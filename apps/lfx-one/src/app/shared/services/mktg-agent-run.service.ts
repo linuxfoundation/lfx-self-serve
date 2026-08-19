@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
 import { MKTG_RUN_POLL, MKTG_RUN_STORAGE_KEY_PREFIX } from '@lfx-one/shared/constants';
 import {
@@ -10,6 +10,7 @@ import {
   MktgChatResponse,
   MktgGenerateProgress,
   MktgGenerateRequest,
+  MktgRunAttempt,
   MktgRunGenerateBody,
   MktgRunResultBody,
   MktgRunResultResponse,
@@ -19,7 +20,9 @@ import {
   MktgStoredAgentRun,
 } from '@lfx-one/shared/interfaces';
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
-import { concat, filter, map, Observable, of, switchMap, take, timeout, timer } from 'rxjs';
+import { catchError, concat, filter, map, Observable, of, switchMap, take, throwError, timeout, timer } from 'rxjs';
+
+import { UserService } from './user.service';
 
 /**
  * Form-first agent runs for the Marketing OS marketplace. A first run submits
@@ -30,14 +33,19 @@ import { concat, filter, map, Observable, of, switchMap, take, timeout, timer } 
  * session via the chat/session BFF. Either way the document comes exclusively
  * from the agent's result endpoint, which returns only schema-validated,
  * sha256-verified envelopes — raw chat text is never treated as the document.
- * Each run (session + answers + versions) persists in localStorage so the
- * marketplace can badge agents with stored output and the run page can restore
- * prior results.
+ * Each run (session + answers + versions) persists in localStorage, keyed to
+ * the EFFECTIVE user (login/impersonation swaps `user` without a reload — the
+ * user-keyed invalidation precedent in user.service.ts), so one user's stored
+ * session — whose ownerToken is HMAC-bound to their sub — can never be replayed
+ * as another's. If a stored session still turns stale (the server 401/403s the
+ * follow-up), the run drops it and falls back to a fresh session instead of
+ * dead-ending the user.
  */
 @Injectable({ providedIn: 'root' })
 export class MktgAgentRunService {
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly userService = inject(UserService);
 
   /**
    * Generates (or regenerates) an agent document. Emits `submitted` once the
@@ -46,21 +54,13 @@ export class MktgAgentRunService {
    */
   public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
     const stored = this.loadRun(request.projectUid, request.agentId);
-    // The stored run's latest version is the single source of truth for BOTH
-    // the follow-up message's "finalize as version N+1" directive and the poll
-    // gate below — deriving them together means the agent is always told to
-    // produce the exact version the poll will accept. (The result endpoint
-    // reports the best envelope in the WHOLE session, so on a follow-up the
-    // prior draft is already `ready` — only a strictly newer version counts as
-    // this submission's document.)
-    const priorVersion = stored?.versions.at(-1)?.version;
-    const session$: Observable<MktgSessionInfo> = stored ? this.followUp(request, stored, priorVersion) : this.startRun(request);
+    const attempt$: Observable<MktgRunAttempt> = stored ? this.followUp(request, stored) : this.startRun(request);
 
-    return session$.pipe(
-      switchMap((session) =>
+    return attempt$.pipe(
+      switchMap(({ session, priorVersion }) =>
         concat(
           of<MktgGenerateProgress>({ type: 'submitted' }),
-          this.pollForDocument(request.intake.endpoints.result, session, priorVersion ?? 0).pipe(
+          this.pollForDocument(request.intake.endpoints.result, session, priorVersion).pipe(
             map((result) => ({ type: 'document' as const, run: this.appendVersion(request, session, result) }))
           )
         )
@@ -68,13 +68,17 @@ export class MktgAgentRunService {
     );
   }
 
-  /** Reads the stored run for a project + agent. Returns null on the server or when nothing is stored. */
+  /** Reads the stored run for a project + agent. Returns null on the server, when signed out, or when nothing is stored. */
   public loadRun(projectUid: string, agentId: string): MktgStoredAgentRun | null {
     if (!isPlatformBrowser(this.platformId) || !projectUid) {
       return null;
     }
+    const key = this.storageKey(projectUid, agentId);
+    if (!key) {
+      return null;
+    }
     try {
-      const raw = window.localStorage.getItem(this.storageKey(projectUid, agentId));
+      const raw = window.localStorage.getItem(key);
       if (!raw) {
         return null;
       }
@@ -91,13 +95,14 @@ export class MktgAgentRunService {
   /**
    * First run: one-shot form-mode generation through the agent's validated
    * generate endpoint. The BFF validates the answers against the agent's own
-   * intake schema and renders the batch message server-side.
+   * intake schema and renders the batch message server-side. A fresh session
+   * has no prior draft, so the result poll's gate is 0.
    */
-  private startRun(request: MktgGenerateRequest): Observable<MktgSessionInfo> {
+  private startRun(request: MktgGenerateRequest): Observable<MktgRunAttempt> {
     const body: MktgRunGenerateBody = { answers: request.answers };
     return this.http
       .post<MktgRunSessionResponse>(request.intake.endpoints.generate, body)
-      .pipe(map((response) => ({ agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken })));
+      .pipe(map((response) => ({ session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken }, priorVersion: 0 })));
   }
 
   /**
@@ -106,17 +111,38 @@ export class MktgAgentRunService {
    * prior-version directive so the agent finalizes as v+1, plus the feedback
    * paragraph when regenerating — rendered as the agent's batch message and
    * posted through the chat/session BFF contract.
+   *
+   * The stored run's latest version is the single source of truth for BOTH the
+   * message's "finalize as version N+1" directive and the result poll's gate —
+   * deriving them together means the agent is always told to produce the exact
+   * version the poll will accept. (The result endpoint reports the best
+   * envelope in the WHOLE session, so on a follow-up the prior draft is
+   * already `ready` — only a strictly newer version counts.)
+   *
+   * Recovery: a 401/403 means the stored session no longer belongs to this
+   * browser's effective user (the HMAC-bound ownerToken stopped verifying —
+   * e.g. a session written before runs were user-keyed). The stored run is
+   * unusable forever, so it is dropped and the submission falls back to a
+   * fresh run instead of dead-ending every subsequent submit.
    */
-  private followUp(request: MktgGenerateRequest, stored: MktgStoredAgentRun, priorVersion: number | undefined): Observable<MktgSessionInfo> {
+  private followUp(request: MktgGenerateRequest, stored: MktgStoredAgentRun): Observable<MktgRunAttempt> {
+    const priorVersion = stored.versions.at(-1)?.version ?? 0;
     const body: MktgChatRequest = {
       agentId: request.agentId,
-      message: renderMktgIntakeMessage(request.intake, request.answers, request.feedback, priorVersion),
+      message: renderMktgIntakeMessage(request.intake, request.answers, request.feedback, priorVersion || undefined),
       sessionId: stored.sessionId,
       ownerToken: stored.ownerToken,
     };
-    return this.http
-      .post<MktgChatResponse>('/api/mktg-agents/chat', body)
-      .pipe(map(() => ({ agentId: request.agentId, sessionId: stored.sessionId, ownerToken: stored.ownerToken })));
+    return this.http.post<MktgChatResponse>('/api/mktg-agents/chat', body).pipe(
+      map(() => ({ session: { agentId: request.agentId, sessionId: stored.sessionId, ownerToken: stored.ownerToken }, priorVersion })),
+      catchError((error: unknown) => {
+        if (error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403)) {
+          this.clearRun(request.projectUid, request.agentId);
+          return this.startRun(request);
+        }
+        return throwError(() => error);
+      })
+    );
   }
 
   /**
@@ -165,14 +191,44 @@ export class MktgAgentRunService {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
+    const key = this.storageKey(run.projectUid, run.agentId);
+    if (!key) {
+      return;
+    }
     try {
-      window.localStorage.setItem(this.storageKey(run.projectUid, run.agentId), JSON.stringify(run));
+      window.localStorage.setItem(key, JSON.stringify(run));
     } catch {
       // Ignore — the in-memory result still renders; only cross-visit restore is lost.
     }
   }
 
-  private storageKey(projectUid: string, agentId: string): string {
-    return `${MKTG_RUN_STORAGE_KEY_PREFIX}:${projectUid}:${agentId}`;
+  /** Drops a stored run whose session the server no longer accepts. Best-effort, like saveRun. */
+  private clearRun(projectUid: string, agentId: string): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    const key = this.storageKey(projectUid, agentId);
+    if (!key) {
+      return;
+    }
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      // Ignore — loadRun's validation treats an unremovable stale record as absent-on-error anyway.
+    }
+  }
+
+  /**
+   * Storage key scoped to the EFFECTIVE user's sub (impersonation swaps
+   * `user()` in place), so a login or impersonation change can never surface —
+   * or overwrite — another user's stored run. Null when signed out: stored
+   * runs simply don't exist without an authenticated user to own them.
+   */
+  private storageKey(projectUid: string, agentId: string): string | null {
+    const userSub = this.userService.user()?.sub;
+    if (!userSub) {
+      return null;
+    }
+    return `${MKTG_RUN_STORAGE_KEY_PREFIX}:${userSub}:${projectUid}:${agentId}`;
   }
 }

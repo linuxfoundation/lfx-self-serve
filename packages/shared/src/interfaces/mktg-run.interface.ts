@@ -9,6 +9,8 @@
 // generated document as a browser-side version so the marketplace can badge
 // agents that already have output.
 
+import type { MktgSessionInfo } from './mktg-chat.interface';
+
 /** How a single intake field is rendered on the run page. */
 export type MktgIntakeFieldKind = 'text' | 'textarea';
 
@@ -153,6 +155,20 @@ export interface MktgStoredAgentRun {
   answers: Record<string, string>;
   /** Generated versions, oldest first. */
   versions: MktgRunVersion[];
+}
+
+/**
+ * Outcome of a generate submission — the Guild session the result poll must
+ * query, paired with the version that poll must beat. Deriving them together
+ * (follow-up → the stored draft's version; fresh session, including the
+ * stale-session recovery fallback, → 0) means the poll gate can never demand a
+ * version the session will not produce.
+ */
+export interface MktgRunAttempt {
+  /** The Guild session whose result endpoint the document poll queries. */
+  session: MktgSessionInfo;
+  /** Version the polled envelope must exceed; 0 on a fresh session. */
+  priorVersion: number;
 }
 
 /** Run-page phase: intake form → staged running → document result. */
