@@ -53,10 +53,6 @@ export interface SocialListeningMention {
   COMPUTED_AT?: string;
 }
 
-export interface SocialListeningMentionCount {
-  TOTAL: number;
-}
-
 export interface SocialListeningMentionAuthor {
   AUTHOR: string;
   PLATFORM: string;
@@ -71,10 +67,6 @@ export interface SocialListeningPlatform {
 export interface SocialListeningSubProject {
   SOURCE_PROJECT_ID: string;
   SOURCE_PROJECT_NAME: string;
-}
-
-export interface SocialListeningTag {
-  TAG: string | null;
 }
 
 /** Tag with usage count. The single `mentions-tags` endpoint serves both the tag filter dropdown and the analytics top-tags panel (PCC's separate `analytics-tags` was dropped). */

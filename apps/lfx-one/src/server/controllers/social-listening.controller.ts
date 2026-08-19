@@ -17,7 +17,7 @@ import { SocialListeningService } from '../services/social-listening.service';
 
 /**
  * Social Listening HTTP boundary (LFXV2-3002): query params are validated via
- * `social-listening-params.helper` before touching the service. The ED gate lives in the route middleware.
+ * `social-listening-params.helper` before touching the service. The dashboard-access gate (ED + LF Staff) lives in the route middleware.
  */
 export class SocialListeningController {
   private readonly socialListeningService: SocialListeningService;

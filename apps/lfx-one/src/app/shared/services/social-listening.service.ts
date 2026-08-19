@@ -27,8 +27,8 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 /**
- * Angular gateway over the 13 Express endpoints from LFXV2-3015 (`/api/social-listening/*`, ED-gated
- * server-side). Pure-read by design: errors deliberately propagate to the page's `toSignal` pipelines.
+ * Angular gateway over the 13 Express endpoints from LFXV2-3015 (`/api/social-listening/*`,
+ * dashboard-access-gated server-side: ED + LF Staff). Pure-read: errors propagate to the page's `toSignal` pipelines.
  */
 @Injectable({
   providedIn: 'root',
