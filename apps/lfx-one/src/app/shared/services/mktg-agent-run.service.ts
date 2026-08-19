@@ -10,7 +10,10 @@ import {
   MktgChatResponse,
   MktgGenerateProgress,
   MktgGenerateRequest,
-  MktgHistoryResponse,
+  MktgRunGenerateBody,
+  MktgRunResultBody,
+  MktgRunResultResponse,
+  MktgRunSessionResponse,
   MktgRunVersion,
   MktgSessionInfo,
   MktgStoredAgentRun,
@@ -19,11 +22,16 @@ import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
 import { concat, filter, map, Observable, of, switchMap, take, timeout, timer } from 'rxjs';
 
 /**
- * Form-first agent runs for the Marketing OS marketplace. Submits batch intake
- * forms through the existing chat/session BFF (`/api/mktg-agents/chat` +
- * `/history`), polls the session for the generated document, and persists each
- * run (session + answers + versions) in localStorage so the marketplace can
- * badge agents with stored output and the run page can restore prior results.
+ * Form-first agent runs for the Marketing OS marketplace. A first run submits
+ * the batch intake answers to the agent's validated generate endpoint (the BFF
+ * renders the batch message server-side); regenerations resubmit the full form
+ * plus feedback and prior_version as a follow-up on the run's existing Guild
+ * session via the chat/session BFF. Either way the document comes exclusively
+ * from the agent's result endpoint, which returns only schema-validated,
+ * sha256-verified envelopes — raw chat text is never treated as the document.
+ * Each run (session + answers + versions) persists in localStorage so the
+ * marketplace can badge agents with stored output and the run page can restore
+ * prior results.
  */
 @Injectable({ providedIn: 'root' })
 export class MktgAgentRunService {
@@ -32,38 +40,23 @@ export class MktgAgentRunService {
 
   /**
    * Generates (or regenerates) an agent document. Emits `submitted` once the
-   * chat POST resolves, then `document` with the updated stored run once the
-   * agent's reply lands. Regeneration resubmits the full form plus feedback and
-   * prior_version as a follow-up on the run's existing Guild session.
+   * generate/chat POST resolves, then `document` with the updated stored run
+   * once the validated document lands.
    */
   public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
-    const message = renderMktgIntakeMessage(request.intake, request.answers, request.feedback, request.priorVersion);
     const stored = this.loadRun(request.projectUid, request.agentId);
+    // The result endpoint reports the best envelope in the WHOLE session, so on
+    // a follow-up the prior draft is already `ready` — only a strictly newer
+    // version counts as this submission's document.
+    const priorVersion = stored?.versions.at(-1)?.version ?? 0;
+    const session$: Observable<MktgSessionInfo> = stored ? this.followUp(request, stored) : this.startRun(request);
 
-    // On a follow-up the session already holds history — snapshot the known
-    // message ids first so only messages produced by this submission count.
-    const baseline$: Observable<Set<string>> = stored
-      ? this.history(stored.sessionId).pipe(map((response) => new Set(response.messages.map((historyMessage) => historyMessage.id))))
-      : of(new Set<string>());
-
-    return baseline$.pipe(
-      switchMap((knownIds) =>
-        this.chat({ agentId: request.agentId, message, sessionId: stored?.sessionId ?? null, ownerToken: stored?.ownerToken }).pipe(
-          map((response) => ({
-            knownIds,
-            session:
-              'sessionId' in response
-                ? { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken }
-                : // Follow-up acks carry no ids — the stored session is unchanged.
-                  { agentId: request.agentId, sessionId: stored!.sessionId, ownerToken: stored!.ownerToken },
-          }))
-        )
-      ),
-      switchMap(({ knownIds, session }) =>
+    return session$.pipe(
+      switchMap((session) =>
         concat(
           of<MktgGenerateProgress>({ type: 'submitted' }),
-          this.pollForDocument(session.sessionId, knownIds).pipe(
-            map((document) => ({ type: 'document' as const, run: this.appendVersion(request, session, document) }))
+          this.pollForDocument(request.intake.endpoints.result, session, priorVersion).pipe(
+            map((result) => ({ type: 'document' as const, run: this.appendVersion(request, session, result) }))
           )
         )
       )
@@ -90,40 +83,62 @@ export class MktgAgentRunService {
     }
   }
 
-  private chat(request: MktgChatRequest): Observable<MktgChatResponse> {
-    return this.http.post<MktgChatResponse>('/api/mktg-agents/chat', request);
-  }
-
-  private history(sessionId: string): Observable<MktgHistoryResponse> {
-    return this.http.get<MktgHistoryResponse>('/api/mktg-agents/history', { params: { sessionId } });
+  /**
+   * First run: one-shot form-mode generation through the agent's validated
+   * generate endpoint. The BFF validates the answers against the agent's own
+   * intake schema and renders the batch message server-side.
+   */
+  private startRun(request: MktgGenerateRequest): Observable<MktgSessionInfo> {
+    const body: MktgRunGenerateBody = { answers: request.answers };
+    return this.http
+      .post<MktgRunSessionResponse>(request.intake.endpoints.generate, body)
+      .pipe(map((response) => ({ agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken })));
   }
 
   /**
-   * Polls session history until an agent message that wasn't in the baseline
-   * appears, then emits its text. Batch mode tells the agent to draft directly
-   * (no clarifying round-trips), so the first fresh agent reply is the
-   * document; when a poll catches several, the latest wins.
+   * Follow-up on the run's existing Guild session (edit-inputs resubmit or
+   * "Request changes" regeneration): the full form — plus feedback and
+   * prior_version when regenerating — rendered as the agent's batch message
+   * and posted through the chat/session BFF contract.
    */
-  private pollForDocument(sessionId: string, knownIds: ReadonlySet<string>): Observable<string> {
+  private followUp(request: MktgGenerateRequest, stored: MktgStoredAgentRun): Observable<MktgSessionInfo> {
+    const body: MktgChatRequest = {
+      agentId: request.agentId,
+      message: renderMktgIntakeMessage(request.intake, request.answers, request.feedback, request.priorVersion),
+      sessionId: stored.sessionId,
+      ownerToken: stored.ownerToken,
+    };
+    return this.http
+      .post<MktgChatResponse>('/api/mktg-agents/chat', body)
+      .pipe(map(() => ({ agentId: request.agentId, sessionId: stored.sessionId, ownerToken: stored.ownerToken })));
+  }
+
+  /**
+   * Polls the agent's validated result endpoint (owner token in the POST body,
+   * never the query string) until it reports a `ready` document with a version
+   * newer than the prior draft's. The endpoint surfaces only schema-validated,
+   * sha256-verified envelopes, so agent status chatter can never be mistaken
+   * for the document — anything else stays `pending`.
+   */
+  private pollForDocument(resultPath: string, session: MktgSessionInfo, priorVersion: number): Observable<MktgRunResultResponse> {
+    const body: MktgRunResultBody = { sessionId: session.sessionId, ownerToken: session.ownerToken };
     return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
-      switchMap(() => this.history(sessionId)),
-      map((response) => {
-        const fresh = response.messages.filter((historyMessage) => historyMessage.sender === 'agent' && !knownIds.has(historyMessage.id));
-        return fresh.length > 0 ? fresh[fresh.length - 1].text : null;
-      }),
-      filter((document): document is string => document !== null),
+      switchMap(() => this.http.post<MktgRunResultResponse>(resultPath, body)),
+      filter((result) => result.status === 'ready' && typeof result.documentMarkdown === 'string' && (result.version ?? 0) > priorVersion),
       take(1),
       timeout(MKTG_RUN_POLL.timeoutMs)
     );
   }
 
-  /** Appends the generated document as the next version and persists the run. */
-  private appendVersion(request: MktgGenerateRequest, session: MktgSessionInfo, document: string): MktgStoredAgentRun {
+  /** Appends the validated document as the next version and persists the run. */
+  private appendVersion(request: MktgGenerateRequest, session: MktgSessionInfo, result: MktgRunResultResponse): MktgStoredAgentRun {
     const stored = this.loadRun(request.projectUid, request.agentId);
     const lastVersion = stored?.versions.length ? stored.versions[stored.versions.length - 1].version : 0;
     const version: MktgRunVersion = {
-      version: lastVersion + 1,
-      document,
+      // The envelope's own version is authoritative; pollForDocument guaranteed
+      // it (and the document) is present, so the fallbacks are type-narrowing only.
+      version: result.version ?? lastVersion + 1,
+      document: result.documentMarkdown ?? '',
       feedback: request.feedback,
       createdAt: new Date().toISOString(),
     };

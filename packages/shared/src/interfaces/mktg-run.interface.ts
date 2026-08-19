@@ -3,9 +3,11 @@
 
 // Form-first agent run contract for the Marketing OS Agents marketplace
 // (LFXAI-95 workstream). An agent run collects a batch intake form, submits it
-// through the existing chat/session BFF (`POST /api/mktg-agents/chat`), and
-// stores each generated document as a browser-side version so the marketplace
-// can badge agents that already have output.
+// through the agent's validated generate endpoint (regenerations go through
+// the existing chat/session BFF, `POST /api/mktg-agents/chat`), polls the
+// agent's result endpoint for the schema-validated document, and stores each
+// generated document as a browser-side version so the marketplace can badge
+// agents that already have output.
 
 /** How a single intake field is rendered on the run page. */
 export type MktgIntakeFieldKind = 'text' | 'textarea';
@@ -39,6 +41,63 @@ export interface MktgIntakeField {
 }
 
 /**
+ * BFF endpoints backing an agent's validated generation flow. Every agent with
+ * an envelope contract exposes a generate/result pair (e.g.
+ * `/api/mktg-agents/brand-kit/...`); the result endpoint returns only
+ * schema-validated, integrity-checked documents, so the UI never has to trust
+ * raw chat text as the generated document.
+ */
+export interface MktgRunEndpoints {
+  /** POST — body {@link MktgRunGenerateBody}; responds {@link MktgRunSessionResponse}. */
+  generate: string;
+  /** POST — body {@link MktgRunResultBody}; responds {@link MktgRunResultResponse}. */
+  result: string;
+}
+
+/**
+ * Body POSTed to an agent's `generate` endpoint — the full intake answers,
+ * keyed by field key. The server renders the batch message and validates the
+ * answers against the agent's own intake schema.
+ */
+export interface MktgRunGenerateBody {
+  /** Answers keyed by intake field key; every field required, non-empty. */
+  answers: Record<string, string>;
+}
+
+/**
+ * Body POSTed to an agent's `result` endpoint. The owner token travels in the
+ * body (never the query string) so it stays out of access logs and proxies.
+ */
+export interface MktgRunResultBody {
+  /** Guild session id returned by the generate endpoint. */
+  sessionId: string;
+  /** Creator-binding owner token returned by the generate endpoint. */
+  ownerToken: string;
+}
+
+/** Response of an agent's `generate` endpoint — the session to poll. */
+export interface MktgRunSessionResponse {
+  /** Guild session id running the one-shot form-mode generation. */
+  sessionId: string;
+  /** Opaque creator-binding token; required to fetch the result. */
+  ownerToken: string;
+}
+
+/**
+ * Response of an agent's `result` endpoint: `pending` until the session emits
+ * a schema-valid, integrity-checked envelope, then `ready` with the validated
+ * document.
+ */
+export interface MktgRunResultResponse {
+  /** Generation state. */
+  status: 'pending' | 'ready';
+  /** The validated document (Markdown). Present when ready. */
+  documentMarkdown?: string;
+  /** Draft version from the validated envelope. Present when ready. */
+  version?: number;
+}
+
+/**
  * A registered batch intake form for one agent. The run-page shell is driven
  * entirely by this definition, so a second agent's form slots in by adding a
  * new entry to the shared registry.
@@ -61,6 +120,8 @@ export interface MktgAgentIntake {
   fields: MktgIntakeField[];
   /** Section labels the generated document is expected to contain. */
   sections: string[];
+  /** BFF endpoints for the agent's validated generation flow. */
+  endpoints: MktgRunEndpoints;
 }
 
 /** One generated document version for an agent run. */

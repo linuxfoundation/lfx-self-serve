@@ -6,6 +6,8 @@
 // from marketing-os-agents docs/contracts/brand-kit-output.schema.json — the
 // JSON Schema file is normative; this must stay in sync (reviewed at PR).
 
+import { MktgRunGenerateBody, MktgRunResultBody, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
+
 /** One verbatim intake Q/A pair (Paul's fixed 7-question order). */
 export interface BrandKitIntakeAnswer {
   /** Question position, 1–7. */
@@ -82,45 +84,30 @@ export interface BrandKitIntakeQuestion {
  * Request body for `POST /api/mktg-agents/brand-kit/generate` — all 7 of
  * Paul's intake answers collected on a single page (dec-brand-kit-intake-form),
  * open-ended and verbatim, keyed by `BrandKitIntakeQuestion.key` in order.
+ * Aliased to the generic run-flow body so the form-first run shell (driven by
+ * `MktgAgentIntake.endpoints`) is compile-bound to this endpoint's contract.
  */
-export interface BrandKitGenerateRequest {
-  /** Answers keyed by intake question key; all 7 required, non-empty. */
-  answers: Record<string, string>;
-}
+export type BrandKitGenerateRequest = MktgRunGenerateBody;
 
-/** Response of `POST /api/mktg-agents/brand-kit/generate` — the session to poll. */
-export interface BrandKitGenerateResponse {
-  /** Guild session id running the one-shot form-mode generation. */
-  sessionId: string;
-  /** Opaque creator-binding token; required to fetch the result. */
-  ownerToken: string;
-}
+/** Response of `POST /api/mktg-agents/brand-kit/generate` — the session to poll (generic run-flow shape). */
+export type BrandKitGenerateResponse = MktgRunSessionResponse;
 
-/** Request body for `POST /api/mktg-agents/brand-kit/result` — the token travels in the body (never the query string) so it stays out of access logs. */
-export interface BrandKitResultRequest {
-  /** Guild session id returned by generate. */
-  sessionId: string;
-  /** Owner token returned by generate. */
-  ownerToken: string;
-}
+/** Request body for `POST /api/mktg-agents/brand-kit/result` — the token travels in the body (never the query string) so it stays out of access logs (generic run-flow shape). */
+export type BrandKitResultRequest = MktgRunResultBody;
 
 /**
  * Response of `POST /api/mktg-agents/brand-kit/result`.
  * `pending` until the session emits a valid envelope; then `ready` with the
  * validated document. The document is DISPLAYED to the user only — no
  * server-side persistence in this iteration (persistence deferred).
+ * Extends the generic run-flow result (status/documentMarkdown/version) the
+ * form-first run shell polls, adding brand-kit envelope provenance fields.
  */
-export interface BrandKitResultResponse {
-  /** Generation state. */
-  status: 'pending' | 'ready';
-  /** The validated Brand Kit document (Paul's structure, Markdown). Present when ready. */
-  documentMarkdown?: string;
+export interface BrandKitResultResponse extends MktgRunResultResponse {
   /** Project display name from the envelope (intake Q1 verbatim). Present when ready. */
   projectName?: string;
   /** Project slug from the envelope. Present when ready. */
   project?: string;
-  /** Draft version from the envelope. Present when ready. */
-  version?: number;
   /** How the intake answers were collected, from the envelope. Present when ready. */
   intakeMode?: BrandKitIntakeMode;
 }

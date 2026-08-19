@@ -1,18 +1,41 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MktgAgentIntake } from '../interfaces';
+import { MktgAgentIntake, MktgIntakeField } from '../interfaces';
+import { BRAND_KIT_FORM_PREAMBLE_LINES, BRAND_KIT_INTAKE_QUESTIONS } from './brand-kit.constants';
 
 // Form-first run-page configuration for the Marketing OS Agents marketplace
 // (LFXAI-95 workstream): per-agent batch intake registry, running-phase stage
-// labels, browser persistence key, and history polling cadence.
+// labels, browser persistence key, and result polling cadence.
 
 /**
- * Brand Kit Agent batch intake. The seven questions are Paul's intake wording
- * QUOTED VERBATIM from the brand-kit agent's own `src/questions.ts`
- * (marketing-os-agents `agents/brand-kit-ts`) — never paraphrase them. The
- * batch preamble mirrors the agent's `renderFormMessage` form-mode wording so
- * its MODE RULES skip the conversational intake and draft directly.
+ * Presentation layered onto Paul's verbatim brand-kit questions — control
+ * kind, sizing, LFX prefill sources, and hints. Keyed by the question keys of
+ * `BRAND_KIT_INTAKE_QUESTIONS`; the question wording itself is deliberately
+ * NOT restated here (single verbatim copy, dec-paul-prompt-fidelity).
+ */
+const BRAND_KIT_FIELD_PRESENTATION: Record<(typeof BRAND_KIT_INTAKE_QUESTIONS)[number]['key'], Omit<MktgIntakeField, 'key' | 'question'>> = {
+  project_name: { kind: 'text', prefill: 'project-name' },
+  github_url: { kind: 'text', prefill: 'repository-url' },
+  one_line_description: {
+    kind: 'text',
+    prefill: 'project-description',
+    missingPrefillHint: 'Not set on your LFX project — describe it in your own words.',
+  },
+  primary_audience: { kind: 'textarea', rows: 2 },
+  voice_adjectives: { kind: 'text', placeholder: 'In your own words — statements are fine too' },
+  constraints: { kind: 'textarea', rows: 2 },
+  reference_brands: { kind: 'textarea', rows: 2 },
+};
+
+/**
+ * Brand Kit Agent batch intake. The seven questions are DERIVED from
+ * `BRAND_KIT_INTAKE_QUESTIONS` — Paul's intake wording quoted verbatim from
+ * the brand-kit agent's own `src/questions.ts` (marketing-os-agents
+ * `agents/brand-kit-ts`), never paraphrased and never duplicated — with the
+ * form presentation layered on top. The batch preamble is the same
+ * `BRAND_KIT_FORM_PREAMBLE_LINES` the BFF's `renderBrandKitFormMessage` sends,
+ * so the agent's MODE RULES trigger identically for regeneration follow-ups.
  */
 export const BRAND_KIT_INTAKE: MktgAgentIntake = {
   agentId: 'brand-kit',
@@ -20,57 +43,12 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
   documentName: 'Brand Kit',
   intro:
     'Seven questions, answered in your own words. Fields marked “From LFX” are pre-filled from your project — edit anything. Logos, colors, and fonts are generated for you; they are not inputs.',
-  batchPreamble: [
-    'BATCH INTAKE SUBMISSION (form mode — see MODE RULES in your instructions).',
-    'All seven intake answers were collected on a single LFX form and are',
-    'provided below, in the same order as your Step 1 questions. Do NOT ask',
-    'the intake questions; proceed directly to Step 2.',
-  ],
-  fields: [
-    {
-      key: 'project_name',
-      question: "What's the name of the LF project?",
-      kind: 'text',
-      prefill: 'project-name',
-    },
-    {
-      key: 'github_url',
-      question: "What's the URL of the project's GitHub repo or README?",
-      kind: 'text',
-      prefill: 'repository-url',
-    },
-    {
-      key: 'one_line_description',
-      question: 'One-line description — what does it do, beyond the name?',
-      kind: 'text',
-      prefill: 'project-description',
-      missingPrefillHint: 'Not set on your LFX project — describe it in your own words.',
-    },
-    {
-      key: 'primary_audience',
-      question: 'Primary audience — who does this brand need to speak to? (e.g., AI/ML platform engineers, enterprise buyers, agent-framework contributors)',
-      kind: 'textarea',
-      rows: 2,
-    },
-    {
-      key: 'voice_adjectives',
-      question: 'Three adjectives for the voice you want?',
-      kind: 'text',
-      placeholder: 'In your own words — statements are fine too',
-    },
-    {
-      key: 'constraints',
-      question: 'Any constraints — colors/marks to avoid, an existing LF-family look to stay consistent with, trademark concerns?',
-      kind: 'textarea',
-      rows: 2,
-    },
-    {
-      key: 'reference_brands',
-      question: 'One to three reference brands or projects — ones they admire, or want to differentiate from?',
-      kind: 'textarea',
-      rows: 2,
-    },
-  ],
+  batchPreamble: [...BRAND_KIT_FORM_PREAMBLE_LINES],
+  fields: BRAND_KIT_INTAKE_QUESTIONS.map((question) => ({
+    key: question.key,
+    question: question.question,
+    ...BRAND_KIT_FIELD_PRESENTATION[question.key],
+  })),
   sections: [
     'How to Use This Document',
     '1. Project Definition',
@@ -85,6 +63,10 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
     'Appendix A: Document Architecture',
     'Appendix B: Source Intake',
   ],
+  endpoints: {
+    generate: '/api/mktg-agents/brand-kit/generate',
+    result: '/api/mktg-agents/brand-kit/result',
+  },
 };
 
 /**
@@ -102,12 +84,12 @@ export const MKTG_RUN_STAGES: string[] = ['Submitting your intake', 'Agent draft
 /** localStorage key prefix for stored runs; full key is `<prefix>:<projectUid>:<agentId>`. */
 export const MKTG_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-agent-run';
 
-/** Session-history polling cadence while a generation is in flight. */
+/** Validated-result polling cadence while a generation is in flight. */
 export const MKTG_RUN_POLL = {
-  /** Delay before the first history poll after the chat POST resolves. */
+  /** Delay before the first result poll after the generate/chat POST resolves. */
   initialDelayMs: 4000,
   /** Interval between subsequent polls. */
   intervalMs: 5000,
-  /** Overall deadline for the agent's document to appear. */
+  /** Overall deadline for the agent's validated document to appear. */
   timeoutMs: 600000,
 } as const;
