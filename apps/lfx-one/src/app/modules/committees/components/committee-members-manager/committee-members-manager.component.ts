@@ -22,6 +22,7 @@ import {
   CreateCommitteeInviteRequest,
   CreateCommitteeMemberRequest,
   MemberPendingChanges,
+  SucceededMemberOperations,
 } from '@lfx-one/shared/interfaces';
 import { generateTempId } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
@@ -314,6 +315,32 @@ export class CommitteeMembersManagerComponent implements OnInit {
     if (member?.email) {
       window.open(`mailto:${member.email}`, '_blank');
     }
+  }
+
+  /**
+   * Drops successfully-flushed items from local state after a partial flush failure, so a retry
+   * only resubmits what actually failed instead of re-creating/re-inviting/re-deleting items that
+   * already landed server-side. Failed items are left untouched — still staged, visible, and
+   * editable (GH-1608).
+   */
+  public pruneSucceeded(succeeded: SucceededMemberOperations): void {
+    this.membersWithState.update((members) =>
+      members
+        .filter((m) => {
+          if (m.state === 'new') {
+            return !succeeded.addedEmails.has((m.email ?? '').trim().toLowerCase());
+          }
+          if (m.state === 'deleted') {
+            return !succeeded.deletedUids.has(m.uid);
+          }
+          return true;
+        })
+        .map((m) => (m.state === 'modified' && succeeded.updatedUids.has(m.uid) ? this.createMemberWithState(m, 'existing') : m))
+    );
+
+    this.pendingInvites.update((current) => current.filter((invite) => !succeeded.invitedEmails.has((invite.invitee_email ?? '').trim().toLowerCase())));
+
+    this.emitMemberUpdates();
   }
 
   private openCollectInviteDialog(serverInvites: CommitteeInvite[]): void {

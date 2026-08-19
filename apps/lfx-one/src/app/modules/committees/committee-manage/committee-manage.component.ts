@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { COMMITTEE_FORM_STEPS, COMMITTEE_INVITE_CONCURRENCY, COMMITTEE_LABEL, COMMITTEE_STEP_TITLES, COMMITTEE_TOTAL_STEPS } from '@lfx-one/shared/constants';
-import { Committee, MemberPendingChanges } from '@lfx-one/shared/interfaces';
+import { Committee, MemberOperationResult, MemberOperationType, MemberPendingChanges, SucceededMemberOperations } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -57,6 +57,9 @@ export class CommitteeManageComponent {
   // Member management state
   public memberUpdates = signal<MemberPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [], toInvite: [] });
   public memberUpdatesRefresh$ = new BehaviorSubject<void>(undefined);
+  // Reference to the mounted members-manager child so a partial flush failure can prune
+  // successfully-applied items out of its local state without navigating away (GH-1608).
+  private readonly membersManager = viewChild(CommitteeMembersManagerComponent);
 
   // Stepper state
   private internalStep = signal<number>(1);
@@ -242,6 +245,14 @@ export class CommitteeManageComponent {
       .pipe(finalize(() => this.submitting.set(false)))
       .subscribe((results) => {
         this.showMemberOperationToast(results);
+
+        // Don't navigate away while any staged item failed — re-entering the wizard would lose
+        // it. Prune the items that did succeed so a retry doesn't resubmit them (GH-1608).
+        if (results.some((result) => !result.success)) {
+          this.membersManager()?.pruneSucceeded(this.computeSucceededOperations(results));
+          return;
+        }
+
         this.router.navigate(['/groups']);
       });
   }
@@ -298,7 +309,7 @@ export class CommitteeManageComponent {
         finalize(() => this.submitting.set(false))
       )
       .subscribe({
-        next: (result: { committee: Committee; members: { type: string; success: number; failed: number }[] }) => {
+        next: (result: { committee: Committee; members: MemberOperationResult[] }) => {
           const memberResults = result.members;
 
           // Show success message
@@ -310,6 +321,13 @@ export class CommitteeManageComponent {
               summary: 'Success',
               detail: `${this.committeeLabel} updated successfully`,
             });
+          }
+
+          // Don't navigate away while any staged item failed — re-entering the wizard would lose
+          // it. Prune the items that did succeed so a retry doesn't resubmit them (GH-1608).
+          if (memberResults.some((memberResult) => !memberResult.success)) {
+            this.membersManager()?.pruneSucceeded(this.computeSucceededOperations(memberResults));
+            return;
           }
 
           // Navigate back to committees list
@@ -519,21 +537,23 @@ export class CommitteeManageComponent {
     // Add delete operation if there are members to delete
     if (memberUpdates.toDelete.length > 0) {
       for (const memberId of memberUpdates.toDelete) {
-        operations.push(this.createMemberOperation('delete', () => this.committeeService.deleteCommitteeMember(committeeId, memberId)));
+        operations.push(this.createMemberOperation('delete', memberId, () => this.committeeService.deleteCommitteeMember(committeeId, memberId)));
       }
     }
 
     // Add update operation if there are members to update
     if (memberUpdates.toUpdate.length > 0) {
       for (const update of memberUpdates.toUpdate) {
-        operations.push(this.createMemberOperation('update', () => this.committeeService.updateCommitteeMember(committeeId, update.uid, update.changes)));
+        operations.push(
+          this.createMemberOperation('update', update.uid, () => this.committeeService.updateCommitteeMember(committeeId, update.uid, update.changes))
+        );
       }
     }
 
     // Add create operation if there are members to add
     if (memberUpdates.toAdd.length > 0) {
       for (const member of memberUpdates.toAdd) {
-        operations.push(this.createMemberOperation('add', () => this.committeeService.createCommitteeMember(committeeId, member)));
+        operations.push(this.createMemberOperation('add', member.email, () => this.committeeService.createCommitteeMember(committeeId, member)));
       }
     }
 
@@ -546,7 +566,7 @@ export class CommitteeManageComponent {
    * (LFXV2-2606) — run with the same bounded concurrency as the immediate-send invite path
    * (COMMITTEE_INVITE_CONCURRENCY), after the member mutations finish.
    */
-  private flushMemberUpdates(): Observable<{ type: string; success: number; failed: number }[]> {
+  private flushMemberUpdates(): Observable<MemberOperationResult[]> {
     const committeeId = this.committeeId()!;
     const memberUpdates = this.memberUpdates();
 
@@ -558,7 +578,7 @@ export class CommitteeManageComponent {
       invites.length > 0
         ? from(invites).pipe(
             mergeMap(
-              (invite) => this.createMemberOperation('invite', () => this.committeeService.createCommitteeInvite(committeeId, invite)),
+              (invite) => this.createMemberOperation('invite', invite.invitee_email, () => this.committeeService.createCommitteeInvite(committeeId, invite)),
               COMMITTEE_INVITE_CONCURRENCY
             )
           )
@@ -567,16 +587,30 @@ export class CommitteeManageComponent {
     return concat(memberOps$, inviteOps$).pipe(toArray());
   }
 
-  private createMemberOperation(type: string, operation: () => Observable<unknown>) {
+  private createMemberOperation(type: MemberOperationType, identifier: string, operation: () => Observable<unknown>): Observable<MemberOperationResult> {
     return operation().pipe(
-      switchMap(() => of({ type, success: 1, failed: 0 })),
-      catchError(() => of({ type, success: 0, failed: 1 }))
+      switchMap(() => of({ type, identifier, success: true })),
+      catchError(() => of({ type, identifier, success: false }))
     );
   }
 
-  private showMemberOperationToast(results: { type: string; success: number; failed: number }[]): void {
-    const totalSuccess = results.reduce((sum, result) => sum + result.success, 0);
-    const totalFailed = results.reduce((sum, result) => sum + result.failed, 0);
+  /** Groups the identifiers of successfully-flushed operations so the members-manager child can prune them (GH-1608). */
+  private computeSucceededOperations(results: MemberOperationResult[]): SucceededMemberOperations {
+    const succeeded = results.filter((result) => result.success);
+    const normalizedEmails = (type: MemberOperationType) =>
+      new Set(succeeded.filter((result) => result.type === type).map((result) => result.identifier.trim().toLowerCase()));
+
+    return {
+      addedEmails: normalizedEmails('add'),
+      updatedUids: new Set(succeeded.filter((result) => result.type === 'update').map((result) => result.identifier)),
+      deletedUids: new Set(succeeded.filter((result) => result.type === 'delete').map((result) => result.identifier)),
+      invitedEmails: normalizedEmails('invite'),
+    };
+  }
+
+  private showMemberOperationToast(results: MemberOperationResult[]): void {
+    const totalSuccess = results.filter((result) => result.success).length;
+    const totalFailed = results.filter((result) => !result.success).length;
     const totalOperations = totalSuccess + totalFailed;
     const inviteOps = results.filter((result) => result.type === 'invite').length;
     const memberOps = results.length - inviteOps;

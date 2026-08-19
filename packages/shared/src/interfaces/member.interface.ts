@@ -192,6 +192,34 @@ export interface MemberPendingChanges {
   toInvite: CreateCommitteeInviteRequest[];
 }
 
+/** Kind of staged operation flushed by the committee-manage wizard (GH-1608). */
+export type MemberOperationType = 'add' | 'update' | 'delete' | 'invite';
+
+/**
+ * Result of a single flushed member/invite operation.
+ * @description `identifier` traces the result back to the staged item that produced it — the
+ * member email for `add`, the member uid for `update`/`delete`, or the invitee email for
+ * `invite` — so a failure can be re-staged instead of silently discarded (GH-1608).
+ */
+export interface MemberOperationResult {
+  type: MemberOperationType;
+  identifier: string;
+  success: boolean;
+}
+
+/**
+ * Identifiers of successfully-flushed operations, grouped by type, normalized (trimmed +
+ * lowercased) where the identifier is an email. Used to prune already-applied changes out of the
+ * wizard's staged state after a partial flush failure, so retry only resubmits what actually
+ * failed (GH-1608).
+ */
+export interface SucceededMemberOperations {
+  addedEmails: Set<string>;
+  updatedUids: Set<string>;
+  deletedUids: Set<string>;
+  invitedEmails: Set<string>;
+}
+
 /**
  * Unified table row for the committee Members list.
  * Member rows carry a `CommitteeMember`; invite rows carry a `CommitteeInvite`.
