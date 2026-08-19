@@ -7543,12 +7543,19 @@ export class ProjectService {
       return [];
     }
 
-    const children = await fetchAllQueryResources<Project>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'project',
-        parent: `project:${parentUid}`,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const children = await fetchAllQueryResources<Project>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'project',
+          parent: `project:${parentUid}`,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      // A later-page failure must not silently keep only the earlier pages: that can drop a
+      // nested sub-foundation that happened to land on a later page with no signal beyond a
+      // warning (Cursor). failOnPartial makes a partial fetch throw instead, which the outer
+      // .catch() below turns into a clean "stop this branch" rather than a silent undercount.
+      { failOnPartial: true }
     ).catch((error) => {
       logger.warning(req, 'discover_sub_foundations', 'Failed to resolve children, stopping traversal at this branch', {
         parent_uid: parentUid,
