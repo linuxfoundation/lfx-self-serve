@@ -76,14 +76,14 @@ function storedRow(over: Partial<OrgAllEmployeeRow> = {}): OrgAllEmployeeRow {
   return {
     personKey: 'lfnEMOUiFenugGty80',
     lfid: 'lfnEMOUiFenugGty80',
-    lfUsername: 'mcderk',
+    lfUsername: 'dclarke',
     cdpMemberId: null,
-    name: 'Kieran McDermott',
-    firstName: 'Kieran',
-    lastName: 'McDermott',
+    name: 'Devon Clarke',
+    firstName: 'Devon',
+    lastName: 'Clarke',
     title: 'VP Product',
-    email: 'kmcdermott@linuxfoundation.org',
-    emails: ['kmcdermott@linuxfoundation.org'],
+    email: 'dclarke@linuxfoundation.org',
+    emails: ['dclarke@linuxfoundation.org'],
     avatarUrl: null,
     sources: ['snowflake'],
     seatsCount: 22,
@@ -107,10 +107,10 @@ function seat(over: Record<string, unknown> = {}): never {
     committee_uid: 'c-1',
     committee_name: 'WG Identity & Trust',
     committee_category: 'Working Group',
-    first_name: 'Kieran',
-    last_name: 'McDermott',
-    email: 'kmcdermott@contractor.linuxfoundation.org',
-    username: 'mcderk',
+    first_name: 'Devon',
+    last_name: 'Clarke',
+    email: 'dclarke@contractor.linuxfoundation.org',
+    username: 'dclarke',
     role_name: 'LF Staff',
     voting_status: 'Observer',
     appointed_by: 'None',
@@ -149,15 +149,15 @@ beforeEach(() => {
 
 describe('resolveMergeKey', () => {
   it('prefers the verified identity over the address', () => {
-    expect(resolveMergeKey({ lfUsername: 'mcderk', email: 'anything@example.com' })).toBe('identity:mcderk');
+    expect(resolveMergeKey({ lfUsername: 'dclarke', email: 'anything@example.com' })).toBe('identity:dclarke');
   });
 
   it('lowercases and trims the username', () => {
-    expect(resolveMergeKey({ lfUsername: '  McDerK ' })).toBe('identity:mcderk');
+    expect(resolveMergeKey({ lfUsername: '  DClArKe ' })).toBe('identity:dclarke');
   });
 
   it('falls back to the lowercased address when no username is present', () => {
-    expect(resolveMergeKey({ lfUsername: null, email: 'Kmcdermott@LinuxFoundation.org' })).toBe('email:kmcdermott@linuxfoundation.org');
+    expect(resolveMergeKey({ lfUsername: null, email: 'Dclarke@LinuxFoundation.org' })).toBe('email:dclarke@linuxfoundation.org');
   });
 
   it('falls back when the username is blank rather than treating whitespace as an identity', () => {
@@ -200,23 +200,23 @@ describe('OrgPeopleDirectoryService.merge — identity matching (US1)', () => {
     expect(rows[0].emails).toEqual(expect.arrayContaining(['dqualls@contractor.linuxfoundation.org', 'dqualls@linuxfoundation.org']));
   });
 
-  it('merges a committee seat into the stored row on username (the Kieran case)', async () => {
+  it('merges a committee seat into the stored row on username (the Devon case)', async () => {
     getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat()]);
 
     const { rows } = await run();
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].emails).toEqual(expect.arrayContaining(['kmcdermott@linuxfoundation.org', 'kmcdermott@contractor.linuxfoundation.org']));
+    expect(rows[0].emails).toEqual(expect.arrayContaining(['dclarke@linuxfoundation.org', 'dclarke@contractor.linuxfoundation.org']));
   });
 
-  it('collapses a person arriving from three sources into one row (the Christopher Robinson case)', async () => {
+  it('collapses a person arriving from three sources into one row (the Jamie Ortiz case)', async () => {
     getAllEmployees.mockResolvedValue(
-      baseResponse([storedRow({ lfUsername: 'crob', name: 'Christopher Robinson', email: 'crob@intel.com', emails: ['crob@intel.com'] })])
+      baseResponse([storedRow({ lfUsername: 'jortiz', name: 'Jamie Ortiz', email: 'jortiz@vendor-corp.example', emails: ['jortiz@vendor-corp.example'] })])
     );
     fetchAllOrgSeats.mockResolvedValue([
-      seat({ email: 'christopher.robinson@intel.com', username: 'crob' }),
-      seat({ uid: 'seat-2', email: 'christopher.robinson@linuxfoundation.org', username: 'crob', committee_category: 'Board' }),
+      seat({ email: 'jamie.ortiz@vendor-corp.example', username: 'jortiz' }),
+      seat({ uid: 'seat-2', email: 'jamie.ortiz@linuxfoundation.org', username: 'jortiz', committee_category: 'Board' }),
     ]);
 
     const { rows } = await run();
@@ -330,7 +330,7 @@ describe('OrgPeopleDirectoryService.merge — identity-less rows fold into the i
 
   it('keeps the stored counters authoritative when absorbing', async () => {
     getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
-    fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'kmcdermott@linuxfoundation.org' })]);
+    fetchAllOrgSeats.mockResolvedValue([seat({ username: null, email: 'dclarke@linuxfoundation.org' })]);
 
     const { rows } = await run();
 
@@ -508,9 +508,9 @@ describe('OrgPeopleDirectoryService.merge — false-merge protection', () => {
 
   it('does not merge an access principal into a person with a different username', async () => {
     getAllEmployees.mockResolvedValue(
-      baseResponse([storedRow({ lfUsername: 'nickcoai', name: 'Nick Cooper', email: 'nickc@openai.com', emails: ['nickc@openai.com'] })])
+      baseResponse([storedRow({ lfUsername: 'spateloai', name: 'Sam Patel', email: 'spatel@partner-corp.example', emails: ['spatel@partner-corp.example'] })])
     );
-    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'kmcdermott@linuxfoundation.org', username: 'mcderk', name: 'Kieran McDermott' })]);
+    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'dclarke@linuxfoundation.org', username: 'dclarke', name: 'Devon Clarke' })]);
 
     const { rows } = await run();
 
@@ -525,7 +525,7 @@ describe('OrgPeopleDirectoryService.merge — invariants', () => {
 
     const { rows } = await run();
 
-    // Kieran: stored 22 + two live contractor seats ⇒ 22, not 24.
+    // Devon: stored 22 + two live contractor seats ⇒ 22, not 24.
     expect(rows[0].seatsCount).toBe(22);
     expect(rows[0].committeeSeatsCount).toBe(20);
     expect(rows[0].boardSeatsCount).toBe(2);
@@ -545,7 +545,7 @@ describe('OrgPeopleDirectoryService.merge — invariants', () => {
 
   it('sources are de-duplicated and emails are lowercased and unique', async () => {
     getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
-    fetchAllOrgSeats.mockResolvedValue([seat({ email: 'KMcDermott@LinuxFoundation.org' }), seat({ uid: 'seat-2', email: 'kmcdermott@linuxfoundation.org' })]);
+    fetchAllOrgSeats.mockResolvedValue([seat({ email: 'KClarke@LinuxFoundation.org' }), seat({ uid: 'seat-2', email: 'dclarke@linuxfoundation.org' })]);
 
     const { rows } = await run();
 
@@ -617,7 +617,7 @@ describe('OrgPeopleDirectoryService.merge — no regression for single-source pe
 describe('OrgPeopleDirectoryService.merge — stats count people, not rows (US2)', () => {
   it('counts a person who arrived from two sources exactly once', async () => {
     getAllEmployees.mockResolvedValue(baseResponse([storedRow()]));
-    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'kmcdermott@contractor.linuxfoundation.org', username: 'mcderk', name: 'Kieran McDermott' })]);
+    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'dclarke@contractor.linuxfoundation.org', username: 'dclarke', name: 'Devon Clarke' })]);
 
     const { rows, stats } = await run();
 

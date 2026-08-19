@@ -16,21 +16,21 @@ const DATA_LOAD_TIMEOUT = 30_000;
 
 const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 const MOCK_UID = MOCK_ACCOUNT_ID;
-const MOCK_ACCOUNT_NAME = 'Toyota';
-const MOCK_ACCOUNT_SLUG = 'toyota';
+const MOCK_ACCOUNT_NAME = 'Acme Motors';
+const MOCK_ACCOUNT_SLUG = 'acme-motors';
 
-const CHIANING_EMAIL = 'johnny.wang@toyota.com';
+const MORGAN_EMAIL = 'morgan.diaz@acme-motors.example';
 
 // 1×1 transparent PNG — loads synchronously (no network) so the photo <img> path is deterministic.
 const PNG_1x1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
-const CHIANING = {
-  email: CHIANING_EMAIL,
-  firstName: 'Chianing',
-  lastName: 'Wang',
-  fullName: 'Chianing Wang',
+const MORGAN = {
+  email: MORGAN_EMAIL,
+  firstName: 'Morgan',
+  lastName: 'Diaz',
+  fullName: 'Morgan Diaz',
   jobTitle: 'Infrastructure Architect',
-  initials: 'CW',
+  initials: 'MD',
   avatarUrl: PNG_1x1,
 };
 
@@ -49,7 +49,7 @@ function committeeMembersResponse() {
     appointedBy: 'Membership Entitlement',
     isOrgEditable: true,
     reason: null,
-    person: CHIANING,
+    person: MORGAN,
   });
   return {
     orgUid: MOCK_UID,
@@ -123,21 +123,21 @@ test.describe('Org People — avatar consistency', () => {
     );
     // The org-wide employee picker carries the same person (same avatar) — proving cross-surface consistency.
     await page.route(/\/api\/orgs\/[^/]+\/lens\/employees(?:\?.*)?$/, (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ orgUid: MOCK_UID, employees: [CHIANING] }) })
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ orgUid: MOCK_UID, employees: [MORGAN] }) })
     );
 
     await gotoCommitteeTab(page);
 
     // Surface 1 — the People → Committee roster row renders the photo.
-    const row = page.getByTestId(`org-people-committee-row-${CHIANING_EMAIL}`);
+    const row = page.getByTestId(`org-people-committee-row-${MORGAN_EMAIL}`);
     await expect(row).toBeVisible();
     await expect(row.getByTestId('person-avatar-image')).toBeVisible();
 
     // Surface 2 — the reassign picker suggestion renders the same photo for the same person.
-    await page.getByTestId(`org-people-committee-reassign-${CHIANING_EMAIL}`).click();
+    await page.getByTestId(`org-people-committee-reassign-${MORGAN_EMAIL}`).click();
     await expect(page.getByTestId('org-people-committee-modal-reassign')).toBeVisible();
     await page.getByTestId('org-people-committee-modal-reassign-email-input').fill('wang');
-    const option = page.getByTestId(`org-people-committee-modal-reassign-employee-option-${CHIANING_EMAIL}`);
+    const option = page.getByTestId(`org-people-committee-modal-reassign-employee-option-${MORGAN_EMAIL}`);
     await expect(option).toBeVisible();
     await expect(option.getByTestId('person-avatar-image')).toBeVisible();
   });
