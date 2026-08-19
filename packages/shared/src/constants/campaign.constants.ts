@@ -141,6 +141,71 @@ export const VALID_CAMPAIGN_STATUSES: ReadonlySet<CampaignStatus> = new Set<Camp
  */
 export const RUNNING_CAMPAIGN_STATUSES: ReadonlySet<string> = new Set<string>(['created', 'created_degraded', 'active', 'enabled']);
 
+/**
+ * The statuses campaign-service will accept a RESUME (`ACTIVE`) for.
+ *
+ * Mirrors `model.CampaignStatusToggleable` in lfx-v2-campaign-service, which returns true for
+ * exactly `created`, `active` and `paused` — every other status is refused with a 409. This is the
+ * ALLOW-list half of the pair, and it is deliberately an allow-list rather than the complement of
+ * a deny-list: `campaigns.status` is unconstrained TEXT upstream, so a status this file has never
+ * seen (a typo, an addition, upstream drift) must fail CLOSED — rendered as unavailable — rather
+ * than fail open into a Resume button that is guaranteed to 409.
+ *
+ * `created_degraded` is absent on purpose, and that is not the same statement as
+ * RUNNING_CAMPAIGN_STATUSES including it. The service's exception for that status is PAUSE-ONLY
+ * and lives at its `ToggleCampaignStatus` call site, not in the direction-blind predicate: such a
+ * campaign is spending (so it must offer Pause) and cannot be resumed until it is reconciled (so
+ * it must never offer Resume). The two sets answer different questions and legitimately differ.
+ */
+export const RESUMABLE_CAMPAIGN_STATUSES: ReadonlySet<string> = new Set<string>(['created', 'active', 'paused']);
+
+/**
+ * The status each campaign row is in, as the toggle button must present it.
+ *
+ * Three states rather than a boolean, because a boolean can only ever mean "Pause or Resume" and
+ * upstream has a third answer. `pending`, `group_created`, `unconfirmed` and any status not yet
+ * known here are all rejected by `model.CampaignStatusToggleable`, so a two-state UI silently
+ * files them under Resume and offers an action guaranteed to fail with a 409.
+ *
+ * Derived from the two status sets rather than hand-listed, so adding a status upstream cannot
+ * quietly re-expose the doomed button: anything outside both sets lands on `unavailable`.
+ */
+export function campaignToggleAction(status: string): 'pause' | 'resume' | 'unavailable' {
+  const normalized = status.toLowerCase();
+  if (RUNNING_CAMPAIGN_STATUSES.has(normalized)) {
+    return 'pause';
+  }
+  if (RESUMABLE_CAMPAIGN_STATUSES.has(normalized)) {
+    return 'resume';
+  }
+  return 'unavailable';
+}
+
+/**
+ * Why a row's toggle is disabled, in words the operator can act on.
+ *
+ * Named per status rather than a single "cannot be changed": the three reachable cases have
+ * genuinely different remedies. `pending` resolves itself when the dispatch settles; the two
+ * partial-orphan statuses need reconciliation before the platform will accept anything. A generic
+ * message would send someone to look for a problem that is about to disappear on its own.
+ */
+export const CAMPAIGN_UNAVAILABLE_REASONS: Readonly<Record<string, string>> = {
+  pending: 'Still being created. Pause and resume become available once it finishes.',
+  group_created: 'Only partly created upstream. It needs to be reconciled before it can be paused or resumed.',
+  unconfirmed: 'Its creation outcome is unconfirmed. It needs to be reconciled before it can be paused or resumed.',
+  deleted: 'This campaign has been removed.',
+};
+
+/** Fallback for a status this UI has never seen — see `campaignToggleAction` on failing closed. */
+export const CAMPAIGN_UNAVAILABLE_DEFAULT_REASON = 'This campaign is not in a state that can be paused or resumed.';
+
+/** The button's visible word per action. `unavailable` still names an action — the button is disabled, not blank. */
+export const CAMPAIGN_TOGGLE_LABELS: Readonly<Record<'pause' | 'resume' | 'unavailable', string>> = {
+  pause: 'Pause',
+  resume: 'Resume',
+  unavailable: 'Unavailable',
+};
+
 export const GADS_STATUS_ENUM: Partial<Record<number, CampaignStatus>> = {
   2: 'enabled',
   3: 'paused',

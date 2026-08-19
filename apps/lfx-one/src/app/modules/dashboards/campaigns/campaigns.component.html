@@ -462,6 +462,8 @@
             data-testid="campaigns-optimization-tab"
             [briefCampaigns]="briefCampaigns()"
             [campaignsPossiblyStale]="briefCampaignsStale()"
+            [campaignsUnavailable]="briefCampaignsUnavailable()"
+            (retryCampaigns)="retryBriefCampaigns()"
             [projectSlug]="activeFoundationSlug()"
             [briefId]="briefPersistence().briefId ?? ''" />
         </div>

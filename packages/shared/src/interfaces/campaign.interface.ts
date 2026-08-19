@@ -1341,13 +1341,41 @@ export interface CampaignRow {
   /** What the row displays: this session's confirmed status, else the indexed one. */
   status: string;
   /**
-   * Whether the campaign is running upstream, and so offers PAUSE rather than RESUME.
+   * What the row's button offers, derived from `status` via `campaignToggleAction`.
    *
-   * Derived from `status` via `RUNNING_CAMPAIGN_STATUSES`, which counts `created_degraded` as
-   * running — it is spending, and upstream refuses to resume it.
+   * Three states, not a boolean. A boolean can only say "Pause or Resume", and upstream has a
+   * third answer: `pending`, `group_created` and `unconfirmed` are all refused by
+   * `model.CampaignStatusToggleable`, so a two-state row files them under Resume and offers an
+   * action that is guaranteed to 409. `unavailable` is that third answer, and any status this UI
+   * has not seen falls into it rather than into a doomed button.
    */
-  isRunning: boolean;
+  action: CampaignToggleAction;
+  /**
+   * Why the toggle is disabled — set for `unavailable` rows only, empty otherwise.
+   *
+   * Carried on the row rather than looked up in the template, so the reason is rendered from the
+   * same `status` the action was derived from and the two cannot disagree.
+   */
+  unavailableReason: string;
+  /**
+   * The button's visible word, and the verb inside its accessible name.
+   *
+   * One field for both so speech input ("click Pause") keeps matching the visible text — the
+   * accessible name CONTAINS this word rather than replacing it. Carried on the row rather than
+   * ternaried in the template because there are now three cases, and a nested ternary in a
+   * template is exactly the construct this repo forbids.
+   */
+  toggleLabel: string;
 }
+
+/**
+ * What a campaign row's toggle offers.
+ *
+ * `unavailable` is not "we do not know" — it is a positive statement that campaign-service will
+ * refuse a run-state change for this status, which is why the row disables the button and states
+ * a reason instead of hiding it.
+ */
+export type CampaignToggleAction = 'pause' | 'resume' | 'unavailable';
 
 /**
  * What `GET /api/campaigns/list` reports back.

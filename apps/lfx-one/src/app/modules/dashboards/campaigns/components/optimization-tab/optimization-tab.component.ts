@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, OnInit, output, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type {
   CampaignIndexDoc,
@@ -24,7 +24,13 @@ import type {
   RedditActionItem,
   RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
-import { PLATFORM_BRAND_COLORS, RUNNING_CAMPAIGN_STATUSES } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_TOGGLE_LABELS,
+  CAMPAIGN_UNAVAILABLE_DEFAULT_REASON,
+  CAMPAIGN_UNAVAILABLE_REASONS,
+  campaignToggleAction,
+  PLATFORM_BRAND_COLORS,
+} from '@lfx-one/shared/constants';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
 import type { Subscription } from 'rxjs';
@@ -54,6 +60,18 @@ export class OptimizationTabComponent implements OnInit {
 
   /** True when an empty list may simply not be indexed yet, rather than genuinely empty. */
   public readonly campaignsPossiblyStale = input(false);
+
+  /**
+   * True when the campaign list READ FAILED, as opposed to never having been asked for.
+   *
+   * `briefCampaigns` is `null` for both, and rendering nothing for both makes an outage
+   * indistinguishable from a fresh page — the failure-as-absence shape. This input is what lets
+   * the tab say so, and offer the retry, for campaigns that may still be spending.
+   */
+  public readonly campaignsUnavailable = input(false);
+
+  /** Emitted when the operator asks to re-read a failed campaign list; the parent owns the read. */
+  public readonly retryCampaigns = output<void>();
 
   /** The project the campaigns belong to; the toggle is addressed per-project upstream. */
   public readonly projectSlug = input('');
@@ -143,8 +161,8 @@ export class OptimizationTabComponent implements OnInit {
    * CONFIRMED. `null` stays `null` — see `briefCampaigns` for why that must not become `[]`.
    *
    * A computed rather than template methods, because a template may only read signals, computed
-   * values and pipes (frontend-checklist §4). `displayStatus(campaign)`/`isRunning(campaign)` also
-   * re-ran on every change detection pass for every row; this recomputes only when a toggle lands.
+   * values and pipes (frontend-checklist §4). Per-row template methods also re-ran on every change
+   * detection pass for every row; this recomputes only when a toggle lands.
    */
   protected readonly campaignRows = computed<CampaignRow[] | null>(() => {
     const rows = this.briefCampaigns();
@@ -154,12 +172,16 @@ export class OptimizationTabComponent implements OnInit {
     const toggled = this.toggledStatus();
     return rows.map((campaign) => {
       const status = toggled[campaign.id] ?? campaign.status;
+      // Three states, not two. `campaignToggleAction` derives them from the shared status sets, so
+      // a status upstream refuses — `pending`, a partial orphan, or one added after this was
+      // written — lands on `unavailable` rather than on the Resume button that would 409.
+      const action = campaignToggleAction(status);
       return {
         campaign,
         status,
-        // `created_degraded` counts as running: it is live and spending, and upstream refuses a
-        // resume for it with 409. See RUNNING_CAMPAIGN_STATUSES.
-        isRunning: RUNNING_CAMPAIGN_STATUSES.has(status.toLowerCase()),
+        action,
+        unavailableReason: action === 'unavailable' ? (CAMPAIGN_UNAVAILABLE_REASONS[status.toLowerCase()] ?? CAMPAIGN_UNAVAILABLE_DEFAULT_REASON) : '',
+        toggleLabel: CAMPAIGN_TOGGLE_LABELS[action],
       };
     });
   });
@@ -265,6 +287,13 @@ export class OptimizationTabComponent implements OnInit {
     if (this.togglePending()[campaign.id]) {
       return;
     }
+    // The template disables the button for these rows, so reaching here means the DOM and the
+    // computed disagreed. Refuse rather than spend a round trip on a 409 the status already
+    // predicted — and never send a direction that was never offered.
+    if (row.action === 'unavailable') {
+      this.toggleError.update((e) => ({ ...e, [campaign.id]: row.unavailableReason }));
+      return;
+    }
     // The FRESH etag first: the row is an immutable input holding the etag as read, which this
     // session's own earlier toggle already invalidated. Replaying it earns a 412 that reads as
     // someone else's concurrent edit.
@@ -276,7 +305,7 @@ export class OptimizationTabComponent implements OnInit {
       return;
     }
 
-    const status: CampaignToggleStatus = row.isRunning ? 'PAUSED' : 'ACTIVE';
+    const status: CampaignToggleStatus = row.action === 'pause' ? 'PAUSED' : 'ACTIVE';
     this.togglePending.update((p) => ({ ...p, [campaign.id]: true }));
     this.toggleError.update((e) => {
       const next = { ...e };
@@ -317,9 +346,39 @@ export class OptimizationTabComponent implements OnInit {
           // the button still offers the action that did not happen. Claiming the pause landed
           // would be the expensive lie here — someone would stop watching a campaign that is
           // still spending.
-          this.toggleError.update((e) => ({ ...e, [campaign.id]: 'Could not change this campaign. It has not been paused — try again.' }));
+          //
+          // Worded PER DIRECTION, because the outcome differs by direction and both are about
+          // money. A failed pause leaves the campaign RUNNING; a failed resume leaves it PAUSED.
+          // Stating "it has not been paused" after a failed resume is the exact inversion of the
+          // truth — it describes a campaign that is spending when the campaign is in fact dark.
+          const message =
+            row.action === 'pause'
+              ? 'Could not pause this campaign. It is still running — try again.'
+              : 'Could not resume this campaign. It is still paused — try again.';
+          this.toggleError.update((e) => ({ ...e, [campaign.id]: message }));
         },
       });
+  }
+
+  /**
+   * The button's `aria-describedby`, or null when there is nothing to point at.
+   *
+   * A method rather than a template expression because there are two candidate elements and the
+   * choice is a three-way one — a nested ternary in the template, which this repo forbids. Both
+   * ids may be present at once (a disabled row can still hold an error from a click that raced the
+   * status), and `aria-describedby` takes a LIST, so both are named rather than one silently
+   * shadowing the other. A dangling reference to an element that renders conditionally is worse
+   * than none, so each id is included only when its element is actually drawn.
+   */
+  protected toggleDescribedBy(row: CampaignRow): string | null {
+    const ids: string[] = [];
+    if (this.toggleError()[row.campaign.id]) {
+      ids.push(`campaign-error-${row.campaign.id}`);
+    }
+    if (row.action === 'unavailable') {
+      ids.push(`campaign-unavailable-${row.campaign.id}`);
+    }
+    return ids.length > 0 ? ids.join(' ') : null;
   }
 
   protected setDateRange(days: DateRangeOption): void {

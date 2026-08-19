@@ -13,6 +13,8 @@ import type {
   CampaignBriefPersistenceState,
   CampaignImplementationDraft,
   CampaignDeliveryType,
+  CampaignIndexDoc,
+  CampaignListResult,
   CampaignProgramType,
   CampaignTab,
   CampaignTabOption,
@@ -965,6 +967,164 @@ describe('CampaignsComponent brief persistence', () => {
       proceed();
       await fixture.whenStable();
       expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', 'tlf-1', '"1"', false);
+    });
+
+    /**
+     * The campaign list is per-(foundation, brief), and Optimize stays mounted across a switch.
+     *
+     * Same defect class as the email picker's: a signal written by a load and cleared by nothing,
+     * on a component a foundation switch does not re-create. The consequence here is worse than a
+     * stale list — `projectSlug` and `briefId` are the address every row's pause/resume is sent
+     * to, and after a switch those name the NEW context while the rows describe the old one.
+     */
+    describe('the Optimize campaign list', () => {
+      function campaigns(): CampaignIndexDoc[] | null {
+        return (fixture.componentInstance as unknown as { briefCampaigns(): CampaignIndexDoc[] | null }).briefCampaigns();
+      }
+
+      function unavailable(): boolean {
+        return (fixture.componentInstance as unknown as { briefCampaignsUnavailable(): boolean }).briefCampaignsUnavailable();
+      }
+
+      function load(): void {
+        (fixture.componentInstance as unknown as { loadBriefCampaigns(): void }).loadBriefCampaigns();
+      }
+
+      const indexed = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc =>
+        ({
+          id: 'c-1',
+          project_id: 'tlf',
+          brief_id: 'brief-9',
+          platform: 'google-ads',
+          campaign_name: 'KubeCon EU',
+          status: 'created',
+          version: 1,
+          etag: '"1"',
+          ...over,
+        }) as CampaignIndexDoc;
+
+      /** Put a real brief id on the component so `loadBriefCampaigns` gets past its own guard. */
+      async function withSavedBrief(): Promise<void> {
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'brief-9', etag: '"1"', created: true, approved: true }));
+        proceed();
+        await fixture.whenStable();
+      }
+
+      it('clears the previous brief campaigns when the foundation changes', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false }));
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+        expect(campaigns()).toHaveLength(1);
+
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false }));
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        // Not TLF's campaigns under CNCF: the rows would render against a projectSlug that is
+        // now 'cncf' and a briefId that is now '', which is the address a pause is sent to.
+        expect(campaigns()).not.toEqual([indexed()]);
+      });
+
+      it('drops a campaign list that resolves after the foundation changed', async () => {
+        const late = new Subject<CampaignListResult>();
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(late);
+        await withSavedBrief();
+        load();
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        // The response the switch invalidated. Clearing the signal alone cannot stop this — the
+        // request was already in flight and lands afterwards.
+        late.next({ campaigns: [indexed()], possiblyStale: false });
+        await fixture.whenStable();
+
+        expect(campaigns()).toBeNull();
+      });
+
+      /**
+       * Failure-as-absence. `null` already means "not loaded", so a failed read that also leaves
+       * `null` is indistinguishable from a page nobody has asked anything of — no indication and
+       * no retry, on campaigns that may still be spending.
+       */
+      it('marks a failed read as unavailable rather than leaving it as not-loaded', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+
+        expect(campaigns()).toBeNull();
+        expect(unavailable()).toBe(true);
+      });
+
+      it('does not mark a genuinely empty list as unavailable', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(of({ campaigns: [], possiblyStale: false }));
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+
+        expect(campaigns()).toEqual([]);
+        expect(unavailable()).toBe(false);
+      });
+
+      it('clears a previous failure when the foundation changes', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+        expect(unavailable()).toBe(true);
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        // The banner belongs to the read that produced it. Leaving it set would report TLF's
+        // outage against CNCF, which was never queried.
+        expect(unavailable()).toBe(false);
+      });
+
+      /**
+       * `take(1)` satisfies the repo's stated convention (frontend-checklist §6 lists it beside
+       * `takeUntilDestroyed`), so this is not a rule violation — it is a correctness one. `take(1)`
+       * unsubscribes after the FIRST emission, which on a request that never answers is never: the
+       * subscription outlives the component and its handler writes into a destroyed instance.
+       *
+       * Asserted through the subscription's teardown rather than through a signal, because a write
+       * to a destroyed component's signal is not observable from here — the teardown running on
+       * destroy IS the mechanism, and `take(1)` alone does not run it.
+       */
+      it('tears down an unanswered campaign list read when the component is destroyed', async () => {
+        let torndown = false;
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          new Observable<CampaignListResult>(() => {
+            return () => {
+              torndown = true;
+            };
+          })
+        );
+        await withSavedBrief();
+        load();
+        expect(torndown).toBe(false);
+
+        fixture.destroy();
+
+        expect(torndown).toBe(true);
+      });
+
+      it('clears a stale failure when a later read succeeds', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+        expect(unavailable()).toBe(true);
+
+        list.mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false }));
+        load();
+        await fixture.whenStable();
+
+        expect(unavailable()).toBe(false);
+        expect(campaigns()).toHaveLength(1);
+      });
     });
   });
 
