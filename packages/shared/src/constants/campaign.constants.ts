@@ -204,7 +204,18 @@ export function campaignToggleAction(status: string, platform?: string): 'pause'
   if (platform !== undefined && !TOGGLEABLE_CAMPAIGN_PLATFORMS.has(platform)) {
     return 'unavailable';
   }
-  const normalized = status.toLowerCase();
+  // Total in `status`, matching how the platform check above is already total. `status` is typed
+  // `string`, but that is a compile-time claim about a wire shape nothing validates: the BFF
+  // spreads index docs through untouched (`listBriefCampaigns`), so a missing or non-string
+  // `status` reaches here intact and `.toLowerCase()` would throw a TypeError.
+  //
+  // The blast radius is what makes this worth a guard rather than a cast. The call sits inside the
+  // `campaignRows` computed, so one malformed doc takes out the ENTIRE campaigns section for every
+  // row — and Angular re-throws on each change-detection pass. That is a fail-OPEN blank panel on
+  // campaigns that are live and spending, which is the direction this pair exists to prevent.
+  //
+  // `''` already lands on `unavailable` through the two misses below, so no other arm changes.
+  const normalized = typeof status === 'string' ? status.toLowerCase() : '';
   if (RUNNING_CAMPAIGN_STATUSES.has(normalized)) {
     return 'pause';
   }

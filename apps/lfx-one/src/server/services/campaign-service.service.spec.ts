@@ -2257,6 +2257,28 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     );
   });
 
+  /**
+   * The all-foreign case, which the mixed test above does not reach: `possiblyStale` is derived
+   * from `campaigns.length`, NOT `docs.length`, and only a read where every row is dropped tells
+   * the two apart.
+   *
+   * Both expressions agree on an empty upstream result and on the mixed case, so without this the
+   * mutation `possiblyStale: docs.length === 0` survives the whole suite. It matters because the
+   * false value renders the flat "No campaigns to show." — asserting a brief has no campaigns on
+   * a read that in fact found nothing it could trust.
+   */
+  it('marks a result possiblyStale when the brief re-check drops every row', async () => {
+    isServerFeatureEnabled.mockImplementation(() => false);
+    proxyRequest.mockResolvedValueOnce({
+      resources: [{ data: doc({ id: 'c-2', brief_id: 'b-2-other' }) }],
+    });
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    expect(result.campaigns).toEqual([]);
+    expect(result.possiblyStale).toBe(true);
+  });
+
   // Indexing is asynchronous, so "not indexed yet" and "none exist" are the same answer here.
   // A caller that read absence as proof would tell a user their campaigns do not exist.
   it('marks an empty result possiblyStale rather than asserting emptiness', async () => {

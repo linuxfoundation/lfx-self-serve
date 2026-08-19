@@ -1362,7 +1362,10 @@ describe('CampaignController.listBriefCampaigns', () => {
     controller = new CampaignController();
     res = buildRes();
     next = vi.fn();
-    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true });
+    // Carries `statusToggleEnabled` because the real `listBriefCampaigns` always returns it and
+    // `CampaignListResult` declares it required. A fixture omitting it stands in for a payload the
+    // service cannot produce, and this suite is the only place the /list HTTP contract is exercised.
+    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, statusToggleEnabled: false });
   });
 
   it('passes both scopes through, trimmed', async () => {
@@ -1391,6 +1394,19 @@ describe('CampaignController.listBriefCampaigns', () => {
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ possiblyStale: true }));
+  });
+
+  /**
+   * `statusToggleEnabled: false` is the default that suppresses every toggle button, so a
+   * controller-side reshape that dropped the field would disable the feature fleet-wide. Pinned
+   * here because this is the only test of the /list response shape.
+   */
+  it('forwards statusToggleEnabled through the passthrough', async () => {
+    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: false, statusToggleEnabled: true });
+
+    await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ statusToggleEnabled: true }));
   });
 
   it('lets a query-service failure reach the error middleware', async () => {
