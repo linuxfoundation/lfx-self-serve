@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { inject } from '@angular/core';
-import { RedirectCommand, ResolveFn, Router, UrlSegment } from '@angular/router';
-import type { DocsArticle } from '@lfx-one/shared/interfaces';
+import { isPlatformServer } from '@angular/common';
+import { inject, PLATFORM_ID, REQUEST_CONTEXT } from '@angular/core';
+import { ResolveFn, UrlSegment } from '@angular/router';
+import type { DocsArticle, ServerRequestContext } from '@lfx-one/shared/interfaces';
 
 import { DocsManifestService } from '../services/docs-manifest.service';
 
@@ -17,19 +18,17 @@ import { DocsManifestService } from '../services/docs-manifest.service';
  * On hit: returns the article — `DocsArticleComponent` consumes it via
  * `route.snapshot.data['article']`.
  *
- * On miss: returns a `RedirectCommand` pointing at `/docs/not-found` so the
- * Angular 20 router triggers a navigation redirect (a bare `UrlTree` would
- * be stored as the resolved value and rendered as if it were an article).
- * The dedicated server route in `app.routes.server.ts` is configured with
- * `status: 404`, so SSR serves the proper HTTP status to crawlers.
+ * On miss: returns `null` so `DocsArticleComponent` renders not-found inline at
+ * the original URL; SSR sets `reqContext.notFound` to emit a real 404 (like `/u/`).
  *
  * URL normalization (FR / R: SC-008): trailing slash, mixed case, and
  * doubled slashes all resolve to the same canonical slug. The manifest is
  * generated lower-case so we lower-case the request side once here.
  */
-export const docsArticleResolver: ResolveFn<DocsArticle | RedirectCommand> = (route) => {
-  const router = inject(Router);
+export const docsArticleResolver: ResolveFn<DocsArticle | null> = (route) => {
   const manifest = inject(DocsManifestService);
+  const platformId = inject(PLATFORM_ID);
+  const reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
 
   const slug = normalizeSlug(route.url);
   const article = manifest.getArticle(slug);
@@ -37,12 +36,12 @@ export const docsArticleResolver: ResolveFn<DocsArticle | RedirectCommand> = (ro
     return article;
   }
 
-  // Miss → tell the router to redirect. Angular 20 only honors a redirect
-  // from a resolver when the returned value is a `RedirectCommand`; a bare
-  // `UrlTree` would be stored as `data['article']` and rendered as if it
-  // were the article (see `apps/lfx-one/node_modules/@angular/router`
-  // resolveNode → instanceof RedirectCommand check).
-  return new RedirectCommand(router.parseUrl('/docs/not-found'));
+  // Miss → render not-found in place (no route change). During SSR, signal the
+  // handler to emit a real HTTP 404 at the originally-requested path.
+  if (isPlatformServer(platformId) && reqContext) {
+    reqContext.notFound = true;
+  }
+  return null;
 };
 
 function normalizeSlug(segments: UrlSegment[]): string {
