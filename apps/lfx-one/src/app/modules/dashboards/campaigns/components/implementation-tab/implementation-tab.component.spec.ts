@@ -851,9 +851,15 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
  * lands after the constructor effect has already replayed the user's choice onto the form, so an
  * unguarded assignment would overwrite it on every single return to the tab.
  *
- * The guard is `!this.linkedInAccountId()`. The suites above leave `CampaignService` unstubbed, so
- * the list resolves empty and the guard is never exercised — deleting it kept all 35 tests green.
- * These two stub a real list so the branch is actually reached.
+ * The rule is CATALOG MEMBERSHIP: a selection the returned list does not contain is replaced by
+ * the first account, or cleared when the list is empty. That covers three situations with one
+ * test — the first visit (`''` is never in the list), a restored choice that is still offered, and
+ * a restored choice that has been revoked.
+ *
+ * The suites above leave `CampaignService` unstubbed, so the list resolves empty and this branch
+ * is never meaningfully exercised there. These cases stub a real list, and release it through a
+ * `Subject` so it lands AFTER the restore — the production ordering, and the only one in which the
+ * rule does any work.
  */
 describe('ImplementationTabComponent linkedin account defaulting', () => {
   const EVENT_SLUG = 'kubecon-eu-2026';
@@ -906,10 +912,17 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
    */
   let accountsSubject: Subject<typeof ACCOUNTS>;
 
-  /** The last draft emitted to the parent, so the emission half can be asserted too. */
-  let lastEmitted: CampaignImplementationDraft | null;
+  /**
+   * The last draft emitted to the parent, so the emission half can be asserted too.
+   *
+   * Read through `emitted()` rather than directly: assigning only inside the subscribe callback
+   * lets TypeScript narrow the variable to `never` at the assertion site.
+   */
+  let lastEmitted: CampaignImplementationDraft | null = null;
+  const emitted = (): CampaignImplementationDraft | null => lastEmitted;
 
-  async function mount(draft: CampaignImplementationDraft | null): Promise<ComponentFixture<ImplementationTabComponent>> {
+  /** `catalog` defaults to the two-account list; pass `[]` for the unconfigured-LinkedIn case. */
+  async function mount(draft: CampaignImplementationDraft | null, catalog: typeof ACCOUNTS = ACCOUNTS): Promise<ComponentFixture<ImplementationTabComponent>> {
     const f = TestBed.createComponent(ImplementationTabComponent);
     lastEmitted = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (lastEmitted = d));
@@ -918,7 +931,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     f.detectChanges();
     await f.whenStable();
     // The restore has already run; only now does the ad-account list arrive.
-    accountsSubject.next(ACCOUNTS);
+    accountsSubject.next(catalog);
     accountsSubject.complete();
     f.detectChanges();
     await f.whenStable();
@@ -957,6 +970,25 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
   });
 
   /**
+   * An EMPTY catalog is a real answer, and it must clear a restored id rather than skip.
+   *
+   * `loadLinkedInConfig` falls back to `accounts: []` when the LinkedIn config is absent or
+   * malformed (`linkedin-ads.service.ts:39`), so a SUCCESSFUL response can carry nothing. A guard
+   * that required `accounts.length > 0` skipped entirely in that case, leaving the restored id on
+   * the form with no account to match it — the selector renders empty while `submit()` still
+   * dispatches the stale value. Clearing is the honest outcome: the create then fails upstream on
+   * a blank account rather than silently spending against someone else's.
+   */
+  it('clears a restored account when the catalog comes back empty', async () => {
+    // A SUCCESSFUL response that happens to carry no accounts, released after the restore.
+    const f = await mount(draftWith(ACCOUNTS[1].accountId), []);
+
+    expect(accountId(f)).toBe('');
+    // The parent learns about it too, so a later tab switch cannot restore the stale id.
+    expect(emitted()?.linkedInAccountId).toBe('');
+  });
+
+  /**
    * The CORRECTED account must also reach the parent's draft, not just the form.
    *
    * `ngOnInit` runs after the constructor effect, so this `setValue` lands outside the `seeding`
@@ -968,7 +1000,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
   it('emits the corrected account to the parent draft', async () => {
     await mount(draftWith('urn:li:sponsoredAccount:revoked-999'));
 
-    expect(lastEmitted?.linkedInAccountId).toBe(ACCOUNTS[0].accountId);
+    expect(emitted()?.linkedInAccountId).toBe(ACCOUNTS[0].accountId);
   });
 
   /**

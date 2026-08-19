@@ -389,9 +389,12 @@ export interface CampaignImplementationDraft {
    * site, and the natural `?? recommendedGeoTargets` fallback would then put the AI's list back
    * over a deliberate clearance, which is the defect rather than the fix.
    *
-   * `linkedInAccountId` is '' before the ad-account fetch resolves. That is carried as-is: the
-   * account list is re-fetched on every mount, and `ngOnInit` fills the first account in only
-   * when the restored value is still blank, so a real choice is never overwritten by the default.
+   * `linkedInAccountId` is '' before the ad-account fetch resolves, and is carried as-is. Note the
+   * restored value is NOT preserved unconditionally: the account list is refetched on every mount,
+   * and `ngOnInit` reconciles the restored id against it — keeping it when the catalog still
+   * offers it, replacing it with the first account otherwise, and clearing it when the catalog is
+   * empty. A choice that is still valid survives; one pointing at a revoked account does not,
+   * because the alternative is dispatching to an account the page cannot display.
    */
   linkedInAccountId: string;
   linkedInGeoTargets: LinkedInGeoTarget[];

@@ -587,8 +587,14 @@ export class ImplementationTabComponent implements OnInit {
           // `emitEvent` is left ON deliberately — this assignment CHANGES what `submit()` would
           // send, so the parent's draft has to learn about it; suppressing the event would leave
           // the draft carrying a value the form and the request no longer agree with.
-          if (accounts.length > 0 && !accounts.some((a) => a.accountId === this.linkedInAccountId())) {
-            this.campaignForm.controls.linkedInAccountId.setValue(accounts[0].accountId);
+          // An EMPTY catalog is a real answer, not a skip. `loadLinkedInConfig` falls back to
+          // `accounts: []` when the LinkedIn config is absent or malformed, so a successful
+          // response can carry nothing — and a restored id would then survive with no account to
+          // match it, dispatching a stale value while the selector shows an empty list. Clearing
+          // is the honest result: `canSubmit` still lets a LinkedIn create through on an empty id,
+          // but the request then fails upstream on a blank account rather than on someone else's.
+          if (!accounts.some((a) => a.accountId === this.linkedInAccountId())) {
+            this.campaignForm.controls.linkedInAccountId.setValue(accounts[0]?.accountId ?? '');
           }
           this.linkedInAccountsLoading.set(false);
         },
