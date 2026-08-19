@@ -1040,3 +1040,46 @@ describe('ProjectService — a failed OPTIONAL email breakdown is flagged, not s
     expect(result.breakdownUnavailable).toBe(true);
   });
 });
+
+/**
+ * getFoundationProjectsDetailGrouped (GH-1607) fans out getFoundationProjectsDetail across the
+ * root foundation plus every discovered sub-foundation. getProjectBySlug/discoverSubFoundations
+ * are stubbed directly rather than mocking their NATS/query-service internals — this suite is
+ * testing the new fan-out/grouping orchestration, not the already-covered descendant walk.
+ */
+describe('ProjectService — getFoundationProjectsDetailGrouped', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+    vi.spyOn(service, 'getProjectBySlug').mockResolvedValue({ uid: 'root-uid', slug: 'lfeurope', name: 'LF Europe' } as Project);
+  });
+
+  it('groups rows by which foundation slug they were fetched under', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([{ uid: 'sub-uid', slug: 'neonephos', name: 'NeoNephos' }]);
+    execute
+      .mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'p1', PROJECT_NAME: 'Envoy', PROJECT_SLUG: 'envoy' }] })
+      .mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'p2', PROJECT_NAME: 'Nephio', PROJECT_SLUG: 'nephio' }] });
+
+    const result = await service.getFoundationProjectsDetailGrouped(req, 'lfeurope');
+
+    expect(result.groups).toEqual([
+      expect.objectContaining({ foundationSlug: 'lfeurope', foundationName: 'LF Europe', projects: [expect.objectContaining({ projectSlug: 'envoy' })] }),
+      expect.objectContaining({ foundationSlug: 'neonephos', foundationName: 'NeoNephos', projects: [expect.objectContaining({ projectSlug: 'nephio' })] }),
+    ]);
+    expect(result.totalCount).toBe(2);
+  });
+
+  it('omits a sub-foundation whose detail fetch fails instead of failing the whole request', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([{ uid: 'sub-uid', slug: 'neonephos', name: 'NeoNephos' }]);
+    execute
+      .mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'p1', PROJECT_NAME: 'Envoy', PROJECT_SLUG: 'envoy' }] })
+      .mockRejectedValueOnce(new Error('snowflake unavailable'));
+
+    const result = await service.getFoundationProjectsDetailGrouped(req, 'lfeurope');
+
+    expect(result.groups).toEqual([expect.objectContaining({ foundationSlug: 'lfeurope' })]);
+    expect(result.totalCount).toBe(1);
+  });
+});
