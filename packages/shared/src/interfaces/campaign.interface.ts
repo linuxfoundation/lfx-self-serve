@@ -347,10 +347,12 @@ export interface CampaignBriefPersistenceState {
  * worth doing rather than deferring: the form is the better target, since it needs no per-handler
  * emission and so cannot be forgotten when a control is added.
  *
- * That drift is not hypothetical: LFXV2-3227/3228 added four more user-editable Meta controls and
- * had to carry them by the per-handler signal mechanism, because they are signal-backed rather
- * than form-backed. Two mechanisms now coexist in this file exactly as predicted above, which is
- * the argument for unifying on the form rather than deferring it again.
+ * That drift is not hypothetical, though none of it is visible HERE: this branch adds only the
+ * three LinkedIn picks, and no budget or Meta member appears on this interface yet. LFXV2-3315
+ * (budgets) and LFXV2-3227/3228 (four Meta controls — objective, placements, pixel id, geo
+ * targets) both carry their fields by the per-handler signal mechanism, and both are still open.
+ * When they land, two mechanisms will coexist in this file, which is the argument for unifying on
+ * the form rather than deferring it a third time.
  *
  * Any per-platform value not named on this interface is NOT carried across a tab switch. Those
  * fall into two groups with opposite verdicts, and the distinction matters more than the
