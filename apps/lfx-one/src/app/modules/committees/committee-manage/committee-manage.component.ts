@@ -8,7 +8,14 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { COMMITTEE_FORM_STEPS, COMMITTEE_INVITE_CONCURRENCY, COMMITTEE_LABEL, COMMITTEE_STEP_TITLES, COMMITTEE_TOTAL_STEPS } from '@lfx-one/shared/constants';
-import { Committee, MemberOperationResult, MemberOperationType, MemberPendingChanges, SucceededMemberOperations } from '@lfx-one/shared/interfaces';
+import {
+  Committee,
+  CommitteeMember,
+  MemberOperationResult,
+  MemberOperationType,
+  MemberPendingChanges,
+  SucceededMemberOperations,
+} from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -553,7 +560,14 @@ export class CommitteeManageComponent {
     // Add create operation if there are members to add
     if (memberUpdates.toAdd.length > 0) {
       for (const member of memberUpdates.toAdd) {
-        operations.push(this.createMemberOperation('add', member.email, () => this.committeeService.createCommitteeMember(committeeId, member)));
+        operations.push(
+          this.createMemberOperation(
+            'add',
+            member.email,
+            () => this.committeeService.createCommitteeMember(committeeId, member),
+            (createdMember) => createdMember
+          )
+        );
       }
     }
 
@@ -587,9 +601,14 @@ export class CommitteeManageComponent {
     return concat(memberOps$, inviteOps$).pipe(toArray());
   }
 
-  private createMemberOperation(type: MemberOperationType, identifier: string, operation: () => Observable<unknown>): Observable<MemberOperationResult> {
+  private createMemberOperation<T>(
+    type: MemberOperationType,
+    identifier: string,
+    operation: () => Observable<T>,
+    captureMember?: (result: T) => CommitteeMember
+  ): Observable<MemberOperationResult> {
     return operation().pipe(
-      switchMap(() => of({ type, identifier, success: true })),
+      switchMap((result) => of({ type, identifier, success: true, createdMember: captureMember?.(result) })),
       catchError(() => of({ type, identifier, success: false }))
     );
   }
@@ -597,14 +616,16 @@ export class CommitteeManageComponent {
   /** Groups the identifiers of successfully-flushed operations so the members-manager child can prune them (GH-1608). */
   private computeSucceededOperations(results: MemberOperationResult[]): SucceededMemberOperations {
     const succeeded = results.filter((result) => result.success);
-    const normalizedEmails = (type: MemberOperationType) =>
-      new Set(succeeded.filter((result) => result.type === type).map((result) => (result.identifier ?? '').trim().toLowerCase()));
 
     return {
-      addedEmails: normalizedEmails('add'),
+      addedMembers: new Map(
+        succeeded
+          .filter((result) => result.type === 'add' && result.createdMember)
+          .map((result) => [(result.identifier ?? '').trim().toLowerCase(), result.createdMember!])
+      ),
       updatedUids: new Set(succeeded.filter((result) => result.type === 'update').map((result) => result.identifier)),
       deletedUids: new Set(succeeded.filter((result) => result.type === 'delete').map((result) => result.identifier)),
-      invitedEmails: normalizedEmails('invite'),
+      invitedEmails: new Set(succeeded.filter((result) => result.type === 'invite').map((result) => (result.identifier ?? '').trim().toLowerCase())),
     };
   }
 

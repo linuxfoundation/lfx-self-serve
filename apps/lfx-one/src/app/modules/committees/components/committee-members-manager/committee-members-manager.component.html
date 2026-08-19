@@ -161,6 +161,10 @@
               @if (member.state === 'modified') {
                 <span class="px-2 py-1 text-xs font-medium bg-amber-100 text-amber-800 rounded">Modified</span>
               }
+              <!-- Failed-delete indicator — still staged for retry on the next submit (GH-1608) -->
+              @if (member.state === 'deleted') {
+                <span class="px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded">Failed to remove</span>
+              }
               <!-- Voting status badge -->
               @if (member.voting?.status) {
                 <span

@@ -115,8 +115,13 @@ export class CommitteeMembersManagerComponent implements OnInit {
   // In-flight guard so rapid clicks on "Invite by email" don't stack overlapping dialogs.
   private readonly loadingInvites = signal(false);
 
+  // uids of members whose delete failed on the last flush. Members in this state stay in state
+  // 'deleted' (so emitMemberUpdates() keeps re-queuing the delete on the next flush) but must
+  // remain visible — otherwise a failed delete silently vanishes from the roster (GH-1608).
+  private readonly failedDeleteUids = signal<Set<string>>(new Set());
+
   // Simple computed signals
-  public readonly visibleMembers = computed(() => this.membersWithState().filter((m) => m.state !== 'deleted'));
+  public readonly visibleMembers = computed(() => this.membersWithState().filter((m) => m.state !== 'deleted' || this.failedDeleteUids().has(m.uid)));
   public readonly memberCount = computed(() => this.visibleMembers().length);
   public readonly votingCount = computed(() => this.visibleMembers().filter((m) => this.isVotingMember(m)).length);
   /** Gates every action that stages/mutates member or invite state — load-in-progress, load-failed, or an active flush. */
@@ -324,19 +329,32 @@ export class CommitteeMembersManagerComponent implements OnInit {
    * editable (GH-1608).
    */
   public pruneSucceeded(succeeded: SucceededMemberOperations): void {
+    const failedDeleteUids = new Set<string>();
+
     this.membersWithState.update((members) =>
       members
         .filter((m) => {
-          if (m.state === 'new') {
-            return !succeeded.addedEmails.has((m.email ?? '').trim().toLowerCase());
-          }
           if (m.state === 'deleted') {
-            return !succeeded.deletedUids.has(m.uid);
+            if (succeeded.deletedUids.has(m.uid)) {
+              return false;
+            }
+            failedDeleteUids.add(m.uid);
           }
           return true;
         })
-        .map((m) => (m.state === 'modified' && succeeded.updatedUids.has(m.uid) ? this.createMemberWithState(m, 'existing') : m))
+        .map((m) => {
+          if (m.state === 'new') {
+            const createdMember = succeeded.addedMembers.get((m.email ?? '').trim().toLowerCase());
+            return createdMember ? this.createMemberWithState(createdMember, 'existing') : m;
+          }
+          if (m.state === 'modified' && succeeded.updatedUids.has(m.uid)) {
+            return this.createMemberWithState(m, 'existing');
+          }
+          return m;
+        })
     );
+
+    this.failedDeleteUids.set(failedDeleteUids);
 
     this.pendingInvites.update((current) => current.filter((invite) => !succeeded.invitedEmails.has((invite.invitee_email ?? '').trim().toLowerCase())));
 
