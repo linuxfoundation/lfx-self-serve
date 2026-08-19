@@ -1724,6 +1724,12 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
       endDate: '2026-02-01',
       includeSearch: true,
       includeDemandGen: false,
+      // Event A's LinkedIn picks (LFXV2-3230). Present so this stale draft is a COMPLETE one —
+      // the guard under test must reject it on the slug alone, not because it happened to be
+      // missing fields.
+      linkedInAccountId: 'urn:li:sponsoredAccount:event-a',
+      linkedInGeoTargets: [],
+      linkedInTargetingProfile: 'mcp',
       eventSlug: 'event-a',
     });
 

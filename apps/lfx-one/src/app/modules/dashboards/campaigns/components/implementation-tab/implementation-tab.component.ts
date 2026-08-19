@@ -211,6 +211,26 @@ export class ImplementationTabComponent implements OnInit {
     includeDemandGen: [true],
     headlines: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)])]),
     descriptions: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)])]),
+    // The LinkedIn ad account, geo targets and targeting profile, on the FORM rather than in
+    // signals (LFXV2-3230). All three are user-editable — a select, an add/remove chip list and a
+    // two-button toggle — and all three used to be destroyed by a tab switch, then silently
+    // re-stamped from the brief on remount, so the revert looked like the AI's recommendation
+    // standing rather than the user's choice being lost.
+    //
+    // Being on the form buys the RESTORE and the emission trigger: `valueChanges` already feeds
+    // `emitDraft`, so no handler emits by hand, and `applyDraft`'s existing `patchValue` replays
+    // them with no extra signal writes. It does NOT save the three members on
+    // `CampaignImplementationDraft` — `emitDraft` builds an object literal, so a control still has
+    // to be named there to reach the draft. The saving is that the value has one home instead of
+    // four (handler, `submit`, seed, snapshot).
+    //
+    // NO validators, deliberately. `canSubmit` already gates the LinkedIn section on a non-empty
+    // geo list, and it reads the whole form's validity for GOOGLE (`campaignForm.invalid`) — a
+    // required-validator here would make an empty LinkedIn geo list block a Google-only campaign
+    // that has nothing to do with LinkedIn.
+    linkedInAccountId: [''],
+    linkedInGeoTargets: [[] as LinkedInGeoTarget[]],
+    linkedInTargetingProfile: ['cloud-native' as LinkedInTargetingProfile],
   });
 
   // === WritableSignals ===
@@ -276,14 +296,11 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly briefHsToken = signal<string | null>(null);
   protected readonly briefDriveFolderUrl = signal('');
   protected readonly selectedPlatforms = signal<CampaignPlatform[]>(['google-ads']);
-  protected readonly linkedInGeoTargets = signal<LinkedInGeoTarget[]>([]);
-  protected readonly linkedInTargetingProfile = signal<LinkedInTargetingProfile>('cloud-native');
   protected readonly linkedInVariants = signal<LinkedInCreativeVariant[]>([]);
   protected readonly linkedInBudgetUsd = signal(500);
   protected readonly linkedInLifetimeBudget = signal(false);
   protected readonly linkedInAccounts = signal<LinkedInAccount[]>([]);
   protected readonly linkedInAccountsLoading = signal(false);
-  protected readonly linkedInAccountId = signal<string>('');
   protected readonly redditVariants = signal<RedditAdVariant[]>([]);
   protected readonly redditSubreddits = signal<string[]>([]);
   protected readonly redditInterests = signal<string[]>([]);
@@ -348,6 +365,50 @@ export class ImplementationTabComponent implements OnInit {
   private readonly countryCodeValue = toSignal(
     this.campaignForm.controls.countryCode.valueChanges.pipe(startWith(this.campaignForm.controls.countryCode.value)),
     { initialValue: this.campaignForm.controls.countryCode.value }
+  );
+
+  /**
+   * The three LinkedIn controls as SIGNALS, for the same reason `countryCodeValue` is one
+   * (LFXV2-3230).
+   *
+   * They moved from signals onto `campaignForm` so the draft carries them, but the template,
+   * `canSubmit` and `availableGeoTargets` all read them reactively. A plain
+   * `controls.linkedInGeoTargets.value` read is not a reactive dependency, so a `computed` over
+   * it would memoise on first read and never update — the chip list would stop re-rendering as
+   * the user adds and removes geos. Bridging through `toSignal` keeps every existing reader
+   * working unchanged while the value itself lives on the form.
+   *
+   * `startWith` seeds the current value rather than a literal, so these are correct from first
+   * read rather than only after the first edit.
+   */
+  protected readonly linkedInAccountId = toSignal(
+    this.campaignForm.controls.linkedInAccountId.valueChanges.pipe(startWith(this.campaignForm.controls.linkedInAccountId.value)),
+    { initialValue: this.campaignForm.controls.linkedInAccountId.value }
+  );
+
+  /**
+   * Coalesced to `[]` HERE rather than at each reader, because the readers are the whole surface:
+   * `canSubmit`, `availableGeoTargets`, `submit()` and two template blocks all read this, and four
+   * of the five would throw on an absent value (`.length`, `.map`, `@for`). Guarding one call site
+   * leaves the other four, and the crash in `availableGeoTargets` is reached from the TEMPLATE, so
+   * it takes down the tab rather than one control.
+   *
+   * The value can be absent even though `CampaignImplementationDraft` declares it non-optional:
+   * that is a compile-time claim, and `applyDraft` hands `patchValue` whatever the draft holds
+   * while `patchValue` passes `undefined` straight through. Unreachable today — `emitDraft` is the
+   * only non-null producer and the draft is in-memory — but a required TYPE is not what keeps it
+   * safe, so the guard belongs at the boundary the values flow through.
+   */
+  protected readonly linkedInGeoTargets = computed<LinkedInGeoTarget[]>(() => this.linkedInGeoTargetsRaw() ?? []);
+
+  private readonly linkedInGeoTargetsRaw = toSignal(
+    this.campaignForm.controls.linkedInGeoTargets.valueChanges.pipe(startWith(this.campaignForm.controls.linkedInGeoTargets.value)),
+    { initialValue: this.campaignForm.controls.linkedInGeoTargets.value }
+  );
+
+  protected readonly linkedInTargetingProfile = toSignal(
+    this.campaignForm.controls.linkedInTargetingProfile.valueChanges.pipe(startWith(this.campaignForm.controls.linkedInTargetingProfile.value)),
+    { initialValue: this.campaignForm.controls.linkedInTargetingProfile.value }
   );
 
   /**
@@ -474,6 +535,19 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
+    // The account must be one the CATALOG confirms, not merely a non-empty string.
+    //
+    // `ngOnInit`'s reconciliation only runs on a successful response, so it cannot cover the two
+    // windows either side of it: before the request returns, and permanently if it fails. In both
+    // the restored id is still on the form while `linkedInAccounts()` is empty, so a create would
+    // dispatch an account nothing has verified and the selector is not displaying — the same
+    // divergence the reconciliation closes, reached where it does not run.
+    //
+    // Membership is the test rather than "loading finished", because a failed fetch leaves
+    // loading false with an empty catalog, which is exactly when this matters most. It also
+    // covers the blank id for free. The gate is scoped to LinkedIn, so a Google-only or
+    // Reddit-only create is unaffected by an ad-account endpoint being down.
+    if (linkedInSelected && !this.linkedInAccounts().some((a) => a.accountId === this.linkedInAccountId())) return false;
     if (metaSelected && this.metaBudgetUsd() < 1) return false;
     // No usable geo at all: every chip ineligible (or none) AND no usable countryCode. The request
     // would otherwise carry nothing and let the server default to US — spending on a country the
@@ -609,10 +683,15 @@ export class ImplementationTabComponent implements OnInit {
       this.emitDraft();
     });
 
-    // Emit as the user types. `valueChanges` covers the form (copy, budget, flight, campaign
-    // types); it does NOT cover the platform signals, which is deliberate — see the draft
-    // interface for why this snapshot is scoped to the fields a user types rather than everything
-    // the component holds.
+    // Emit as the user edits. `valueChanges` covers everything on `campaignForm` — copy, budget,
+    // flight, campaign types, and since LFXV2-3230 the three LinkedIn picks (ad account, geo
+    // targets, targeting profile). Moving those three onto the form is what makes their restore
+    // work: this subscription emits on every pick with no per-handler plumbing.
+    //
+    // Still OUTSIDE it: the platform picks that remain signals — the LinkedIn budget pair and
+    // variants, and the Reddit fields — none of which `emitDraft` names, so they do not reach the
+    // draft at all. See the draft interface: the snapshot is scoped to the fields a user EDITS,
+    // which is broader than the ones they type, and excludes anything re-derived from a fetch.
     this.campaignForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       if (this.seeding) return;
       this.emitDraft();
@@ -627,8 +706,39 @@ export class ImplementationTabComponent implements OnInit {
       .subscribe({
         next: (accounts) => {
           this.linkedInAccounts.set(accounts);
-          if (accounts.length > 0 && !this.linkedInAccountId()) {
-            this.linkedInAccountId.set(accounts[0].accountId);
+          // Keep the restored selection only if this catalog still CONTAINS it; otherwise fall
+          // back to the first account.
+          //
+          // A blank-only check was enough until this commit and is not any more. Persisting the id
+          // (LFXV2-3230) makes a STALE one reachable for the first time: the list is refetched on
+          // every mount and an account can be revoked or lose permission between them. A stale id
+          // then splits the page in two — `selectedLinkedInAccount` resolves the label and
+          // org/status line through `accounts.find(...) ?? accounts[0]`, and the `<select>` cannot
+          // render an unmatched value either, so both show the FIRST account, while `submit()`
+          // sends `linkedInAccountId()` verbatim. The operator reads one account and spends money
+          // on another, with nothing on screen to say so.
+          //
+          // That fallback pre-dates this change but was unreachable while the id was not carried
+          // on the draft, which is why closing it belongs here rather than in a follow-up.
+          //
+          // Correcting silently rather than prompting: the operator never chose this state, the
+          // first account is what every other surface is already showing, and the alternative is a
+          // modal on a path that is noisy enough. Membership also subsumes the first-visit case —
+          // '' is never in the list.
+          //
+          // Writes through the form rather than a signal, since that is where the value now lives.
+          // `emitEvent` is left ON deliberately — this assignment CHANGES what `submit()` would
+          // send, so the parent's draft has to learn about it; suppressing the event would leave
+          // the draft carrying a value the form and the request no longer agree with.
+          // An EMPTY catalog is a real answer, not a skip. `loadLinkedInConfig` falls back to
+          // `accounts: []` when the LinkedIn config is absent or malformed, so a successful
+          // response can carry nothing — and a restored id would then survive with no account to
+          // match it, dispatching a stale value while the selector shows an empty list. Clearing
+          // is the honest result, and `canSubmit`'s membership gate then BLOCKS the create rather
+          // than letting it reach LinkedIn: an empty catalog contains no id, including ''. The
+          // operator sees Create disabled with an empty account list, which is the true state.
+          if (!accounts.some((a) => a.accountId === this.linkedInAccountId())) {
+            this.campaignForm.controls.linkedInAccountId.setValue(accounts[0]?.accountId ?? '');
           }
           this.linkedInAccountsLoading.set(false);
         },
@@ -673,20 +783,25 @@ export class ImplementationTabComponent implements OnInit {
     if (arr.length > 1) arr.removeAt(index);
   }
 
+  // The three handlers below write to `campaignForm` rather than to a signal (LFXV2-3230). That
+  // single change is what makes these edits survive a tab switch: `valueChanges` already drives
+  // `emitDraft`, so the parent's copy updates on every pick with no emission added here.
   protected removeGeoTarget(index: number): void {
-    this.linkedInGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
+    const current = this.campaignForm.controls.linkedInGeoTargets.value;
+    this.campaignForm.controls.linkedInGeoTargets.setValue(current.filter((_, i) => i !== index));
   }
 
   protected addGeoTarget(urn: string): void {
     if (!urn) return;
     const geo = this.allKnownGeos.find((g) => g.urn === urn);
-    if (geo && !this.linkedInGeoTargets().some((g) => g.urn === urn)) {
-      this.linkedInGeoTargets.update((targets) => [...targets, geo]);
+    const current = this.campaignForm.controls.linkedInGeoTargets.value;
+    if (geo && !current.some((g) => g.urn === urn)) {
+      this.campaignForm.controls.linkedInGeoTargets.setValue([...current, geo]);
     }
   }
 
   protected setLinkedInTargetingProfile(profile: LinkedInTargetingProfile): void {
-    this.linkedInTargetingProfile.set(profile);
+    this.campaignForm.controls.linkedInTargetingProfile.setValue(profile);
   }
 
   protected setLinkedInLifetimeBudget(value: boolean): void {
@@ -697,12 +812,12 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInBudgetUsd.set(value);
   }
 
-  protected setLinkedInAccount(accountId: string): void {
-    this.linkedInAccountId.set(accountId);
-  }
-
+  // `setLinkedInAccount` was removed here (LFXV2-3230). Nothing in this component's template
+  // called it — only a test did, which made the test pass against a broken `(change)` binding.
+  // `onLinkedInAccountChange` below is the real path and is what the round-trip test now drives.
+  // The identically-named methods on monitoring-tab and optimization-tab are live and untouched.
   protected onLinkedInAccountChange(event: Event): void {
-    this.linkedInAccountId.set((event.target as HTMLSelectElement).value);
+    this.campaignForm.controls.linkedInAccountId.setValue((event.target as HTMLSelectElement).value);
   }
 
   protected onGeoTargetChange(event: Event): void {
@@ -1023,6 +1138,19 @@ export class ImplementationTabComponent implements OnInit {
       endDate: draft.endDate,
       includeSearch: draft.includeSearch,
       includeDemandGen: draft.includeDemandGen,
+      // The three LinkedIn controls (LFXV2-3230), restored in the SAME patch as everything else —
+      // which is the entire benefit of having moved them onto the form: no extra signal writes and
+      // no second emission. This runs AFTER `populateFromBrief`, so it deliberately overwrites the
+      // recommendation that seeded a moment ago; that ordering is what makes the restore win.
+      //
+      // Restored UNCONDITIONALLY, with no `|| draft.linkedInGeoTargets.length` guard. An empty
+      // geo list means the user removed every chip, and replacing it with the brief's
+      // recommendation would be the silent revert this ticket exists to stop; `canSubmit` already
+      // blocks a LinkedIn campaign with no geos, so the empty state is visible rather than
+      // dangerous.
+      linkedInAccountId: draft.linkedInAccountId,
+      linkedInGeoTargets: draft.linkedInGeoTargets,
+      linkedInTargetingProfile: draft.linkedInTargetingProfile,
     });
 
     // The copy arrays stay silent: nothing derives a display from them, and rebuilding a FormArray
@@ -1102,6 +1230,13 @@ export class ImplementationTabComponent implements OnInit {
       endDate: form.endDate,
       includeSearch: form.includeSearch,
       includeDemandGen: form.includeDemandGen,
+      // The three LinkedIn controls (LFXV2-3230). Listed EXPLICITLY, like every field above,
+      // because this emit is an object literal rather than a spread of `getRawValue()` — a
+      // control added to the form does not reach the draft until it is named here. That is the
+      // one step "just put it on the form" does not do for you.
+      linkedInAccountId: form.linkedInAccountId,
+      linkedInGeoTargets: form.linkedInGeoTargets,
+      linkedInTargetingProfile: form.linkedInTargetingProfile,
       eventSlug: form.eventSlug,
       // Signal-backed, so `valueChanges` never carries them — they are snapshotted here and
       // emitted explicitly by each Meta handler. `placements` is spread rather than referenced so
@@ -1162,8 +1297,29 @@ export class ImplementationTabComponent implements OnInit {
 
     if (brief.linkedInCopy) {
       this.linkedInVariants.set(brief.linkedInCopy.variants);
-      this.linkedInGeoTargets.set(brief.linkedInCopy.recommendedGeoTargets);
-      this.linkedInTargetingProfile.set(brief.linkedInCopy.recommendedTargetingProfile);
+      // Seeded UNCONDITIONALLY, and the ticket's premise that this needs a "only when the parent
+      // holds nothing" guard does not survive contact with the call order (LFXV2-3230).
+      //
+      // The constructor effect runs `populateFromBrief(brief)` and THEN
+      // `untracked(() => this.applyDraft())`. The restore is last, so it overwrites whatever this
+      // seeds — a guard here changes nothing for any field `applyDraft` restores. This was
+      // mutation-tested rather than reasoned about: with the guard replaced by `if (true)` the
+      // whole suite still passed, including the round-trip tests, because the restore had already
+      // done the work. Dead code that reads as load-bearing is worse than no code, so it is gone.
+      //
+      // The guard WOULD be needed if the two ever swapped order, or for a field this seeds but
+      // `applyDraft` does not restore. Neither is true today for these two controls.
+      //
+      // These EMIT, and must. The three controls are read through `toSignal` bridges over
+      // `valueChanges`, so a `{ emitEvent: false }` write updates the control while every reader —
+      // the template's chip list, `canSubmit`, `availableGeoTargets`, `submit()` — keeps the stale
+      // initial value. Suppressing here made the seed invisible: the form held the recommendation
+      // and the page rendered an empty geo list.
+      //
+      // Emitting is safe because `seeding` is true for the whole of this call, so the
+      // `valueChanges` subscription returns early rather than snapshotting a half-built form.
+      this.campaignForm.controls.linkedInGeoTargets.setValue(brief.linkedInCopy.recommendedGeoTargets);
+      this.campaignForm.controls.linkedInTargetingProfile.setValue(brief.linkedInCopy.recommendedTargetingProfile);
       // `budgetRecommendation` is guarded as well as `strategy`. Until LFXV2-3108 every brief
       // reaching here came straight from the generator, which always emits both; a RESTORED
       // brief is replayed from stored JSON, where `asVariantCopy` validates only the `variants`
