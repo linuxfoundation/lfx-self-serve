@@ -13,6 +13,8 @@ import {
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
   META_CHAR_LIMITS,
+  CAMPAIGN_PLATFORMS,
+  REDDIT_MAX_BUDGET_USD,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -172,6 +174,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly charLimits = CAMPAIGN_CHAR_LIMITS;
   protected readonly linkedInCharLimits = LINKEDIN_CHAR_LIMITS;
   protected readonly metaCharLimits = META_CHAR_LIMITS;
+  protected readonly redditMaxBudget = REDDIT_MAX_BUDGET_USD;
   protected readonly allKnownGeos: LinkedInGeoTarget[] = [...new Map(Object.values(LINKEDIN_GEO_RESOLVE_MAP).map((g) => [g.urn, g])).values()];
   protected readonly todayDate = new Date().toISOString().split('T')[0];
   protected readonly defaultEndDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0];
@@ -281,6 +284,69 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly showGoogleSection = computed(() => this.selectedPlatforms().includes('google-ads'));
   protected readonly showLinkedInSection = computed(() => this.selectedPlatforms().includes('linkedin-ads'));
   protected readonly showRedditSection = computed(() => this.selectedPlatforms().includes('reddit-ads'));
+  /**
+   * The keywords a Reddit dispatch will actually carry.
+   *
+   * Mirrors `submit()`'s own fallback: brief-supplied Reddit keywords when present, otherwise the
+   * generic brief keywords. Showing only `redditKeywords()` would render an empty list for the
+   * common case where the fallback is what ships — the section would then be hiding exactly the
+   * targeting it exists to surface.
+   */
+  protected readonly redditEffectiveKeywords = computed<string[]>(() =>
+    this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term)
+  );
+
+  /**
+   * The geo targets a Reddit dispatch will actually carry.
+   *
+   * Same reason as `redditEffectiveKeywords`: `submit()` falls back to the form's country code
+   * when the brief recommends no geos, so rendering only `redditGeoTargets()` shows an empty
+   * list for a request that targets somewhere specific. A section built so the operator can
+   * review what dispatches has to show the value that dispatches.
+   */
+  /**
+   * The form's country code as a SIGNAL.
+   *
+   * `campaignForm.controls.countryCode.value` is a plain read — not a reactive dependency — so a
+   * `computed` over it memoises and never updates. An RxJS pipeline keyed on `valueChanges` has
+   * the mirror-image bug: it tracks the country but NOT `redditGeoTargets()`, which
+   * `populateFromBrief` assigns AFTER patching the form, so the recommended geos arrive with
+   * nothing left to re-run the map. Both inputs have to be signals for the derivation to hold.
+   */
+  private readonly countryCodeValue = toSignal(
+    this.campaignForm.controls.countryCode.valueChanges.pipe(startWith(this.campaignForm.controls.countryCode.value)),
+    { initialValue: this.campaignForm.controls.countryCode.value }
+  );
+
+  /**
+   * The geo targets a Reddit dispatch will actually carry.
+   *
+   * Mirrors `submit()`'s fallback to the form's country code, so the preview shows the value that
+   * ships rather than an empty list for a request that targets somewhere specific.
+   */
+  protected readonly redditEffectiveGeoTargets: Signal<string[]> = computed(() => {
+    // Normalise FIRST, then decide whether to fall back. Choosing the branch on the RAW
+    // recommendation strands the form's country: a brief carrying an unusable ['USA'] is
+    // non-empty, so it wins the branch, filters to nothing, and canSubmit blocks the section
+    // permanently — with a perfectly valid US sitting unread in the form. The fallback is for
+    // "the brief offers no usable geo", and non-empty is not the same test as usable.
+    const recommended = this.normaliseGeoCodes(this.redditGeoTargets());
+    if (recommended.length > 0) return recommended;
+    return this.normaliseGeoCodes([this.countryCodeValue()]);
+  });
+  /**
+   * Subreddit names as they will DISPATCH. A restored brief keeps whatever the generator wrote,
+   * and `r/k8s` is a real stored value (campaign-service.service.spec.ts asserts it survives
+   * restore verbatim). The dispatch side strips an optional `r/`, so rendering the raw value
+   * under a fixed `r/` prefix previews `r/r/k8s` — a section whose entire purpose is showing
+   * what will be sent must not show something else.
+   */
+  protected readonly redditEffectiveSubreddits: Signal<string[]> = computed(() =>
+    this.redditSubreddits()
+      .map((sub) => sub.trim().replace(/^\/?r\//i, ''))
+      .filter((sub) => sub.length > 0)
+  );
+
   protected readonly showMetaSection = computed(() => this.selectedPlatforms().includes('meta-ads'));
   protected readonly selectedLinkedInAccount = computed(() => {
     const accounts = this.linkedInAccounts();
@@ -305,6 +371,20 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
     if (metaSelected && this.metaBudgetUsd() < 1) return false;
+    // Reddit's client rejects a non-positive budget at dispatch (client.go: "invalid budget:
+    // must be a positive number"), and because creation is async that surfaces as a dead job
+    // rather than an error on the request. Refuse locally instead.
+    //
+    // Budget only: unlike Meta and LinkedIn, Reddit's remaining inputs are all AI-recommended
+    // from the brief and rendered read-only for review, so there is no user-entered value left to
+    // validate. The section exists so the operator SEES what will dispatch. Deliberately not an
+    // enumeration — listing which inputs those are is a claim the next added field falsifies.
+    if (redditSelected && !this.redditBudgetIsUsable()) return false;
+    // No usable geo at all — the brief recommended none AND the country code is blank. The
+    // request would carry [''], which Reddit cannot target and the operator cannot see, because
+    // the preview correctly renders nothing. countryCode has no validator, so this state is
+    // reachable by clearing one optional field.
+    if (redditSelected && this.redditEffectiveGeoTargets().length === 0) return false;
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
 
     // Blocked while a brief save is in flight, because the create needs the id that save produces.
@@ -533,6 +613,30 @@ export class ImplementationTabComponent implements OnInit {
     this.metaBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
   }
 
+  /**
+   * Whether the Reddit budget is one the platform will accept.
+   *
+   * The CEILING and finiteness mirror the client's contract exactly
+   * (`internal/platform/reddit/client.go`: finite, within (0, 1e9]). Creation is ASYNC, so an
+   * over-cap budget is not a validation error the operator sees — it is a job that dies later and
+   * has to be gone and read.
+   *
+   * The 1 USD FLOOR is deliberately stricter than upstream, which accepts anything rounding to at
+   * least one micro-dollar. A sub-dollar Reddit campaign buys nothing, so a value in that range is
+   * far more likely a typo than an intent, and the siblings use the same 1 USD floor. Stated
+   * plainly rather than described as mirroring the client, because it does not.
+   *
+   * The siblings enforce neither bound; LFXV2-3315 covers bringing them into line.
+   */
+  protected redditBudgetIsUsable(): boolean {
+    const budget = this.redditBudgetUsd();
+    return Number.isFinite(budget) && budget >= 1 && budget <= REDDIT_MAX_BUDGET_USD;
+  }
+
+  protected onRedditBudgetInput(event: Event): void {
+    this.redditBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+  }
+
   protected onMetaLifetimeBudgetChange(event: Event): void {
     this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
   }
@@ -599,8 +703,14 @@ export class ImplementationTabComponent implements OnInit {
               budgetUsd: this.redditBudgetUsd(),
               startDate: form.startDate,
               endDate: form.endDate,
-              geoTargets: this.redditGeoTargets().length > 0 ? this.redditGeoTargets() : [form.countryCode],
-              subreddits: this.redditSubreddits(),
+              // The SAME derivation the preview renders. Reading `[form.countryCode]` here instead
+              // would let the two disagree: a cleared country code previews nothing and dispatches
+              // [''], which the operator cannot see and Reddit cannot use.
+              geoTargets: this.redditEffectiveGeoTargets(),
+              // The normalised list, matching the preview above for the same reason geoTargets
+              // does: dispatch strips an optional `r/`, so sending the raw value would submit
+              // something the operator was never shown.
+              subreddits: this.redditEffectiveSubreddits(),
               interests: this.redditInterests(),
               keywords: this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term),
               variants: this.redditVariants(),
@@ -787,7 +897,22 @@ export class ImplementationTabComponent implements OnInit {
     });
 
     if (brief.selectedPlatforms?.length) {
-      this.selectedPlatforms.set(brief.selectedPlatforms);
+      // A brief saved BEFORE a platform was disabled still names it, and the Plan picker cannot
+      // clear it — the tile is `[disabled]`, so the user has no way to deselect. Restoring it
+      // unfiltered would submit that platform's config on brief-derived values they never saw
+      // and cannot edit, which is the exact defect disabling the picker exists to prevent.
+      //
+      // Set the filtered list UNCONDITIONALLY, including when it is empty. Skipping the set on an
+      // empty result would leave the component's own `google-ads` default standing, so a
+      // Reddit-only brief would open as a GOOGLE campaign — the user's real choice silently
+      // replaced by one they never made, and `submit()` builds its request from this signal.
+      // campaign-service.service.ts:1505-1515 rejects exactly that substitution server-side; this
+      // is the same rule applied to the platforms it does still recognise.
+      //
+      // Empty is the honest answer: `canSubmit()` requires at least one selected platform, so the
+      // brief opens blocked rather than dispatching something unchosen.
+      const selectable = new Set(CAMPAIGN_PLATFORMS.filter((o) => !o.disabled).map((o) => o.id));
+      this.selectedPlatforms.set(brief.selectedPlatforms.filter((p) => selectable.has(p)));
     }
 
     const searchCopy = brief.structuredCopy?.['google_search'] as Record<string, unknown> | undefined;
@@ -916,5 +1041,19 @@ export class ImplementationTabComponent implements OnInit {
       ),
       { initialValue: '' }
     );
+  }
+  /**
+   * Shape only: two uppercase letters, the form campaign-service requires before it consults its
+   * ISO 3166-1 set. That catches every realistic typo reachable from this form — empty,
+   * lowercase, "USA", a single letter — while never rejecting a valid code.
+   *
+   * Deliberately NOT validated against the shared COUNTRIES constant: it holds 89 of the ~250
+   * assigned codes (Iceland yes, Monaco and Liechtenstein no), so using it as an allow-list
+   * would refuse real campaigns — a worse failure than the one it prevents. A well-formed but
+   * unassigned code like "ZZ" still reaches dispatch and is refused there; LFXV2-3316 covers
+   * porting a real ISO set into the shared package, which the whole app would use.
+   */
+  private normaliseGeoCodes(codes: string[]): string[] {
+    return codes.map((g) => g.trim().toUpperCase()).filter((g) => /^[A-Z]{2}$/.test(g));
   }
 }

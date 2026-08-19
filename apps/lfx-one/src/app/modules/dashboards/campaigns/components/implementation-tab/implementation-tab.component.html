@@ -418,6 +418,113 @@
         </div>
       }
 
+      <!-- Reddit Ads Section -->
+      @if (showRedditSection()) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="implementation-reddit-section">
+          <div class="mb-4 flex items-center gap-2">
+            <i class="fa-brands fa-reddit text-orange-600" aria-hidden="true"></i>
+            <h3 class="text-sm font-semibold text-gray-900">Reddit Ads</h3>
+          </div>
+
+          <!-- Reddit Budget. A LIFETIME cap: internal/dispatch/reddit.go passes lifetime=true with
+               the comment "LIFETIME spend cap, not a daily one". Its siblings above default to
+               DAILY and expose a checkbox to switch, so an operator carrying that model across
+               would read this number as per-day — a 30x misread of committed spend on a
+               month-long flight. Hence the label says so rather than relying on the default.
+
+               Both bounds mirror the client's contract (client.go): finite, and within (0, 1e9].
+               The 1 USD floor is STRICTER than upstream, which accepts anything above one
+               micro-dollar — a deliberate product floor, since a sub-dollar Reddit campaign
+               buys nothing and is far more likely a typo than an intent. The siblings enforce
+               neither bound; LFXV2-3315 covers bringing them into line. -->
+          <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label for="reddit-budget" class="text-xs font-medium text-gray-700">Reddit Budget (USD, lifetime)</label>
+              <input
+                id="reddit-budget"
+                type="number"
+                [value]="redditBudgetUsd()"
+                (input)="onRedditBudgetInput($event)"
+                min="1"
+                [max]="redditMaxBudget"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-reddit-budget" />
+              <p class="text-xs text-gray-500">
+                A lifetime cap for the whole flight, not a daily spend — unlike the Meta and LinkedIn budgets above, which default to daily. Reddit campaigns
+                are created paused.
+              </p>
+            </div>
+          </div>
+
+          <!-- Targeting, all AI-recommended from the brief. Rendered read-only so the operator can
+               REVIEW what will dispatch; editing them is a separate change. -->
+          @if (redditEffectiveGeoTargets().length > 0) {
+            <div class="mb-4">
+              <label class="mb-2 block text-xs font-medium text-gray-700">Geo Targets</label>
+              <div class="flex flex-wrap gap-2">
+                @for (geo of redditEffectiveGeoTargets(); track geo) {
+                  <span class="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">{{ geo }}</span>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Gate on the EFFECTIVE list, matching the count and chips below. Gating on the raw
+               list renders "Subreddits (0)" with no chips for a brief whose names all normalise
+               away — the geo and keyword blocks already gate on their effective lists. -->
+          @if (redditEffectiveSubreddits().length > 0) {
+            <div class="mb-4">
+              <label class="mb-2 block text-xs font-medium text-gray-700">Subreddits ({{ redditEffectiveSubreddits().length }})</label>
+              <div class="flex flex-wrap gap-2">
+                @for (sub of redditEffectiveSubreddits(); track sub) {
+                  <span class="inline-flex items-center rounded-full bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">r/{{ sub }}</span>
+                }
+              </div>
+            </div>
+          }
+
+          @if (redditInterests().length > 0) {
+            <div class="mb-4">
+              <label class="mb-2 block text-xs font-medium text-gray-700">Interests ({{ redditInterests().length }})</label>
+              <div class="flex flex-wrap gap-2">
+                @for (interest of redditInterests(); track interest) {
+                  <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">{{ interest }}</span>
+                }
+              </div>
+            </div>
+          }
+
+          @if (redditEffectiveKeywords().length > 0) {
+            <div class="mb-4">
+              <label class="mb-2 block text-xs font-medium text-gray-700">Keywords ({{ redditEffectiveKeywords().length }})</label>
+              <div class="flex flex-wrap gap-2">
+                @for (kw of redditEffectiveKeywords(); track kw) {
+                  <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">{{ kw }}</span>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Variant Preview -->
+          @if (redditVariants().length > 0) {
+            <div>
+              <label class="mb-2 block text-xs font-medium text-gray-700">Ad Variants ({{ redditVariants().length }})</label>
+              <div class="flex flex-col gap-2">
+                @for (variant of redditVariants(); track $index; let i = $index) {
+                  <div class="rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'implementation-reddit-variant-' + i">
+                    <p class="mb-1 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</p>
+                    <p class="text-sm text-gray-800">{{ variant.headline }}</p>
+                    @if (variant.body) {
+                      <p class="mt-1 text-xs text-gray-500">{{ variant.body }}</p>
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+
       <!-- Submit -->
       <div class="flex items-center gap-3">
         <lfx-button

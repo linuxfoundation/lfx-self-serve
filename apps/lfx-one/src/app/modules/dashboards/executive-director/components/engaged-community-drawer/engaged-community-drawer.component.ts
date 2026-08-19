@@ -7,7 +7,16 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { createHorizontalBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
+import {
+  DASHBOARD_TOOLTIP_CONFIG,
+  DRAWER_NO_ACTIVITY_BODY,
+  DRAWER_LOADING_HEADING,
+  DRAWER_UNAVAILABLE_BODY,
+  DRAWER_UNAVAILABLE_HEADING,
+  createHorizontalBarChartOptions,
+  createLineChartOptions,
+  lfxColors,
+} from '@lfx-one/shared/constants';
 import { formatNumber, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
@@ -53,6 +62,23 @@ export class EngagedCommunityDrawerComponent {
     weeklyTrend: [],
   });
   // === Computed Signals ===
+  /**
+   * True when the source request FAILED, as opposed to returning a measured zero. The
+   * parent passes the undefined-ness of its response through; the empty state then says
+   * the data could not be loaded instead of asserting there was no activity.
+   */
+  public readonly unavailable = input<boolean>(false);
+  protected readonly unavailableHeading = DRAWER_UNAVAILABLE_HEADING;
+  protected readonly unavailableBody = DRAWER_UNAVAILABLE_BODY;
+  protected readonly loadingHeading = DRAWER_LOADING_HEADING;
+  /**
+   * True while the parent's request is still in flight. The body is suppressed for this too —
+   * the zero-filled fallback is no more a measurement while loading than after a failure — but
+   * the copy must not claim a failure that has not happened.
+   */
+  public readonly pending = input<boolean>(false);
+  protected readonly noActivityBody = DRAWER_NO_ACTIVITY_BODY;
+
   protected readonly hasNoData: Signal<boolean> = this.initHasNoData();
   protected readonly formattedTotalMembers: Signal<string> = computed(() => formatNumber(this.data().totalMembers));
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
@@ -192,6 +218,7 @@ export class EngagedCommunityDrawerComponent {
   // === Private Initializers ===
   private initHasNoData(): Signal<boolean> {
     return computed(() => {
+      if (this.unavailable()) return true;
       const { totalMembers, monthlyData } = this.data();
       return totalMembers === 0 && monthlyData.length === 0;
     });
