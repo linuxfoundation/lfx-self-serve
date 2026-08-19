@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { ProjectTableRow } from './dashboard-metric.interface';
+import type { ProjectTableRow, TrainingCertificationSummaryResponse } from './dashboard-metric.interface';
 
 /** Performance rating for paid project campaigns. */
 export type PaidProjectPerformance = 'EXCELLENT' | 'GOOD' | 'AVERAGE' | 'EMERGING';
@@ -2645,6 +2645,25 @@ export interface MarketingSplitByPriority {
 }
 
 // ============================================
+// Education (ED Marketing Overview)
+// ============================================
+
+/**
+ * One education category row in the Education drawer breakdown.
+ * Revenue is nullable rather than 0 because edX carries no revenue column in
+ * COURSE_PURCHASES — a 0 would read as "earned nothing" instead of "not tracked".
+ */
+export interface EducationCategoryRow {
+  label: string;
+  enrollments: number;
+  revenue: number | null;
+  /** Share of total enrollments, 0-100; 0 when there are no enrollments at all */
+  enrollmentSharePct: number;
+  /** Pre-rounded share label (e.g. "60%") so the template does not call toFixed() per render */
+  enrollmentShareLabel: string;
+}
+
+// ============================================
 // Social Reach (Marketing Dashboard)
 // ============================================
 
@@ -2871,6 +2890,13 @@ export interface EmailCtrCampaignGroup {
 export interface EmailCampaignPerformance {
   campaignName: string;
   emailType: string;
+  /**
+   * Day-level send date. The breakdown groups by PUBLISHED_DATE so a campaign sent more than once
+   * lists each send separately — without this field those rows are indistinguishable, both to a
+   * reader and to an @for track expression.
+   * Null when the warehouse row carries no publish date.
+   */
+  sendDate: string | null;
   sends: number;
   opens: number;
   clicks: number;
@@ -2898,6 +2924,13 @@ export interface EmailTypeBreakdown {
  * API response for Email CTR query
  */
 export interface EmailCtrResponse {
+  /**
+   * True when the optional campaign-breakdown query failed while the primary CTR read
+   * succeeded. The drawer's Sends/Opens/Open-Rate/CTR tiles reduce() over emailTypeBreakdown,
+   * so an empty array from a FAILURE sums to 0 and is indistinguishable from a month with no
+   * campaigns — the same fabricated zero this contract exists to prevent, on a partial path.
+   */
+  breakdownUnavailable?: boolean;
   currentCtr: number;
   changePercentage: number;
   momChangePercentage: number | null;
@@ -3142,6 +3175,17 @@ export interface BrandReachWeeklyDataPoint {
  * Digital reach across social platforms and owned websites
  */
 export interface BrandReachResponse {
+  /**
+   * True when the SOCIAL half of this response could not be read, while the web half was
+   * measured normally. getBrandReach runs two independent queries and deliberately keeps
+   * serving web data when social fails — without this flag that partial success is
+   * indistinguishable from a foundation with zero followers, which is the reported AAIF
+   * defect (17,269 followers rendering as "0 · 0 platforms").
+   *
+   * A WEB failure has no equivalent flag because it fails the whole request, so the
+   * client's undefined sentinel already covers it.
+   */
+  socialUnavailable?: boolean;
   totalSocialFollowers: number;
   totalMonthlySessions: number;
   activePlatforms: number;
@@ -3463,17 +3507,98 @@ export interface FunnelAggregates {
  * Used by buildEdEvolutionMetrics() to convert API data into card UI models.
  */
 export interface EdEvolutionData {
-  flywheel: FlywheelConversionResponse;
-  memberAcquisition: MemberAcquisitionResponse;
-  memberRetention: MemberRetentionResponse;
-  engagedCommunity: EngagedCommunitySizeResponse;
-  eventGrowth: EventGrowthResponse;
-  brandReach: BrandReachResponse;
-  brandHealth: BrandHealthResponse;
-  revenueImpact: RevenueImpactResponse;
-  emailCtr: EmailCtrResponse;
-  paidCampaign: SocialReachResponse;
+  /**
+   * `undefined` when the request failed, so the Flywheel card renders "—" rather than a 0.0% conversion rate.
+   * A zero-filled fallback is indistinguishable from a genuine zero once the error is gone.
+   */
+  flywheel: FlywheelConversionResponse | undefined;
+  /**
+   * `undefined` when the request failed, so the Members card renders "—" rather than 0 paying members.
+   * A zero-filled fallback is indistinguishable from a genuine zero once the error is gone.
+   */
+  memberAcquisition: MemberAcquisitionResponse | undefined;
+  /**
+   * `undefined` when the request failed, so the Members caption renders the unavailable placeholder rather than 0.0% retention.
+   * A zero-filled fallback is indistinguishable from a genuine zero once the error is gone.
+   */
+  memberRetention: MemberRetentionResponse | undefined;
+  /**
+   * Adoption card data. undefined means "request failed", not "nobody engaged".
+   *
+   * Same contract as revenueImpact, brandReach and emailCtr. AAIF has 27,831 engaged
+   * individuals and the card read "0" whenever this fell back to a zero-filled response.
+   */
+  engagedCommunity: EngagedCommunitySizeResponse | undefined;
+  /**
+   * `undefined` when the request failed, so the Events card renders "—" rather than 0 registrants.
+   * A zero-filled fallback is indistinguishable from a genuine zero once the error is gone.
+   */
+  eventGrowth: EventGrowthResponse | undefined;
+  /**
+   * Social and Web card data. undefined means "request failed", not "no followers".
+   *
+   * Same contract as revenueImpact below, and required-but-undefinable for the same
+   * forkJoin reason. A foundation with 17,269 followers rendered "0 · 0 platforms" on a
+   * cold load when this fell back to a zero-filled response — a live outage reported as
+   * a measured absence, on the two cards that read it.
+   */
+  brandReach: BrandReachResponse | undefined;
+  /**
+   * Sentiment card data. undefined means "request failed", not "nobody mentioned us".
+   *
+   * Same contract as revenueImpact, brandReach, emailCtr and engagedCommunity. AAIF has
+   * 80,799 mentions; the card read "0" and its drawer asserted "No brand mention activity
+   * detected" whenever this fell back to a zero-filled response.
+   */
+  brandHealth: BrandHealthResponse | undefined;
+  /**
+   * Attribution card data. undefined means "request failed", not "zero revenue".
+   *
+   * Declared required-but-undefinable (not `revenueImpact?:`) so forkJoin's result type,
+   * which always supplies the key, stays assignable to this interface.
+   *
+   * $0 attributed revenue is a legitimate measurement, so the card cannot fall back to a
+   * zero-filled response on error — that would report a failed query as a factual "this
+   * foundation won nothing". The card renders an explicit unavailable state instead.
+   */
+  revenueImpact: RevenueImpactResponse | undefined;
+  /**
+   * Email card data. undefined means "request failed", not "nobody opened anything".
+   *
+   * Same contract as revenueImpact and brandReach. Summing an absent response yields 0, so a
+   * zero-filled fallback rendered "0 opens · 0.0% CTR" for a foundation whose campaign had
+   * 100 opens at a 76.3% CTR — a measurement the reader has no way to distrust.
+   */
+  emailCtr: EmailCtrResponse | undefined;
+  /**
+   * Paid Media card data. undefined means "request failed", not "zero spend".
+   *
+   * Same contract as revenueImpact above: zero spend, zero impressions and 0.0x ROAS are
+   * all legitimate measurements, so a zero-filled error fallback would be indistinguishable
+   * from real data.
+   */
+  paidCampaign: SocialReachResponse | undefined;
   attribution?: MarketingAttributionResponse;
+  /**
+   * Training & certification summary reused from the Health Metrics endpoint.
+   * Declared required-but-undefinable (not `education?:`) so forkJoin's result type,
+   * which always supplies the key, stays assignable to this interface.
+   *
+   * undefined means "request failed" and suppresses the Education card. The caller maps
+   * the analytics service's all-zeros error fallback (identified by an empty projectId)
+   * to undefined, so a failed request cannot be mistaken for a foundation that genuinely
+   * has no enrollments.
+   */
+  education: TrainingCertificationSummaryResponse | undefined;
+  /**
+   * True only while the initial request is in flight, before any response or error.
+   *
+   * Distinguishes "not answered yet" from "answered with a failure". Both leave
+   * revenueImpact and paidCampaign undefined, but only the latter may be reported to
+   * the user as unavailable — announcing a failure during loading claims a request
+   * failed before it has.
+   */
+  pending?: boolean;
 }
 
 // ============================================

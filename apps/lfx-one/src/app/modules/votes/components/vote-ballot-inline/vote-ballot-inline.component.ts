@@ -7,16 +7,19 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
-import { INVITATION_NOT_FOUND } from '@lfx-one/shared/constants';
-import { PollQuestion, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import { TextareaComponent } from '@components/textarea/textarea.component';
+import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { CommentResponseFormData, PollCommentPrompt, PollQuestion, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import { buildCommentResponses, getCommentPromptsData, reconcileCommentFormControls } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
+import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { MessageService } from 'primeng/api';
 import { CheckboxModule } from 'primeng/checkbox';
 import { finalize } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-ballot-inline',
-  imports: [ReactiveFormsModule, CheckboxModule, ButtonComponent, RadioButtonComponent],
+  imports: [ReactiveFormsModule, CheckboxModule, ButtonComponent, RadioButtonComponent, TextareaComponent, CodePointLengthPipe],
   templateUrl: './vote-ballot-inline.component.html',
   styleUrl: './vote-ballot-inline.component.scss',
 })
@@ -34,6 +37,8 @@ export class VoteBallotInlineComponent {
   // === Forms ===
   public readonly form = new FormGroup({});
   public readonly abstainControl = new FormControl<boolean>(false, { nonNullable: true });
+  // Kept separate from `form` so abstain's disable()/enable() toggling of answer controls never touches comments.
+  public readonly commentForm = new FormGroup({});
 
   // === Writable Signals ===
   protected readonly submitting = signal(false);
@@ -46,6 +51,9 @@ export class VoteBallotInlineComponent {
   protected readonly allowAbstain = computed(() => !!this.vote().allow_abstain);
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
   protected readonly submitDisabled: Signal<boolean> = this.initSubmitDisabled();
+  protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
+  protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.vote().poll_comment_prompts ?? []);
+  protected readonly commentPromptsData: Signal<CommentResponseFormData[]> = this.initCommentPromptsData();
 
   public constructor() {
     this.setupFormReactions();
@@ -62,12 +70,18 @@ export class VoteBallotInlineComponent {
       this.form.markAllAsTouched();
       return;
     }
+    if (this.commentForm.invalid) {
+      this.commentForm.markAllAsTouched();
+      return;
+    }
     const userVoteContent = isAbstain || !question ? undefined : this.buildAnswers(question);
+    // Comments are independent of abstain — a voter can abstain and still leave a comment.
+    const commentResponses = buildCommentResponses(this.commentPromptsData());
 
     this.submitting.set(true);
 
     this.voteService
-      .submitMyResponse(vote.uid, { abstain: isAbstain, userVoteContent })
+      .submitMyResponse(vote.uid, { abstain: isAbstain, userVoteContent, commentResponses })
       .pipe(
         takeUntilDestroyed(this.destroyRef),
         finalize(() => this.submitting.set(false))
@@ -101,9 +115,17 @@ export class VoteBallotInlineComponent {
     return computed(() => {
       this.formVersion(); // re-evaluate when controls are added/removed/disabled via { emitEvent: false }
       if (this.submitting()) return true;
+      if (!this.commentForm.valid) return true;
       if (this.abstain()) return false;
       if (!this.question()) return true;
       return !this.form.valid;
+    });
+  }
+
+  private initCommentPromptsData(): Signal<CommentResponseFormData[]> {
+    return computed(() => {
+      this.formVersion(); // re-evaluate when comment controls are added/removed
+      return getCommentPromptsData(this.commentForm, this.commentPrompts());
     });
   }
 
@@ -112,7 +134,16 @@ export class VoteBallotInlineComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((q) => this.rebuildForm(q));
 
+    toObservable(this.commentPrompts)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((prompts) => {
+        reconcileCommentFormControls(this.commentForm, prompts);
+        this.formVersion.update((v) => v + 1);
+      });
+
     this.form.statusChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.formVersion.update((v) => v + 1));
+
+    this.commentForm.statusChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.formVersion.update((v) => v + 1));
 
     this.abstainControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((isAbstaining) => {
       if (isAbstaining) this.form.disable({ emitEvent: false });

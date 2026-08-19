@@ -119,6 +119,13 @@ environment:
 | `image.tag`                      | Image tag                                                                                                      | `"latest"`                                                                    |
 | `image.pullPolicy`               | Image pull policy                                                                                              | `IfNotPresent`                                                                |
 | `imagePullSecrets`               | Image pull secrets                                                                                             | `[]`                                                                          |
+| `nodeSelector`                   | Node labels required for scheduling                                                                            | `{}`                                                                          |
+| `tolerations`                    | Taints the pod tolerates. Pair with `nodeSelector` to target a tainted node pool.                              | `[]`                                                                          |
+| `affinity`                       | Node/pod affinity rules. Prefer `topologySpreadConstraints` for simple spreading.                              | `{}`                                                                          |
+| `priorityClassName`              | PriorityClass for preemption ordering. A nonexistent class blocks scheduling.                                  | `""`                                                                          |
+| `topologySpreadConstraints`      | Spread replicas across failure domains                                                                         | `[]`                                                                          |
+
+`tolerations` only lets a pod land on a tainted node pool; it does not require it. Set `nodeSelector` too if the pod must land there.
 
 ### Environment Variables
 
@@ -177,6 +184,137 @@ environment:
 | `environment.LFX_V2_SERVICE`    | LFX V2 API service endpoint            | **Yes**  | -                                                                |
 | `environment.QUERY_SERVICE_URL` | Query service URL for resource queries | No       | `http://query-service.default.svc.cluster.local/query/resources` |
 | `environment.NATS_URL`          | NATS messaging server URL              | **Yes**  | -                                                                |
+
+#### Campaign Service Cutover
+
+Campaign endpoints are being moved off this application's vendor-direct integrations and onto
+lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
+changing a value here rather than by shipping a revert.
+
+| Parameter                                                | Description                                                                                                                         | Required | Default |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`          | Serves campaign job status from campaign-service; see the accepted values below                                                     | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`        | Persists the generated brief in campaign-service instead of only in the browser tab                                                 | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`        | Creates campaigns through campaign-service instead of the per-platform Express services                                             | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`    | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                | No       | off     |
+
+Every cutover flag in the table above is ON for `true`, `1`, `yes`, or `on` — trimmed and matched
+case-insensitively, so `"True"` and `" on "` also enable it. Every other value is OFF, including
+unset, empty, `0`, `false`, and any misspelling. Do not read "only `true` works" into that: an
+operator setting `yes` and expecting it to be ignored would route production traffic at
+campaign-service. The default-deny half is the deliberate part — a typo like `flase` is invisible
+in a values.yaml diff, so an unrecognised value has to fail towards the path already known to work.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` is a CAPABILITY flag, not a routing one, and that is
+why it is separate from the three above. They ask "should this go through campaign-service?"; it
+asks "does the campaign-service we are actually talking to understand `googleAdsConfig.channel`?"
+Those can be out of step, because the two services deploy independently.
+
+Turning it on against a campaign-service that predates LFXV2-3257 is the failure it exists to
+prevent, and that failure is SILENT. Go's JSON decoder ignores unknown keys, so an older service
+drops `channel` and builds its default SEARCH campaign instead: real budget, no keywords, and by
+its own documentation it "can never serve". Nothing errors — the job reports success, and the
+wrong campaign is discovered later in Google Ads with money already spent.
+
+There is no version probe because campaign-service exposes no version endpoint, and inferring
+support from a successful create is exactly the ambiguity that makes this dangerous. So the order
+is: deploy campaign-service with LFXV2-3257, confirm it, then set this. Left off, a Demand Gen
+create is refused with a message telling the user to select Search instead.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` moves campaign pause/resume onto campaign-service,
+and what it buys is REACH rather than a different backend. The path it replaces is a `switch` over
+Meta and Reddit whose default arm throws, so pause was unavailable for every other platform no
+matter what the allowlist said. Since pause is the primary cost-control lever on a mis-targeted or
+overspending campaign, "cannot pause Google Ads from the product" meant logging into Google Ads.
+
+**Turning it on does NOT give users a pause button.** It enables the SERVER path only. The app
+cannot call it yet — pausing a campaign-service campaign needs its UUID, brief id and ETag, and
+nothing in the UI can obtain any of them until the campaign read lands (LFXV2-3099). So the reach
+above is reach the API gains, not a control the product grows. An operator flipping this expecting
+a working pause control would find nothing changed on screen. Enable it when the UI half ships, or
+earlier if you want the endpoint reachable for direct API use.
+
+An overlapping rollout is SAFE here, and it is worth saying why, because the hazard recorded for
+`LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` looks identical and is not. Routing runs a campaign-id SHAPE
+check BEFORE and INDEPENDENTLY of this flag — that is the actual safety property. The two id
+spaces are disjoint (campaign-service keys campaigns by UUID; the legacy path uses the ad
+platform's numeric id), so no request can be claimed by both paths and a flag-on pod and a
+flag-off pod cannot disagree about where one belongs. A flag-off pod handed a UUID refuses with a
+clear error instead of answering the confident `not_found` that made the JOBS flag dangerous.
+
+It is INERT until `LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE` has been on long enough to produce
+UUID-keyed campaigns, because a campaign only has a UUID if campaign-service created it. Enabling
+it earlier is harmless, just useless.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` gates both halves of brief persistence: the write
+(`POST /api/campaigns/brief/persist`, called when a user approves a brief and moves to the
+Implementation tab) and the READ-BACK (`GET /api/campaigns/brief` and the Planning tab's restore
+offer). With it off both answer "off" and call nothing; the brief stays where it has always
+lived, in the browser tab, and is lost on reload.
+
+Read and write share one flag deliberately — a pod that read while the write flag was off would
+report an empty brief for one sitting in front of the user.
+
+Because the read exists, an overlapping rollout is no longer free. Requests are not sticky, so a
+lookup can land flag-off (brief not offered, user regenerates) while the following save lands
+flag-on (finds the row, refuses as `unowned-brief-exists`). Confusing, but safe — nothing is
+overwritten in either direction. Prefer a no-overlap rollout when flipping this flag; see
+`values.yaml` for the detail.
+
+Turning it off after it has been on leaves already-saved briefs untouched; they simply stop being
+offered.
+
+`..._BRIEFS` and `..._JOBS` are independent of each other and gate different endpoints: setting
+`..._BRIEFS` does not route job polling anywhere new, and setting `..._JOBS` does not persist
+anything.
+
+**`..._CREATE` is not independent — it requires BOTH of the others.** `createCampaigns` gates on
+all three together, so with either prerequisite off it reports disabled and every create silently
+stays on the legacy path. Enabling CREATE alone, or CREATE+BRIEFS without JOBS, does nothing at
+all.
+
+- BRIEFS, because the create route is `/projects/{slug}/briefs/{brief_id}/campaigns` — there is no
+  create-without-a-brief path, so without it there is no brief id to create from.
+- JOBS, because a campaign-service create returns a job the client must then POLL.
+
+### Rollout ordering (this order matters)
+
+1. Turn **JOBS** on first and leave it on.
+2. Then **BRIEFS**.
+3. Then **CREATE**.
+
+To roll back, reverse it: turn **CREATE** off first, and keep **JOBS** on until every outstanding
+UUID job has drained.
+
+The reason is the id-shape backstop. A poll reaches campaign-service only when the job id is a
+UUID, which is the shape campaign-service mints; the legacy path mints `job_<epoch>_<rand>`. A pod
+with JOBS **off** does not apply that check and sends the poll to its in-process map, where a UUID
+job does not exist — so a job that is real and **spending** becomes unreportable. Turning CREATE on
+before JOBS, or JOBS off while UUID jobs are still in flight, strands them exactly that way.
+
+Before creation was cut over, JOBS on by itself was inert: no UUID job could exist, so every real
+poll went to the in-process map regardless. That is no longer true once CREATE is on — do not read
+"flag on, no errors" from that earlier era as a verified cutover.
+
+Campaign traffic reaches campaign-service **through the gateway**, at `environment.LFX_V2_SERVICE`.
+There is deliberately no chart parameter for a campaign-service base URL. The application does read
+`LFX_V2_CAMPAIGN_SERVICE` and falls back to `LFX_V2_SERVICE` when it is unset — the same shape as
+`LFX_V2_MEMBER_SERVICE` and `LFX_V2_COMMITTEE_SERVICE`, neither of which this chart declares either.
+The fallback is what makes the gateway the default, and the gateway is where the authorization
+lives: Heimdall and OpenFGA enforce `campaign_manager` on the project in front of campaign-service,
+while the service's own token check authenticates the caller without authorizing them for that
+project. A base URL aimed at a service instance would therefore let any caller with a valid token
+act on a project it holds no grant for, given a job id.
+
+Omitting the key from `values.yaml` does not by itself close that path — `templates/deployment.yaml`
+emits every entry in `.Values.environment`, so an override adds the variable without touching this
+chart. All three variables are therefore rejected at render time by
+`lfx-self-serve.environment.gatewayOnlyValidate`, and `helm template` fails with the reason rather
+than producing a pod that silently bypasses the gateway. Declaring the key with an empty value is
+still fine: the container treats it as unset and the application resolves it to `LFX_V2_SERVICE`. A
+deployment that genuinely needs a direct address should drop the variable from that list in a
+reviewed chart commit — a values override is invisible to review, a chart change is not.
 
 #### AI Service Configuration
 

@@ -1,13 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, effect, inject, Injector, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { NEWSLETTER_COMMITTEE_CATEGORY, NEWSLETTER_STEP_TITLES, NEWSLETTER_TOTAL_STEPS } from '@lfx-one/shared/constants';
+import {
+  NEWSLETTER_COMMITTEE_CATEGORY,
+  NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS,
+  NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES,
+  NEWSLETTER_STEP_TITLES,
+  NEWSLETTER_TOTAL_STEPS,
+} from '@lfx-one/shared/constants';
 import {
   Committee,
   CreateNewsletterRequest,
@@ -15,18 +22,32 @@ import {
   Newsletter,
   NewsletterLayout,
   NewsletterAudienceEmailAdd,
+  NewsletterCancelScheduleResult,
   NewsletterManageViewMode,
+  NewsletterScheduleResult,
+  NewsletterScheduleWindowError,
   NewsletterSendResult,
   ProjectContext,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime, isValidEmail, stripHtml } from '@lfx-one/shared/utils';
+import {
+  combineDateTime,
+  formatFutureRelativeTime,
+  formatRelativeTime,
+  formatTo12HourInTimezone,
+  getTimezoneUtcOffsetString,
+  getUserTimezone,
+  isValidEmail,
+  stripHtml,
+} from '@lfx-one/shared/utils';
+import { newsletterScheduleWindowValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { toZonedTime } from 'date-fns-tz';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -40,6 +61,7 @@ import {
   EMPTY,
   filter,
   finalize,
+  interval,
   map,
   merge,
   of,
@@ -87,19 +109,36 @@ export class NewsletterManageComponent {
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Forms ===
   // Form control names stay camelCase (Angular convention). API payloads
   // are serialized to snake_case at the boundary in saveDraft / runSend.
-  public readonly form = new FormGroup({
-    committeeUids: new FormControl<string[]>([], { nonNullable: true }),
-    subject: new FormControl<string>('', { nonNullable: true }),
-    // body_layout is the authored source of truth (from the block composer).
-    // body_html is derived server-side (render-on-write) and synced back on save
-    // so the preview drawer and test-send use the authoritative MJML render.
-    bodyLayout: new FormControl<NewsletterLayout | null>(null),
-    bodyHtml: new FormControl<string>('', { nonNullable: true }),
-  });
+  // Group-level newsletterScheduleWindowValidator() reports scheduleWindow
+  // errors ('past' | 'tooSoon' | 'tooFar') off the group rather than a single
+  // control, since it reads scheduleDate + scheduleTime + scheduleTimezone
+  // together (see scheduleWindowError()).
+  public readonly form = new FormGroup(
+    {
+      committeeUids: new FormControl<string[]>([], { nonNullable: true }),
+      subject: new FormControl<string>('', { nonNullable: true }),
+      // body_layout is the authored source of truth (from the block composer).
+      // body_html is derived server-side (render-on-write) and synced back on save
+      // so the preview drawer and test-send use the authoritative MJML render.
+      bodyLayout: new FormControl<NewsletterLayout | null>(null),
+      bodyHtml: new FormControl<string>('', { nonNullable: true }),
+      sendMode: new FormControl<'now' | 'schedule'>('now', { nonNullable: true }),
+      scheduleDate: new FormControl<Date | null>(null),
+      // timeFormatValidator rejects an out-of-range free-typed value (e.g. "13:99 PM")
+      // that would otherwise survive into combineDateTime, which normalizes rather
+      // than rejects overflow — see scheduleWindowError()'s 'invalidFormat' branch.
+      scheduleTime: new FormControl<string>('', { nonNullable: true, validators: [timeFormatValidator()] }),
+      // Seeded from the browser's resolved IANA zone in the constructor (SSR has
+      // no reliable Intl timezone), so this stays 'UTC' until initScheduleTimezone runs.
+      scheduleTimezone: new FormControl<string>('UTC', { nonNullable: true }),
+    },
+    { validators: newsletterScheduleWindowValidator() }
+  );
 
   // === Mode + state ===
   public readonly newsletterId = signal<string | null>(null);
@@ -117,6 +156,13 @@ export class NewsletterManageComponent {
   public readonly manualSaving = signal<boolean>(false);
   public readonly deletingDraft = signal<boolean>(false);
   public readonly previewDrawerVisible = signal<boolean>(false);
+  public readonly scheduling = signal<boolean>(false);
+  public readonly cancelingSchedule = signal<boolean>(false);
+  // Loaded newsletter's upstream status. Only 'scheduled' currently changes UI
+  // behavior (read-only banner) — 'sending'/'sent' newsletters never reach this
+  // screen (edit routes redirect from the list before landing here).
+  private readonly newsletterStatus = signal<Newsletter['status'] | null>(null);
+  public readonly isScheduleReadOnly = computed(() => this.newsletterStatus() === 'scheduled');
 
   // === Step state ===
   private readonly internalStep = signal<number>(1);
@@ -156,14 +202,85 @@ export class NewsletterManageComponent {
   private readonly bodyLayoutValue = signal<NewsletterLayout | null>(null);
   // Server-rendered body_html, synced back after each save (render-on-write).
   private readonly bodyHtmlValue = signal<string>('');
+  public readonly sendModeValue = signal<'now' | 'schedule'>('now');
+  public readonly scheduleDateValue = signal<Date | null>(null);
+  public readonly scheduleTimeValue = signal<string>('');
+  public readonly scheduleTimezoneValue = signal<string>('UTC');
+  // Date-granular picker guard rails (min/max on <lfx-calendar>) — a coarse
+  // first line of defense only. The exact minLead/72h window is the
+  // validator's job (scheduleWindowError()); these just keep the calendar
+  // from opening on a day that could never satisfy it.
+  public readonly scheduleMinDate = new Date();
+  public readonly scheduleMaxDate = new Date(Date.now() + NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS * 60 * 60 * 1000);
+
+  // === Schedule derived state ===
+  // null whenever the picker is incomplete or send-now is selected — combineDateTime
+  // itself also returns '' on unparsable input, normalized to null here.
+  public readonly scheduleAtIso = computed<string | null>(() => {
+    if (this.sendModeValue() !== 'schedule') return null;
+    const date = this.scheduleDateValue();
+    const time = this.scheduleTimeValue();
+    if (!date || !time) return null;
+    const iso = combineDateTime(date, time, this.scheduleTimezoneValue());
+    return iso || null;
+  });
+  // Ticks once a minute (browser only) so scheduleWindowError below re-evaluates purely from
+  // clock advancement — a picked time can drift from 'valid' into 'tooSoon'/'past' on a tab
+  // left open with no form interaction at all. See initScheduleClock.
+  private readonly scheduleClockTick = signal(0);
+  // Read off the group (not a single control) since newsletterScheduleWindowValidator()
+  // is attached at the FormGroup level — see the `form` doc comment. `FormGroup.errors` is a
+  // plain getter, not a signal, so this computed must read the mirror signals the validator
+  // actually depends on (mode/date/time/timezone), plus scheduleClockTick for elapsed-time-only
+  // changes, to know when to re-evaluate — otherwise it memoizes the first result forever.
+  public readonly scheduleWindowError = computed<NewsletterScheduleWindowError | null>(() => {
+    const sendMode = this.sendModeValue();
+    this.scheduleDateValue();
+    this.scheduleTimeValue();
+    this.scheduleTimezoneValue();
+    this.scheduleClockTick();
+    // Gate every reason on schedule mode — the validator itself doesn't know
+    // about sendMode (it just reads the date/time controls), so stale picker
+    // values left over from a prior schedule pick would otherwise still
+    // surface 'past'/'tooSoon'/'tooFar' after switching to Send now, which
+    // would spuriously fire initSchedulePastGuard's toast-and-clear below.
+    if (sendMode !== 'schedule') return null;
+    // Check the control's own format error before the group-level window error —
+    // an out-of-range free-typed time (e.g. "13:99 PM") normalizes into a valid
+    // instant via combineDateTime instead of failing, so scheduleWindow would
+    // otherwise never catch it.
+    if (this.form.controls.scheduleTime.invalid) {
+      return 'invalidFormat';
+    }
+    return this.form.errors?.['scheduleWindow'] ?? null;
+  });
+  // Live lower bound for the time picker's dropdown (see TimePickerComponent's
+  // minDateTime input) — re-derived off scheduleClockTick so a tab left open long
+  // enough drops the now-too-soon options from the list rather than only rejecting
+  // them after the fact via scheduleWindowError.
+  public readonly scheduleMinDateTime = computed<Date>(() => {
+    this.scheduleClockTick();
+    return new Date(Date.now() + NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES * 60 * 1000);
+  });
+  public readonly scheduleSummary = computed<string>(() => {
+    const iso = this.scheduleAtIso();
+    if (!iso) return '';
+    const date = new Date(iso);
+    const timezone = this.scheduleTimezoneValue();
+    const dateLabel = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: timezone });
+    const timeLabel = formatTo12HourInTimezone(date, timezone);
+    const offset = getTimezoneUtcOffsetString(timezone, date);
+    return `Sends ${dateLabel} at ${timeLabel} (UTC${offset}) — ${formatFutureRelativeTime(date)}`;
+  });
 
   // === Save dedup ===
   // bodyHtml is tracked alongside body_layout so the simple editor (which
   // authors body_html directly) autosaves. In blocks mode body_html is
   // server-derived, so the snapshot's bodyHtml is always taken from the SAVE
   // RESPONSE — the rendered value — which is what the form then holds; comparing
-  // against it never loops.
-  private readonly lastSavedSnapshot = signal<{ subject: string; bodyHtml: string; bodyLayout: string; committeeUids: string[] } | null>(null);
+  // against it never loops. scheduledAt is included so a schedule-only edit
+  // (picker changed, nothing else) isn't deduped as "nothing to save".
+  private readonly lastSavedSnapshot = signal<{ subject: string; bodyHtml: string; bodyLayout: string; committeeUids: string[]; scheduledAt: string | null } | null>(null);
   private readonly saveTrigger$ = new Subject<boolean>();
 
   // === Recipient summary ===
@@ -275,10 +392,32 @@ export class NewsletterManageComponent {
       !this.submitting() &&
       !this.resolvingSend() &&
       !this.savingDraft() &&
-      !this.hasPendingAudienceAdds()
+      !this.scheduling() &&
+      !this.hasPendingAudienceAdds() &&
+      !this.isScheduleReadOnly()
   );
   public readonly canSendTest = computed(
-    () => this.subjectFilled() && this.bodyUsable() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending()
+    () =>
+      this.subjectFilled() && this.bodyUsable() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending() && !this.isScheduleReadOnly()
+  );
+  // Same gates as canSend, plus a valid armable time. scheduleWindowError() covers
+  // 'tooSoon'/'tooFar' directly; 'past' is handled separately by an effect that resets
+  // sendMode to 'now' (see initSchedulePastGuard), so it should never surface here.
+  public readonly canSchedule = computed(
+    () =>
+      this.audienceFilled() &&
+      this.audienceNormalized() &&
+      this.subjectFilled() &&
+      this.bodyFilled() &&
+      this.hasContext() &&
+      !this.submitting() &&
+      !this.resolvingSend() &&
+      !this.savingDraft() &&
+      !this.scheduling() &&
+      !this.hasPendingAudienceAdds() &&
+      !this.isScheduleReadOnly() &&
+      this.scheduleAtIso() !== null &&
+      this.scheduleWindowError() === null
   );
   public readonly canProceed = computed(() => this.computeCanProceed(this.currentStep()));
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);
@@ -294,7 +433,9 @@ export class NewsletterManageComponent {
       // the server rather than reverting on reload.
       this.bodyPersistable() &&
       this.edEmail().length > 0 &&
-      !this.savingDraft()
+      !this.savingDraft() &&
+      !this.scheduling() &&
+      !this.isScheduleReadOnly()
   );
   public readonly isLastStep = computed(() => this.currentStep() === this.totalSteps);
   public readonly currentStepTitle = computed(() => NEWSLETTER_STEP_TITLES[this.currentStep()] ?? '');
@@ -305,6 +446,7 @@ export class NewsletterManageComponent {
   });
 
   public constructor() {
+    this.initScheduleTimezone();
     this.initContextLogo();
     this.initFormMirrors();
     this.initLoadDraft();
@@ -312,6 +454,9 @@ export class NewsletterManageComponent {
     this.initAutosave();
     this.initRecipientCount();
     this.initAudienceNormalization();
+    this.initScheduleClock();
+    this.initSchedulePastGuard();
+    this.initScheduleFieldLock();
   }
 
   protected goToStep(step: number | undefined): void {
@@ -336,9 +481,11 @@ export class NewsletterManageComponent {
     if (this.canGoPrevious()) this.goToStep(this.currentStep() - 1);
   }
 
-  // Enter the stepper at a specific step from the Review screen.
+  // Enter the stepper at a specific step from the Review screen. Upstream rejects any
+  // edit/save on a scheduled newsletter (409 'scheduled') — the review template already hides
+  // these Edit affordances while isScheduleReadOnly(), this is the defense-in-depth backstop.
   protected enterStep(step: number): void {
-    if (step < 1 || step > this.totalSteps) return;
+    if (step < 1 || step > this.totalSteps || this.isScheduleReadOnly()) return;
     if (!this.isEditMode()) {
       this.internalStep.set(step);
       return;
@@ -363,7 +510,7 @@ export class NewsletterManageComponent {
 
   protected onDeleteDraft(): void {
     const id = this.newsletterId();
-    if (!id || this.deletingDraft()) return;
+    if (!id || this.deletingDraft() || this.isScheduleReadOnly()) return;
     const subjectLabel = this.subjectValue().trim() || 'Untitled draft';
     this.confirmationService.confirm({
       key: 'newsletter-manage',
@@ -483,6 +630,39 @@ export class NewsletterManageComponent {
     });
   }
 
+  protected onSchedule(): void {
+    if (!this.canSchedule()) return;
+    const count = this.recipientCount();
+    const recipientLabel = count !== null && count > 0 ? `${count} ${count === 1 ? 'recipient' : 'recipients'}` : 'the selected groups';
+    this.confirmationService.confirm({
+      key: 'newsletter-manage',
+      header: 'Schedule newsletter?',
+      message: `This will schedule your newsletter to send to ${recipientLabel} ${this.scheduleSummary().replace(/^Sends /, 'on ')}.`,
+      icon: 'pi pi-clock',
+      acceptLabel: 'Schedule',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => this.runSchedule(),
+    });
+  }
+
+  protected onCancelSchedule(): void {
+    const id = this.newsletterId();
+    if (!id || this.cancelingSchedule()) return;
+    this.confirmationService.confirm({
+      key: 'newsletter-manage',
+      header: 'Cancel schedule?',
+      message: 'This newsletter will return to Drafts. Your picked time is kept, so you can re-schedule it later.',
+      icon: 'pi pi-times-circle',
+      acceptLabel: 'Cancel schedule',
+      rejectLabel: 'Keep scheduled',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => this.runCancelSchedule(id),
+    });
+  }
+
   protected retryCommittees(): void {
     this.retryCommittees$.next();
   }
@@ -555,7 +735,7 @@ export class NewsletterManageComponent {
     return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
   }
 
-  private goToList(tab?: 'draft' | 'sent'): void {
+  private goToList(tab?: 'draft' | 'scheduled' | 'sent'): void {
     this.router.navigate(['list'], {
       relativeTo: this.route.parent,
       queryParams: tab ? { tab } : undefined,
@@ -584,6 +764,95 @@ export class NewsletterManageComponent {
     // setValue(emitEvent:false) and set bodyHtmlValue directly, so they don't
     // double-fire this and never re-trigger autosave.
     this.form.controls.bodyHtml.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.bodyHtmlValue.set(v ?? ''));
+    this.form.controls.sendMode.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.sendModeValue.set(v ?? 'now'));
+    this.form.controls.scheduleDate.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.scheduleDateValue.set(v ?? null));
+    this.form.controls.scheduleTime.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.scheduleTimeValue.set(v ?? ''));
+    this.form.controls.scheduleTimezone.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.scheduleTimezoneValue.set(v ?? 'UTC'));
+  }
+
+  /**
+   * Seeds scheduleTimezone from the browser's resolved IANA zone. SSR has no
+   * reliable Intl timezone resolution, so this stays the 'UTC' default until
+   * the app rehydrates in the browser (see the `form` doc comment).
+   */
+  private initScheduleTimezone(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const timezone = getUserTimezone();
+    this.form.controls.scheduleTimezone.setValue(timezone);
+    this.scheduleTimezoneValue.set(timezone);
+  }
+
+  /**
+   * FormGroup validators only re-run on a control value change — a picked time that's
+   * currently 'valid' silently drifts into 'tooSoon' (and eventually 'past') purely from the
+   * clock advancing, with no value change to trigger revalidation. Force a revalidation once a
+   * minute and bump scheduleClockTick so the scheduleWindowError computed picks up the result.
+   */
+  private initScheduleClock(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    interval(60_000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.form.updateValueAndValidity({ onlySelf: true, emitEvent: false });
+        this.scheduleClockTick.update((n) => n + 1);
+      });
+  }
+
+  /**
+   * A tab left open past the picked time makes every autosave fail upstream
+   * ('scheduled_at must be in the future'). 'past' resets to send-now;
+   * 'tooSoon'/'tooFar' are left alone — they still save fine and only need to
+   * disable the Schedule action (see canSchedule). Repo convention forbids
+   * effect() for imperative side effects (form patches, toasts) — bridge the
+   * signal to an observable instead.
+   *
+   * Skips while isScheduleReadOnly(): the minute clock (initScheduleClock)
+   * makes scheduleWindowError re-evaluate purely from elapsed time, so once a
+   * deep-linked armed newsletter's scheduled_at passes, this would otherwise
+   * clear the picker and toast "pick a new time or send now" even though
+   * edit/send are intentionally hidden for an armed row — the form here is a
+   * read-only mirror of what's already committed at the provider, not
+   * something the guard should be resetting.
+   */
+  private initSchedulePastGuard(): void {
+    toObservable(this.scheduleWindowError)
+      .pipe(
+        filter((error) => error === 'past' && !this.isScheduleReadOnly()),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
+        this.form.patchValue({ sendMode: 'now', scheduleDate: null, scheduleTime: '' });
+        this.messageService.add({
+          severity: 'warn',
+          summary: 'Scheduled time passed',
+          detail: 'Your scheduled time has passed — pick a new time or send now.',
+        });
+      });
+  }
+
+  /**
+   * Disables the date/time controls while an arm request is in flight (scheduling()) so the
+   * author can't change the picker mid-request — runSchedule re-reads scheduleAtIso() right
+   * before the call goes out, so leaving the fields live during that window would let a fresh
+   * edit slip in after the value has already been captured for the request but before the
+   * response lands, arming a time the author no longer sees selected. Repo convention forbids
+   * effect() for imperative side effects (see initSchedulePastGuard above) — bridge the signal
+   * to an observable instead.
+   */
+  private initScheduleFieldLock(): void {
+    toObservable(this.scheduling)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((locked) => {
+        const dateControl = this.form.controls.scheduleDate;
+        const timeControl = this.form.controls.scheduleTime;
+        if (locked) {
+          dateControl.disable({ emitEvent: false });
+          timeControl.disable({ emitEvent: false });
+        } else {
+          dateControl.enable({ emitEvent: false });
+          timeControl.enable({ emitEvent: false });
+        }
+      });
   }
 
   private initRecipientCount(): void {
@@ -814,6 +1083,254 @@ export class NewsletterManageComponent {
       });
   }
 
+  private runSchedule(): void {
+    const id = this.newsletterId();
+    if (!id || !this.scheduleAtIso()) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Save first',
+        detail: 'Save the newsletter as a draft before scheduling.',
+      });
+      return;
+    }
+    this.scheduling.set(true);
+
+    // Same ensureSaved$ pattern as runSend: land any pending autosave (and
+    // refresh version()) before arming, since the arm call sends by id/version.
+    const ensureSaved$ = toObservable(this.savingDraft, { injector: this.injector }).pipe(
+      filter((saving) => !saving),
+      take(1),
+      switchMap(() => (this.snapshotMatchesLastSaved() ? of(true) : this.saveDraft(true).pipe(map((draft) => draft !== null))))
+    );
+
+    ensureSaved$
+      .pipe(
+        switchMap((saved) => {
+          if (!saved) return EMPTY;
+          // Re-read scheduleAtIso() here rather than capturing it before ensureSaved$: the
+          // picker isn't frozen while the confirm dialog's autosave wait is in flight (canSchedule
+          // disables the button once scheduling() flips true, but that only blocks a *new* click —
+          // it doesn't stop the author from continuing to edit the already-open picker). Capturing
+          // the value up front would arm whatever time was selected before the wait, even though
+          // saveDraft(true) just persisted a newer one.
+          const scheduledAt = this.scheduleAtIso();
+          if (!scheduledAt) return EMPTY;
+          return this.newsletterService.scheduleNewsletter(this.projectUid(), id, this.version(), scheduledAt);
+        }),
+        finalize(() => this.scheduling.set(false))
+      )
+      .subscribe({
+        next: (result: NewsletterScheduleResult) => this.handleScheduleResponse(result),
+        error: (err: HttpErrorResponse) => this.handleScheduleError(err, id),
+      });
+  }
+
+  /**
+   * Same synchronous-settlement edge case as handleSendResponse: a
+   * zero-recipient audience (or a pre-async upstream) can return
+   * status='sent' immediately instead of the usual 'sending' → 'scheduled'
+   * arm-in-progress path. Mirror handleSendResponse's positive check on the
+   * one known in-flight status ('sending') rather than a negated check —
+   * 'scheduled' never comes back synchronously (the fan-out job settles to
+   * it later), so treating it as a distinct in-flight branch is both
+   * unreachable and, if the upstream contract ever grows a new status,
+   * would silently misroute it into the "still arming" branch instead of
+   * the settled-outcome one.
+   */
+  private handleScheduleResponse(result: NewsletterScheduleResult): void {
+    this.newsletterStatus.set(result.newsletter.status);
+    this.version.set(result.newsletter.version);
+    if (result.newsletter.status !== 'sending') {
+      if (result.failed > 0) {
+        this.messageService.add({
+          severity: 'warn',
+          summary: 'Sent with errors',
+          detail: `Delivered ${result.sent} of ${result.total_recipients}. ${result.failed} failed.`,
+          life: 8000,
+        });
+      } else {
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Newsletter sent',
+          detail: `Delivered to ${result.sent} ${result.sent === 1 ? 'recipient' : 'recipients'}.`,
+        });
+      }
+      this.goToList('sent');
+      return;
+    }
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Scheduling newsletter',
+      detail: `Your newsletter will be sent ${this.scheduleSummary().replace(/^Sends /, '')}.`,
+    });
+    this.goToList('scheduled');
+  }
+
+  /**
+   * Errors branch on the BFF's upstreamCode passthrough (see
+   * microservice.error.ts) so each condition reads distinctly from a generic
+   * conflict. 409 send_in_progress/already_sent reuses handleSendError's
+   * refetch-and-branch logic — the newsletter moved on without us, and
+   * re-arming blind risks a duplicate send. 412 is a plain out-of-sync
+   * If-Match failure (e.g. the 5-minute settlement sweep bumped version) —
+   * simpler than a send race, so it gets its own message rather than a refetch.
+   */
+  private handleScheduleError(err: HttpErrorResponse, id: string): void {
+    const upstreamCode = err?.error?.upstreamCode;
+    if (err.status === 503) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Scheduling unavailable',
+        detail: "Scheduling isn't available in this environment. Use Send now instead.",
+        life: 8000,
+      });
+      return;
+    }
+    if (err.status === 409 && upstreamCode === 'scheduled') {
+      // Someone else (another tab, or a retry that actually landed) armed this
+      // draft first. A toast alone leaves newsletterStatus() at 'draft', so
+      // isScheduleReadOnly() stays false and every edit/save/send control keeps
+      // accepting input against a newsletter the upstream will now reject —
+      // refetch and adopt the real status/version, same as runCancelSchedule's
+      // conflict branch.
+      this.newsletterService
+        .getNewsletter(this.projectUid(), id)
+        .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (newsletter) => {
+            this.version.set(newsletter.version);
+            this.newsletterStatus.set(newsletter.status);
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Already scheduled',
+              detail: 'This newsletter is already scheduled.',
+            });
+          },
+          error: () => {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Already scheduled',
+              detail: 'This newsletter is already scheduled. Reload the page to see the latest status.',
+              life: 8000,
+            });
+          },
+        });
+      return;
+    }
+    if (err.status === 409 && (upstreamCode === 'send_in_progress' || upstreamCode === 'already_sent')) {
+      this.handleSendError(err, id);
+      return;
+    }
+    if (err.status === 412) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Draft out of sync',
+        detail: 'Draft out of sync. Reload to continue.',
+        life: 10_000,
+      });
+      return;
+    }
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Schedule failed',
+      detail: extractErrorMessage(err, 'Could not schedule the newsletter. Please try again.'),
+      life: 8000,
+    });
+  }
+
+  private runCancelSchedule(id: string): void {
+    const projectUid = this.projectUid();
+    if (!projectUid) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Project context unavailable',
+        detail: 'Reload the page and try again.',
+      });
+      return;
+    }
+    this.cancelingSchedule.set(true);
+    this.newsletterService
+      .cancelSchedule(projectUid, id, this.version())
+      .pipe(
+        take(1),
+        finalize(() => this.cancelingSchedule.set(false))
+      )
+      .subscribe({
+        next: (result: NewsletterCancelScheduleResult) => {
+          this.version.set(result.newsletter.version);
+          this.newsletterStatus.set(result.newsletter.status);
+          // A newsletter opened via a deep-linked `?step=N` while scheduled was locked
+          // to review by isScheduleReadOnly(), leaving that param sitting unused in the
+          // URL. Cancelling flips isScheduleReadOnly() false, and deriveViewMode would
+          // then honor the stale param and jump straight to the stepper — clear it so
+          // the author stays on the review screen they just cancelled from.
+          this.backToReview();
+          this.messageService.add({ severity: 'success', summary: 'Schedule cancelled', detail: 'The newsletter is back in Drafts.' });
+        },
+        error: (err: HttpErrorResponse) => {
+          const upstreamCode = err?.error?.upstreamCode;
+          if (err.status === 409 && upstreamCode === 'cancel_window_closed') {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Too late to cancel',
+              detail: 'Too close to the send time to cancel. This newsletter will go out as scheduled.',
+              life: 8000,
+            });
+            return;
+          }
+          if ((err.status === 409 && upstreamCode === 'already_sent') || err.status === 412) {
+            // 412 is a generic version_mismatch, not necessarily "already sent" —
+            // the fan-out can advance sending -> scheduled, or a concurrent cancel
+            // can win, leaving the real status as scheduled or draft. Refetch and
+            // branch on the actual status before choosing the toast.
+            this.newsletterService
+              .getNewsletter(projectUid, id)
+              .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+              .subscribe({
+                next: (newsletter) => {
+                  this.version.set(newsletter.version);
+                  this.newsletterStatus.set(newsletter.status);
+                  // sent/sending must navigate away, same as handleSendError — leaving
+                  // newsletterStatus at 'sent'/'sending' would clear isScheduleReadOnly
+                  // (true only for 'scheduled') and re-enable the edit/send controls on
+                  // a newsletter that has already gone out.
+                  if (newsletter.status === 'sent' || newsletter.status === 'sending') {
+                    this.messageService.add({
+                      severity: 'warn',
+                      summary: 'Already sent',
+                      detail: newsletter.status === 'sent' ? 'This newsletter has already been sent.' : 'This newsletter is already being sent.',
+                    });
+                    this.goToList('sent');
+                    return;
+                  }
+                  const copy: Record<string, { summary: string; detail: string }> = {
+                    scheduled: { summary: 'Still scheduled', detail: 'The cancellation did not go through — this newsletter is still scheduled.' },
+                    draft: { summary: 'Already cancelled', detail: 'This newsletter has already been moved back to Drafts.' },
+                  };
+                  const { summary, detail } = copy[newsletter.status] ?? { summary: 'Out of sync', detail: 'Reload the page to see the latest status.' };
+                  this.messageService.add({ severity: 'warn', summary, detail });
+                },
+                error: () => {
+                  this.messageService.add({
+                    severity: 'warn',
+                    summary: 'Out of sync',
+                    detail: 'Could not confirm the current status. Reload the page to continue.',
+                    life: 8000,
+                  });
+                },
+              });
+            return;
+          }
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Cancel failed',
+            detail: extractErrorMessage(err, 'Could not cancel the schedule. Please try again.'),
+            life: 8000,
+          });
+        },
+      });
+  }
+
   private initCurrentStep(): Signal<number> {
     const initialStep = this.parseStepParam(this.route.snapshot.queryParamMap.get('step'));
     this.internalStep.set(initialStep);
@@ -829,19 +1346,27 @@ export class NewsletterManageComponent {
   private initViewMode(): Signal<NewsletterManageViewMode> {
     // Initial-value path runs synchronously before isEditMode reacts to the loaded
     // newsletterId; derive editMode from the snapshot id param so first paint is correct.
+    // isScheduleReadOnly() is false at this point (status hydrates after the draft
+    // loads), so a scheduled newsletter briefly resolves via the step/view params below
+    // and then flips to 'review' once initViewMode() re-runs off the isScheduleReadOnly
+    // observable — draftLoading() keeps both branches hidden in the meantime.
     const initialIsEdit = this.route.snapshot.paramMap.get('id') !== null;
-    const initial = this.deriveViewMode(initialIsEdit, this.route.snapshot.queryParamMap.get('view'), this.route.snapshot.queryParamMap.get('step'));
+    const initial = this.deriveViewMode(initialIsEdit, this.route.snapshot.queryParamMap.get('view'), this.route.snapshot.queryParamMap.get('step'), false);
 
     return toSignal(
-      combineLatest([toObservable(this.isEditMode), this.route.queryParamMap]).pipe(
-        map(([editMode, params]) => this.deriveViewMode(editMode, params.get('view'), params.get('step')))
+      combineLatest([toObservable(this.isEditMode), this.route.queryParamMap, toObservable(this.isScheduleReadOnly)]).pipe(
+        map(([editMode, params, readOnly]) => this.deriveViewMode(editMode, params.get('view'), params.get('step'), readOnly))
       ),
       { initialValue: initial }
     );
   }
 
-  private deriveViewMode(isEdit: boolean, view: string | null, step: string | null): NewsletterManageViewMode {
+  private deriveViewMode(isEdit: boolean, view: string | null, step: string | null, readOnly: boolean): NewsletterManageViewMode {
     if (!isEdit) return 'step';
+    // A scheduled newsletter is locked to review regardless of a `?step=` query param —
+    // otherwise a direct/bookmarked link to the stepper would bypass the read-only lock
+    // and still reach the audience/content mutation handlers underneath it.
+    if (readOnly) return 'review';
     if (view === 'review') return 'review';
     // Step param means the user explicitly entered the stepper (or bookmarked / refreshed there).
     if (step) return 'step';
@@ -941,19 +1466,41 @@ export class NewsletterManageComponent {
 
   private populateFormFromDraft(draft: Newsletter): void {
     this.version.set(draft.version);
+    this.newsletterStatus.set(draft.status);
     const committeeUids = draft.committee_uids ?? [];
     const subject = draft.subject ?? '';
     const bodyHtml = draft.body_html ?? '';
     const bodyLayout = draft.body_layout ?? null;
-    this.form.patchValue({ committeeUids, subject, bodyLayout, bodyHtml }, { emitEvent: false });
+
+    // scheduled_at hydration mirrors populateFormWithMeetingData in
+    // meeting-manage.component.ts: convert the saved UTC instant into the
+    // picker's local date/time pair for the newsletter's own timezone (or the
+    // browser's, for older drafts saved before per-draft timezone existed).
+    let sendMode: 'now' | 'schedule' = 'now';
+    let scheduleDate: Date | null = null;
+    let scheduleTime = '';
+    let scheduleTimezone = this.scheduleTimezoneValue();
+    if (draft.scheduled_at) {
+      const utcDate = new Date(draft.scheduled_at);
+      scheduleTimezone = isPlatformBrowser(this.platformId) ? getUserTimezone() : scheduleTimezone;
+      scheduleDate = toZonedTime(utcDate, scheduleTimezone);
+      scheduleTime = formatTo12HourInTimezone(utcDate, scheduleTimezone);
+      sendMode = 'schedule';
+    }
+
+    this.form.patchValue({ committeeUids, subject, bodyLayout, bodyHtml, sendMode, scheduleDate, scheduleTime, scheduleTimezone }, { emitEvent: false });
     this.committeeUidsValue.set(committeeUids);
     this.subjectValue.set(subject);
     this.bodyLayoutValue.set(bodyLayout);
     this.bodyHtmlValue.set(bodyHtml);
+    this.sendModeValue.set(sendMode);
+    this.scheduleDateValue.set(scheduleDate);
+    this.scheduleTimeValue.set(scheduleTime);
+    this.scheduleTimezoneValue.set(scheduleTimezone);
     // A freshly loaded draft matches the server, so seed the saved snapshot —
     // otherwise isDirty would read true on reopen and gate preview/send off until
     // the first autosave.
-    this.recordSavedSnapshot({ subject, bodyHtml, bodyLayout: this.serializeLayout(bodyLayout), committeeUids });
+    this.recordSavedSnapshot({ subject, bodyHtml, bodyLayout: this.serializeLayout(bodyLayout), committeeUids, scheduledAt: draft.scheduled_at ?? null });
     this.fetchRecipientCountFor(committeeUids);
   }
 
@@ -970,13 +1517,23 @@ export class NewsletterManageComponent {
     combineLatest([this.form.valueChanges, toObservable(this.edEmail)])
       .pipe(
         debounceTime(1000),
-        // Never autosave while a send is in flight: the PUT would bump the
-        // newsletter's version mid-send and race the upstream status
-        // transition (the direct cause of the LFXV2-2604 duplicate-send
-        // incident). The upstream also rejects edits while status='sending',
-        // but suppressing the write here avoids surfacing that 409 as a
-        // spurious save-error toast.
-        filter(([, email]) => !this.submitting() && !this.resolvingSend() && this.hasContext() && this.hasAnythingToSave() && email.length > 0),
+        // Never autosave while a send or a schedule arm is in flight: the PUT
+        // would bump the newsletter's version mid-request and race the
+        // upstream status transition (the direct cause of the LFXV2-2604
+        // duplicate-send incident, and the same hazard for scheduleNewsletter
+        // — see runSchedule's ensureSaved$ comment). The upstream also
+        // rejects edits while status='sending', but suppressing the write
+        // here avoids surfacing that 409 as a spurious save-error toast.
+        filter(
+          ([, email]) =>
+            !this.submitting() &&
+            !this.resolvingSend() &&
+            !this.scheduling() &&
+            !this.isScheduleReadOnly() &&
+            this.hasContext() &&
+            this.hasAnythingToSave() &&
+            email.length > 0
+        ),
         filter(() => !this.snapshotMatchesLastSaved()),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -990,7 +1547,8 @@ export class NewsletterManageComponent {
       saved.subject === this.form.controls.subject.value &&
       saved.bodyHtml === this.form.controls.bodyHtml.value &&
       saved.bodyLayout === this.serializeLayout(this.form.controls.bodyLayout.value) &&
-      this.uidsEqual(saved.committeeUids, this.form.controls.committeeUids.value)
+      this.uidsEqual(saved.committeeUids, this.form.controls.committeeUids.value) &&
+      saved.scheduledAt === this.scheduleAtIso()
     );
   }
 
@@ -1093,6 +1651,10 @@ export class NewsletterManageComponent {
     };
     // Serialize once; same shape works for create and update because both
     // requests accept the same body fields.
+    // scheduled_at is always sent explicitly (including null) — PUT is
+    // full-replace, so omitting it would silently clear a previously-saved
+    // value or, worse, leave a stale one behind when the user switches back
+    // to "Send now" (see the `form` doc comment and scheduleAtIso()).
     const basePayload = {
       subject: this.form.controls.subject.value,
       body_html: this.form.controls.bodyHtml.value,
@@ -1104,11 +1666,13 @@ export class NewsletterManageComponent {
       body_layout: this.form.controls.bodyLayout.value,
       committee_uids: this.form.controls.committeeUids.value,
       ed_reply_email: this.edEmail(),
+      scheduled_at: this.scheduleAtIso(),
     };
     const snapshotKey = {
       subject: basePayload.subject,
       bodyLayout: this.serializeLayout(this.form.controls.bodyLayout.value),
       committeeUids: [...basePayload.committee_uids],
+      scheduledAt: basePayload.scheduled_at,
     };
 
     if (id) {
@@ -1154,12 +1718,13 @@ export class NewsletterManageComponent {
     );
   }
 
-  private recordSavedSnapshot(payload: { subject: string; bodyHtml: string; bodyLayout: string; committeeUids: string[] }): void {
+  private recordSavedSnapshot(payload: { subject: string; bodyHtml: string; bodyLayout: string; committeeUids: string[]; scheduledAt: string | null }): void {
     this.lastSavedSnapshot.set({
       subject: payload.subject,
       bodyHtml: payload.bodyHtml,
       bodyLayout: payload.bodyLayout,
       committeeUids: [...payload.committeeUids],
+      scheduledAt: payload.scheduledAt,
     });
   }
 

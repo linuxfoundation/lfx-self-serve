@@ -6,7 +6,8 @@ import { WeeklyBriefState } from '../interfaces/weekly-brief.interface';
 /**
  * Brief states a "Share to Mailing List" action may fire from — i.e. states
  * with saved brief_text worth sending. Excludes `empty`, `generating`, and
- * `error`.
+ * `error`. Also reused (LFXV2-3042) as the states a brief may be rated in —
+ * both actions require reviewable saved content, so the same set applies.
  */
 export const WEEKLY_BRIEF_SHAREABLE_STATES: readonly WeeklyBriefState[] = ['generated', 'edited', 'approved'] as const;
 
@@ -36,6 +37,15 @@ export const WEEKLY_BRIEF_DEFAULT_THROTTLE = {
 /** Mirrors upstream's `brief_text` bound (`UpdateCurrentWeeklyBriefRequestBody`: maxLength 20000, non-empty). */
 export const WEEKLY_BRIEF_TEXT_MAX_LENGTH = 20_000;
 
+/** Max AI-extracted action items surfaced per brief revision (LFXV2-3043) — guards against an overlong Pending Actions list and bounds AI spend per extraction. */
+export const WEEKLY_BRIEF_ACTION_ITEMS_MAX = 5;
+
+/** Max character length of an extracted action item's `text` (LFXV2-3043). Also passed as the JSON schema's `maxLength` hint to the model, but enforced defensively server-side too — the schema bound is a request to the model, not a guarantee about its response. */
+export const WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH = 300;
+
+/** Max character length of an extracted action item's `suggested_owner_role` (LFXV2-3043). Same defense-in-depth rationale as `WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH`. */
+export const WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH = 100;
+
 /**
  * Generation is async upstream (202/generating; the LLM call runs out-of-band) — the
  * card polls GET /current on this interval, up to this many attempts, until the brief
@@ -54,3 +64,6 @@ export const WEEKLY_BRIEF_TERMINAL_STATES: ReadonlySet<WeeklyBriefState> = new S
  * `WeeklyBriefErrorReason` in `weekly-brief.interface.ts` for the derived type.
  */
 export const WEEKLY_BRIEF_ERROR_REASON = { NO_SOURCES: 'no_sources' } as const;
+
+/** Number of past briefs fetched per page in the archive drawer (LFXV2-3046). The BFF caps all limit values at 50. */
+export const WEEKLY_BRIEF_ARCHIVE_PAGE_SIZE = 10;

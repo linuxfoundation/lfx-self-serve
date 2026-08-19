@@ -10,14 +10,17 @@ import {
   MyNewsletter,
   Newsletter,
   NewsletterAnalytics,
+  NewsletterCancelScheduleResult,
   NewsletterListParams,
   NewsletterListResponse,
   NewsletterOptOutListResponse,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
+  NewsletterRecipientEngagementResponse,
   NewsletterRecipientsResponse,
   NewsletterRenderPreviewPayload,
   NewsletterRenderPreviewResponse,
+  NewsletterScheduleResult,
   NewsletterSendResult,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
@@ -77,6 +80,18 @@ export class NewsletterService {
     return this.http.get<NewsletterAnalytics>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/analytics`).pipe(take(1));
   }
 
+  /**
+   * Per-recipient engagement: who the newsletter went to, delivery outcome,
+   * and every recorded open. PII-gated upstream (requires the `auditor`
+   * relation) — callers should handle 403 distinctly from getAnalytics, which
+   * a broader set of users can reach.
+   */
+  public getRecipientEngagement(projectUid: string, newsletterUid: string): Observable<NewsletterRecipientEngagementResponse> {
+    return this.http
+      .get<NewsletterRecipientEngagementResponse>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/analytics/recipients`)
+      .pipe(take(1));
+  }
+
   public listOptOuts(projectUid: string): Observable<NewsletterOptOutListResponse> {
     return this.http.get<NewsletterOptOutListResponse>(`/api/projects/${this.enc(projectUid)}/newsletters/opt-outs`).pipe(take(1));
   }
@@ -115,6 +130,29 @@ export class NewsletterService {
     const headers = new HttpHeaders({ 'If-Match': `"${version}"` });
     return this.http
       .post<NewsletterSendResult>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/send`, {}, { headers })
+      .pipe(take(1));
+  }
+
+  /**
+   * Arm a saved (or overridden) `scheduled_at` at the send provider. Omit
+   * `scheduledAt` to arm the value already saved on the draft.
+   */
+  public scheduleNewsletter(projectUid: string, newsletterUid: string, version: number, scheduledAt?: string): Observable<NewsletterScheduleResult> {
+    const headers = new HttpHeaders({ 'If-Match': `"${version}"` });
+    const body = scheduledAt ? { scheduled_at: scheduledAt } : {};
+    return this.http
+      .post<NewsletterScheduleResult>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/schedule`, body, { headers })
+      .pipe(take(1));
+  }
+
+  /**
+   * Revert an armed newsletter to `draft`. Upstream retains `scheduled_at` so
+   * re-arming doesn't require re-entering the time.
+   */
+  public cancelSchedule(projectUid: string, newsletterUid: string, version: number): Observable<NewsletterCancelScheduleResult> {
+    const headers = new HttpHeaders({ 'If-Match': `"${version}"` });
+    return this.http
+      .post<NewsletterCancelScheduleResult>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/cancel-schedule`, {}, { headers })
       .pipe(take(1));
   }
 

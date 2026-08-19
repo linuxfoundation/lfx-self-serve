@@ -65,7 +65,7 @@
             severity="secondary"
             data-testid="edit-meeting-button"
             tooltip="Edit Meeting"
-            [routerLink]="['/meetings', meeting().id, 'edit']"
+            [routerLink]="editCommands()"
             [queryParams]="editQueryParams()"></lfx-button>
         }
         @if (meeting().organizer) {
@@ -346,7 +346,7 @@
           }
         } @else if (!pastMeeting()) {
           <!-- Show RSVP Selection for authenticated invited non-organizers (upcoming meetings only) -->
-          @if (isInvited()) {
+          @if (effectivelyInvited()) {
             @defer (on viewport) {
               <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
             } @placeholder {

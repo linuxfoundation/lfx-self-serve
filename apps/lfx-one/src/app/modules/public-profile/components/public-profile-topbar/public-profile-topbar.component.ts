@@ -25,7 +25,18 @@ export class PublicProfileTopbarComponent {
   protected readonly scrolled = signal(false);
 
   protected readonly name = computed(() => this.basic()?.Name?.trim() || 'LFX Contributor');
-  protected readonly avatarImage = computed(() => this.basic()?.LogoURL || '');
+
+  // Same two-tier fallback as the hero (LFXV2-2628): prefer the uploaded avatar, fall back to
+  // LogoURL if it 404s (tracked by comparing against the exact URL that errored).
+  private readonly erroredAvatarUrl = signal<string | null>(null);
+  protected readonly avatarImage = computed(() => {
+    const basic = this.basic();
+    const uploaded = basic?.avatarUrl?.trim();
+    if (uploaded && this.erroredAvatarUrl() !== uploaded) {
+      return uploaded;
+    }
+    return basic?.LogoURL?.trim() || '';
+  });
 
   // "{Title} at {Company}" — mirrors the hero, hiding the "Individual" no-employer placeholder.
   protected readonly headline = computed(() => formatAffiliation(this.basic()));
@@ -46,5 +57,13 @@ export class PublicProfileTopbarComponent {
       this.scrolled.set(window.scrollY > IDENTITY_REVEAL_OFFSET);
       this.scrollFramePending = false;
     });
+  }
+
+  /** Record the uploaded-avatar URL as errored so `avatarImage` falls back to LogoURL. */
+  protected handleAvatarError(): void {
+    const uploaded = this.basic()?.avatarUrl?.trim();
+    if (uploaded) {
+      this.erroredAvatarUrl.set(uploaded);
+    }
   }
 }

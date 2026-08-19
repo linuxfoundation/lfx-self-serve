@@ -3,10 +3,7 @@
 
 <div class="flex flex-col gap-6" data-testid="project-detail-page">
   @if (!hasCompany()) {
-    <lfx-empty-state
-      icon="fa-light fa-building"
-      title="Select a company via Impersonate to view project details."
-      data-testid="project-detail-no-company-empty-state" />
+    <lfx-empty-state icon="fa-light fa-building" title="Select an organization to view project details." data-testid="project-detail-no-company-empty-state" />
   } @else if (heroState().status === 'notFound') {
     <!-- B1 is the sole page-level gate: a 404 hero is the whole-page not-found. -->
     <lfx-empty-state
@@ -364,7 +361,14 @@
                         <tr
                           class="border-b border-gray-100"
                           [class.bg-blue-50]="row.isViewingOrg"
-                          [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-technical-viewing-row' : null">
+                          [class.cursor-pointer]="!isActivityMode()"
+                          [class.hover:bg-blue-50]="!isActivityMode()"
+                          [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-technical-viewing-row' : null"
+                          [attr.tabindex]="isActivityMode() ? null : 0"
+                          [attr.aria-label]="isActivityMode() ? null : 'Open ' + row.orgName + ' score breakdown'"
+                          (click)="openLeaderboardDetail('technical', row)"
+                          (keydown.enter)="openLeaderboardDetail('technical', row)"
+                          (keydown.space)="openLeaderboardDetail('technical', row); $event.preventDefault()">
                           <td class="px-3 py-3.5 text-gray-500">{{ row.rank ?? '—' }}</td>
                           <td class="px-3 py-3.5">
                             <div class="flex items-center gap-2.5">
@@ -493,7 +497,14 @@
                         <tr
                           class="border-b border-gray-100"
                           [class.bg-blue-50]="row.isViewingOrg"
-                          [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-ecosystem-viewing-row' : null">
+                          [class.cursor-pointer]="!isActivityMode()"
+                          [class.hover:bg-blue-50]="!isActivityMode()"
+                          [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-ecosystem-viewing-row' : null"
+                          [attr.tabindex]="isActivityMode() ? null : 0"
+                          [attr.aria-label]="isActivityMode() ? null : 'Open ' + row.orgName + ' score breakdown'"
+                          (click)="openLeaderboardDetail('ecosystem', row)"
+                          (keydown.enter)="openLeaderboardDetail('ecosystem', row)"
+                          (keydown.space)="openLeaderboardDetail('ecosystem', row); $event.preventDefault()">
                           <td class="px-3 py-3.5 text-gray-500">{{ row.rank ?? '—' }}</td>
                           <td class="px-3 py-3.5">
                             <div class="flex items-center gap-2.5">
@@ -734,3 +745,11 @@
     </div>
   }
 </p-drawer>
+
+<!-- Leaderboard row score-breakdown drawer (LFXV2-2934) -->
+<lfx-org-leaderboard-detail-drawer
+  [dimension]="leaderboardDetailDimension()"
+  [orgName]="leaderboardDetailOrgName()"
+  [isViewingOrg]="leaderboardDetailIsViewingOrg()"
+  [projectName]="hero()?.projectName ?? ''"
+  [(visible)]="leaderboardDetailOpen" />

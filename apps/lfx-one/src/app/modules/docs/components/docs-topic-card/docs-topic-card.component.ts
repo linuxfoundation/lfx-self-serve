@@ -46,8 +46,7 @@ export class DocsTopicCardComponent {
     trainings: { icon: 'fa-solid fa-graduation-cap', container: 'bg-violet-600 text-white' },
     badges: { icon: 'fa-solid fa-award', container: 'bg-violet-600 text-white' },
     profile: { icon: 'fa-light fa-user', container: 'bg-gray-200 text-gray-900' },
-    settings: { icon: 'fa-light fa-gear', container: 'bg-gray-200 text-gray-900' },
-    transactions: { icon: 'fa-light fa-receipt', container: 'bg-gray-200 text-gray-900' },
+    account: { icon: 'fa-light fa-id-card', container: 'bg-gray-200 text-gray-900' },
     crowdfunding: { icon: 'fa-solid fa-box-dollar', container: 'bg-blue-500 text-white' },
   };
 

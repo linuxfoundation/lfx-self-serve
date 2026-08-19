@@ -4,7 +4,13 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
-import { LINKEDIN_PROFILE_PATTERN, MEETING_PASSWORD_HEADER, PAST_MEETING_RECORDING_CACHE_TTL_MS, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
+import {
+  LINKEDIN_PROFILE_PATTERN,
+  MEETING_DETAIL_CACHE_TTL_MS,
+  MEETING_PASSWORD_HEADER,
+  PAST_MEETING_RECORDING_CACHE_TTL_MS,
+  PAST_MEETING_SORT,
+} from '@lfx-one/shared/constants';
 import {
   AttachmentDownloadUrlResponse,
   BatchRegistrantOperationResponse,
@@ -50,6 +56,7 @@ export class MeetingService {
 
   private readonly http = inject(HttpClient);
   private readonly pastMeetingRecordingCache = new Map<string, { observable: Observable<PastMeetingRecording>; cachedAt: number }>();
+  private readonly meetingDetailCache = new Map<string, { observable: Observable<Meeting>; cachedAt: number }>();
 
   public getMeetings(params?: HttpParams): Observable<PaginatedResponse<Meeting>> {
     return this.http.get<PaginatedResponse<Meeting>>('/api/meetings', { params }).pipe(
@@ -191,13 +198,39 @@ export class MeetingService {
   }
 
   public getMeeting(id: string): Observable<Meeting> {
-    return this.http.get<Meeting>(`/api/meetings/${id}`).pipe(
+    return this.getMeetingDetail(id).pipe(tap((meeting) => this.meeting.set(meeting)));
+  }
+
+  /**
+   * Meeting-detail fetch with a short-TTL shared cache: the writerGuard slug
+   * resolution and MeetingManageComponent's initializeMeeting both need the same payload
+   * within one navigation — sharing the request avoids a duplicate fetch on every edit-page
+   * load. Probe-friendly: no `meeting` signal side-effect. Entries evict on error and on
+   * write (updateMeeting/deleteMeeting). Pass `skipCache` to force a fresh fetch when a caller
+   * needs enrichment that a cached payload may predate. `skipCache` replaces the cache entry with
+   * the new `request$` rather than invalidating — callers already subscribed to the prior
+   * `shareReplay(1)` observable continue to completion with the old payload, so racing
+   * `skipCache` callers can still observe a stale result.
+   */
+  public getMeetingDetail(id: string, options?: { skipCache?: boolean }): Observable<Meeting> {
+    const cached = this.meetingDetailCache.get(id);
+    if (!options?.skipCache && cached && Date.now() - cached.cachedAt < MEETING_DETAIL_CACHE_TTL_MS) {
+      return cached.observable;
+    }
+    if (cached) {
+      this.meetingDetailCache.delete(id);
+    }
+    const request$ = this.http.get<Meeting>(`/api/meetings/${id}`).pipe(
+      tap({ error: () => this.meetingDetailCache.delete(id) }),
       catchError((error) => {
         console.error(`Failed to load meeting ${id}:`, error);
         return throwError(() => error);
       }),
-      tap((meeting) => this.meeting.set(meeting))
+      shareReplay(1)
     );
+    this.pruneExpiredMeetingDetailCache();
+    this.meetingDetailCache.set(id, { observable: request$, cachedAt: Date.now() });
+    return request$;
   }
 
   public getPublicMeeting(id: string, password: string | null): Observable<{ meeting: Meeting; project: PublicMeetingProject }> {
@@ -263,6 +296,7 @@ export class MeetingService {
     }
     return this.http.put<void>(`/api/meetings/${id}`, meeting, { params }).pipe(
       take(1),
+      tap(() => this.meetingDetailCache.delete(id)),
       catchError((error) => {
         console.error(`Failed to update meeting ${id}:`, error);
         return throwError(() => error);
@@ -277,6 +311,7 @@ export class MeetingService {
     }
     return this.http.delete<void>(`/api/meetings/${id}`, { params }).pipe(
       take(1),
+      tap(() => this.meetingDetailCache.delete(id)),
       catchError((error) => {
         console.error(`Failed to delete meeting ${id}:`, error);
         return throwError(() => error);
@@ -359,10 +394,31 @@ export class MeetingService {
     );
   }
 
-  public getMeetingRegistrants(meetingUid: string, includeRsvp: boolean = false, occurrenceId?: string): Observable<MeetingRegistrant[]> {
+  /**
+   * @param failOnPartial - If true, the request fails instead of returning a truncated roster
+   *   when a later page fails server-side. Callers that rely on the complete list for
+   *   correctness (e.g. importing every registrant) should set this.
+   * @param committeeUid - Required whenever `failOnPartial` is true. The server verifies the
+   *   committee belongs to the same project as the meeting, and that the caller either has writer
+   *   access on the committee or is a member of it when the committee is invite_only (mirroring
+   *   canSendMemberInvites() client-side) — see meeting.controller.ts.
+   */
+  public getMeetingRegistrants(
+    meetingUid: string,
+    includeRsvp: boolean = false,
+    occurrenceId?: string,
+    failOnPartial: boolean = false,
+    committeeUid?: string
+  ): Observable<MeetingRegistrant[]> {
     let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
     if (occurrenceId) {
       params = params.set('occurrence_id', occurrenceId);
+    }
+    if (failOnPartial) {
+      params = params.set('fail_on_partial', 'true');
+    }
+    if (committeeUid) {
+      params = params.set('committee_uid', committeeUid);
     }
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`, { params });
   }
@@ -606,6 +662,16 @@ export class MeetingService {
         return throwError(() => error);
       })
     );
+  }
+
+  // Opportunistic sweep on insert: entries otherwise linger for the whole session once their TTL lapses.
+  private pruneExpiredMeetingDetailCache(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.meetingDetailCache) {
+      if (now - entry.cachedAt >= MEETING_DETAIL_CACHE_TTL_MS) {
+        this.meetingDetailCache.delete(key);
+      }
+    }
   }
 
   private pruneExpiredPastMeetingRecordingCache(): void {

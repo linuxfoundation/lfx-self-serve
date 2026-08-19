@@ -102,12 +102,13 @@ export class SidebarComponent {
 
   protected readonly user = this.userService.user;
   protected readonly userInitials = this.userService.userInitials;
+  protected readonly avatarUrl = this.userService.effectiveAvatarUrl;
   protected readonly personaLabels: Signal<{ label: string; icon: string; names: string[]; ariaLabel: string }[]> = this.initPersonaLabels();
   // Hide the persona badge when the user is a root-writer — executive-director is spoofed, not naturally detected.
   protected readonly showPersonaBadge: Signal<boolean> = computed(() => !this.personaService.isRootWriter());
 
   // Profile & Account tabs for the me-lens card overflow (⋯) dropdown → /profile/<route>.
-  // Computed (not static) so the read-only "My CLAs" tab appears here whenever `my-clas-enabled`
+  // Computed (not static) so the read-only "CLAs" tab appears here whenever `my-clas-enabled`
   // is on, keeping this menu in sync with the profile-layout subtab strip (both use buildProfileTabs).
   private readonly myClasEnabled = this.featureFlagService.getBooleanFlag(MY_CLAS_ENABLED_FLAG, false);
   protected readonly profileTabs: Signal<ProfileTab[]> = computed(() => buildProfileTabs(this.myClasEnabled()));

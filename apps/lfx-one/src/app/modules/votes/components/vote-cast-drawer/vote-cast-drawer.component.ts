@@ -10,9 +10,12 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { TextareaComponent } from '@components/textarea/textarea.component';
 import { PollType } from '@lfx-one/shared';
-import { INVITATION_NOT_FOUND } from '@lfx-one/shared/constants';
-import { PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { CommentResponseFormData, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import { buildCommentResponses, getCommentPromptsData, reconcileCommentFormControls } from '@lfx-one/shared/utils';
+import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteService } from '@services/vote.service';
@@ -33,8 +36,10 @@ import { catchError, filter, finalize, of, shareReplay, startWith, Subject, swit
     ButtonComponent,
     RadioButtonComponent,
     TagComponent,
+    TextareaComponent,
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
+    CodePointLengthPipe,
     DatePipe,
   ],
   templateUrl: './vote-cast-drawer.component.html',
@@ -59,6 +64,8 @@ export class VoteCastDrawerComponent {
   // === Forms ===
   public readonly form = new FormGroup({});
   public readonly abstainControl = new FormControl<boolean>(false, { nonNullable: true });
+  // Kept separate from `form` so abstain's disable()/enable() toggling of answer controls never touches comments.
+  public readonly commentForm = new FormGroup({});
 
   // === Writable Signals ===
   protected readonly loadingVote = signal<boolean>(false);
@@ -90,6 +97,9 @@ export class VoteCastDrawerComponent {
   protected readonly submitDisabled: Signal<boolean> = this.initSubmitDisabled();
   // Map<question_id, ordered choices> — recomputed when questions or formVersion changes; replaces a per-render method call in @for.
   protected readonly rankedOrderByQuestion: Signal<Map<string, UserChoice[]>> = this.initRankedOrderByQuestion();
+  protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
+  protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.vote()?.poll_comment_prompts ?? []);
+  protected readonly commentPromptsData: Signal<CommentResponseFormData[]> = this.initCommentPromptsData();
 
   public constructor() {
     // Rebuild the form when the loaded vote's questions change.
@@ -97,8 +107,19 @@ export class VoteCastDrawerComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((questions) => this.rebuildForm(questions));
 
+    // Rebuild the comment form when the loaded vote's comment prompts change.
+    toObservable(this.commentPrompts)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((prompts) => {
+        reconcileCommentFormControls(this.commentForm, prompts);
+        this.bumpFormVersion();
+      });
+
     // User input (checkbox/radio toggle, etc.) emits statusChanges; bump formVersion so the submitDisabled computed re-evaluates form.valid.
     this.form.statusChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.bumpFormVersion());
+
+    // Comment textarea input emits statusChanges (e.g. max-code-points violation); bump formVersion so submitDisabled re-evaluates commentForm.valid.
+    this.commentForm.statusChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.bumpFormVersion());
 
     // Abstain toggle disables answer controls without losing their values.
     this.abstainControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((isAbstaining) => {
@@ -118,6 +139,10 @@ export class VoteCastDrawerComponent {
         this.submitting.set(false);
         // Reset abstain so reopening starts fresh — letting valueChanges fire keeps form.enable + abstain signal in sync.
         if (this.abstainControl.value) this.abstainControl.setValue(false);
+        // Clear comment text so reopening the same vote doesn't show stale drafts.
+        for (const control of Object.values(this.commentForm.controls) as FormControl<string>[]) {
+          control.reset('');
+        }
       });
   }
 
@@ -152,12 +177,22 @@ export class VoteCastDrawerComponent {
     if (!vote || this.submitting()) return;
 
     const isAbstain = this.abstain();
+    if (!isAbstain && this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+    if (this.commentForm.invalid) {
+      this.commentForm.markAllAsTouched();
+      return;
+    }
     const userVoteContent = isAbstain ? undefined : this.buildAnswers(vote.poll_questions ?? []);
+    // Comments are independent of abstain — a voter can abstain and still leave a comment.
+    const commentResponses = buildCommentResponses(this.commentPromptsData());
 
     this.submitting.set(true);
 
     this.voteService
-      .submitMyResponse(vote.uid, { abstain: isAbstain, userVoteContent })
+      .submitMyResponse(vote.uid, { abstain: isAbstain, userVoteContent, commentResponses })
       .pipe(
         takeUntil(this.cancelSubmit$),
         takeUntilDestroyed(this.destroyRef),
@@ -221,8 +256,16 @@ export class VoteCastDrawerComponent {
     return computed(() => {
       this.formVersion(); // re-evaluate when controls are added/removed/disabled via { emitEvent: false }
       if (this.submitting()) return true;
+      if (!this.commentForm.valid) return true;
       if (this.abstain()) return false;
       return !this.form.valid;
+    });
+  }
+
+  private initCommentPromptsData(): Signal<CommentResponseFormData[]> {
+    return computed(() => {
+      this.formVersion(); // re-evaluate when comment controls are added/removed
+      return getCommentPromptsData(this.commentForm, this.commentPrompts());
     });
   }
 

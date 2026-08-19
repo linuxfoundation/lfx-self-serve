@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, isPlatformServer } from '@angular/common';
-import { afterNextRender, Component, computed, inject, makeStateKey, PLATFORM_ID, Signal, TransferState } from '@angular/core';
+import { afterNextRender, Component, computed, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
-import { PublicProfilePageState } from '@lfx-one/shared/interfaces';
+import { PublicProfilePageState, ServerRequestContext } from '@lfx-one/shared/interfaces';
 import { formatAffiliation } from '@lfx-one/shared/utils';
 import { OsanoService } from '@services/osano.service';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -43,6 +43,7 @@ export class PublicProfilePageComponent {
   private readonly meta = inject(Meta);
   private readonly transferState = inject(TransferState);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
 
   // Persists the SSR-resolved page state so the client's first paint matches the server DOM on every
   // branch — failed responses aren't in HttpTransferCache, so not-found/error would else mismatch.
@@ -128,6 +129,10 @@ export class PublicProfilePageComponent {
             tap((state) => {
               if (isPlatformServer(this.platformId) && !state.loading) {
                 this.transferState.set(this.stateKey, state);
+                // Emit a real HTTP 404 for a missing/private profile (in place, no URL change).
+                if (state.notFound && this.reqContext) {
+                  this.reqContext.notFound = true;
+                }
               }
             }),
             // Seed the first client emission from the SSR state to avoid a loading flash and a

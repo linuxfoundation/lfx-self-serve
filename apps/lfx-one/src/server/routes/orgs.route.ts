@@ -19,6 +19,7 @@ import { OrgLensProjectsController } from '../controllers/org-lens-projects.cont
 import { OrgLensRoiController } from '../controllers/org-lens-roi.controller';
 import { OrgLensGroupsController } from '../controllers/org-lens-groups.controller';
 import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
+import { requireOrgLensAccess } from '../middleware/require-org-lens-access.middleware';
 
 function buildOrgsRouter(): Router {
   const router = Router();
@@ -44,6 +45,13 @@ function buildOrgsRouter(): Router {
   router.get('/uid/:uid', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
   router.put('/uid/:uid', (req, res, next) => orgIdentityController.updateOrg(req, res, next));
   router.get('/uid/:uid/addresses', (req, res, next) => orgIdentityController.getOrgAddresses(req, res, next));
+
+  // Org-membership read gate for the whole lens family. Previously only the meetings, ROI and
+  // groups handlers called `assertOrgLensRead`; every other route let the caller-supplied `:orgUid`
+  // both select and authorize the data, which is the ADR-0038 failure. Mounting it on the shared
+  // prefix covers each existing route and any future one by default. Some routes below name the
+  // param `:accountId`; the prefix match still binds it as `orgUid`, and both carry the same SFID.
+  router.use('/:orgUid/lens', (req, res, next) => requireOrgLensAccess(req, res, next));
 
   // Spec 002: all org-lens routes key off the org account id (18-char SFID). The param is still named
   // `:orgUid` for backward compatibility; the value space is the SFID (validated by assertOrgUid).
@@ -133,10 +141,18 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/meetings/influence', (req, res, next) => orgLensMeetingsController.getInfluence(req, res, next));
 
   // LFXV2-2980 — Org Lens ROI Metrics.
-  // Register literal segments before any `/roi/.../:projectSlug` matcher, or they get consumed as a slug.
+  // Keep every literal /roi/* segment below ahead of any parameterized matcher added at the same
+  // depth, or the literal gets captured as the parameter — the trap the /lens/projects/search
+  // comment further down records.
   router.get('/:orgUid/lens/roi/summary', (req, res, next) => orgLensRoiController.getSummary(req, res, next));
   router.get('/:orgUid/lens/roi/coverage', (req, res, next) => orgLensRoiController.getCoverage(req, res, next));
   router.get('/:orgUid/lens/roi/annual', (req, res, next) => orgLensRoiController.getAnnual(req, res, next));
+  router.get('/:orgUid/lens/roi/investment-breakdown', (req, res, next) => orgLensRoiController.getInvestmentBreakdown(req, res, next));
+  router.get('/:orgUid/lens/roi/projects', (req, res, next) => orgLensRoiController.getProjects(req, res, next));
+  // Parameterized, so it stays below every literal above — `investment-breakdown` would otherwise
+  // be captured as a project slug.
+  router.get('/:orgUid/lens/roi/projects/:projectSlug/annual', (req, res, next) => orgLensRoiController.getProjectAnnual(req, res, next));
+  router.get('/:orgUid/lens/roi/projects/:projectSlug', (req, res, next) => orgLensRoiController.getProjectDetail(req, res, next));
 
   // LFXV2-1894 — Org Lens Code Contributions page (KPI strip + repositories table + commits feed).
   router.get('/:orgUid/lens/contributions', (req, res, next) => orgLensContributionsController.getContributions(req, res, next));

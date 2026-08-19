@@ -12,8 +12,8 @@ import {
   NAV_LENS_COOKIE_KEY,
   ORG_LENS_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
-import { Lens, LensOption, NavLens } from '@lfx-one/shared/interfaces';
-import { deriveAllowedLenses } from '@lfx-one/shared/utils';
+import { Lens, LensGrantInputs, LensOption, NavLens } from '@lfx-one/shared/interfaces';
+import { deriveAllowedLenses, isHybridLensUser } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { filter, take } from 'rxjs';
 
@@ -56,8 +56,15 @@ export class LensService {
   public readonly availableLenses: Signal<LensOption[]> = this.initAvailableLenses();
   /** Lenses shown in the sidebar switcher. Mirrors {@link availableLenses} except for hybrid personas, who get a merged project entry instead of separate foundation + project buttons. */
   public readonly displayLenses: Signal<LensOption[]> = this.initDisplayLenses();
-  /** True when the user holds both a board role (ED/Board Member) AND a project role (Maintainer/Contributor). */
-  public readonly isHybridPersona: Signal<boolean> = computed(() => this.personaService.hasBoardRole() && this.personaService.hasProjectRole());
+  /** Single source of the persona/grant booleans, so lens visibility and the hybrid merge always agree. */
+  private readonly lensGrantInputs: Signal<LensGrantInputs> = this.initLensGrantInputs();
+  /**
+   * True when the user can reach both the foundation and project lenses, from any grant source —
+   * a board+project role pair, LF staff membership, a root-writer grant, or `writer` grants.
+   * Shares {@link lensGrantInputs} with {@link getAllowedLensIds} so the merged switcher entry
+   * cannot disagree with which lenses actually render.
+   */
+  public readonly isHybridPersona: Signal<boolean> = computed(() => isHybridLensUser(this.lensGrantInputs()));
   /** Lens to highlight in the switcher UI. Hybrid personas merge foundation + project into the 'project' entry, so a foundation-scoped active lens highlights 'project'. */
   public readonly displayActiveLens: Signal<Lens> = computed(() => {
     const active = this.activeLens();
@@ -186,14 +193,19 @@ export class LensService {
    * `MainLayoutComponent.syncLensFromRoute` is the one caller that re-asserts.
    */
   private getAllowedLensIds(): readonly Lens[] {
-    return deriveAllowedLenses({
+    return deriveAllowedLenses(this.lensGrantInputs());
+  }
+
+  private initLensGrantInputs(): Signal<LensGrantInputs> {
+    return computed(() => ({
       hasBoardRole: this.personaService.hasBoardRole(),
       hasProjectRole: this.personaService.hasProjectRole(),
       isRootWriter: this.personaService.isRootWriter(),
       hasWriterFoundation: this.writerGrantsService.hasWriterFoundation(),
       hasWriterProject: this.writerGrantsService.hasWriterProject(),
       isOrgLensEnabled: this.isOrgLensEnabled(),
-    });
+      isLFStaff: this.personaService.isLFStaff(),
+    }));
   }
 
   private persistToCookie(lens: Lens): void {

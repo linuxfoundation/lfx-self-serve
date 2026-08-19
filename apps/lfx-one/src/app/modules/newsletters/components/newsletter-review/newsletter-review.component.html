@@ -14,7 +14,11 @@
         data-testid="newsletter-review-subject">
         {{ subjectDisplay() }}
       </h2>
-      <lfx-tag value="Draft" severity="warn" data-testid="newsletter-review-draft-tag"></lfx-tag>
+      @if (isScheduleReadOnly()) {
+        <lfx-tag value="Scheduled" severity="info" data-testid="newsletter-review-draft-tag"></lfx-tag>
+      } @else {
+        <lfx-tag value="Draft" severity="warn" data-testid="newsletter-review-draft-tag"></lfx-tag>
+      }
       @if (savedLabel(); as label) {
         <span class="flex items-center gap-1 text-xs text-gray-500" data-testid="newsletter-review-saved-indicator">
           <i class="fa-light fa-circle-check text-emerald-500"></i>
@@ -62,7 +66,7 @@
           ariaLabel="Retry loading groups"
           data-testid="newsletter-review-audience-retry-btn">
         </lfx-button>
-      } @else {
+      } @else if (!isScheduleReadOnly()) {
         <lfx-button
           label="Edit"
           icon="fa-light fa-pen"
@@ -126,16 +130,18 @@
           </div>
         </div>
       </div>
-      <lfx-button
-        label="Edit"
-        icon="fa-light fa-pen"
-        severity="secondary"
-        [outlined]="true"
-        size="small"
-        (onClick)="editContent.emit()"
-        ariaLabel="Edit content"
-        data-testid="newsletter-review-content-edit-btn">
-      </lfx-button>
+      @if (!isScheduleReadOnly()) {
+        <lfx-button
+          label="Edit"
+          icon="fa-light fa-pen"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          (onClick)="editContent.emit()"
+          ariaLabel="Edit content"
+          data-testid="newsletter-review-content-edit-btn">
+        </lfx-button>
+      }
     </div>
     @if (hasBody()) {
       <div class="flex justify-start">
@@ -173,54 +179,151 @@
           </div>
         </div>
       </div>
-      <lfx-button
-        label="Edit"
-        icon="fa-light fa-pen"
-        severity="secondary"
-        [outlined]="true"
-        size="small"
-        (onClick)="editSend.emit()"
-        ariaLabel="Edit send settings"
-        data-testid="newsletter-review-send-edit-btn">
-      </lfx-button>
+      @if (!isScheduleReadOnly()) {
+        <lfx-button
+          label="Edit"
+          icon="fa-light fa-pen"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          (onClick)="editSend.emit()"
+          ariaLabel="Edit send settings"
+          data-testid="newsletter-review-send-edit-btn">
+        </lfx-button>
+      }
     </div>
-    <div class="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-gray-100">
-      <lfx-button
-        label="Send test"
-        icon="fa-regular fa-paper-plane"
-        severity="secondary"
-        [outlined]="true"
-        size="small"
-        [disabled]="!canSendTest()"
-        [loading]="testSending()"
-        (onClick)="sendTest.emit()"
-        [ariaLabel]="'Send a test newsletter to ' + edEmail()"
-        data-testid="newsletter-review-send-test-btn">
-      </lfx-button>
-      <lfx-button
-        label="Send now"
-        icon="fa-regular fa-paper-plane"
-        severity="primary"
-        size="small"
-        [disabled]="!canSend()"
-        [loading]="sending()"
-        (onClick)="send.emit()"
-        data-testid="newsletter-review-send-now-btn">
-      </lfx-button>
-    </div>
+
+    @if (isScheduleReadOnly()) {
+      <div
+        class="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 flex items-center justify-between gap-4"
+        data-testid="newsletter-review-schedule-readonly-banner">
+        <div class="flex items-center gap-3">
+          <i class="fa-regular fa-clock text-blue-500"></i>
+          <div class="text-sm text-gray-700">{{ scheduleSummary() || 'This newsletter is scheduled.' }} Cancel the schedule to edit.</div>
+        </div>
+        <lfx-button
+          label="Cancel schedule"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          [loading]="cancelingSchedule()"
+          (onClick)="cancelSchedule.emit()"
+          data-testid="newsletter-review-cancel-schedule-btn">
+        </lfx-button>
+      </div>
+    } @else {
+      <div class="rounded-lg border border-gray-200 px-4 py-3 flex flex-col gap-4 pt-2" data-testid="newsletter-review-schedule-panel">
+        <div class="text-sm font-medium text-gray-900">When should this go out?</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" role="group" aria-label="When should this go out?">
+          @for (option of sendModeOptions; track option.value) {
+            <button
+              type="button"
+              [attr.aria-pressed]="sendMode() === option.value"
+              class="flex items-start gap-3 rounded-lg border-2 px-4 py-3 text-left transition-colors"
+              [class.border-blue-500]="sendMode() === option.value"
+              [class.bg-blue-50]="sendMode() === option.value"
+              [class.border-gray-200]="sendMode() !== option.value"
+              (click)="selectSendMode(option.value)"
+              [attr.data-testid]="'newsletter-review-schedule-mode-' + option.value">
+              <span
+                class="flex h-9 w-9 items-center justify-center rounded-full shrink-0"
+                [class.bg-blue-100]="sendMode() === option.value"
+                [class.text-blue-600]="sendMode() === option.value"
+                [class.bg-gray-100]="sendMode() !== option.value"
+                [class.text-gray-500]="sendMode() !== option.value">
+                <i [class]="option.icon"></i>
+              </span>
+              <span class="flex flex-col gap-0.5 min-w-0">
+                <span class="text-sm font-medium text-gray-900">{{ option.label }}</span>
+                <span class="text-xs text-gray-500">{{ option.description }}</span>
+              </span>
+            </button>
+          }
+        </div>
+
+        @if (sendMode() === 'schedule') {
+          <div class="flex flex-col gap-3 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3" data-testid="newsletter-review-schedule-details">
+            <p class="text-xs text-gray-500" data-testid="newsletter-review-schedule-rules">{{ scheduleRulesText }}</p>
+            <div class="flex items-center gap-3 flex-wrap">
+              <lfx-calendar
+                [form]="form()"
+                control="scheduleDate"
+                appendTo="body"
+                placeholder="Select date"
+                [minDate]="scheduleMinDate()"
+                [maxDate]="scheduleMaxDate()"
+                data-testid="newsletter-review-schedule-date"></lfx-calendar>
+              <lfx-time-picker
+                [form]="form()"
+                control="scheduleTime"
+                placeholder="Select time"
+                [selectedDate]="form().get('scheduleDate')?.value ?? null"
+                [minDateTime]="scheduleMinDateTime()"
+                [maxDateTime]="scheduleMaxDate()"
+                data-testid="newsletter-review-schedule-time"></lfx-time-picker>
+            </div>
+            @if (scheduleWindowMessage(); as message) {
+              <div class="text-xs text-amber-600" data-testid="newsletter-review-schedule-window-error">{{ message }}</div>
+            } @else if (scheduleSummary()) {
+              <div class="text-xs text-gray-500" data-testid="newsletter-review-schedule-summary">{{ scheduleSummary() }}</div>
+            }
+          </div>
+        }
+      </div>
+
+      <div class="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-gray-100">
+        <lfx-button
+          label="Send test"
+          icon="fa-regular fa-paper-plane"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          [disabled]="!canSendTest()"
+          [loading]="testSending()"
+          (onClick)="sendTest.emit()"
+          [ariaLabel]="'Send a test newsletter to ' + edEmail()"
+          data-testid="newsletter-review-send-test-btn">
+        </lfx-button>
+        @if (sendMode() === 'schedule') {
+          <lfx-button
+            label="Schedule"
+            icon="fa-regular fa-clock"
+            severity="primary"
+            size="small"
+            [disabled]="!canSchedule()"
+            [loading]="scheduling()"
+            (onClick)="schedule.emit()"
+            data-testid="newsletter-review-schedule-submit-btn">
+          </lfx-button>
+        } @else {
+          <lfx-button
+            label="Send now"
+            icon="fa-regular fa-paper-plane"
+            severity="primary"
+            size="small"
+            [disabled]="!canSend()"
+            [loading]="sending()"
+            (onClick)="send.emit()"
+            data-testid="newsletter-review-send-now-btn">
+          </lfx-button>
+        }
+      </div>
+    }
   </div>
 
-  <!-- Destructive actions -->
-  <div class="flex justify-start">
-    <lfx-button
-      label="Delete draft"
-      icon="fa-light fa-trash"
-      severity="danger"
-      [text]="true"
-      size="small"
-      [loading]="deleting()"
-      (onClick)="delete.emit()"
-      data-testid="newsletter-review-delete-btn">
-    </lfx-button>
-  </div>
+  @if (!isScheduleReadOnly()) {
+    <!-- Destructive actions -->
+    <div class="flex justify-start">
+      <lfx-button
+        label="Delete draft"
+        icon="fa-light fa-trash"
+        severity="danger"
+        [text]="true"
+        size="small"
+        [loading]="deleting()"
+        (onClick)="delete.emit()"
+        data-testid="newsletter-review-delete-btn">
+      </lfx-button>
+    </div>
+  }
 </div>

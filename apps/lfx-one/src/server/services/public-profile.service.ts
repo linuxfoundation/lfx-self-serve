@@ -18,10 +18,12 @@ import {
   PUBLIC_PROFILE_SERVICE_NAME,
   PUBLIC_PROFILE_TRAINING_STATUS_ALLOWLIST,
   PUBLIC_PROFILE_TRAINING_TYPE_ALLOWLIST,
+  PUBLIC_PROFILE_TRAINING_TYPE_KNOWN_EXCLUDED,
   PUBLIC_PROFILE_USERNAME_PATTERN,
   PUBLIC_PROFILES_BUCKET_URL_ENV,
 } from '../constants';
 import { MicroserviceError } from '../errors';
+import { deriveAvatarUrl } from '../utils/avatar-url.util';
 import { logger } from './logger.service';
 
 /**
@@ -66,7 +68,19 @@ function asRecordArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.map(asRecord).filter((entry): entry is Record<string, unknown> => entry !== undefined) : [];
 }
 
-function projectBasic(value: unknown): PublicProfileBasic | undefined {
+// deriveAvatarUrl throws when CDN_URL_PREFIX is set but misconfigured (not an absolute http(s) URL) —
+// that's the right behavior for the upload path (a real config error worth failing loudly), but this
+// endpoint has no LogoURL-fallback signal for it, so a bad env var must degrade to "no avatarUrl"
+// rather than 500 the whole public-profile response.
+function safeDeriveAvatarUrl(username: string): string | undefined {
+  try {
+    return deriveAvatarUrl(username) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function projectBasic(value: unknown, username?: string): PublicProfileBasic | undefined {
   const basic = asRecord(value);
   if (!basic) {
     return undefined;
@@ -76,10 +90,11 @@ function projectBasic(value: unknown): PublicProfileBasic | undefined {
   // to keep this endpoint's render-only PII boundary intact.
   const firstUsername = asRecordArray(basic['Identities'])
     .map((identity) => pickString(identity['Username']))
-    .find((username) => !!username && !!username.trim());
+    .find((identityUsername) => !!identityUsername && !!identityUsername.trim());
   return {
     Name: pickString(basic['Name']),
     LogoURL: pickString(basic['LogoURL']),
+    avatarUrl: (username && safeDeriveAvatarUrl(username)) || undefined,
     TwitterID: pickString(basic['TwitterID']),
     LinkedInID: pickString(basic['LinkedInID']),
     GithubID: pickString(basic['GithubID']),
@@ -109,29 +124,43 @@ function projectTechnicalContribution(value: unknown): PublicProfileTechnicalCon
   return { projects };
 }
 
-/** Blanks the epoch-zero placeholder date the artifact writes for "no date"; passes other values through. */
+/**
+ * Blanks the epoch-zero placeholder date, passing other values through. Uses `startsWith('1970')`
+ * (tighter than myprofile's `includes`) so only a leading epoch year counts as the placeholder.
+ */
 function scrubEpochDate(value: unknown): string | undefined {
   const date = pickString(value);
   if (date === undefined) {
     return undefined;
   }
-  return date.includes(PUBLIC_PROFILE_EPOCH_PLACEHOLDER) ? '' : date;
+  return date.startsWith(PUBLIC_PROFILE_EPOCH_PLACEHOLDER) ? '' : date;
 }
 
 // Public trainings, myprofile parity: keep allow-listed statuses + types, blank epoch dates, sort by
 // name. Raw `Status` drives the filter only and is never projected to the client.
-function projectTrainingActivities(value: unknown): PublicProfileTraining[] | undefined {
+function projectTrainingActivities(value: unknown, req?: Request): PublicProfileTraining[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
-  return asRecordArray(value)
-    .filter((activity) => {
-      const status = pickString(activity['Status']);
-      const type = pickString(activity['Type']);
-      return (
-        status !== undefined && PUBLIC_PROFILE_TRAINING_STATUS_ALLOWLIST.has(status) && type !== undefined && PUBLIC_PROFILE_TRAINING_TYPE_ALLOWLIST.has(type)
-      );
-    })
+  let droppedForUnknownType = 0;
+  const kept = asRecordArray(value).filter((activity) => {
+    const status = pickString(activity['Status']);
+    const type = pickString(activity['Type']);
+    const statusAllowed = status !== undefined && PUBLIC_PROFILE_TRAINING_STATUS_ALLOWLIST.has(status);
+    const typeAllowed = type !== undefined && PUBLIC_PROFILE_TRAINING_TYPE_ALLOWLIST.has(type);
+    // Drift signal: an allow-listed Status with a Type that's neither allow-listed nor a known
+    // excluded type (exam/subscription/bundle) means the myprofile vocabulary likely drifted — count it.
+    if (statusAllowed && type !== undefined && !typeAllowed && !PUBLIC_PROFILE_TRAINING_TYPE_KNOWN_EXCLUDED.has(type)) {
+      droppedForUnknownType++;
+    }
+    return statusAllowed && typeAllowed;
+  });
+  if (droppedForUnknownType > 0) {
+    logger.warning(req, 'project_public_profile', 'Dropped training rows with an unrecognized Type', {
+      dropped_for_unknown_type: droppedForUnknownType,
+    });
+  }
+  return kept
     .map((activity) => ({
       Name: pickString(activity['Name']),
       Type: pickString(activity['Type']),
@@ -141,8 +170,8 @@ function projectTrainingActivities(value: unknown): PublicProfileTraining[] | un
     .sort((a, b) => (a.Name ?? '').localeCompare(b.Name ?? ''));
 }
 
-// Public certifications, myprofile parity: completed only, drop epoch/absent StartDate. Raw `Status`
-// drives the filter only and is never projected to the client.
+// Public certifications: completed only, sorted by name. Stricter than myprofile parity — also drops
+// an absent StartDate and matches the epoch date with `startsWith`. Raw `Status` is never projected.
 function projectCertificationActivities(value: unknown): PublicProfileCertification[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
@@ -155,7 +184,7 @@ function projectCertificationActivities(value: unknown): PublicProfileCertificat
         status !== undefined &&
         PUBLIC_PROFILE_CERTIFICATION_STATUS_ALLOWLIST.has(status) &&
         startDate !== undefined &&
-        !startDate.includes(PUBLIC_PROFILE_EPOCH_PLACEHOLDER)
+        !startDate.startsWith(PUBLIC_PROFILE_EPOCH_PLACEHOLDER)
       );
     })
     .map((activity) => ({
@@ -163,7 +192,8 @@ function projectCertificationActivities(value: unknown): PublicProfileCertificat
       Type: pickString(activity['Type']),
       StartDate: pickString(activity['StartDate']),
       EndDate: pickString(activity['EndDate']),
-    }));
+    }))
+    .sort((a, b) => (a.Name ?? '').localeCompare(b.Name ?? ''));
 }
 
 function projectBadges(value: unknown): PublicProfileBadge[] | undefined {
@@ -180,14 +210,14 @@ function projectBadges(value: unknown): PublicProfileBadge[] | undefined {
  * Projects the raw S3 artifact down to the render-only allowlist — fail closed, so any field not
  * listed here never reaches the client. This is the sole PII boundary for the anonymous endpoint.
  */
-export function projectPublicProfile(record: Record<string, unknown>): PublicProfile {
+export function projectPublicProfile(record: Record<string, unknown>, req?: Request, username?: string): PublicProfile {
   return {
     isPublic: resolvePublicFlag(record),
-    basic: projectBasic(record['basic']),
+    basic: projectBasic(record['basic'], username),
     About: pickString(record['About']),
     technical_contribution: projectTechnicalContribution(record['technical_contribution']),
     certification_activities: projectCertificationActivities(record['certification_activities']),
-    training_activities: projectTrainingActivities(record['training_activities']),
+    training_activities: projectTrainingActivities(record['training_activities'], req),
     badges: projectBadges(record['badges']),
   };
 }
@@ -335,6 +365,6 @@ export class PublicProfileService {
     }
 
     const record = parsed as Record<string, unknown>;
-    return projectPublicProfile(record);
+    return projectPublicProfile(record, req, username);
   }
 }

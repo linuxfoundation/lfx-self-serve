@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 {{- include "lfx-self-serve.staticConfigMaps.rootValidate" . }}
+{{- include "lfx-self-serve.environment.gatewayOnlyValidate" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -47,6 +48,21 @@ spec:
       {{- with .Values.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . | quote }}
       {{- end }}
       containers:
         - name: {{ .Chart.Name }}

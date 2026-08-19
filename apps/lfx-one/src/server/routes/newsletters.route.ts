@@ -51,6 +51,9 @@ router.get('/:newsletterUid', (req, res, next) => newsletterController.getNewsle
 router.put('/:newsletterUid', (req, res, next) => newsletterController.updateNewsletter(req, res, next));
 router.delete('/:newsletterUid', (req, res, next) => newsletterController.deleteNewsletter(req, res, next));
 router.post('/:newsletterUid/send', (req, res, next) => newsletterController.sendNewsletter(req, res, next));
+router.post('/:newsletterUid/schedule', (req, res, next) => newsletterController.scheduleNewsletter(req, res, next));
+router.post('/:newsletterUid/cancel-schedule', (req, res, next) => newsletterController.cancelScheduleNewsletter(req, res, next));
 router.get('/:newsletterUid/analytics', (req, res, next) => newsletterController.getAnalytics(req, res, next));
+router.get('/:newsletterUid/analytics/recipients', (req, res, next) => newsletterController.getRecipientEngagement(req, res, next));
 
 export default router;

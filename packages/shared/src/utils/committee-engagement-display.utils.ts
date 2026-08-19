@@ -19,10 +19,11 @@ export function toCommitteeEngagementWindow(windowId: string): CommitteeEngageme
  * (there is signal to act on, unlike a never-invited member) — but operates on the already-classified
  * response row rather than re-deriving the tier client-side. Re-deriving from the response's rounded
  * `rate` would disagree with the server at threshold boundaries (e.g. 0.395 displays as 0.40 but
- * classifies `Low`), so the served `classification` is authoritative. `Emeritus` and the
- * tenure-grace `High` can never match. Rows from a degraded response (`data_available: false`) are
- * zeroed with `invited: 0` and classify `Inactive` — or `Emeritus` / tenure-grace `High` for the
- * roster exceptions the response contract documents — so they never read as at-risk here.
+ * classifies `Low`), so the served `classification` is authoritative. `Emeritus`, `LF Staff`
+ * (LFXV2-3101), and the tenure-grace `High` can never match. Rows from a degraded response
+ * (`data_available: false`) are zeroed with `invited: 0` and classify `Inactive` — or `Emeritus` /
+ * tenure-grace `High` for the roster exceptions the response contract documents — so they never
+ * read as at-risk here.
  */
 export function isCommitteeEngagementRowAtRisk(row: CommitteeMemberEngagement): boolean {
   return row.classification === 'Low' || (row.classification === 'Inactive' && row.invited > 0);

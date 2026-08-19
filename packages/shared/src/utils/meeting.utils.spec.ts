@@ -19,11 +19,13 @@ import {
   SURVEY_COLOR,
   VOTE_COLOR,
 } from '../constants';
-import {
+import type {
   CustomRecurrencePattern,
   Meeting,
+  MeetingCommittee,
   MeetingOccurrence,
   MeetingRecurrence,
+  MeetingRegistrant,
   PastMeeting,
   PastMeetingSummary,
   PastOccurrenceSummary,
@@ -37,11 +39,15 @@ import {
   getMeetingSeriesUid,
   buildMeetingOrganizerChip,
   buildMeetingOrganizerMailto,
+  buildImportSummary,
   buildRecurrenceNeverEndDate,
   buildRecurrenceSummary,
   collectMeetingOrganizers,
   compareMeetingPeopleByHostThenName,
   convertRecurrenceToPattern,
+  extractRegistrantEmails,
+  filterUnlistedEmails,
+  getMeetingEditCommands,
   getMeetingOrganizerDisplayName,
   isCalendarDeadlinePast,
   isMeetingOccurrenceCancelled,
@@ -57,6 +63,8 @@ import {
   resolveRsvpOccurrenceId,
   resolveSurveyCalendarColors,
   resolveVoteCalendarColors,
+  sanitizeMeetingCommittees,
+  sanitizeMeetingCommitteeUids,
   selectCommitteeCadenceMeeting,
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
@@ -990,6 +998,20 @@ describe('buildMeetingOccurrenceRoute', () => {
   });
 });
 
+describe('getMeetingEditCommands', () => {
+  it('prefixes foundation-owned meetings with /foundation', () => {
+    expect(getMeetingEditCommands({ id: 'abc-123', is_foundation: true })).toEqual(['/', 'foundation', 'meetings', 'abc-123', 'edit']);
+  });
+
+  it('prefixes regular-project meetings with /project', () => {
+    expect(getMeetingEditCommands({ id: 'abc-123', is_foundation: false })).toEqual(['/', 'project', 'meetings', 'abc-123', 'edit']);
+  });
+
+  it('returns null when is_foundation is absent so callers fall back to the flat path', () => {
+    expect(getMeetingEditCommands({ id: 'abc-123' })).toBeNull();
+  });
+});
+
 describe('getMeetingSeriesUid', () => {
   it('returns meeting_id for past-meeting payloads whose id is the composite occurrence id', () => {
     const past = { id: 'series-1-1789551000000', meeting_id: 'series-1' } as PastMeeting;
@@ -1094,5 +1116,112 @@ describe('buildOccurrenceNavTimeline', () => {
 
     expect(result[0].duration).toBe(30);
     expect(result[1].duration).toBe(45);
+  });
+});
+
+describe('sanitizeMeetingCommittees', () => {
+  it('returns [] for null, undefined, and empty input', () => {
+    expect(sanitizeMeetingCommittees(null)).toEqual([]);
+    expect(sanitizeMeetingCommittees(undefined)).toEqual([]);
+    expect(sanitizeMeetingCommittees([])).toEqual([]);
+  });
+
+  it('drops null entries, blank uids, and keeps valid committees', () => {
+    const valid: MeetingCommittee = { uid: 'group-1', name: 'TSC' };
+    const result = sanitizeMeetingCommittees([null, { uid: null as unknown as string }, { uid: '' }, { uid: '   ' }, valid, undefined]);
+
+    expect(result).toEqual([valid]);
+  });
+});
+
+describe('sanitizeMeetingCommitteeUids', () => {
+  it('returns [] for null, undefined, and empty input', () => {
+    expect(sanitizeMeetingCommitteeUids(null)).toEqual([]);
+    expect(sanitizeMeetingCommitteeUids(undefined)).toEqual([]);
+    expect(sanitizeMeetingCommitteeUids([])).toEqual([]);
+  });
+
+  it('drops null, undefined, and blank uids', () => {
+    expect(sanitizeMeetingCommitteeUids([null, undefined, '', '   ', 'group-1', 'group-2'])).toEqual(['group-1', 'group-2']);
+  });
+});
+
+/** Builds a minimal MeetingRegistrant fixture; extractRegistrantEmails only reads `email`. */
+function registrant(email: string): MeetingRegistrant {
+  return { email } as MeetingRegistrant;
+}
+
+describe('extractRegistrantEmails', () => {
+  it('returns trimmed emails and counts registrants with no email', () => {
+    const result = extractRegistrantEmails([registrant('a@example.com'), registrant('  b@example.com  '), registrant(''), registrant('   ')]);
+
+    expect(result.emails).toEqual(['a@example.com', 'b@example.com']);
+    expect(result.skippedNoEmail).toBe(2);
+  });
+
+  it('de-duplicates case-insensitively, preserving first-seen casing', () => {
+    const result = extractRegistrantEmails([registrant('Person@Example.com'), registrant('person@example.com'), registrant('PERSON@EXAMPLE.COM')]);
+
+    expect(result.emails).toEqual(['Person@Example.com']);
+    expect(result.skippedNoEmail).toBe(0);
+  });
+
+  it('handles an all-blank roster', () => {
+    const result = extractRegistrantEmails([registrant(''), registrant('  '), registrant(undefined as unknown as string)]);
+
+    expect(result.emails).toEqual([]);
+    expect(result.skippedNoEmail).toBe(3);
+  });
+
+  it('returns an empty result for empty or nullish input', () => {
+    expect(extractRegistrantEmails([])).toEqual({ emails: [], skippedNoEmail: 0 });
+    expect(extractRegistrantEmails(null)).toEqual({ emails: [], skippedNoEmail: 0 });
+    expect(extractRegistrantEmails(undefined)).toEqual({ emails: [], skippedNoEmail: 0 });
+  });
+});
+
+describe('filterUnlistedEmails', () => {
+  it('drops emails already present in alreadyListed, case-insensitively', () => {
+    const result = filterUnlistedEmails(['a@example.com', 'B@Example.com', 'c@example.com'], ['a@example.com', 'b@example.com']);
+
+    expect(result).toEqual(['c@example.com']);
+  });
+
+  it('returns all emails unchanged when alreadyListed is empty', () => {
+    expect(filterUnlistedEmails(['a@example.com'], [])).toEqual(['a@example.com']);
+  });
+
+  it('returns an empty array when emails is empty', () => {
+    expect(filterUnlistedEmails([], ['a@example.com'])).toEqual([]);
+  });
+});
+
+describe('buildImportSummary', () => {
+  it('reports a single added address in singular form', () => {
+    expect(buildImportSummary('Q3 Roadmap', 1, 0, 0)).toBe('Added 1 address from "Q3 Roadmap".');
+  });
+
+  it('reports multiple added addresses in plural form', () => {
+    expect(buildImportSummary('Q3 Roadmap', 3, 0, 0)).toBe('Added 3 addresses from "Q3 Roadmap".');
+  });
+
+  it('appends an already-listed count when present', () => {
+    expect(buildImportSummary('Q3 Roadmap', 2, 1, 0)).toBe('Added 2 addresses from "Q3 Roadmap" — 1 already listed.');
+  });
+
+  it('appends a singular skipped-no-email note', () => {
+    expect(buildImportSummary('Q3 Roadmap', 2, 0, 1)).toBe('Added 2 addresses from "Q3 Roadmap" — 1 registrant had no email and was skipped.');
+  });
+
+  it('appends a plural skipped-no-email note', () => {
+    expect(buildImportSummary('Q3 Roadmap', 2, 0, 3)).toBe('Added 2 addresses from "Q3 Roadmap" — 3 registrants had no email and were skipped.');
+  });
+
+  it('combines already-listed and skipped-no-email notes', () => {
+    expect(buildImportSummary('Q3 Roadmap', 1, 2, 1)).toBe('Added 1 address from "Q3 Roadmap" — 2 already listed — 1 registrant had no email and was skipped.');
+  });
+
+  it('reports zero added addresses in plural form', () => {
+    expect(buildImportSummary('Q3 Roadmap', 0, 4, 0)).toBe('Added 0 addresses from "Q3 Roadmap" — 4 already listed.');
   });
 });

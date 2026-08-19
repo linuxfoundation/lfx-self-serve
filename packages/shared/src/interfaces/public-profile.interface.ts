@@ -41,6 +41,14 @@ export interface PublicProfileSocialLink {
 export interface PublicProfileBasic {
   Name?: string;
   LogoURL?: string;
+  /**
+   * Proxy-derived avatar URL (camelCase — unlike the PascalCase fields above, not sourced from the
+   * upstream artifact). Guessed from the profile's username using the same key convention as the
+   * avatar-upload service; existence is not verified server-side. The client should prefer this
+   * over LogoURL and fall back to LogoURL on load error, since it reflects any avatar the user has
+   * uploaded through this app, which LogoURL (a separate, batch-generated artifact) does not.
+   */
+  avatarUrl?: string;
   TwitterID?: string;
   LinkedInID?: string;
   GithubID?: string;

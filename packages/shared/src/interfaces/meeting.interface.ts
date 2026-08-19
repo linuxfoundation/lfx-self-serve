@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type { PAST_MEETING_SORT } from '../constants/meeting.constants';
-import { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
-import { TagSeverity } from './components.interface';
+import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
+import type { TagSeverity } from './components.interface';
 
 // ============================================================================
 // V1 Legacy Summary Interfaces (still used by transformV1SummaryToV2)
@@ -323,10 +323,14 @@ export interface Meeting {
   /** Current user's RSVP for this meeting (null when the user hasn't responded).
    * Populated by /api/user/meetings only. Absent on other Meeting-returning endpoints. */
   my_rsvp?: MeetingRsvp | null;
-  /** Project name */
-  project_name: string;
-  /** Project slug */
-  project_slug: string;
+  /** Project name — populated on query-service list payloads; on the authenticated detail
+   * response (`GET /api/meetings/:uid`) it is populated via BFF enrichment and is
+   * absent when that enrichment fails (and from the raw ITX detail payload). */
+  project_name?: string;
+  /** Project slug — populated on query-service list payloads; on the authenticated detail
+   * response (`GET /api/meetings/:uid`) it is populated via BFF enrichment and is
+   * absent when that enrichment fails (and from the raw ITX detail payload). */
+  project_slug?: string;
   /** Whether the project is a foundation (top-level entity) */
   is_foundation?: boolean;
   /** Parent project UID (for subprojects under a foundation) */
@@ -475,6 +479,32 @@ export interface MeetingTemplateGroup {
   meetingType: MeetingType;
   /** Array of templates for this meeting type */
   templates: MeetingTemplate[];
+}
+
+/**
+ * Dropdown option for the "import registrants from a meeting" picker (LFXV2-2607).
+ * `label` is the display string (title + date); `title` is kept separately so
+ * import summaries can name the meeting cleanly.
+ */
+export interface MeetingSelectOption {
+  /** Meeting id passed to the registrants fetch */
+  value: string;
+  /** Display label, e.g. "Q3 Roadmap — Jul 3, 2026" */
+  label: string;
+  /** Bare meeting title, for summary copy */
+  title: string;
+}
+
+/**
+ * Result of pulling invite-ready emails off a meeting's registrant list.
+ * `emails` is de-duplicated (case-insensitive, first-seen casing preserved);
+ * `skippedNoEmail` counts registrants that carried no usable email.
+ */
+export interface RegistrantEmailExtraction {
+  /** Unique, trimmed registrant emails ready to feed the invite flow */
+  emails: string[];
+  /** Count of registrants skipped because they had no email */
+  skippedNoEmail: number;
 }
 
 /**
@@ -1250,6 +1280,17 @@ export interface UrlMetadataResponse {
 }
 
 /**
+ * Slim parent (foundation) project context nested in {@link PublicMeetingProject} — resolved
+ * server-side (LFXV2-3266) so anonymous visitors on public meeting pages get foundation
+ * attribution without the client needing an authenticated `/api/projects/:uid` call.
+ */
+export type PublicMeetingParentProject = {
+  uid: string;
+  name: string;
+  slug: string;
+};
+
+/**
  * Slim project context returned alongside public meeting endpoints.
  * Only the fields needed for the join page — callers must not assume
  * any other project fields are present.
@@ -1260,6 +1301,8 @@ export type PublicMeetingProject = {
   logo_url: string;
   uid: string;
   parent_uid: string;
+  /** Resolved foundation project, or `null` when top-level or unresolvable (LFXV2-3266). */
+  parent: PublicMeetingParentProject | null;
 };
 
 /**

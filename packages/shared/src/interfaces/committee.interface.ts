@@ -423,6 +423,19 @@ export interface Committee {
   mailing_list?: string | null;
   /** Chat channel URL or identifier associated with the group (plain string from upstream). Set to null to clear. */
   chat_channel?: string | null;
+  /**
+   * Whether the committee has a Slack incoming webhook configured. The raw `chat_webhook_url` is
+   * a bearer credential and is deliberately never returned by any read — see
+   * {@link CommitteeSettingsData.chat_webhook_url}. This boolean is the only signal reads get,
+   * sourced directly from the upstream-computed {@link CommitteeSettingsData.has_chat_webhook}
+   * (LFXV2-3094 / lfx-v2-committee-service PR #179) — the URL itself is never inspected here.
+   *
+   * Sourced from `GET /committees/:uid/settings` (fetched by `getCommitteeById` alongside the base
+   * committee resource), unlike `has_mailing_list`, which list endpoints enrich too. Absence on a
+   * list result (`getCommittees`, `getCommitteesByIds`, etc.) means "not looked up here", not "not
+   * configured" — check the single-committee endpoint before relying on it being `false`.
+   */
+  has_slack_webhook?: boolean;
 
   // NOTE: chair/co_chair are NOT returned by GET /committees/{uid}.
   // Leadership is derived from committee members with role.name === "Chair" / "Vice Chair".
@@ -456,6 +469,20 @@ export interface Committee {
   my_role?: CommitteeMemberRole | 'Member';
   /** Caller's member UID in this committee. Absent for non-members. */
   my_member_uid?: string;
+  /** Source-labeled external entities linked to this committee (e.g. OCG groups/events). Linked activity metadata only — never overrides category, governance, or other LFX-owned attributes. */
+  external_sources?: CommitteeExternalSource[];
+}
+
+/** A single source-labeled external entity linked to a committee (e.g. an OCG group or event). */
+export interface CommitteeExternalSource {
+  provider: 'ocg';
+  entity_type: 'community' | 'group' | 'event';
+  label: string;
+  url: string;
+  external_id?: string;
+  external_category?: string;
+  external_region?: string;
+  external_event_category?: string;
 }
 
 /**
@@ -575,6 +602,20 @@ export interface CommitteeSettingsData {
   member_visibility?: CommitteeMemberVisibility;
   /** Update show meeting attendees setting */
   show_meeting_attendees?: boolean;
+  /**
+   * Update or clear the Slack incoming webhook URL (must match `hooks.slack.com/services/...`).
+   * Lives on the settings sub-resource, not the base committee object, per LFXV2-3094 — the
+   * webhook is deliberately kept off the base resource so it isn't visible to every committee
+   * viewer. Write-only — never echoed back on any read; see {@link Committee.has_slack_webhook}.
+   */
+  chat_webhook_url?: string | null;
+  /**
+   * Whether a Slack incoming webhook is configured — computed server-side by upstream
+   * (`chat_webhook_url` set to a non-empty value), never the raw URL itself. Read-only: only ever
+   * present on a `GET`/`PUT .../settings` response, never accepted on a write. See
+   * {@link Committee.has_slack_webhook}, which is sourced from this field.
+   */
+  has_chat_webhook?: boolean;
   /** Update the list of users with manage (write) access */
   writers?: CommitteeUser[];
   /** Update the list of users with review (audit) access */

@@ -1,13 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate } from '@angular/common';
+import { DatePipe, formatDate, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
+import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, PollType, VoteResponseStatus } from '@lfx-one/shared';
 import {
+  CommentResultPageView,
   MyVoteResponse,
   PollCommentResult,
   RankedQuestionView,
@@ -17,18 +19,34 @@ import {
   VoteResultsQuestion,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
+import { VOTE_COMMENT_RESULTS_PAGE_SIZE, VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS } from '@lfx-one/shared/constants';
+import { getVoteEndedEarlyDetailTooltip, isVoteEndedEarly, sortCommentResponsesByRecency, splitIntoParagraphs } from '@lfx-one/shared/utils';
+import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteService } from '@services/vote.service';
 import { DrawerModule } from 'primeng/drawer';
+import { PaginatorModule, PaginatorState } from 'primeng/paginator';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, distinctUntilChanged, finalize, map, of, shareReplay, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, of, shareReplay, startWith, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-results-drawer',
-  imports: [DrawerModule, TagComponent, DatePipe, PollStatusLabelPipe, PollStatusSeverityPipe, SkeletonModule, ButtonComponent, TooltipModule],
+  imports: [
+    DrawerModule,
+    TagComponent,
+    DatePipe,
+    NgTemplateOutlet,
+    PollStatusLabelPipe,
+    PollStatusSeverityPipe,
+    SkeletonModule,
+    PaginatorModule,
+    ButtonComponent,
+    TooltipModule,
+    ExpandableTextComponent,
+    LinkifyPipe,
+  ],
   templateUrl: './vote-results-drawer.component.html',
   styleUrl: './vote-results-drawer.component.scss',
 })
@@ -52,6 +70,9 @@ export class VoteResultsDrawerComponent {
   // === Outputs ===
   public readonly castVoteRequested = output<string>();
 
+  // === Constants ===
+  protected readonly commentRowsPerPageOptions = VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS;
+
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
@@ -62,6 +83,10 @@ export class VoteResultsDrawerComponent {
   protected readonly voteResultsError = signal<boolean>(false);
   /** Distinguishes "my-response request in flight" from "my-response loaded with no row"; without this, a non-participant deep-linking a closed vote would briefly route to State C instead of access-denied. */
   protected readonly myResponseLoading = signal<boolean>(false);
+  /** True when the most recent my-response call failed (non-404) — a transient failure must not collapse into access-denied. */
+  protected readonly myResponseError = signal<boolean>(false);
+  /** Per-prompt paginator state ({ first, rows }) for the comment-results lists, keyed by prompt_id. */
+  protected readonly commentPaginatorState = signal<Map<string, PaginatorState>>(new Map());
 
   // === Shared Observables ===
   private readonly voteId$ = toObservable(this.voteId).pipe(shareReplay({ bufferSize: 1, refCount: true }));
@@ -85,6 +110,7 @@ export class VoteResultsDrawerComponent {
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = this.initQuestionsWithResults();
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = this.initRankedQuestions();
   protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
+  protected readonly paginatedCommentResults: Signal<CommentResultPageView[]> = this.initPaginatedCommentResults();
   protected readonly votingMethodText: Signal<string> = this.initVotingMethodText();
   protected readonly rankedMethodDescription: Signal<string> = this.initRankedMethodDescription();
 
@@ -106,6 +132,10 @@ export class VoteResultsDrawerComponent {
     const id = this.vote()?.uid;
     if (id) this.castVoteRequested.emit(id);
     this.visible.set(false);
+  }
+
+  protected onCommentPageChange(promptId: string, event: PaginatorState): void {
+    this.commentPaginatorState.update((prev) => new Map(prev).set(promptId, { first: event.first ?? 0, rows: event.rows ?? VOTE_COMMENT_RESULTS_PAGE_SIZE }));
   }
 
   // === Private Initializers ===
@@ -289,14 +319,63 @@ export class VoteResultsDrawerComponent {
     });
   }
 
+  /** Prompts come from the vote detail (poll_comment_prompts), not the results payload — the
+   *  results endpoint only reports prompts that have responses, which hid the Comments section
+   *  entirely on zero-response votes. Responses left-join in by prompt_id when present, sorted
+   *  newest-first (pagination slices the already-sorted list, so page 1 always shows the most
+   *  recent comments). If the detail fetch supplied no prompts (e.g. it failed and the list-vote
+   *  fallback lacks them), degrade to the results payload's prompts that have responses. A failed
+   *  results fetch suppresses the section entirely — otherwise each prompt would render "No
+   *  responses yet" and a load failure would masquerade as a genuine zero-response vote. */
   private initCommentResults(): Signal<PollCommentResult[]> {
     return computed(() => {
-      const results = this.voteResults();
-      if (!results?.comment_results?.length) {
-        return [];
+      if (this.voteResultsError()) return [];
+
+      const commentResults = this.voteResults()?.comment_results ?? [];
+      const detailPrompts = this.vote()?.poll_comment_prompts;
+
+      if (!detailPrompts?.length) {
+        return commentResults.flatMap((cr) => (cr.responses.length > 0 ? [{ ...cr, responses: sortCommentResponsesByRecency(cr.responses) }] : []));
       }
 
-      return results.comment_results.filter((cr) => cr.comments.length > 0);
+      const resultsByPromptId = new Map(commentResults.map((cr) => [cr.prompt.prompt_id, cr]));
+
+      return detailPrompts.map((prompt) => {
+        const result = resultsByPromptId.get(prompt.prompt_id);
+        return {
+          prompt,
+          responses: sortCommentResponsesByRecency(result?.responses ?? []),
+          total_responses: result?.total_responses,
+        };
+      });
+    });
+  }
+
+  /** Slices each prompt's responses to its current page. The offset is clamped to the last valid
+   *  page so a stale Map entry (e.g. from a previously opened vote with more comments, or after a
+   *  rows-per-page change) can never render an empty page. */
+  private initPaginatedCommentResults(): Signal<CommentResultPageView[]> {
+    return computed(() => {
+      const stateByPrompt = this.commentPaginatorState();
+
+      return this.commentResults().map((cr) => {
+        const totalResponses = cr.responses.length;
+        const state = stateByPrompt.get(cr.prompt.prompt_id);
+        const rows = state?.rows ?? VOTE_COMMENT_RESULTS_PAGE_SIZE;
+        const lastPageFirst = Math.max(0, Math.ceil(totalResponses / rows) - 1) * rows;
+        const first = Math.min(state?.first ?? 0, lastPageFirst);
+
+        return {
+          ...cr,
+          responses: cr.responses.slice(first, first + rows).map((response) => ({
+            ...response,
+            paragraphs: splitIntoParagraphs(response.comment_text),
+          })),
+          totalResponses,
+          first,
+          rows,
+        };
+      });
     });
   }
 
@@ -339,18 +418,34 @@ export class VoteResultsDrawerComponent {
     });
   }
 
-  /** Fetches the current user's vote_response row in voter scope; tracks loading separately so initVoterState can distinguish "loaded null" (access-denied) from "still pending". */
+  /** Fetches the current user's vote_response row in voter scope; tracks loading separately so initVoterState can distinguish "loaded null" (access-denied) from "still pending". visible is part of the key because hosts keep selectedVoteId set across close — a voteId-only key would make reopening the same vote a no-op and leave myResponseError latched, so the "Try reopening this vote" copy could never recover. The !visible branch returns EMPTY (not of(null)) so the last loaded response survives the close animation — vote/voteResults stay populated during close, so clearing my-response would flip voterState to access_denied while the drawer is still sliding out. Retention is keyed to the vote the response was loaded for: hosts update selectedVoteId before closing, so a row retained across a voteId change would paint the prior vote's "submitted" state onto the new vote. */
   private initMyResponse(): Signal<MyVoteResponse | null> {
+    // Vote the retained response belongs to — close-with-same-vote keeps it; a voteId change clears it.
+    let responseVoteId: string | null = null;
     return toSignal(
-      combineLatest([this.voteId$, toObservable(this.audience)]).pipe(
-        switchMap(([id, audience]) => {
+      combineLatest([this.voteId$, toObservable(this.audience), toObservable(this.visible)]).pipe(
+        switchMap(([id, audience, visible]) => {
           if (!id || audience !== 'voter') {
             this.myResponseLoading.set(false);
+            this.myResponseError.set(false);
+            responseVoteId = null;
             return of(null);
           }
+          if (!visible) {
+            // Closing — reset flags but keep the last response when it belongs to the still-current vote; emitting null here would collapse voterState to access_denied mid-close-animation, while retaining another vote's row would show a false "submitted" state on the new vote.
+            this.myResponseLoading.set(false);
+            this.myResponseError.set(false);
+            return responseVoteId === id ? EMPTY : of(null);
+          }
           this.myResponseLoading.set(true);
+          this.myResponseError.set(false);
           return this.voteService.getMyVoteResponse(id).pipe(
-            catchError(() => of(null)),
+            tap(() => (responseVoteId = id)),
+            // The service maps 404 to null; anything reaching this catch is a real failure — surface an error state instead of access-denied.
+            catchError(() => {
+              this.myResponseError.set(true);
+              return of(null);
+            }),
             finalize(() => this.myResponseLoading.set(false))
           );
         })
@@ -368,7 +463,8 @@ export class VoteResultsDrawerComponent {
       const isVoter = this.audience() === 'voter';
       // Access-denied: voter_removed wins; voter with loaded-null row is a non-participant deep-link.
       if (my?.voter_removed) return 'access_denied';
-      if (isVoter && !this.myResponseLoading() && !my) return 'access_denied';
+      // A failed my-response call (non-404) must not collapse into access-denied — the template shows the error state instead.
+      if (isVoter && !this.myResponseLoading() && !this.myResponseError() && !my) return 'access_denied';
       const closed = v.status === PollStatus.ENDED;
       const decoratedResponseStatus = this.listVote()?.response_status ?? v.response_status;
       const submitted = my?.vote_status === 'responded' || decoratedResponseStatus === VoteResponseStatus.RESPONDED;

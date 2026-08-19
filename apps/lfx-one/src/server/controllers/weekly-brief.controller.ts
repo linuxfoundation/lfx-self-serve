@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { WEEKLY_BRIEF_TEXT_MAX_LENGTH } from '@lfx-one/shared/constants';
-import { GenerateWeeklyBriefRequest, SaveWeeklyBriefRequest } from '@lfx-one/shared/interfaces';
+import { GenerateWeeklyBriefRequest, RateWeeklyBriefRequest, SaveWeeklyBriefRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -75,14 +75,66 @@ function validateGenerateBriefBody(body: unknown): { ok: true; value: GenerateWe
  * dialog shows a specific rendered revision — the caller must send it back so the
  * service can reject a stale approval (another writer saved an edit in between)
  * instead of silently sharing content the caller never actually reviewed.
+ *
+ * Same bound as `validateRateBriefBody`/`validateClearRatingBody` (integer, >= 1), not the
+ * looser finite-number check this used to have (LFXV2-3080): shareBrief's revision only ever
+ * fed a local equality comparison, but shareToSlack's now also crosses the wire as the
+ * committee-service share-to-chat request body, which declares it `UInt64, Minimum(1)` — a
+ * malformed value here should fail loudly at this boundary with a clear 400, not ride into an
+ * upstream Goa validation error. `isSafeInteger`, not just `isInteger`: a value beyond
+ * `Number.MAX_SAFE_INTEGER` (e.g. `1e20`) still passes `isInteger` but can't faithfully
+ * represent a `UInt64` — same failure mode as an out-of-range value, just one `isInteger` alone
+ * wouldn't catch.
  */
 function validateShareBriefBody(body: unknown): { ok: true; value: { revision: number } } | { ok: false; fieldErrors: Record<string, string> } {
   if (!body || typeof body !== 'object') {
     return { ok: false, fieldErrors: { body: 'Request body must be a JSON object' } };
   }
   const b = body as Record<string, unknown>;
-  if (typeof b['revision'] !== 'number' || !Number.isFinite(b['revision'] as number)) {
-    return { ok: false, fieldErrors: { revision: 'revision is required and must be a finite number' } };
+  if (typeof b['revision'] !== 'number' || !Number.isSafeInteger(b['revision']) || b['revision'] < 1) {
+    return { ok: false, fieldErrors: { revision: 'revision is required and must be an integer of at least 1' } };
+  }
+  return { ok: true, value: { revision: b['revision'] as number } };
+}
+
+/**
+ * Narrow `req.body` to a RateWeeklyBriefRequest for the rating endpoint. `rating` is a
+ * closed two-value type, not a free string — whitelisted explicitly like every other
+ * body-narrowing function in this file, rather than forwarding req.body verbatim.
+ */
+function validateRateBriefBody(body: unknown): { ok: true; value: RateWeeklyBriefRequest } | { ok: false; fieldErrors: Record<string, string> } {
+  if (!body || typeof body !== 'object') {
+    return { ok: false, fieldErrors: { body: 'Request body must be a JSON object' } };
+  }
+  const b = body as Record<string, unknown>;
+  const fieldErrors: Record<string, string> = {};
+  if (b['rating'] !== 'up' && b['rating'] !== 'down') {
+    fieldErrors['rating'] = 'rating is required and must be "up" or "down"';
+  }
+  if (typeof b['revision'] !== 'number' || !Number.isInteger(b['revision']) || b['revision'] < 1) {
+    fieldErrors['revision'] = 'revision is required and must be an integer of at least 1';
+  }
+  if (Object.keys(fieldErrors).length > 0) {
+    return { ok: false, fieldErrors };
+  }
+  return { ok: true, value: { rating: b['rating'] as 'up' | 'down', revision: b['revision'] as number } };
+}
+
+/**
+ * Narrow `req.body` to `{ revision: number }` for the clear-rating (DELETE) endpoint. The caller
+ * must send back the revision they actually saw so the service can reject a stale clear (PR #1361
+ * review) instead of silently deleting whatever revision happens to be current. Same bound as
+ * `validateRateBriefBody`'s (and now `validateShareBriefBody`'s) revision check (integer, >= 1) —
+ * rate and clear are the same closed pair of endpoints and should share one boundary contract
+ * (PR #1361 review, round 2).
+ */
+function validateClearRatingBody(body: unknown): { ok: true; value: { revision: number } } | { ok: false; fieldErrors: Record<string, string> } {
+  if (!body || typeof body !== 'object') {
+    return { ok: false, fieldErrors: { body: 'Request body must be a JSON object' } };
+  }
+  const b = body as Record<string, unknown>;
+  if (typeof b['revision'] !== 'number' || !Number.isInteger(b['revision']) || b['revision'] < 1) {
+    return { ok: false, fieldErrors: { revision: 'revision is required and must be an integer of at least 1' } };
   }
   return { ok: true, value: { revision: b['revision'] as number } };
 }
@@ -132,6 +184,90 @@ export class WeeklyBriefController {
         has_brief: !!result.brief,
         state: result.brief?.state,
         revision: result.brief?.revision,
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/committees/:committeeId/weekly-briefs
+   *
+   * Paginated archive list of past briefs for the committee, sourced from the query-service
+   * `group_weekly_brief` index. Gated by `assertCommitteeRead` — same access contract as
+   * getCurrentBrief (committee#auditor). Returns `{ data: WeeklyBrief[], page_token? }`.
+   */
+  public async listBriefs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { committeeId } = req.params;
+    const startTime = logger.startOperation(req, 'list_weekly_briefs', {
+      committee_id: committeeId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(committeeId, req, next, {
+          operation: 'list_weekly_briefs',
+          service: 'weekly_brief_controller',
+        })
+      ) {
+        return;
+      }
+
+      await assertCommitteeRead(req, committeeId, 'list_weekly_briefs');
+
+      const limit = typeof req.query['limit'] === 'string' ? req.query['limit'] : undefined;
+      const rawPageToken = req.query['page_token'];
+      const pageToken = typeof rawPageToken === 'string' && rawPageToken.length <= 512 ? rawPageToken : undefined;
+      const { data, page_token } = await this.weeklyBriefService.listBriefs(req, committeeId, {
+        ...(limit && { limit }),
+        ...(pageToken && { page_token: pageToken }),
+      });
+
+      logger.success(req, 'list_weekly_briefs', startTime, {
+        committee_id: committeeId,
+        count: data.length,
+        has_more_pages: !!page_token,
+      });
+
+      res.json({ data, page_token });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/committees/:committeeId/weekly-briefs/action-items
+   *
+   * Gated by `assertCommitteeRead` (committee#auditor) — same gate as getCurrentBrief, since
+   * this is a read of brief-derived content, not a new privilege. Extraction failures degrade
+   * to an empty list inside `WeeklyBriefService.getActionItems` (LFXV2-3043) — this controller
+   * never sees an extraction error as distinct from "no items".
+   */
+  public async getActionItems(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { committeeId } = req.params;
+    const startTime = logger.startOperation(req, 'get_weekly_brief_action_items', {
+      committee_id: committeeId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(committeeId, req, next, {
+          operation: 'get_weekly_brief_action_items',
+          service: 'weekly_brief_controller',
+        })
+      ) {
+        return;
+      }
+
+      await assertCommitteeRead(req, committeeId, 'get_weekly_brief_action_items');
+
+      const result = await this.weeklyBriefService.getActionItems(req, committeeId);
+
+      logger.success(req, 'get_weekly_brief_action_items', startTime, {
+        committee_id: committeeId,
+        item_count: result.items.length,
       });
 
       res.json(result);
@@ -299,6 +435,150 @@ export class WeeklyBriefController {
       });
 
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/committees/:committeeId/weekly-briefs/share-slack
+   *
+   * Same gating shape as {@link shareBrief}: `assertCommitteeRead` (committee#auditor) closes
+   * the existence/state read this method does internally before anything else; the actual send
+   * is authorized separately and more narrowly inside the service
+   * (`project:{project_uid}#writer`).
+   */
+  public async shareToSlack(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { committeeId } = req.params;
+    const startTime = logger.startOperation(req, 'share_weekly_brief_slack', {
+      committee_id: committeeId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(committeeId, req, next, {
+          operation: 'share_weekly_brief_slack',
+          service: 'weekly_brief_controller',
+        })
+      ) {
+        return;
+      }
+
+      await assertCommitteeRead(req, committeeId, 'share_weekly_brief_slack');
+
+      const validation = validateShareBriefBody(req.body);
+      if (!validation.ok) {
+        return next(
+          ServiceValidationError.fromFieldErrors(validation.fieldErrors, 'Invalid share-weekly-brief-to-slack request body', {
+            operation: 'share_weekly_brief_slack',
+            service: 'weekly_brief_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const result = await this.weeklyBriefService.shareToSlack(req, committeeId, validation.value.revision);
+
+      logger.success(req, 'share_weekly_brief_slack', startTime, {
+        committee_id: committeeId,
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/committees/:committeeId/weekly-briefs/:briefUid/rating
+   *
+   * BFF-only feature (LFXV2-3042) — no upstream endpoint, no committee-write involved. Gated by
+   * `assertCommitteeRead`, same as `getCurrentBrief`/`shareBrief`: a rating is a personal
+   * read-time reaction to a brief the caller can already see, not a committee edit.
+   */
+  public async rateBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { committeeId, briefUid } = req.params;
+    const startTime = logger.startOperation(req, 'rate_weekly_brief', {
+      committee_id: committeeId,
+      brief_uid: briefUid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(committeeId, req, next, { operation: 'rate_weekly_brief', service: 'weekly_brief_controller' }) ||
+        !validateUidParameter(briefUid, req, next, { operation: 'rate_weekly_brief', service: 'weekly_brief_controller' })
+      ) {
+        return;
+      }
+
+      const validation = validateRateBriefBody(req.body);
+      if (!validation.ok) {
+        return next(
+          ServiceValidationError.fromFieldErrors(validation.fieldErrors, 'Invalid rate-weekly-brief request body', {
+            operation: 'rate_weekly_brief',
+            service: 'weekly_brief_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      await assertCommitteeRead(req, committeeId, 'rate_weekly_brief');
+
+      const result = await this.weeklyBriefService.rateBrief(req, committeeId, briefUid, validation.value.rating, validation.value.revision);
+
+      logger.success(req, 'rate_weekly_brief', startTime, {
+        committee_id: committeeId,
+        brief_uid: briefUid,
+        rating: result.rating,
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /api/committees/:committeeId/weekly-briefs/:briefUid/rating
+   *
+   * Clears the caller's own rating on the brief's current revision. Same gate as `rateBrief`.
+   */
+  public async clearBriefRating(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { committeeId, briefUid } = req.params;
+    const startTime = logger.startOperation(req, 'clear_weekly_brief_rating', {
+      committee_id: committeeId,
+      brief_uid: briefUid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(committeeId, req, next, { operation: 'clear_weekly_brief_rating', service: 'weekly_brief_controller' }) ||
+        !validateUidParameter(briefUid, req, next, { operation: 'clear_weekly_brief_rating', service: 'weekly_brief_controller' })
+      ) {
+        return;
+      }
+
+      const validation = validateClearRatingBody(req.body);
+      if (!validation.ok) {
+        return next(
+          ServiceValidationError.fromFieldErrors(validation.fieldErrors, 'Invalid clear-weekly-brief-rating request body', {
+            operation: 'clear_weekly_brief_rating',
+            service: 'weekly_brief_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      await assertCommitteeRead(req, committeeId, 'clear_weekly_brief_rating');
+
+      await this.weeklyBriefService.clearBriefRating(req, committeeId, briefUid, validation.value.revision);
+
+      logger.success(req, 'clear_weekly_brief_rating', startTime, {
+        committee_id: committeeId,
+        brief_uid: briefUid,
+      });
+
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

@@ -18,17 +18,19 @@ import {
 import { lfxColors } from '../constants/colors.constants';
 import { RecurrenceType } from '../enums';
 import { PollStatus } from '../enums/poll.enum';
-import {
+import type {
   BuildMeetingOccurrenceRouteOptions,
   CalendarColor,
   CustomRecurrencePattern,
   Meeting,
+  MeetingCommittee,
   MeetingHostCandidate,
   MeetingOccurrence,
   MeetingOccurrenceRoute,
   MeetingOrganizerChipModel,
   MeetingOrganizerLink,
   MeetingRecurrence,
+  MeetingRegistrant,
   MeetingUserInfo,
   OccurrenceNavItem,
   PastMeeting,
@@ -37,6 +39,7 @@ import {
   PublicMeetingOccurrencesResponse,
   QueryServiceItem,
   RecurrenceSummary,
+  RegistrantEmailExtraction,
   SummaryData,
   TranscriptCue,
   User,
@@ -73,6 +76,53 @@ export function isRecurrenceNeverEndSentinel(endDateTime: string | null | undefi
   const end = new Date(endDateTime).getTime();
   if (!Number.isFinite(end)) return false;
   return end - Date.now() >= FIFTY_YEARS_MS;
+}
+
+/**
+ * Pulls invite-ready emails off a meeting's registrant list (LFXV2-2607).
+ * Trims each email, drops blanks (counting them as skipped so the UI can report
+ * "N registrants had no email"), and de-duplicates case-insensitively while
+ * preserving the first-seen casing. The caller feeds `emails` into the existing
+ * invite dedupe/fan-out, so this deliberately does no member/invite matching.
+ */
+export function extractRegistrantEmails(registrants: MeetingRegistrant[] | null | undefined): RegistrantEmailExtraction {
+  const emails: string[] = [];
+  const seen = new Set<string>();
+  let skippedNoEmail = 0;
+
+  for (const registrant of registrants ?? []) {
+    const email = (registrant?.email ?? '').trim();
+    if (!email) {
+      skippedNoEmail++;
+      continue;
+    }
+    const key = email.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    emails.push(email);
+  }
+
+  return { emails, skippedNoEmail };
+}
+
+/** Filters `emails` down to those not already present (case-insensitively) in `alreadyListed`. */
+export function filterUnlistedEmails(emails: string[], alreadyListed: string[]): string[] {
+  const listed = new Set(alreadyListed.map((email) => email.toLowerCase()));
+  return emails.filter((email) => !listed.has(email.toLowerCase()));
+}
+
+/** Compose the import result line: how many were added, already listed, and skipped for no email. */
+export function buildImportSummary(meetingTitle: string, added: number, alreadyListed: number, skippedNoEmail: number): string {
+  const parts: string[] = [added === 1 ? `Added 1 address from "${meetingTitle}"` : `Added ${added} addresses from "${meetingTitle}"`];
+  if (alreadyListed > 0) {
+    parts.push(`${alreadyListed} already listed`);
+  }
+  if (skippedNoEmail > 0) {
+    parts.push(skippedNoEmail === 1 ? '1 registrant had no email and was skipped' : `${skippedNoEmail} registrants had no email and were skipped`);
+  }
+  return `${parts.join(' — ')}.`;
 }
 
 /**
@@ -656,6 +706,21 @@ export function buildMeetingOccurrenceRoute(
     path: ['/meetings', meetingId],
     queryParams,
   };
+}
+
+/**
+ * Builds the canonical Angular router commands for a meeting's edit page, prefixing the path with
+ * the MEETING's own project tier (`is_foundation`) rather than the viewer's transient active lens:
+ * foundation-owned meetings edit under `/foundation/meetings/{id}/edit`, all other projects under
+ * `/project/meetings/{id}/edit`. Returns null when `is_foundation` is absent (unenriched payload)
+ * so callers can fall back to the flat `/meetings/{id}/edit` path handled by `lensRedirectGuard`.
+ */
+export function getMeetingEditCommands(meeting: Pick<Meeting, 'id' | 'is_foundation'>): string[] | null {
+  if (meeting.is_foundation === undefined) {
+    return null;
+  }
+
+  return ['/', meeting.is_foundation ? 'foundation' : 'project', 'meetings', meeting.id, 'edit'];
 }
 
 /**
@@ -1249,4 +1314,32 @@ export function compareMeetingPeopleByHostThenName<T extends { host?: boolean; f
     return rankDelta;
   }
   return a.first_name?.localeCompare(b.first_name ?? '') ?? 0;
+}
+
+/**
+ * Drops null/blank committee entries from a meeting payload.
+ *
+ * PrimeNG MultiSelect builds its trigger label with `label += getLabelByValue(...)`.
+ * Unmatched values return JS `null`, and `'' + null === 'null'`, so a committees
+ * array of `[null]` / `{ uid: null }` renders the literal label "null" instead of
+ * the empty placeholder (GH-1430).
+ */
+export function sanitizeMeetingCommittees(committees: ReadonlyArray<MeetingCommittee | null | undefined> | null | undefined): MeetingCommittee[] {
+  if (!Array.isArray(committees) || committees.length === 0) {
+    return [];
+  }
+
+  return committees.filter((committee): committee is MeetingCommittee => Boolean(committee?.uid?.trim()));
+}
+
+/**
+ * Drops null/blank committee UIDs from a MultiSelect form value so the control
+ * stays `[]` rather than `[null]` / `[undefined]`.
+ */
+export function sanitizeMeetingCommitteeUids(uids: ReadonlyArray<string | null | undefined> | null | undefined): string[] {
+  if (!Array.isArray(uids) || uids.length === 0) {
+    return [];
+  }
+
+  return uids.filter((uid): uid is string => typeof uid === 'string' && uid.trim().length > 0);
 }

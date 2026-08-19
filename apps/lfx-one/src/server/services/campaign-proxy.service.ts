@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AI_MODEL, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
+import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
 
 import type {
   BulkKeywordActionRequest,
@@ -497,6 +497,12 @@ function getExtractionPrompt(programType?: CampaignProgramType): string {
 
 const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
 const SUPPORTED_PROGRAM_TYPES: ReadonlySet<CampaignProgramType> = new Set<CampaignProgramType>(['events', 'education']);
+// DERIVED from the shared constant, not a second hand-written list. CLAUDE.md requires shared
+// constants to live in `@lfx-one/shared`, and the controller already validates against this one —
+// a duplicate here would let a newly-added delivery type be accepted by the controller and
+// rejected by this service, which is the worst version of the drift: it type-checks, and the two
+// halves disagree only at runtime.
+const SUPPORTED_DELIVERY_TYPES: ReadonlySet<string> = new Set(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id));
 
 // ---------------------------------------------------------------------------
 // Background job management
@@ -613,7 +619,36 @@ export class CampaignProxyService {
       return;
     }
 
+    // Rejected rather than defaulted, unlike the fields above whose fallbacks are harmless.
+    // Bodies are cast rather than parsed at the controller, so a typo like "emial" would fall
+    // through `=== 'email'` as paid marketing and silently launch ad-copy and keyword generation
+    // — a request that MEANT to suppress that spend causing it instead. Failing loudly is the
+    // only reading that cannot cost money.
+    if (body.deliveryType !== undefined && !SUPPORTED_DELIVERY_TYPES.has(body.deliveryType)) {
+      yield { type: 'error', data: `Unsupported deliveryType. Supported: ${[...SUPPORTED_DELIVERY_TYPES].join(', ')}.` };
+      return;
+    }
+
     const isRefinement = !!body.refineFeedback && !!body.previousCopy;
+    // Resolved HERE rather than beside the copy block below, because the extraction-failure
+    // message further down promises "generating copy from URL" — which is false for email, where
+    // no copy is generated at all. A status line that names work the stream will not do is the
+    // same class of falsehood as a silent skip.
+    const isEmail = body.deliveryType === 'email';
+
+    // `/brief/generate` has its OWN refinement mode — `refineFeedback` + `previousCopy` — and it is
+    // a second door onto the same refusal. Left open, an email refinement here skipped the scrape
+    // and extraction (because `isRefinement`) AND every generator (because `isEmail`), then
+    // emitted `done`: a successful no-op, which is worse than the error it should be, because the
+    // caller is told the work happened.
+    //
+    // Same message as `streamRefinedBrief`, deliberately — one refusal reached two ways should not
+    // read as two different problems.
+    if (isEmail && isRefinement) {
+      yield { type: 'error', data: 'Refining email copy is not supported yet.' };
+      return;
+    }
+
     const isEducation = body.programType === 'education';
     const pageLabel = isEducation ? 'course page' : 'event page';
     let html = '';
@@ -668,7 +703,12 @@ export class CampaignProxyService {
         };
       } catch (error) {
         logger.warning(req, 'campaign_brief_extract', `${isEducation ? 'Course' : 'Event'} extraction failed, continuing with URL only`, { err: error });
-        yield { type: 'status', data: `Could not extract structured ${extractLabel}, generating copy from URL...` };
+        yield {
+          type: 'status',
+          data: isEmail
+            ? `Could not extract structured ${extractLabel}; continuing with the URL only.`
+            : `Could not extract structured ${extractLabel}, generating copy from URL...`,
+        };
       }
 
       const eventName = (eventDetails?.['name'] as string) || extractEventNameFromUrl(body.url);
@@ -688,66 +728,82 @@ export class CampaignProxyService {
       }
     }
 
+    // An email brief has no ad channels, so the paid default must not apply. `platforms` absence
+    // cannot carry that meaning on its own — it already means "use the default" for every paid
+    // caller — so the delivery type is read explicitly.
     const selectedPlatforms = body.platforms?.length ? body.platforms : ['google-ads'];
-    const platformList = selectedPlatforms.join(', ');
-    yield { type: 'status', data: `Generating copy for ${platformList}...` };
 
-    const copySystemPrompt = buildCopySystemPrompt(selectedPlatforms, body.programType);
-    const userPrompt = buildCopyPrompt(body, eventDetails);
-    let fullCopy = '';
+    // SKIPPED for email, not run with an empty platform list. `buildCopySystemPrompt` composes
+    // its output from per-platform sections and ends with "Keys: <joined>" — with no platforms
+    // that asks the model for a JSON object with NO keys, which is a broken call rather than a
+    // cheap one. The scrape, event details and HubSpot UTM above are what an email brief needs
+    // from this stream today; generated subject/preview/sender copy arrives with the `email-copy`
+    // endpoint (LFXV2-3198), which this path deliberately does not try to stand in for.
+    if (!isEmail) {
+      const platformList = selectedPlatforms.join(', ');
+      yield { type: 'status', data: `Generating copy for ${platformList}...` };
 
-    try {
-      for await (const token of aiChatStream(copySystemPrompt, userPrompt, signal)) {
-        yield { type: 'copy_token', data: token };
-        fullCopy += token;
-      }
-      yield { type: 'copy_done', data: null };
+      const copySystemPrompt = buildCopySystemPrompt(selectedPlatforms, body.programType);
+      const userPrompt = buildCopyPrompt(body, eventDetails);
+      let fullCopy = '';
 
       try {
-        const text = stripJsonFences(fullCopy);
-        const structured = JSON.parse(text) as Record<string, unknown>;
+        for await (const token of aiChatStream(copySystemPrompt, userPrompt, signal)) {
+          yield { type: 'copy_token', data: token };
+          fullCopy += token;
+        }
+        yield { type: 'copy_done', data: null };
 
-        truncateAdCopy(structured);
+        try {
+          const text = stripJsonFences(fullCopy);
+          const structured = JSON.parse(text) as Record<string, unknown>;
 
-        if (selectedPlatforms.includes('linkedin-ads')) {
-          const liData = (structured['linkedin_sponsored'] || (structured['platforms'] as Record<string, unknown> | undefined)?.['linkedin_sponsored']) as
-            | Record<string, unknown>
-            | undefined;
-          if (liData) {
-            const rawGeos = liData['recommended_geos'];
-            const MAX_GEO_LENGTH = 100;
-            const MAX_GEO_COUNT = 20;
-            const sanitizedGeos = (Array.isArray(rawGeos) ? rawGeos : [])
-              .filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
-              .slice(0, MAX_GEO_COUNT)
-              .map((g) =>
-                g
-                  .trim()
-                  .slice(0, MAX_GEO_LENGTH)
-                  .replace(/[^a-zA-Z0-9 ,.-]/g, '')
-              );
-            if (sanitizedGeos.length > 0) {
-              try {
-                const resolved = await resolveGeoTargets(sanitizedGeos);
-                liData['resolved_geo_targets'] = resolved;
-              } catch (geoError) {
-                logger.warning(req, 'campaign_brief_geo_resolve', 'Failed to resolve LinkedIn geo targets', { err: geoError });
+          truncateAdCopy(structured);
+
+          if (selectedPlatforms.includes('linkedin-ads')) {
+            const liData = (structured['linkedin_sponsored'] || (structured['platforms'] as Record<string, unknown> | undefined)?.['linkedin_sponsored']) as
+              | Record<string, unknown>
+              | undefined;
+            if (liData) {
+              const rawGeos = liData['recommended_geos'];
+              const MAX_GEO_LENGTH = 100;
+              const MAX_GEO_COUNT = 20;
+              const sanitizedGeos = (Array.isArray(rawGeos) ? rawGeos : [])
+                .filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
+                .slice(0, MAX_GEO_COUNT)
+                .map((g) =>
+                  g
+                    .trim()
+                    .slice(0, MAX_GEO_LENGTH)
+                    .replace(/[^a-zA-Z0-9 ,.-]/g, '')
+                );
+              if (sanitizedGeos.length > 0) {
+                try {
+                  const resolved = await resolveGeoTargets(sanitizedGeos);
+                  liData['resolved_geo_targets'] = resolved;
+                } catch (geoError) {
+                  logger.warning(req, 'campaign_brief_geo_resolve', 'Failed to resolve LinkedIn geo targets', { err: geoError });
+                }
               }
             }
           }
-        }
 
-        yield { type: 'copy_structured', data: structured };
-      } catch {
-        yield { type: 'copy_structured', data: { raw: fullCopy } };
+          yield { type: 'copy_structured', data: structured };
+        } catch {
+          yield { type: 'copy_structured', data: { raw: fullCopy } };
+        }
+      } catch (error) {
+        if (signal.aborted) return;
+        yield { type: 'error', data: `Ad copy generation failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        return;
       }
-    } catch (error) {
-      if (signal.aborted) return;
-      yield { type: 'error', data: `Ad copy generation failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
-      return;
     }
 
-    if (body.platforms?.includes('google-ads') || !body.platforms || body.platforms.length === 0) {
+    // Keywords are a Google Ads concept. The `!body.platforms` arm opts an UNSPECIFIED list in on
+    // purpose — a paid caller that names no platform still gets the google-ads default above, so
+    // it still wants keywords. Email is the one case where absence does not mean the default, and
+    // it is excluded first rather than by adding another arm to that condition.
+    if (!isEmail && (body.platforms?.includes('google-ads') || !body.platforms || body.platforms.length === 0)) {
       yield { type: 'status', data: 'Generating keyword list...' };
 
       try {
@@ -770,7 +826,12 @@ export class CampaignProxyService {
       }
     }
 
-    if (selectedPlatforms.includes('linkedin-ads') && !isRefinement) {
+    // `!isEmail` is not redundant with the platform check. Today's client never sends
+    // `linkedin-ads` alongside `deliveryType: 'email'`, but that is a CLIENT guarantee and this is
+    // a server the client does not own — `{deliveryType:'email', platforms:['linkedin-ads']}` is
+    // accepted by the type and would otherwise spend an AI call on a LinkedIn targeting strategy
+    // for a brief that has no ad channels.
+    if (!isEmail && selectedPlatforms.includes('linkedin-ads') && !isRefinement) {
       yield { type: 'status', data: 'Generating LinkedIn targeting strategy...' };
       try {
         const strategyPrompt = buildLinkedInStrategyPrompt(body, eventDetails);
@@ -810,6 +871,23 @@ export class CampaignProxyService {
 
     if (body.programType !== undefined && !SUPPORTED_PROGRAM_TYPES.has(body.programType)) {
       yield { type: 'error', data: `Unsupported programType. Supported: events, education.` };
+      return;
+    }
+
+    // Same rejection as the generate path. Lower stakes here — an unrecognised value falls to the
+    // paid branch and refines, which is what this endpoint did before the field existed — but a
+    // caller who misspells the type should be told, not quietly given the other behaviour.
+    if (body.deliveryType !== undefined && !SUPPORTED_DELIVERY_TYPES.has(body.deliveryType)) {
+      yield { type: 'error', data: `Unsupported deliveryType. Supported: ${[...SUPPORTED_DELIVERY_TYPES].join(', ')}.` };
+      return;
+    }
+
+    // Refine re-runs the ad-copy generator, so it inherits the generate path's constraint: with
+    // no platforms `buildCopySystemPrompt` asks for a JSON object with no keys. There is nothing
+    // for it to refine on an email brief either — the copy it would rewrite was never generated —
+    // so the request is refused rather than answered with a broken call.
+    if (body.deliveryType === 'email') {
+      yield { type: 'error', data: 'Refining email copy is not supported yet.' };
       return;
     }
 
@@ -899,7 +977,7 @@ export class CampaignProxyService {
     const job = jobs.get(jobId);
     if (!job) {
       logger.warning(req, 'campaign_job_status', `Job ${jobId} not found on this instance — likely routed to a different replica`, { jobId });
-      return { status: 'not_found', error: 'Lost connection to the campaign creation process. Please try again.' };
+      return { status: 'not_found', error: JOB_LOST_MESSAGE };
     }
     return job;
   }
@@ -1516,6 +1594,10 @@ function extractEventNameFromUrl(url: string): string {
 }
 
 function buildCopyPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
+  // No email branch: only the GENERATE path reaches this function, and it skips the whole ad-copy
+  // block for email before calling it. (Refine builds its prompt with `buildRefinePrompt`, not
+  // this one, and refuses email earlier still — an earlier version of this comment said "the two
+  // ad-copy paths", which named the wrong function for half of the claim.)
   const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
   const includeGoogle = platforms.includes('google-ads');
   const includeLinkedIn = platforms.includes('linkedin-ads');
@@ -1647,6 +1729,10 @@ function buildRefinePrompt(body: CampaignBriefRefineRequest): string {
   const eventBlock = body.eventDetails
     ? `\n${isEducation ? 'COURSE' : 'EVENT'}: ${body.eventDetails.name}\n${isEducation ? 'Duration' : 'Dates'}: ${body.eventDetails.dates}\n${isEducation ? '' : `City: ${body.eventDetails.city}\n`}`
     : '';
+  // No email branch: this helper belongs to the REFINE path only, and `streamRefinedBrief`
+  // rejects email before it gets here. (The comment used to name `buildCopyPrompt` — a copy of
+  // the note from that function, left behind when this one was written. Two helpers, one per
+  // path: generate uses `buildCopyPrompt`, refine uses this.)
   const platforms = body.platforms?.length ? body.platforms : ['google-ads'];
   const hasGoogle = platforms.includes('google-ads');
   const hasLinkedIn = platforms.includes('linkedin-ads');

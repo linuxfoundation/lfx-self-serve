@@ -221,6 +221,26 @@ export function formatTo12HourInTimezone(date: Date, timezone: string): string {
 }
 
 /**
+ * Formats a Date object to a short month/day format ("Aug 17") in a specific timezone.
+ * `toZonedTime` shifts the instant so the JS Date's *local-machine* getters read as the
+ * target zone's wall-clock values (same trick `formatTo12HourInTimezone` relies on) — so
+ * this reads the shifted date's local month/day rather than reformatting in UTC, which
+ * `formatShortDate` does and would reintroduce the timezone mismatch this function exists to fix.
+ * @param date The date to format (typically a UTC date)
+ * @param timezone The IANA timezone identifier (e.g., "America/Chicago")
+ * @returns Date string in short format (e.g., "Aug 17")
+ */
+export function formatShortDateInTimezone(date: Date, timezone: string): string {
+  try {
+    const zonedDate = toZonedTime(date, timezone);
+    return zonedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch (error) {
+    console.error('Error formatting date in timezone:', timezone, error);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+}
+
+/**
  * Parses a 12-hour time string and returns hours and minutes
  */
 export function parseTime12Hour(time: string): { hours: number; minutes: number } | null {
@@ -543,5 +563,103 @@ export function formatRelativeTime(date: Date): string {
 
 /** Short date label for range previews, e.g. "Apr 18, 2026". */
 export function formatShortDate(date: Date): string {
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
+
+/**
+ * Short relative-time label for a future instant ("in 5 min", "in 2 hr", "in
+ * 3 days") — the forward-looking counterpart to `formatRelativeTime`, which
+ * only reads correctly for past instants (negative diffs there collapse to
+ * "just now"). Meant for scheduling summaries, not live countdowns.
+ */
+export function formatFutureRelativeTime(date: Date): string {
+  const timestamp = date.getTime();
+  if (!Number.isFinite(timestamp)) {
+    return 'unknown';
+  }
+  const diffMs = timestamp - Date.now();
+  if (diffMs <= 0) return 'now';
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return 'in less than a minute';
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 60) return `in ${diffMin} min`;
+  const diffHr = Math.floor(diffMs / 3_600_000);
+  if (diffHr < 24) return `in ${diffHr} hr`;
+  const diffDay = Math.floor(diffMs / 86_400_000);
+  return `in ${diffDay} day${diffDay === 1 ? '' : 's'}`;
+}
+
+/**
+ * Formats a date-only `YYYY-MM-DD` string as "Jul 14, 2026", or returns the input unchanged when
+ * it is not a real date.
+ *
+ * Parts are parsed explicitly rather than handed to `new Date(iso)`, which would interpret the
+ * string as UTC midnight and then render it in local time — a day early for anyone west of
+ * Greenwich. The range and round-trip checks matter because `Date.UTC` silently rolls invalid
+ * parts over: month 13 becomes January of the next year, and Feb 31 becomes March 3rd. Returning
+ * the raw string makes bad warehouse data visible instead of plausible.
+ */
+export function formatIsoDateLabel(iso: string): string {
+  // Shape-checked first: splitting alone accepts trailing junk, so "2026-07-14-extra" would parse
+  // to a valid-looking date and pass every check below.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  const [year, month, day] = iso.split('-').map(Number);
+  if (!year || !month || !day) return iso;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  // The year is round-tripped alongside month and day because Date.UTC remaps years 0–99 into the
+  // 1900s: 0001-01-01 would otherwise render as "Jan 1, 1901".
+  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return iso;
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/**
+ * Render a HubSpot `updatedAt` for a marketing-email row.
+ *
+ * Two templates routinely share a name, so without a date two same-name rows are visually
+ * identical and an operator cannot tell which one they are cloning.
+ *
+ * Returns '' rather than a placeholder when the field is absent: `updatedAt` is optional on the
+ * interface, and a dash in the metadata line would read as a value the portal reported. HubSpot
+ * also sends a date-only form, which `new Date` would parse as UTC midnight and render as the
+ * previous day in western timezones — normalising to local midnight avoids the off-by-one.
+ */
+export function formatHubSpotUpdatedAt(value: string | undefined): string {
+  if (!value) return '';
+
+  // A date-only value goes through formatIsoDateLabel, which ROUND-TRIPS year/month/day.
+  // Shape-checking alone is not enough: `2026-02-31` matches the pattern, and JS silently
+  // rolls the excess day into the next month, so `isNaN` never fires and the picker renders
+  // a confident "Mar 3, 2026" for a date that does not exist. An operator uses this value to
+  // tell two same-named templates apart, so a fabricated date is worse than none.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const label = formatIsoDateLabel(value);
+    // formatIsoDateLabel returns its input unchanged when it rejects; render nothing rather
+    // than echoing a raw ISO string into a metadata line that reads as a portal value.
+    return label === value ? '' : label;
+  }
+
+  // A TIMESTAMP carries the same hazard as the date-only form, and the earlier fix guarded only
+  // the latter: `new Date('2026-02-31T10:00:00Z')` rolls over to Mar 3 exactly as the bare date
+  // does, so the fabrication survived in this branch while the spec pinned the other one. Split
+  // the date portion off and round-trip it through the same validator before formatting.
+  const datePart = value.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart) && formatIsoDateLabel(datePart) === datePart) {
+    // formatIsoDateLabel echoes its input when it rejects, so an equal result means the calendar
+    // date does not exist — Feb 31st, year 0001, and the like.
+    return '';
+  }
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return '';
+  // Pinned to UTC for the same reason the date-only branch is: without an explicit `timeZone`,
+  // `toLocaleDateString` renders in the HOST zone, and this is an SSR app. A timestamp near
+  // midnight then formats to one date in the Node process and another in the browser, so the row
+  // text and its accessible label both change during hydration. Pinning also keeps the two
+  // branches agreeing: `2026-08-14` and `2026-08-14T23:30:00Z` must not render different days.
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }

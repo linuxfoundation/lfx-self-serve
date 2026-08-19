@@ -3,19 +3,22 @@
 
 import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup } from '@angular/forms';
+import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { Committee, CreateMailingListRequest, GroupsIOMailingList, JoinMode, MailingListPickerDialogResult } from '@lfx-one/shared/interfaces';
+import { Committee, CreateMailingListRequest, GroupsIOMailingList, JoinMode, MailingListPickerDialogResult, ValidationError } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
+import { SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
+import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
 
 import { MailingListPickerDialogComponent } from '../mailing-list-picker-dialog/mailing-list-picker-dialog.component';
 import { CommitteeSettingsComponent } from '../committee-settings/committee-settings.component';
@@ -31,6 +34,7 @@ import { MailingListTypePipe } from './pipes/mailing-list-type.pipe';
 })
 export class CommitteeSettingsTabComponent {
   private readonly committeeService = inject(CommitteeService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly lensService = inject(LensService);
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
@@ -38,6 +42,7 @@ export class CommitteeSettingsTabComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
   private readonly dialogService = inject(DialogService);
+  private readonly userService = inject(UserService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -51,6 +56,20 @@ export class CommitteeSettingsTabComponent {
   public deleting = signal(false);
   public savingMl = signal(false);
   public removingMlUid = signal<string | null>(null);
+  /** Whether the Slack webhook "Replace" affordance is open, revealing the input for a new URL. Reset to false on a successful save, or on a committee refresh unless the control has an unsaved (dirty) edit in progress — see the constructor. */
+  public editingSlackWebhookUrl = signal(false);
+  /**
+   * True only when the user clicked Remove (`removeSlackWebhookStaged`), not merely when the
+   * control is dirty-and-empty — Replace also leaves the control empty if the user types then
+   * backspaces everything, and that should NOT be treated as "delete the webhook" on save. Reset
+   * to false on Cancel, on a successful save, and the moment the user types a non-empty value
+   * (typing a real URL supersedes a staged removal — see the constructor's valueChanges
+   * subscription). Also reset alongside `editingSlackWebhookUrl` on a committee refresh as a
+   * defensive backstop, though that branch can't currently fire while true: `onRemoveSlackWebhook`
+   * always marks the control dirty, so a staged removal keeps `preserveWebhookEdit` true until
+   * one of the three active resets above already cleared this flag.
+   */
+  public slackWebhookRemovalStaged = signal(false);
   private mlLoadingInternal = signal(true);
 
   // Subject to trigger ML list refresh after association changes
@@ -68,6 +87,10 @@ export class CommitteeSettingsTabComponent {
     show_meeting_attendees: new FormControl(false),
     chat_channel: new FormControl<string | null>(null),
     website: new FormControl<string | null>(null),
+    // Write-only — never patched from the committee (Committee.has_slack_webhook is the only
+    // read signal). Reset to null when `committee` refreshes, unless the control has an unsaved
+    // (dirty) edit in progress; see the constructor.
+    chat_webhook_url: new FormControl<string | null>(null, [Validators.pattern(SLACK_INCOMING_WEBHOOK_URL_PATTERN)]),
   });
 
   // Project mailing lists (loaded when committee has a project_uid — used by the picker dialog)
@@ -79,6 +102,35 @@ export class CommitteeSettingsTabComponent {
   // Derived loading state: true until first emission from associatedMailingLists
   public mlLoading = computed(() => this.mlLoadingInternal() && !!this.committee()?.uid);
 
+  // Dark-launch gate for the whole Slack webhook card — mirrors committee-overview.component.ts's
+  // 'wg-weekly-brief' flag on the brief card itself, but as its own flag. Purely a UI-visibility
+  // gate: the real enforcement boundary is the server-side kill switch
+  // (ServerFeatureFlag.WeeklyBriefSlack, committee.service.ts's updateCommittee — env-var only,
+  // defaults off, this OpenFeature/GrowthBook flag can't reach it). Both must be on for a save to
+  // actually succeed; this flag alone controls whether the card renders at all, so it stays off
+  // until the feature is ready to roll out to users, independent of when the server flag flips.
+  public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
+
+  // Server-blocked (committee.service.ts's updateCommittee) as well — surfaced here too so the
+  // control renders visible-but-disabled instead of accepting an edit that will 403, matching the
+  // established pattern (weekly-brief-card, profile-panel) of gating on
+  // `userService.impersonating()` directly, not on module input plumbing.
+  public readonly impersonating = this.userService.impersonating;
+
+  // Whether the committee already has a Slack webhook configured — drives the settings card's Configured/Replace vs. empty-input display.
+  public slackWebhookConfigured = computed(() => !!this.committee()?.has_slack_webhook);
+
+  // Whether the webhook-URL input is currently rendered/editable — passed straight to
+  // CommitteeSettingsComponent as its single source of truth for that decision (not re-derived
+  // independently in the child from two separately-passed inputs, which is how the "input
+  // visible but the save didn't send it" bug happened in the first place).
+  public slackWebhookInputVisible = computed(() => this.editingSlackWebhookUrl() || !this.slackWebhookConfigured());
+
+  // Last committee uid seen by the constructor's patch subscription below — lets it tell "this
+  // component instance got reused for a different committee via route param navigation" apart
+  // from "the same committee's data just refreshed". Undefined only before the first emission.
+  private lastCommitteeUid: string | undefined;
+
   public constructor() {
     // Patch form when committee input changes
     toObservable(this.committee)
@@ -87,6 +139,18 @@ export class CommitteeSettingsTabComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((c) => {
+        // A dirty chat_webhook_url means the user has an unsaved edit in progress. Preserve it
+        // across the resulting refresh instead of silently discarding what they typed; a
+        // successful save already reset the control itself (see saveSettings' next handler), so
+        // this only ever preserves a genuinely unsaved value.
+        // But only within the SAME committee: this component instance can be reused across a
+        // route navigation from one committee to another (e.g. /groups/:id -> /groups/:id2)
+        // without being destroyed, and `dirty` alone can't tell that apart from a same-committee
+        // refresh — an unsaved edit for committee A must never survive onto committee B's form,
+        // let alone ride along into committee B's save payload.
+        const committeeChanged = this.lastCommitteeUid !== undefined && this.lastCommitteeUid !== c.uid;
+        this.lastCommitteeUid = c.uid;
+        const preserveWebhookEdit = !committeeChanged && this.form.controls.chat_webhook_url.dirty;
         this.form.patchValue({
           member_visibility: c.member_visibility || 'hidden',
           join_mode: c.join_mode || 'invite_only',
@@ -98,15 +162,40 @@ export class CommitteeSettingsTabComponent {
           show_meeting_attendees: c.show_meeting_attendees || false,
           chat_channel: c.chat_channel ?? null,
           website: c.website ?? null,
+          ...(preserveWebhookEdit ? {} : { chat_webhook_url: null }),
         });
+        if (!preserveWebhookEdit) {
+          this.editingSlackWebhookUrl.set(false);
+          this.slackWebhookRemovalStaged.set(false);
+        }
       });
 
-    // Disable form fields for read-only (Auditor) access
-    toObservable(this.canEdit)
+    // Typing a non-empty value after clicking Remove means the user changed their mind and is
+    // entering a replacement URL instead — the staged removal no longer applies, and saveSettings'
+    // payload gate must go back to keying off the typed value rather than the removal flag.
+    this.form.controls.chat_webhook_url.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => {
+      if (value) {
+        this.slackWebhookRemovalStaged.set(false);
+      }
+    });
+
+    // Disable form fields for read-only (Auditor) access, and — independently — keep
+    // chat_webhook_url specifically disabled during impersonation even when the rest of the form
+    // is editable. Server-side, committee.service.ts's updateCommittee rejects the *whole request*
+    // when chat_webhook_url is present during impersonation, not just that field — disabling only
+    // this one control client-side keeps the rest of the form saveable by simply excluding the
+    // webhook value from what saveSettings sends (it's gated on the control's own dirty flag,
+    // which a disabled-but-untouched control never sets). form.enable() re-enables every child
+    // control including chat_webhook_url, so the impersonation re-disable must run after it, in
+    // the same subscription, rather than as a separate independent one that could race.
+    combineLatest([toObservable(this.canEdit), toObservable(this.impersonating)])
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((editable) => {
+      .subscribe(([editable, impersonating]) => {
         if (editable) {
           this.form.enable();
+          if (impersonating) {
+            this.form.controls.chat_webhook_url.disable();
+          }
         } else {
           this.form.disable();
         }
@@ -189,6 +278,36 @@ export class CommitteeSettingsTabComponent {
   public saveSettings(): void {
     this.saving.set(true);
     const values = this.form.getRawValue();
+    // Gated on the control's own dirty flag, not on whether the input happens to be rendered —
+    // patchValue (constructor) never marks a control dirty, only a real user edit does, so this
+    // is "the user actually typed something" rather than "the input was visible". Gating on
+    // visibility alone would send chat_webhook_url: null on every save for a not-yet-configured
+    // committee (untouched or not), forcing a needless read-back round trip and risking
+    // clobbering a webhook someone else configured after this page loaded.
+    //
+    // A dirty-but-empty control is ambiguous on its own: it's what an explicit Remove looks
+    // like, but it's also what Replace looks like if the user types then backspaces everything
+    // without hitting Cancel. Requiring either a real typed value OR the explicit
+    // slackWebhookRemovalStaged flag (set only by Remove — see that signal's doc comment) keeps
+    // the latter case from silently deleting an already-configured webhook.
+    //
+    // `.enabled`, not just `.dirty`: getRawValue() (unlike .value) includes disabled controls'
+    // values, and disable() never clears .dirty — so a URL typed before impersonation starts
+    // stays dirty and present in `values` even after the impersonation subscription above
+    // disables the control. Without this check, that stale value would still be sent, and the
+    // server rejects the *entire* request (IMPERSONATION_READ_ONLY), blocking every other field
+    // on the same save over a value the user can no longer edit or even see change.
+    //
+    // Captured once, reused in both the payload below AND the success handler: the success
+    // handler resetting the control whenever it's merely *dirty* (regardless of whether this
+    // save actually included it) would silently wipe out a URL that was excluded by the
+    // `.enabled` check above — the user typed it, it was never sent, and then it vanished from
+    // the form too, on a save of completely unrelated fields.
+    const chatWebhookUrlIncludedInSave = !!(
+      this.form.controls.chat_webhook_url.enabled &&
+      this.form.controls.chat_webhook_url.dirty &&
+      (values.chat_webhook_url || this.slackWebhookRemovalStaged())
+    );
     this.committeeService
       .updateCommittee(this.committee().uid, {
         member_visibility: (values.member_visibility as CommitteeMemberVisibility) || undefined,
@@ -201,15 +320,54 @@ export class CommitteeSettingsTabComponent {
         show_meeting_attendees: values.show_meeting_attendees ?? false,
         chat_channel: values.chat_channel || null,
         website: values.website || null,
+        ...(chatWebhookUrlIncludedInSave ? { chat_webhook_url: values.chat_webhook_url || null } : {}),
       })
       .pipe(finalize(() => this.saving.set(false)))
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Settings saved' });
+          // Reset locally rather than relying on the refresh triggered by the emit below — that
+          // refresh is async (a refetch round-trip) and its timing shouldn't be what keeps this
+          // control's dirty/value state correct. Only when this save actually included the
+          // webhook — see chatWebhookUrlIncludedInSave's comment above.
+          if (chatWebhookUrlIncludedInSave) {
+            this.form.controls.chat_webhook_url.reset(null);
+            this.editingSlackWebhookUrl.set(false);
+            this.slackWebhookRemovalStaged.set(false);
+          }
           this.committeeUpdated.emit();
         },
-        error: () => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to save settings' });
+        error: (err: any) => {
+          const code = err?.error?.code;
+          const status = err?.status;
+          let detail = 'Failed to save settings';
+          if (status === 403 && code === 'IMPERSONATION_READ_ONLY') {
+            // Backstop only — the control is already disabled during impersonation (see the
+            // constructor's combineLatest subscription), so this path shouldn't normally be
+            // reachable from this form. Kept for direct-API-caller parity with the server guard.
+            detail = 'Configuring the Slack webhook is unavailable while impersonating another user.';
+          } else if (status === 403 && code === 'NOT_PROJECT_WRITER') {
+            // Unlike IMPERSONATION_READ_ONLY above, this one IS reachable from this form: canEdit
+            // (committee-view.component.ts) is true for a direct committee-writer grant, which
+            // updateCommittee's project-writer check on chat_webhook_url (committee.service.ts)
+            // does not accept — a committee writer without project-writer access sees an editable
+            // field with no reliable client-side signal to disable it against (see that commit's
+            // PR-description trade-off note). This branch is the only explanation the user gets.
+            // Explicit "nothing was saved" clause: unlike the 409 branch above, this check runs
+            // before updateWithETag/updateCommitteeSettings, so every other field on this same
+            // save (visibility, join mode, chat_channel, etc.) was rejected too, not just the
+            // webhook — without saying so, this reads like the 409 branch's "other changes saved".
+            detail = 'Only project writers can configure the Slack webhook. No changes were saved. Contact a project administrator.';
+          } else if (status === 409 && code === 'FEATURE_DISABLED') {
+            // committee.service.ts's ServerFeatureFlag.WeeklyBriefSlack kill switch — checked
+            // first in updateCommittee, before any write, so — like NOT_PROJECT_WRITER above —
+            // nothing on this save persisted, not just the webhook field.
+            detail = 'Slack webhook sharing is not enabled in this environment yet. No changes were saved.';
+          } else if (status === 400) {
+            const fieldErrors = err?.error?.errors as ValidationError[] | undefined;
+            detail = fieldErrors?.[0]?.message ?? detail;
+          }
+          this.messageService.add({ severity: 'error', summary: 'Error', detail });
         },
       });
   }

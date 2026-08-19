@@ -64,7 +64,14 @@
               "lodash.isempty",
               "quill-delta"
             ],
-            "externalDependencies": ["snowflake-sdk", "@opentelemetry/api", "@opentelemetry/semantic-conventions", "pdfkit", "google-ads-api"]
+            "externalDependencies": [
+              "snowflake-sdk",
+              "@opentelemetry/api",
+              "@opentelemetry/semantic-conventions",
+              "pdfkit",
+              "google-ads-api",
+              "@aws-sdk/client-s3"
+            ]
           },
           "configurations": {
             "production": {
@@ -176,6 +183,17 @@
           "builder": "@angular-eslint/builder:lint",
           "options": {
             "lintFilePatterns": ["src/**/*.ts", "src/**/*.html"]
+          }
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "buildTarget": "lfx-one:build:development",
+            "tsConfig": "tsconfig.spec.json",
+            "runner": "vitest",
+            "providersFile": "src/test-providers.ts",
+            "include": ["src/app/**/*.spec.ts"],
+            "watch": false
           }
         }
       }

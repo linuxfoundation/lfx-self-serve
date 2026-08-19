@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberStatus, CommitteeMemberVotingStatus } from '../enums';
-import { CommitteeInvite, CommitteePermissionLevel } from './committee.interface';
+import { CommitteeInvite, CommitteePermissionLevel, CreateCommitteeInviteRequest } from './committee.interface';
 
 /**
  * Committee member entity with complete profile and role information
@@ -184,6 +184,45 @@ export interface MemberPendingChanges {
   toUpdate: { uid: string; changes: CreateCommitteeMemberRequest }[];
   /** Member UIDs to be deleted via API */
   toDelete: string[];
+  /**
+   * Bulk email invites staged during the create-group wizard. Collected client-side and
+   * flushed on wizard completion (POST /invites) — never sent immediately, so cancelling
+   * the wizard sends nothing (LFXV2-2606).
+   */
+  toInvite: CreateCommitteeInviteRequest[];
+}
+
+/** Kind of staged operation flushed by the committee-manage wizard (GH-1608). */
+export type MemberOperationType = 'add' | 'update' | 'delete' | 'invite';
+
+/**
+ * Result of a single flushed member/invite operation.
+ * @description `identifier` traces the result back to the staged item that produced it — the
+ * member email for `add`, the member uid for `update`/`delete`, or the invitee email for
+ * `invite` — so a failure can be re-staged instead of silently discarded (GH-1608). `createdMember`
+ * carries the server-assigned record (with its real `uid`) for a successful `add`, so the staged
+ * row can be promoted to an `existing` member instead of merely dropped.
+ */
+export interface MemberOperationResult {
+  type: MemberOperationType;
+  identifier: string;
+  success: boolean;
+  createdMember?: CommitteeMember;
+}
+
+/**
+ * Identifiers of successfully-flushed operations, grouped by type, normalized (trimmed +
+ * lowercased) where the identifier is an email. Used to prune already-applied changes out of the
+ * wizard's staged state after a partial flush failure, so retry only resubmits what actually
+ * failed (GH-1608). `addedMembers` carries the server-assigned record (with its real `uid`) for
+ * each successful add, keyed by normalized email, so the staged row can be promoted to `existing`
+ * instead of dropped.
+ */
+export interface SucceededMemberOperations {
+  addedMembers: Map<string, CommitteeMember>;
+  updatedUids: Set<string>;
+  deletedUids: Set<string>;
+  invitedEmails: Set<string>;
 }
 
 /**

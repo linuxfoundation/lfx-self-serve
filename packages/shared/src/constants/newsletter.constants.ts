@@ -42,6 +42,12 @@ export const NEWSLETTER_AI_MAX_TOKENS = 12_000;
 // global one.
 export const NEWSLETTER_ANALYTICS_FETCH_CONCURRENCY = 5;
 
+// Upstream caps the `top_links` click-analytics breakdown at the 20 highest-click
+// links (lfx-v2-newsletter-service PR #76). Mirrored here so the "Top clicked
+// links" card's display note and defensive display slice can't drift from
+// upstream or from each other.
+export const NEWSLETTER_TOP_LINKS_LIMIT = 20;
+
 // Per-request timeout for the send endpoint, overriding the API client's 30s
 // default. The new upstream accepts sends in well under a second (202 +
 // background fan-out), but while a pre-async newsletter-service is deployed
@@ -66,3 +72,19 @@ export const NEWSLETTER_SPACING_DEFAULT = '0px';
 // set is the render superset in the newsletter service, so it's the safe
 // default; a draft with a stored `template_key` uses that instead.
 export const NEWSLETTER_DEFAULT_TEMPLATE_KEY = 'aaif-user-community';
+
+// UI-enforced minimum lead time for arming a schedule (LFXV2-2685). Must be
+// >= the upstream's *effective* floor, which the send orchestrator computes
+// as max(configured NEWSLETTER_SCHEDULE_MIN_LEAD, SendJobTimeout + 5m) —
+// with the deployed SendJobTimeout default of 30m, that floor is 35m
+// regardless of what NEWSLETTER_SCHEDULE_MIN_LEAD is set to. A UI floor
+// below that lets an author pick a time upstream then rejects with a 400 at
+// arm time. 35 minutes also clears SendGrid's 10-minute cancel buffer
+// (NEWSLETTER_SCHEDULE_CANCEL_BUFFER) with room to spare.
+export const NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES = 35;
+
+// UI-enforced (and upstream-enforced) maximum horizon for arming a schedule.
+// Matches SendGrid Mail Send's own send_at ceiling — the newsletter-service's
+// NEWSLETTER_SCHEDULE_MAX_HORIZON defaults to and is hard-capped at 72h, so a
+// larger value can never succeed at arm time regardless of what the UI allows.
+export const NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS = 72;

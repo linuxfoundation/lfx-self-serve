@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { IMPORT_REGISTRANTS_MAX } from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiResponse,
@@ -30,6 +31,7 @@ import {
   PastOccurrenceSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
+  Project,
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateMeetingAttachmentRequest,
@@ -39,6 +41,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildRecurrenceNeverEndDate,
+  computeIsFoundation,
   getPastMeetingTranscriptUrl,
   mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary,
@@ -47,11 +50,12 @@ import {
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { ResourceNotFoundError } from '../errors';
+import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
+import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
@@ -61,11 +65,13 @@ import { ProjectService } from './project.service';
  */
 export class MeetingService {
   private accessCheckService: AccessCheckService;
+  private committeeService: CommitteeService;
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
+    this.committeeService = new CommitteeService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.projectService = new ProjectService();
   }
@@ -174,8 +180,23 @@ export class MeetingService {
 
   /**
    * Fetches a single meeting by UID
+   *
+   * @param options.access - When true (default), add the caller's organizer access fields.
+   * @param options.includeProject - When true, enrich the payload with the meeting's project fields
+   * (`project_slug`, `project_name`, `is_foundation`) so clients can reconcile project context
+   * from the meeting itself. Opt-in because the public
+   * meeting controller side-cars the project separately and other callers (e.g.
+   * getMyMeetingRegistrants) only need the organizer flag — neither should pay for the extra
+   * project fetch. An options object (not boolean positionals) keeps call sites self-describing
+   * and makes swapping the two flags a type error — see CommitteeService.getCommitteeById.
    */
-  public async getMeetingById(req: Request, meetingUid: string, meetingType: QueryServiceMeetingType = 'v1_meeting', access: boolean = true): Promise<Meeting> {
+  public async getMeetingById(
+    req: Request,
+    meetingUid: string,
+    meetingType: QueryServiceMeetingType = 'v1_meeting',
+    options: { access?: boolean; includeProject?: boolean } = {}
+  ): Promise<Meeting> {
+    const { access = true, includeProject = false } = options;
     logger.debug(req, 'get_meeting_by_id', 'Fetching meeting by ID', {
       meeting_id: meetingUid,
       type: meetingType,
@@ -195,13 +216,32 @@ export class MeetingService {
       });
     }
 
-    if (meeting.committees && meeting.committees.length > 0) {
+    const committees = meeting.committees && meeting.committees.length > 0 ? meeting.committees : null;
+
+    if (committees) {
       logger.debug(req, 'get_meeting_by_id', 'Enriching meeting with committee data', {
         meeting_id: meetingUid,
-        committee_count: meeting.committees.length,
+        committee_count: committees.length,
       });
-      const committeeNameMap = await this.getCommitteeNameMap(req, [meeting]);
-      meeting.committees = meeting.committees.map((c) => ({
+    }
+
+    // Project enrichment runs in parallel with the committee-name lookup (both depend only on
+    // the meeting payload), so it adds no sequential latency.
+    const [project, committeeNameMap] = await Promise.all([
+      includeProject ? this.fetchMeetingProject(req, meeting) : Promise.resolve(null),
+      committees ? this.getCommitteeNameMap(req, [meeting]) : Promise.resolve(null),
+    ]);
+    if (project) {
+      meeting.project_slug = project.slug;
+      meeting.project_name = project.name;
+      meeting.is_foundation = computeIsFoundation(project);
+      // parent_project_uid is deliberately NOT mapped here: nothing in the detail/edit flow
+      // consumes it, and it discloses hierarchy the caller may hold no relation to. List
+      // payloads still carry it via enrichWithProjectData for the dashboard filters.
+    }
+
+    if (committees && committeeNameMap) {
+      meeting.committees = committees.map((c) => ({
         uid: c.uid,
         name: committeeNameMap.get(c.uid) || c.name,
         allowed_voting_statuses: c.allowed_voting_statuses,
@@ -563,8 +603,23 @@ export class MeetingService {
    *   caller is rendering; when omitted, each registrant's most recent RSVP is
    *   returned regardless of scope — correct only for non-recurring meetings or
    *   aggregate views. See LFXV2-2864 for the seconds↔ms unit mismatch.
+   * @param failOnPartial - If true, throw instead of returning a truncated roster when a
+   *   later page fails. Callers that rely on the complete list for correctness (e.g.
+   *   importing every registrant) should set this; default preserves the existing
+   *   partial-tolerant behavior for callers that just render whatever loaded.
+   * @param maxResults - If set, stop paging once the accumulated count exceeds this many
+   *   registrants — bounds upstream calls for callers that only need to know "is this over N"
+   *   (e.g. enforcing a size cap) rather than the true total. The returned array's length is a
+   *   lower bound, not an exact count, once it exceeds `maxResults`.
    */
-  public async getMeetingRegistrants(req: Request, meetingUid: string, includeRsvp: boolean = false, occurrenceId?: string): Promise<MeetingRegistrant[]> {
+  public async getMeetingRegistrants(
+    req: Request,
+    meetingUid: string,
+    includeRsvp: boolean = false,
+    occurrenceId?: string,
+    failOnPartial: boolean = false,
+    maxResults?: number
+  ): Promise<MeetingRegistrant[]> {
     // Registrant records carry `parent_refs: ['meeting:<uid>']` but no indexed tags — use `parent`
     // to query parent_refs, matching the working pattern in getMeetingRsvps.
     const params: Record<string, any> = {
@@ -574,11 +629,14 @@ export class MeetingService {
 
     logger.debug(req, 'get_meeting_registrants', 'Fetching meeting registrants', { meeting_id: meetingUid, params });
 
-    let registrants = await fetchAllQueryResources<MeetingRegistrant>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    let registrants = await fetchAllQueryResources<MeetingRegistrant>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial, maxResults }
     );
 
     // If include_rsvp is true, fetch RSVP data and attach to registrants.
@@ -614,6 +672,56 @@ export class MeetingService {
           err: error,
         });
       }
+    }
+
+    return registrants;
+  }
+
+  /**
+   * Fetches a meeting's complete registrant roster for the committee "import registrants" flow
+   * (LFXV2-2607), enforcing the authorization and size-cap rules that gate it. Business logic
+   * lives here rather than in the controller per the three-file pattern
+   * (docs/reviews/backend-checklist.md) — this orchestrates two domain resources plus an access
+   * check and a security-critical decision, not just HTTP request/response handling.
+   *
+   * The upstream query-service has no default per-user grant filtering on v1_meeting_registrant,
+   * so `getMeetingRegistrants` with `failOnPartial: true` would otherwise return any meeting's
+   * full registrant PII to any authenticated caller who supplies its uid. Requires the caller to
+   * either have writer access on `committeeUid`, or be a member of it when it's invite_only
+   * (mirroring `canSendMemberInvites()` client-side — those callers are already independently
+   * authorized to send invites for that committee upstream, via their own bearer token, so
+   * letting them populate the invite textarea via import grants no new privilege). Also requires
+   * the committee and meeting to share a project, and refuses rosters over `IMPORT_REGISTRANTS_MAX`
+   * — a sync fetch-then-invite-fan-out for a large roster risks timeouts and confusing
+   * partial-failure states (this exact failure mode broke in PCC).
+   *
+   * @throws AuthorizationError if the caller isn't authorized, per the rules above.
+   * @throws ServiceValidationError if the roster exceeds IMPORT_REGISTRANTS_MAX.
+   */
+  public async getAuthorizedRegistrantsForImport(req: Request, meetingUid: string, committeeUid: string): Promise<MeetingRegistrant[]> {
+    const [committee, meeting, isCommitteeWriter] = await Promise.all([
+      this.committeeService.getCommitteeById(req, committeeUid, { includeMembership: true }),
+      this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false }),
+      this.accessCheckService.checkSingleAccess(req, { resource: 'committee', id: committeeUid, access: 'writer' }),
+    ]);
+
+    const isCommitteeMember = !!committee.my_role;
+    const canImport = isCommitteeWriter || (committee.join_mode === 'invite_only' && isCommitteeMember);
+    if (!canImport || committee.project_uid !== meeting.project_uid) {
+      throw new AuthorizationError('Not authorized to import registrants for this meeting', {
+        operation: 'get_authorized_registrants_for_import',
+        service: 'meeting_service',
+      });
+    }
+
+    const registrants = await this.getMeetingRegistrants(req, meetingUid, false, undefined, true, IMPORT_REGISTRANTS_MAX);
+
+    if (registrants.length > IMPORT_REGISTRANTS_MAX) {
+      throw ServiceValidationError.forField(
+        'registrants',
+        `This meeting has more than ${IMPORT_REGISTRANTS_MAX} registrants — imports are limited to ${IMPORT_REGISTRANTS_MAX} per meeting.`,
+        { operation: 'get_authorized_registrants_for_import', service: 'meeting_service' }
+      );
     }
 
     return registrants;
@@ -1642,32 +1750,37 @@ export class MeetingService {
   }
 
   /**
-   * Creates a new meeting registrant using M2M token (for public endpoints)
-   * @param req - Express request object
-   * @param registrantData - Registrant data to create
-   * @param m2mToken - M2M token for authentication
-   * @returns The created meeting registrant
+   * Registers the authenticated user as a meeting registrant using their bearer token.
+   * Email and username are sourced from the user's JWT by the meeting service — they must
+   * not be included in the payload. Only public meetings are supported; private meetings
+   * return 403.
    */
-  public async addMeetingRegistrantWithM2M(req: Request, registrantData: CreateMeetingRegistrantRequest, m2mToken: string): Promise<MeetingRegistrant> {
-    const startTime = logger.startOperation(req, 'add_meeting_registrant_with_m2m', { meeting_id: registrantData.meeting_id });
+  public async addMeetingRegistrantSelf(req: Request, meetingId: string, registrantData: CreateMeetingRegistrantRequest): Promise<MeetingRegistrant> {
+    const startTime = logger.startOperation(req, 'add_meeting_registrant_self', { meeting_id: meetingId });
 
-    const sanitizedPayload = logger.sanitize({ registrantData });
-    logger.debug(req, 'add_meeting_registrant_with_m2m', 'Creating meeting registrant with M2M token', sanitizedPayload);
+    logger.debug(req, 'add_meeting_registrant_self', 'Self-registering authenticated user for meeting', { meeting_id: meetingId });
+
+    const payload = {
+      first_name: registrantData.first_name,
+      last_name: registrantData.last_name,
+      ...(registrantData.org_name && { org: registrantData.org_name }),
+      ...(registrantData.job_title && { job_title: registrantData.job_title }),
+      ...(registrantData.occurrence_id && { occurrence: registrantData.occurrence_id }),
+    };
 
     const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${registrantData.meeting_id}/registrants`,
+      `/itx/meetings/${meetingId}/registrants/self`,
       'POST',
       undefined,
-      registrantData,
-      { Authorization: `Bearer ${m2mToken}`, ['X-Sync']: 'true' }
+      payload,
+      { 'X-Sync': 'true' }
     );
 
-    logger.success(req, 'add_meeting_registrant_with_m2m', startTime, {
-      meeting_id: registrantData.meeting_id,
+    logger.success(req, 'add_meeting_registrant_self', startTime, {
+      meeting_id: meetingId,
       registrant_uid: newRegistrant.uid,
-      host: registrantData.host || false,
     });
 
     return newRegistrant;
@@ -1675,6 +1788,36 @@ export class MeetingService {
 
   public async getMeetingProjectName<T extends Meeting>(req: Request, meetings: T[]): Promise<T[]> {
     return this.projectService.enrichWithProjectData(req, meetings) as Promise<T[]>;
+  }
+
+  /**
+   * Fetches the meeting's project for detail enrichment. Returns null on failure so the meeting
+   * still loads — the frontend falls back to resolving project context from `project_uid`.
+   *
+   * Uses the query-service metadata lookup (getProjectsByIds) rather than getProjectById: the
+   * /projects/:uid endpoint is relation-gated, and a meeting writer may lack a project-level
+   * viewer relation (the committee-writer case writerGuard handles) — the direct fetch would
+   * 403 for exactly those users, and the client fallback hits the same gated endpoint, leaving
+   * the edit page in a stale context. The query-service path needs no project relation.
+   * Meeting access was already checked by the caller, and the exposed fields
+   * (slug/name/is_foundation) are non-sensitive.
+   */
+  private async fetchMeetingProject(req: Request, meeting: Meeting): Promise<Project | null> {
+    if (!meeting.project_uid) {
+      return null;
+    }
+
+    try {
+      const projects = await this.projectService.getProjectsByIds(req, [meeting.project_uid]);
+      return projects.get(meeting.project_uid) ?? null;
+    } catch (error) {
+      logger.warning(req, 'get_meeting_by_id', 'Failed to fetch project for meeting enrichment; continuing without project fields', {
+        meeting_id: meeting.id,
+        project_uid: meeting.project_uid,
+        err: error,
+      });
+      return null;
+    }
   }
 
   /**

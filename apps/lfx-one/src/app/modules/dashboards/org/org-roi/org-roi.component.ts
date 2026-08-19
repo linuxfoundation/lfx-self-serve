@@ -1,12 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
-import { afterNextRender, Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { afterNextRender, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ORG_LENS_ROI_DEFAULT_METHOD, ORG_LENS_ROI_METHOD_STORAGE_KEY, ORG_LENS_ROI_METHODS } from '@lfx-one/shared/constants';
+import { ORG_LENS_ROI_DEFAULT_METHOD } from '@lfx-one/shared/constants';
 import type { OrgLensRoiCoverage, OrgLensRoiMethod, OrgLensRoiSummary } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensRoiMethodPreferenceService } from '@services/org-lens-roi-method-preference.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -18,8 +18,11 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 
 import { OrgRoiAnnualTrendComponent } from './components/org-roi-annual-trend/org-roi-annual-trend.component';
 import { OrgRoiAssumptionsDrawerComponent } from './components/org-roi-assumptions-drawer/org-roi-assumptions-drawer.component';
+import { OrgRoiCategoryDonutComponent } from './components/org-roi-category-donut/org-roi-category-donut.component';
 import { OrgRoiEmptyStateComponent } from './components/org-roi-empty-state/org-roi-empty-state.component';
 import { OrgRoiKpiCardsComponent } from './components/org-roi-kpi-cards/org-roi-kpi-cards.component';
+import { OrgRoiProjectsDonutComponent } from './components/org-roi-projects-donut/org-roi-projects-donut.component';
+import { OrgRoiProjectsSectionComponent } from './components/org-roi-projects-section/org-roi-projects-section.component';
 
 const EMPTY_SUMMARY: OrgLensRoiSummary = {
   orgUid: '',
@@ -45,6 +48,9 @@ const EMPTY_COVERAGE: OrgLensRoiCoverage = { orgUid: '', hasData: false, coverag
   imports: [
     OrgRoiKpiCardsComponent,
     OrgRoiAnnualTrendComponent,
+    OrgRoiCategoryDonutComponent,
+    OrgRoiProjectsDonutComponent,
+    OrgRoiProjectsSectionComponent,
     OrgRoiAssumptionsDrawerComponent,
     OrgRoiEmptyStateComponent,
     EmptyStateComponent,
@@ -58,7 +64,7 @@ export class OrgRoiComponent {
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
   private readonly roiService = inject(OrgLensRoiService);
-  private readonly platformId = inject(PLATFORM_ID);
+  private readonly methodPreference = inject(OrgLensRoiMethodPreferenceService);
 
   protected readonly method = signal<OrgLensRoiMethod>(ORG_LENS_ROI_DEFAULT_METHOD);
   protected readonly drawerVisible = signal(false);
@@ -104,7 +110,54 @@ export class OrgRoiComponent {
       !this.portfolioFailed()
   );
 
+  /**
+   * Whether the summary in hand actually describes the organization now selected.
+   *
+   * `summary()` holds its previous value while a new request is in flight, so during an org switch
+   * every measure derived from it belongs to the organization the viewer just navigated away from.
+   * Comparing the payload's own `orgUid` to the selected account is a synchronous signal read, so
+   * it flips in the same change-detection pass as the switch — unlike the donuts' internal loading
+   * flags, which are driven by `toObservable` and therefore only settle on the next effect flush.
+   */
+  protected readonly summaryMatchesSelectedOrg: Signal<boolean> = computed(() => {
+    const selected = this.accountContext.selectedAccount()?.accountId ?? '';
+    return selected !== '' && this.summary().orgUid === selected;
+  });
+
+  /**
+   * True whenever this organization has figures to show — deliberately **without**
+   * `portfolioLoading`, unlike the state-branch chain in the template.
+   *
+   * The chain swaps the whole populated block for a skeleton on every request, including a
+   * method-only one. That tore down and remounted the category donut on each method switch,
+   * re-issuing a read whose response cannot vary by method — the opposite of what its own comment
+   * claimed. Mounting the donuts on this condition instead keeps them alive across a method
+   * change, so the category donut's account-keyed request simply never re-emits.
+   *
+   * An org switch is the case that must NOT survive, and the identity check is what separates the
+   * two: the account id changes while the summary still describes the previous organization, so
+   * this goes false immediately and the donuts unmount rather than rendering one company's
+   * investment under another's page.
+   */
+  protected readonly showsFigures: Signal<boolean> = computed(
+    () =>
+      this.loaded() &&
+      !this.hasNoOrgAccess() &&
+      this.hasCompany() &&
+      this.hasAnalyticsId() &&
+      !this.portfolioForbidden() &&
+      !this.portfolioFailed() &&
+      this.summaryMatchesSelectedOrg() &&
+      this.hasRoiData()
+  );
+
+  /**
+   * Blank until the summary describes the selected organization. The header sits outside the
+   * state-branch chain, so without this it would keep showing the previous organization's date
+   * window for the whole of the next request — seconds, on a warehouse read.
+   */
   protected readonly windowLabel: Signal<string> = computed(() => {
+    if (!this.summaryMatchesSelectedOrg()) return '';
     const { yearMin, yearMax } = this.summary();
     if (yearMin === null || yearMax === null) return '';
     return yearMin === yearMax ? `${yearMin}` : `${yearMin}–${yearMax}`;
@@ -156,23 +209,11 @@ export class OrgRoiComponent {
   }
 
   private restoreMethod(): void {
-    if (!isPlatformBrowser(this.platformId)) return;
-    try {
-      const stored = localStorage.getItem(ORG_LENS_ROI_METHOD_STORAGE_KEY);
-      if (stored !== null && (ORG_LENS_ROI_METHODS as readonly string[]).includes(stored)) {
-        this.method.set(stored as OrgLensRoiMethod);
-      }
-    } catch {
-      // Ignore unavailable storage.
-    }
+    const stored = this.methodPreference.read();
+    if (stored !== null) this.method.set(stored);
   }
 
   private persistMethod(method: OrgLensRoiMethod): void {
-    if (!isPlatformBrowser(this.platformId)) return;
-    try {
-      localStorage.setItem(ORG_LENS_ROI_METHOD_STORAGE_KEY, method);
-    } catch {
-      // Ignore unavailable storage.
-    }
+    this.methodPreference.write(method);
   }
 }

@@ -9,12 +9,13 @@ import { SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lf
 import { ProjectContext } from '@lfx-one/shared/interfaces';
 import { isBoardScopedPersona, isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { catchError, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, map, of, startWith, switchMap } from 'rxjs';
 
 import { CookieRegistryService } from './cookie-registry.service';
 import { LensService } from './lens.service';
 import { PersonaService } from './persona.service';
 import { ProjectService } from './project.service';
+import { UserService } from './user.service';
 
 @Injectable({
   providedIn: 'root',
@@ -27,6 +28,7 @@ export class ProjectContextService {
   private readonly personaService = inject(PersonaService);
   private readonly projectService = inject(ProjectService);
   private readonly router = inject(Router);
+  private readonly userService = inject(UserService);
 
   private readonly foundationStorageKey = SELECTED_FOUNDATION_COOKIE_KEY;
   private readonly projectStorageKey = SELECTED_PROJECT_COOKIE_KEY;
@@ -74,23 +76,23 @@ export class ProjectContextService {
     this.projectSelection.set(this.loadFromCookie(this.projectStorageKey));
   }
 
+  // The URL sync runs outside the same-context early return: a stale `?project=` left by a prior
+  // selection must still be corrected when the incoming selection already matches the current one.
   public setFoundation(foundation: ProjectContext, syncUrl = true): void {
-    if (isSameProjectContext(this.foundationSelection(), foundation)) {
-      return;
+    if (!isSameProjectContext(this.foundationSelection(), foundation)) {
+      this.foundationSelection.set(foundation);
+      this.persistToCookie(this.foundationStorageKey, foundation);
     }
-    this.foundationSelection.set(foundation);
-    this.persistToCookie(this.foundationStorageKey, foundation);
     if (syncUrl) {
       this.syncProjectQueryParam(foundation.slug);
     }
   }
 
   public setProject(project: ProjectContext, syncUrl = true): void {
-    if (isSameProjectContext(this.projectSelection(), project)) {
-      return;
+    if (!isSameProjectContext(this.projectSelection(), project)) {
+      this.projectSelection.set(project);
+      this.persistToCookie(this.projectStorageKey, project);
     }
-    this.projectSelection.set(project);
-    this.persistToCookie(this.projectStorageKey, project);
     if (syncUrl) {
       this.syncProjectQueryParam(project.slug);
     }
@@ -213,9 +215,10 @@ export class ProjectContextService {
 
   private initCanWrite(): Signal<boolean> {
     return toSignal(
-      toObservable(this.activeContext).pipe(
-        switchMap((ctx) => {
-          if (!ctx?.slug) {
+      combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated)]).pipe(
+        switchMap(([ctx, authenticated]) => {
+          // Anonymous/public routes have no session — /api/projects/:slug would just 401 (LFXV2-3266).
+          if (!ctx?.slug || !authenticated) {
             return of(false);
           }
           return this.projectService.getProject(ctx.slug, false).pipe(
@@ -230,9 +233,10 @@ export class ProjectContextService {
 
   private initSelectedFoundationSfid(): Signal<string | null> {
     return toSignal(
-      toObservable(this.selectedFoundation).pipe(
-        switchMap((foundation) => {
-          if (!foundation?.uid) {
+      combineLatest([toObservable(this.selectedFoundation), toObservable(this.userService.authenticated)]).pipe(
+        switchMap(([foundation, authenticated]) => {
+          // Anonymous/public routes have no session — /api/projects/:uid/sfid would just 401 (LFXV2-3266).
+          if (!foundation?.uid || !authenticated) {
             return of(null);
           }
           return this.projectService.getProjectSfid(foundation.uid).pipe(startWith(null));

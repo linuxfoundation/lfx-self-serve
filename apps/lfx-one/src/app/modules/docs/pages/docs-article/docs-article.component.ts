@@ -7,12 +7,13 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { DOCS_CANONICAL_ORIGIN } from '@lfx-one/shared/constants';
-import type { DocsArticle } from '@lfx-one/shared/interfaces';
+import type { DocsArticle, DocsSiblingLink } from '@lfx-one/shared/interfaces';
 import { isDocsPath } from '@lfx-one/shared/utils';
 import { map } from 'rxjs/operators';
 
 import { DocsSearchComponent } from '../../components/docs-search/docs-search.component';
 import { DocsManifestService } from '../../services/docs-manifest.service';
+import { DocsNotFoundComponent } from '../docs-not-found/docs-not-found.component';
 
 /**
  * Renders one documentation article.
@@ -51,7 +52,7 @@ import { DocsManifestService } from '../../services/docs-manifest.service';
 @Component({
   selector: 'lfx-docs-article',
   standalone: true,
-  imports: [RouterLink, DatePipe, DocsSearchComponent],
+  imports: [RouterLink, DatePipe, DocsSearchComponent, DocsNotFoundComponent],
   templateUrl: './docs-article.component.html',
 })
 export class DocsArticleComponent {
@@ -64,14 +65,42 @@ export class DocsArticleComponent {
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly location = inject(Location);
 
-  /** Article resolved by `docsArticleResolver` — guaranteed non-null on a successful navigation. */
+  /** Article resolved by `docsArticleResolver`: the `DocsArticle` on a hit, or `null` on a miss (renders the inline not-found view). */
   protected readonly article = this.initArticle();
 
-  /** Sibling articles in the same topic, denormalized for cheap renders. */
-  protected readonly siblings = computed(() => {
+  /** Sibling articles in the same topic, denormalized for cheap renders. Consumed only by `topicArticles`. */
+  private readonly siblings = computed(() => {
     const a = this.article();
     if (!a) return [];
     return a.siblings.map((slug) => this.docsManifest.getArticle(slug)).filter((s): s is DocsArticle => Boolean(s));
+  });
+
+  /**
+   * The stable "More in this topic" list: every non-landing article in the
+   * topic, *including* the one currently in view, so the active page stays in
+   * place (highlighted) instead of dropping out of the rail on navigation.
+   *
+   * The build-time `siblings` list excludes the current article and — on a
+   * leaf page — the topic landing (the landing is surfaced by the breadcrumb).
+   * We re-insert the current leaf and re-sort so that, for a topic with two or
+   * more leaves, the rendered set is identical no matter which leaf is open.
+   * Returns `[]` when the article has no peers, hiding the rail — that covers a
+   * truly lone article and the single leaf of a one-leaf topic, whose only
+   * potential peer (the landing) is filtered out. (A one-leaf topic is thus
+   * asymmetric: its landing still lists the leaf, but the leaf shows nothing.
+   * No such topic exists today — every `docs/user` topic has two or more
+   * leaves.)
+   *
+   * Each entry is mapped to a `DocsSiblingLink` with its active-state class and
+   * `aria-current` value precomputed, so the template needs no per-item method
+   * call (`docs/reviews/frontend-checklist.md` §63-81).
+   */
+  protected readonly topicArticles = computed<DocsSiblingLink[]>(() => {
+    const current = this.article();
+    const peers = this.siblings();
+    if (!current || peers.length === 0) return [];
+    const ordered = current.isTopicLanding ? peers : [...peers, current].sort((a, b) => this.byDisplayOrderThenSlug(a, b));
+    return ordered.map((entry) => this.toSiblingLink(entry, entry.slug === current.slug));
   });
 
   public constructor() {
@@ -122,6 +151,33 @@ export class DocsArticleComponent {
 
     event.preventDefault();
     void this.router.navigateByUrl(href);
+  }
+
+  /**
+   * Mirrors the docs build's sibling sort: `displayOrder` ascending, then slug.
+   * The slug tie-break uses raw codepoint comparison (`<`/`>`) to match the
+   * build's `sortByDisplayOrderThenAlpha` exactly — `localeCompare` applies
+   * locale collation that can differ between the SSR (Node) and browser
+   * renders of this same rail, which would reorder identical input.
+   */
+  private byDisplayOrderThenSlug(a: DocsArticle, b: DocsArticle): number {
+    const aOrder = typeof a.displayOrder === 'number' ? a.displayOrder : Number.POSITIVE_INFINITY;
+    const bOrder = typeof b.displayOrder === 'number' ? b.displayOrder : Number.POSITIVE_INFINITY;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    if (a.slug < b.slug) return -1;
+    if (a.slug > b.slug) return 1;
+    return 0;
+  }
+
+  /**
+   * Builds a render-ready rail link, precomputing the active-state Tailwind
+   * class and `aria-current` value so the template stays method-free.
+   */
+  private toSiblingLink(article: DocsArticle, isActive: boolean): DocsSiblingLink {
+    const base =
+      'block rounded-md px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary';
+    const linkClass = isActive ? `${base} bg-blue-50 font-medium text-primary` : `${base} text-gray-700 hover:bg-blue-50 hover:text-primary`;
+    return { slug: article.slug, url: article.url, title: article.title, linkClass, ariaCurrent: isActive ? 'page' : null };
   }
 
   private findAnchor(target: EventTarget | null): HTMLAnchorElement | null {
@@ -179,6 +235,8 @@ export class DocsArticleComponent {
   }
 
   private initArticle() {
-    return toSignal<DocsArticle | undefined>(this.route.data.pipe(map((d): DocsArticle | undefined => d['article'])), { initialValue: undefined });
+    // `docsArticleResolver` yields `null` on a manifest miss (rendered as the
+    // inline not-found view); include it so the signal type matches the resolver.
+    return toSignal<DocsArticle | null | undefined>(this.route.data.pipe(map((d): DocsArticle | null => d['article'] ?? null)), { initialValue: undefined });
   }
 }

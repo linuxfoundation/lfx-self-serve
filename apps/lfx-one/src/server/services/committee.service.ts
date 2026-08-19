@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CHAT_WEBHOOK_URL_MAX_LENGTH, SLACK_INCOMING_WEBHOOK_URL_PATTERN } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
@@ -35,11 +36,12 @@ import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
-import { AuthorizationError, ResourceNotFoundError } from '../errors';
+import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
-import { resolveAuditUserDisplayName, getUsernameFromAuth } from '../utils/auth-helper';
+import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -224,7 +226,7 @@ export class CommitteeService {
       }
     }
 
-    return committees;
+    return committees.map((c) => this.stripChatWebhookUrl(c));
   }
 
   /**
@@ -258,7 +260,7 @@ export class CommitteeService {
       })
     );
     const committees = await this.accessCheckService.addAccessToResources(req, resources, 'committee');
-    return committees.filter((c) => c.writer === true);
+    return committees.filter((c) => c.writer === true).map((c) => this.stripChatWebhookUrl(c));
   }
 
   /**
@@ -313,7 +315,7 @@ export class CommitteeService {
       });
     }
 
-    return permitted.slice(0, pageSize);
+    return permitted.slice(0, pageSize).map((c) => this.stripChatWebhookUrl(c));
   }
 
   /**
@@ -363,15 +365,21 @@ export class CommitteeService {
     // LFXV2-2914). Compute it the same way the query-service-backed list
     // endpoints (getCommittees/getMyCommittees) do: a direct count against
     // the mailing-list index.
-    const committee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
+    const rawCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
 
-    if (!committee) {
+    if (!rawCommittee) {
       throw new ResourceNotFoundError('Committee', committeeId, {
         operation: 'get_committee_by_id',
         service: 'committee_service',
         path: `/committees/${committeeId}`,
       });
     }
+
+    // chat_webhook_url does not live on the base committee resource (see LFXV2-3094 below), but
+    // strip it defensively anyway before it can flow into the access-check merge, project-metadata
+    // enrichment, or the HTTP response — a no-op today, cheap insurance if that ever changes.
+    /* eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional strip, not a read */
+    const { chat_webhook_url: _baseChatWebhookUrl, ...committee } = rawCommittee as Committee & { chat_webhook_url?: string | null };
 
     // Fetch settings, optional caller membership, access, optional inherited
     // (parent-project) permissions, and optional mailing-list status in parallel.
@@ -383,32 +391,77 @@ export class CommitteeService {
       options.includeMailingListStatus ? this.getMailingListCountByCommittee(req, committeeId) : Promise.resolve(null),
     ]);
 
+    // has_chat_webhook is upstream's raw wire field (settings.has_chat_webhook) — read into
+    // has_slack_webhook below, then excluded from the spread so it doesn't ride out on the
+    // response undeclared (Committee has no has_chat_webhook field of its own).
+    /* eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional strip, not a read */
+    const { has_chat_webhook: _hasChatWebhook, ...settingsForResponse } = settings;
+
     const merged = {
       ...withAccess,
-      ...settings,
+      ...settingsForResponse,
       ...(membership && { my_role: membership.role, my_member_uid: membership.member_uid }),
       ...(inheritedPermissions && { inherited_writers: inheritedPermissions.writers, inherited_auditors: inheritedPermissions.auditors }),
       ...(mlCount !== null && { has_mailing_list: mlCount > 0 }),
+      // Upstream (lfx-v2-committee-service PR #179 / LFXV2-3094) computes this server-side from
+      // chat_webhook_url and never returns the raw URL on any read — settings.chat_webhook_url is
+      // always undefined here, so has_chat_webhook is the only real signal a read ever gets.
+      has_slack_webhook: settings.has_chat_webhook === true,
     };
 
+    // `settingsForResponse` above is stripped only of `has_chat_webhook` (the raw upstream signal
+    // has_slack_webhook is derived from) — chat_webhook_url itself is stopped from leaking by
+    // stripChatWebhookUrl below, applied to the fully-merged response either way.
     if (!options.includeProjectMetadata) {
-      return merged;
+      return this.stripChatWebhookUrl(merged);
     }
 
     // Enrich with project metadata so the UI can resolve project_uid -> project_slug for navigation.
     const [enriched] = await this.projectService.enrichWithProjectData(req, [merged]);
-    return enriched;
+    return this.stripChatWebhookUrl(enriched);
   }
 
   /**
    * Creates a new committee with optional settings
    */
   public async createCommittee(req: Request, data: CommitteeCreateData): Promise<Committee> {
-    // Extract settings fields
-    const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, ...committeeData } = data;
+    // chat_webhook_url is deliberately absent from CommitteeCreateData — it's update-only (see
+    // CommitteeSettingsData.chat_webhook_url), with its own SLACK_INCOMING_WEBHOOK_URL_PATTERN
+    // check and impersonation guard in updateCommittee, neither of which this method runs. The
+    // type omission alone doesn't stop a raw req.body cast (committee.controller.ts) from
+    // carrying the key at runtime, so strip it explicitly rather than relying on the type system.
+    /* eslint-disable @typescript-eslint/no-unused-vars -- intentional strip, not a read */
+    const {
+      chat_webhook_url: _chatWebhookUrl,
+      business_email_required,
+      is_audit_enabled,
+      show_meeting_attendees,
+      member_visibility,
+      ...committeeData
+    } = data as CommitteeCreateData & { chat_webhook_url?: unknown };
+    /* eslint-enable @typescript-eslint/no-unused-vars */
 
     // Step 1: Create committee
-    const newCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', '/committees', 'POST', {}, committeeData);
+    // <Committee | null>, not <Committee> — matches the established convention at
+    // committee-activity.service.ts's guarded proxyRequest call sites: proxyRequest can return
+    // null for an empty upstream body, and typing the call site itself as nullable is what makes
+    // that reachable through the type system (a bare <Committee> would make the compiler believe
+    // newCommittee is always non-null even though the runtime value can be null).
+    const newCommittee = await this.microserviceProxy.proxyRequest<Committee | null>(req, 'LFX_V2_SERVICE', '/committees', 'POST', {}, committeeData);
+
+    // Fail loud, not silently: an empty body on a create response means the committee-service
+    // didn't confirm anything was actually created. Returning a uid-less object here instead would
+    // let the controller respond 201 with committee.uid undefined, and the client's post-create
+    // flow (committee-manage.component.ts) reads that uid immediately to add members — a silent
+    // "success" would be strictly worse than a loud failure, not a safer fallback. This also
+    // narrows newCommittee to non-null for the rest of the method, so nothing below it needs `?.`.
+    if (!newCommittee?.uid) {
+      throw new MicroserviceError('Committee service returned an empty response for the create request', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'create_committee',
+        service: 'committee_service',
+        path: '/committees',
+      });
+    }
 
     // Step 2: Update settings if provided
     if (business_email_required !== undefined || is_audit_enabled !== undefined || show_meeting_attendees !== undefined || member_visibility !== undefined) {
@@ -422,7 +475,7 @@ export class CommitteeService {
     }
 
     return {
-      ...newCommittee,
+      ...this.stripChatWebhookUrl(newCommittee),
       ...(business_email_required !== undefined && { business_email_required }),
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
       ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
@@ -433,10 +486,105 @@ export class CommitteeService {
   /**
    * Updates an existing committee using ETag for concurrency control
    */
-  public async updateCommittee(req: Request, committeeId: string, data: CommitteeUpdateData): Promise<Committee> {
-    // Extract settings fields — writers/auditors belong to UpdateCommitteeSettingsRequestBody,
-    // NOT UpdateCommitteeBaseRequestBody, so they must go through the settings endpoint
-    const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, writers, auditors, ...committeeData } = data;
+  public async updateCommittee(
+    req: Request,
+    committeeId: string,
+    data: CommitteeUpdateData & Pick<CommitteeSettingsData, 'chat_webhook_url'>
+  ): Promise<Committee> {
+    // Extract settings fields — writers/auditors/chat_webhook_url all belong to
+    // UpdateCommitteeSettingsRequestBody, NOT UpdateCommitteeBaseRequestBody, so they must go
+    // through the settings endpoint (updateCommitteeSettings), never the core PUT below.
+    // chat_webhook_url comes from CommitteeSettingsData, not CommitteeUpdateData (see
+    // LFXV2-3094) — this method's parameter type is deliberately CommitteeUpdateData intersected
+    // with just that one settings field, since this single endpoint accepts one merged payload
+    // and internally routes pieces of it to two different upstream resources. Naming it
+    // explicitly here, rather than letting it fall into `...committeeData`, is what keeps it out
+    // of the core PUT body.
+    const {
+      business_email_required,
+      is_audit_enabled,
+      show_meeting_attendees,
+      member_visibility,
+      writers,
+      auditors,
+      chat_webhook_url: rawChatWebhookUrlTyped,
+      ...committeeData
+    } = data;
+
+    // Read as `unknown`, not trusting the declared `string | null | undefined` type: this body
+    // arrives as raw JSON (the controller casts req.body to this method's parameter type via a
+    // bare variable annotation, which performs no runtime validation — see
+    // committee.controller.ts), so a direct API caller can send any JSON value — false, 0, {},
+    // [].
+    const rawChatWebhookUrl: unknown = rawChatWebhookUrlTyped;
+
+    // Server-side kill switch, independent of WG_WEEKLY_BRIEF_SLACK_FLAG (the Angular UI's
+    // OpenFeature/GrowthBook flag) — that flag only gates rendering of the settings card, since
+    // the OpenFeature Web SDK it's evaluated through never runs on this server. Without this, any
+    // caller with ordinary project-writer access could configure chat_webhook_url directly against
+    // the API while the UI still hides the card. Checked first, before the impersonation guard
+    // below, so a disabled environment reports the same "not available" outcome regardless of who's
+    // asking.
+    if (rawChatWebhookUrl !== undefined && !isServerFeatureEnabled(ServerFeatureFlag.WeeklyBriefSlack)) {
+      throw new ConflictError('Slack webhook sharing is not enabled in this environment', 'FEATURE_DISABLED', {
+        operation: 'update_committee',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+      });
+    }
+
+    // Scoped to this one field, not the whole route: an impersonator repointing chat_webhook_url
+    // to a channel they control, then leaving, would let a later legitimate share-slack (itself
+    // correctly blocked during impersonation — weekly-brief.route.ts) deliver brief content
+    // somewhere the real committee owner never chose. Requests that don't carry chat_webhook_url
+    // are unaffected — this is not a blanket write-lock on the route. A request that does carry
+    // it is rejected whole, before any write (ETag fetch, core PUT, settings update), so name /
+    // chat_channel / business_email_required / etc. sent *alongside* chat_webhook_url in the same
+    // request are rejected too — resubmit them without the webhook field to save just those.
+    if (rawChatWebhookUrl !== undefined && isImpersonating(req)) {
+      logger.warning(req, 'impersonation_readonly', 'Blocked chat_webhook_url write during impersonation', {
+        committee_id: committeeId,
+        impersonator_sub: req.appSession?.['impersonator']?.sub,
+        target_sub: req.appSession?.['impersonationUser']?.sub,
+      });
+      throw new AuthorizationError('Configuring the Slack webhook is not available while impersonating a user', {
+        operation: 'update_committee',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+        code: 'IMPERSONATION_READ_ONLY',
+      });
+    }
+
+    // A truthiness-only check below would let falsy non-strings through: they'd skip the pattern
+    // test entirely and ride straight into the settings PUT payload. The check below therefore
+    // rejects every value that isn't absent, null, or a string — before any write happens. The
+    // length bound mirrors upstream's own MaxLength(500) — without it here, an over-length value
+    // that still happens to match the pattern would pass this check and fail upstream's instead,
+    // with a less actionable error.
+    if (
+      rawChatWebhookUrl !== undefined &&
+      rawChatWebhookUrl !== null &&
+      (typeof rawChatWebhookUrl !== 'string' ||
+        (rawChatWebhookUrl !== '' && (rawChatWebhookUrl.length > CHAT_WEBHOOK_URL_MAX_LENGTH || !SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(rawChatWebhookUrl))))
+    ) {
+      throw ServiceValidationError.forField('chat_webhook_url', 'Must be a valid Slack Incoming Webhook URL (https://hooks.slack.com/services/...)', {
+        operation: 'update_committee',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+      });
+    }
+
+    // Normalized to upstream's OWN clear signal, not this API's usual null-means-clear
+    // convention (see mailing_list/chat_channel elsewhere on this same type): upstream treats
+    // omitted/null as "preserve the existing value" and only an explicit '' as "clear" — see
+    // lfx-v2-committee-service's committee_writer.go UpdateSettings, which documents this
+    // specifically because chat_webhook_url is write-only, so a GET→PUT round-trip here always
+    // sends nil for it and must not be read as "wipe the credential". A caller sending either ''
+    // or null to THIS API means "clear" (both are an explicit action, unlike omission — see the
+    // impersonation guard above, which blocks both the same as setting a real URL); both are
+    // normalized to upstream's '' here so the settings PUT actually clears rather than silently
+    // preserving the old value.
+    const chatWebhookUrlToSave: string | undefined = rawChatWebhookUrl === '' || rawChatWebhookUrl === null ? '' : (rawChatWebhookUrl as string | undefined);
 
     const hasSettingsUpdate =
       business_email_required !== undefined ||
@@ -444,10 +592,11 @@ export class CommitteeService {
       show_meeting_attendees !== undefined ||
       member_visibility !== undefined ||
       writers !== undefined ||
-      auditors !== undefined;
+      auditors !== undefined ||
+      chatWebhookUrlToSave !== undefined;
     const hasCoreUpdate = Object.keys(committeeData).length > 0;
 
-    let updatedCommittee: Committee;
+    let updatedCommittee: Committee | null;
 
     if (hasCoreUpdate) {
       // Step 1: Fetch committee with ETag
@@ -457,6 +606,25 @@ export class CommitteeService {
         `/committees/${committeeId}`,
         'update_committee'
       );
+
+      // Choosing the Slack destination must require the same authorization as sending to it —
+      // shareToSlack (weekly-brief.service.ts) gates the send on strict project-writer, not
+      // committee-writer. Upstream's own PUT /committees/:uid/settings only enforces
+      // committee-writer (direct grants exist independently of project writer — see
+      // getDirectGrantCommittees), so without this, a committee writer who is not a project
+      // writer could point the webhook at a Slack workspace they control, and a later legitimate
+      // project-writer send would deliver brief content there. Checked here (post-fetch, since
+      // currentCommittee.project_uid is needed) rather than before, to avoid a second upstream
+      // round trip only for this field — and, like the settings-only branch below, before any
+      // write.
+      if (chatWebhookUrlToSave !== undefined) {
+        // Authorize against the effective post-update project, not the committee's current one:
+        // if this same PUT also moves the committee (committeeData.project_uid lands in
+        // mergedData below), a writer of only the old project could otherwise pair the move with
+        // a webhook they control — and a later legitimate writer of the new project would send
+        // briefs there.
+        await this.assertWebhookChangeAuthorized(req, committeeId, committeeData.project_uid ?? currentCommittee.project_uid);
+      }
 
       // Step 2: Strip read-only and computed fields, then merge with update data (PUT replaces the entire resource)
       /* eslint-disable @typescript-eslint/no-unused-vars -- intentional destructuring to strip server-computed fields */
@@ -481,7 +649,9 @@ export class CommitteeService {
       };
 
       // Step 3: Update committee with ETag (PUT)
-      updatedCommittee = await this.etagService.updateWithETag<Committee>(
+      // <Committee | null>, not <Committee> — see the matching comment on createCommittee's
+      // proxyRequest call above; updateWithETag forwards to the same proxyRequest under the hood.
+      updatedCommittee = await this.etagService.updateWithETag<Committee | null>(
         req,
         'LFX_V2_SERVICE',
         `/committees/${committeeId}`,
@@ -489,9 +659,33 @@ export class CommitteeService {
         mergedData,
         'update_committee'
       );
+    } else if (chatWebhookUrlToSave !== undefined) {
+      // No core fields to update, but the webhook itself is changing (the common case: saving
+      // just the Slack card). Still needs the committee's project_uid to run the same
+      // project-writer authorization as the core-update branch above — a plain (non-ETag) GET is
+      // enough since nothing here writes the base resource, and its result doubles as the
+      // response-shaping fetch the final `else` branch below would otherwise need.
+      const currentCommittee = await this.microserviceProxy.proxyRequest<Committee | null>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
+      // Thrown here, immediately, rather than deferred to the generic UPSTREAM_INVALID_RESPONSE
+      // guard further down: that guard runs AFTER the hasSettingsUpdate block below has already
+      // called updateCommitteeSettings — a real PUT /committees/:id/settings with its own
+      // fetchWithETag/updateWithETag round trip, unaffected by this GET coming back empty.
+      // Deferring the check here would let that settings write (including the webhook itself)
+      // commit with no project-writer authorization at all for a committee this GET couldn't
+      // find, since assertWebhookChangeAuthorized never even runs in that case. A 404 here is
+      // also the more honest response than a 502 for "the committee doesn't exist" anyway.
+      if (!currentCommittee) {
+        throw new ResourceNotFoundError('Committee', committeeId, {
+          operation: 'update_committee',
+          service: 'committee_service',
+          path: `/committees/${committeeId}`,
+        });
+      }
+      await this.assertWebhookChangeAuthorized(req, committeeId, currentCommittee.project_uid);
+      updatedCommittee = currentCommittee;
     } else {
       // No core fields to update — fetch current committee for the response
-      updatedCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
+      updatedCommittee = await this.microserviceProxy.proxyRequest<Committee | null>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
     }
 
     // Step 3: Update settings if provided — propagate errors so callers aren't misled
@@ -505,11 +699,33 @@ export class CommitteeService {
         member_visibility,
         writers,
         auditors,
+        chat_webhook_url: chatWebhookUrlToSave,
+      });
+    }
+
+    // Fail loud, not silently: an empty body here means the committee-service didn't confirm the
+    // core update (or, on the no-core-update branch, the committee no longer exists), and the
+    // mailing_list fallback below dereferences updatedCommittee unconditionally — same rationale
+    // as createCommittee's identical guard. Deliberately checked *after* the settings update, not
+    // before — but "after" only means the settings write itself isn't skipped; it doesn't mean
+    // this stays quiet about it. On the no-core-update branch, an empty response-shaping GET here
+    // still throws a 502, even though the settings write immediately above already committed
+    // upstream — the caller has no way to learn the settings save succeeded from this response.
+    // That's an accepted, rare-edge-case trade-off (this GET reading empty right after a working
+    // PUT/fetch on the same committee is unlikely — a concurrent delete or a transient upstream
+    // blip), not a designed "don't block the write" guarantee; the write already isn't blocked
+    // either way, only the response is degraded. On the core-update branch, the PUT has already
+    // committed the same way. Narrows updatedCommittee to non-null for the rest of the method.
+    if (!updatedCommittee) {
+      throw new MicroserviceError('Committee service returned an empty response for the update request', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'update_committee',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
       });
     }
 
     return {
-      ...updatedCommittee,
+      ...this.stripChatWebhookUrl(updatedCommittee),
       ...(business_email_required !== undefined && { business_email_required }),
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
       ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
@@ -1548,6 +1764,68 @@ export class CommitteeService {
     return count > 0;
   }
 
+  /**
+   * Enforces that only a project writer may configure the committee's Slack webhook — mirrors
+   * `shareToSlack`'s own strict project-writer gate (weekly-brief.service.ts), so choosing the
+   * Slack destination requires the same authorization as sending to it. Stricter than upstream's
+   * committee-writer check on the settings PUT: direct committee grants exist independently of
+   * project writer (see `getDirectGrantCommittees`), so without this a committee writer who is
+   * not a project writer could point the webhook at a Slack workspace they control.
+   *
+   * Shared by both `updateCommittee` branches that can change `chat_webhook_url` (the core-update
+   * branch, which already has `currentCommittee.project_uid` from its own ETag fetch, and the
+   * settings-only branch, which fetches it separately) — each calls this at the point where a
+   * `project_uid` is available but no write has happened yet, so a caller who fails this check
+   * is rejected before any write in either branch, not just the core-PUT one.
+   */
+  private async assertWebhookChangeAuthorized(req: Request, committeeId: string, projectUid: string | undefined): Promise<void> {
+    // Fail closed when there's no project to check against (e.g. the committee-only fetch that
+    // resolves projectUid came back empty) — same posture as every other branch here: absence of
+    // proof is not proof of authorization.
+    const isProjectWriter = projectUid
+      ? await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: projectUid, access: 'writer' })
+      : false;
+    if (!isProjectWriter) {
+      throw new AuthorizationError('Only project writers can configure the Slack webhook', {
+        operation: 'update_committee',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+        code: 'NOT_PROJECT_WRITER',
+      });
+    }
+  }
+
+  /**
+   * Strips the write-only `chat_webhook_url` credential from a committee before it leaves this
+   * service via any HTTP response. Applied at every method that returns a `Committee`/`Committee[]`
+   * built from a raw upstream fetch — `getCommittees`, `getDirectGrantCommittees`,
+   * `searchCreatableCommittees`, `createCommittee`, `updateCommittee`, `getCommitteesByIds`
+   * (covers `getMyCommittees`) — so the "never returned by any read" invariant on
+   * {@link Committee.has_slack_webhook}'s doc comment holds everywhere, not just the two
+   * hand-audited call sites. {@link getCommitteeById} calls this too, on top of (not instead of)
+   * its own inline destructure of the base resource — the inline strip keeps the credential out
+   * of the access-check and project-metadata enrichment inputs, while this call is what
+   * guarantees the response itself is clean regardless of which resource (base or settings) the
+   * field is present on. The field now lives on the settings sub-resource per LFXV2-3094, but
+   * this strip is intentionally resource-agnostic — cheap insurance against it ever showing up on
+   * the base object too (e.g. a future upstream change, or a raw pass-through response).
+   *
+   * Deliberately not null-tolerant: `proxyRequest` can return `null` for an empty upstream body
+   * (documented at committee-activity.service.ts's four guarded call sites), and both
+   * `createCommittee` and `updateCommittee` feed a raw `proxyRequest`/`updateWithETag` result
+   * through this helper — but each throws its own typed `MicroserviceError` if the result is
+   * null/undefined before this helper ever runs (immediately after the fetch in createCommittee;
+   * in updateCommittee, deliberately after its settings-update step — see that guard's own
+   * comment for why), rather than letting a body-less response silently
+   * become a 201/200 with a uid-less `Committee`. By the time either caller reaches this helper,
+   * the value is guaranteed non-null.
+   */
+  private stripChatWebhookUrl<T extends Committee>(committee: T): T {
+    /* eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional destructuring to strip the secret before it reaches the response */
+    const { chat_webhook_url: _chatWebhookUrl, ...rest } = committee as T & { chat_webhook_url?: string | null };
+    return rest as T;
+  }
+
   /** Writer gate for listing and reviewing join applications (matches UI canManageCommitteeMembers). */
   private async assertCommitteeApplicationWriter(req: Request, committeeId: string, operation: string): Promise<void> {
     const committee = await this.getCommitteeById(req, committeeId);
@@ -1638,7 +1916,7 @@ export class CommitteeService {
     const byUid = new Map<string, Committee>();
     for (const committee of batchResults.flat()) {
       if (committee?.uid) {
-        byUid.set(committee.uid, committee);
+        byUid.set(committee.uid, this.stripChatWebhookUrl(committee));
       }
     }
 
@@ -1875,13 +2153,21 @@ export class CommitteeService {
       'update_committee_settings'
     );
 
+    // has_chat_webhook is upstream's read-only computed field (GET/PUT .../settings response
+    // only) — excluded here so it doesn't ride back out in the PUT body alongside the rest of
+    // the unchanged current settings, which is otherwise a field the write contract never
+    // declares.
+    /* eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional strip, not a read */
+    const { has_chat_webhook: _hasChatWebhook, ...currentSettingsForWrite } = currentSettings;
+
     // Merge provided fields over current settings
     const settingsData = {
-      ...currentSettings,
+      ...currentSettingsForWrite,
       ...(settings.business_email_required !== undefined && { business_email_required: settings.business_email_required }),
       ...(settings.is_audit_enabled !== undefined && { is_audit_enabled: settings.is_audit_enabled }),
       ...(settings.show_meeting_attendees !== undefined && { show_meeting_attendees: settings.show_meeting_attendees }),
       ...(settings.member_visibility !== undefined && { member_visibility: settings.member_visibility }),
+      ...(settings.chat_webhook_url !== undefined && { chat_webhook_url: settings.chat_webhook_url }),
       ...(settings.writers !== undefined && { writers: settings.writers }),
       ...(settings.auditors !== undefined && { auditors: settings.auditors }),
     };

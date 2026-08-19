@@ -52,6 +52,9 @@ export const PERSONAS_CACHE_TTL_MS = 15_000;
 export const ROOT_PROJECT_SLUG = 'ROOT';
 export const ROOT_PROJECT_UID_CACHE_TTL_MS = 60 * 60 * 1000;
 
+/** OpenFGA team id for the `team:lf-staff#member` relation used by the LF-staff capability check. */
+export const LF_STAFF_TEAM_ID = 'lf-staff';
+
 export const PERSONA_OPTIONS: PersonaOption[] = [
   // {
   //   value: 'contributor',

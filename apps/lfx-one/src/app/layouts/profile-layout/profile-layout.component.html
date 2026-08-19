@@ -2,34 +2,20 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!--
-  Profile & Account hub. The profile panel is a fixed, full-height 300px rail pinned to the right
-  edge of the viewport at every screen size — mirroring the left menu. It never stacks above the
-  content, never changes width, and always sits above page content (z-40). MainLayoutComponent
-  reserves a matching right gutter (pr-[300px]) on the profile hub so the content and the shared
-  footer stay clear of the rail. The rail's `top` matches the impersonation banner offset.
+  Profile & Account hub. At 2xl and up, the profile panel is a fixed, full-height 300px rail pinned
+  to the right edge of the viewport — mirroring the left menu: it never stacks above the content,
+  never changes width, and always sits above page content (z-40). MainLayoutComponent reserves a
+  matching right gutter (2xl:pr-[300px]) on the profile hub so the content and the shared footer
+  stay clear of the rail. The rail's `top` matches the impersonation banner offset. Below 2xl, the
+  panel renders inline in the content column above the subtabs instead — capped at max-w-md below
+  sm (a stacked card), full width from sm up to just under 2xl (where the panel's own internal
+  layout, profile-panel.component.html, reflows into a header row + metadata grid + side-by-side
+  social rows). The 2xl threshold (not lg) accounts for the 348px left sidebar (lg:ml-[348px] on
+  <main>) plus 56px page padding (md:px-8, which is 2rem per side at this app's 14px root — not the
+  64px a 16px-root assumption would give) that also apply once the sidebar shows — at lg that leaves
+  only a 320px content column next to a 300px rail; at 2xl it leaves 736px.
 -->
 <div class="flex flex-col" data-testid="profile-layout">
-  <!-- Profile panel — fixed full-height right rail at all widths (out of normal flow) -->
-  <div class="fixed bottom-0 right-0 z-40 w-[300px]" [class.top-12]="impersonating()" [class.top-0]="!impersonating()">
-    <lfx-profile-panel
-      [loading]="loading()"
-      [impersonating]="impersonating()"
-      [avatarUrl]="avatarUrl()"
-      [displayName]="displayName()"
-      [initials]="initials()"
-      [username]="displayUsername() ?? ''"
-      [jobTitle]="jobTitle()"
-      [organization]="organization()"
-      [email]="emailInfo()"
-      [addressLines]="fullAddress()"
-      [phone]="phoneInfo()"
-      [tshirtSize]="tshirtSizeLabel()"
-      [aboutMe]="aboutMe()"
-      [githubHandle]="githubHandle()"
-      (editRequested)="openEditDrawer()"
-      (visibilityRequested)="openVisibilityDrawer()" />
-  </div>
-
   <!-- Left column -->
   <div class="min-w-0 flex-1">
     <div class="mx-auto flex max-w-[1024px] flex-col gap-6">
@@ -48,6 +34,36 @@
       <div>
         <h1 class="text-[22px] font-bold tracking-tight text-slate-900" data-testid="profile-page-title">Profile &amp; Account</h1>
         <p class="mt-1 text-sm text-slate-500">Manage your profile and account settings.</p>
+      </div>
+
+      <!-- Profile panel — capped at max-w-md below sm (stacked card, matches the design's "stacked
+           card below sm" state — the content column can exceed the cap there, e.g. ~515px at a 550px
+           viewport against a 392px cap (this app sets html { font-size: 14px } in styles.scss, so
+           max-w-md's 28rem renders at 392px here, not the browser-default-root 448px), so without the
+           cap the card would stretch wide while still fully stacked internally); full width from sm
+           up to 2xl (reflows internally); fixed full-height right rail at 2xl and up (out of normal
+           flow). -->
+      <div
+        class="max-w-md sm:max-w-none 2xl:fixed 2xl:bottom-0 2xl:right-0 2xl:z-40 2xl:w-[300px]"
+        [ngClass]="{ '2xl:top-12': impersonating(), '2xl:top-0': !impersonating() }"
+        data-testid="profile-panel-rail">
+        <lfx-profile-panel
+          [loading]="loading()"
+          [impersonating]="impersonating()"
+          [avatarUrl]="avatarUrl()"
+          [displayName]="displayName()"
+          [initials]="initials()"
+          [username]="displayUsername() ?? ''"
+          [jobTitle]="jobTitle()"
+          [organization]="organization()"
+          [email]="emailInfo()"
+          [addressLines]="fullAddress()"
+          [phone]="phoneInfo()"
+          [tshirtSize]="tshirtSizeLabel()"
+          [aboutMe]="aboutMe()"
+          [githubHandle]="githubHandle()"
+          (editRequested)="openEditDrawer()"
+          (visibilityRequested)="openVisibilityDrawer()" />
       </div>
 
       <!-- Subtab navigation — horizontally scrollable on small screens -->

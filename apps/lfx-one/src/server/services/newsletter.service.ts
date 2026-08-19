@@ -7,14 +7,17 @@ import {
   MyNewsletter,
   Newsletter,
   NewsletterAnalytics,
+  NewsletterCancelScheduleResult,
   NewsletterListParams,
   NewsletterListResponse,
   NewsletterOptOutListResponse,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
+  NewsletterRecipientEngagementResponse,
   NewsletterRecipientsResponse,
   NewsletterRenderPreviewPayload,
   NewsletterRenderPreviewResponse,
+  NewsletterScheduleResult,
   NewsletterSendResult,
   NewsletterTemplateManifest,
   NewsletterTemplatesResponse,
@@ -152,6 +155,20 @@ export class NewsletterService {
     return this.newsletterClient.sendNewsletter(req, projectUid, newsletterUid, ifMatchVersion);
   }
 
+  public scheduleNewsletter(
+    req: Request,
+    projectUid: string,
+    newsletterUid: string,
+    ifMatchVersion: number,
+    scheduledAt: string | undefined
+  ): Promise<NewsletterScheduleResult> {
+    return this.newsletterClient.scheduleNewsletter(req, projectUid, newsletterUid, ifMatchVersion, scheduledAt);
+  }
+
+  public cancelScheduleNewsletter(req: Request, projectUid: string, newsletterUid: string, ifMatchVersion: number): Promise<NewsletterCancelScheduleResult> {
+    return this.newsletterClient.cancelScheduleNewsletter(req, projectUid, newsletterUid, ifMatchVersion);
+  }
+
   public recipientCount(req: Request, projectUid: string, payload: NewsletterRecipientCountPayload): Promise<NewsletterRecipientCount> {
     return this.newsletterClient.recipientCount(req, projectUid, payload);
   }
@@ -166,6 +183,10 @@ export class NewsletterService {
 
   public getAnalytics(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterAnalytics> {
     return this.newsletterClient.getAnalytics(req, projectUid, newsletterUid);
+  }
+
+  public getRecipientEngagement(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterRecipientEngagementResponse> {
+    return this.newsletterClient.getRecipientEngagement(req, projectUid, newsletterUid);
   }
 
   public listOptOuts(req: Request, projectUid: string): Promise<NewsletterOptOutListResponse> {

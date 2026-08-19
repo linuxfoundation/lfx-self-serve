@@ -57,6 +57,9 @@ import {
   MembershipChurnPerTierSummaryResponse,
   NpsSummaryResponse,
   OutstandingBalanceSummaryResponse,
+  EventDetailResponse,
+  EventRosterResponse,
+  EventsOverviewSummaryResponse,
   EventsSummaryResponse,
   ParticipatingOrgsSummaryResponse,
   TrainingCertificationSummaryResponse,
@@ -75,7 +78,7 @@ import {
   MultiFoundationSummaryResponse,
 } from '@lfx-one/shared/interfaces';
 import { DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT, HEALTH_METRICS_NPS_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
-import { catchError, Observable, of, shareReplay } from 'rxjs';
+import { catchError, Observable, of, shareReplay, throwError } from 'rxjs';
 
 /**
  * Analytics service for fetching analytics data from Snowflake
@@ -96,6 +99,12 @@ export class AnalyticsService {
   // the drawer chart reuse one request per foundation so navigating away and
   // back doesn't re-fetch (and potentially error into a zeroed fallback).
   private readonly foundationHealthScoreDistributionCache = new Map<string, Observable<FoundationHealthScoreDistributionResponse>>();
+
+  // Request cache for the event roster, keyed on every argument that changes the
+  // response. The attention section (upcoming only) and the roster table both fetch
+  // on first paint with the same arguments, so without this they fire two identical
+  // requests for one payload.
+  private readonly eventRosterCache = new Map<string, Observable<EventRosterResponse>>();
 
   /**
    * Get active weeks streak data for the current user
@@ -866,27 +875,21 @@ export class AnalyticsService {
   }
 
   /**
-   * Get web activities summary grouped by domain category
+   * Get web activities summary grouped by domain category.
+   *
+   * Errors PROPAGATE deliberately — see getBrandReach. The Website drawer sets its own
+   * unavailable flag inside a catchError, and a swallow here makes that flag unreachable:
+   * the drawer would render "No website traffic detected" for a failed request.
+   *
    * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
    * @param classification - Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
-   * @returns Observable of web activities summary response
+   * @returns Observable of web activities summary response. Errors are NOT caught — a failed
+   * request errors the observable so the caller's guard can distinguish it from a real zero.
    */
   public getWebActivitiesSummary(foundationSlug: string, classification?: string, period?: string): Observable<WebActivitiesSummaryResponse> {
-    return this.http
-      .get<WebActivitiesSummaryResponse>('/api/analytics/web-activities-summary', {
-        params: this.buildFoundationParams(foundationSlug, classification, period),
-      })
-      .pipe(
-        catchError(() => {
-          return of({
-            totalSessions: 0,
-            totalPageViews: 0,
-            domainGroups: [],
-            dailyData: [],
-            dailyLabels: [],
-          });
-        })
-      );
+    return this.http.get<WebActivitiesSummaryResponse>('/api/analytics/web-activities-summary', {
+      params: this.buildFoundationParams(foundationSlug, classification, period),
+    });
   }
 
   /**
@@ -896,21 +899,14 @@ export class AnalyticsService {
    * @returns Observable of email CTR response
    */
   public getEmailCtr(foundationSlug: string, classification?: string, period?: string): Observable<EmailCtrResponse> {
-    return this.http.get<EmailCtrResponse>('/api/analytics/email-ctr', { params: this.buildFoundationParams(foundationSlug, classification, period) }).pipe(
-      catchError(() => {
-        return of({
-          currentCtr: 0,
-          changePercentage: 0,
-          momChangePercentage: null,
-          trend: 'up' as const,
-          monthlyData: [],
-          monthlyLabels: [],
-          campaignGroups: [],
-          monthlySends: [],
-          monthlyOpens: [],
-        });
-      })
-    );
+    // Propagates rather than resolving a zero-filled object, matching getEventRoster. Swallowing
+    // the failure here reached the tab as a successful response of all zeros, so an outage rendered
+    // "Total Sends 0 · CTR 0.0%" as measurements — and no downstream guard could tell the
+    // difference, because by then the error no longer existed. The caller catches it and renders a
+    // failure state instead.
+    return this.http.get<EmailCtrResponse>('/api/analytics/email-ctr', {
+      params: this.buildFoundationParams(foundationSlug, classification, period),
+    });
   }
 
   /**
@@ -947,29 +943,22 @@ export class AnalyticsService {
 
   /**
    * Get paid social reach metrics
+   *
+   * Errors propagate to the caller rather than resolving to an all-zeros response.
+   * Spend, impressions and ROAS of 0 are legitimate measurements, so a zero-filled
+   * error fallback here would render a failed request as "this foundation spent
+   * nothing" — indistinguishable from the real thing. Callers must handle the error
+   * stream and render their own unavailable state; a caller that swallows the error
+   * back into zeros reintroduces exactly the ambiguity this avoids.
+   *
    * @param foundationSlug - Foundation slug used to filter metrics
    * @param classification - Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
    * @returns Social reach response with ROAS, impressions, and monthly trends
    */
   public getSocialReach(foundationSlug: string, classification?: string, period?: string): Observable<SocialReachResponse> {
-    return this.http
-      .get<SocialReachResponse>('/api/analytics/social-reach', { params: this.buildFoundationParams(foundationSlug, classification, period) })
-      .pipe(
-        catchError(() => {
-          return of({
-            totalReach: 0,
-            roas: 0,
-            totalSpend: 0,
-            totalRevenue: 0,
-            changePercentage: 0,
-            trend: 'up' as const,
-            monthlyData: [],
-            monthlyLabels: [],
-            monthlyRoas: [],
-            channelGroups: [],
-          });
-        })
-      );
+    return this.http.get<SocialReachResponse>('/api/analytics/social-reach', {
+      params: this.buildFoundationParams(foundationSlug, classification, period),
+    });
   }
 
   public getKeywordPerformance(foundationSlug: string, period?: string): Observable<KeywordPerformanceResponse> {
@@ -981,66 +970,48 @@ export class AnalyticsService {
   // North Star Metrics
 
   /**
-   * Get member retention metrics from Snowflake North Star views
+   * Get member retention metrics from Snowflake North Star views.
+   *
+   * Errors PROPAGATE deliberately — see getBrandReach. A catchError resolving to a zero-filled
+   * response here makes the ED card's undefined guard unreachable, and the card renders the
+   * zeros as if measured.
+   *
+   * @param foundationSlug Foundation slug used to filter Snowflake queries
+   * @returns Observable of the response. Errors are NOT caught — a failed request errors the
+   * observable so the caller's guard can distinguish it from a real zero.
    */
   public getMemberRetention(foundationSlug: string): Observable<MemberRetentionResponse> {
-    return this.http.get<MemberRetentionResponse>('/api/analytics/member-retention', { params: { foundationSlug } }).pipe(
-      catchError(() => {
-        return of({
-          renewalRate: 0,
-          netRevenueRetention: 0,
-          changePercentage: 0,
-          trend: 'up' as const,
-          target: 85,
-          monthlyData: [],
-        });
-      })
-    );
+    return this.http.get<MemberRetentionResponse>('/api/analytics/member-retention', { params: { foundationSlug } });
   }
 
   /**
-   * Get member acquisition rate metrics from Snowflake North Star views
+   * Get member acquisition rate metrics from Snowflake North Star views.
+   *
+   * Errors PROPAGATE deliberately — see getBrandReach. A catchError resolving to a zero-filled
+   * response here makes the ED card's undefined guard unreachable, and the card renders the
+   * zeros as if measured.
+   *
+   * @param foundationSlug Foundation slug used to filter Snowflake queries
+   * @returns Observable of the response. Errors are NOT caught — a failed request errors the
+   * observable so the caller's guard can distinguish it from a real zero.
    */
   public getMemberAcquisition(foundationSlug: string): Observable<MemberAcquisitionResponse> {
-    return this.http.get<MemberAcquisitionResponse>('/api/analytics/member-acquisition', { params: { foundationSlug } }).pipe(
-      catchError(() => {
-        return of({
-          totalMembers: 0,
-          totalMembersMonthlyData: [],
-          totalMembersMonthlyLabels: [],
-          newMembersThisQuarter: 0,
-          newMemberRevenue: 0,
-          changePercentage: 0,
-          trend: 'up' as const,
-          quarterlyData: [],
-        });
-      })
-    );
+    return this.http.get<MemberAcquisitionResponse>('/api/analytics/member-acquisition', { params: { foundationSlug } });
   }
 
   /**
-   * Get engaged community size metrics from Snowflake North Star views
+   * Get engaged community size metrics from Snowflake North Star views.
+   *
+   * Errors PROPAGATE deliberately — see getBrandReach. A catchError resolving to a zero-filled
+   * response here makes the ED card's undefined guard unreachable, and the card renders the
+   * zeros as if measured.
+   *
+   * @param foundationSlug Foundation slug used to filter Snowflake queries
+   * @returns Observable of the response. Errors are NOT caught — a failed request errors the
+   * observable so the caller's guard can distinguish it from a real zero.
    */
   public getEngagedCommunity(foundationSlug: string): Observable<EngagedCommunitySizeResponse> {
-    return this.http.get<EngagedCommunitySizeResponse>('/api/analytics/engaged-community', { params: { foundationSlug } }).pipe(
-      catchError(() => {
-        return of({
-          totalMembers: 0,
-          changePercentage: 0,
-          trend: 'up' as const,
-          breakdown: {
-            newsletterSubscribers: 0,
-            communityMembers: 0,
-            workingGroupMembers: 0,
-            certifiedIndividuals: 0,
-            webVisitors: 0,
-            codeContributors: 0,
-            trainingEnrollees: 0,
-          },
-          monthlyData: [],
-        });
-      })
-    );
+    return this.http.get<EngagedCommunitySizeResponse>('/api/analytics/engaged-community', { params: { foundationSlug } });
   }
 
   /**
@@ -1141,6 +1112,76 @@ export class AnalyticsService {
     );
   }
 
+  /**
+   * Foundation-wide Events Summary tiles for the Campaign Impact Overview tab.
+   * Emits null on error so the tiles fall back to dashes rather than measured zeros.
+   */
+  public getEventsOverviewSummary(foundationSlug: string, period?: string): Observable<EventsOverviewSummaryResponse | null> {
+    return this.http
+      .get<EventsOverviewSummaryResponse>('/api/analytics/events-overview-summary', {
+        params: this.buildFoundationParams(foundationSlug, undefined, period),
+      })
+      .pipe(
+        catchError((error: unknown) => {
+          // Log before falling back so an outage stays diagnosable: the null return is
+          // rendered as dashes, which is otherwise indistinguishable from "no data yet".
+          console.error('[analytics] events-overview-summary failed', { foundationSlug, period, error });
+          return of(null);
+        })
+      );
+  }
+
+  /**
+   * Foundation event roster (upcoming by default; pass includePast to include past events,
+   * scoped to the period when one is supplied).
+   * Emits an empty roster on error so the table shows its empty state rather than breaking.
+   */
+  public getEventRoster(foundationSlug: string, includePast = false, period?: string): Observable<EventRosterResponse> {
+    // Only the arguments that actually change the response belong in the key. The server applies
+    // the period filter solely when includePast is true (see getEventRoster in project.service.ts),
+    // so for the upcoming-events case every period yields the same rows — keying on it there would
+    // split one cacheable response across N entries and make the roster and the attention strip
+    // each issue their own request.
+    const key = `${foundationSlug}|${includePast}|${includePast ? (period ?? '') : ''}`;
+    if (!this.eventRosterCache.has(key)) {
+      const params = this.buildFoundationParams(foundationSlug, undefined, period);
+      if (includePast) {
+        params['includePast'] = 'true';
+      }
+      // The error propagates rather than degrading to an empty roster: "no upcoming events" and
+      // "we couldn't load your events" are different statements, and collapsing an outage or an
+      // expired session into the former misreports a failure as real data. Subscribers render an
+      // explicit failure state. The cache entry is evicted first so a retry re-requests instead
+      // of replaying the failure.
+      const req$ = this.http.get<EventRosterResponse>('/api/analytics/event-roster', { params }).pipe(
+        catchError((error: unknown) => {
+          console.error('[analytics] event-roster failed', { foundationSlug, includePast, error });
+          this.eventRosterCache.delete(key);
+          return throwError(() => error);
+        }),
+        shareReplay(1)
+      );
+      this.eventRosterCache.set(key, req$);
+    }
+    return this.eventRosterCache.get(key)!;
+  }
+
+  /**
+   * Per-event detail for the roster drawer (meta, actual-vs-goal, sponsorship-by-tier).
+   *
+   * `foundationSlug` is required and server-enforced: the event id alone carries no ownership,
+   * so the query is scoped to the foundation rather than trusting it. Resolves to `null` for a
+   * genuinely missing event and THROWS on transport/authorization failures, so the drawer can
+   * tell "no such event" apart from "we could not load it".
+   *
+   * The removed second block claimed it "emits null on error so the drawer shows its empty
+   * state" — the opposite of the throw above, and exactly the reasoning that turns a failed
+   * read back into a rendered measurement.
+   */
+  public getEventDetail(eventId: string, foundationSlug: string): Observable<EventDetailResponse | null> {
+    return this.http.get<EventDetailResponse>('/api/analytics/event-detail', { params: { eventId, foundationSlug } });
+  }
+
   public getTrainingCertificationSummary(foundationSlug: string, range: string = 'YTD'): Observable<TrainingCertificationSummaryResponse> {
     const params: Record<string, string> = { foundationSlug };
     if (range && range !== 'YTD') {
@@ -1225,103 +1266,75 @@ export class AnalyticsService {
 
   /**
    * Get event growth metrics for the ED dashboard.
+   *
+   * Errors PROPAGATE deliberately — do not add a catchError that resolves to a zero-filled
+   * response. The ED dashboard's `safe()` wrapper turns a failure into `undefined`, which is
+   * what lets the card render "Data unavailable" instead of a fabricated zero. Swallowing here
+   * makes that guard unreachable: `safe()` sees a success and the card prints the zeros as if
+   * measured. This is the AAIF defect — 17,269 followers rendered as "0 · 0 platforms".
+   *
    * @param foundationSlug Foundation slug used to filter Snowflake queries
-   * @returns Observable emitting event growth totals, YoY changes, and monthly trend (or zeroed defaults on error)
+   * @returns Observable emitting event growth totals, YoY changes, and monthly trend. Errors
+   * are NOT caught — see the propagation note above; the caller's guard needs the failure.
    */
   public getEventGrowth(foundationSlug: string): Observable<EventGrowthResponse> {
-    return this.http.get<EventGrowthResponse>('/api/analytics/event-growth', { params: { foundationSlug } }).pipe(
-      catchError(() =>
-        of({
-          totalAttendees: 0,
-          totalRegistrants: 0,
-          totalEvents: 0,
-          totalRevenue: 0,
-          revenuePerAttendee: 0,
-          attendeeYoyChange: 0,
-          registrantYoyChange: 0,
-          revenueYoyChange: 0,
-          trend: 'up' as const,
-          monthlyData: [],
-          topEvents: [],
-        })
-      )
-    );
+    return this.http.get<EventGrowthResponse>('/api/analytics/event-growth', { params: { foundationSlug } });
   }
 
   /**
    * Get brand reach metrics for the ED dashboard (social followers + web sessions).
+   *
+   * Errors PROPAGATE deliberately — do not add a catchError that resolves to a zero-filled
+   * response. The ED dashboard's `safe()` wrapper turns a failure into `undefined`, which is
+   * what lets the card render "Data unavailable" instead of a fabricated zero. Swallowing here
+   * makes that guard unreachable: `safe()` sees a success and the card prints the zeros as if
+   * measured. This is the AAIF defect — 17,269 followers rendered as "0 · 0 platforms".
+   *
    * @param foundationSlug Foundation slug used to filter Snowflake queries
    * @param classification Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
-   * @returns Observable emitting reach totals, platform breakdowns, and weekly trend (or zeroed defaults on error)
+   * @returns Observable emitting reach totals, platform breakdowns, and weekly trend. Errors
+   * are NOT caught — see the propagation note above; the caller's guard needs the failure.
    */
   public getBrandReach(foundationSlug: string, classification?: string): Observable<BrandReachResponse> {
-    return this.http.get<BrandReachResponse>('/api/analytics/brand-reach', { params: this.buildFoundationParams(foundationSlug, classification) }).pipe(
-      catchError(() =>
-        of({
-          totalSocialFollowers: 0,
-          totalMonthlySessions: 0,
-          activePlatforms: 0,
-          changePercentage: 0,
-          sessionMomChangePct: 0,
-          trend: 'up' as const,
-          socialPlatforms: [],
-          websiteDomains: [],
-          weeklyTrend: [],
-        })
-      )
-    );
+    return this.http.get<BrandReachResponse>('/api/analytics/brand-reach', { params: this.buildFoundationParams(foundationSlug, classification) });
   }
 
   /**
    * Get brand health metrics for the ED dashboard (mention volume + sentiment breakdown).
+   *
+   * Errors PROPAGATE deliberately — do not add a catchError that resolves to a zero-filled
+   * response. The ED dashboard's `safe()` wrapper turns a failure into `undefined`, which is
+   * what lets the card render "Data unavailable" instead of a fabricated zero. Swallowing here
+   * makes that guard unreachable: `safe()` sees a success and the card prints the zeros as if
+   * measured. This is the AAIF defect — 17,269 followers rendered as "0 · 0 platforms".
+   *
    * @param foundationSlug Foundation slug used to filter Snowflake queries
-   * @returns Observable emitting mention totals, sentiment percentages, and monthly history (or zeroed defaults on error)
+   * @returns Observable emitting mention totals, sentiment percentages, and monthly history.
+   * Errors are NOT caught — see the propagation note above; the caller's guard needs the failure.
    */
   public getBrandHealth(foundationSlug: string, includeMentions = false, period?: string): Observable<BrandHealthResponse> {
     const params: Record<string, string> = { foundationSlug, ...(includeMentions && { includeMentions: 'true' }), ...(period && { period }) };
-    return this.http.get<BrandHealthResponse>('/api/analytics/brand-health', { params }).pipe(
-      catchError(() =>
-        of({
-          totalMentions: 0,
-          sentiment: { positive: 0, neutral: 0, negative: 0 },
-          sentimentMomChangePp: 0,
-          mentionMomChangePct: null,
-          trend: 'up' as const,
-          monthlyMentions: [],
-          topProjects: [],
-          topPositiveMentions: [],
-          topNegativeMentions: [],
-        })
-      )
-    );
+    return this.http.get<BrandHealthResponse>('/api/analytics/brand-health', { params });
   }
 
   /**
    * Get revenue impact metrics for the ED dashboard (attribution + paid media + event registration).
+   *
+   * Errors propagate to the caller rather than resolving to an all-zeros response.
+   * $0 attributed revenue is a legitimate measurement, so a zero-filled error fallback
+   * here would render a failed request as "this foundation won nothing" —
+   * indistinguishable from the real thing. Callers must handle the error stream and
+   * render their own unavailable state; a caller that swallows the error back into
+   * zeros reintroduces exactly the ambiguity this avoids.
+   *
    * @param foundationSlug Foundation slug used to filter Snowflake queries
    * @param classification Optional LF_SUB_DOMAIN_CLASSIFICATION filter (e.g., 'LF Events', 'LF Corporate')
-   * @returns Observable emitting pipeline/revenue totals, attribution breakdowns, and event registration data (or zeroed defaults on error)
+   * @returns Observable emitting pipeline/revenue totals, attribution breakdowns, and event registration data
    */
   public getRevenueImpact(foundationSlug: string, classification?: string, period?: string): Observable<RevenueImpactResponse> {
-    return this.http
-      .get<RevenueImpactResponse>('/api/analytics/revenue-impact', { params: this.buildFoundationParams(foundationSlug, classification, period) })
-      .pipe(
-        catchError(() =>
-          of({
-            pipelineInfluenced: 0,
-            revenueAttributed: 0,
-            matchRate: 0,
-            changePercentage: 0,
-            trend: 'up' as const,
-            attributionModels: { linear: 0, firstTouch: 0, lastTouch: 0 },
-            engagementTypes: [],
-            paidMedia: { roas: 0, impressions: 0, adSpend: 0, adRevenue: 0, monthlyTrend: [] },
-            attributionChannels: [],
-            projectBreakdown: [],
-            eventRegistrationAttribution: { channelBreakdown: [], monthlyTrend: [] },
-          })
-        )
-      );
+    return this.http.get<RevenueImpactResponse>('/api/analytics/revenue-impact', {
+      params: this.buildFoundationParams(foundationSlug, classification, period),
+    });
   }
 
   /**

@@ -71,13 +71,16 @@ export class HiddenActionsService {
     return this.cookieService.check(`${this.cookiePrefix}${hash}`) || this.cookieService.check(`${this.dismissCookiePrefix}${hash}`);
   }
 
-  // Prefer intrinsic IDs (meetingUid, voteUid) so same-text siblings never collide; fall back to type+badge+text+buttonLink for legacy action shapes without one.
+  // Prefer intrinsic IDs (meetingUid, voteUid, briefActionUid) so same-text siblings never collide; fall back to type+badge+text+buttonLink for legacy action shapes without one.
   private getActionIdentifier(item: PendingActionItem): string {
     if (item.meetingUid) {
       return `${item.type}-${item.meetingUid}-${item.occurrenceId ?? ''}`;
     }
     if (item.voteUid) {
       return `${item.type}-${item.voteUid}`;
+    }
+    if (item.briefActionUid) {
+      return `${item.type}-${item.briefActionUid}`;
     }
     const base = `${item.type}-${item.badge}-${item.text}`;
     return item.buttonLink ? `${base}|${item.buttonLink}` : base;

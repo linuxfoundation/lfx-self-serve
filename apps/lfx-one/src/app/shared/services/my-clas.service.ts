@@ -6,7 +6,7 @@ import { inject, Injectable } from '@angular/core';
 import { MyClasResponse, PdfUrlResponse } from '@lfx-one/shared/interfaces';
 import { Observable, take } from 'rxjs';
 
-/** Client for the read-only "My CLAs" server endpoints (Me lens → Profile tab). */
+/** Client for the read-only "CLAs" server endpoints (Me lens → Profile tab). */
 @Injectable({
   providedIn: 'root',
 })

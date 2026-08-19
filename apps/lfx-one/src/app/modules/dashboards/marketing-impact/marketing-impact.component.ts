@@ -1,18 +1,28 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { ButtonComponent } from '@components/button/button.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { SelectComponent } from '@components/select/select.component';
-import { FOCUS_VISIBLE_TABS, MARKETING_IMPACT_FOCUS_OPTIONS, MARKETING_IMPACT_TABS } from '@lfx-one/shared/constants';
+import {
+  COMING_SOON_FOCUS_PROGRAMS,
+  EVENTS_SPLIT_FOCUS,
+  EVENTS_SPLIT_OPTIONS,
+  FOCUS_VISIBLE_TABS,
+  MARKETING_IMPACT_FOCUS_OPTIONS,
+  MARKETING_IMPACT_TABS,
+} from '@lfx-one/shared/constants';
 import { buildMarketingImpactPeriodOptions, getDefaultMarketingImpactPeriod } from '@lfx-one/shared/utils';
+import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { startWith } from 'rxjs';
 
 import type {
+  EventsSplitOption,
+  EventsSplitView,
   FilterPillOption,
   MarketingImpactFocusProgram,
   MarketingImpactPeriodOption,
@@ -20,7 +30,6 @@ import type {
   MarketingImpactTabOption,
 } from '@lfx-one/shared/interfaces';
 
-import { AttributionSectionComponent } from './components/attribution-section/attribution-section.component';
 import { EmailTabComponent } from './components/email-tab/email-tab.component';
 import { OverviewTabComponent } from './components/overview-tab/overview-tab.component';
 import { PerformanceMarketingTabComponent } from './components/performance-marketing-tab/performance-marketing-tab.component';
@@ -33,10 +42,8 @@ import { WebActivityTabComponent } from './components/web-activity-tab/web-activ
   imports: [
     ReactiveFormsModule,
     SelectComponent,
-    ButtonComponent,
     FilterPillsComponent,
     OverviewTabComponent,
-    AttributionSectionComponent,
     PerformanceMarketingTabComponent,
     EmailTabComponent,
     WebActivityTabComponent,
@@ -49,7 +56,9 @@ import { WebActivityTabComponent } from './components/web-activity-tab/web-activ
 export class MarketingImpactComponent {
   // === Services ===
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly personaService = inject(PersonaService);
   private readonly fb = inject(FormBuilder);
+  private readonly platformId = inject(PLATFORM_ID);
   private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
 
   // === Forms ===
@@ -60,10 +69,13 @@ export class MarketingImpactComponent {
   protected readonly periodOptions: MarketingImpactPeriodOption[] = buildMarketingImpactPeriodOptions();
   protected readonly focusOptions: FilterPillOption[] = MARKETING_IMPACT_FOCUS_OPTIONS;
   protected readonly tabs: MarketingImpactTabOption[] = MARKETING_IMPACT_TABS;
+  protected readonly eventsSplitOptions: EventsSplitOption[] = EVENTS_SPLIT_OPTIONS;
 
   // === WritableSignals ===
   protected readonly selectedFocus = signal<MarketingImpactFocusProgram>('all');
-  protected readonly selectedTab = signal<MarketingImpactTab>('overview');
+  protected readonly selectedTab = signal<MarketingImpactTab>('all');
+  /** Attendance vs sponsorship sub-view; only meaningful while the Events campaign type is active. */
+  protected readonly selectedEventsSplit = signal<EventsSplitView>('attendance');
 
   // === Computed Signals ===
   protected readonly hasFoundation = computed(() => !!this.projectContextService.selectedFoundation());
@@ -72,6 +84,19 @@ export class MarketingImpactComponent {
   protected readonly selectedPeriod: Signal<string> = this.initSelectedPeriod();
   protected readonly contextLabel: Signal<string> = this.initContextLabel();
   protected readonly visibleTabs: Signal<MarketingImpactTabOption[]> = this.initVisibleTabs();
+  protected readonly isExecutiveDirector: Signal<boolean> = this.initIsExecutiveDirector();
+  /** True when the selected Campaign Type has no dashboard content built yet. */
+  protected readonly isComingSoon = computed(() => COMING_SOON_FOCUS_PROGRAMS.has(this.selectedFocus()));
+  /**
+   * The attendance/sponsorship split is scoped to the Events campaign type on the "All" channel.
+   * The per-channel tabs render their own components, which have no attendance/sponsorship dimension.
+   */
+  protected readonly showEventsSplit = computed(() => this.selectedFocus() === EVENTS_SPLIT_FOCUS && this.selectedTab() === 'all');
+  /** Display label of the selected Campaign Type, used in the coming-soon copy. */
+  protected readonly selectedFocusLabel = computed(() => this.focusOptions.find((o) => o.id === this.selectedFocus())?.label ?? '');
+
+  /** id of the channel tab that names the outer tabpanel. The split has its own nested panel. */
+  protected readonly panelLabelledBy = computed(() => `mi-tab-${this.selectedTab()}`);
 
   // === Protected Methods ===
   protected onFocusChange(focusId: string): void {
@@ -81,13 +106,56 @@ export class MarketingImpactComponent {
 
       const allowed = FOCUS_VISIBLE_TABS[focus];
       if (!allowed.has(this.selectedTab())) {
-        this.selectedTab.set(this.tabs.find((t) => allowed.has(t.id))?.id ?? 'overview');
+        this.selectedTab.set(this.tabs.find((t) => allowed.has(t.id))?.id ?? 'all');
+      }
+
+      // Leaving Events discards the sub-view, so returning to it always opens on Attendance rather
+      // than resuming a sponsorship view the user can no longer see or change.
+      if (focus !== EVENTS_SPLIT_FOCUS) {
+        this.selectedEventsSplit.set('attendance');
       }
     }
   }
 
   protected onTabChange(tabId: MarketingImpactTab): void {
     this.selectedTab.set(tabId);
+  }
+
+  protected onEventsSplitChange(view: EventsSplitView): void {
+    this.selectedEventsSplit.set(view);
+  }
+
+  /**
+   * Roving-tabindex keyboard handling for the Events split tablist, mirroring the person-detail
+   * drawer's tabs. Only the selected tab is in the tab order, so without Arrow/Home/End movement a
+   * keyboard-only user could reach Attendance and never Sponsorship. Focus follows selection,
+   * which is what the roving pattern requires.
+   */
+  protected onEventsSplitKeydown(event: KeyboardEvent): void {
+    const views = this.eventsSplitOptions;
+    const current = views.findIndex((view) => view.id === this.selectedEventsSplit());
+    let next = current;
+    switch (event.key) {
+      case 'ArrowRight':
+        next = (current + 1) % views.length;
+        break;
+      case 'ArrowLeft':
+        next = (current - 1 + views.length) % views.length;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = views.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    this.selectedEventsSplit.set(views[next].id);
+    if (isPlatformBrowser(this.platformId)) {
+      document.getElementById(`mi-events-tab-${views[next].id}`)?.focus();
+    }
   }
 
   // === Private Initializers ===
@@ -102,6 +170,11 @@ export class MarketingImpactComponent {
       const allowed = FOCUS_VISIBLE_TABS[this.selectedFocus()];
       return this.tabs.filter((t) => allowed.has(t.id));
     });
+  }
+
+  // Uses currentPersona() not canViewExecutiveDashboards() — LF Staff keep their contributor persona and fall into the !isExecutiveDirector() Social-Listening-only branch.
+  private initIsExecutiveDirector(): Signal<boolean> {
+    return computed(() => this.personaService.currentPersona() === 'executive-director');
   }
 
   private initContextLabel(): Signal<string> {

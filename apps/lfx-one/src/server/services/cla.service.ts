@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Read-only "My CLAs" service (Milestone 1). Resolves the session identity to a
+// Read-only "CLAs" service (Milestone 1). Resolves the session identity to a
 // set of identity keys, then delegates listing, validity computation and PDF
 // retrieval to the EasyCLA `/v4/my-clas` endpoints via lfx-gateway.
 //
@@ -301,40 +301,20 @@ export class ClaService {
    * `lfUsername` defaults to the authenticated principal upstream when omitted,
    * but is sent explicitly for clarity. GitHub id and username are both sent (see
    * resolveIdentity).
-   *
-   * STOPGAP (lfx-gateway#114): the platform API gateway's awslambda middleware
-   * forwards ONLY multi-valued query params when ANY param is repeated, silently
-   * dropping every single-valued one. With 2+ verified emails that strips the
-   * single `githubId`/`githubUsername`, so GitHub-only CLAs disappear. Pad each
-   * array key to length >= 2 (duplicate the lone value) whenever any key is
-   * already multi-valued, so it survives the gateway; EasyCLA de-dupes each
-   * identity list before authorizing, so the duplicate is a no-op server-side.
-   * `lfUsername` is intentionally NOT padded - the backend derives the principal
-   * from the X-USERNAME header, so its loss is harmless. Remove once #114 ships.
    */
   private identityQuery(identity: ResolvedClaIdentity): URLSearchParams {
     const params = new URLSearchParams();
 
-    const anyMulti = identity.emails.length > 1 || identity.githubIds.length > 1 || identity.githubUsernames.length > 1;
-
-    const appendKeepAlive = (key: string, values: string[]): void => {
-      if (values.length === 0) {
-        return;
-      }
-      if (anyMulti && values.length === 1) {
-        params.append(key, values[0]);
-        params.append(key, values[0]);
-        return;
-      }
-      for (const value of values) {
-        params.append(key, value);
-      }
-    };
-
     if (identity.lfUsername) params.set('lfUsername', identity.lfUsername);
-    appendKeepAlive('email', identity.emails);
-    appendKeepAlive('githubId', identity.githubIds);
-    appendKeepAlive('githubUsername', identity.githubUsernames);
+    for (const email of identity.emails) {
+      params.append('email', email);
+    }
+    for (const githubId of identity.githubIds) {
+      params.append('githubId', githubId);
+    }
+    for (const githubUsername of identity.githubUsernames) {
+      params.append('githubUsername', githubUsername);
+    }
     return params;
   }
 }

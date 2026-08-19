@@ -38,6 +38,19 @@
         <p-skeleton width="100%" height="12rem" />
         <p-skeleton width="60%" height="1rem" />
       </div>
+    } @else if (dataUnavailable()) {
+      <!--
+        Distinct from a genuine zero result: getSocialReach propagates errors rather than
+        resolving to zeros, precisely so 0 impressions / 0.0x ROAS can't be mistaken for a
+        measurement. Rendering the stats block here would reintroduce that ambiguity.
+      -->
+      <div role="alert" data-testid="paid-social-reach-drawer-error">
+        <lfx-empty-state
+          [withCard]="false"
+          icon="fa-light fa-triangle-exclamation"
+          title="Paid media data unavailable"
+          subtitle="This data could not be loaded. Please try again." />
+      </div>
     } @else {
       <!-- Summary Stats -->
       <div class="flex gap-4" data-testid="paid-social-reach-drawer-stats">

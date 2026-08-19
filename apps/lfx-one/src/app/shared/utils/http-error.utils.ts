@@ -37,9 +37,18 @@ export function getHttpErrorDetail(err: HttpErrorResponse, fallback: string): st
  */
 export function extractErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof HttpErrorResponse) {
-    const body = error.error as { message?: string; error?: string } | string | null;
+    const body = error.error as { message?: string; error?: string; errors?: { message?: string }[] } | string | null;
     if (typeof body === 'string' && body.trim().length > 0) return body;
     if (body && typeof body === 'object') {
+      // ServiceValidationError's `errors[].message` (server) carries the specific, actionable
+      // detail for the failing field — the top-level message/error is often a generic
+      // "Validation failed for <field>" wrapper, so prefer the field-level detail when present.
+      // `body` is unknown runtime data cast through a type assertion, not a runtime guarantee —
+      // `errors` could be any shape (e.g. a string), so Array.isArray guards before searching it.
+      const fieldDetail = Array.isArray(body.errors)
+        ? body.errors.find((e): e is { message: string } => !!e && typeof e.message === 'string' && e.message.trim().length > 0)
+        : undefined;
+      if (fieldDetail) return fieldDetail.message;
       const candidate = [body.message, body.error].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
       if (candidate) return candidate;
     }
@@ -52,11 +61,18 @@ export function extractErrorMessage(error: unknown, fallback: string): string {
 
 /**
  * Whether an error is worth retrying — a beat of time could plausibly fix a network drop (0),
- * rate limit (429), or upstream 5xx, but not a client error like an expired session (401) or a
- * permission/not-found response (403/404).
+ * rate limit (429), request timeout (408), or upstream 5xx, but not a client error like an
+ * expired session (401) or a permission/not-found response (403/404).
+ *
+ * 408 is in the list despite being a 4xx because in this app it is not a client error at all:
+ * it is the status this server mints for its OWN abort, when an upstream microservice call
+ * exceeds the configured timeout (`ApiClientService.executeRequest`). Nothing about the request
+ * is wrong, and the next attempt may well land inside the budget — treating it as permanent
+ * would abandon exactly the case retrying exists for. The rest of the 4xx range keeps failing
+ * fast, so authentication and validation errors still surface on the first response.
  */
 export function isTransientHttpError(error: unknown): boolean {
-  return error instanceof HttpErrorResponse && (error.status === 0 || error.status === 429 || error.status >= 500);
+  return error instanceof HttpErrorResponse && (error.status === 0 || error.status === 408 || error.status === 429 || error.status >= 500);
 }
 
 /**

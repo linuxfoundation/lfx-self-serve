@@ -6,6 +6,7 @@ import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
 import { authenticatedMatchGuard } from './shared/guards/authenticated-match.guard';
+import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { executiveDirectorGuard } from './shared/guards/executive-director.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
@@ -38,18 +39,18 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
-      // Foundation Lens — Health Metrics page (ED-only)
+      // Foundation Lens — Health Metrics page (ED + LF Staff)
       {
         path: 'foundation/health-metrics',
         data: { lens: 'foundation' },
-        canActivate: [executiveDirectorGuard, projectQueryParamGuard],
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/health-metrics/health-metrics.component').then((m) => m.HealthMetricsComponent),
       },
-      // Foundation Lens — Marketing Impact page (ED-only)
+      // Foundation Lens — Campaign Impact page (ED + LF Staff; LF Staff see only the Social Listening tab)
       {
         path: 'foundation/marketing-impact',
         data: { lens: 'foundation' },
-        canActivate: [executiveDirectorGuard, projectQueryParamGuard],
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/marketing-impact/marketing-impact.component').then((m) => m.MarketingImpactComponent),
       },
       // Foundation Lens — Campaigns page (ED-only)
@@ -127,6 +128,9 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/dashboards/org/org-project-detail/org-project-detail.component').then((m) => m.OrgProjectDetailComponent),
           },
           {
+            // Componentless parent, so the dark-launch guard is declared once and the project
+            // detail child is matched by it rather than by a second guard of its own. A looser
+            // copy would be a way into the unfinished feature while the flag is off.
             path: 'roi',
             canMatch: [orgLensRoiEnabledGuard],
             data: {
@@ -135,7 +139,20 @@ export const routes: Routes = [
               description: "Modelled return on your organization's open source investment.",
               icon: 'fa-light fa-chart-mixed-up-circle-dollar',
             },
-            loadComponent: () => import('./modules/dashboards/org/org-roi/org-roi.component').then((m) => m.OrgRoiComponent),
+            children: [
+              {
+                path: '',
+                loadComponent: () => import('./modules/dashboards/org/org-roi/org-roi.component').then((m) => m.OrgRoiComponent),
+              },
+              {
+                path: 'projects/:projectSlug',
+                data: { title: 'Project ROI Detail', description: "Modelled return on your organization's investment in one project." },
+                loadComponent: () =>
+                  import('./modules/dashboards/org/org-roi/org-roi-project-detail/org-roi-project-detail.component').then(
+                    (m) => m.OrgRoiProjectDetailComponent
+                  ),
+              },
+            ],
           },
           {
             // INFO: Future Epic implementation — the Governance page is hidden; deep links
@@ -352,6 +369,17 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
       {
+        // Canonical shareable newsletter permalink (GH-1550). Mounted ahead of
+        // the lens-redirected `newsletters` mount below so the URL never
+        // rewrites to /foundation/... or /project/..., whose mount-level
+        // newsletterAccessGuard would block non-manager readers. Any
+        // authenticated user may view sent issues; drafts 404 in-place for
+        // non-writers (enforced in the component).
+        path: 'newsletters/:projectSlug/:id',
+        canActivate: [authGuard],
+        loadComponent: () => import('./modules/newsletters/newsletter-reader/newsletter-reader.component').then((m) => m.NewsletterReaderComponent),
+      },
+      {
         path: 'newsletters',
         // No newsletterAccessGuard at the mount: the Me-lens member feed
         // (/newsletters/my) must be reachable by regular committee members.
@@ -489,24 +517,17 @@ export const routes: Routes = [
     path: 'auth-error',
     loadComponent: () => import('./modules/auth-error/auth-error.component').then((m) => m.AuthErrorComponent),
   },
-  // Branded 404 page — public named route so the /not-found destination is reachable without a
-  // session (auth.middleware.ts classifies it as 'public'). Following the same pattern as
-  // auth-error and invite/error.
-  // Note: for authenticated users this page is reached directly via the ** wildcard below.
-  // For anonymous users the Express auth middleware classifies unrecognized paths as required-auth
-  // and redirects to login first; after login the returnTo URL is honoured and the ** wildcard
-  // then redirects here — so the branded 404 is always shown, just after authentication for
-  // anonymous deep-links rather than before.
+  // Trailing in-shell catch-all — branded 404 in place (no redirect), inside the shell for the left nav.
+  // MUST be last so it never shadows the public sibling routes above; server sets 404 via the flag.
   {
-    path: 'not-found',
-    loadComponent: () => import('./modules/not-found/not-found.component').then((m) => m.NotFoundComponent),
-  },
-  // Generic catch-all — redirects unrecognized URLs to /not-found so authenticated users get a
-  // proper HTTP 404 status and a branded page. Also handles post-login returnTo redirects for
-  // anonymous users who followed a stale or mistyped URL (see /not-found comment above).
-  // Must be last so it never shadows real routes.
-  {
-    path: '**',
-    redirectTo: '/not-found',
+    path: '',
+    canActivate: [authGuard],
+    loadComponent: () => import('./layouts/main-layout/main-layout.component').then((m) => m.MainLayoutComponent),
+    children: [
+      {
+        path: '**',
+        loadComponent: () => import('./modules/not-found/not-found.component').then((m) => m.NotFoundComponent),
+      },
+    ],
   },
 ];

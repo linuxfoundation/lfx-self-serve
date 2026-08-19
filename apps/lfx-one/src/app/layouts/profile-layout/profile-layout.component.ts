@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
@@ -11,7 +11,7 @@ import { buildProfileTabs } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { ProfileEditDrawerComponent } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.component';
@@ -33,9 +33,10 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
 /**
  * ProfileLayoutComponent is the shell for the Profile & Account hub. It provides:
  * - Content column: page head, subtab navigation, and the router outlet for child pages
- * - A fixed, full-height 300px profile rail (lfx-profile-panel) pinned to the right edge at every
- *   screen size — never stacks above the content, never changes width, and sits above page content
- *   (z-40); MainLayoutComponent reserves a matching right gutter so content/footer stay clear of it
+ * - A profile rail (lfx-profile-panel) that is inline in the content column below 2xl, and a fixed,
+ *   full-height 300px rail pinned to the right edge at 2xl and up — never stacks above the content,
+ *   never changes width, and sits above page content (z-40) at that breakpoint; MainLayoutComponent
+ *   reserves a matching right gutter (2xl and up only) so content/footer stay clear of it
  *
  * The layout owns the profile data fetch, optimistic updates, the edit drawer, and the
  * Flow C (management-token) auth-return handling; the panel is presentational and emits
@@ -43,10 +44,13 @@ const PROFILE_AUTH_ERROR_CODES = new Set([
  */
 @Component({
   selector: 'lfx-profile-layout',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent, ProfileEditDrawerComponent, ProfileVisibilityDrawerComponent],
+  imports: [NgClass, RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent, ProfileEditDrawerComponent, ProfileVisibilityDrawerComponent],
   // Drawer services are layout-scoped (not root) so their retained context is torn down when the hub
-  // is left; each drawer child shares this injector instance via the providers below.
-  providers: [MessageService, ProfileEditDrawerService, ProfileVisibilityDrawerService],
+  // is left; each drawer child shares this injector instance via the providers below. MessageService
+  // is deliberately NOT scoped here — the app's only <p-toast/> lives in AppComponent and reads from
+  // the root MessageService, so a layout-local instance would shadow it and every toast raised by the
+  // drawer/panel/visibility-drawer would be added to a MessageService no <p-toast/> ever consumes.
+  providers: [ProfileEditDrawerService, ProfileVisibilityDrawerService],
   templateUrl: './profile-layout.component.html',
   styleUrl: './profile-layout.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -74,7 +78,11 @@ export class ProfileLayoutComponent {
   // Store raw CombinedProfile for passing to dialog
   private combinedProfile: CombinedProfile | null = null;
 
-  // Tab configuration. The read-only "My CLAs" tab is appended (before Transactions/Settings)
+  // A just-saved overlay awaiting a base profile: on the Flow C cold return the save can resolve before
+  // the initial GET, so we stash it and re-apply once a GET lands (see reapplyPendingOptimisticUpdate).
+  private pendingOptimisticMetadata: Partial<UserMetadata> | null = null;
+
+  // Tab configuration. The read-only "CLAs" tab is appended (before Transactions/Settings)
   // only when the `my-clas-enabled` flag is on — matching the route's CanMatch guard.
   private readonly myClasEnabled = this.featureFlagService.getBooleanFlag(MY_CLAS_ENABLED_FLAG, false);
   public readonly tabs: Signal<ProfileTab[]> = computed(() => buildProfileTabs(this.myClasEnabled()));
@@ -97,8 +105,11 @@ export class ProfileLayoutComponent {
   // Computed signals
   public readonly displayUsername = computed(() => stripAuthPrefixOrNull(this.profileData()?.username));
 
-  // Avatar image URL sourced from auth0 user_metadata.picture (empty when unset)
-  public readonly avatarUrl = computed(() => this.profileData()?.avatarUrl || '');
+  // Avatar image URL: read the shared signal (uploaded avatar > Auth0 OIDC picture claim) instead
+  // of this component's own profileData fetch — that GET is eventually consistent (see comment
+  // above on fetchedProfileData), so after an upload elsewhere this rail must not fall back to its
+  // own possibly-stale copy (LFXV2-2628).
+  public readonly avatarUrl = this.userService.effectiveAvatarUrl;
 
   public readonly displayName = computed(() => {
     const data = this.profileData();
@@ -162,6 +173,11 @@ export class ProfileLayoutComponent {
       }
 
       if (PROFILE_AUTH_ERROR_CODES.has(params['error'])) {
+        // Clear any stash from the redirect that failed — otherwise it outlives this failed
+        // attempt and gets replayed by the next unrelated Flow C success (see handleProfileAuthReturn).
+        if (isPlatformBrowser(this.platformId)) {
+          sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
+        }
         this.messageService.add({
           severity: 'error',
           summary: 'Authorization Error',
@@ -186,6 +202,13 @@ export class ProfileLayoutComponent {
   /** Apply the optimistic update emitted by the edit drawer's `saved` output. */
   public onProfileSaved(metadata: Partial<UserMetadata>): void {
     this.applyOptimisticProfileUpdate(metadata);
+
+    // Sync a fresh avatar upload into the shared signal immediately, so the home sidebar/header
+    // (which read UserService.effectiveAvatarUrl, not this layout's own profileData) reflect it in
+    // the same session without waiting for the next full-page load's post-hydration fetch.
+    if (metadata.picture) {
+      this.userService.uploadedAvatarUrl.set(metadata.picture);
+    }
   }
 
   /**
@@ -194,17 +217,12 @@ export class ProfileLayoutComponent {
    * drawer is correct too) and sets it as the optimistic header override.
    */
   private applyOptimisticProfileUpdate(metadata: Partial<UserMetadata>): void {
-    if (!this.combinedProfile) {
-      // No base profile to merge into yet (e.g. Flow C cold load, where the save resolves before
-      // the initial profile GET populates combinedProfile). Fall back to a refetch so the UI still
-      // reflects the change — there's nothing cached to clobber in this case.
-      this.refreshProfile$.next();
-      return;
-    }
-
-    // A null profile means the GET never loaded; merging would fabricate a non-null profile and flip
-    // the drawer's metadataLoaded true, letting a later save wipe unloaded fields. Refetch instead.
-    if (this.combinedProfile.profile == null) {
+    // No base profile to merge into yet (Flow C cold load, or a user-only GET with no profile record
+    // where merging would fabricate one and flip the drawer's metadataLoaded true). Stash the save +
+    // refetch; reapplyPendingOptimisticUpdate merges it once a base profile lands, so an eventually-
+    // consistent (pre-save) body can't mask the write.
+    if (!this.combinedProfile || this.combinedProfile.profile == null) {
+      this.pendingOptimisticMetadata = { ...(this.pendingOptimisticMetadata ?? {}), ...metadata };
       this.refreshProfile$.next();
       return;
     }
@@ -229,6 +247,20 @@ export class ProfileLayoutComponent {
 
     this.combinedProfile = mergedProfile;
     this.optimisticProfileData.set(this.mapToHeaderData(mergedProfile));
+    // The merge supersedes any stash; clear it so a later GET doesn't re-apply a now-stale overlay.
+    this.pendingOptimisticMetadata = null;
+  }
+
+  // After a GET populates combinedProfile, re-apply a save that was stashed because no base profile
+  // existed when it resolved (Flow C cold return), so an eventually-consistent (pre-save) body can't
+  // mask the write. No-op until a real profile record lands (merging a null profile would fabricate one).
+  private reapplyPendingOptimisticUpdate(): void {
+    const pending = this.pendingOptimisticMetadata;
+    if (!pending || this.combinedProfile?.profile == null) {
+      return;
+    }
+    this.pendingOptimisticMetadata = null;
+    this.applyOptimisticProfileUpdate(pending);
   }
 
   /**
@@ -246,25 +278,45 @@ export class ProfileLayoutComponent {
 
     sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
 
-    // Stored as { savedAt, userMetadata } — replay the drawer's already-mapped payload verbatim (its
-    // clear-to-empty decision), discarding it past the TTL so a stale return isn't silently replayed.
-    // A pre-LFXV2-2933 bundle wrote { savedAt, form } (raw form value); accept that legacy shape during
-    // the rollout window and map it with the prior omit-empties rules so a save started just before a
-    // mid-Flow-C deploy isn't silently dropped by the new parser.
-    let userMetadata: Partial<UserMetadata>;
+    // Stored as one of: { savedAt, userMetadata } (drawer's mapped text-field save),
+    // { savedAt, avatarPending, userMetadata? } (avatar-upload redirect, mapped and optional), or the
+    // pre-LFXV2-2933 legacy { savedAt, form } (raw, no avatarPending — mapLegacyFormEnvelope below
+    // preserves its original non-clearing semantics). Discard past the TTL so a stale or abandoned
+    // profile-edit authorization isn't silently replayed by a later, unrelated profile-auth return.
+    let userMetadata: Partial<UserMetadata> | undefined;
+    let avatarPending = false;
     try {
-      const envelope = JSON.parse(savedState) as { savedAt?: unknown; userMetadata?: Partial<UserMetadata>; form?: Partial<UserMetadata> };
+      const envelope = JSON.parse(savedState) as {
+        savedAt?: unknown;
+        userMetadata?: Partial<UserMetadata>;
+        form?: Partial<UserMetadata>;
+        avatarPending?: boolean;
+      };
       if (typeof envelope?.savedAt !== 'number' || Date.now() - envelope.savedAt > ProfileLayoutComponent.pendingSaveTtlMs) {
         return;
       }
+      avatarPending = envelope.avatarPending === true;
       if (envelope.userMetadata) {
         userMetadata = envelope.userMetadata;
       } else if (envelope.form) {
         userMetadata = this.mapLegacyFormEnvelope(envelope.form);
-      } else {
-        return;
       }
     } catch {
+      return;
+    }
+
+    // The selected File can't survive the redirect (sessionStorage can't hold one), so this is the
+    // earliest reliable point to tell the user to re-select their image — a toast shown right before
+    // `window.location.href` in the drawer is wiped by the same-tick navigation before it can be read.
+    if (avatarPending) {
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Authorization complete',
+        detail: 'Please re-select your image to upload it.',
+      });
+    }
+
+    if (!userMetadata) {
       return;
     }
 
@@ -334,6 +386,9 @@ export class ProfileLayoutComponent {
             switchMap(() =>
               this.userService.getCurrentUserProfile().pipe(
                 map((profile: CombinedProfile) => this.mapToHeaderData(profile)),
+                // Read-your-writes: if a save landed before this GET (Flow C cold return), re-apply it
+                // now that combinedProfile is populated so a stale (pre-save) body can't win.
+                tap(() => this.reapplyPendingOptimisticUpdate()),
                 catchError(() => of(null))
               )
             )
@@ -381,6 +436,16 @@ export class ProfileLayoutComponent {
   private mapToHeaderData(profile: CombinedProfile): ProfileHeaderData {
     this.loading.set(false);
     this.combinedProfile = profile;
+
+    // Seed the shared avatar signal from this response, with the same no-clobber guard as
+    // UserService's own post-hydration fetch. This response is the profile GET itself, so unlike
+    // that guard (which runs inside afterNextRender and never fires during SSR) this one also runs
+    // server-side — the profile page's first render already carries the uploaded avatar instead of
+    // waiting on a second, client-only fetch to correct it (LFXV2-2628).
+    if (profile.profile?.picture && this.userService.uploadedAvatarUrl() === null) {
+      this.userService.uploadedAvatarUrl.set(profile.profile.picture);
+    }
+
     return {
       firstName: profile.user.first_name || '',
       lastName: profile.user.last_name || '',
@@ -396,7 +461,6 @@ export class ProfileLayoutComponent {
       phoneNumber: profile.profile?.phone_number || '',
       tshirtSize: normalizeTShirtSize(profile.profile?.t_shirt_size),
       aboutMe: profile.profile?.bio || '',
-      avatarUrl: profile.profile?.picture || '',
     };
   }
 }

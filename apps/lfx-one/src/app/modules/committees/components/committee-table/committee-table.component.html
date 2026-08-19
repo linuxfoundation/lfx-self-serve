@@ -78,7 +78,7 @@
                       tooltipPosition="top"
                       aria-label="Public group — copy shareable link"
                       [attr.data-testid]="'public-group-copy-link-' + committee.uid"
-                      (click)="$event.stopPropagation(); copyPublicGroupLink(committee.uid)">
+                      (click)="$event.stopPropagation(); copyPublicGroupLink(committee)">
                       <i class="fa-light fa-copy w-3 h-3" aria-hidden="true"></i>
                     </button>
                   } @else {

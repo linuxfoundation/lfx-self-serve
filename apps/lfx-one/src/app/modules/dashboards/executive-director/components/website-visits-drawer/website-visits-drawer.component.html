@@ -39,133 +39,151 @@
         <p-skeleton width="60%" height="1rem" />
       </div>
     } @else {
-      <!-- Summary Stats -->
-      <div class="flex gap-4" data-testid="website-visits-drawer-stats">
-        <lfx-card styleClass="flex-1">
-          <div class="flex flex-col gap-1">
-            <span class="text-sm text-gray-500">Total Sessions (last 30 days)</span>
-            <span class="text-2xl font-semibold text-gray-900">{{ formattedTotalSessions() }}</span>
-          </div>
-        </lfx-card>
-        <lfx-card styleClass="flex-1">
-          <div class="flex flex-col gap-1">
-            <span class="text-sm text-gray-500">Page Views (last 30 days)</span>
-            <span class="text-2xl font-semibold text-gray-900">{{ formattedTotalPageViews() }}</span>
-          </div>
-        </lfx-card>
-      </div>
-
-      <!-- FIRST FOLD: Needs Your Attention -->
-      @if (attentionActions().length > 0 || attentionInsights().length > 0) {
-        <div
-          class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-red-600 bg-white overflow-hidden"
-          data-testid="website-visits-drawer-attention">
-          <div class="flex items-center gap-2 px-4 pt-4 pb-2">
-            <i class="fa-light fa-triangle-exclamation text-red-600"></i>
-            <h3 class="text-sm font-semibold text-red-700">Needs Your Attention</h3>
-          </div>
-
-          @for (action of attentionActions(); track action.title) {
-            <div class="flex items-start justify-between gap-4 px-4 py-3 border-t border-gray-100">
-              <div class="flex flex-col gap-1 flex-1 min-w-0">
-                <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
-                <p class="text-sm text-gray-500">{{ action.description }}</p>
-              </div>
-              @if (action.priority === 'high') {
-                <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
-              } @else {
-                <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
-              }
-            </div>
-          }
-
-          @for (insight of attentionInsights(); track insight.text) {
-            <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
-              <i class="fa-light fa-triangle-exclamation text-red-500 flex-shrink-0"></i>
-              <span>{{ insight.text }}</span>
-            </div>
-          }
-        </div>
-      }
-
-      <!-- SECOND FOLD: Performing Well -->
-      @if (performingActions().length > 0 || performingInsights().length > 0) {
-        <div
-          class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-green-600 bg-white overflow-hidden"
-          data-testid="website-visits-drawer-performing">
-          <div class="flex items-center gap-2 px-4 pt-4 pb-2">
-            <i class="fa-light fa-check text-green-600"></i>
-            <h3 class="text-sm font-semibold text-green-700">Performing Well</h3>
-          </div>
-
-          @for (action of performingActions(); track action.title) {
-            <div class="flex items-start gap-4 px-4 py-3 border-t border-gray-100">
-              <div class="flex flex-col gap-1 flex-1 min-w-0">
-                <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
-                <p class="text-sm text-gray-500">{{ action.description }}</p>
-              </div>
-            </div>
-          }
-
-          @for (insight of performingInsights(); track insight.text) {
-            <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
-              <i class="fa-light fa-check text-green-600 flex-shrink-0"></i>
-              <span>{{ insight.text }}</span>
-            </div>
-          }
-        </div>
-      }
-
-      @if (hasNoData()) {
+      @if (unavailable()) {
+        <!-- A failed request renders ONLY this. Section-by-section guarding was tried on the
+             parent-fed drawers and repeatedly missed one, so the whole body goes. -->
         <div
           class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-blue-600 bg-white overflow-hidden"
           role="status"
-          data-testid="website-visits-drawer-no-data">
+          aria-live="polite"
+          data-testid="website-visits-drawer-unavailable">
           <div class="flex items-start gap-4 px-4 py-4">
             <i class="fa-light fa-circle-info text-blue-500 mt-0.5" aria-hidden="true"></i>
             <div class="flex flex-col gap-1 flex-1 min-w-0">
-              <h3 class="text-sm font-semibold text-gray-900">No website traffic detected</h3>
-              <p class="text-sm text-gray-500">Engage with marketing ops to activate campaigns and start tracking results.</p>
+              <h3 class="text-sm font-semibold text-gray-900">{{ unavailableHeading }}</h3>
+              <p class="text-sm text-gray-500">{{ unavailableBody }}</p>
             </div>
           </div>
         </div>
+      } @else {
+        <!-- Summary Stats -->
+        <div class="flex gap-4" data-testid="website-visits-drawer-stats">
+          <lfx-card styleClass="flex-1">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Total Sessions (last 30 days)</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ formattedTotalSessions() }}</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Page Views (last 30 days)</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ formattedTotalPageViews() }}</span>
+            </div>
+          </lfx-card>
+        </div>
+
+        <!-- FIRST FOLD: Needs Your Attention -->
+        @if (attentionActions().length > 0 || attentionInsights().length > 0) {
+          <div
+            class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-red-600 bg-white overflow-hidden"
+            data-testid="website-visits-drawer-attention">
+            <div class="flex items-center gap-2 px-4 pt-4 pb-2">
+              <i class="fa-light fa-triangle-exclamation text-red-600"></i>
+              <h3 class="text-sm font-semibold text-red-700">Needs Your Attention</h3>
+            </div>
+
+            @for (action of attentionActions(); track action.title) {
+              <div class="flex items-start justify-between gap-4 px-4 py-3 border-t border-gray-100">
+                <div class="flex flex-col gap-1 flex-1 min-w-0">
+                  <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+                  <p class="text-sm text-gray-500">{{ action.description }}</p>
+                </div>
+                @if (action.priority === 'high') {
+                  <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
+                } @else {
+                  <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
+                }
+              </div>
+            }
+
+            @for (insight of attentionInsights(); track insight.text) {
+              <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
+                <i class="fa-light fa-triangle-exclamation text-red-500 flex-shrink-0"></i>
+                <span>{{ insight.text }}</span>
+              </div>
+            }
+          </div>
+        }
+
+        <!-- SECOND FOLD: Performing Well -->
+        @if (performingActions().length > 0 || performingInsights().length > 0) {
+          <div
+            class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-green-600 bg-white overflow-hidden"
+            data-testid="website-visits-drawer-performing">
+            <div class="flex items-center gap-2 px-4 pt-4 pb-2">
+              <i class="fa-light fa-check text-green-600"></i>
+              <h3 class="text-sm font-semibold text-green-700">Performing Well</h3>
+            </div>
+
+            @for (action of performingActions(); track action.title) {
+              <div class="flex items-start gap-4 px-4 py-3 border-t border-gray-100">
+                <div class="flex flex-col gap-1 flex-1 min-w-0">
+                  <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+                  <p class="text-sm text-gray-500">{{ action.description }}</p>
+                </div>
+              </div>
+            }
+
+            @for (insight of performingInsights(); track insight.text) {
+              <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 text-sm text-gray-700">
+                <i class="fa-light fa-check text-green-600 flex-shrink-0"></i>
+                <span>{{ insight.text }}</span>
+              </div>
+            }
+          </div>
+        }
+
+        @if (hasNoData()) {
+          <div
+            class="flex flex-col rounded-lg border border-gray-200 border-l-4 border-l-blue-600 bg-white overflow-hidden"
+            role="status"
+            data-testid="website-visits-drawer-no-data">
+            <div class="flex items-start gap-4 px-4 py-4">
+              <i class="fa-light fa-circle-info text-blue-500 mt-0.5" aria-hidden="true"></i>
+              <div class="flex flex-col gap-1 flex-1 min-w-0">
+                <h3 class="text-sm font-semibold text-gray-900">No website traffic detected</h3>
+                <p class="text-sm text-gray-500">{{ noActivityBody }}</p>
+              </div>
+            </div>
+          </div>
+        }
+
+        <!-- Daily Trend Chart -->
+        <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="website-visits-drawer-trend-section">
+          <div class="flex flex-col gap-1">
+            <h3 class="text-sm font-semibold text-gray-900">Weekly Sessions</h3>
+            <p class="text-sm text-gray-600">Web activity over the last 6 months (weekly)</p>
+          </div>
+          @if (drawerData().dailyData.length > 0) {
+            <div class="h-[200px]" data-testid="website-visits-drawer-trend-chart">
+              <lfx-chart type="line" [data]="trendChartData()" [options]="trendChartOptions" height="100%"></lfx-chart>
+            </div>
+          } @else {
+            <div class="text-center py-8 border border-slate-200 rounded-lg">
+              <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+              <p class="text-sm text-gray-500">No session data available</p>
+            </div>
+          }
+        </div>
+
+        <!-- Domain Breakdown -->
+        <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="website-visits-drawer-domains-section">
+          <div class="flex flex-col gap-1">
+            <h3 class="text-sm font-semibold text-gray-900">Sessions by Domain</h3>
+            <p class="text-sm text-gray-600">Web traffic distribution across project domains</p>
+          </div>
+          @if (drawerData().domainGroups.length > 1) {
+            <div class="h-[240px]" data-testid="website-visits-drawer-domains-chart">
+              <lfx-chart type="bar" [data]="domainChartData()" [options]="domainChartOptions" height="100%"></lfx-chart>
+            </div>
+          } @else {
+            <div class="text-center py-8 border border-slate-200 rounded-lg">
+              <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+              <p class="text-sm text-gray-500">No domain breakdown available</p>
+            </div>
+          }
+        </div>
       }
-
-      <!-- Daily Trend Chart -->
-      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="website-visits-drawer-trend-section">
-        <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-gray-900">Weekly Sessions</h3>
-          <p class="text-sm text-gray-600">Web activity over the last 6 months (weekly)</p>
-        </div>
-        @if (drawerData().dailyData.length > 0) {
-          <div class="h-[200px]" data-testid="website-visits-drawer-trend-chart">
-            <lfx-chart type="line" [data]="trendChartData()" [options]="trendChartOptions" height="100%"></lfx-chart>
-          </div>
-        } @else {
-          <div class="text-center py-8 border border-slate-200 rounded-lg">
-            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-            <p class="text-sm text-gray-500">No session data available</p>
-          </div>
-        }
-      </div>
-
-      <!-- Domain Breakdown -->
-      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="website-visits-drawer-domains-section">
-        <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-gray-900">Sessions by Domain</h3>
-          <p class="text-sm text-gray-600">Web traffic distribution across project domains</p>
-        </div>
-        @if (drawerData().domainGroups.length > 1) {
-          <div class="h-[240px]" data-testid="website-visits-drawer-domains-chart">
-            <lfx-chart type="bar" [data]="domainChartData()" [options]="domainChartOptions" height="100%"></lfx-chart>
-          </div>
-        } @else {
-          <div class="text-center py-8 border border-slate-200 rounded-lg">
-            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-            <p class="text-sm text-gray-500">No domain breakdown available</p>
-          </div>
-        }
-      </div>
     }
   </div>
 </p-drawer>

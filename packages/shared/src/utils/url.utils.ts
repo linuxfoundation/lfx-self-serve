@@ -7,7 +7,7 @@
  * Pattern matches http:// or https:// followed by non-whitespace/control characters.
  * We intentionally exclude common dangerous characters: <>"{}|\^`[]
  */
-const URL_DETECTION_REGEX = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+const URL_DETECTION_REGEX = /https?:\/\/[^\s<>"{}|\\^`[\]]+/gi;
 
 /**
  * List of additional dangerous URL patterns to reject
@@ -65,6 +65,78 @@ export function isValidUrl(urlString: string): boolean {
 }
 
 /**
+ * Trailing characters that are almost never part of an intended URL when found at the end
+ * of a regex match — sentence punctuation and quotes (e.g. `Visit https://example.com.`
+ * should link `https://example.com`, not the trailing period).
+ *
+ * Held as a `Set` (not a regex) and stripped with a bounded character loop: a `+`-quantified
+ * class anchored at the end (`/[...]+$/`) trips CodeQL's "polynomial regular expression used on
+ * uncontrolled data" rule when the input is user-supplied comment text. The loop visits each
+ * trailing char at most once, so the trim is strictly linear.
+ */
+const TRAILING_PUNCTUATION_CHARS: ReadonlySet<string> = new Set(['.', ',', ';', ':', '!', '?', "'", '"', '’', '”']);
+
+/**
+ * Trailing bracket closers — only stripped when unmatched inside the URL, so legitimately
+ * bracketed paths (e.g. Wikipedia's `https://en.wikipedia.org/wiki/Foo_(bar)`) keep them.
+ * Only `)` is listed: the detection regex never admits `[]{}'` into a match, so those
+ * closers can never trail one.
+ */
+const TRAILING_BRACKETS: Record<string, string> = { ')': '(' };
+
+/**
+ * Trims sentence punctuation and unmatched closing brackets off the end of a detected URL.
+ * The detection regex greedily consumes non-whitespace characters, so prose like
+ * `(see https://linuxfoundation.org),` otherwise links the trailing `),`.
+ * @param url - The raw regex match
+ * @returns The URL with prose trailing punctuation removed
+ */
+function trimTrailingPunctuation(url: string): string {
+  let trimmed = url;
+
+  // Tally each bracket pair's balance up front so every strip below is O(1) — re-counting per strip would compound to O(n^2) on adversarial input.
+  // Punctuation stripping never removes bracket chars (the sets are disjoint), so the tallies stay valid across the fixpoint loop.
+  const unmatchedClosers = new Map<string, number>();
+  for (const [closer, opener] of Object.entries(TRAILING_BRACKETS)) {
+    let balance = 0;
+    for (const char of trimmed) {
+      if (char === closer) {
+        balance++;
+      } else if (char === opener) {
+        balance--;
+      }
+    }
+    unmatchedClosers.set(closer, balance);
+  }
+
+  // Fixpoint loop: stripping an unmatched bracket can expose new trailing punctuation
+  // (`https://example.com/page.)` → strip `)` → now-trailing `.`), so the two passes
+  // re-run until neither strips anything. Each pass visits each char at most once.
+  let changed = true;
+  while (changed && trimmed.length > 0) {
+    changed = false;
+
+    while (trimmed.length > 0 && TRAILING_PUNCTUATION_CHARS.has(trimmed.charAt(trimmed.length - 1))) {
+      trimmed = trimmed.slice(0, -1);
+      changed = true;
+    }
+
+    let lastChar = trimmed.charAt(trimmed.length - 1);
+    let balance = unmatchedClosers.get(lastChar);
+    while (balance !== undefined && balance > 0) {
+      trimmed = trimmed.slice(0, -1);
+      balance--;
+      unmatchedClosers.set(lastChar, balance);
+      changed = true;
+      lastChar = trimmed.charAt(trimmed.length - 1);
+      balance = unmatchedClosers.get(lastChar);
+    }
+  }
+
+  return trimmed;
+}
+
+/**
  * Extracts all valid URLs from a given text string
  * @param text - The text to extract URLs from
  * @returns Array of validated URL strings found in the text
@@ -78,7 +150,7 @@ export function extractUrls(text: string): string[] {
   const validUrls: string[] = [];
 
   potentialUrls.forEach((match) => {
-    const url = match[0];
+    const url = trimTrailingPunctuation(match[0]);
     if (isValidUrl(url)) {
       validUrls.push(url);
     }

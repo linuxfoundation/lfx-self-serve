@@ -24,6 +24,28 @@ export {
 export const COMMITTEE_VALID_TABS: CommitteeTab[] = ['overview', 'about', 'members', 'votes', 'meetings', 'surveys', 'documents', 'settings'];
 
 /**
+ * Slack Incoming Webhook URLs always live under this stable, documented prefix. Enforced as a
+ * hard allowlist (not just format hinting) on write (`committee.service.ts`'s `updateCommittee`) —
+ * committee-service itself now owns the actual outbound POST to Slack (LFXV2-3094 /
+ * lfx-v2-committee-service PR #178), enforcing the same host allowlist independently at send
+ * time, but this BFF-side check still matters: it's what gives the caller an actionable 400 at
+ * save time instead of a webhook that silently 422s every future share attempt.
+ *
+ * The `hooks.slack.com` host is duplicated as a literal in `apps/lfx-one/otel.mjs`'s
+ * `ignoreRequestHook`. That carve-out predates the send moving server-side (LFXV2-3080) — this
+ * BFF no longer makes any outbound request to hooks.slack.com itself, so it's dormant today, kept
+ * as defense-in-depth against a future direct-fetch path being reintroduced. It checks only the
+ * derived request URL's hostname — deliberately broader than this path-anchored full-URL pattern,
+ * since suppressing every request to the host is the safe direction for a redaction guard. If
+ * this pattern's host ever changes or a second host is added, update `otel.mjs`'s carve-out to
+ * match, in case that dormant path is ever reactivated.
+ */
+export const SLACK_INCOMING_WEBHOOK_URL_PATTERN = /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/;
+
+/** Mirrors upstream's `chat_webhook_url` bound (lfx-v2-committee-service's `ChatWebhookURLAttribute`, `dsl.MaxLength(500)`) — checked alongside {@link SLACK_INCOMING_WEBHOOK_URL_PATTERN} so an over-length value fails loud with an actionable 400 at the BFF boundary instead of an opaque upstream rejection. */
+export const CHAT_WEBHOOK_URL_MAX_LENGTH = 500;
+
+/**
  * Configurable labels for committees displayed throughout the UI
  * @description This constant allows the user-facing labels to be changed (e.g., to "Group/Groups")
  * while keeping all code and file names as "committees"
