@@ -506,8 +506,17 @@
                 (keydown.enter)="onMetaGeoTargetAdd($event); $event.preventDefault()"
                 class="w-24 rounded-md border border-dashed border-blue-300 bg-white px-2 py-1 text-xs uppercase text-blue-600 placeholder:normal-case placeholder:text-blue-400"
                 data-testid="implementation-meta-geo-add" />
+              <!--
+                Reads the SAME computed `submit()` sends, so the line cannot name one country while
+                the request buys another. The empty arm is a real state — nothing usable was
+                supplied — and `canSubmit` blocks there rather than letting the server default.
+              -->
               @if (metaGeoTargets().length === 0) {
-                <span class="text-xs text-gray-400">No geo targets selected — defaults to {{ campaignForm.controls.countryCode.value }}</span>
+                @if (metaEffectiveGeoTargets().length > 0) {
+                  <span class="text-xs text-gray-400">No geo targets selected — defaults to {{ metaEffectiveGeoTargets().join(', ') }}</span>
+                } @else {
+                  <span class="text-xs text-red-500" data-testid="implementation-meta-geo-none">Add at least one geo target — no usable country is set.</span>
+                }
               }
             </div>
           </div>

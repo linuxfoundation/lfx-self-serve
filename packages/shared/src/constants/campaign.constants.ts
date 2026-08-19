@@ -259,6 +259,40 @@ export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
 export const ASSIGNED_COUNTRY_CODES: ReadonlySet<string> = new Set<string>(COUNTRIES.map((c) => c.value));
 
 /**
+ * Assigned countries Meta will not accept as an ad-targeting geo.
+ *
+ * Mirrors `metaIneligibleCountries` in `lfx-v2-campaign-service`
+ * (`internal/platform/meta/client.go`), which is the path this app is cutting over to. Kept in
+ * step with it deliberately: while the cutover is dark the legacy TypeScript service handles the
+ * create, and without this list it would accept a code the Go path refuses — so the SAME user
+ * input would succeed or fail depending only on a flag.
+ *
+ * These are ASSIGNED codes, so `ASSIGNED_COUNTRY_CODES` passes them; ineligibility is a separate,
+ * Meta-specific fact and is checked separately. Two groups, both non-targetable: comprehensively
+ * sanctioned or policy-prohibited markets, and ISO territories with no resident population and so
+ * no Meta ad market.
+ *
+ * Best-effort rather than authoritative, exactly as the Go list documents itself. A still-eligible
+ * code that slips through is rejected by Meta at the ad-set POST — after the campaign exists — so
+ * this list reduces that window rather than closing it.
+ */
+export const META_INELIGIBLE_COUNTRIES: ReadonlySet<string> = new Set<string>([
+  // Comprehensively sanctioned or prohibited by Meta ads policy.
+  'CU',
+  'IR',
+  'KP',
+  'RU',
+  'SY',
+  // Uninhabited / non-targetable ISO territories (no Meta ad market).
+  'AQ',
+  'BV',
+  'HM',
+  'TF',
+  'GS',
+  'UM',
+]);
+
+/**
  * Normalise a list of Meta geo targets: trim, uppercase, drop mis-shaped codes, de-dupe.
  *
  * The single owner of geo normalisation. Every entry point — the chip add path, the brief seed

@@ -378,6 +378,16 @@ export interface CampaignImplementationDraft {
   metaPlacements?: MetaPlacement;
   metaPixelId?: string;
   metaGeoTargets?: string[];
+  /**
+   * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
+   *
+   * Here for the same reason as the four above — signal-backed, so `campaignForm.valueChanges`
+   * never sees them — and called out separately because this pair is the one whose loss is
+   * measured in money: a silent revert puts the campaign back to $500/day, which is a spend
+   * decision the operator did not make and the form does not show them re-making.
+   */
+  metaBudgetUsd?: number;
+  metaLifetimeBudget?: boolean;
 }
 
 /**

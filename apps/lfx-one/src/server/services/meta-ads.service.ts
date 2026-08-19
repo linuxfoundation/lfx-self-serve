@@ -21,6 +21,7 @@ import {
   META_NUMERIC_ID_PATTERN,
   META_OBJECTIVE_LABELS,
   META_OBJECTIVE_PARAMS,
+  META_INELIGIBLE_COUNTRIES,
   normalizeGeoTargets,
 } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
@@ -91,9 +92,29 @@ function validateRegistrationUrl(url: string): void {
  * Meta as `["US","US"]`. Sharing one helper with the client keeps the two layers from disagreeing
  * about what a geo target is.
  */
+/**
+ * The geo targets this create will actually send, or a refusal.
+ *
+ * Three-stage, and the stages answer different questions: `normalizeGeoTargets` settles SHAPE and
+ * ISO ASSIGNMENT, `META_INELIGIBLE_COUNTRIES` settles Meta ELIGIBILITY, and the caller's later
+ * `REGULATED_COUNTRIES` filter settles compliance. Mirrors the ordering in
+ * `lfx-v2-campaign-service`'s Meta client so the same input cannot succeed on one path and fail on
+ * the other purely because the cutover flag is dark.
+ *
+ * The US fallback applies ONLY to an empty request — "the caller named no geo", where defaulting
+ * is the documented behaviour. An explicitly supplied list that loses every entry is REFUSED
+ * instead, matching the Go path's "refusing to silently fall back to US": those two cases look
+ * identical by the time they reach this line, and collapsing them would spend an operator's budget
+ * on a country they did not ask for after discarding every country they did.
+ */
 function validateGeoTargets(geoTargets: string[]): string[] {
-  const valid = normalizeGeoTargets(geoTargets);
-  return valid.length > 0 ? valid : ['US'];
+  const assigned = normalizeGeoTargets(geoTargets);
+  const eligible = assigned.filter((code) => !META_INELIGIBLE_COUNTRIES.has(code));
+  if (eligible.length > 0) return eligible;
+  if (geoTargets.length === 0) return ['US'];
+  throw new Error(
+    `No usable geo targets: every supplied code (${geoTargets.join(', ')}) is malformed, not an assigned ISO 3166-1 alpha-2 country, or not eligible for Meta ad targeting — refusing to silently fall back to US.`
+  );
 }
 
 // ---------------------------------------------------------------------------

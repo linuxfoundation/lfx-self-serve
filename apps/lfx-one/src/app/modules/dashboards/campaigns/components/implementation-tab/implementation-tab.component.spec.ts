@@ -654,6 +654,73 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect((await submittedMetaConfig())['objective']).toBe('awareness');
   });
 
+  // === Geo eligibility, and display/dispatch agreement ===
+
+  /**
+   * `IR` is an ASSIGNED ISO country, so the assignment check passes it — but Meta refuses to
+   * target it, and on the legacy path that refusal lands at the AD SET, after `POST /campaigns`
+   * has created a billable resource. Refused at the chip, where it costs nothing.
+   */
+  it('refuses an assigned but Meta-ineligible geo code', async () => {
+    const c = component();
+    c['metaGeoTargets'].set([]);
+    await fixture.whenStable();
+
+    const input = require<HTMLInputElement>('implementation-meta-geo-add');
+    input.value = 'IR';
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(c['metaGeoTargets']()).toEqual([]);
+  });
+
+  /**
+   * The counterpart that stops the guard over-broadening: a guard rejecting every country would
+   * pass the test above while breaking geo targeting outright.
+   */
+  it('still accepts an eligible geo code', async () => {
+    const c = component();
+    c['metaGeoTargets'].set([]);
+    await fixture.whenStable();
+
+    const input = require<HTMLInputElement>('implementation-meta-geo-add');
+    input.value = 'JP';
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(c['metaGeoTargets']()).toEqual(['JP']);
+  });
+
+  /**
+   * The display/dispatch divergence. `countryCode` carries no validator, so it can be blank with
+   * no chips left; the preview then read "defaults to " while `submit()` sent `['']`, which the
+   * server resolved to `US` — a paid US campaign the operator was never shown.
+   *
+   * The binding assertion is that submission is BLOCKED, not that the message changed: a fix that
+   * only corrected the text would still let the request go out.
+   */
+  it('blocks a meta create when no usable geo target survives', async () => {
+    const c = component();
+    c['metaGeoTargets'].set([]);
+    c['campaignForm'].controls['countryCode'].setValue('');
+    await fixture.whenStable();
+
+    expect(c['metaEffectiveGeoTargets']()).toEqual([]);
+    expect(canSubmit()).toBe(false);
+    expect(query('implementation-meta-geo-none')).not.toBeNull();
+  });
+
+  /** Display and dispatch must name the SAME country when the fallback does apply. */
+  it('sends exactly the geo the empty-state line displays', async () => {
+    const c = component();
+    c['metaGeoTargets'].set([]);
+    c['campaignForm'].controls['countryCode'].setValue('de');
+    await fixture.whenStable();
+
+    expect(c['metaEffectiveGeoTargets']()).toEqual(['DE']);
+    expect((await submittedMetaConfig())['geoTargets']).toEqual(['DE']);
+  });
+
   // === Draft survival across a tab switch ===
 
   /**
@@ -677,6 +744,9 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     await typePixelId('998877');
     await togglePlacement('reels', true);
     component()['addMetaGeoTarget']('jp');
+    component()['metaBudgetUsd'].set(1234);
+    component()['metaLifetimeBudget'].set(true);
+    component()['emitDraft']();
     await fixture.whenStable();
 
     expect(draft).not.toBeNull();
@@ -710,6 +780,10 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(metaConfig['pixelId']).toBe('998877');
     expect(metaConfig['placements']).toEqual({ reels: true });
     expect(metaConfig['geoTargets']).toContain('JP');
+    // The budget pair is the one whose loss is measured in money: a silent revert puts the
+    // campaign back to $500/day, a spend decision the operator did not make.
+    expect(metaConfig['budgetUsd']).toBe(1234);
+    expect(metaConfig['lifetimeBudget']).toBe(true);
   });
 
   /**

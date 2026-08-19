@@ -97,6 +97,46 @@ describe('executeMetaCampaignCreation', () => {
     });
   });
 
+  describe('geo eligibility preflight', () => {
+    // `IR` is an ASSIGNED ISO country, so the assignment check passes it — but Meta refuses to
+    // target it. The legacy path filtered only SG/TW/KR, so it reached `geo_locations` and was
+    // rejected at the AD SET, after the campaign POST. The Go client checks this before mutating;
+    // mirroring it here means the same input cannot succeed on one path and fail on the other.
+    it('issues no mutating POST when every supplied geo is ineligible', async () => {
+      await expect(executeMetaCampaignCreation(undefined, baseConfig({ geoTargets: ['IR', 'KP'] }))).rejects.toThrow(/No usable geo targets/);
+
+      expect(postPaths(fetchMock)).toEqual([]);
+    });
+
+    // REFUSES rather than falling back, matching the Go path. Falling back would spend the budget
+    // on a country the operator did not ask for, after discarding every country they did.
+    it('refuses an explicit list rather than silently defaulting to US', async () => {
+      await expect(executeMetaCampaignCreation(undefined, baseConfig({ geoTargets: ['ZZ'] }))).rejects.toThrow(/refusing to silently fall back to US/);
+
+      expect(postPaths(fetchMock)).toEqual([]);
+    });
+
+    // The fallback still applies to an EMPTY request — "the caller named no geo" is a different
+    // question from "every geo the caller named was unusable", and only the first has a default.
+    it('still defaults to US when no geo was supplied at all', async () => {
+      await executeMetaCampaignCreation(undefined, baseConfig({ geoTargets: [] }));
+
+      const adSetCall = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/adsets'));
+      const adSetBody = JSON.parse((adSetCall![1] as RequestInit).body as string);
+      expect(adSetBody.targeting.geo_locations.countries).toEqual(['US']);
+    });
+
+    // Mixed lists DROP the ineligible entries and proceed, rather than failing the whole create —
+    // the guard must not over-broaden into refusing usable campaigns.
+    it('drops ineligible entries from a mixed list and still creates', async () => {
+      await executeMetaCampaignCreation(undefined, baseConfig({ geoTargets: ['IR', 'JP'] }));
+
+      const adSetCall = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/adsets'));
+      const adSetBody = JSON.parse((adSetCall![1] as RequestInit).body as string);
+      expect(adSetBody.targeting.geo_locations.countries).toEqual(['JP']);
+    });
+  });
+
   describe('placement validation ordering', () => {
     // Same ORDERING defect as the promoted object above, and the same reason a rejection-only
     // assertion would not catch it: an all-off placement selection always threw, but it threw from

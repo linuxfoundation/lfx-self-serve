@@ -19,6 +19,7 @@ import {
   META_OBJECTIVE_LABELS,
   META_PLACEMENT_LABELS,
   META_SELECTABLE_PLACEMENTS,
+  META_INELIGIBLE_COUNTRIES,
   normalizeGeoTargets,
   CAMPAIGN_PLATFORMS,
   REDDIT_MAX_BUDGET_USD,
@@ -378,6 +379,26 @@ export class ImplementationTabComponent implements OnInit {
       .filter((sub) => sub.length > 0)
   );
 
+  /**
+   * The geo list a Meta create would ACTUALLY send — one value for both the preview and `submit()`.
+   *
+   * They were derived separately, and that is what let them disagree: the preview printed
+   * `countryCode` raw while `submit()` sent `[countryCode]` through the server's normaliser. With
+   * `countryCode` blank (it carries no validator) the preview read "defaults to " and the request
+   * carried `['']`, which the server resolved to `US` — a paid US-targeted campaign the operator
+   * was never shown. Deriving both from here means the screen cannot claim one target while the
+   * request buys another.
+   *
+   * Empty is a real answer, not a bug: it means nothing usable was supplied, and `canSubmit`
+   * blocks on it rather than letting the server pick a country on the operator's behalf.
+   */
+  protected readonly metaEffectiveGeoTargets = computed<string[]>(() => {
+    const chips = normalizeGeoTargets(this.metaGeoTargets());
+    const eligibleChips = chips.filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
+    if (eligibleChips.length > 0) return eligibleChips;
+    return normalizeGeoTargets([this.countryCodeValue()]).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
+  });
+
   protected readonly showMetaSection = computed(() => this.selectedPlatforms().includes('meta-ads'));
 
   /** Whether the pixel field applies at all — only `conversions` carries a promoted pixel object. */
@@ -454,6 +475,10 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
     if (metaSelected && this.metaBudgetUsd() < 1) return false;
+    // No usable geo at all: every chip ineligible (or none) AND no usable countryCode. The request
+    // would otherwise carry nothing and let the server default to US — spending on a country the
+    // operator neither chose nor saw.
+    if (metaSelected && this.metaEffectiveGeoTargets().length === 0) return false;
     // Reddit's client rejects a non-positive budget at dispatch (client.go: "invalid budget:
     // must be a positive number"), and because creation is async that surfaces as a dead job
     // rather than an error on the request. Refuse locally instead.
@@ -696,6 +721,7 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onMetaBudgetInput(event: Event): void {
     this.metaBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+    this.emitDraft();
   }
 
   /**
@@ -724,6 +750,7 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onMetaLifetimeBudgetChange(event: Event): void {
     this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
+    this.emitDraft();
   }
 
   protected onMetaObjectiveChange(event: Event): void {
@@ -777,6 +804,12 @@ export class ImplementationTabComponent implements OnInit {
    * usable survives rather than silently falling back to US.
    */
   protected addMetaGeoTarget(code: string): void {
+    // Ineligible codes are refused at the chip rather than accepted and dropped later. `IR`, `CU`
+    // and the uninhabited territories are ASSIGNED, so `normalizeGeoTargets` passes them, but Meta
+    // will not target them — and on the legacy path that rejection lands at the ad set, after the
+    // campaign POST. Same list the server and the Go client check, so the answer cannot depend on
+    // which path runs.
+    if (META_INELIGIBLE_COUNTRIES.has(code.trim().toUpperCase())) return;
     this.metaGeoTargets.update((targets) => normalizeGeoTargets([...targets, code]));
     this.emitDraft();
   }
@@ -875,7 +908,8 @@ export class ImplementationTabComponent implements OnInit {
               lifetimeBudget: this.metaLifetimeBudget(),
               startDate: form.startDate,
               endDate: form.endDate,
-              geoTargets: this.metaGeoTargets().length > 0 ? this.metaGeoTargets() : [form.countryCode],
+              // The SAME value the preview renders — see `metaEffectiveGeoTargets`.
+              geoTargets: this.metaEffectiveGeoTargets(),
               variants: this.metaVariants(),
               objective: this.metaObjective(),
               placements: this.metaPlacementOverrides(),
@@ -998,6 +1032,12 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.metaGeoTargets !== undefined) {
       this.metaGeoTargets.set([...draft.metaGeoTargets]);
     }
+    if (draft.metaBudgetUsd !== undefined) {
+      this.metaBudgetUsd.set(draft.metaBudgetUsd);
+    }
+    if (draft.metaLifetimeBudget !== undefined) {
+      this.metaLifetimeBudget.set(draft.metaLifetimeBudget);
+    }
   }
 
   /**
@@ -1054,6 +1094,8 @@ export class ImplementationTabComponent implements OnInit {
       metaPlacements: { ...this.metaPlacements() },
       metaPixelId: this.metaPixelId(),
       metaGeoTargets: [...this.metaGeoTargets()],
+      metaBudgetUsd: this.metaBudgetUsd(),
+      metaLifetimeBudget: this.metaLifetimeBudget(),
     });
   }
 
