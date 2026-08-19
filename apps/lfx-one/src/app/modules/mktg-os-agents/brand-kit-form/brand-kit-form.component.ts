@@ -5,6 +5,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, inject, OnDestroy, outp
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { isPlatformBrowser } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
@@ -48,6 +49,8 @@ export class BrandKitFormComponent implements OnDestroy {
   private readonly brandKitService = inject(BrandKitService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   /** Emitted when the user leaves the form back to the marketplace grid. */
   public readonly back = output<void>();
@@ -117,6 +120,9 @@ export class BrandKitFormComponent implements OnDestroy {
     this.pollEpoch++;
     this.clearPollTimer();
     this.back.emit();
+    // Routed standalone (no parent binds `back`) — return to the marketplace
+    // grid the same way the agent run shell does.
+    this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
   }
 
   protected onStartOver(): void {
