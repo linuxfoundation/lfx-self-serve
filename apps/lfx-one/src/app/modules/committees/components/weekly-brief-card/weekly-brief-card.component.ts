@@ -17,6 +17,7 @@ import {
   WEEKLY_BRIEF_MAX_POLL_ATTEMPTS,
   WEEKLY_BRIEF_POLL_INTERVAL_MS,
   WEEKLY_BRIEF_SHAREABLE_STATES,
+  WEEKLY_BRIEF_SOURCE_SECTIONS,
   WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD,
   WEEKLY_BRIEF_TERMINAL_STATES,
   WEEKLY_BRIEF_TEXT_MAX_LENGTH,
@@ -123,17 +124,6 @@ export class WeeklyBriefCardComponent {
   // constant, so this is re-exposed as a class field for the collapse-threshold comparison.
   protected readonly sourcesCollapseThreshold = WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD;
 
-  // Fixed display order/labels for the Sources disclosure's kind-sections (LFXV2-3335) — UI
-  // presentation only, not a cross-cutting value, so kept local rather than in shared constants.
-  private static readonly sourceChipSectionOrder = ['meeting', 'vote', 'mailing-list', 'doc', 'members'];
-  private static readonly sourceChipSectionLabels: Record<string, string> = {
-    meeting: 'Meetings',
-    vote: 'Votes',
-    'mailing-list': 'Mailing List',
-    doc: 'Documents',
-    members: 'Membership',
-  };
-
   // Reactive form for the editor textarea — `lfx-textarea` requires a FormGroup + control name.
   public readonly editForm = new FormGroup({
     briefText: new FormControl('', { nonNullable: true }),
@@ -228,22 +218,8 @@ export class WeeklyBriefCardComponent {
 
   // sourceChips() grouped into fixed-order kind-sections for the expanded disclosure view
   // (LFXV2-3335) — precomputed here rather than re-derived in the template (frontend-checklist
-  // §4). A section is omitted entirely when it has no chips. `kind` is an open string (see
-  // WeeklyBriefSourceRef's doc comment) — the trailing "Other" section catches any chip whose
-  // kind isn't one of the five known ones, so an unrecognized future kind still renders here
-  // (matching mapWeeklyBriefSourceRefsToChips's "renders unlinked instead of breaking" contract)
-  // instead of silently vanishing from the expanded view while still counted in sourceRefCount().
-  public readonly sourceChipSections: Signal<{ kind: string; label: string; chips: WeeklyBriefSourceChip[] }[]> = computed(() => {
-    const chips = this.sourceChips();
-    const known = new Set(WeeklyBriefCardComponent.sourceChipSectionOrder);
-    const sections = WeeklyBriefCardComponent.sourceChipSectionOrder.map((kind) => ({
-      kind,
-      label: WeeklyBriefCardComponent.sourceChipSectionLabels[kind],
-      chips: chips.filter((chip) => chip.kind === kind),
-    }));
-    sections.push({ kind: 'other', label: 'Other', chips: chips.filter((chip) => !known.has(chip.kind)) });
-    return sections.filter((section) => section.chips.length > 0);
-  });
+  // §4). See initSourceChipSections for the "Other" catch-all rationale.
+  public readonly sourceChipSections: Signal<{ kind: string; label: string; chips: WeeklyBriefSourceChip[] }[]> = this.initSourceChipSections();
 
   // "no_sources" is the only error_reason meaningful to the UI today (LFXV2-3000) —
   // a committee with zero activity in the lookback window, not a genuine generation
@@ -600,6 +576,22 @@ export class WeeklyBriefCardComponent {
   }
 
   // Private initializer functions
+  // Groups sourceChips() into the fixed-order kind-sections defined by WEEKLY_BRIEF_SOURCE_SECTIONS
+  // (LFXV2-3335), appending a trailing "Other" section for any chip whose kind isn't one of the
+  // known ones — kind is an open string (see WeeklyBriefSourceRef's doc comment), so without this
+  // catch-all an unrecognized future kind would silently vanish from the expanded view while
+  // still counted in sourceRefCount(), contradicting mapWeeklyBriefSourceRefsToChips's "renders
+  // unlinked instead of breaking" contract. A section with no chips is omitted entirely.
+  private initSourceChipSections(): Signal<{ kind: string; label: string; chips: WeeklyBriefSourceChip[] }[]> {
+    return computed(() => {
+      const chips = this.sourceChips();
+      const known = new Set(WEEKLY_BRIEF_SOURCE_SECTIONS.map((section) => section.kind));
+      const sections = WEEKLY_BRIEF_SOURCE_SECTIONS.map(({ kind, label }) => ({ kind, label, chips: chips.filter((chip) => chip.kind === kind) }));
+      sections.push({ kind: 'other', label: 'Other', chips: chips.filter((chip) => !known.has(chip.kind)) });
+      return sections.filter((section) => section.chips.length > 0);
+    });
+  }
+
   private initBriefResponseSubscription(): void {
     const committeeUid$ = this.committee$.pipe(
       filter((c): c is Committee => !!c?.uid),
