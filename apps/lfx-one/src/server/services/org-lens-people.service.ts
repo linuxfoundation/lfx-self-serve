@@ -138,12 +138,24 @@ export class OrgLensPeopleService {
 
   /** Chevron-expansion detail for one person within an account; five Snowflake queries in parallel, served through the shared per-org cache. */
   public async getEmployeeDetail(req: Request, accountId: string, personKey: string): Promise<OrgAllEmployeeDetail> {
+    // Live-only (synthetic) keys have no ORG_PEOPLE_ALL row at all — every one of the five detail
+    // queries is a guaranteed-empty round trip for them. Short-circuit straight to the live-merged
+    // roster (access/board/committee/keyContact sources) instead of burning five Snowflake
+    // connections just to resolve an email.
+    if (personKey.startsWith('live-')) {
+      const resolvedEmail = await this.resolveLiveOnlyEmail(req, accountId, personKey);
+      return {
+        personKey,
+        boardSeats: [],
+        committeeSeats: [],
+        code: [],
+        events: [],
+        training: [],
+        companyEmails: deriveDemoCompanyEmails(resolvedEmail),
+      };
+    }
+
     const { committeeRows, codeRows, eventRows, trainingRows, email } = await this.fetchEmployeeDetailRaw(accountId, personKey);
-    // Live-only (synthetic) people have no ORG_PEOPLE_ALL row to query by personKey, so the direct
-    // lookup above always misses for them; their real address only exists on the live-merged roster
-    // (access/board/committee/keyContact sources) built by OrgPeopleDirectoryService. Fall back to
-    // that before giving up.
-    const resolvedEmail = email ?? (await this.resolveLiveOnlyEmail(req, accountId, personKey));
 
     const memberships = committeeRows.map((row) => this.mapCommitteeRow(row));
     const boardSeats = memberships.filter((m) => m.isBoard);
@@ -176,7 +188,7 @@ export class OrgLensPeopleService {
       code: codeRows.map((row) => this.mapCodeRow(row)),
       events,
       training,
-      companyEmails: deriveDemoCompanyEmails(resolvedEmail),
+      companyEmails: deriveDemoCompanyEmails(email),
     };
   }
 

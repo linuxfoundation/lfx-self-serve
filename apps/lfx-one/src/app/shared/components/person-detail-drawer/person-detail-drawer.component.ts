@@ -96,6 +96,6 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     if (this.drawer.loading() || this.drawer.error()) {
       return [];
     }
-    return this.drawer.detail()?.companyEmails ?? [];
+    return this.drawer.companyEmails();
   }
 }

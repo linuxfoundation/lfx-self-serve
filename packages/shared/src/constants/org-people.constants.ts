@@ -6,7 +6,6 @@ import type {
   OrgAccessRole,
   OrgAccessTypeFilterOption,
   OrgAllEmployeeActivityOption,
-  OrgAllEmployeeDetail,
   OrgAllEmployeesResponse,
   OrgAllEmployeeStats,
   OrgContributorsResponse,
@@ -60,17 +59,6 @@ export const EMPTY_ORG_ALL_EMPLOYEES_RESPONSE: OrgAllEmployeesResponse = {
   rows: [],
   stats: EMPTY_ORG_ALL_EMPLOYEE_STATS,
   foundations: [],
-};
-
-/** Zero-valued OrgAllEmployeeDetail with only `companyEmails` populated — used by the person-detail drawer's email-only fetch path (Board/Committee tabs, which have no personKey and pre-supply governanceSeats directly). */
-export const EMPTY_ORG_ALL_EMPLOYEE_DETAIL: OrgAllEmployeeDetail = {
-  personKey: '',
-  boardSeats: [],
-  committeeSeats: [],
-  code: [],
-  events: [],
-  training: [],
-  companyEmails: [],
 };
 
 /** Activity-filter dropdown options for the All Employees table. */

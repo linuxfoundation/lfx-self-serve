@@ -4,10 +4,17 @@
 import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { EMPTY_ORG_ALL_EMPLOYEE_DETAIL } from '@lfx-one/shared/constants';
-import type { OrgAllEmployeeDetail, OrgLensCompanyEmailsResponse, PersonDrawerContext, PersonDrawerTab } from '@lfx-one/shared/interfaces';
+import type {
+  OrgAllEmployeeDetail,
+  OrgDrawerFetchResult,
+  OrgLensCompanyEmailsResponse,
+  PersonDrawerContext,
+  PersonDrawerTab,
+} from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { catchError, combineLatest, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
+
+const EMPTY_FETCH_RESULT: OrgDrawerFetchResult = { detail: null, companyEmails: [] };
 
 /** Cross-page open state + detail fetch for the shared person-detail drawer (LFXV2-2195). */
 @Injectable({
@@ -31,7 +38,7 @@ export class PersonDetailDrawerService {
 
   public readonly isOpen = computed(() => this._activeContext() !== null);
 
-  public readonly detail = toSignal<OrgAllEmployeeDetail | null>(
+  private readonly fetchResult = toSignal(
     combineLatest([
       toObservable(this.accountContext.selectedAccount).pipe(
         map((account) => account.uid),
@@ -43,46 +50,52 @@ export class PersonDetailDrawerService {
         if (!context || !orgUid) {
           this._loading.set(false);
           this._error.set(false);
-          return of(null);
+          return of(EMPTY_FETCH_RESULT);
         }
         if (context.personKey) {
           this._loading.set(true);
           this._error.set(false);
           const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/${encodeURIComponent(context.personKey)}/detail`;
           return this.http.get<OrgAllEmployeeDetail>(url).pipe(
+            map((detail) => ({ detail, companyEmails: detail.companyEmails })),
             tap(() => this._loading.set(false)),
             catchError(() => {
               this._error.set(true);
               this._loading.set(false);
-              return of(null);
+              return of(EMPTY_FETCH_RESULT);
             })
           );
         }
         // No personKey (Board/Committee openers) — governanceSeats are pre-supplied via context, but
         // companyEmails still need a server-side lookup by the raw email so both tabs share the same
         // deriveDemoCompanyEmails logic as the personKey-based path. POST (not GET) so the email
-        // travels in the body, not the query string, keeping it out of request-log URLs.
+        // travels in the body, not the query string, keeping it out of request-log URLs. `detail`
+        // stays null here — there's no personKey to fetch real activity for, so the drawer's
+        // "Detailed activity isn't available" state must stay truthful rather than showing verified-empty tabs.
         if (context.email) {
           this._loading.set(true);
           this._error.set(false);
           const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/company-emails`;
           return this.http.post<OrgLensCompanyEmailsResponse>(url, { email: context.email }).pipe(
-            map((response) => ({ ...EMPTY_ORG_ALL_EMPLOYEE_DETAIL, companyEmails: response.companyEmails })),
+            map((response) => ({ detail: null, companyEmails: response.companyEmails })),
             tap(() => this._loading.set(false)),
             catchError(() => {
               this._error.set(true);
               this._loading.set(false);
-              return of(null);
+              return of(EMPTY_FETCH_RESULT);
             })
           );
         }
         this._loading.set(false);
         this._error.set(false);
-        return of(null);
+        return of(EMPTY_FETCH_RESULT);
       })
     ),
-    { initialValue: null }
+    { initialValue: EMPTY_FETCH_RESULT }
   );
+
+  public readonly detail = computed<OrgAllEmployeeDetail | null>(() => this.fetchResult().detail);
+  public readonly companyEmails = computed<string[]>(() => this.fetchResult().companyEmails);
 
   public open(context: PersonDrawerContext): void {
     this._activeTab.set(context.defaultTab ?? 'events');

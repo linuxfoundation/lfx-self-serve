@@ -189,3 +189,13 @@ export interface OrgAllEmployeeDetail {
 export interface OrgLensCompanyEmailsResponse {
   companyEmails: string[];
 }
+
+/**
+ * Internal fetch-result shape for `PersonDetailDrawerService`. `detail` stays `null` for
+ * email-only lookups (Board/Committee openers with no `personKey`) so the drawer's "Detailed
+ * activity isn't available" state stays truthful instead of implying verified-empty activity.
+ */
+export interface OrgDrawerFetchResult {
+  detail: OrgAllEmployeeDetail | null;
+  companyEmails: string[];
+}
