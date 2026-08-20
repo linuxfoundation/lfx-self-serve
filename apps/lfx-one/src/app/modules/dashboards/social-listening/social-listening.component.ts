@@ -566,7 +566,9 @@ export class SocialListeningComponent {
             return of<LoadableState<SocialListeningFeedResponse>>({ loading: false, error: null, data: cached });
           }
 
-          const initialLimit = this.localOffset() === 0 ? this.pageSize() : this.serverWindowSize;
+          // Phase 2 re-requests from offset + initialLimit — past MENTION_MAX_FEED_OFFSET that offset clamps, duplicating rows.
+          const canSplitWindow = (req.offset ?? 0) + this.pageSize() <= MENTION_MAX_FEED_OFFSET;
+          const initialLimit = this.localOffset() === 0 && canSplitWindow ? this.pageSize() : this.serverWindowSize;
           const initialReq = { ...req, limit: initialLimit };
 
           return this.socialListeningService.getMentionsFeed(initialReq).pipe(
