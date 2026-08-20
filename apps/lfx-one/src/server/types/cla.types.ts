@@ -156,3 +156,39 @@ export interface ResolvedClaIdentity {
   /** True when the session has at least one linked GitHub identity. */
   githubLinked: boolean;
 }
+
+/** One manager from `GET /v4/my-clas/{signatureID}/cla-managers` (`#/definitions/my-cla-manager`). */
+export interface EasyClaMyClaManager {
+  lfUsername?: string;
+  name?: string;
+  email?: string;
+}
+
+/** Response for `GET /v4/my-clas/{signatureID}/cla-managers` (`#/definitions/my-cla-manager-list`). */
+export interface EasyClaMyClaManagerList {
+  signatureID?: string;
+  claGroupID?: string;
+  claGroupName?: string;
+  projectName?: string;
+  companyID?: string;
+  companyName?: string;
+  claManager?: boolean;
+  managers?: EasyClaMyClaManager[];
+  resultCount?: number;
+}
+
+/** Body for `POST /v4/my-clas/{signatureID}/cla-manager-requests` (`#/definitions/my-cla-manager-request`). */
+export interface EasyClaMyClaManagerRequest {
+  requestType: 'approval' | 'removal';
+  recipients: string[];
+  message?: string;
+}
+
+/** Response for the same POST (`#/definitions/my-cla-manager-request-result`). */
+export interface EasyClaMyClaManagerRequestResult {
+  requestID?: string;
+  signatureID?: string;
+  requestType?: 'approval' | 'removal';
+  status?: 'sent' | 'recorded';
+  recipients?: string[];
+}

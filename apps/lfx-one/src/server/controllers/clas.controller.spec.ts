@@ -8,13 +8,15 @@ import '@angular/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getUsernameFromAuth } = vi.hoisted(() => ({ getUsernameFromAuth: vi.fn<() => Promise<string | null>>() }));
-const { getMyClas, resolveIdentity, getPdfUrl, searchClaGroups, listGithubAccounts, prepareSign } = vi.hoisted(() => ({
+const { getMyClas, resolveIdentity, getPdfUrl, searchClaGroups, listGithubAccounts, prepareSign, getClaManagers, createClaManagerRequest } = vi.hoisted(() => ({
   getMyClas: vi.fn(),
   resolveIdentity: vi.fn(),
   getPdfUrl: vi.fn(),
   searchClaGroups: vi.fn(),
   listGithubAccounts: vi.fn(),
   prepareSign: vi.fn(),
+  getClaManagers: vi.fn(),
+  createClaManagerRequest: vi.fn(),
 }));
 
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
@@ -26,6 +28,8 @@ vi.mock('../services/cla.service', () => ({
     public searchClaGroups = searchClaGroups;
     public listGithubAccounts = listGithubAccounts;
     public prepareSign = prepareSign;
+    public getClaManagers = getClaManagers;
+    public createClaManagerRequest = createClaManagerRequest;
   },
 }));
 vi.mock('../services/logger.service', () => ({
@@ -363,5 +367,132 @@ describe('ClasController.prepareSign', () => {
 
     expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
     expect(prepareSign).not.toHaveBeenCalled();
+  });
+});
+
+const SIGNATURE_ID = '3fee6d72-0c80-4145-99c2-fb382b3a93fb';
+const managerList = {
+  signatureId: SIGNATURE_ID,
+  managers: [{ lfUsername: 'jdoe', name: 'Jane Doe' }],
+  resultCount: 1,
+};
+
+describe('ClasController.getClaManagers', () => {
+  it('returns the manager list for an owned ECLA', async () => {
+    getClaManagers.mockResolvedValue(managerList);
+    const res = buildRes();
+
+    await new ClasController().getClaManagers({ params: { signatureId: SIGNATURE_ID } } as any, res, vi.fn());
+
+    expect(getClaManagers).toHaveBeenCalledWith(expect.anything(), SIGNATURE_ID, resolvedIdentity);
+    expect(res.json).toHaveBeenCalledWith(managerList);
+  });
+
+  it('returns 404 (never an empty list) when upstream reports unknown / not-owned / ICLA', async () => {
+    getClaManagers.mockResolvedValue(null);
+    const res = buildRes();
+
+    await new ClasController().getClaManagers({ params: { signatureId: SIGNATURE_ID } } as any, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).not.toHaveBeenCalledWith(expect.objectContaining({ managers: [] }));
+  });
+
+  it.each(['', '   ', 'not-a-uuid', 'sig-1'])('rejects %p as a signature id', async (signatureId) => {
+    const res = buildRes();
+
+    await new ClasController().getClaManagers({ params: { signatureId } } as any, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(getClaManagers).not.toHaveBeenCalled();
+  });
+
+  it('returns 401 (via next) when unauthenticated', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    const next = vi.fn();
+
+    await new ClasController().getClaManagers({ params: { signatureId: SIGNATURE_ID } } as any, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+    expect(resolveIdentity).not.toHaveBeenCalled();
+  });
+});
+
+describe('ClasController.createClaManagerRequest', () => {
+  const receipt = {
+    requestId: 'r-1',
+    signatureId: SIGNATURE_ID,
+    requestType: 'removal' as const,
+    status: 'sent' as const,
+    recipients: ['jdoe'],
+  };
+
+  function body(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return { requestType: 'removal', recipients: ['jdoe'], ...overrides };
+  }
+
+  it('returns the producer receipt', async () => {
+    createClaManagerRequest.mockResolvedValue(receipt);
+    const res = buildRes();
+
+    await new ClasController().createClaManagerRequest({ params: { signatureId: SIGNATURE_ID }, body: body() } as any, res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith(receipt);
+    expect(createClaManagerRequest).toHaveBeenCalledWith(expect.anything(), SIGNATURE_ID, resolvedIdentity, {
+      requestType: 'removal',
+      recipients: ['jdoe'],
+    });
+  });
+
+  it.each(['contact', '', 'approve', undefined])('rejects %p as a request type', async (requestType) => {
+    const res = buildRes();
+
+    await new ClasController().createClaManagerRequest({ params: { signatureId: SIGNATURE_ID }, body: body({ requestType }) } as any, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(createClaManagerRequest).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty recipient list', async () => {
+    const res = buildRes();
+
+    await new ClasController().createClaManagerRequest({ params: { signatureId: SIGNATURE_ID }, body: body({ recipients: [] }) } as any, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(createClaManagerRequest).not.toHaveBeenCalled();
+  });
+
+  it('rejects a message longer than 4096 characters', async () => {
+    const res = buildRes();
+
+    await new ClasController().createClaManagerRequest(
+      { params: { signatureId: SIGNATURE_ID }, body: body({ message: 'x'.repeat(4097) }) } as any,
+      res,
+      vi.fn()
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(createClaManagerRequest).not.toHaveBeenCalled();
+  });
+
+  it('forwards a trimmed optional message', async () => {
+    createClaManagerRequest.mockResolvedValue(receipt);
+
+    await new ClasController().createClaManagerRequest(
+      { params: { signatureId: SIGNATURE_ID }, body: body({ message: '  please  ' }) } as any,
+      buildRes(),
+      vi.fn()
+    );
+
+    expect(createClaManagerRequest).toHaveBeenCalledWith(expect.anything(), SIGNATURE_ID, resolvedIdentity, expect.objectContaining({ message: 'please' }));
+  });
+
+  it('returns 404 when the signature is unknown, not-owned, or an ICLA', async () => {
+    createClaManagerRequest.mockResolvedValue(null);
+    const res = buildRes();
+
+    await new ClasController().createClaManagerRequest({ params: { signatureId: SIGNATURE_ID }, body: body() } as any, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
   });
 });

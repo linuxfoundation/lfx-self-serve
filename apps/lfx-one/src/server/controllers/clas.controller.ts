@@ -174,4 +174,90 @@ export class ClasController {
       next(error);
     }
   }
+
+  // GET /api/me/clas/:signatureId/cla-managers
+  // Managers of the CCLA covering an owned ECLA (#1372 / #1574). A read: impersonation stays
+  // allowed, same as the PDF URL. 404 (never an empty list) for unknown / not-owned / ICLA ids.
+  public async getClaManagers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_cla_managers');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_cla_managers' });
+      }
+
+      const signatureId = (req.params['signatureId'] ?? '').trim();
+      if (!CLA_GROUP_ID_PATTERN.test(signatureId)) {
+        res.status(400).json({ message: 'A signature identifier is required' });
+        return;
+      }
+
+      const identity = await this.claService.resolveIdentity(req);
+      const list = await this.claService.getClaManagers(req, signatureId, identity);
+      if (!list) {
+        res.status(404).json({ message: 'Signed agreement not found' });
+        return;
+      }
+
+      logger.success(req, 'get_cla_managers', startTime, { manager_count: list.resultCount });
+      res.json(list);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/me/clas/:signatureId/cla-manager-requests
+  // Approval or removal notice to selected CLA managers. Blocked during impersonation at the
+  // route. Contact mode never reaches this handler — the client does not call it.
+  public async createClaManagerRequest(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'create_cla_manager_request');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'create_cla_manager_request' });
+      }
+
+      const signatureId = (req.params['signatureId'] ?? '').trim();
+      if (!CLA_GROUP_ID_PATTERN.test(signatureId)) {
+        res.status(400).json({ message: 'A signature identifier is required' });
+        return;
+      }
+
+      const body = req.body as { requestType?: unknown; recipients?: unknown; message?: unknown } | undefined;
+      const requestType = String(body?.requestType ?? '').trim();
+      if (requestType !== 'approval' && requestType !== 'removal') {
+        res.status(400).json({ message: 'A request type of approval or removal is required' });
+        return;
+      }
+
+      const rawRecipients = Array.isArray(body?.recipients) ? body.recipients : [];
+      const recipients = rawRecipients.map((value) => String(value ?? '').trim()).filter((value) => value.length > 0);
+      if (recipients.length === 0) {
+        res.status(400).json({ message: 'At least one CLA manager is required' });
+        return;
+      }
+
+      const trimmedMessage = String(body?.message ?? '').trim();
+      if (trimmedMessage.length > 4096) {
+        res.status(400).json({ message: 'Message is too long' });
+        return;
+      }
+
+      const identity = await this.claService.resolveIdentity(req);
+      const result = await this.claService.createClaManagerRequest(req, signatureId, identity, {
+        requestType,
+        recipients,
+        ...(trimmedMessage ? { message: trimmedMessage } : {}),
+      });
+      if (!result) {
+        res.status(404).json({ message: 'Signed agreement not found' });
+        return;
+      }
+
+      logger.success(req, 'create_cla_manager_request', startTime, { request_type: result.requestType, status: result.status });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
 }

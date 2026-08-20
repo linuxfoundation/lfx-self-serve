@@ -5,6 +5,9 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
   ClaGroupSearchResponse,
+  ClaManagerList,
+  ClaManagerRequest,
+  ClaManagerRequestResult,
   GithubAccountOptions,
   MyClasResponse,
   PdfUrlResponse,
@@ -69,5 +72,21 @@ export class MyClasService {
    */
   public prepareSign(body: PrepareSignRequest): Observable<PrepareSignResponse> {
     return this.http.post<PrepareSignResponse>('/api/me/clas/prepare-sign', body).pipe(take(1));
+  }
+
+  /**
+   * CLA managers covering an owned ECLA, for the Contact CLA Manager modal (#1372 / #1574).
+   * A 404 means the signature is unknown, not owned, or an ICLA — not "zero managers".
+   */
+  public getClaManagers(signatureId: string): Observable<ClaManagerList> {
+    return this.http.get<ClaManagerList>(`/api/me/clas/${encodeURIComponent(signatureId)}/cla-managers`).pipe(take(1));
+  }
+
+  /**
+   * Asks the CLA backend to email the selected managers for an approval or removal request.
+   * Does not invalidate or re-approve the signature. Contact mode must not call this.
+   */
+  public createClaManagerRequest(signatureId: string, body: ClaManagerRequest): Observable<ClaManagerRequestResult> {
+    return this.http.post<ClaManagerRequestResult>(`/api/me/clas/${encodeURIComponent(signatureId)}/cla-manager-requests`, body).pipe(take(1));
   }
 }

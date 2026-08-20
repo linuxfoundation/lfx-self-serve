@@ -1182,6 +1182,109 @@ describe('ClaService.prepareSign', () => {
   });
 });
 
+const MANAGER_SIG = '3fee6d72-0c80-4145-99c2-fb382b3a93fb';
+
+describe('ClaService.getClaManagers', () => {
+  const identity: ResolvedClaIdentity = { lfUsername: 'alice', emails: [], githubIds: [], githubUsernames: [], githubLinked: false };
+
+  it('maps the producer list and forwards the session identity query', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      signatureID: MANAGER_SIG,
+      managers: [
+        { lfUsername: 'jdoe', name: 'Jane Doe', email: 'j@example.org' },
+        { lfUsername: '  ', name: 'Dropped' },
+      ],
+      resultCount: 2,
+    });
+
+    const list = await new ClaService().getClaManagers(req, MANAGER_SIG, identity);
+
+    expect(list).toEqual({
+      signatureId: MANAGER_SIG,
+      managers: [{ lfUsername: 'jdoe', name: 'Jane Doe', email: 'j@example.org' }],
+      resultCount: 1,
+    });
+    const calledUrl = gatewayFetch.mock.calls[0][1] as string;
+    expect(calledUrl).toContain(`/v4/my-clas/${MANAGER_SIG}/cla-managers?`);
+    expect(calledUrl).toContain('lfUsername=alice');
+  });
+
+  it('returns null on a 404 rather than an empty manager list', async () => {
+    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { service: 'cla_service' }));
+
+    expect(await new ClaService().getClaManagers(req, MANAGER_SIG, identity)).toBeNull();
+  });
+
+  it('authorizes the ownership check with the target token during impersonation', async () => {
+    isImpersonating.mockReturnValue(true);
+    const imperReq = { bearerToken: 'target-token' } as unknown as Request;
+    gatewayFetch.mockResolvedValueOnce({ signatureID: MANAGER_SIG, managers: [], resultCount: 0 });
+
+    await new ClaService().getClaManagers(imperReq, MANAGER_SIG, identity);
+
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      imperReq,
+      expect.stringContaining(`/v4/my-clas/${MANAGER_SIG}/cla-managers?`),
+      expect.objectContaining({ bearerToken: 'target-token' })
+    );
+  });
+});
+
+describe('ClaService.createClaManagerRequest', () => {
+  const identity: ResolvedClaIdentity = { lfUsername: 'alice', emails: [], githubIds: [], githubUsernames: [], githubLinked: false };
+
+  it('posts approval/removal to the producer with identity query and no impersonation token override', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      requestID: 'r-1',
+      signatureID: MANAGER_SIG,
+      requestType: 'removal',
+      status: 'sent',
+      recipients: ['jdoe'],
+    });
+
+    const result = await new ClaService().createClaManagerRequest(req, MANAGER_SIG, identity, {
+      requestType: 'removal',
+      recipients: ['jdoe'],
+      message: 'please',
+    });
+
+    expect(result).toEqual({
+      requestId: 'r-1',
+      signatureId: MANAGER_SIG,
+      requestType: 'removal',
+      status: 'sent',
+      recipients: ['jdoe'],
+    });
+    const [, url, opts] = gatewayFetch.mock.calls[0] as [unknown, string, { method?: string; body?: Record<string, unknown>; bearerToken?: string }];
+    expect(url).toContain(`/v4/my-clas/${MANAGER_SIG}/cla-manager-requests?`);
+    expect(url).toContain('lfUsername=alice');
+    expect(opts.method).toBe('POST');
+    expect(opts.bearerToken).toBeUndefined();
+    expect(opts.body).toEqual({ requestType: 'removal', recipients: ['jdoe'], message: 'please' });
+  });
+
+  it('omits a blank message rather than sending an empty string', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      requestID: 'r-1',
+      signatureID: MANAGER_SIG,
+      requestType: 'approval',
+      status: 'recorded',
+      recipients: ['jdoe'],
+    });
+
+    await new ClaService().createClaManagerRequest(req, MANAGER_SIG, identity, { requestType: 'approval', recipients: ['jdoe'] });
+
+    const [, , opts] = gatewayFetch.mock.calls[0] as [unknown, string, { body?: Record<string, unknown> }];
+    expect(opts.body).toEqual({ requestType: 'approval', recipients: ['jdoe'] });
+  });
+
+  it('returns null on a 404', async () => {
+    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { service: 'cla_service' }));
+
+    expect(await new ClaService().createClaManagerRequest(req, MANAGER_SIG, identity, { requestType: 'approval', recipients: ['jdoe'] })).toBeNull();
+  });
+});
+
 describe('producerMessageFrom', () => {
   it('reads the message out of the shared CLA error shape', () => {
     expect(producerMessageFrom(JSON.stringify({ code: '403', message: '  not yours  ' }))).toBe('not yours');

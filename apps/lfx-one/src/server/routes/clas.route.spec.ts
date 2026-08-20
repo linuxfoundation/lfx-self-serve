@@ -22,12 +22,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  * accounts must keep working, so a blanket `router.use` would be a bug, not a safer default.
  */
 
-const { getMyClas, getPdfUrl, getClaGroupOptions, getGithubAccounts, prepareSign } = vi.hoisted(() => ({
+const { getMyClas, getPdfUrl, getClaGroupOptions, getGithubAccounts, prepareSign, getClaManagers, createClaManagerRequest } = vi.hoisted(() => ({
   getMyClas: vi.fn(),
   getPdfUrl: vi.fn(),
   getClaGroupOptions: vi.fn(),
   getGithubAccounts: vi.fn(),
   prepareSign: vi.fn(),
+  getClaManagers: vi.fn(),
+  createClaManagerRequest: vi.fn(),
 }));
 const { isImpersonating } = vi.hoisted(() => ({ isImpersonating: vi.fn<() => boolean>(() => false) }));
 
@@ -38,6 +40,8 @@ vi.mock('../controllers/clas.controller', () => ({
     public getClaGroupOptions = getClaGroupOptions;
     public getGithubAccounts = getGithubAccounts;
     public prepareSign = prepareSign;
+    public getClaManagers = getClaManagers;
+    public createClaManagerRequest = createClaManagerRequest;
   },
 }));
 vi.mock('../utils/auth-helper', () => ({ isImpersonating }));
@@ -90,6 +94,8 @@ beforeEach(() => {
   getClaGroupOptions.mockImplementation(ok);
   getGithubAccounts.mockImplementation(ok);
   prepareSign.mockImplementation(ok);
+  getClaManagers.mockImplementation(ok);
+  createClaManagerRequest.mockImplementation(ok);
 });
 
 describe('clas router — prepare-sign write during impersonation', () => {
@@ -145,11 +151,48 @@ describe('clas router — prepare-sign write during impersonation', () => {
     ['PDF URL', '/api/me/clas/sig-1/pdf-url'],
     ['CLA group options', '/api/me/clas/sign-options'],
     ['linked GitHub accounts', '/api/me/clas/github-accounts'],
+    ['CLA managers', '/api/me/clas/3fee6d72-0c80-4145-99c2-fb382b3a93fb/cla-managers'],
   ])('keeps %s readable while impersonating', async (_label, path) => {
     isImpersonating.mockReturnValue(true);
 
     const res = await fetch(`${baseUrl}${path}`);
 
     expect(res.status).toBe(200);
+  });
+});
+
+describe('clas router — CLA manager request write during impersonation', () => {
+  const signatureId = '3fee6d72-0c80-4145-99c2-fb382b3a93fb';
+
+  function postRequest(): Promise<Response> {
+    return fetch(`${baseUrl}/api/me/clas/${signatureId}/cla-manager-requests`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ requestType: 'removal', recipients: ['jdoe'] }),
+    });
+  }
+
+  it('refuses to email CLA managers while impersonating', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await postRequest();
+
+    expect(res.status).toBe(403);
+    expect(createClaManagerRequest).not.toHaveBeenCalled();
+  });
+
+  it('reports the read-only impersonation code', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await postRequest();
+
+    expect((await res.json()).code).toBe('IMPERSONATION_READ_ONLY');
+  });
+
+  it('allows the write in a normal session', async () => {
+    const res = await postRequest();
+
+    expect(res.status).toBe(200);
+    expect(createClaManagerRequest).toHaveBeenCalled();
   });
 });

@@ -15,6 +15,9 @@ import {
   ClaGroupOption,
   ClaGroupSearchResponse,
   EmailManagementData,
+  ClaManagerList,
+  ClaManagerRequest,
+  ClaManagerRequestResult,
   GithubAccountOption,
   GithubAccountOptions,
   MyClaAgreement,
@@ -31,6 +34,9 @@ import { Request } from 'express';
 import {
   EasyClaMyCla,
   EasyClaMyClaList,
+  EasyClaMyClaManagerList,
+  EasyClaMyClaManagerRequest,
+  EasyClaMyClaManagerRequestResult,
   EasyClaMyClaPdf,
   EasyClaPrepareSign,
   EasyClaSearchList,
@@ -704,6 +710,114 @@ export class ClaService {
       githubId: recorded.githubId,
       ...(githubUsername ? { githubUsername } : {}),
       skippedIdentities,
+    };
+  }
+
+  /**
+   * CLA managers of the CCLA covering an owned ECLA (`GET /v4/my-clas/{id}/cla-managers`).
+   * EasyCLA 404s unknown, not-owned, and ICLA ids — those become null here, same as PDF,
+   * so the controller never turns a miss into an empty list the modal would treat as
+   * "no manager reachable".
+   */
+  public async getClaManagers(req: Request, signatureId: string, identity: ResolvedClaIdentity): Promise<ClaManagerList | null> {
+    const startTime = logger.startOperation(req, 'cla_get_cla_managers', { signature_id: signatureId });
+    const params = this.identityQuery(identity);
+
+    let result: EasyClaMyClaManagerList | null;
+    try {
+      result = await gatewayFetch<EasyClaMyClaManagerList>(
+        req,
+        `${claServiceBaseUrl()}/v4/my-clas/${encodeURIComponent(signatureId)}/cla-managers?${params.toString()}`,
+        {
+          operation: 'cla_get_cla_managers',
+          service: SERVICE,
+          errorMessage: 'Failed to fetch CLA managers',
+          errorCode: 'UPSTREAM_ERROR',
+          bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+        }
+      );
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) return null;
+      throw error;
+    }
+
+    if (!result) return null;
+
+    const managers = (result.managers ?? [])
+      .map((manager) => ({
+        lfUsername: manager.lfUsername?.trim() ?? '',
+        ...(manager.name?.trim() ? { name: manager.name.trim() } : {}),
+        ...(manager.email?.trim() ? { email: manager.email.trim() } : {}),
+      }))
+      .filter((manager) => manager.lfUsername.length > 0);
+
+    logger.success(req, 'cla_get_cla_managers', startTime, { manager_count: managers.length });
+    return {
+      signatureId: result.signatureID?.trim() || signatureId,
+      managers,
+      resultCount: managers.length,
+    };
+  }
+
+  /**
+   * Records an approval or removal request and emails the selected CLA managers
+   * (`POST /v4/my-clas/{id}/cla-manager-requests`). Does not change signature state.
+   * 404 (unknown / not-owned / ICLA) becomes null, matching getClaManagers.
+   *
+   * No bearerToken override: this is a write, blocked at the route during impersonation,
+   * so the default gateway token is the caller EasyCLA should attribute.
+   */
+  public async createClaManagerRequest(
+    req: Request,
+    signatureId: string,
+    identity: ResolvedClaIdentity,
+    request: ClaManagerRequest
+  ): Promise<ClaManagerRequestResult | null> {
+    const startTime = logger.startOperation(req, 'cla_create_cla_manager_request', {
+      signature_id: signatureId,
+      request_type: request.requestType,
+    });
+    const params = this.identityQuery(identity);
+
+    const body: EasyClaMyClaManagerRequest = {
+      requestType: request.requestType,
+      recipients: request.recipients,
+      ...(request.message ? { message: request.message } : {}),
+    };
+
+    let result: EasyClaMyClaManagerRequestResult | null;
+    try {
+      result = await gatewayFetch<EasyClaMyClaManagerRequestResult>(
+        req,
+        `${claServiceBaseUrl()}/v4/my-clas/${encodeURIComponent(signatureId)}/cla-manager-requests?${params.toString()}`,
+        {
+          operation: 'cla_create_cla_manager_request',
+          service: SERVICE,
+          errorMessage: 'Failed to send the CLA manager request',
+          errorCode: 'UPSTREAM_ERROR',
+          method: 'POST',
+          body,
+        }
+      );
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) return null;
+      throw error;
+    }
+
+    const requestId = result?.requestID?.trim();
+    const requestType = result?.requestType;
+    const status = result?.status;
+    if (!requestId || (requestType !== 'approval' && requestType !== 'removal') || (status !== 'sent' && status !== 'recorded')) {
+      throw new MicroserviceError('Upstream recorded no usable CLA manager request', 502, 'UPSTREAM_ERROR', { service: SERVICE });
+    }
+
+    logger.success(req, 'cla_create_cla_manager_request', startTime, { request_type: requestType, status });
+    return {
+      requestId,
+      signatureId: result?.signatureID?.trim() || signatureId,
+      requestType,
+      status,
+      recipients: result?.recipients ?? request.recipients,
     };
   }
 

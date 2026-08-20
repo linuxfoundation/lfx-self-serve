@@ -13,6 +13,8 @@ const clasController = new ClasController();
 // route guard + sidebar flag (T020), mirroring the crowdfunding module convention.
 router.get('/clas', (req, res, next) => clasController.getMyClas(req, res, next));
 router.get('/clas/:signatureId/pdf-url', (req, res, next) => clasController.getPdfUrl(req, res, next));
+router.get('/clas/:signatureId/cla-managers', (req, res, next) => clasController.getClaManagers(req, res, next));
+router.post('/clas/:signatureId/cla-manager-requests', blockDuringImpersonation, (req, res, next) => clasController.createClaManagerRequest(req, res, next));
 
 // Sign CLA hand-off (#1251). Project selection is a read and stays available while
 // impersonating.

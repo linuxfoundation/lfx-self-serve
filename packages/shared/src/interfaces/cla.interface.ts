@@ -235,3 +235,49 @@ export interface PrepareSignResponse {
   /** Identity keys the CLA backend ignored. May be empty. */
   skippedIdentities: string[];
 }
+
+/** Copy/API mode for the shared Contact CLA Manager modal (#1372 / #1574). */
+export type ClaManagerRequestMode = 'approval' | 'removal' | 'contact';
+
+/** Producer `requestType` — Contact is a UI mode only and is never sent. */
+export type ClaManagerRequestType = 'approval' | 'removal';
+
+/** One CLA manager from the CCLA signature ACL covering an ECLA. */
+export interface ClaManager {
+  /** LF username — the recipient key for a contact request. */
+  lfUsername: string;
+  /** Display name, omitted when unknown. */
+  name?: string;
+  /** Email, omitted when the user record carries none. */
+  email?: string;
+}
+
+/** Response for `GET /api/me/clas/:signatureId/cla-managers`. */
+export interface ClaManagerList {
+  signatureId: string;
+  /** Empty when no CLA manager is currently reachable. */
+  managers: ClaManager[];
+  resultCount: number;
+}
+
+/** Browser body for `POST /api/me/clas/:signatureId/cla-manager-requests`. */
+export interface ClaManagerRequest {
+  requestType: ClaManagerRequestType;
+  /** LF usernames of the checked managers. Must be non-empty. */
+  recipients: string[];
+  /** Optional note included in the notification email (max 4096). */
+  message?: string;
+}
+
+/** Receipt for an approval/removal request. */
+export interface ClaManagerRequestResult {
+  requestId: string;
+  signatureId: string;
+  requestType: ClaManagerRequestType;
+  /**
+   * `sent` — email dispatched to at least one selected manager with a resolvable address.
+   * `recorded` — audit event written but no email sent.
+   */
+  status: 'sent' | 'recorded';
+  recipients: string[];
+}
