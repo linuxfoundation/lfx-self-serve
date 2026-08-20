@@ -11,6 +11,16 @@ export const MKTG_OS_AGENTS_ROUTES: Routes = [
     canActivate: [authGuard],
   },
   {
+    // Standalone one-page Brand Kit intake form (dec-brand-kit-intake-form)
+    // with the BFF persistence-receipt retry flow (dec-brand-kit-storage-v2).
+    // Kept routable alongside the generic form-first run shell below; whether
+    // the two surfaces converge is a product decision, not resolved here.
+    // Static path — must precede the `:agentId` matcher.
+    path: 'brand-kit-form',
+    loadComponent: () => import('./brand-kit-form/brand-kit-form.component').then((m) => m.BrandKitFormComponent),
+    canActivate: [authGuard],
+  },
+  {
     path: ':agentId',
     loadComponent: () => import('./mktg-agent-run/mktg-agent-run.component').then((m) => m.MktgAgentRunComponent),
     canActivate: [authGuard],
