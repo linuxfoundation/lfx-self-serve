@@ -82,7 +82,8 @@ export class PersonDetailDrawerService {
             // Keep failures local to this optional lookup — no personKey means no activity was ever
             // fetched, so setting the shared _error signal here would wrongly flip the activity tabs
             // to "Couldn't load this person's details" instead of the truthful "not available" state.
-            catchError(() => {
+            catchError((err) => {
+              console.error('Failed to load company emails:', err);
               this._loading.set(false);
               return of(EMPTY_FETCH_RESULT);
             })
