@@ -5,7 +5,7 @@ audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, faq, initiatives, donations, recurring, refunds]
 last_generated: 2026-06-29
-last_updated: 2026-06-29
+last_updated: 2026-08-17
 intercom_collection: Crowdfunding
 ---
 
@@ -40,4 +40,4 @@ A charge fails when the linked payment method cannot be processed — for exampl
 
 ## Can I get a refund for a crowdfunding donation?
 
-Crowdfunding donations are contributions to open-source project funds and are generally non-refundable. If you believe a charge was made in error, contact LFX support through the Help Center with the donation date, amount, and initiative name so the support team can investigate.
+Crowdfunding donations are contributions to open-source project funds and are generally non-refundable. If you believe a charge was made in error, contact LFX support via in-app messaging with the donation date, amount, and initiative name so the support team can investigate.
