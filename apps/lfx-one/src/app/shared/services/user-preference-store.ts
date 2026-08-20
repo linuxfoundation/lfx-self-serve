@@ -40,8 +40,9 @@ export class UserPreferenceStore<T> {
     // Same logical context: skip the cancel — distinctUntilChanged suppresses the reload, so an in-flight write would die silently.
     const current = this.contextSignal();
     if (current?.userId === ctx?.userId && current?.projectId === ctx?.projectId) return;
-    this.cancelPersist$.next();
+    // Publish the new context before cancelling: concatMap dequeues synchronously on cancel, so queued commits must already fail isSameContext.
     this.contextSignal.set(ctx);
+    this.cancelPersist$.next();
   }
 
   public replace(data: T): void {
@@ -50,6 +51,8 @@ export class UserPreferenceStore<T> {
 
   public commit(args: UserPreferenceCommitArgs<T>): void {
     if (!this.config.isBrowser) return;
+    // Never round-trip data the parser flagged read-only (e.g. unknown schema version) — a commit would overwrite it.
+    if (this.stateSignal().readOnly) return;
 
     const ctx = this.contextSignal();
     if (!ctx) return;
