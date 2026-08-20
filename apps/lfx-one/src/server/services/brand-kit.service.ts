@@ -95,6 +95,19 @@ export class BrandKitService {
    * object is skipped, never surfaced. Returns null when the partition holds
    * nothing servable.
    *
+   * LATEST IS WRITE TIME, DELIBERATELY — NOT the envelope `version` riding in
+   * object metadata. This partition is PROJECT-scoped and shared by every
+   * writer of the project, while `version` is a draft counter scoped to one
+   * run: the contract defines it per session lifecycle, and the client only
+   * carries it across sessions through a browser-local stored run (keyed to
+   * the effective user, TTL-pruned). It therefore restarts at 1 for a second
+   * writer, a second browser, cleared storage, or an expired record. Ordering
+   * this partition by it would let one writer's v5 permanently outrank every
+   * later kit anyone else stores — trading a rare race for deterministic,
+   * permanent staleness. Server write time is the only ordering signal that is
+   * monotonic across writers, browsers and sessions. `version` stays what it
+   * is: a label on the returned receipt.
+   *
    * Storage failures degrade to null (WARN, not ERROR) — the caller treats
    * "store unreachable" exactly like "nothing stored" (404), and the client
    * falls back to its browser-stored run; same graceful-degradation contract
@@ -139,7 +152,6 @@ export class BrandKitService {
           continue;
         }
 
-        const version = Number.parseInt(object.metadata['version'] ?? '', 10);
         const intakeMode: BrandKitIntakeMode = object.metadata['intake-mode'] === 'conversational' ? 'conversational' : 'form';
 
         logger.success(req, 'brand_kit_stored', startTime, { project, key: candidate.key });
@@ -149,8 +161,7 @@ export class BrandKitService {
             s3_key: candidate.key,
             content_sha256: keySha,
             project,
-            // Objects persisted before metadata was written default to v1.
-            version: Number.isInteger(version) && version >= 1 ? version : 1,
+            version: this.storedDraftVersion(object.metadata),
             intake_mode: intakeMode,
           },
           ...(candidate.lastModified && { storedAt: candidate.lastModified.toISOString() }),
@@ -173,7 +184,10 @@ export class BrandKitService {
    * Persist the validated envelope's raw document bytes to the shared private
    * marketing artifacts bucket (contract §3 steps 4–5: size gate, key derived
    * from validated fields only). Idempotent under polling — content-addressed
-   * keys make the repeat write a HEAD no-op.
+   * keys make the repeat write a HEAD no-op, with one deliberate exception:
+   * a strictly newer draft that reproduces an already-stored document verbatim
+   * rewrites it, so the stored draft label and store timestamp describe the
+   * latest draft that produced those bytes rather than the first.
    *
    * WRITE BOUNDARY. The partition is the SERVER-RESOLVED LFX project uid and
    * the caller must hold that project's writer grant (the same entitlement
@@ -216,10 +230,25 @@ export class BrandKitService {
       // The version / intake mode ride as object metadata so the stored-document
       // read path can rebuild the receipt without re-parsing the envelope —
       // content-addressed keys carry only the sha.
-      const written = await this.objectStore.putObjectIfAbsent(req, 'marketing-os-artifacts', key, documentBytes, 'text/markdown; charset=utf-8', 'private', {
-        version: String(envelope.version),
-        'intake-mode': envelope.intake.mode,
-      });
+      const written = await this.objectStore.putContentAddressedObject(
+        req,
+        'marketing-os-artifacts',
+        key,
+        documentBytes,
+        'text/markdown; charset=utf-8',
+        'private',
+        { version: String(envelope.version), 'intake-mode': envelope.intake.mode },
+        // The bytes are immutable, but their metadata is not content: when a
+        // later draft of the run reproduces this document verbatim, the stored
+        // labels still describe the draft that wrote it first, and — because
+        // the object is skipped as a no-op — its store timestamp still dates
+        // that first write, which is what the read path orders by. So a
+        // strictly newer draft rewrites the identical bytes to advance both.
+        // Strictly newer, never equal: the repeat write of every subsequent
+        // poll must stay a HEAD-only no-op, and a draft label must never move
+        // backwards when an older run re-emits the same document.
+        { refreshMetadataWhen: (stored) => this.storedDraftVersion(stored) < envelope.version }
+      );
 
       logger.success(req, 'brand_kit_persist', startTime, {
         key,
@@ -307,6 +336,20 @@ export class BrandKitService {
       });
       return null;
     }
+  }
+
+  /**
+   * The draft version an object's metadata reports. Objects persisted before
+   * metadata was written — and anything unparseable — report the documented
+   * default of 1, so this is safe to compare on the write path: an unlabelled
+   * object is treated as the oldest possible draft, never as a newer one.
+   */
+  private storedDraftVersion(metadata: Record<string, string>): number {
+    const version = Number.parseInt(metadata['version'] ?? '', 10);
+    if (!Number.isInteger(version) || version < 1) {
+      return 1;
+    }
+    return version;
   }
 
   /** The sha256 half of a content-addressed key `{prefix}{sha}.md`, or null when the key is not one. */

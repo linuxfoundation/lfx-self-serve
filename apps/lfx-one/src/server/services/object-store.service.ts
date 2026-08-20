@@ -50,13 +50,13 @@ export class ObjectStoreService {
    * silently masked "not ready yet".
    *
    * `options.degradable` controls the failure log level: callers that catch and degrade
-   * gracefully (e.g. `putObjectIfAbsent` consumers like Brand Kit persistence) pass true so a
-   * readiness outage logs WARN instead of ERROR — the request still succeeds, so an ERROR here
+   * gracefully (e.g. `putContentAddressedObject` consumers like Brand Kit persistence) pass true
+   * so a readiness outage logs WARN instead of ERROR — the request still succeeds, so an ERROR here
    * would page on a recovered path. Non-degradable callers (avatar upload) keep ERROR. The
    * severity is captured when the memoized check is created; concurrent callers of the same
    * purpose share that promise and its single log line, which is exact today because each
    * purpose has a single caller class (avatars → uploadProfilePicture, marketing-os-artifacts →
-   * putObjectIfAbsent).
+   * putContentAddressedObject).
    */
   public async ensureBucket(purpose: ObjectStorePurpose = 'avatars', options: { degradable?: boolean } = {}): Promise<void> {
     if (!this.ensureBucketPromises[purpose]) {
@@ -84,24 +84,36 @@ export class ObjectStoreService {
   }
 
   /**
-   * Idempotent, content-addressed write into a purpose-keyed bucket. When the
-   * key already exists (same content by construction for content-addressed
-   * keys), the write is skipped and reported as a no-op success.
+   * Idempotent, content-addressed write into a purpose-keyed bucket. The key
+   * is derived from a hash of the bytes, so an object that already exists
+   * holds identical content by construction and its body is never rewritten —
+   * the write is skipped and reported as a no-op success.
+   *
+   * The object's user METADATA is not content-addressed, though: the same
+   * bytes can be produced again by a later, differently-labelled revision, and
+   * the stored labels (plus the store's last-modified stamp) would still
+   * describe the revision that happened to write them first. A caller that
+   * reads those labels back — or that treats last-modified as "last produced"
+   * — passes `options.refreshMetadataWhen` to re-PUT the identical bytes with
+   * fresh metadata. It receives the stored metadata and MUST be monotonic
+   * (true only for a strictly newer revision), or an idempotent no-op becomes
+   * a write on every repeat call.
    *
    * Note: HEAD-then-PUT is racy under concurrency, but the race is benign for
    * content-addressed keys — concurrent writers PUT identical bytes and the
    * last write is indistinguishable from the first.
    *
-   * @returns true when a new object was written, false when it already existed.
+   * @returns true when the object was written (absent, or metadata refreshed), false on the no-op.
    */
-  public async putObjectIfAbsent(
+  public async putContentAddressedObject(
     req: Request,
     purpose: ObjectStorePurpose,
     key: string,
     body: Buffer,
     contentType: string,
     cacheControl: string,
-    metadata?: Record<string, string>
+    metadata?: Record<string, string>,
+    options: { refreshMetadataWhen?: (storedMetadata: Record<string, string>) => boolean } = {}
   ): Promise<boolean> {
     // degradable: a readiness failure here rethrows to consumers that catch and degrade
     // gracefully (same rationale as the WARN in the catch below), so it must log WARN — not
@@ -110,13 +122,17 @@ export class ObjectStoreService {
 
     const bucket = this.getBucket(purpose);
     const client = this.getClient();
-    const startTime = logger.startOperation(req, 'object_store_put_if_absent', { purpose, key, content_type: contentType, size: body.length });
+    const startTime = logger.startOperation(req, 'object_store_put_content_addressed', { purpose, key, content_type: contentType, size: body.length });
 
     try {
+      let refreshed = false;
       try {
-        await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
-        logger.success(req, 'object_store_put_if_absent', startTime, { key, written: false });
-        return false;
+        const head = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+        refreshed = options.refreshMetadataWhen?.(head.Metadata ?? {}) === true;
+        if (!refreshed) {
+          logger.success(req, 'object_store_put_content_addressed', startTime, { key, written: false });
+          return false;
+        }
       } catch (error) {
         // Only a confirmed 404/NotFound means "object is missing" — anything else
         // (403, timeout, 5xx) must rethrow, never be treated as absent.
@@ -136,7 +152,7 @@ export class ObjectStoreService {
           ...(metadata && { Metadata: metadata }),
         })
       );
-      logger.success(req, 'object_store_put_if_absent', startTime, { key, written: true });
+      logger.success(req, 'object_store_put_content_addressed', startTime, { key, written: true, metadata_refreshed: refreshed });
       return true;
     } catch (error) {
       // WARN, not ERROR: this idempotent write is a best-effort primitive whose
@@ -147,7 +163,7 @@ export class ObjectStoreService {
       // apiErrorHandler, which logs at ERROR. Logging ERROR here as well would
       // page on every transient outage of a path that returns a successful
       // response.
-      logger.warning(req, 'object_store_put_if_absent', 'Object HEAD/PUT failed — rethrowing for the caller to handle', {
+      logger.warning(req, 'object_store_put_content_addressed', 'Object HEAD/PUT failed — rethrowing for the caller to handle', {
         purpose,
         key,
         duration: Date.now() - startTime,
@@ -191,7 +207,7 @@ export class ObjectStoreService {
       logger.success(req, 'object_store_list_objects', startTime, { prefix, count: objects.length });
       return objects;
     } catch (error) {
-      // WARN, not ERROR: same graceful-degradation rationale as putObjectIfAbsent —
+      // WARN, not ERROR: same graceful-degradation rationale as putContentAddressedObject —
       // the consumers of this read primitive (Brand Kit stored lookup) catch and
       // degrade to "none stored"; an unrecovered rethrow still reaches the
       // centralized apiErrorHandler, which logs at ERROR.

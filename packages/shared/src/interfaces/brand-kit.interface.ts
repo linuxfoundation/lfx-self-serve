@@ -115,7 +115,13 @@ export interface BrandKitPersistReceipt {
    * identifier or a persisted kit is invisible to the project that owns it.
    */
   project: string;
-  /** Document draft version from the envelope. */
+  /**
+   * Document draft version from the envelope — a label scoped to the run that
+   * produced the document, not a project-wide sequence: it restarts at 1 for a
+   * different writer, browser or expired stored run. Never order a project's
+   * stored documents by it; the store's write time is the only ordering that
+   * is monotonic across writers.
+   */
   version: number;
   /** How the intake answers were collected. */
   intake_mode: BrandKitIntakeMode;
@@ -127,6 +133,10 @@ export interface BrandKitPersistReceipt {
  * read path). The endpoint is entitlement-gated (project writer) and the
  * storage partition is derived from the server-resolved project uid, never
  * client input; a project with nothing persisted returns 404.
+ *
+ * "Latest" means most recently written for the project — the only ordering
+ * that holds across the multiple writers, browsers and sessions that share one
+ * partition (see {@link BrandKitPersistReceipt.version}).
  */
 export interface BrandKitStoredResponse {
   /** The persisted Brand Kit document (Markdown), integrity-checked against the content-addressed key. */
