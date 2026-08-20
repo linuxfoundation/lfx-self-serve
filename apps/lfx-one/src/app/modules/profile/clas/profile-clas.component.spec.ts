@@ -90,6 +90,8 @@ describe('ProfileClasComponent', () => {
     return menu.model() ?? [];
   }
 
+  const eclaDownloadLabel = 'Download PDF<br><span class="mt-0.5 block text-xs font-normal">Covered by Corporate CLA (CCLA)</span>';
+
   function actionsTrigger(id: string): HTMLElement | null {
     return fixture.nativeElement.querySelector(`[data-testid="agreement-row-actions-${id}"]`);
   }
@@ -209,15 +211,14 @@ describe('ProfileClasComponent', () => {
     expect(items[0].disabled).toBeFalsy();
   });
 
-  it('shows a disabled Download PDF item with a Covered by Corporate CLA tooltip on an ECLA row', async () => {
+  it('shows a disabled Download PDF item with a Covered by Corporate CLA line on an ECLA row', async () => {
     await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' })]);
 
-    expect(menuItems('s-ecla').map((item) => item.label)).toEqual(['Download PDF', 'Request Removal']);
-    expect(menuItems('s-ecla')[0]).toMatchObject({
-      disabled: true,
-      title: 'Covered by Corporate CLA (CCLA)',
-      tooltipOptions: { tooltipLabel: 'Covered by Corporate CLA (CCLA)' },
-    });
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([
+      eclaDownloadLabel,
+      'Request Removal',
+    ]);
+    expect(menuItems('s-ecla')[0]).toMatchObject({ disabled: true, escape: false });
   });
 
   it('offers Request approval, Request Removal, and Contact on a Needs-attention ECLA off the Approved List', async () => {
@@ -233,7 +234,7 @@ describe('ProfileClasComponent', () => {
     ]);
 
     expect(menuItems('s-attn').map((item) => item.label)).toEqual([
-      'Download PDF',
+      eclaDownloadLabel,
       'Request approval',
       'Request Removal',
       'Contact CLA Manager',
@@ -290,7 +291,7 @@ describe('ProfileClasComponent', () => {
   it('keeps Request Removal on an invalidated ECLA — that row is not in the prototype', async () => {
     await render([agreement({ id: 's-inv-ecla', kind: 'ECLA', status: 'invalidated', pdfAvailable: false, companyName: 'Acme' })]);
 
-    expect(menuItems('s-inv-ecla').map((item) => item.label)).toEqual(['Download PDF', 'Request Removal']);
+    expect(menuItems('s-inv-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
     expect(menuItems('s-inv-ecla')[0].disabled).toBe(true);
   });
 

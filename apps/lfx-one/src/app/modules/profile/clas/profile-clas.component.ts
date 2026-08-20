@@ -54,6 +54,9 @@ interface ClaRow {
   hasActions: boolean;
 }
 
+/** Hover tooltips on a right-edge kebab open off-screen; keep the CCLA reason in the item. */
+const ECLA_COVERED_DOWNLOAD_LABEL = 'Download PDF<br><span class="mt-0.5 block text-xs font-normal">Covered by Corporate CLA (CCLA)</span>';
+
 /**
  * "CLAs" Profile tab (Me lens). Lists every signed agreement (ICLA + ECLA)
  * from `/v4/my-clas` with a status column (Valid / Needs attention / Revoked /
@@ -450,11 +453,10 @@ export class ProfileClasComponent {
     if (agreement.kind === 'ECLA') {
       return [
         {
-          label: 'Download PDF',
+          label: ECLA_COVERED_DOWNLOAD_LABEL,
+          escape: false,
           icon: 'fa-light fa-download',
           disabled: true,
-          title: 'Covered by Corporate CLA (CCLA)',
-          tooltipOptions: { tooltipLabel: 'Covered by Corporate CLA (CCLA)' },
         },
         ...buildContactClaManagerMenuItems(agreement, this.dialogService),
       ];
