@@ -153,6 +153,39 @@ export interface MktgRunSessionResponse {
 }
 
 /**
+ * Receipt of an agent's server-side persistence write, returned on a `ready`
+ * result by agents whose contract persists the validated document (the Brand
+ * Kit's dec-brand-kit-storage-v2 write path today). The run shell reads only
+ * its PRESENCE: a ready result WITHOUT a receipt means the object-store write
+ * did not happen — transient by default, and because the keys are
+ * content-addressed the next poll re-runs the same write idempotently.
+ * Field names are snake_case (unlike the camelCase enclosing response) on
+ * purpose: they mirror the downstream Artifact contract verbatim so minting
+ * needs no normalization layer — do not camelCase them.
+ */
+export interface MktgRunPersistReceipt {
+  /** Content-addressed object key the document was written to, e.g. `brand-kit/{project}/{content_sha256}.md`. */
+  s3_key: string;
+  /** Validated + recomputed document SHA-256. */
+  content_sha256: string;
+  /**
+   * Storage partition: the SERVER-RESOLVED LFX project uid the document was
+   * written for (the caller held its writer grant), never an agent-emitted,
+   * free-text-derived slug — the write and read paths must address the same
+   * identifier or a persisted document is invisible to the project that owns it.
+   */
+  project: string;
+  /**
+   * Document draft version from the envelope — a label scoped to the run that
+   * produced the document, not a project-wide sequence: it restarts at 1 for a
+   * different writer, browser or expired stored run. Never order a project's
+   * stored documents by it; the store's write time is the only ordering that
+   * is monotonic across writers.
+   */
+  version: number;
+}
+
+/**
  * Response of an agent's `result` endpoint: `pending` until the session emits
  * a schema-valid, integrity-checked envelope, then `ready` with the validated
  * document.
@@ -166,6 +199,14 @@ export interface MktgRunResultResponse {
   version?: number;
   /** Word-count-locked derivatives from the validated envelope, when the agent's contract defines them. */
   derivatives?: Record<string, string>;
+  /**
+   * Persistence receipt for the returned document — present when ready AND
+   * the server-side write succeeded, for the agents whose intake declares
+   * {@link MktgAgentIntake.persistsDocument}. Absent on a ready result means
+   * no server copy exists yet, which is what the run shell's bounded
+   * persistence retry polls for.
+   */
+  persistence?: MktgRunPersistReceipt;
 }
 
 /**
@@ -203,6 +244,16 @@ export interface MktgAgentIntake {
   attachments?: MktgIntakeAttachment[];
   /** Copyable derivative chips shown on the result, when the agent's envelope carries derivatives. */
   derivativeChips?: MktgIntakeDerivativeChip[];
+  /**
+   * The agent's result endpoint persists the validated document server-side
+   * and reports a {@link MktgRunPersistReceipt} on `ready`
+   * (dec-brand-kit-storage-v2). Set it for every persisting agent: it is what
+   * tells the run shell that a ready result WITHOUT a receipt is a failed
+   * write worth retrying, so a transient storage outage does not leave the
+   * project without the server copy that dependency gating — and every other
+   * browser and user — reads.
+   */
+  persistsDocument?: boolean;
   /**
    * Follow-ups (edit-inputs resubmit, feedback regeneration) go through the
    * agent's generate endpoint as a full resubmit (`feedback` + `priorVersion`

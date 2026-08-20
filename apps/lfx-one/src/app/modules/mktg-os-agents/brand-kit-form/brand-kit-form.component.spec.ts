@@ -321,7 +321,7 @@ describe('BrandKitFormComponent — persistence retry polling', () => {
 
   it('caps success-path persistence retries at 1 + 3 polls when every ready response is receipt-less', () => {
     // Every poll succeeds with a receipt-less ready — no error is ever thrown,
-    // so only the ready-branch guard (`persistRetries >= PERSIST_RETRY_MAX_ATTEMPTS`)
+    // so only the ready-branch guard (`persistRetries >= MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS`)
     // can end the loop. This is the bucket-intentionally-unconfigured
     // environment: bounded retries, then stop (PR #1442 round-3 finding).
     getResult.mockReturnValue(of(READY_WITHOUT_RECEIPT));

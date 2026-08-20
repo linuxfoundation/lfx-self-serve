@@ -74,6 +74,12 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
     generate: '/api/mktg-agents/brand-kit/generate',
     result: '/api/mktg-agents/brand-kit/result',
   },
+  // The result endpoint writes every validated document to the project's
+  // storage partition and reports the receipt (dec-brand-kit-storage-v2), so a
+  // receipt-less ready result is a failed write the run shell must retry —
+  // without the server copy, this agent's own dependents stay locked for every
+  // browser but the one that generated the kit.
+  persistsDocument: true,
 };
 
 /**
@@ -170,3 +176,16 @@ export const MKTG_RUN_POLL = {
   /** Overall deadline for the agent's validated document to appear. */
   timeoutMs: 600000,
 } as const;
+
+/**
+ * Extra result polls spent in the background when a persisting agent's ready
+ * result arrives WITHOUT its persistence receipt (dec-brand-kit-storage-v2).
+ * Each poll re-runs the idempotent content-addressed server-side write, so a
+ * transient storage outage still ends with the document persisted; the
+ * document itself is already displayed, so this never delays the user.
+ * Bounded because the condition can also be permanent (bucket intentionally
+ * unconfigured, document over the size cap) and must not poll for the full
+ * generation budget. ONE policy for every Brand Kit surface — the form-first
+ * run shell and the standalone intake form.
+ */
+export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;

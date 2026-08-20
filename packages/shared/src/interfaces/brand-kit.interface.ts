@@ -6,7 +6,7 @@
 // from marketing-os-agents docs/contracts/brand-kit-output.schema.json — the
 // JSON Schema file is normative; this must stay in sync (reviewed at PR).
 
-import { MktgRunGenerateBody, MktgRunResultBody, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
+import { MktgRunGenerateBody, MktgRunPersistReceipt, MktgRunResultBody, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
 
 /** One verbatim intake Q/A pair (Paul's fixed 7-question order). */
 export interface BrandKitIntakeAnswer {
@@ -97,32 +97,17 @@ export type BrandKitResultRequest = MktgRunResultBody;
 
 /**
  * Receipt of a successful Brand Kit persistence write (dec-brand-kit-storage-v2).
- * Carries exactly the fields needed for later Artifact metadata minting
- * (deferred behind wi-lfx-one-service-actor) — no graph writes happen now.
- * Field names are snake_case (unlike the camelCase enclosing response) on
- * purpose: they mirror the downstream Artifact contract verbatim so minting
- * needs no normalization layer — do not camelCase them.
+ * The generic run-flow receipt ({@link MktgRunPersistReceipt}: `s3_key` —
+ * here always `brand-kit/{project}/{content_sha256}.md` — plus
+ * `content_sha256`, `project`, `version`) with the intake provenance this
+ * contract adds. Together they carry exactly the fields needed for later
+ * Artifact metadata minting (deferred behind wi-lfx-one-service-actor) — no
+ * graph writes happen now. Field names are snake_case (unlike the camelCase
+ * enclosing response) on purpose: they mirror the downstream Artifact
+ * contract verbatim so minting needs no normalization layer — do not
+ * camelCase them.
  */
-export interface BrandKitPersistReceipt {
-  /** Content-addressed object key: brand-kit/{project}/{content_sha256}.md. */
-  s3_key: string;
-  /** Validated + recomputed document SHA-256. */
-  content_sha256: string;
-  /**
-   * Storage partition: the SERVER-RESOLVED LFX project uid the document was
-   * written for (the caller held its writer grant), never the envelope's own
-   * free-text-derived slug — the write and read paths must address the same
-   * identifier or a persisted kit is invisible to the project that owns it.
-   */
-  project: string;
-  /**
-   * Document draft version from the envelope — a label scoped to the run that
-   * produced the document, not a project-wide sequence: it restarts at 1 for a
-   * different writer, browser or expired stored run. Never order a project's
-   * stored documents by it; the store's write time is the only ordering that
-   * is monotonic across writers.
-   */
-  version: number;
+export interface BrandKitPersistReceipt extends MktgRunPersistReceipt {
   /** How the intake answers were collected. */
   intake_mode: BrandKitIntakeMode;
 }

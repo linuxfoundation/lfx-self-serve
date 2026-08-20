@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
-import { MKTG_RUN_POLL, MKTG_RUN_STORAGE_KEY_PREFIX, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
+import { MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS, MKTG_RUN_POLL, MKTG_RUN_STORAGE_KEY_PREFIX, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
 import {
   MktgChatRequest,
   MktgChatResponse,
@@ -20,7 +20,23 @@ import {
   MktgStoredAgentRun,
 } from '@lfx-one/shared/interfaces';
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
-import { catchError, concat, exhaustMap, filter, map, Observable, of, switchMap, take, throwError, timeout, timer } from 'rxjs';
+import {
+  catchError,
+  concat,
+  EMPTY,
+  exhaustMap,
+  filter,
+  ignoreElements,
+  map,
+  Observable,
+  of,
+  switchMap,
+  take,
+  takeWhile,
+  throwError,
+  timeout,
+  timer,
+} from 'rxjs';
 
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
 
@@ -69,6 +85,14 @@ export class MktgAgentRunService {
    * Generates (or regenerates) an agent document. Emits `submitted` once the
    * generate/chat POST resolves, then `document` with the updated stored run
    * once the validated document lands.
+   *
+   * The stream stays open a little longer than the last emission for agents
+   * that persist their document server-side: `retryPersistence` spends a small
+   * bounded budget of extra polls when the ready result carried no persistence
+   * receipt, so a transient storage failure still ends with the server copy
+   * written. It emits nothing, so the user sees the document at the same
+   * moment either way; cancelling the subscription (project switch, a new
+   * submission, leaving the page) cancels the retry with it.
    */
   public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
     const stored = this.loadRun(request.projectUid, request.agentId);
@@ -86,7 +110,12 @@ export class MktgAgentRunService {
         concat(
           of<MktgGenerateProgress>({ type: 'submitted' }),
           this.pollForDocument(request.intake.endpoints.result, session, priorVersion, request.projectUid).pipe(
-            map((result) => ({ type: 'document' as const, run: this.appendVersion(request, session, result) }))
+            switchMap((result) =>
+              concat(
+                of<MktgGenerateProgress>({ type: 'document', run: this.appendVersion(request, session, result) }),
+                this.retryPersistence(request, session, result)
+              )
+            )
           )
         )
       )
@@ -235,7 +264,7 @@ export class MktgAgentRunService {
    * writer grant on it, so the run must say which project it belongs to.
    */
   private pollForDocument(resultPath: string, session: MktgSessionInfo, priorVersion: number, projectUid: string): Observable<MktgRunResultResponse> {
-    const body: MktgRunResultBody = { sessionId: session.sessionId, ownerToken: session.ownerToken, ...(projectUid && { project: projectUid }) };
+    const body = this.resultBody(session, projectUid);
     return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
       exhaustMap(() =>
         this.http.post<MktgRunResultResponse>(resultPath, body).pipe(
@@ -251,6 +280,52 @@ export class MktgAgentRunService {
       take(1),
       timeout(MKTG_RUN_POLL.timeoutMs)
     );
+  }
+
+  /**
+   * Bounded background persistence retry for agents whose result endpoint
+   * persists the validated document (`intake.persistsDocument`, today the
+   * Brand Kit's dec-brand-kit-storage-v2 write path).
+   *
+   * A `ready` result with NO persistence receipt means the server-side write
+   * did not happen — usually a transient object-store failure, which the BFF
+   * degrades through (WARN, document still returned) rather than failing the
+   * run. Because the write is content-addressed and idempotent, another poll
+   * simply re-runs it. Without this, the only copy of the document is this
+   * browser's stored run: the project's server copy — what dependency gating
+   * reads for every other browser and user (a dependent agent stays locked
+   * until it exists) — would be lost to a blip no one ever sees.
+   *
+   * The document is already emitted and rendered by the time this runs, so the
+   * stream deliberately emits NOTHING (`ignoreElements`) and never errors a
+   * run that already succeeded: a failed retry poll is just a spent attempt,
+   * exactly as on the standalone Brand Kit form, and the budget is shared with
+   * it (`MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS`). Polling stops the moment a
+   * receipt arrives. No project scope means the BFF never persists at all, so
+   * there is nothing to retry.
+   */
+  private retryPersistence(request: MktgGenerateRequest, session: MktgSessionInfo, result: MktgRunResultResponse): Observable<never> {
+    if (!request.intake.persistsDocument || result.persistence || !request.projectUid) {
+      return EMPTY;
+    }
+    const body = this.resultBody(session, request.projectUid);
+    return timer(MKTG_RUN_POLL.intervalMs, MKTG_RUN_POLL.intervalMs).pipe(
+      exhaustMap(() =>
+        this.http
+          .post<MktgRunResultResponse>(request.intake.endpoints.result, body)
+          // A failed retry poll spends one attempt like any other; the next
+          // interval tries again within the budget.
+          .pipe(catchError(() => of<MktgRunResultResponse>({ status: 'pending' })))
+      ),
+      take(MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS),
+      takeWhile((response) => !response.persistence),
+      ignoreElements()
+    );
+  }
+
+  /** Result-endpoint body: the owner token travels in the body (never the query string), with the run's project scope when there is one. */
+  private resultBody(session: MktgSessionInfo, projectUid: string): MktgRunResultBody {
+    return { sessionId: session.sessionId, ownerToken: session.ownerToken, ...(projectUid && { project: projectUid }) };
   }
 
   /** Appends the validated document as the next version and persists the run. */

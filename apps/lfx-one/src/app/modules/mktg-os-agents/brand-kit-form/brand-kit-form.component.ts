@@ -11,7 +11,7 @@ import { CardComponent } from '@components/card/card.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { BRAND_KIT_INTAKE_QUESTIONS } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE_QUESTIONS, MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS } from '@lfx-one/shared/constants';
 import { BrandKitResultResponse } from '@lfx-one/shared/interfaces';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { BrandKitService } from '@services/brand-kit.service';
@@ -22,14 +22,6 @@ const RESULT_POLL_INTERVAL_MS = 10_000;
 const RESULT_POLL_MAX_ATTEMPTS = 30;
 /** Consecutive transient poll failures tolerated before giving up. */
 const RESULT_POLL_MAX_CONSECUTIVE_ERRORS = 3;
-/**
- * Bounded background retries when a ready result arrives without a
- * persistence receipt: each poll re-runs the idempotent server-side write
- * (dec-brand-kit-storage-v2), so a transient storage outage still gets the
- * document persisted. Bounded so environments where the bucket is
- * intentionally unconfigured don't poll for the full budget.
- */
-const PERSIST_RETRY_MAX_ATTEMPTS = 3;
 
 /**
  * One-page Brand Kit intake form (dec-brand-kit-intake-form): all 7 of Paul's
@@ -180,7 +172,7 @@ export class BrandKitFormComponent implements OnDestroy {
             // best-effort and never blocks the user.
             this.generating.set(false);
             this.result.set(response);
-            if (response.persistence || persistRetries >= PERSIST_RETRY_MAX_ATTEMPTS) {
+            if (response.persistence || persistRetries >= MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS) {
               return;
             }
             // Missing receipt: each extra poll re-triggers the server-side
@@ -196,7 +188,7 @@ export class BrandKitFormComponent implements OnDestroy {
             // the attempt budget. Spend the bounded persist-retry budget
             // instead, mirroring the error branch below. (Once the document is
             // displayed, `attempt` is never consulted again on any branch.)
-            if (persistRetries < PERSIST_RETRY_MAX_ATTEMPTS) {
+            if (persistRetries < MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS) {
               this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1), RESULT_POLL_INTERVAL_MS);
             }
             return;
@@ -216,7 +208,7 @@ export class BrandKitFormComponent implements OnDestroy {
             // persistence-retry poll must not surface an error or clear it.
             // Spend the remaining retry budget instead of abandoning it on a
             // single transient failure; the same cap bounds both paths.
-            if (persistRetries < PERSIST_RETRY_MAX_ATTEMPTS) {
+            if (persistRetries < MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS) {
               this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1), RESULT_POLL_INTERVAL_MS);
             }
             return;

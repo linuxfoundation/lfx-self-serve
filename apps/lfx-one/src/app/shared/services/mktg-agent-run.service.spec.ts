@@ -4,7 +4,14 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE, MKTG_RUN_POLL, MKTG_RUN_STORAGE_KEY_PREFIX, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
+import {
+  BRAND_KIT_INTAKE,
+  FOUNDATION_MESSAGE_INTAKE,
+  MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
+  MKTG_RUN_POLL,
+  MKTG_RUN_STORAGE_KEY_PREFIX,
+  MKTG_RUN_STORAGE_TTL_MS,
+} from '@lfx-one/shared/constants';
 import { MktgGenerateProgress, MktgGenerateRequest, MktgRunResultResponse, MktgStoredAgentRun, User } from '@lfx-one/shared/interfaces';
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
@@ -399,6 +406,110 @@ describe('MktgAgentRunService', () => {
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null')).toMatchObject(existingRun);
   });
 
+  /**
+   * Bounded background persistence retry (dec-brand-kit-storage-v2) for
+   * intakes whose result endpoint persists the document
+   * (`MktgAgentIntake.persistsDocument`). A `ready` result with NO receipt
+   * means the server-side write did not happen: the document is this
+   * browser's only copy, so the project's stored kit — what dependency gating
+   * serves every OTHER browser and user — silently does not exist. Because
+   * the write is content-addressed and idempotent, extra polls re-run it.
+   * This is the marketplace path (`/mktg-os-agents/brand-kit` → the generic
+   * run shell); the standalone brand-kit-form route already retried, and both
+   * now spend the same budget.
+   */
+  describe('persistence-receipt retry', () => {
+    const READY_NO_RECEIPT: MktgRunResultResponse = { status: 'ready', documentMarkdown: '# Brand Kit', version: 1 };
+    const READY_WITH_RECEIPT: MktgRunResultResponse = {
+      ...READY_NO_RECEIPT,
+      persistence: { s3_key: 'brand-kit/proj-1/abc.md', content_sha256: 'abc', project: 'proj-1', version: 1 },
+    };
+    const resultCalls = (): unknown[][] => httpPost.mock.calls.filter(([url]) => url === BRAND_KIT_INTAKE.endpoints.result);
+
+    it('keeps polling a receipt-less ready result so the idempotent server write is retried, and stops once the receipt lands', async () => {
+      resultResponses = [READY_NO_RECEIPT, READY_WITH_RECEIPT];
+      const events: MktgGenerateProgress[] = [];
+      service.generate(generateRequest()).subscribe((event) => events.push(event));
+
+      // The document is emitted immediately — the retry is background work and
+      // never delays what the user sees.
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      expect(events).toHaveLength(2);
+      expect(events[1].type).toBe('document');
+      expect(resultCalls()).toHaveLength(1);
+
+      // One extra poll re-runs the write; it comes back with a receipt.
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      expect(resultCalls()).toHaveLength(2);
+      // The retry poll is the same owner-token-in-body, project-scoped POST.
+      expect(resultCalls()[1][1]).toEqual({ sessionId: 'sess-1', ownerToken: 'token-1', project: 'proj-1' });
+
+      // Receipt in hand: polling stops, and no further document events land.
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 5);
+      expect(resultCalls()).toHaveLength(2);
+      expect(events).toHaveLength(2);
+    });
+
+    it('bounds the retry — a permanently receipt-less result never polls beyond the shared budget', async () => {
+      // The bucket-unconfigured / over-the-size-cap case: no poll will ever
+      // produce a receipt, so only the budget can end the loop.
+      resultResponses = [READY_NO_RECEIPT];
+      service.generate(generateRequest()).subscribe();
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      expect(resultCalls()).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
+      expect(resultCalls()).toHaveLength(1 + MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS);
+    });
+
+    it('never fails a run that already produced its document when a retry poll errors — the attempt is spent, the next one retries', async () => {
+      resultResponses = [READY_NO_RECEIPT, new HttpErrorResponse({ status: 500, statusText: 'Server Error' }), READY_WITH_RECEIPT];
+      const events: MktgGenerateProgress[] = [];
+      let error: unknown;
+      service.generate(generateRequest()).subscribe({ next: (event) => events.push(event), error: (err) => (error = err) });
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      expect(events).toHaveLength(2);
+
+      // The failing retry poll must not surface as a run failure over a
+      // document the user is already reading.
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      expect(error).toBeUndefined();
+      expect(resultCalls()).toHaveLength(2);
+
+      // The budget is not abandoned on one blip: the next poll gets the receipt.
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      expect(resultCalls()).toHaveLength(3);
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 5);
+      expect(resultCalls()).toHaveLength(3);
+      expect(error).toBeUndefined();
+      expect(events).toHaveLength(2);
+    });
+
+    it('does not retry a run with no project scope — the BFF never persists without one, so there is nothing to write', async () => {
+      resultResponses = [READY_NO_RECEIPT];
+      service.generate({ ...generateRequest(), projectUid: '' }).subscribe();
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      expect(resultCalls()).toHaveLength(1);
+      // The poll carries no project, and no retry poll follows it.
+      expect(resultCalls()[0][1]).toEqual({ sessionId: 'sess-1', ownerToken: 'token-1' });
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
+      expect(resultCalls()).toHaveLength(1);
+    });
+
+    it('does not retry a receipted result — a successful write is terminal', async () => {
+      resultResponses = [READY_WITH_RECEIPT];
+      service.generate(generateRequest()).subscribe();
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
+      expect(resultCalls()).toHaveLength(1);
+    });
+  });
+
   describe('regenerate-via-generate intakes (Message Foundation)', () => {
     const MF_STORAGE_KEY = `${MKTG_RUN_STORAGE_KEY_PREFIX}:${USER_SUB}:proj-1:foundation-setup`;
     const MF_ANSWERS: Record<string, string> = {
@@ -488,6 +599,20 @@ describe('MktgAgentRunService', () => {
       service.generate(mfRequest()).subscribe();
 
       expect(httpPost).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.generate, { answers: MF_ANSWERS });
+    });
+
+    it('never poll-retries after a ready result — this intake persists nothing, so a receipt would never arrive', async () => {
+      // The retry exists to recover a failed server-side write. An intake
+      // without `persistsDocument` has no write to recover, and each poll is
+      // an upstream session read — polling for a receipt that cannot exist
+      // would be pure waste.
+      resultResponses = [{ status: 'ready', documentMarkdown: '# v1', version: 1 }];
+      service.generate(mfRequest()).subscribe();
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
+
+      expect(httpPost.mock.calls.filter(([url]) => url === FOUNDATION_MESSAGE_INTAKE.endpoints.result)).toHaveLength(1);
     });
   });
 });
