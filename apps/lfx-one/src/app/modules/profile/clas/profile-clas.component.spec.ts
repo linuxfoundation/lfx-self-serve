@@ -261,6 +261,50 @@ describe('ProfileClasComponent', () => {
     expect(actionsTrigger('s-rev')).toBeNull();
     expect(rowMenu('s-rev')).toBeNull();
   });
+
+  function signedAs(id: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="agreement-signed-as-${id}"]`);
+  }
+
+  it('renders Signed as {identity} (GitHub) / (GitLab) / no suffix under the date', async () => {
+    await render([
+      agreement({ id: 's-gh', signedVia: 'github', signedAs: 'jellis' }),
+      agreement({ id: 's-gl', signedVia: 'gitlab', signedAs: 'jellis' }),
+      agreement({ id: 's-email', signedVia: 'gerrit', signedAs: 'jellis@linuxfoundation.org' }),
+    ]);
+
+    expect(signedAs('s-gh')?.textContent?.trim()).toBe('Signed as jellis (GitHub)');
+    expect(signedAs('s-gl')?.textContent?.trim()).toBe('Signed as jellis (GitLab)');
+    expect(signedAs('s-email')?.textContent?.trim()).toBe('Signed as jellis@linuxfoundation.org');
+    expect(headers()).toEqual(['Project', 'Type', 'Status', 'Signed', 'Actions']);
+  });
+
+  it('still shows the identity line on Revoked and Invalidated rows', async () => {
+    await render([
+      agreement({ id: 's-rev', kind: 'ECLA', status: 'revoked', pdfAvailable: false, companyName: 'Acme', signedVia: 'github', signedAs: 'jellis' }),
+      agreement({ id: 's-inv', kind: 'ICLA', status: 'invalidated', pdfAvailable: true, signedVia: 'github', signedAs: 'jellis' }),
+    ]);
+
+    expect(signedAs('s-rev')?.textContent?.trim()).toBe('Signed as jellis (GitHub)');
+    expect(signedAs('s-inv')?.textContent?.trim()).toBe('Signed as jellis (GitHub)');
+    expect(actionsTrigger('s-rev')).toBeNull();
+    expect(menuItems('s-inv')[0].label).toBe('Download PDF');
+  });
+
+  it('omits the identity line when the producer sent no identity', async () => {
+    await render([
+      agreement({ id: 's-none' }),
+      agreement({ id: 's-blank', signedVia: 'github', signedAs: '   ' }),
+      agreement({ id: 's-via-only', signedVia: 'github' }),
+      agreement({ id: 's-as-only', signedAs: 'jellis' }),
+    ]);
+
+    expect(signedAs('s-none')).toBeNull();
+    expect(signedAs('s-blank')).toBeNull();
+    expect(signedAs('s-via-only')).toBeNull();
+    expect(signedAs('s-as-only')?.textContent?.trim()).toBe('Signed as jellis');
+    expect(signedAs('s-as-only')?.tagName.toLowerCase()).not.toBe('a');
+  });
 });
 
 /**

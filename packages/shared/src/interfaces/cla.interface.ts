@@ -29,6 +29,12 @@ export type ClaStatus = 'valid' | 'needs_attention' | 'revoked' | 'invalidated' 
 
 export type ClaStatusReason = 'not_on_approval_list' | 'unknown';
 
+/**
+ * Platform the producer says this agreement was signed via (#1573).
+ * `gerrit` is also the LF SSO / email-identified case — there is no separate `email` token.
+ */
+export type ClaSignedVia = 'github' | 'gitlab' | 'gerrit';
+
 /** A single signed CLA shown in the CLAs list. */
 export interface MyClaAgreement {
   /** EasyCLA signatureID — also the key for the PDF-URL endpoint. */
@@ -53,6 +59,17 @@ export interface MyClaAgreement {
   companyName?: string;
   /** ISO date the agreement was signed. */
   signedOn: string;
+  /**
+   * Platform this agreement was signed via, when the producer sent one.
+   * Omitted when the signature record has no identity, or when the token is not
+   * a known `ClaSignedVia` value.
+   */
+  signedVia?: ClaSignedVia;
+  /**
+   * Username or email the agreement was signed as, when the producer sent one.
+   * Empty-after-trim is treated as omitted.
+   */
+  signedAs?: string;
   status: ClaStatus;
   statusReason?: ClaStatusReason;
   /** Signed document version, when exposed upstream (display only). */

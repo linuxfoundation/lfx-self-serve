@@ -8,7 +8,7 @@
 import { PROFILE_TABS } from '../constants/profile.constants';
 import { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
 import { ProfileTab } from '../interfaces';
-import { ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
+import { ClaSignedVia, ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
 
 /**
  * Profile subtab list, with the read-only "CLAs" tab appended (before Transactions)
@@ -92,5 +92,26 @@ export function claStatusSeverity(status: ClaStatus): TagSeverity {
       return 'secondary';
     case 'superseded':
       return 'warn';
+  }
+}
+
+/**
+ * Second line under the signed date (#1573). Undefined ⇒ the Signed cell is date-only.
+ *
+ * GitHub and GitLab take a platform suffix; Gerrit / LF SSO / email do not — that is the
+ * committed prototype, not a missing label. A blank identity omits the line even when a
+ * platform is present: `Signed as  (GitHub)` is worse than a date-only cell.
+ */
+export function signedAsLine(signedVia: ClaSignedVia | undefined, signedAs: string | undefined): string | undefined {
+  const identity = signedAs?.trim();
+  if (!identity) return undefined;
+  switch (signedVia) {
+    case 'github':
+      return `Signed as ${identity} (GitHub)`;
+    case 'gitlab':
+      return `Signed as ${identity} (GitLab)`;
+    case 'gerrit':
+    default:
+      return `Signed as ${identity}`;
   }
 }

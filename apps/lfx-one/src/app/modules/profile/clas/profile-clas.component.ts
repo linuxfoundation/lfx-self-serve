@@ -6,7 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATF
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import type { ClaGroupOption, ClaStatus, GithubAccountOption, MyClaAgreement, MyClasState, PrepareSignResponse, TagSeverity } from '@lfx-one/shared/interfaces';
-import { claStatusLabel, claStatusSeverity, downloadFromUrl, isMyClasEmpty } from '@lfx-one/shared/utils';
+import { claStatusLabel, claStatusSeverity, downloadFromUrl, isMyClasEmpty, signedAsLine } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
@@ -46,6 +46,8 @@ interface ClaRow {
   id: string;
   agreement: MyClaAgreement;
   status: ClaRowStatus;
+  /** Second line under the signed date; absent when the producer sent no identity. */
+  signedAsLine?: string;
   menuItems: MenuItem[];
   /** False ⇒ render no ⋮ trigger at all, rather than one that opens an empty menu. */
   hasActions: boolean;
@@ -138,6 +140,7 @@ export class ProfileClasComponent {
           icon: this.statusIcon(agreement.status),
           note: this.statusNote(agreement),
         },
+        signedAsLine: signedAsLine(agreement.signedVia, agreement.signedAs),
         menuItems,
         hasActions: menuItems.length > 0,
       };

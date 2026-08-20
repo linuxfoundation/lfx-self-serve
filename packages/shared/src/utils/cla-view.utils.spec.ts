@@ -12,6 +12,7 @@ import {
   claStatusSeverity,
   isMyClasEmpty,
   shouldShowGithubCta,
+  signedAsLine,
   splitAgreementsByKind,
 } from './cla-view.utils';
 
@@ -138,5 +139,24 @@ describe('claStatusSeverity', () => {
     expect(claStatusSeverity('invalidated')).toBe('danger');
     expect(claStatusSeverity('unknown')).toBe('secondary');
     expect(claStatusSeverity('superseded')).toBe('warn');
+  });
+});
+
+describe('signedAsLine', () => {
+  it('adds a platform suffix for GitHub and GitLab, and none for Gerrit/email', () => {
+    expect(signedAsLine('github', 'jellis')).toBe('Signed as jellis (GitHub)');
+    expect(signedAsLine('gitlab', 'jellis')).toBe('Signed as jellis (GitLab)');
+    expect(signedAsLine('gerrit', 'jellis@linuxfoundation.org')).toBe('Signed as jellis@linuxfoundation.org');
+  });
+
+  it('omits the line when the identity is missing, empty, or whitespace', () => {
+    expect(signedAsLine('github', undefined)).toBeUndefined();
+    expect(signedAsLine('github', '')).toBeUndefined();
+    expect(signedAsLine('github', '   ')).toBeUndefined();
+    expect(signedAsLine(undefined, undefined)).toBeUndefined();
+  });
+
+  it('prints the identity with no suffix when the platform is missing', () => {
+    expect(signedAsLine(undefined, 'jellis')).toBe('Signed as jellis');
   });
 });

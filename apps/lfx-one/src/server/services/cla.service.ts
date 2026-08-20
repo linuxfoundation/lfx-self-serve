@@ -23,6 +23,7 @@ import {
   PrepareSignResponse,
   type ClaGroupMatchType,
   type ClaGroupOrgSource,
+  type ClaSignedVia,
   type ClaStatus,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
@@ -288,9 +289,16 @@ export function collectClaEmails(primaryEmail: string | null, emailData: EmailMa
 // render an unlabelled, severity-less pill.
 const KNOWN_CLA_STATUSES = new Set<string>(['valid', 'needs_attention', 'revoked', 'invalidated', 'unknown', 'superseded']);
 
+const KNOWN_CLA_SIGNED_VIA = new Set<string>(['github', 'gitlab', 'gerrit']);
+
 /** Narrows the wire `status` to `ClaStatus`, or null when it is absent or out of contract. */
 function asClaStatus(status: string | undefined): ClaStatus | null {
   return status !== undefined && KNOWN_CLA_STATUSES.has(status) ? (status as ClaStatus) : null;
+}
+
+/** Narrows the wire `signedVia` to `ClaSignedVia`, or undefined when absent or unrecognised. */
+function asSignedVia(via: string | undefined): ClaSignedVia | undefined {
+  return via !== undefined && KNOWN_CLA_SIGNED_VIA.has(via) ? (via as ClaSignedVia) : undefined;
 }
 
 /**
@@ -339,6 +347,8 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
     projectLogo: cla.projectLogo || undefined,
     companyName: !isIcla ? cla.signingEntityName || cla.companyName || undefined : undefined,
     signedOn: cla.signedOn ?? '',
+    signedVia: asSignedVia(cla.signedVia),
+    signedAs: cla.signedAs?.trim() || undefined,
     status,
     statusReason,
     documentVersion,

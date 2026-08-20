@@ -30,6 +30,13 @@ export interface EasyClaMyCla {
   signingEntityName?: string;
   userID?: string;
   signedOn?: string;
+  /**
+   * Platform this agreement was signed via (`github` / `gitlab` / `gerrit`).
+   * `gerrit` is also LF SSO / email. Omitted when the signature record has no identity.
+   */
+  signedVia?: 'github' | 'gitlab' | 'gerrit';
+  /** Username or email the agreement was signed as. Omitted with `signedVia` when unknown. */
+  signedAs?: string;
   /** Always true — unsigned records are not returned. */
   signed?: boolean;
   /** False when the signature was invalidated. */

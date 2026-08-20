@@ -273,6 +273,34 @@ describe('toMyClaAgreement', () => {
     expect(revoked.status).toBe('revoked');
   });
 
+  it('copies signedVia and signedAs from the producer', () => {
+    const github = toMyClaAgreement(icla({ signedVia: 'github', signedAs: 'jellis' }));
+    expect(github.signedVia).toBe('github');
+    expect(github.signedAs).toBe('jellis');
+
+    const gitlab = toMyClaAgreement(ecla({ signedVia: 'gitlab', signedAs: 'jellis' }));
+    expect(gitlab.signedVia).toBe('gitlab');
+    expect(gitlab.signedAs).toBe('jellis');
+
+    const gerrit = toMyClaAgreement(icla({ signedVia: 'gerrit', signedAs: 'jellis@linuxfoundation.org' }));
+    expect(gerrit.signedVia).toBe('gerrit');
+    expect(gerrit.signedAs).toBe('jellis@linuxfoundation.org');
+  });
+
+  it('trims signedAs and drops a blank identity', () => {
+    expect(toMyClaAgreement(icla({ signedVia: 'github', signedAs: '  jellis  ' })).signedAs).toBe('jellis');
+    expect(toMyClaAgreement(icla({ signedVia: 'github', signedAs: '   ' })).signedAs).toBeUndefined();
+    expect(toMyClaAgreement(icla({})).signedVia).toBeUndefined();
+    expect(toMyClaAgreement(icla({})).signedAs).toBeUndefined();
+  });
+
+  it('drops an unrecognised signedVia and still keeps signedAs', () => {
+    const row = toMyClaAgreement(icla({ signedVia: 'bitbucket' as EasyClaMyCla['signedVia'], signedAs: 'jellis' }));
+
+    expect(row.signedVia).toBeUndefined();
+    expect(row.signedAs).toBe('jellis');
+  });
+
   it('never maps an ICLA to needs_attention, even if a spurious reason is present', () => {
     const spurious = toMyClaAgreement(icla({ status: 'needs_attention', statusReason: 'not_on_approval_list' }));
     expect(spurious.status).not.toBe('needs_attention');
