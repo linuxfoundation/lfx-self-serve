@@ -71,6 +71,10 @@ export class MyNewslettersComponent {
   protected readonly openingId = signal<string | null>(null);
   protected readonly selected = signal<MyNewsletter | null>(null);
   protected readonly previewBody = signal<string>('');
+  // True when the opened newsletter has a body_layout (blocks): its body_html is
+  // a complete email document, previewed in a sandboxed iframe rather than the
+  // frontend chrome.
+  protected readonly previewFullDocument = signal<boolean>(false);
   protected readonly searchTerm = signal<string>('');
   protected readonly foundationFilter = signal<string | null>(null);
   protected readonly projectFilter = signal<string | null>(null);
@@ -188,6 +192,7 @@ export class MyNewslettersComponent {
       .subscribe((full) => {
         if (full?.body_html) {
           this.previewBody.set(full.body_html);
+          this.previewFullDocument.set(!!full.body_layout);
           this.previewVisible.set(true);
         } else {
           this.messageService.add({

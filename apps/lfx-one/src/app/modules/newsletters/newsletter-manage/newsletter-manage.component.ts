@@ -372,6 +372,10 @@ export class NewsletterManageComponent {
   // layout to null. Keying on block count would wrongly treat a just-emptied
   // blocks draft as simple and skip the dirty check, showing stale preview HTML.
   private readonly isBlocksMode = computed(() => this.bodyLayoutValue() !== null);
+  // Blocks-mode body_html is a complete email document (template wrapper + head
+  // styles), so the preview renders it in a sandboxed iframe rather than the
+  // frontend chrome. Simple-mode body_html is an authored fragment.
+  protected readonly previewIsFullDocument = computed(() => this.isBlocksMode());
   private readonly bodyUsable = computed(() => this.bodyRendered() && (!this.isBlocksMode() || !this.isDirty()));
   public readonly canPreview = computed(() => this.bodyUsable());
   // Gates Send on eligibility having actually resolved — while committees are

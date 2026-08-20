@@ -249,7 +249,8 @@
   [subject]="form.controls.subject.value"
   [bodyHtml]="form.controls.bodyHtml.value"
   [logoUrl]="logoUrl()"
-  [displayName]="displayName()">
+  [displayName]="displayName()"
+  [fullDocument]="previewIsFullDocument()">
 </lfx-newsletter-preview-drawer>
 
 <p-confirmDialog key="newsletter-manage"></p-confirmDialog>
