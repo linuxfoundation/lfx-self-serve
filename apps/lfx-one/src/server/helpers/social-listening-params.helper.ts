@@ -90,6 +90,14 @@ export function parseSocialListeningFilters(req: Request, operation: string): So
   };
 }
 
+/** Analytics filters — omits `mentionIds`: bookmark mode is all-time, analytics stays windowed (the page strips it too). */
+export function parseSocialListeningAnalyticsFilters(req: Request, operation: string): Omit<SocialListeningFilterParams, 'mentionIds'> {
+  return {
+    ...parseSocialListeningAuthorFilters(req, operation),
+    authors: parseArrayParam(req, 'authors', MENTION_FILTER_MAX_VALUES, operation),
+  };
+}
+
 /** The filter subset the author-option query cascades off — omits `authors`/`mentionIds` so a multiselect never filters its own option list. */
 export function parseSocialListeningAuthorFilters(req: Request, operation: string): Omit<SocialListeningFilterParams, 'authors' | 'mentionIds'> {
   return {

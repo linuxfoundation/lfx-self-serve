@@ -8,6 +8,7 @@ import { MultiSelectComponent } from '@components/multi-select/multi-select.comp
 import { SelectComponent } from '@components/select/select.component';
 import {
   FILTERS_PANEL_FOCUSABLE_SELECTOR,
+  MENTION_BOOKMARK_FILTER_OPTIONS,
   MENTION_FILTER_UI_MAX_VALUES,
   MENTION_HAS_TITLE_OPTIONS,
   MENTION_RELEVANCE_OPTIONS,
@@ -20,7 +21,7 @@ import type { AuthorOption, SocialListeningOption } from '@lfx-one/shared/interf
 
 /**
  * Social Listening filters panel (LFXV2-3017, PCC port): selects + keywords/tags/authors multiselects.
- * Saved views and bookmark/read filters are deferred; `filtersForm` bridges state to the page.
+ * Saved views and the read filter are deferred (Blocks 2–3); `filtersForm` bridges state to the page.
  */
 @Component({
   selector: 'lfx-filters-panel',
@@ -38,6 +39,7 @@ export class FiltersPanelComponent {
   public readonly selectedRelevance = model.required<string>();
   public readonly selectedLanguage = model.required<string>();
   public readonly selectedHasTitle = model.required<string>();
+  public readonly selectedBookmarkFilter = model.required<string>();
   public readonly selectedKeywords = model.required<string[]>();
   public readonly selectedTags = model.required<string[]>();
   public readonly selectedAuthors = model.required<string[]>();
@@ -63,6 +65,7 @@ export class FiltersPanelComponent {
     relevance: ['all'],
     language: ['all'],
     hasTitle: ['all'],
+    bookmarkFilter: ['all'],
     keywords: [[] as string[]],
     tags: [[] as string[]],
     authors: [[] as string[]],
@@ -71,6 +74,7 @@ export class FiltersPanelComponent {
   protected readonly sentimentOptions = MENTION_SENTIMENT_OPTIONS;
   protected readonly relevanceOptions = MENTION_RELEVANCE_OPTIONS;
   protected readonly hasTitleOptions = MENTION_HAS_TITLE_OPTIONS;
+  protected readonly bookmarkFilterOptions = MENTION_BOOKMARK_FILTER_OPTIONS;
   protected readonly mentionFilterUiMaxValues = MENTION_FILTER_UI_MAX_VALUES;
 
   // Selected values can fall out of the rescoped option lists (or arrive via URL before the
@@ -88,6 +92,7 @@ export class FiltersPanelComponent {
     this.bindModelToControl(this.selectedRelevance, controls.relevance);
     this.bindModelToControl(this.selectedLanguage, controls.language);
     this.bindModelToControl(this.selectedHasTitle, controls.hasTitle);
+    this.bindModelToControl(this.selectedBookmarkFilter, controls.bookmarkFilter);
     this.bindModelToControl(this.selectedKeywords, controls.keywords);
     this.bindModelToControl(this.selectedTags, controls.tags);
     this.bindModelToControl(this.selectedAuthors, controls.authors);
@@ -96,6 +101,9 @@ export class FiltersPanelComponent {
     this.filtersForm.controls.relevance.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.selectedRelevance.set(value));
     this.filtersForm.controls.language.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.selectedLanguage.set(value));
     this.filtersForm.controls.hasTitle.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.selectedHasTitle.set(value));
+    this.filtersForm.controls.bookmarkFilter.valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((value) => this.selectedBookmarkFilter.set(value));
     this.filtersForm.controls.keywords.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.selectedKeywords.set(value));
     this.filtersForm.controls.tags.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.selectedTags.set(value));
     this.filtersForm.controls.authors.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.selectedAuthors.set(value));

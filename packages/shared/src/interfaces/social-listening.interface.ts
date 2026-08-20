@@ -18,6 +18,9 @@ export type MentionRelevance = 'high' | 'low';
 
 export type SocialListeningTab = 'feed' | 'analytics';
 
+/** Bookmark filter: `bookmarked` restricts the feed to the user's persisted bookmark IDs — all-time, so the server skips the date window. */
+export type SocialListeningBookmarkFilter = 'all' | 'bookmarked';
+
 /** Preference-name prefixes the BFF proxy accepts — derived from the constants tuple so the two can never drift. */
 export type SocialListeningPreferenceNamePrefix = (typeof SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES)[number];
 
@@ -198,6 +201,8 @@ export interface MentionFilters {
   language?: string;
   hasTitle?: string;
   search?: string;
+  /** Bookmark mode: restrict to these mention IDs (feed + count only — the page strips it before analytics). */
+  mentionIds?: string[];
 }
 
 export interface SocialListeningFeedRequest extends MentionFilters {
@@ -351,12 +356,13 @@ export interface LoadableState<T> {
 // Filter predicate + URL-synced scope
 // ---------------------------------------------------------------------------
 
-/** URL-synced filter state. PCC's `bookmarkFilter`/`readFilter` keys are dropped (deferred); everything else round-trips through query params. */
+/** URL-synced filter state. PCC's `readFilter` key is dropped (Block 2); everything else round-trips through query params. */
 export interface FilterPredicate {
   sentiment: string;
   relevance: string;
   language: string;
   hasTitle: string;
+  bookmarkFilter: SocialListeningBookmarkFilter;
   keywords: string[];
   tags: string[];
   authors: string[];
@@ -404,6 +410,7 @@ export interface SocialListeningSignals {
   selectedRelevance: WritableSignalLike<string>;
   selectedLanguage: WritableSignalLike<string>;
   selectedHasTitle: WritableSignalLike<string>;
+  selectedBookmarkFilter: WritableSignalLike<string>;
   selectedKeywords: WritableSignalLike<string[]>;
   selectedTags: WritableSignalLike<string[]>;
   selectedAuthors: WritableSignalLike<string[]>;

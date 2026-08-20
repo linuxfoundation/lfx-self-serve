@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
-import { Component, ElementRef, inject, input, output, PLATFORM_ID, viewChild } from '@angular/core';
+import { Component, computed, ElementRef, inject, input, output, PLATFORM_ID, Signal, viewChild } from '@angular/core';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import { DEFAULT_MENTION_PAGE_SIZE, MENTION_PAGE_SIZE_OPTIONS } from '@lfx-one/shared/constants';
@@ -39,16 +39,30 @@ export class MentionsListComponent {
   public readonly phase2Failed = input(false);
   /** Count endpoint failed while the feed has rows — keeps the paginator visible so the user isn't stranded. */
   public readonly countError = input(false);
+  /** Bookmarked mention IDs for the current foundation (LFXV2-3002 Block 1) — decorates each card's bookmark toggle. */
+  public readonly bookmarkedIds = input<Set<string>>(new Set());
 
   public readonly pageChange = output<{ page: number; rows: number }>();
   /** Manual retry of a phase-2-failed window. */
   public readonly retry = output<void>();
+  /** Re-emitted card toggle — the page owns the write via MentionBookmarkService. */
+  public readonly bookmarkToggled = output<Mention>();
+
+  public readonly isBookmarkedFn: Signal<(id: string) => boolean> = this.initIsBookmarkedFn();
 
   private readonly listContainer = viewChild<ElementRef<HTMLElement>>('listContainer');
 
   protected onTablePage(event: { first: number; rows: number }): void {
     this.pageChange.emit({ page: event.rows > 0 ? Math.floor(event.first / event.rows) : 0, rows: event.rows });
     this.scrollListIntoView();
+  }
+
+  /** Per-card bookmark lookup (PCC port): one computed over the input set, not a per-row method call. */
+  private initIsBookmarkedFn(): Signal<(id: string) => boolean> {
+    return computed(() => {
+      const ids = this.bookmarkedIds();
+      return (id: string) => ids.has(id);
+    });
   }
 
   // Scrolls the list, not the window — paging shouldn't yank the user past the page header.

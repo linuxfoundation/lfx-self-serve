@@ -40,8 +40,10 @@ import {
   queryParamsEqual,
   scopesEqual,
 } from '@lfx-one/shared/utils';
+import { MentionBookmarkService } from '@services/mention-bookmark.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SocialListeningService } from '@services/social-listening.service';
+import { UserService } from '@services/user.service';
 import {
   catchError,
   debounceTime,
@@ -105,6 +107,9 @@ const EMPTY_FEED_RESPONSE: SocialListeningFeedResponse = { mentions: [], compute
   ],
   templateUrl: './social-listening.component.html',
   styleUrl: './social-listening.component.scss',
+  // Component-scoped (PCC parity): the store's destroyRef/injector scope to the page, so the
+  // bookmark set reloads on foundation switch and is dropped on page leave.
+  providers: [MentionBookmarkService],
 })
 export class SocialListeningComponent {
   private readonly destroyRef = inject(DestroyRef);
@@ -113,6 +118,8 @@ export class SocialListeningComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly socialListeningService = inject(SocialListeningService);
+  private readonly mentionBookmarkService = inject(MentionBookmarkService);
+  private readonly userService = inject(UserService);
 
   private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
   private readonly serverWindowSize = MENTION_SERVER_WINDOW_SIZE;
@@ -131,6 +138,7 @@ export class SocialListeningComponent {
   public readonly selectedRelevance = signal('all');
   public readonly selectedLanguage = signal('all');
   public readonly selectedHasTitle = signal('all');
+  public readonly selectedBookmarkFilter = signal('all');
   public readonly selectedKeywords = signal<string[]>([]);
   public readonly selectedTags = signal<string[]>([]);
   public readonly selectedAuthors = signal<string[]>([]);
@@ -165,6 +173,8 @@ export class SocialListeningComponent {
   // === Scope derivations ===
   public readonly foundationSlug = computed(() => this.projectContextService.selectedFoundation()?.slug ?? '');
   public readonly hasFoundation = computed(() => !!this.foundationSlug());
+  /** Live bookmark set for the active user+foundation (empty while loading — decoration only until then). */
+  public readonly bookmarkedIds = computed(() => this.mentionBookmarkService.state().data);
 
   private readonly windowIndex = computed(() => Math.floor((this.currentPage() * this.pageSize()) / this.serverWindowSize));
   // The server clamps offset at MAX_FEED_OFFSET (100,000) — past ~1000 windows the response is clamped, not window-accurate.
@@ -173,8 +183,10 @@ export class SocialListeningComponent {
 
   // === Request pipelines ===
   private readonly searchQuery: Signal<string> = this.initSearchQuery();
-  /** The live feed predicate as a request fragment — drives the feed, the count, and (as an input) the analytics tab. */
+  /** The live feed predicate as a request fragment — drives the feed, the count, and (via `analyticsFilters`) the analytics tab. */
   public readonly currentFilters: Signal<MentionFilters> = this.initCurrentFilters();
+  /** Analytics never filter by bookmark — `mentionIds` is feed+count only, so the analytics input strips it. */
+  public readonly analyticsFilters: Signal<MentionFilters> = this.initAnalyticsFilters();
   private readonly feedRequest: Signal<SocialListeningFeedRequest | null> = this.initFeedRequest();
   private readonly countRequest: Signal<SocialListeningCountRequest | null> = this.initCountRequest();
   private readonly feedCacheKey: Signal<string | null> = this.initFeedCacheKey();
@@ -238,6 +250,7 @@ export class SocialListeningComponent {
     selectedRelevance: this.selectedRelevance,
     selectedLanguage: this.selectedLanguage,
     selectedHasTitle: this.selectedHasTitle,
+    selectedBookmarkFilter: this.selectedBookmarkFilter,
     selectedKeywords: this.selectedKeywords,
     selectedTags: this.selectedTags,
     selectedAuthors: this.selectedAuthors,
@@ -338,7 +351,16 @@ export class SocialListeningComponent {
       });
     });
 
+    // The bookmark set is per user + foundation: reload it as either resolves or changes (PCC port).
+    effect(() => {
+      const userId = this.userService.user()?.sub;
+      const projectId = this.projectContextService.selectedFoundationSfid();
+      const ctx = userId && projectId ? { userId, projectId } : null;
+      untracked(() => this.mentionBookmarkService.setContext(ctx));
+    });
+
     // Foundation switch resets the sub-project + platform scope (their option lists rescope).
+    // selectedBookmarkFilter is intentionally NOT reset — bookmarks are date-independent (PCC parity).
     effect(() => {
       const current = this.foundationSlug();
       const previous = this.previousFoundationSlug;
@@ -386,6 +408,11 @@ export class SocialListeningComponent {
     this.pageSize.set(event.rows);
   }
 
+  /** Card toggle → the bookmark service owns the cap/loading gates, the optimistic write, and the toasts. */
+  public onBookmarkToggled(mention: Mention): void {
+    this.mentionBookmarkService.toggleBookmark(mention.id);
+  }
+
   /** Manual retry of a phase-2-failed window: the tick re-runs the fetch pipeline; a successful refetch overwrites the flagged cache entry (clearing it here would flash the bare empty state for a frame). */
   public retryWindow(): void {
     this.feedRetryTick.update((tick) => tick + 1);
@@ -415,6 +442,7 @@ export class SocialListeningComponent {
       relevance: () => this.selectedRelevance.set(DEFAULT_MENTION_PREDICATE.relevance),
       language: () => this.selectedLanguage.set(DEFAULT_MENTION_PREDICATE.language),
       hasTitle: () => this.selectedHasTitle.set(DEFAULT_MENTION_PREDICATE.hasTitle),
+      bookmarkFilter: () => this.selectedBookmarkFilter.set(DEFAULT_MENTION_PREDICATE.bookmarkFilter),
       keywords: () => this.selectedKeywords.set([]),
       tags: () => this.selectedTags.set([]),
       authors: () => this.selectedAuthors.set([]),
@@ -446,8 +474,12 @@ export class SocialListeningComponent {
   }
 
   private initCurrentFilters(): Signal<MentionFilters> {
-    return computed(() =>
-      buildMentionFilters({
+    return computed(() => {
+      // Bookmark mode: the feed/count requests carry the bookmarked ID set (empty sets are dropped
+      // by buildMentionFilters — the request computeds turn an empty set into a null request).
+      const mentionIds = this.selectedBookmarkFilter() === 'bookmarked' ? Array.from(this.bookmarkedIds()) : undefined;
+
+      return buildMentionFilters({
         sentiment: this.selectedSentiment(),
         relevance: this.selectedRelevance(),
         platform: this.selectedPlatform(),
@@ -458,17 +490,31 @@ export class SocialListeningComponent {
         language: this.selectedLanguage(),
         hasTitle: this.selectedHasTitle(),
         search: this.searchQuery(),
-      })
-    );
+        mentionIds,
+      });
+    });
+  }
+
+  private initAnalyticsFilters(): Signal<MentionFilters> {
+    return computed(() => {
+      const filters = { ...this.currentFilters() };
+      delete filters.mentionIds;
+      return filters;
+    });
   }
 
   private initFeedRequest(): Signal<SocialListeningFeedRequest | null> {
     return computed(() => {
       const foundationSlug = this.foundationSlug();
       if (!foundationSlug) return null;
+      // Bookmark mode: a constant valid period token keeps period changes from refetching (the server
+      // skips the date window for mentionIds anyway); an empty bookmark set skips the request entirely.
+      const bookmarked = this.selectedBookmarkFilter() === 'bookmarked';
+      const period = bookmarked ? this.defaultPeriod : this.selectedPeriod();
+      if (bookmarked && this.bookmarkedIds().size === 0) return null;
       return {
         foundationSlug,
-        period: this.selectedPeriod(),
+        period,
         limit: this.serverWindowSize,
         offset: this.serverOffset(),
         ...this.currentFilters(),
@@ -480,7 +526,10 @@ export class SocialListeningComponent {
     return computed(() => {
       const foundationSlug = this.foundationSlug();
       if (!foundationSlug) return null;
-      return { foundationSlug, period: this.selectedPeriod(), ...this.currentFilters() };
+      const bookmarked = this.selectedBookmarkFilter() === 'bookmarked';
+      const period = bookmarked ? this.defaultPeriod : this.selectedPeriod();
+      if (bookmarked && this.bookmarkedIds().size === 0) return null;
+      return { foundationSlug, period, ...this.currentFilters() };
     });
   }
 

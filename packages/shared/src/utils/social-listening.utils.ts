@@ -1,14 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/** Social Listening mapping/filter helpers, shared by the Angular app and the Express server. The bookmark (`mentionIds`) client branch is deferred to a follow-up ticket. */
+/** Social Listening mapping/filter helpers, shared by the Angular app and the Express server. */
 
 import type { ChartData } from 'chart.js';
 
 import {
   ANALYTICS_TOP_PLATFORMS_LIMIT,
   DEFAULT_MENTION_PREDICATE,
+  MENTION_BOOKMARK_FILTER_OPTIONS,
   MENTION_HAS_TITLE_OPTIONS,
+  MENTION_IDS_MAX_VALUES,
   MENTION_PLATFORM_CONFIG,
   MENTION_RELEVANCE_OPTIONS,
   MENTION_SENTIMENT_CONFIG,
@@ -100,6 +102,7 @@ export function buildMentionFilters(opts: {
   language?: string;
   hasTitle?: string;
   search?: string;
+  mentionIds?: string[];
 }): MentionFilters {
   const isActive = (v?: string): boolean => !!v && v !== 'all';
   const filters: MentionFilters = {};
@@ -114,6 +117,8 @@ export function buildMentionFilters(opts: {
   if (opts.tags.length > 0) filters.tags = opts.tags;
   if (opts.authors && opts.authors.length > 0) filters.authors = opts.authors;
   if (opts.search) filters.search = opts.search;
+  // Bookmark mode: non-empty only — an empty set means "no bookmarks", which the page turns into a null request instead.
+  if (opts.mentionIds && opts.mentionIds.length > 0) filters.mentionIds = opts.mentionIds;
 
   return filters;
 }
@@ -357,6 +362,9 @@ export function buildActiveFilterPills(predicate: FilterPredicate): FilterPillOp
   if (predicate.hasTitle !== DEFAULT_MENTION_PREDICATE.hasTitle) {
     pills.push(pill('hasTitle', 'Has Title', labelFor(MENTION_HAS_TITLE_OPTIONS, predicate.hasTitle)));
   }
+  if (predicate.bookmarkFilter !== DEFAULT_MENTION_PREDICATE.bookmarkFilter) {
+    pills.push(pill('bookmarkFilter', 'Bookmarks', labelFor(MENTION_BOOKMARK_FILTER_OPTIONS, predicate.bookmarkFilter)));
+  }
   if (predicate.keywords.length > 0) {
     const { summary, full } = summarizePillValues(predicate.keywords);
     pills.push(pill('keywords', 'Keywords', summary, full));
@@ -378,6 +386,16 @@ export function buildActiveFilterPills(predicate: FilterPredicate): FilterPillOp
 // ---------------------------------------------------------------------------
 // Per-user preference names (LFXV2-3002 Block 0)
 // ---------------------------------------------------------------------------
+
+/** Parses the persisted bookmark payload (PCC port): tolerates string/parsed input, drops non-strings, caps at the server limit; a corrupt doc yields `[]` so the user can re-bookmark over it. */
+export function parseBookmarkIds(raw: unknown): string[] {
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return (Array.isArray(parsed) ? parsed : []).filter((id): id is string => typeof id === 'string' && id.length > 0).slice(0, MENTION_IDS_MAX_VALUES);
+  } catch {
+    return [];
+  }
+}
 
 /** Builds the exact `<prefix> - <projectId>` preference name PCC writes (ASCII separator — upstream uniqueness is case-insensitive). */
 export function socialListeningPreferenceName(prefix: SocialListeningPreferenceNamePrefix, projectId: string): string {

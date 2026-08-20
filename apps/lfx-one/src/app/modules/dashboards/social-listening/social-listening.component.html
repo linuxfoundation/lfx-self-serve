@@ -40,6 +40,7 @@
             [(selectedRelevance)]="selectedRelevance"
             [(selectedLanguage)]="selectedLanguage"
             [(selectedHasTitle)]="selectedHasTitle"
+            [(selectedBookmarkFilter)]="selectedBookmarkFilter"
             [(selectedKeywords)]="selectedKeywords"
             [(selectedTags)]="selectedTags"
             [(selectedAuthors)]="selectedAuthors"
@@ -85,6 +86,8 @@
             <lfx-mentions-list
               [mentions]="mentions()"
               [loading]="loading()"
+              [bookmarkedIds]="bookmarkedIds()"
+              (bookmarkToggled)="onBookmarkToggled($event)"
               [totalMentions]="totalRecords()"
               [first]="first()"
               [rows]="pageSize()"
@@ -107,7 +110,7 @@
             [foundationSlug]="foundationSlug()"
             [period]="selectedPeriod()"
             [platform]="selectedPlatform()"
-            [filters]="currentFilters()"
+            [filters]="analyticsFilters()"
             [exportNonce]="exportNonce()"
             [(isExporting)]="exporting"
             [(panelsLoading)]="analyticsPanelsLoading" />

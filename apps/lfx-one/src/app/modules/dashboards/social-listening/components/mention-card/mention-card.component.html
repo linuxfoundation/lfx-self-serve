@@ -76,6 +76,17 @@
         <button
           type="button"
           class="card-interactive icon-btn"
+          [pTooltip]="isBookmarked() ? 'Remove Bookmark' : 'Bookmark'"
+          tooltipPosition="top"
+          [attr.aria-label]="isBookmarked() ? 'Remove bookmark' : 'Bookmark mention'"
+          [attr.aria-pressed]="isBookmarked()"
+          (click)="onToggleBookmark()"
+          data-testid="mention-card-bookmark">
+          <i [class]="isBookmarked() ? 'fa-solid fa-bookmark text-base text-blue-600' : 'fa-light fa-bookmark text-base'"></i>
+        </button>
+        <button
+          type="button"
+          class="card-interactive icon-btn"
           [pTooltip]="copied() ? 'Copied!' : 'Copy Link'"
           tooltipPosition="top"
           [attr.aria-label]="copied() ? 'Link copied' : 'Copy link to mention'"

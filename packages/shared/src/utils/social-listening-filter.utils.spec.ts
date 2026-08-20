@@ -71,6 +71,16 @@ describe('encode / decode round-trip', () => {
     expect(decoded.scope).toEqual(scope());
   });
 
+  it('round-trips the bookmark filter and elides it at the default', () => {
+    const original = predicate({ bookmarkFilter: 'bookmarked' });
+
+    const encoded = encodePredicateToQueryParams(original, scope(), DEFAULT_PERIOD);
+    expect(encoded[q.bookmarks]).toBe('bookmarked');
+    expect(decodePredicateFromQueryParams(encoded, DEFAULT_PERIOD).predicate).toEqual(original);
+
+    expect(encodePredicateToQueryParams(predicate(), scope(), DEFAULT_PERIOD)[q.bookmarks]).toBeNull();
+  });
+
   it('resolves the period from the runtime default rather than the constant placeholder', () => {
     const encoded = encodePredicateToQueryParams(predicate(), scope({ period: DEFAULT_PERIOD }), DEFAULT_PERIOD);
     expect(encoded[q.period]).toBeNull();
@@ -136,6 +146,11 @@ describe('decode coercion', () => {
   ])('coerces an off-list $field literal back to the default', ({ key, field, valid, invalid }) => {
     expect(decodePredicateFromQueryParams({ [key]: valid }, DEFAULT_PERIOD).predicate[field]).toBe(valid);
     expect(decodePredicateFromQueryParams({ [key]: invalid }, DEFAULT_PERIOD).predicate[field]).toBe(DEFAULT_MENTION_PREDICATE[field]);
+  });
+
+  it('coerces an unknown bookmarks value back to the default', () => {
+    expect(decodePredicateFromQueryParams({ [q.bookmarks]: 'everything' }, DEFAULT_PERIOD).predicate.bookmarkFilter).toBe('all');
+    expect(normalizePredicate({ bookmarkFilter: 'everything' }).bookmarkFilter).toBe('all');
   });
 
   it('only recognizes the analytics tab, defaulting anything else to feed', () => {

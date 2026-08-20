@@ -30,6 +30,7 @@ describe('FiltersPanelComponent', () => {
     fixture.componentRef.setInput('selectedRelevance', 'all');
     fixture.componentRef.setInput('selectedLanguage', 'all');
     fixture.componentRef.setInput('selectedHasTitle', 'all');
+    fixture.componentRef.setInput('selectedBookmarkFilter', 'all');
     fixture.componentRef.setInput('selectedKeywords', []);
     fixture.componentRef.setInput('selectedTags', []);
     fixture.componentRef.setInput('selectedAuthors', []);
@@ -99,6 +100,19 @@ describe('FiltersPanelComponent', () => {
 
     expect(preventDefault).toHaveBeenCalled();
     expect(document.activeElement).toBe(last);
+  });
+
+  it('bridges the bookmark filter between the model and the form control', async () => {
+    const form = (fixture.componentInstance as unknown as { filtersForm: { controls: { bookmarkFilter: { value: string; setValue: (v: string) => void } } } })
+      .filtersForm;
+
+    fixture.componentRef.setInput('selectedBookmarkFilter', 'bookmarked');
+    await fixture.whenStable();
+    expect(form.controls.bookmarkFilter.value).toBe('bookmarked');
+
+    form.controls.bookmarkFilter.setValue('all');
+    await fixture.whenStable();
+    expect(fixture.componentInstance.selectedBookmarkFilter()).toBe('all');
   });
 
   it('does not intercept Tab from a middle element', () => {

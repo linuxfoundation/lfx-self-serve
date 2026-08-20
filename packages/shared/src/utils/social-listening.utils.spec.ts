@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  MENTION_IDS_MAX_VALUES,
   MENTION_SENTIMENT_CONFIG,
   SOCIAL_LISTENING_BOOKMARKS_PREFERENCE_PREFIX,
   SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES,
@@ -20,6 +21,7 @@ import {
   normalizeKeywords,
   normalizePlatformKey,
   normalizeSentiment,
+  parseBookmarkIds,
   socialListeningPreferenceName,
 } from './social-listening.utils';
 
@@ -194,6 +196,12 @@ describe('buildMentionFilters', () => {
   it('omits absent optional dimensions entirely', () => {
     expect(buildMentionFilters({ ...base, sentiment: 'negative' })).toEqual({ sentiment: 'negative' });
   });
+
+  it('emits mentionIds only when the bookmarked set is non-empty', () => {
+    expect(buildMentionFilters({ ...base, mentionIds: ['m1', 'm2'] })).toEqual({ mentionIds: ['m1', 'm2'] });
+    expect(buildMentionFilters({ ...base, mentionIds: [] })).toEqual({});
+    expect(buildMentionFilters(base)).toEqual({});
+  });
 });
 
 describe('small helpers', () => {
@@ -218,6 +226,28 @@ describe('small helpers', () => {
     const merged = mergeSelectedAuthors(options, ['@alice', '@bob']);
     expect(merged).toHaveLength(2);
     expect(merged[1]).toMatchObject({ AUTHOR: '@bob', PLATFORM: '', MENTION_COUNT: 0 });
+  });
+});
+
+describe('parseBookmarkIds', () => {
+  it('parses a JSON string and accepts a pre-parsed array', () => {
+    expect(parseBookmarkIds('["m1","m2"]')).toEqual(['m1', 'm2']);
+    expect(parseBookmarkIds(['m1', 'm2'])).toEqual(['m1', 'm2']);
+  });
+
+  it('drops non-string and empty entries', () => {
+    expect(parseBookmarkIds(['m1', '', 42, null, 'm2'])).toEqual(['m1', 'm2']);
+  });
+
+  it('caps the list at the server limit', () => {
+    const overCap = Array.from({ length: MENTION_IDS_MAX_VALUES + 50 }, (_, i) => `m${i}`);
+    expect(parseBookmarkIds(overCap)).toHaveLength(MENTION_IDS_MAX_VALUES);
+  });
+
+  it('returns an empty list for corrupt JSON or a non-array payload', () => {
+    expect(parseBookmarkIds('{not json')).toEqual([]);
+    expect(parseBookmarkIds('{"ids":["m1"]}')).toEqual([]);
+    expect(parseBookmarkIds(null)).toEqual([]);
   });
 });
 

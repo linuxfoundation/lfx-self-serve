@@ -151,6 +151,44 @@ describe('MentionCardComponent', () => {
     expect(body.length).toBeLessThanOrEqual(MENTION_FORWARD_EMAIL_BODY_MAX_ENCODED_CHARS);
   });
 
+  it('emits bookmarkToggled with the mention when the bookmark button is clicked', async () => {
+    const mention = baseMention();
+    setMention(mention);
+    await fixture.whenStable();
+
+    const emitted: Mention[] = [];
+    fixture.componentInstance.bookmarkToggled.subscribe((m) => emitted.push(m));
+
+    (querySelector('[data-testid="mention-card-bookmark"]') as HTMLButtonElement).click();
+
+    expect(emitted).toEqual([mention]);
+  });
+
+  it('reflects the bookmarked state in aria-pressed and swaps the outline icon for a solid blue one', async () => {
+    setMention(baseMention());
+    fixture.componentRef.setInput('isBookmarked', false);
+    await fixture.whenStable();
+
+    let button = querySelector('[data-testid="mention-card-bookmark"]') as HTMLButtonElement;
+    // Angular's [class] binding dedupes and reorders tokens — assert tokens, not substrings.
+    let iconClass = button.querySelector('i')?.className ?? '';
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    expect(button.getAttribute('aria-label')).toBe('Bookmark mention');
+    expect(iconClass).toContain('fa-light');
+    expect(iconClass).toContain('fa-bookmark');
+    expect(iconClass).not.toContain('fa-solid');
+
+    fixture.componentRef.setInput('isBookmarked', true);
+    await fixture.whenStable();
+
+    button = querySelector('[data-testid="mention-card-bookmark"]') as HTMLButtonElement;
+    iconClass = button.querySelector('i')?.className ?? '';
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(button.getAttribute('aria-label')).toBe('Remove bookmark');
+    expect(iconClass).toContain('fa-solid');
+    expect(iconClass).toContain('text-blue-600');
+  });
+
   it('exposes the stretched link as the sole keyboard tab stop to the original URL', async () => {
     setMention(baseMention());
     await fixture.whenStable();

@@ -9,7 +9,13 @@ import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ServiceValidationError } from '../errors';
-import { parseFoundationSlug, parseSocialListeningFilters, parseSocialListeningPagination, parseSocialListeningScope } from './social-listening-params.helper';
+import {
+  parseFoundationSlug,
+  parseSocialListeningAnalyticsFilters,
+  parseSocialListeningFilters,
+  parseSocialListeningPagination,
+  parseSocialListeningScope,
+} from './social-listening-params.helper';
 
 const reqWith = (query: Record<string, unknown>): Request => ({ query }) as unknown as Request;
 
@@ -153,6 +159,21 @@ describe('parseSocialListeningFilters', () => {
 
   it('keeps a repeated-key list as parsed values', () => {
     expect(parseSocialListeningFilters(reqWith({ tags: ['ai', 'linux'] }), 'op').tags).toEqual(['ai', 'linux']);
+  });
+});
+
+describe('parseSocialListeningAnalyticsFilters', () => {
+  it('omits mentionIds while keeping every other feed filter', () => {
+    const filters = parseSocialListeningAnalyticsFilters(reqWith({ mentionIds: ['k1'], authors: ['alice'], sentiment: 'negative' }), 'op');
+
+    expect(filters).toEqual({ sentiment: 'negative', authors: ['alice'] });
+    expect(filters).not.toHaveProperty('mentionIds');
+  });
+
+  it('ignores an over-cap mentionIds list rather than 400ing — the boundary never reads it', () => {
+    const mentionIds = Array.from({ length: 501 }, (_, i) => `mention-${i}`);
+
+    expect(() => parseSocialListeningAnalyticsFilters(reqWith({ mentionIds }), 'op')).not.toThrow();
   });
 });
 

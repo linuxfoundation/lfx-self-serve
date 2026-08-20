@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -29,7 +29,7 @@ const COPIED_STATE_MS = 1000;
 
 /**
  * A single mention in the Social Listening feed (LFXV2-3016): a stretched link to `originalUrl` with
- * interactive elements above it via `.card-interactive`. Bookmark/read state is deferred (todo §6).
+ * interactive elements above it via `.card-interactive`. Read state is deferred (Block 2).
  */
 @Component({
   selector: 'lfx-mention-card',
@@ -44,6 +44,9 @@ export class MentionCardComponent {
   public readonly mention = input.required<Mention>();
   /** Heartbeat from the page (one shared interval) that re-evaluates the relative timestamp. */
   public readonly timeTick = input<number>(0);
+  /** Bookmark decoration (LFXV2-3002 Block 1) — the page owns persistence via MentionBookmarkService. */
+  public readonly isBookmarked = input<boolean>(false);
+  public readonly bookmarkToggled = output<Mention>();
 
   public readonly copied = signal(false);
   /** Keyed by URL, not a boolean: row components are reused across pages, so a flag would hide the next mention's thumbnail. */
@@ -80,6 +83,11 @@ export class MentionCardComponent {
         clearTimeout(this.copyTimeoutId);
       }
     });
+  }
+
+  /** Re-emits the toggle intent — the page decides whether the write proceeds (cap/loading gates live in the service). */
+  public onToggleBookmark(): void {
+    this.bookmarkToggled.emit(this.mention());
   }
 
   /** Copies the mention's canonical URL to the clipboard with a transient "Copied!" state. */

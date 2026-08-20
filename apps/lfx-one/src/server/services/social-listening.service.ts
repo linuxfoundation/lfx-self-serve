@@ -475,10 +475,14 @@ export class SocialListeningService {
   }
 
   /** Foundation + half-open date window + the two shared scope selects; `alias` prefixes columns for the one joining query (`getMentionsTags`). */
-  private buildScope(params: SocialListeningScopedOptionsParams, alias?: string): SqlFragment {
+  private buildScope(params: SocialListeningScopedOptionsParams & { mentionIds?: string[] }, alias?: string): SqlFragment {
     const col = (name: string): string => (alias ? `${alias}.${name}` : name);
-    const clauses = [`${col('PROJECT_SLUG')} = ?`, `${col('MENTION_TS')} >= TO_DATE(?)`, `${col('MENTION_TS')} < TO_DATE(?)`];
-    const binds: QueryBind[] = [params.foundationSlug, params.startDate, params.endDate];
+    // Bookmark mode (`mentionIds` present): bookmarks are all-time — a date window would hide any older than the current period.
+    const windowed = params.mentionIds === undefined;
+    const clauses = windowed
+      ? [`${col('PROJECT_SLUG')} = ?`, `${col('MENTION_TS')} >= TO_DATE(?)`, `${col('MENTION_TS')} < TO_DATE(?)`]
+      : [`${col('PROJECT_SLUG')} = ?`];
+    const binds: QueryBind[] = windowed ? [params.foundationSlug, params.startDate, params.endDate] : [params.foundationSlug];
 
     if (params.sourceProjectId && params.sourceProjectId !== 'all') {
       clauses.push(`${col('SOURCE_PROJECT_ID')} = ?`);

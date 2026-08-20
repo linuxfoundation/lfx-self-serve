@@ -36,6 +36,7 @@ export function predicateFromSignals(s: SocialListeningSignals): FilterPredicate
     relevance: s.selectedRelevance(),
     language: s.selectedLanguage(),
     hasTitle: s.selectedHasTitle(),
+    bookmarkFilter: s.selectedBookmarkFilter() === 'bookmarked' ? 'bookmarked' : DEFAULT_MENTION_PREDICATE.bookmarkFilter,
     keywords: normalizeKeywords(s.selectedKeywords() ?? []),
     tags: [...(s.selectedTags() ?? [])],
     authors: [...(s.selectedAuthors() ?? [])],
@@ -48,6 +49,7 @@ export function applyPredicateToSignals(p: FilterPredicate, s: SocialListeningSi
   s.selectedRelevance.set(p.relevance);
   s.selectedLanguage.set(p.language);
   s.selectedHasTitle.set(p.hasTitle);
+  s.selectedBookmarkFilter.set(p.bookmarkFilter);
   s.selectedKeywords.set(normalizeKeywords([...p.keywords]));
   s.selectedTags.set([...p.tags]);
   s.selectedAuthors.set([...p.authors]);
@@ -109,6 +111,7 @@ export function normalizePredicate(raw: unknown): FilterPredicate {
     relevance: str(p.relevance, DEFAULT_MENTION_PREDICATE.relevance),
     language: str(p.language, DEFAULT_MENTION_PREDICATE.language),
     hasTitle: str(p.hasTitle, DEFAULT_MENTION_PREDICATE.hasTitle),
+    bookmarkFilter: p.bookmarkFilter === 'bookmarked' ? 'bookmarked' : DEFAULT_MENTION_PREDICATE.bookmarkFilter,
     keywords: normalizeKeywords(strArr(p.keywords)),
     tags: strArr(p.tags),
     authors: strArr(p.authors),
@@ -122,6 +125,7 @@ export function isEmptyPredicate(p: FilterPredicate): boolean {
     p.relevance === DEFAULT_MENTION_PREDICATE.relevance &&
     p.language === DEFAULT_MENTION_PREDICATE.language &&
     p.hasTitle === DEFAULT_MENTION_PREDICATE.hasTitle &&
+    p.bookmarkFilter === DEFAULT_MENTION_PREDICATE.bookmarkFilter &&
     p.keywords.length === 0 &&
     p.tags.length === 0 &&
     p.authors.length === 0 &&
@@ -136,6 +140,7 @@ export function countActiveFilters(p: FilterPredicate): number {
   if (p.relevance !== DEFAULT_MENTION_PREDICATE.relevance) count++;
   if (p.language !== DEFAULT_MENTION_PREDICATE.language) count++;
   if (p.hasTitle !== DEFAULT_MENTION_PREDICATE.hasTitle) count++;
+  if (p.bookmarkFilter !== DEFAULT_MENTION_PREDICATE.bookmarkFilter) count++;
   if (p.keywords.length > 0) count++;
   if (p.tags.length > 0) count++;
   if (p.authors.length > 0) count++;
@@ -156,6 +161,7 @@ export function predicatesEqual(a: FilterPredicate, b: FilterPredicate): boolean
     a.relevance === b.relevance &&
     a.language === b.language &&
     a.hasTitle === b.hasTitle &&
+    a.bookmarkFilter === b.bookmarkFilter &&
     sortedEqual(a.keywords, b.keywords) &&
     sortedEqual(a.tags, b.tags) &&
     sortedEqual(a.authors, b.authors) &&
@@ -186,6 +192,7 @@ export function encodePredicateToQueryParams(p: FilterPredicate, scope: ScopeSta
     [q.relevance]: p.relevance === DEFAULT_MENTION_PREDICATE.relevance ? null : p.relevance,
     [q.language]: p.language === DEFAULT_MENTION_PREDICATE.language ? null : p.language,
     [q.hasTitle]: p.hasTitle === DEFAULT_MENTION_PREDICATE.hasTitle ? null : p.hasTitle,
+    [q.bookmarks]: p.bookmarkFilter === DEFAULT_MENTION_PREDICATE.bookmarkFilter ? null : p.bookmarkFilter,
     [q.keywords]: p.keywords.length > 0 ? [...p.keywords] : null,
     [q.tags]: p.tags.length > 0 ? [...p.tags] : null,
     [q.authors]: p.authors.length > 0 ? [...p.authors] : null,
@@ -222,6 +229,8 @@ export function decodePredicateFromQueryParams(params: SocialListeningQueryParam
     relevance: coerceLiteral(asScalar(params[q.relevance]), RELEVANCE_VALUES, DEFAULT_MENTION_PREDICATE.relevance),
     language: asScalar(params[q.language]) || DEFAULT_MENTION_PREDICATE.language,
     hasTitle: coerceLiteral(asScalar(params[q.hasTitle]), HAS_TITLE_VALUES, DEFAULT_MENTION_PREDICATE.hasTitle),
+    // Anything but the exact active value coerces to the default — a crafted `?bookmarks=` can't wedge the predicate.
+    bookmarkFilter: asScalar(params[q.bookmarks]) === 'bookmarked' ? 'bookmarked' : DEFAULT_MENTION_PREDICATE.bookmarkFilter,
     keywords,
     tags,
     authors,

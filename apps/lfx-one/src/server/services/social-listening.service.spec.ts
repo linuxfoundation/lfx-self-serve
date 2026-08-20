@@ -267,7 +267,7 @@ describe('buildFilters', () => {
 
     const { sql, binds } = lastCall();
     expect(normalize(sql)).toContain('AND 1 = 0');
-    expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01']);
+    expect(binds).toEqual(['cncf']);
   });
 
   it('binds a populated mentionIds list against the identity column', async () => {
@@ -275,13 +275,44 @@ describe('buildFilters', () => {
 
     const { sql, binds } = lastCall();
     expect(normalize(sql)).toContain('_KEY IN (?, ?)');
-    expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'k1', 'k2']);
+    expect(binds).toEqual(['cncf', 'k1', 'k2']);
   });
 
   it('scopes before it filters, so scope binds always precede filter binds', async () => {
     await service().getMentionsCount(req, { ...SCOPE, platform: 'Reddit', sentiment: 'negative' });
 
     expect(lastCall().binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'reddit', 'negative']);
+  });
+});
+
+describe('bookmark mode — mentionIds skip the date window', () => {
+  it('omits the MENTION_TS bounds and date binds from the feed when mentionIds are present', async () => {
+    await service().getMentionsFeed(req, { ...SCOPE, mentionIds: ['k1', 'k2'], limit: 20, offset: 0 });
+
+    const { sql, binds } = lastCall();
+    const normalized = normalize(sql);
+    expect(normalized).not.toContain('MENTION_TS >= TO_DATE(?)');
+    expect(normalized).not.toContain('MENTION_TS < TO_DATE(?)');
+    expect(normalized).toContain('_KEY IN (?, ?)');
+    expect(binds).toEqual(['cncf', 'k1', 'k2']);
+  });
+
+  it('omits the window from the count query too, keeping every other scope bind', async () => {
+    await service().getMentionsCount(req, { ...SCOPE, mentionIds: ['k1'], platform: 'Reddit' });
+
+    const { sql, binds } = lastCall();
+    expect(normalize(sql)).not.toContain('MENTION_TS');
+    expect(binds).toEqual(['cncf', 'reddit', 'k1']);
+  });
+
+  it('keeps the half-open date window when mentionIds is absent', async () => {
+    await service().getMentionsCount(req, SCOPE);
+
+    const { sql, binds } = lastCall();
+    const normalized = normalize(sql);
+    expect(normalized).toContain('MENTION_TS >= TO_DATE(?)');
+    expect(normalized).toContain('MENTION_TS < TO_DATE(?)');
+    expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01']);
   });
 });
 

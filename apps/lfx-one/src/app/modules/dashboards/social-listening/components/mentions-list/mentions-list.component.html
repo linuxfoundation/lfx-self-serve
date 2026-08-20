@@ -39,7 +39,11 @@
     <ng-template #body let-mention>
       <tr>
         <td class="border-0 p-0 pb-3">
-          <lfx-mention-card [mention]="mention" [timeTick]="timeTick()" />
+          <lfx-mention-card
+            [mention]="mention"
+            [timeTick]="timeTick()"
+            [isBookmarked]="isBookmarkedFn()(mention.id)"
+            (bookmarkToggled)="bookmarkToggled.emit($event)" />
         </td>
       </tr>
     </ng-template>

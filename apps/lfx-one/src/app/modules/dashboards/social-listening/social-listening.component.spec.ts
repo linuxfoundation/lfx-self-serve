@@ -1,11 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
+import { getDefaultMarketingImpactPeriod } from '@lfx-one/shared/utils';
+import { MentionBookmarkService } from '@services/mention-bookmark.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SocialListeningService } from '@services/social-listening.service';
+import { UserService } from '@services/user.service';
 import { BehaviorSubject, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,6 +18,8 @@ import type {
   SocialListeningFeedResponse,
   SocialListeningMention,
   SocialListeningQueryParams,
+  User,
+  UserPreferenceState,
 } from '@lfx-one/shared/interfaces';
 
 import { SocialListeningComponent } from './social-listening.component';
@@ -34,6 +39,13 @@ describe('SocialListeningComponent', () => {
   let queryParams$: BehaviorSubject<SocialListeningQueryParams>;
   /** What the URL currently holds — the navigate stub writes it, the snapshot getter reads it. */
   let currentParams: SocialListeningQueryParams;
+  /** Component-scoped MentionBookmarkService is overridden with this harness — state is the live bookmark set. */
+  let bookmarkState: WritableSignal<UserPreferenceState<Set<string>>>;
+  let toggleBookmark: ReturnType<typeof vi.fn>;
+  let setBookmarkContext: ReturnType<typeof vi.fn>;
+  let foundationSignal: ReturnType<typeof signal>;
+  let foundationSfid: WritableSignal<string | null>;
+  let userSignal: WritableSignal<User | null>;
 
   function rawMention(id: string): SocialListeningMention {
     return { MENTION_ID: id, MENTION_TS: '2026-08-01T00:00:00Z' } as SocialListeningMention;
@@ -91,6 +103,12 @@ describe('SocialListeningComponent', () => {
     navigate = vi.fn(navigateImpl);
     getMentionsFeed = vi.fn((req: SocialListeningFeedRequest) => of(feedResponse(req)));
     getMentionsCount = vi.fn(() => of({ total: 1000 }));
+    bookmarkState = signal<UserPreferenceState<Set<string>>>({ data: new Set<string>(), loading: false, readOnly: false, error: null });
+    toggleBookmark = vi.fn();
+    setBookmarkContext = vi.fn();
+    foundationSignal = signal(FOUNDATION);
+    foundationSfid = signal<string | null>(null);
+    userSignal = signal<User | null>(null);
 
     await TestBed.configureTestingModule({
       imports: [SocialListeningComponent],
@@ -105,7 +123,8 @@ describe('SocialListeningComponent', () => {
           },
         },
         { provide: Router, useValue: { navigate } },
-        { provide: ProjectContextService, useValue: { selectedFoundation: signal(FOUNDATION) } },
+        { provide: ProjectContextService, useValue: { selectedFoundation: foundationSignal, selectedFoundationSfid: foundationSfid } },
+        { provide: UserService, useValue: { user: userSignal } },
         {
           provide: SocialListeningService,
           useValue: {
@@ -121,7 +140,13 @@ describe('SocialListeningComponent', () => {
         },
       ],
     })
-      .overrideComponent(SocialListeningComponent, { set: { template: '' } })
+      .overrideComponent(SocialListeningComponent, {
+        set: {
+          template: '',
+          // The page scopes MentionBookmarkService to itself — swap it here or the real store would hit the transport.
+          providers: [{ provide: MentionBookmarkService, useValue: { state: bookmarkState, setContext: setBookmarkContext, toggleBookmark } }],
+        },
+      })
       .compileComponents();
 
     fixture = TestBed.createComponent(SocialListeningComponent);
@@ -322,6 +347,102 @@ describe('SocialListeningComponent', () => {
       await settle();
       expect(currentParams['search']).toBe('mesh');
       expect(navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('bookmark mode', () => {
+    it('sets the bookmark context once the signed-in user and foundation SFID resolve, and clears it when either drops', async () => {
+      // Neither has resolved yet — the store stays idle.
+      expect(setBookmarkContext).toHaveBeenCalledWith(null);
+
+      userSignal.set({ sub: 'u1' } as User);
+      foundationSfid.set('001ABC0000XYZDEFAAA');
+      await settle();
+
+      expect(setBookmarkContext).toHaveBeenLastCalledWith({ userId: 'u1', projectId: '001ABC0000XYZDEFAAA' });
+    });
+
+    it('carries the bookmarked ID set as mentionIds on a constant period token, regardless of the selected period', async () => {
+      fixture.componentInstance.selectedPeriod.set('2026-03');
+      bookmarkState.set({ data: new Set(['m1', 'm3']), loading: false, readOnly: false, error: null });
+      fixture.componentInstance.selectedBookmarkFilter.set('bookmarked');
+      await settle();
+
+      const bookmarkCalls = feedCalls().filter((req) => 'mentionIds' in req);
+      expect(bookmarkCalls.length).toBeGreaterThan(0);
+      for (const req of bookmarkCalls) {
+        expect(req.mentionIds).toEqual(['m1', 'm3']);
+        // The constant default period, never the live selectedPeriod — period changes must not refetch in bookmark mode.
+        expect(req.period).toBe(getDefaultMarketingImpactPeriod());
+      }
+      expect(getMentionsCount).toHaveBeenLastCalledWith(expect.objectContaining({ mentionIds: ['m1', 'm3'], period: getDefaultMarketingImpactPeriod() }));
+      // The filter round-trips through the URL.
+      expect(currentParams['bookmarks']).toBe('bookmarked');
+    });
+
+    it('skips the feed and count requests entirely when the bookmarked set is empty', async () => {
+      const feedCallCount = getMentionsFeed.mock.calls.length;
+      const countCallCount = getMentionsCount.mock.calls.length;
+
+      fixture.componentInstance.selectedBookmarkFilter.set('bookmarked');
+      await settle();
+
+      expect(getMentionsFeed).toHaveBeenCalledTimes(feedCallCount);
+      expect(getMentionsCount).toHaveBeenCalledTimes(countCallCount);
+      expect(fixture.componentInstance.totalRecords()).toBe(0);
+      expect(fixture.componentInstance.mentions()).toEqual([]);
+      expect(fixture.componentInstance.loading()).toBe(false);
+    });
+
+    it('delegates a card toggle to the bookmark service by mention id', () => {
+      fixture.componentInstance.onBookmarkToggled({ id: 'm1' } as Mention);
+
+      expect(toggleBookmark).toHaveBeenCalledWith('m1');
+    });
+
+    it('strips mentionIds from the analytics filter input', async () => {
+      bookmarkState.set({ data: new Set(['m1']), loading: false, readOnly: false, error: null });
+      fixture.componentInstance.selectedBookmarkFilter.set('bookmarked');
+      await settle();
+
+      expect(fixture.componentInstance.currentFilters().mentionIds).toEqual(['m1']);
+      expect(fixture.componentInstance.analyticsFilters()).not.toHaveProperty('mentionIds');
+    });
+
+    it('resets to All on clear-all and on pill removal, stripping the URL key', async () => {
+      bookmarkState.set({ data: new Set(['m1']), loading: false, readOnly: false, error: null });
+      fixture.componentInstance.selectedBookmarkFilter.set('bookmarked');
+      await settle();
+      expect(currentParams['bookmarks']).toBe('bookmarked');
+
+      fixture.componentInstance.removeFilterPill('bookmarkFilter');
+      await settle();
+      expect(fixture.componentInstance.selectedBookmarkFilter()).toBe('all');
+      expect(currentParams['bookmarks']).toBeUndefined();
+
+      fixture.componentInstance.selectedBookmarkFilter.set('bookmarked');
+      await settle();
+      fixture.componentInstance.clearAllFilters();
+      await settle();
+      expect(fixture.componentInstance.selectedBookmarkFilter()).toBe('all');
+      expect(currentParams['bookmarks']).toBeUndefined();
+    });
+
+    it('keeps the bookmark filter across a foundation switch while the ID set reloads', async () => {
+      bookmarkState.set({ data: new Set(['m1']), loading: false, readOnly: false, error: null });
+      fixture.componentInstance.selectedBookmarkFilter.set('bookmarked');
+      fixture.componentInstance.selectedProject.set('proj-1');
+      fixture.componentInstance.selectedPlatform.set('Reddit');
+      await settle();
+
+      foundationSignal.set({ uid: 'f2', name: 'LF', slug: 'linuxfoundation' });
+      await settle();
+
+      expect(fixture.componentInstance.selectedBookmarkFilter()).toBe('bookmarked');
+      expect(currentParams['bookmarks']).toBe('bookmarked');
+      // Sub-project + platform still reset on the switch — only the bookmark filter survives.
+      expect(fixture.componentInstance.selectedProject()).toBe('all');
+      expect(fixture.componentInstance.selectedPlatform()).toBe('all');
     });
   });
 });

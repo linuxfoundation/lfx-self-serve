@@ -69,6 +69,11 @@ export const MENTION_HAS_TITLE_OPTIONS: SocialListeningOption[] = [
   { label: 'No', value: 'no' },
 ];
 
+export const MENTION_BOOKMARK_FILTER_OPTIONS: SocialListeningOption[] = [
+  { label: 'All', value: 'all' },
+  { label: 'Bookmarked', value: 'bookmarked' },
+];
+
 // ---------------------------------------------------------------------------
 // Pagination + limits
 // ---------------------------------------------------------------------------
@@ -86,7 +91,7 @@ export const MENTION_FILTER_MAX_VALUES = 200;
 /** UI selection cap per array filter — keeps deep-link URLs within the ~8 KB budget common proxies allow; the server cap stays 200. */
 export const MENTION_FILTER_UI_MAX_VALUES = 50;
 
-/** Reserved for the deferred bookmarked-mentions filter (follow-up ticket). */
+/** Cap for the bookmarked-mentions filter — bounds the bookmark store, the HTTP boundary, and the SQL builder. */
 export const MENTION_IDS_MAX_VALUES = 500;
 
 /** Row cap for the `mentions-tags` endpoint — serves both the tag filter dropdown and the analytics top-tags panel. */
@@ -142,7 +147,7 @@ export const FILTERS_PANEL_FOCUSABLE_SELECTOR = 'a[href], button:not([disabled])
 // ---------------------------------------------------------------------------
 
 /**
- * URL query-param keys for the predicate + scope round-trip; PCC's `bookmarks`/`read`/`view` keys are dropped (deferred) and `range` is renamed to `period`.
+ * URL query-param keys for the predicate + scope round-trip; PCC's `read`/`view` keys are dropped (Blocks 2–3) and `range` is renamed to `period`.
  * This page must own its route — before any embedded-shell composition, namespace the generic keys (`tab`, `q`, e.g. `slTab`).
  */
 export const SOCIAL_LISTENING_QUERY_PARAMS = {
@@ -156,6 +161,7 @@ export const SOCIAL_LISTENING_QUERY_PARAMS = {
   relevance: 'relevance',
   language: 'language',
   hasTitle: 'hasTitle',
+  bookmarks: 'bookmarks',
   keywords: 'keywords',
   tags: 'tags',
   authors: 'authors',
@@ -168,6 +174,7 @@ export const DEFAULT_MENTION_PREDICATE: FilterPredicate = {
   relevance: 'all',
   language: 'all',
   hasTitle: 'all',
+  bookmarkFilter: 'all',
   keywords: [],
   tags: [],
   authors: [],

@@ -82,6 +82,21 @@
       data-testid="social-listening-filters-has-title" />
   </div>
 
+  <!-- Bookmarked -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-bookmarked">Bookmarked</label>
+    <lfx-select
+      [form]="filtersForm"
+      control="bookmarkFilter"
+      [options]="bookmarkFilterOptions"
+      optionLabel="label"
+      optionValue="value"
+      inputId="sl-filter-bookmarked"
+      ariaLabel="Filter by bookmark status"
+      styleClass="w-full"
+      data-testid="social-listening-filters-bookmarked" />
+  </div>
+
   <!-- Authors (options cascade off every other filter) -->
   <div class="filter-group">
     <label class="filter-label" for="sl-filter-authors">Authors</label>
