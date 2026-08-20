@@ -71,7 +71,7 @@ describe('MentionBookmarkService', () => {
     expect(messageService.add).toHaveBeenCalledWith({ severity: 'success', summary: 'Bookmarked', detail: 'Mention added to your bookmarks.' });
   });
 
-  it('removes an existing bookmark and toasts the removal', async () => {
+  it('deletes the preference row when the last bookmark is removed', async () => {
     socialListeningService.getPreference.mockReturnValue(of('["m1"]'));
     service.setContext(ctx);
     await flush();
@@ -80,8 +80,21 @@ describe('MentionBookmarkService', () => {
     await flush();
 
     expect(service.state().data.has('m1')).toBe(false);
-    expect(socialListeningService.upsertPreference).toHaveBeenCalledWith(preferenceName, '[]');
+    expect(socialListeningService.deletePreference).toHaveBeenCalledWith(preferenceName);
+    expect(socialListeningService.upsertPreference).not.toHaveBeenCalled();
     expect(messageService.add).toHaveBeenCalledWith({ severity: 'success', summary: 'Bookmark removed', detail: 'Mention removed from your bookmarks.' });
+  });
+
+  it('upserts the remaining ids when one of several bookmarks is removed', async () => {
+    socialListeningService.getPreference.mockReturnValue(of('["m1","m2"]'));
+    service.setContext(ctx);
+    await flush();
+
+    service.toggleBookmark('m1');
+    await flush();
+
+    expect(socialListeningService.upsertPreference).toHaveBeenCalledWith(preferenceName, '["m2"]');
+    expect(socialListeningService.deletePreference).not.toHaveBeenCalled();
   });
 
   it('rolls back and toasts the error when the write fails', async () => {
@@ -97,6 +110,19 @@ describe('MentionBookmarkService', () => {
 
     expect(service.state().data.has('m1')).toBe(false);
     expect(messageService.add).toHaveBeenCalledWith({ severity: 'error', summary: 'Could not save bookmark', detail: 'Please try again.' });
+  });
+
+  it('rolls back and toasts the error when the delete fails', async () => {
+    socialListeningService.getPreference.mockReturnValue(of('["m1"]'));
+    service.setContext(ctx);
+    await flush();
+
+    socialListeningService.deletePreference.mockReturnValue(throwError(() => new Error('delete lost')));
+    service.toggleBookmark('m1');
+    await flush();
+
+    expect(service.state().data.has('m1')).toBe(true);
+    expect(messageService.add).toHaveBeenCalledWith({ severity: 'error', summary: 'Could not remove bookmark', detail: 'Please try again.' });
   });
 
   it('ignores toggles while the initial load is in flight', async () => {

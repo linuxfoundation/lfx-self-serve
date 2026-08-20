@@ -35,6 +35,8 @@ export class MentionBookmarkService {
     initial: () => new Set<string>(),
     parse: (raw) => ({ data: new Set(parseBookmarkIds(raw)) }),
     serialize: (ids) => JSON.stringify([...ids]),
+    // PCC parity: emptying the set deletes the row rather than persisting '[]'.
+    shouldDeleteOnEmpty: (ids) => ids.size === 0,
   });
 
   public readonly state = this.store.state;
