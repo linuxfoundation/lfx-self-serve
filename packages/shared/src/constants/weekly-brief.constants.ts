@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { WeeklyBriefState } from '../interfaces/weekly-brief.interface';
+import { WeeklyBriefSourceSection, WeeklyBriefState } from '../interfaces/weekly-brief.interface';
 
 /**
  * Brief states a "Share to Mailing List" action may fire from — i.e. states
@@ -67,3 +67,38 @@ export const WEEKLY_BRIEF_ERROR_REASON = { NO_SOURCES: 'no_sources' } as const;
 
 /** Number of past briefs fetched per page in the archive drawer (LFXV2-3046). The BFF caps all limit values at 50. */
 export const WEEKLY_BRIEF_ARCHIVE_PAGE_SIZE = 10;
+
+/**
+ * Raw `source_refs` count above which the weekly-brief card's Sources row collapses behind a
+ * `Sources (N)` disclosure toggle instead of rendering every chip flat (LFXV2-3335). At or
+ * below this threshold there's no disclosure wrapper and no kind-sections — just the flat row,
+ * same as before this feature existed. Per-(kind, label) dedupe grouping (see
+ * `mapWeeklyBriefSourceRefsToChips`) still applies at every count, threshold or not; a size-1
+ * group renders unchanged either way, so this only matters when duplicate labels are present.
+ *
+ * Deliberately gated on the raw ref count, not the deduped `sourceChips().length` — matches
+ * the ticket's own worked example (a 16-ref week still shows "Sources (16)" pre-expansion,
+ * even though several of those refs dedupe down to one grouped chip once revealed). The
+ * disclosure and the dedupe solve two different problems (row height vs. duplicate-looking
+ * chips) and are gated independently on purpose, even though a heavily-duplicated week can hit
+ * both at once.
+ */
+export const WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD = 5;
+
+/**
+ * Fixed display order and section labels for the weekly-brief card's expanded Sources
+ * disclosure (LFXV2-3335) — an array (not a `Record`) because iteration order is the whole
+ * point. Kept here rather than in `weekly-brief.utils.ts` alongside `SOURCE_REF_ICONS` /
+ * `SOURCE_REF_DEFAULT_LABELS`: those two are keyed for icon/default-label *resolution* per
+ * ref (any order), this one is *display sequence* (order matters, and "members" ranks last
+ * here despite sorting mid-pack alphabetically) — different concerns that happen to share a
+ * key set today, not the same lookup table split across files. A `kind` missing from this
+ * list still renders, grouped under the component's "Other" catch-all section.
+ */
+export const WEEKLY_BRIEF_SOURCE_SECTIONS: readonly WeeklyBriefSourceSection[] = [
+  { kind: 'meeting', label: 'Meetings' },
+  { kind: 'vote', label: 'Votes' },
+  { kind: 'mailing-list', label: 'Mailing List' },
+  { kind: 'doc', label: 'Documents' },
+  { kind: 'members', label: 'Membership' },
+] as const;

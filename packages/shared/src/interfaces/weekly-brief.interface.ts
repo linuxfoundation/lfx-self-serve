@@ -48,15 +48,52 @@ export type WeeklyBriefSourceChipAction = PastMeetingActivityFeedAction | VoteDr
 /**
  * Precomputed display view-model for one "Sources" chip under a weekly brief — built from a
  * `WeeklyBriefSourceRef` by `mapWeeklyBriefSourceRefsToChips` (`../utils/weekly-brief.utils`).
- * `action: null` means the chip renders unlinked (no resolvable click target for that `kind` —
- * e.g. "mailing-list", which has no archive URL anywhere in this contract, or an unrecognized
- * future `kind`).
+ * `action: null` on a chip with no `group` means it renders unlinked — no resolvable click
+ * target for that `kind` (e.g. "mailing-list", which has no archive URL anywhere in this
+ * contract, or an unrecognized future `kind`). A chip *with* `group` also always has
+ * `action: null`, but for a different reason: it's not unlinked, it's a toggle button — the
+ * click opens `group.instances` rather than navigating, and each of those instances carries its
+ * own real `action` instead. `kind` is copied straight from the source `WeeklyBriefSourceRef` so
+ * the template can group chips into kind-sections without resolving it again (frontend-checklist §4).
  */
 export interface WeeklyBriefSourceChip {
   id: string;
   label: string;
   icon: string;
+  kind: string;
   action: WeeklyBriefSourceChipAction | null;
+
+  /**
+   * Present when this chip represents 2+ source refs collapsed under the same kind+label —
+   * e.g. 12 instances of a recurring meeting. Absent for a chip backed by a single,
+   * unique source ref, which renders exactly as it did before this field existed.
+   */
+  group?: {
+    count: number;
+    /** Precomputed "label (count)" display string for the group chip's tag — kept off the
+     *  template, which only reads signals/computeds (frontend-checklist §4). */
+    badgeLabel: string;
+    /** Individual chips for level-2 expansion, each with its own action; label suffixed
+     *  with an ordinal (" #1", " #2", ...) in source_refs order — WeeklyBriefSourceRef has
+     *  no date field to sort/label by, see LFXV2-3335. */
+    instances: WeeklyBriefSourceChip[];
+  };
+}
+
+/**
+ * One entry of `WEEKLY_BRIEF_SOURCE_SECTIONS` (`../constants/weekly-brief.constants`) — the
+ * fixed display order/label for a Sources-disclosure kind-section. Kept alongside
+ * `WeeklyBriefSourceChipSection` below since the two shapes are the same concept before and
+ * after `sourceChips()` is filtered into each section (LFXV2-3335).
+ */
+export interface WeeklyBriefSourceSection {
+  kind: string;
+  label: string;
+}
+
+/** A `WeeklyBriefSourceSection` populated with the chips that fell into it (LFXV2-3335). */
+export interface WeeklyBriefSourceChipSection extends WeeklyBriefSourceSection {
+  chips: WeeklyBriefSourceChip[];
 }
 
 export interface WeeklyBrief {
