@@ -177,7 +177,7 @@
 
             <p-step-panel [value]="2" data-testid="meeting-manage-panel-1">
               <ng-template #content let-activateCallback="activateCallback">
-                <lfx-meeting-details [form]="form()"></lfx-meeting-details>
+                <lfx-meeting-details [form]="form()" [savedOwner]="hydratedOwner()"></lfx-meeting-details>
               </ng-template>
             </p-step-panel>
 

@@ -11,11 +11,11 @@ const TOAST_TIMEOUT = 10_000;
 
 const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 const MOCK_UID = MOCK_ACCOUNT_ID;
-const MOCK_ACCOUNT_NAME = 'Toyota';
-const MOCK_ACCOUNT_SLUG = 'toyota';
+const MOCK_ACCOUNT_NAME = 'Acme Motors';
+const MOCK_ACCOUNT_SLUG = 'acme-motors';
 
-const CHIANING_EMAIL = 'johnny.wang@toyota.com';
-const REPLACEMENT_EMAIL = 'cara.dev@toyota.com';
+const MORGAN_EMAIL = 'morgan.diaz@acme-motors.example';
+const REPLACEMENT_EMAIL = 'cara.dev@acme-motors.example';
 
 function entitlementSeat(uid: string, committeeUid: string, committeeName: string) {
   return {
@@ -32,7 +32,7 @@ function entitlementSeat(uid: string, committeeUid: string, committeeName: strin
     appointedBy: 'Membership Entitlement',
     isOrgEditable: true,
     reason: null,
-    person: { email: CHIANING_EMAIL, firstName: 'Chianing', lastName: 'Wang', fullName: 'Chianing Wang', jobTitle: 'Infrastructure Architect', initials: 'CW' },
+    person: { email: MORGAN_EMAIL, firstName: 'Morgan', lastName: 'Diaz', fullName: 'Morgan Diaz', jobTitle: 'Infrastructure Architect', initials: 'MD' },
   };
 }
 
@@ -58,12 +58,12 @@ function committeeMembersResponse() {
         isOrgEditable: false,
         reason: "This seat is held by foundation election or appointment, not by your organization's membership entitlement.",
         person: {
-          email: CHIANING_EMAIL,
-          firstName: 'Chianing',
-          lastName: 'Wang',
-          fullName: 'Chianing Wang',
+          email: MORGAN_EMAIL,
+          firstName: 'Morgan',
+          lastName: 'Diaz',
+          fullName: 'Morgan Diaz',
           jobTitle: 'Infrastructure Architect',
-          initials: 'CW',
+          initials: 'MD',
         },
       },
     ],
@@ -73,7 +73,7 @@ function committeeMembersResponse() {
 
 const MOCK_EMPLOYEES = [
   { email: REPLACEMENT_EMAIL, firstName: 'Cara', lastName: 'Dev', fullName: 'Cara Dev', jobTitle: 'Senior Engineer', initials: 'CD' },
-  { email: 'evan.qa@toyota.com', firstName: 'Evan', lastName: 'QA', fullName: 'Evan QA', jobTitle: 'QA Lead', initials: 'EQ' },
+  { email: 'evan.qa@acme-motors.example', firstName: 'Evan', lastName: 'QA', fullName: 'Evan QA', jobTitle: 'QA Lead', initials: 'EQ' },
 ];
 
 function skipWhenAuthMissing(page: Page): void {
@@ -171,7 +171,7 @@ test.describe('Org People → Committee — Reassign Committee Roles modal (US3)
     await stubEmployees(page);
 
     await gotoCommitteeTab(page);
-    await page.getByTestId(`org-people-committee-reassign-${CHIANING_EMAIL}`).click();
+    await page.getByTestId(`org-people-committee-reassign-${MORGAN_EMAIL}`).click();
 
     const modal = page.getByTestId('org-people-committee-modal-reassign');
     await expect(modal).toBeVisible();
@@ -188,7 +188,7 @@ test.describe('Org People → Committee — Reassign Committee Roles modal (US3)
     await stubEmployees(page);
 
     await gotoCommitteeTab(page);
-    await page.getByTestId(`org-people-committee-reassign-${CHIANING_EMAIL}`).click();
+    await page.getByTestId(`org-people-committee-reassign-${MORGAN_EMAIL}`).click();
     await page.getByTestId('org-people-committee-modal-reassign-role-checkbox-m-link').click();
     await expect(page.getByTestId('org-people-committee-modal-reassign-primary-button')).toContainText('Save Changes (2 roles)');
   });
@@ -199,7 +199,7 @@ test.describe('Org People → Committee — Reassign Committee Roles modal (US3)
     await stubEmployees(page);
 
     await gotoCommitteeTab(page);
-    await page.getByTestId(`org-people-committee-reassign-${CHIANING_EMAIL}`).click();
+    await page.getByTestId(`org-people-committee-reassign-${MORGAN_EMAIL}`).click();
     await expect(page.getByTestId('org-people-committee-modal-reassign-primary-button')).toBeDisabled();
   });
 
@@ -216,7 +216,7 @@ test.describe('Org People → Committee — Reassign Committee Roles modal (US3)
     });
 
     await gotoCommitteeTab(page);
-    await page.getByTestId(`org-people-committee-reassign-${CHIANING_EMAIL}`).click();
+    await page.getByTestId(`org-people-committee-reassign-${MORGAN_EMAIL}`).click();
     await page.getByTestId('org-people-committee-modal-reassign-email-input').fill(REPLACEMENT_EMAIL);
     await page.getByTestId('org-people-committee-modal-reassign-first-name-input').fill('Cara');
     await page.getByTestId('org-people-committee-modal-reassign-last-name-input').fill('Dev');
@@ -244,7 +244,7 @@ test.describe('Org People → Committee — Reassign Committee Roles modal (US3)
     });
 
     await gotoCommitteeTab(page);
-    await page.getByTestId(`org-people-committee-reassign-${CHIANING_EMAIL}`).click();
+    await page.getByTestId(`org-people-committee-reassign-${MORGAN_EMAIL}`).click();
     await page.getByTestId('org-people-committee-modal-reassign-email-input').fill(REPLACEMENT_EMAIL);
     await page.getByTestId('org-people-committee-modal-reassign-first-name-input').fill('Cara');
     await page.getByTestId('org-people-committee-modal-reassign-last-name-input').fill('Dev');
@@ -266,7 +266,7 @@ test.describe('Org People → Committee — Reassign Committee Roles modal (US3)
     );
 
     await gotoCommitteeTab(page);
-    await page.getByTestId(`org-people-committee-reassign-${CHIANING_EMAIL}`).click();
+    await page.getByTestId(`org-people-committee-reassign-${MORGAN_EMAIL}`).click();
     await page.getByTestId('org-people-committee-modal-reassign-email-input').fill(REPLACEMENT_EMAIL);
     await page.getByTestId('org-people-committee-modal-reassign-first-name-input').fill('Cara');
     await page.getByTestId('org-people-committee-modal-reassign-last-name-input').fill('Dev');
@@ -285,7 +285,7 @@ test.describe('Org People → Committee — Edit Committee Role modal (US4)', ()
     await stubEmployees(page);
 
     await gotoCommitteeTab(page);
-    await page.getByTestId(`org-people-committee-row-${CHIANING_EMAIL}`).click();
+    await page.getByTestId(`org-people-committee-row-${MORGAN_EMAIL}`).click();
     await page.getByTestId('org-people-committee-edit-m-inc').click();
 
     const modal = page.getByTestId('org-people-committee-modal-edit');
@@ -293,7 +293,7 @@ test.describe('Org People → Committee — Edit Committee Role modal (US4)', ()
     await expect(page.getByTestId('org-people-committee-modal-edit-title')).toHaveText('Edit Committee Role');
     await expect(page.getByTestId('org-people-committee-modal-edit-chips')).toContainText('INC Software Working Area');
     await expect(page.getByTestId('org-people-committee-modal-edit-chips')).toContainText('Ultra Ethernet Consortium');
-    await expect(page.getByTestId('org-people-committee-modal-edit-current')).toContainText('Chianing Wang');
+    await expect(page.getByTestId('org-people-committee-modal-edit-current')).toContainText('Morgan Diaz');
   });
 
   test('Save fires exactly one PATCH and shows a success toast', async ({ page }) => {
@@ -311,7 +311,7 @@ test.describe('Org People → Committee — Edit Committee Role modal (US4)', ()
     });
 
     await gotoCommitteeTab(page);
-    await page.getByTestId(`org-people-committee-row-${CHIANING_EMAIL}`).click();
+    await page.getByTestId(`org-people-committee-row-${MORGAN_EMAIL}`).click();
     await page.getByTestId('org-people-committee-edit-m-inc').click();
     await page.getByTestId('org-people-committee-modal-edit-email-input').fill(REPLACEMENT_EMAIL);
     await page.getByTestId('org-people-committee-modal-edit-first-name-input').fill('Cara');
@@ -331,7 +331,7 @@ test.describe('Org People → Committee — Edit Committee Role modal (US4)', ()
     );
 
     await gotoCommitteeTab(page);
-    await page.getByTestId(`org-people-committee-row-${CHIANING_EMAIL}`).click();
+    await page.getByTestId(`org-people-committee-row-${MORGAN_EMAIL}`).click();
     await page.getByTestId('org-people-committee-edit-m-inc').click();
     await page.getByTestId('org-people-committee-modal-edit-email-input').fill(REPLACEMENT_EMAIL);
     await page.getByTestId('org-people-committee-modal-edit-first-name-input').fill('Cara');
@@ -349,7 +349,7 @@ test.describe('Org People → Committee — Edit Committee Role modal (US4)', ()
     await stubEmployees(page);
 
     await gotoCommitteeTab(page);
-    await page.getByTestId(`org-people-committee-row-${CHIANING_EMAIL}`).click();
+    await page.getByTestId(`org-people-committee-row-${MORGAN_EMAIL}`).click();
     await expect(page.getByTestId('org-people-committee-edit-m-tsc')).toBeDisabled();
   });
 
@@ -359,11 +359,11 @@ test.describe('Org People → Committee — Edit Committee Role modal (US4)', ()
     await stubEmployees(page);
 
     await gotoCommitteeTab(page);
-    await page.getByTestId(`org-people-committee-row-${CHIANING_EMAIL}`).click();
+    await page.getByTestId(`org-people-committee-row-${MORGAN_EMAIL}`).click();
     await page.getByTestId('org-people-committee-edit-m-inc').click();
 
     const emailInput = page.getByTestId('org-people-committee-modal-edit-email-input');
-    await emailInput.fill('toyota.com');
+    await emailInput.fill('acme-motors.example');
     await emailInput.press('ArrowDown');
 
     // The first option in the listbox is highlighted; aria-activedescendant on the input points to its id.
@@ -392,7 +392,7 @@ test.describe('Org People → Committee — Edit Committee Role modal (US4)', ()
     });
 
     await gotoCommitteeTab(page);
-    await page.getByTestId(`org-people-committee-row-${CHIANING_EMAIL}`).click();
+    await page.getByTestId(`org-people-committee-row-${MORGAN_EMAIL}`).click();
     await page.getByTestId('org-people-committee-edit-m-inc').click();
     await expect(page.getByTestId('org-people-committee-modal-edit')).toBeVisible();
 
