@@ -41,20 +41,19 @@ export const MKTG_AGENTS: MktgAgent[] = [
     accent: 'violet',
     guildAgentHandle: 'brand-kit',
   },
-  // Live Guild agent (linux-foundation~foundation-message), but its batch
-  // intake form ships separately (wi-mf-lfx-selfserve). The form-first UI has
-  // no run surface for it until then, so it stays `coming-soon` — flipping it
-  // back to `active` (handle `foundation-message`) lands with its intake form.
+  // Live Guild agent (linux-foundation~foundation-message) with its batch
+  // intake form registered in MKTG_AGENT_INTAKES (wi-mf-lfx-selfserve).
   {
     id: 'foundation-setup',
     number: 2,
     name: 'Message Foundation Agent',
     tags: ['Messaging', 'Summaries'],
-    status: 'coming-soon',
+    status: 'active',
     description:
       'Builds the messaging foundation for a Linux Foundation project — positioning, audiences, pillars, talking points, plus the 25/50-word summaries, boilerplate, llms.txt, and elevator pitch.',
     icon: 'fa-light fa-landmark',
     accent: 'blue',
+    guildAgentHandle: 'foundation-message',
   },
   {
     id: 'icp',

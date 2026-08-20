@@ -10,7 +10,6 @@ import {
   BRAND_KIT_CONTRACT_ID,
   BRAND_KIT_FORM_PREAMBLE_LINES,
   BRAND_KIT_INTAKE_QUESTIONS,
-  BRAND_KIT_EXTRACTION_MAX_DEPTH,
   BRAND_KIT_INTAKE_ANSWER_COUNT,
   BRAND_KIT_ISO_TIMESTAMP_REGEX,
   BRAND_KIT_KIND,
@@ -21,6 +20,7 @@ import {
   BRAND_KIT_SHA256_REGEX,
 } from '../constants/brand-kit.constants';
 import { BrandKitEnvelope, BrandKitValidationResult } from '../interfaces/brand-kit.interface';
+import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
 
 /**
  * Validate a candidate Brand Kit envelope against the v1 contract's schema
@@ -137,149 +137,12 @@ export function findMissingBrandKitHeadings(documentMarkdown: string): string[] 
  * Candidates are returned as `unknown` — they carry the discriminator but are
  * otherwise UNVALIDATED; callers must pass each through
  * `validateBrandKitEnvelope` before treating it as a `BrandKitEnvelope`.
+ *
+ * The scanner itself is the shared, contract-agnostic
+ * `extractMktgEnvelopeCandidates` (mktg-envelope.utils.ts).
  */
 export function extractBrandKitEnvelopeCandidates(payload: string): unknown[] {
-  if (!payload || !payload.includes(BRAND_KIT_CONTRACT_ID)) {
-    return [];
-  }
-
-  const candidates: unknown[] = [];
-
-  const consider = (value: unknown, depth: number): void => {
-    if (depth > BRAND_KIT_EXTRACTION_MAX_DEPTH) {
-      // Guard against pathological deeply-nested payloads; real Guild event
-      // wrappers are only a few levels deep.
-      return;
-    }
-    if (typeof value === 'string') {
-      // envelope_json double-encoding: a string that itself parses to an envelope.
-      if (value.includes(BRAND_KIT_CONTRACT_ID)) {
-        try {
-          consider(JSON.parse(value), depth + 1);
-        } catch {
-          // Not valid JSON — scan it for embedded objects instead.
-          candidates.push(...scanForEnvelopeObjects(value));
-        }
-      }
-      return;
-    }
-    if (typeof value !== 'object' || value === null) {
-      return;
-    }
-    const record = value as Record<string, unknown>;
-    if (record['contract'] === BRAND_KIT_CONTRACT_ID) {
-      candidates.push(record);
-      return;
-    }
-    if (typeof record['envelope_json'] === 'string') {
-      consider(record['envelope_json'], depth + 1);
-      return;
-    }
-    // Recurse into wrapper shapes ({content: ...}, {data: ...}, arrays) — full
-    // depth up to the cap; only branches that can contain the contract id are
-    // followed (string branches are pre-filtered by the includes() check).
-    for (const child of Object.values(record)) {
-      if (child && (typeof child === 'object' || (typeof child === 'string' && child.includes(BRAND_KIT_CONTRACT_ID)))) {
-        consider(child, depth + 1);
-      }
-    }
-  };
-
-  try {
-    consider(JSON.parse(payload), 0);
-  } catch {
-    candidates.push(...scanForEnvelopeObjects(payload));
-  }
-
-  return candidates;
-}
-
-/**
- * Scan free text for balanced `{...}` JSON objects containing the contract id
- * and parse each. Used when the payload is not itself valid JSON (e.g. an LLM
- * stream body with an embedded tool result).
- */
-function scanForEnvelopeObjects(text: string): unknown[] {
-  const found: unknown[] = [];
-  let searchFrom = 0;
-
-  for (;;) {
-    const marker = text.indexOf(BRAND_KIT_CONTRACT_ID, searchFrom);
-    if (marker === -1) {
-      break;
-    }
-    // Walk back to the opening brace of the object containing the marker. The
-    // marker may sit inside a direct envelope OR inside an `envelope_json`
-    // string value — walk outward brace by brace until a parse succeeds.
-    let start = text.lastIndexOf('{', marker);
-    let matched = false;
-    while (start !== -1 && !matched) {
-      const objectText = readBalancedObject(text, start);
-      if (objectText) {
-        try {
-          const parsed = JSON.parse(objectText) as Record<string, unknown>;
-          if (parsed['contract'] === BRAND_KIT_CONTRACT_ID) {
-            found.push(parsed);
-            matched = true;
-            break;
-          }
-          if (typeof parsed['envelope_json'] === 'string' && parsed['envelope_json'].includes(BRAND_KIT_CONTRACT_ID)) {
-            // The authoritative tool-result wrapper embedded in free text:
-            // unwrap the double-encoded envelope.
-            try {
-              const inner = JSON.parse(parsed['envelope_json']) as Record<string, unknown>;
-              if (inner['contract'] === BRAND_KIT_CONTRACT_ID) {
-                found.push(inner);
-                matched = true;
-                break;
-              }
-            } catch {
-              // Malformed inner JSON — fall through to walk further out.
-            }
-          }
-        } catch {
-          // Malformed fragment — walk further out.
-        }
-      }
-      start = start > 0 ? text.lastIndexOf('{', start - 1) : -1;
-    }
-    searchFrom = marker + BRAND_KIT_CONTRACT_ID.length;
-  }
-
-  return found;
-}
-
-/** Read a balanced JSON object starting at `start` (must be `{`), string-aware. */
-function readBalancedObject(text: string, start: number): string | null {
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (ch === '\\') {
-        escaped = true;
-      } else if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-    } else if (ch === '{') {
-      depth++;
-    } else if (ch === '}') {
-      depth--;
-      if (depth === 0) {
-        return text.slice(start, i + 1);
-      }
-    }
-  }
-
-  return null;
+  return extractMktgEnvelopeCandidates(payload, BRAND_KIT_CONTRACT_ID);
 }
 
 /** UTF-8 byte length without assuming Buffer (browser-safe). */

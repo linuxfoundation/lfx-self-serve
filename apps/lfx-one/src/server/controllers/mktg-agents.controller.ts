@@ -7,16 +7,21 @@ import {
   BrandKitGenerateResponse,
   BrandKitResultRequest,
   BrandKitResultResponse,
+  FoundationMessageGenerateRequest,
+  FoundationMessageGenerateResponse,
+  FoundationMessageResultRequest,
+  FoundationMessageResultResponse,
   MktgChatRequest,
   MktgChatResponse,
   MktgHistoryRequest,
   MktgHistoryResponse,
 } from '@lfx-one/shared/interfaces';
-import { validateBrandKitIntakeAnswers } from '@lfx-one/shared/utils';
+import { validateBrandKitIntakeAnswers, validateFoundationMessageIntakeAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
 import { BrandKitService } from '../services/brand-kit.service';
+import { FoundationMessageService } from '../services/foundation-message.service';
 import { GuildService } from '../services/guild.service';
 import { logger } from '../services/logger.service';
 import { getEffectiveSub } from '../utils/auth-helper';
@@ -25,6 +30,7 @@ import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-
 export class MktgAgentsController {
   private readonly guildService = new GuildService();
   private readonly brandKitService = new BrandKitService();
+  private readonly foundationMessageService = new FoundationMessageService();
 
   /**
    * POST /api/mktg-agents/chat
@@ -295,6 +301,154 @@ export class MktgAgentsController {
     try {
       const result: BrandKitResultResponse = await this.brandKitService.getResult(req, validSessionId);
       logger.success(req, 'brand_kit_result', startTime, { status: result.status });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/foundation-message/generate
+   * Starts a one-shot form-mode Message Foundation generation from the
+   * batch intake form. The answers are validated against the agent's
+   * conditional form contract (discovery answers required exactly when no
+   * Brand Kit markdown is provided); regenerations arrive as a full resubmit
+   * with `feedback` + `priorVersion` and run on a fresh session. Returns the
+   * session id + creator-binding owner token for polling the result.
+   */
+  public async generateFoundationMessage(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { answers, feedback, priorVersion } = (req.body ?? {}) as Partial<FoundationMessageGenerateRequest>;
+
+    const answersResult = validateFoundationMessageIntakeAnswers(answers);
+    if (!answersResult.valid) {
+      next(
+        ServiceValidationError.forField('answers', answersResult.errors.join('; '), {
+          operation: 'foundation_message_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Type-gate the regeneration fields — never rely on downstream coercion.
+    if (feedback !== undefined && typeof feedback !== 'string') {
+      next(
+        ServiceValidationError.forField('feedback', 'feedback must be a string when provided', {
+          operation: 'foundation_message_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    if (priorVersion !== undefined && (typeof priorVersion !== 'number' || !Number.isInteger(priorVersion) || priorVersion < 1)) {
+      next(
+        ServiceValidationError.forField('priorVersion', 'priorVersion must be an integer >= 1 when provided', {
+          operation: 'foundation_message_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'foundation_message_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Routing handle comes from the shared catalog only — never the client.
+    const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'foundation-setup');
+    if (!agent || agent.status !== 'active') {
+      next(
+        ServiceValidationError.forField('agentId', 'The Message Foundation agent is not available.', {
+          operation: 'foundation_message_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'foundation_message_generate', { has_feedback: !!feedback, prior_version: priorVersion ?? 0 });
+
+    try {
+      // Safe: validateFoundationMessageIntakeAnswers guaranteed a string record.
+      const trimmedAnswers = Object.fromEntries(
+        Object.entries(answers as Record<string, string>)
+          .map(([key, value]) => [key, value.trim()])
+          .filter(([, value]) => value !== '')
+      );
+      const sessionId = await this.foundationMessageService.startGeneration(req, trimmedAnswers, { feedback, priorVersion }, agent.guildAgentHandle);
+      logger.success(req, 'foundation_message_generate', startTime, { session_created: true });
+      const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/foundation-message/result
+   * Polls a generation session for the validated Message Foundation document
+   * (and its word-count-locked derivatives). Only the session's creator may
+   * read the result (owner-token proof).
+   */
+  public async foundationMessageResult(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { sessionId, ownerToken } = (req.body ?? {}) as Partial<FoundationMessageResultRequest>;
+
+    const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
+    if (!validSessionId) {
+      next(
+        ServiceValidationError.forField('sessionId', 'sessionId is required and must be a non-empty string', {
+          operation: 'foundation_message_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'foundation_message_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Type-gate body fields — never rely on downstream defensive coercion.
+    const validOwnerToken = typeof ownerToken === 'string' && ownerToken ? ownerToken : undefined;
+    if (!verifySessionOwnerToken(validOwnerToken, userId, validSessionId)) {
+      next(
+        new AuthorizationError('You do not have permission to read this session.', {
+          operation: 'foundation_message_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'foundation_message_result', {});
+
+    try {
+      const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(req, validSessionId);
+      logger.success(req, 'foundation_message_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
       next(error);

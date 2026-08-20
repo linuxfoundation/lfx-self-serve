@@ -40,6 +40,61 @@ export interface MktgIntakeField {
   prefill?: MktgIntakePrefillSource;
   /** Honest hint shown when the prefill source has no value on the LFX project. */
   missingPrefillHint?: string;
+  /** Always-visible helper text under the control (e.g. the README auto-fetch note). */
+  hint?: string;
+  /**
+   * Optional answer: no required validator, no asterisk, and the key is
+   * omitted from the submitted answers when the trimmed value is empty.
+   */
+  optional?: boolean;
+}
+
+/**
+ * How the user answers an intake's Brand Kit gate question (Q1c of the
+ * Message Foundation interview): consume the project's stored Brand Kit,
+ * paste one, or answer the brand-discovery questions instead.
+ */
+export type MktgBrandKitGateChoice = 'stored' | 'paste' | 'discovery';
+
+/** One selectable option of the Brand Kit gate. */
+export interface MktgIntakeGateOption {
+  /** Which gate branch this option selects. */
+  choice: MktgBrandKitGateChoice;
+  /** Option title. */
+  label: string;
+  /** One-line explanation under the title. */
+  sublabel: string;
+}
+
+/**
+ * Brand Kit gate configuration for intakes whose agent CONSUMES a Brand Kit
+ * (e.g. the Message Foundation). The gate question is quoted verbatim from
+ * the agent's own intake wording; its three options branch the form:
+ * `stored` submits the project's stored Brand Kit document, `paste` requires
+ * the paste field, `discovery` requires the discovery fields. The `stored`
+ * option is only offered when a stored document actually exists — until the
+ * server-side Brand Kit persistence lands, the only stored-document source is
+ * the browser-persisted Brand Kit agent run (`storedSourceAgentId`).
+ */
+export interface MktgIntakeBrandKitGate {
+  /** The gate question, quoted VERBATIM from the agent's `src/questions.ts`. */
+  question: string;
+  /** The selectable options, in render order. */
+  options: MktgIntakeGateOption[];
+  /** Field key of the paste textarea — required only for the `paste` choice. */
+  pasteFieldKey: string;
+  /** Field keys required only for the `discovery` choice; hidden otherwise. */
+  discoveryFieldKeys: string[];
+  /** Catalog agent id whose stored run provides the `stored` option's document. */
+  storedSourceAgentId: string;
+}
+
+/** One word-count-locked derivative surfaced as a copyable chip on the result. */
+export interface MktgIntakeDerivativeChip {
+  /** Derivative key in the agent's envelope `derivatives` record. */
+  key: string;
+  /** Human label, e.g. `25-word summary`. */
+  label: string;
 }
 
 /**
@@ -62,8 +117,19 @@ export interface MktgRunEndpoints {
  * answers against the agent's own intake schema.
  */
 export interface MktgRunGenerateBody {
-  /** Answers keyed by intake field key; every field required, non-empty. */
+  /** Answers keyed by intake field key; conditional/optional keys may be absent per the agent's own contract. */
   answers: Record<string, string>;
+  /**
+   * Feedback on the prior draft (regenerate-via-generate intakes only): the
+   * server renders it into the batch payload's feedback block so the agent
+   * regenerates incorporating it.
+   */
+  feedback?: string;
+  /**
+   * Version of the prior draft being revised (regenerate-via-generate intakes
+   * only); the agent finalizes the new draft as `priorVersion + 1`.
+   */
+  priorVersion?: number;
 }
 
 /**
@@ -97,6 +163,8 @@ export interface MktgRunResultResponse {
   documentMarkdown?: string;
   /** Draft version from the validated envelope. Present when ready. */
   version?: number;
+  /** Word-count-locked derivatives from the validated envelope, when the agent's contract defines them. */
+  derivatives?: Record<string, string>;
 }
 
 /**
@@ -118,12 +186,25 @@ export interface MktgAgentIntake {
    * agent's own form-mode wording, quoted verbatim so its MODE RULES trigger.
    */
   batchPreamble: string[];
-  /** Ordered intake fields; every answer is required. */
+  /** Ordered intake fields; required unless marked `optional` or branched by the gate. */
   fields: MktgIntakeField[];
   /** Section labels the generated document is expected to contain. */
   sections: string[];
   /** BFF endpoints for the agent's validated generation flow. */
   endpoints: MktgRunEndpoints;
+  /** Brand Kit gate configuration, for agents that consume a Brand Kit. */
+  brandKitGate?: MktgIntakeBrandKitGate;
+  /** Copyable derivative chips shown on the result, when the agent's envelope carries derivatives. */
+  derivativeChips?: MktgIntakeDerivativeChip[];
+  /**
+   * Follow-ups (edit-inputs resubmit, feedback regeneration) go through the
+   * agent's generate endpoint as a full resubmit (`feedback` + `priorVersion`
+   * in the body, fresh Guild session) instead of a chat follow-up on the
+   * stored session. Required for agents whose batch payload is a structured
+   * `agent_input` object (server-side README fetch, typed form contract) —
+   * a chat follow-up could carry neither.
+   */
+  regenerateViaGenerate?: boolean;
 }
 
 /** One generated document version for an agent run. */
@@ -134,6 +215,8 @@ export interface MktgRunVersion {
   document: string;
   /** The feedback that produced this version, when it was a regeneration. */
   feedback?: string;
+  /** Word-count-locked derivatives from the validated envelope, when the agent's contract defines them. */
+  derivatives?: Record<string, string>;
   /** ISO-8601 creation timestamp. */
   createdAt: string;
 }

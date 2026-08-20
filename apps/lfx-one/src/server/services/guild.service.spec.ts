@@ -153,3 +153,70 @@ describe('GuildService.getRawEventPayloads', () => {
     });
   });
 });
+
+/**
+ * Session-creation routing during the Guild mention-routing outage: the
+ * body must carry the explicit `agent_id` (Guild's recommended
+ * {agent_id, agent_input} format) ALONGSIDE the transitional `@handle`
+ * prepend on text messages — flippable off via GUILD_EXPLICIT_AGENT_ID
+ * without a redeploy — and structured agent inputs (typed batch forms)
+ * must pass through verbatim, where a mention cannot ride along.
+ */
+describe('GuildService.createSession — explicit agent_id routing', () => {
+  let service: GuildService;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  const sessionResponse = (): Response => ({ ok: true, status: 200, json: () => Promise.resolve({ id: 'session-new' }) }) as unknown as Response;
+  const sentBody = (): Record<string, unknown> => JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body) as Record<string, unknown>;
+
+  beforeEach(() => {
+    vi.stubEnv('GUILD_API_KEY', 'test-key');
+    vi.stubEnv('GUILD_API_URL', 'https://guild.test');
+    vi.stubEnv('GUILD_WORKSPACE_OWNER', 'owner');
+    vi.stubEnv('GUILD_WORKSPACE_NAME', 'workspace');
+    service = new GuildService();
+    fetchMock = vi.fn().mockResolvedValue(sessionResponse());
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it('passes agent_id by default (flag unset) AND keeps the @handle prepend on text messages — belt and braces', async () => {
+    const sessionId = await service.createSession(req, { message: 'hello there', handle: 'foundation-message' });
+
+    expect(sessionId).toBe('session-new');
+    const body = sentBody();
+    expect(body['agent_id']).toBe('foundation-message');
+    expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message hello there' });
+  });
+
+  it('drops the agent_id field (only) when GUILD_EXPLICIT_AGENT_ID=false', async () => {
+    vi.stubEnv('GUILD_EXPLICIT_AGENT_ID', 'false');
+
+    await service.createSession(req, { message: 'hello there', handle: 'foundation-message' });
+
+    const body = sentBody();
+    expect('agent_id' in body).toBe(false);
+    expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message hello there' });
+  });
+
+  it('sends a structured agent input verbatim with agent_id (no mention can ride a typed form payload)', async () => {
+    const form = { type: 'message_foundation_intake_form', project_name: 'X', github_url: 'https://github.com/x/y' };
+
+    await service.createSession(req, { agentInput: form, handle: 'foundation-message' });
+
+    const body = sentBody();
+    expect(body['agent_id']).toBe('foundation-message');
+    expect(body['agent_input']).toEqual(form);
+  });
+
+  it('never emits agent_id without a handle', async () => {
+    await service.createSession(req, { message: 'hello' });
+
+    expect('agent_id' in sentBody()).toBe(false);
+  });
+});

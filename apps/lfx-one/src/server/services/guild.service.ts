@@ -57,28 +57,56 @@ export class GuildService {
   }
 
   /**
-   * Create a new Guild session seeded with the first message.
-   * Returns the new session id.
+   * Whether session creation passes the target agent explicitly as
+   * `agent_id` (Guild's `{agent_id, agent_input}` format — the fix for the
+   * broken `@handle` mention routing). Defaults ON; `GUILD_EXPLICIT_AGENT_ID=false`
+   * drops the field without a redeploy if the API rejects unknown fields.
    */
-  public async createSession(req: Request, params: { message: string; handle?: string }): Promise<string> {
+  private get explicitAgentIdEnabled(): boolean {
+    return process.env['GUILD_EXPLICIT_AGENT_ID'] !== 'false';
+  }
+
+  /**
+   * Create a new Guild session seeded with the first input — either a plain
+   * text message (with the transitional `@handle` mention prepended) or a
+   * structured `agentInput` payload (an agent's typed batch form, where a
+   * mention cannot ride along). Returns the new session id.
+   *
+   * Routing is belt-and-braces during the Guild mention-routing outage: the
+   * `@handle` prepend stays on text messages, AND the request body carries an
+   * explicit `agent_id` (Guild's recommended `{agent_id, agent_input}`
+   * format). The `agent_id` field is gated behind `GUILD_EXPLICIT_AGENT_ID`
+   * (default ON; set to `false` to drop the field without a redeploy in case
+   * the API rejects unknown fields).
+   */
+  public async createSession(req: Request, params: { message?: string; agentInput?: Record<string, unknown>; handle?: string }): Promise<string> {
     this.assertConfigured('guild_create_session', { requireWorkspace: true });
 
-    const apiMessage = this.applyRouting(params.message, params.handle);
+    if (params.agentInput === undefined && params.message === undefined) {
+      throw new MicroserviceError('Guild session creation requires a message or a structured agent input.', 500, 'guild_invalid_session_input', {
+        service: 'guild',
+        operation: 'guild_create_session',
+      });
+    }
+
+    const agentInput: Record<string, unknown> = params.agentInput ?? { type: 'text', text: this.applyRouting(params.message ?? '', params.handle) };
     const path = `/api/workspaces/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.workspace)}/sessions`;
 
-    logger.debug(req, 'guild_create_session', 'Creating Guild session', { has_handle: !!params.handle });
+    const body: Record<string, unknown> = {
+      session_type: 'api_trigger',
+      agent_input: agentInput,
+    };
+    if (params.handle && this.explicitAgentIdEnabled) {
+      body['agent_id'] = params.handle;
+    }
 
-    const response = await this.fetchGuild(
-      path,
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          session_type: 'api_trigger',
-          agent_input: { type: 'text', text: apiMessage },
-        }),
-      },
-      'guild_create_session'
-    );
+    logger.debug(req, 'guild_create_session', 'Creating Guild session', {
+      has_handle: !!params.handle,
+      structured_input: !!params.agentInput,
+      explicit_agent_id: !!body['agent_id'],
+    });
+
+    const response = await this.fetchGuild(path, { method: 'POST', body: JSON.stringify(body) }, 'guild_create_session');
 
     await this.assertOk(response, 'guild_create_session', path);
 

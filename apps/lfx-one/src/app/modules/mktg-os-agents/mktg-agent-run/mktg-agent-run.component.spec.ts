@@ -5,7 +5,7 @@ import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { MktgStoredAgentRun, Project, ProjectContext, User } from '@lfx-one/shared/interfaces';
+import { MktgGenerateProgress, MktgGenerateRequest, MktgStoredAgentRun, Project, ProjectContext, User } from '@lfx-one/shared/interfaces';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -37,6 +37,7 @@ describe('MktgAgentRunComponent', () => {
   let projects: Record<string, Partial<Project> | null>;
   let loadRun: ReturnType<typeof vi.fn>;
   let getProject: ReturnType<typeof vi.fn>;
+  let generate: ReturnType<typeof vi.fn>;
 
   const storedRun = (projectUid: string, document: string, answers: Record<string, string>): MktgStoredAgentRun => ({
     agentId: 'brand-kit',
@@ -61,13 +62,17 @@ describe('MktgAgentRunComponent', () => {
     return { icon: row.querySelector('i')?.className ?? '', sr: row.querySelector('.sr-only')?.textContent?.trim() ?? '' };
   };
 
-  const configure = async (platformId: 'browser' | 'server' = 'browser'): Promise<void> => {
+  const configure = async (platformId: 'browser' | 'server' = 'browser', agentId = 'brand-kit'): Promise<void> => {
     activeContext = signal<ProjectContext | null>(null);
     userSignal = signal<User | null>({ sub: 'auth0|user-1' } as User);
     storedRuns = {};
     projects = {};
-    loadRun = vi.fn((projectUid: string) => storedRuns[projectUid] ?? null);
+    // Stored runs are keyed per agent: `<projectUid>` alone keeps the legacy
+    // brand-kit fixtures working, `<projectUid>:<agentId>` scopes when a test
+    // needs both the page agent's run AND the gate's brand-kit source run.
+    loadRun = vi.fn((projectUid: string, runAgentId: string) => storedRuns[`${projectUid}:${runAgentId}`] ?? storedRuns[projectUid] ?? null);
     getProject = vi.fn((slug: string) => of(projects[slug] ?? null));
+    generate = vi.fn(() => of<MktgGenerateProgress>({ type: 'submitted' }));
 
     await TestBed.configureTestingModule({
       imports: [MktgAgentRunComponent],
@@ -75,11 +80,11 @@ describe('MktgAgentRunComponent', () => {
         provideRouter([]),
         provideNoopAnimations(),
         { provide: PLATFORM_ID, useValue: platformId },
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ agentId: 'brand-kit' }) } } },
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ agentId }) } } },
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: () => activeContext()?.uid ?? '' } },
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
-        { provide: MktgAgentRunService, useValue: { loadRun, generate: vi.fn() } },
+        { provide: MktgAgentRunService, useValue: { loadRun, generate } },
       ],
     }).compileComponents();
 
@@ -220,6 +225,179 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-agent-run-form')).not.toBeNull();
       expect(component['intakeForm'].getRawValue()).toMatchObject({ project_name: 'Project Two' });
       expect(fromLfxChip('project_name')).not.toBeNull();
+    });
+  });
+
+  describe('Message Foundation — Brand Kit gate logic (wi-mf-lfx-selfserve)', () => {
+    /** Fills the two always-required base fields. */
+    const fillBase = (): void => {
+      component['intakeForm'].controls['project_name'].setValue('TestOrbit');
+      component['intakeForm'].controls['github_url'].setValue('https://github.com/example-org/testorbit');
+    };
+    const fillDiscovery = (): void => {
+      for (const key of ['one_line_description', 'primary_audience', 'voice_adjectives', 'constraints', 'reference_brands']) {
+        component['intakeForm'].controls[key].setValue(`Answer for ${key}`);
+      }
+    };
+    const brandKitSourceRun = (document: string): MktgStoredAgentRun => ({
+      agentId: 'brand-kit',
+      projectUid: 'proj-1',
+      sessionId: 'sess-bk',
+      ownerToken: 'token-bk',
+      answers: {},
+      versions: [{ version: 2, document, createdAt: '2026-08-19T00:00:00.000Z' }],
+      savedAt: '2026-08-19T00:00:00.000Z',
+    });
+    const submittedAnswers = (): Record<string, string> => (generate.mock.calls[0][0] as MktgGenerateRequest).answers;
+
+    beforeEach(async () => configure('browser', 'foundation-setup'));
+
+    it('hides the stored-kit option when the project has no stored Brand Kit and defaults to discovery', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(query('mktg-agent-run-gate')).not.toBeNull();
+      expect(query('mktg-agent-run-gate-stored')).toBeNull();
+      expect(query('mktg-agent-run-gate-paste')).not.toBeNull();
+      expect(query('mktg-agent-run-gate-discovery')).not.toBeNull();
+      // Discovery branch active: its five questions render, the paste textarea does not.
+      expect(host().querySelector('[data-test="mktg-intake-one_line_description"]')).not.toBeNull();
+      expect(host().querySelector('[data-test="mktg-intake-brand_kit_markdown"]')).toBeNull();
+    });
+
+    it('enforces the conditional contract: discovery answers required on discovery, only the paste field on paste', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fillBase();
+
+      // Discovery choice: base fields alone are not enough.
+      expect(component['intakeForm'].valid).toBe(false);
+      fillDiscovery();
+      expect(component['intakeForm'].valid).toBe(true);
+
+      // Paste choice: the pasted document becomes the requirement; stale
+      // discovery text (cleared here) must not block, and empty paste blocks.
+      component['gateForm'].controls.choice.setValue('paste');
+      await fixture.whenStable();
+      expect(host().querySelector('[data-test="mktg-intake-brand_kit_markdown"]')).not.toBeNull();
+      expect(host().querySelector('[data-test="mktg-intake-one_line_description"]')).toBeNull();
+      expect(component['intakeForm'].valid).toBe(false);
+      component['intakeForm'].controls['brand_kit_markdown'].setValue('# TestOrbit Brand Kit');
+      expect(component['intakeForm'].valid).toBe(true);
+    });
+
+    it('offers the stored Brand Kit (with its version), defaults to it, and submits its document as brand_kit_markdown', async () => {
+      storedRuns = { 'proj-1:brand-kit': brandKitSourceRun('# TestOrbit Brand Kit v2') };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      const storedOption = query('mktg-agent-run-gate-stored');
+      expect(storedOption).not.toBeNull();
+      expect(storedOption?.textContent).toContain('(v2)');
+      expect(component['gateChoice']()).toBe('stored');
+      // Neither branch's fields render for the stored choice.
+      expect(host().querySelector('[data-test="mktg-intake-brand_kit_markdown"]')).toBeNull();
+      expect(host().querySelector('[data-test="mktg-intake-one_line_description"]')).toBeNull();
+
+      fillBase();
+      component['onSubmit']();
+
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(submittedAnswers()).toEqual({
+        project_name: 'TestOrbit',
+        github_url: 'https://github.com/example-org/testorbit',
+        brand_kit_markdown: '# TestOrbit Brand Kit v2',
+      });
+    });
+
+    it('omits hidden-branch fields and the blank optional gap_fill_notes from the submitted answers', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fillBase();
+      fillDiscovery();
+      // Stale paste text from a previous choice must never leak into a discovery submission.
+      component['intakeForm'].controls['brand_kit_markdown'].setValue('# Stale pasted kit');
+      component['onSubmit']();
+
+      const answers = submittedAnswers();
+      expect(answers['brand_kit_markdown']).toBeUndefined();
+      expect(answers['gap_fill_notes']).toBeUndefined();
+      expect(answers['one_line_description']).toBe('Answer for one_line_description');
+    });
+
+    it('includes gap_fill_notes when the user filled it', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fillBase();
+      fillDiscovery();
+      component['intakeForm'].controls['gap_fill_notes'].setValue('Anchor to the v2 launch');
+      component['onSubmit']();
+
+      expect(submittedAnswers()['gap_fill_notes']).toBe('Anchor to the v2 launch');
+    });
+
+    it('surfaces the five derivative chips as copyable values on the result', async () => {
+      storedRuns = {
+        'proj-1:foundation-setup': {
+          agentId: 'foundation-setup',
+          projectUid: 'proj-1',
+          sessionId: 'sess-mf',
+          ownerToken: 'token-mf',
+          answers: { project_name: 'TestOrbit', github_url: 'https://github.com/example-org/testorbit', brand_kit_markdown: '# Kit' },
+          versions: [
+            {
+              version: 1,
+              document: '# Doc',
+              derivatives: { summary_25: 'Twenty-five words.', llms_txt: '# TestOrbit' },
+              createdAt: '2026-08-19T00:00:00.000Z',
+            },
+          ],
+          savedAt: new Date().toISOString(),
+        },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(query('mktg-agent-run-result')).not.toBeNull();
+      // Only derivatives the envelope actually carried render as chips.
+      expect(query('mktg-agent-run-derivative-summary_25')?.textContent).toContain('25-word summary');
+      expect(query('mktg-agent-run-derivative-llms_txt')).not.toBeNull();
+      expect(query('mktg-agent-run-derivative-boilerplate')).toBeNull();
+
+      // Copy flashes the chip to "Copied" and writes the derivative VALUE.
+      const writeText = vi.fn(() => Promise.resolve());
+      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+      try {
+        query('mktg-agent-run-derivative-summary_25')?.click();
+        await fixture.whenStable();
+        expect(writeText).toHaveBeenCalledWith('Twenty-five words.');
+        expect(query('mktg-agent-run-derivative-summary_25')?.textContent).toContain('Copied');
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it('restores a run whose submission carried Brand Kit markdown onto the paste branch', async () => {
+      storedRuns = {
+        'proj-1:foundation-setup': {
+          agentId: 'foundation-setup',
+          projectUid: 'proj-1',
+          sessionId: 'sess-mf',
+          ownerToken: 'token-mf',
+          answers: { project_name: 'TestOrbit', github_url: 'https://github.com/example-org/testorbit', brand_kit_markdown: '# Kit' },
+          versions: [{ version: 1, document: '# Doc', createdAt: '2026-08-19T00:00:00.000Z' }],
+          savedAt: new Date().toISOString(),
+        },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      component['onEditInputs']();
+      await fixture.whenStable();
+
+      expect(component['gateChoice']()).toBe('paste');
+      expect(component['intakeForm'].getRawValue()).toMatchObject({ brand_kit_markdown: '# Kit' });
+      expect(component['intakeForm'].valid).toBe(true);
     });
   });
 

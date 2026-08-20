@@ -67,7 +67,14 @@ export class MktgAgentRunService {
    */
   public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
     const stored = this.loadRun(request.projectUid, request.agentId);
-    const attempt$: Observable<MktgRunAttempt> = stored ? this.followUp(request, stored) : this.startRun(request);
+    let attempt$: Observable<MktgRunAttempt>;
+    if (!stored) {
+      attempt$ = this.startRun(request);
+    } else if (request.intake.regenerateViaGenerate) {
+      attempt$ = this.resubmitRun(request, stored);
+    } else {
+      attempt$ = this.followUp(request, stored);
+    }
 
     return attempt$.pipe(
       switchMap(({ session, priorVersion }) =>
@@ -131,6 +138,31 @@ export class MktgAgentRunService {
     return this.http
       .post<MktgRunSessionResponse>(request.intake.endpoints.generate, body)
       .pipe(map((response) => ({ session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken }, priorVersion: 0 })));
+  }
+
+  /**
+   * Follow-up for `regenerateViaGenerate` intakes (e.g. the Message
+   * Foundation): every edit-inputs resubmit or feedback regeneration is a
+   * FULL resubmit through the generate endpoint on a fresh Guild session —
+   * the BFF re-renders the agent's typed batch payload (re-fetching
+   * server-side inputs like the README) with `feedback` + `priorVersion`, so
+   * the agent finalizes as `priorVersion + 1`, which is exactly the version
+   * the result poll's strictly-newer gate accepts. The stored run keeps the
+   * version history; only its session is replaced by `appendVersion`.
+   */
+  private resubmitRun(request: MktgGenerateRequest, stored: MktgStoredAgentRun): Observable<MktgRunAttempt> {
+    const priorVersion = stored.versions.at(-1)?.version ?? 0;
+    if (priorVersion === 0) {
+      // A stored run without versions has nothing to revise — plain first run.
+      return this.startRun(request);
+    }
+    const body: MktgRunGenerateBody = { answers: request.answers, priorVersion };
+    if (request.feedback?.trim()) {
+      body.feedback = request.feedback.trim();
+    }
+    return this.http
+      .post<MktgRunSessionResponse>(request.intake.endpoints.generate, body)
+      .pipe(map((response) => ({ session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken }, priorVersion })));
   }
 
   /**
@@ -222,6 +254,7 @@ export class MktgAgentRunService {
       version: result.version ?? lastVersion + 1,
       document: result.documentMarkdown ?? '',
       feedback: request.feedback,
+      derivatives: result.derivatives,
       createdAt: new Date().toISOString(),
     };
     const run: MktgStoredAgentRun = {

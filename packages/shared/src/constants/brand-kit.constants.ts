@@ -50,9 +50,6 @@ export const BRAND_KIT_MIN_DOCUMENT_LENGTH = 1000;
 /** ISO-8601 timestamp shape gate: date + time part required; offset/Z optional (shape gate, not a UTC enforcer). */
 export const BRAND_KIT_ISO_TIMESTAMP_REGEX = /^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:[Zz]|[+-]\d{2}:?\d{2})?$/;
 
-/** Max recursion depth when scanning event payloads for envelope candidates. */
-export const BRAND_KIT_EXTRACTION_MAX_DEPTH = 16;
-
 /**
  * Batch-mode preamble lines of the form-mode first message
  * (dec-brand-kit-intake-form) — the exact wording the agent's MODE RULES key
