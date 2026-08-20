@@ -296,6 +296,22 @@ describe('WeeklyBriefCardComponent — Sources disclosure (LFXV2-3335)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid^="weekly-brief-card-source-chip-"]')).toBeNull();
   });
 
+  it('still renders a chip of an unrecognized kind in the expanded view, under an "Other" section', async () => {
+    await setup([
+      ...Array.from({ length: 5 }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })),
+      sourceRef('future-1', { kind: 'some_future_kind', title: 'A Brand New Source Kind' }),
+    ]);
+
+    component.onToggleSources();
+    await fixture.whenStable();
+
+    // sourceRefCount still counts it even though it isn't one of the five known kinds.
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-sources-toggle"]').textContent).toContain('Sources (6)');
+    const chip = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-chip-future-1"]');
+    expect(chip).not.toBeNull();
+    expect(chip.textContent).toContain('A Brand New Source Kind');
+  });
+
   it('level-1 toggle expands and re-collapses the sectioned view', async () => {
     await setup(Array.from({ length: 6 }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })));
 

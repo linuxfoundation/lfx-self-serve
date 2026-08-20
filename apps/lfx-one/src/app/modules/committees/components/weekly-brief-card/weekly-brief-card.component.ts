@@ -220,22 +220,29 @@ export class WeeklyBriefCardComponent {
   // entirely.
   public readonly sourceChips: Signal<WeeklyBriefSourceChip[]> = computed(() => mapWeeklyBriefSourceRefsToChips(this.renderableBrief()?.source_refs ?? []));
 
-  // Total distinct source refs (not the deduped chip count) — drives both the collapse
-  // threshold comparison and the "Sources (N)" disclosure header (LFXV2-3335).
-  public readonly sourceRefCount: Signal<number> = computed(() => this.renderableBrief()?.source_refs.length ?? 0);
+  // Raw source_refs count, duplicates included — NOT the deduped sourceChips() length. Drives
+  // both the collapse threshold comparison and the "Sources (N)" disclosure header (LFXV2-3335).
+  // `?? []` before `.length`, not `?.source_refs.length ?? 0`, matches sourceChips()'s guard two
+  // lines up: a brief response missing source_refs must not throw through this computed.
+  public readonly sourceRefCount: Signal<number> = computed(() => (this.renderableBrief()?.source_refs ?? []).length);
 
   // sourceChips() grouped into fixed-order kind-sections for the expanded disclosure view
   // (LFXV2-3335) — precomputed here rather than re-derived in the template (frontend-checklist
-  // §4). A section is omitted entirely when it has no chips.
+  // §4). A section is omitted entirely when it has no chips. `kind` is an open string (see
+  // WeeklyBriefSourceRef's doc comment) — the trailing "Other" section catches any chip whose
+  // kind isn't one of the five known ones, so an unrecognized future kind still renders here
+  // (matching mapWeeklyBriefSourceRefsToChips's "renders unlinked instead of breaking" contract)
+  // instead of silently vanishing from the expanded view while still counted in sourceRefCount().
   public readonly sourceChipSections: Signal<{ kind: string; label: string; chips: WeeklyBriefSourceChip[] }[]> = computed(() => {
     const chips = this.sourceChips();
-    return WeeklyBriefCardComponent.sourceChipSectionOrder
-      .map((kind) => ({
-        kind,
-        label: WeeklyBriefCardComponent.sourceChipSectionLabels[kind],
-        chips: chips.filter((chip) => chip.kind === kind),
-      }))
-      .filter((section) => section.chips.length > 0);
+    const known = new Set(WeeklyBriefCardComponent.sourceChipSectionOrder);
+    const sections = WeeklyBriefCardComponent.sourceChipSectionOrder.map((kind) => ({
+      kind,
+      label: WeeklyBriefCardComponent.sourceChipSectionLabels[kind],
+      chips: chips.filter((chip) => chip.kind === kind),
+    }));
+    sections.push({ kind: 'other', label: 'Other', chips: chips.filter((chip) => !known.has(chip.kind)) });
+    return sections.filter((section) => section.chips.length > 0);
   });
 
   // "no_sources" is the only error_reason meaningful to the UI today (LFXV2-3000) —
