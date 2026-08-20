@@ -17,6 +17,9 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, splitDisplayName } from '@lfx-one/shared/utils';
 
+import { Request } from 'express';
+
+import { OrgPeopleDirectoryService } from './org-people-directory.service';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
@@ -106,6 +109,9 @@ interface TrainingRow {
 /** Org Lens "People → All Employees" analytics — backed by the 6 PLATINUM_LFX_ONE.ORG_PEOPLE_* tables. Empty rows produce an empty envelope, never a 404. */
 export class OrgLensPeopleService {
   private snowflakeService: SnowflakeService;
+  // Lazily constructed: OrgPeopleDirectoryService's own constructor builds an OrgLensPeopleService,
+  // so eagerly instantiating it here would recurse infinitely between the two constructors.
+  private directoryService: OrgPeopleDirectoryService | undefined;
 
   public constructor() {
     this.snowflakeService = SnowflakeService.getInstance();
@@ -130,8 +136,13 @@ export class OrgLensPeopleService {
   }
 
   /** Chevron-expansion detail for one person within an account; five Snowflake queries in parallel, served through the shared per-org cache. */
-  public async getEmployeeDetail(accountId: string, personKey: string): Promise<OrgAllEmployeeDetail> {
+  public async getEmployeeDetail(req: Request, accountId: string, personKey: string): Promise<OrgAllEmployeeDetail> {
     const { committeeRows, codeRows, eventRows, trainingRows, email } = await this.fetchEmployeeDetailRaw(accountId, personKey);
+    // Live-only (synthetic) people have no ORG_PEOPLE_ALL row to query by personKey, so the direct
+    // lookup above always misses for them; their real address only exists on the live-merged roster
+    // (access/board/committee/keyContact sources) built by OrgPeopleDirectoryService. Fall back to
+    // that before giving up.
+    const resolvedEmail = email ?? (await this.resolveLiveOnlyEmail(req, accountId, personKey));
 
     const memberships = committeeRows.map((row) => this.mapCommitteeRow(row));
     const boardSeats = memberships.filter((m) => m.isBoard);
@@ -164,8 +175,24 @@ export class OrgLensPeopleService {
       code: codeRows.map((row) => this.mapCodeRow(row)),
       events,
       training,
-      companyEmails: deriveDemoCompanyEmails(email),
+      companyEmails: deriveDemoCompanyEmails(resolvedEmail),
     };
+  }
+
+  /** Looks up a live-only person's merged address from the live roster (access/board/committee/keyContact sources). */
+  private async resolveLiveOnlyEmail(req: Request, accountId: string, personKey: string): Promise<string | null> {
+    if (!personKey.startsWith('live-')) {
+      return null;
+    }
+    const { rows } = await this.getDirectoryService().getLive(req, accountId);
+    return rows.find((row) => row.personKey === personKey)?.email ?? null;
+  }
+
+  private getDirectoryService(): OrgPeopleDirectoryService {
+    if (!this.directoryService) {
+      this.directoryService = new OrgPeopleDirectoryService();
+    }
+    return this.directoryService;
   }
 
   /** Three parallel Snowflake reads returning raw rows; mapping happens after the cache read. */

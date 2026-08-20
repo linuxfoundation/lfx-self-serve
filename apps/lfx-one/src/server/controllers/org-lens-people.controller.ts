@@ -85,7 +85,7 @@ export class OrgLensPeopleController {
       assertOrgUid(orgUid, 'get_org_lens_people_detail');
       this.assertPersonKey(personKey, 'get_org_lens_people_detail');
 
-      const response = await this.service.getEmployeeDetail(orgUid, personKey);
+      const response = await this.service.getEmployeeDetail(req, orgUid, personKey);
 
       logger.success(req, 'get_org_lens_people_detail', startTime, {
         org_uid: orgUid,
