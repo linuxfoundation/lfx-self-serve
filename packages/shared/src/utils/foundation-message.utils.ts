@@ -12,6 +12,8 @@ import {
   FOUNDATION_MESSAGE_CONTRACT_ID,
   FOUNDATION_MESSAGE_DERIVATIVE_KEYS,
   FOUNDATION_MESSAGE_DISCOVERY_KEYS,
+  FOUNDATION_MESSAGE_DISCOVERY_QUESTIONS,
+  FOUNDATION_MESSAGE_FORM_PREAMBLE_LINES,
   FOUNDATION_MESSAGE_FORM_TYPE,
   FOUNDATION_MESSAGE_INTAKE_ANSWERS_MAX,
   FOUNDATION_MESSAGE_INTAKE_ANSWERS_MIN,
@@ -19,6 +21,9 @@ import {
   FOUNDATION_MESSAGE_KIND,
   FOUNDATION_MESSAGE_MIN_DOCUMENT_LENGTH,
   FOUNDATION_MESSAGE_PROJECT_SLUG_REGEX,
+  FOUNDATION_MESSAGE_Q_BRAND_KIT,
+  FOUNDATION_MESSAGE_Q_GITHUB_URL,
+  FOUNDATION_MESSAGE_Q_PROJECT_NAME,
   FOUNDATION_MESSAGE_REQUIRED_HEADINGS,
   FOUNDATION_MESSAGE_REVISED_INTAKE_FEEDBACK,
   FOUNDATION_MESSAGE_SHA256_REGEX,
@@ -148,6 +153,80 @@ export function buildFoundationMessageFormPayload(
   }
 
   return payload;
+}
+
+/**
+ * Render a built form payload into the structured first user message the
+ * agent's MODE RULES wrapper section tells the model to expect — a VERBATIM
+ * mirror of the agent's own `renderFormMessage` (marketing-os-agents
+ * `agents/foundation-message-ts` src/form.ts), producing byte-identical text
+ * for the same payload.
+ *
+ * Why the BFF renders instead of sending the typed payload as the Guild
+ * session's structured `agent_input`: live-smoked 2026-08-20 — Guild accepts
+ * a structured `agent_input` (201) but coerces it to
+ * `{type: 'text', text: JSON.stringify(payload)}` BEFORE the agent's zod
+ * preprocess runs, so the model receives raw JSON and the batch MODE RULES
+ * never trigger. Rendering here restores the known-good text transport (the
+ * shipped brand-kit pattern) with the exact message the agent would have
+ * rendered itself.
+ */
+export function renderFoundationMessageFormText(input: FoundationMessageFormPayload): string {
+  const lines: string[] = [
+    ...FOUNDATION_MESSAGE_FORM_PREAMBLE_LINES,
+    '',
+    `Q1a. ${FOUNDATION_MESSAGE_Q_PROJECT_NAME}`,
+    `A1a. ${input.project_name}`,
+    '',
+    `Q1b. ${FOUNDATION_MESSAGE_Q_GITHUB_URL}`,
+    `A1b. ${input.github_url}`,
+    '',
+    `Q1c. ${FOUNDATION_MESSAGE_Q_BRAND_KIT}`,
+  ];
+  if (input.brand_kit_markdown !== undefined) {
+    lines.push(
+      'A1c. Yes — the full Brand Kit document is provided below (BRAND KIT DOCUMENT block).',
+      '',
+      '===== BEGIN BRAND KIT DOCUMENT =====',
+      input.brand_kit_markdown,
+      '===== END BRAND KIT DOCUMENT =====',
+      ''
+    );
+  } else {
+    lines.push('A1c. No — brand-discovery answers provided instead:', '');
+    FOUNDATION_MESSAGE_DISCOVERY_QUESTIONS.forEach((entry, i) => {
+      lines.push(`Q1c.${i + 1}. ${entry.question}`);
+      lines.push(`A1c.${i + 1}. ${input[entry.key] ?? ''}`);
+      lines.push('');
+    });
+  }
+  if (input.readme_markdown !== undefined) {
+    lines.push(
+      "The project's GitHub README content (pre-fetched — you cannot fetch URLs):",
+      '',
+      '===== BEGIN GITHUB README =====',
+      input.readme_markdown,
+      '===== END GITHUB README =====',
+      ''
+    );
+  } else {
+    lines.push(
+      'No README content was provided. You cannot fetch URLs — ground README-',
+      'dependent sections only in the answers above, marking gaps TBD per your',
+      'instructions.',
+      ''
+    );
+  }
+  if (input.gap_fill_notes !== undefined) {
+    lines.push('GAP-FILL NOTES (covers your Step 1d question areas):', input.gap_fill_notes, '');
+  }
+  if (input.feedback !== undefined) {
+    const nextVersion = (input.prior_version ?? 1) + 1;
+    lines.push(`FEEDBACK on draft v${input.prior_version ?? 1} — regenerate incorporating it and finalize as version ${nextVersion}:`);
+    lines.push(input.feedback);
+    lines.push('');
+  }
+  return lines.join('\n');
 }
 
 /**

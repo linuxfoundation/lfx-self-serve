@@ -7,6 +7,7 @@ import {
   FOUNDATION_MESSAGE_DERIVATIVE_CHIPS,
   FOUNDATION_MESSAGE_DISCOVERY_KEYS,
   FOUNDATION_MESSAGE_DISCOVERY_QUESTIONS,
+  FOUNDATION_MESSAGE_FORM_PREAMBLE_LINES,
   FOUNDATION_MESSAGE_Q_BRAND_KIT,
   FOUNDATION_MESSAGE_Q_GITHUB_URL,
   FOUNDATION_MESSAGE_Q_PROJECT_NAME,
@@ -110,15 +111,11 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   documentName: 'Message Foundation',
   intro: 'One form, then the agent drafts the full document. Fields marked “From LFX” are pre-filled from your project — edit anything.',
   // The agent's own form-mode preamble (src/form.ts renderFormMessage),
-  // verbatim. Unused at runtime while every follow-up rides the generate
-  // endpoint, but registered so the shell's generic renderer could never
-  // compose a message the agent's MODE RULES would not recognize.
-  batchPreamble: [
-    'BATCH INTAKE SUBMISSION (form mode — see MODE RULES in your instructions).',
-    'The interview inputs were collected on a single LFX form and are provided',
-    'below, paired with your Step 1 questions. Do NOT re-ask them; proceed',
-    'directly to Step 2.',
-  ],
+  // verbatim — the same FOUNDATION_MESSAGE_FORM_PREAMBLE_LINES the BFF's
+  // `renderFoundationMessageFormText` opens the batch submission with, so
+  // the agent's MODE RULES trigger identically wherever the message is
+  // composed.
+  batchPreamble: [...FOUNDATION_MESSAGE_FORM_PREAMBLE_LINES],
   fields: [
     { key: 'project_name', question: FOUNDATION_MESSAGE_Q_PROJECT_NAME, kind: 'text', prefill: 'project-name' },
     {

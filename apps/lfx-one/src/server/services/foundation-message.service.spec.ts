@@ -3,7 +3,7 @@
 
 import { createHash } from 'node:crypto';
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors brand-kit.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired
 // into this app's vitest config with Angular-free resolution, so shared runtime
@@ -110,13 +110,41 @@ describe('FoundationMessageService.startGeneration', () => {
     readmeMocks.fetchReadme.mockResolvedValue('# TestOrbit readme');
   });
 
-  it('submits the typed form payload as the structured agent_input with the catalog handle', async () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  interface CreateSessionParams {
+    message?: string;
+    agentInput?: Record<string, unknown>;
+    handle?: string;
+  }
+  const sentParams = (call = 0): CreateSessionParams => guildMocks.createSession.mock.calls[call][1] as CreateSessionParams;
+
+  it('submits the rendered form-mode text by default (live-smoke verdict: Guild coerces structured inputs to raw JSON text)', async () => {
     const sessionId = await service.startGeneration(req, answers(), {}, 'foundation-message');
 
     expect(sessionId).toBe('session-1');
     expect(guildMocks.createSession).toHaveBeenCalledTimes(1);
-    const params = guildMocks.createSession.mock.calls[0][1] as { agentInput: Record<string, unknown>; handle: string };
+    const params = sentParams();
     expect(params.handle).toBe('foundation-message');
+    expect(params.agentInput).toBeUndefined();
+    // The agent's MODE RULES preamble plus verbatim Q/A pairs and fenced documents.
+    expect(params.message).toContain('BATCH INTAKE SUBMISSION (form mode — see MODE RULES in your instructions).');
+    expect(params.message).toContain('A1a. TestOrbit');
+    expect(params.message).toContain('A1b. https://github.com/example-org/testorbit');
+    expect(params.message).toContain(`===== BEGIN BRAND KIT DOCUMENT =====\n${answers()['brand_kit_markdown']}\n===== END BRAND KIT DOCUMENT =====`);
+    expect(params.message).toContain('===== BEGIN GITHUB README =====\n# TestOrbit readme\n===== END GITHUB README =====');
+  });
+
+  it('submits the typed form payload as the structured agent_input when GUILD_STRUCTURED_AGENT_INPUT=true', async () => {
+    vi.stubEnv('GUILD_STRUCTURED_AGENT_INPUT', 'true');
+
+    await service.startGeneration(req, answers(), {}, 'foundation-message');
+
+    const params = sentParams();
+    expect(params.handle).toBe('foundation-message');
+    expect(params.message).toBeUndefined();
     expect(params.agentInput).toMatchObject({
       type: 'message_foundation_intake_form',
       project_name: 'TestOrbit',
@@ -126,25 +154,26 @@ describe('FoundationMessageService.startGeneration', () => {
     });
   });
 
-  it('NEVER blocks the run on a failed README fetch — readme_markdown is simply omitted', async () => {
+  it('NEVER blocks the run on a failed README fetch — the no-README grounding lines are rendered instead', async () => {
     readmeMocks.fetchReadme.mockResolvedValue(null);
 
     await service.startGeneration(req, answers(), {}, 'foundation-message');
 
-    const params = guildMocks.createSession.mock.calls[0][1] as { agentInput: Record<string, unknown> };
-    expect('readme_markdown' in params.agentInput).toBe(false);
+    const message = sentParams().message ?? '';
+    expect(message).toContain('No README content was provided.');
+    expect(message).not.toContain('===== BEGIN GITHUB README =====');
   });
 
   it('carries feedback + prior_version on a regeneration, and synthesizes the revision note without feedback', async () => {
     await service.startGeneration(req, answers(), { feedback: 'Sharpen it', priorVersion: 2 }, 'foundation-message');
-    let params = guildMocks.createSession.mock.calls[0][1] as { agentInput: Record<string, unknown> };
-    expect(params.agentInput['feedback']).toBe('Sharpen it');
-    expect(params.agentInput['prior_version']).toBe(2);
+    let message = sentParams().message ?? '';
+    expect(message).toContain('FEEDBACK on draft v2 — regenerate incorporating it and finalize as version 3:');
+    expect(message).toContain('Sharpen it');
 
     await service.startGeneration(req, answers(), { priorVersion: 1 }, 'foundation-message');
-    params = guildMocks.createSession.mock.calls[1][1] as { agentInput: Record<string, unknown> };
-    expect(params.agentInput['feedback']).toBe(FOUNDATION_MESSAGE_REVISED_INTAKE_FEEDBACK);
-    expect(params.agentInput['prior_version']).toBe(1);
+    message = sentParams(1).message ?? '';
+    expect(message).toContain('FEEDBACK on draft v1 — regenerate incorporating it and finalize as version 2:');
+    expect(message).toContain(FOUNDATION_MESSAGE_REVISED_INTAKE_FEEDBACK);
   });
 });
 

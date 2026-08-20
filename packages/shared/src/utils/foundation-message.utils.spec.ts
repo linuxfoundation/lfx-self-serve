@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   FOUNDATION_MESSAGE_DISCOVERY_KEYS,
+  FOUNDATION_MESSAGE_DISCOVERY_QUESTIONS,
   FOUNDATION_MESSAGE_FORM_TYPE,
   FOUNDATION_MESSAGE_README_MAX_CHARS,
   FOUNDATION_MESSAGE_REQUIRED_HEADINGS,
@@ -13,6 +14,7 @@ import {
 import {
   buildFoundationMessageFormPayload,
   findMissingFoundationMessageHeadings,
+  renderFoundationMessageFormText,
   validateFoundationMessageEnvelope,
   validateFoundationMessageIntakeAnswers,
 } from './foundation-message.utils';
@@ -129,6 +131,68 @@ describe('buildFoundationMessageFormPayload — the message_foundation_intake_fo
       expect(payload.prior_version).toBeUndefined();
       expect(payload.feedback).toBeUndefined();
     }
+  });
+});
+
+describe('renderFoundationMessageFormText — verbatim mirror of the agent renderFormMessage', () => {
+  it('renders the brand-kit branch byte-identically to the agent renderer (preamble, Q/A pairs, fenced documents, feedback directive)', () => {
+    const payload = buildFoundationMessageFormPayload(
+      { ...brandKitAnswers(), gap_fill_notes: 'Anchor to the v2 launch' },
+      { readmeMarkdown: '# Readme body', feedback: 'Sharpen the pitch', priorVersion: 2 }
+    );
+
+    // Expected text hand-transcribed from marketing-os-agents
+    // agents/foundation-message-ts src/form.ts renderFormMessage — every
+    // line, blank line, and fence must match so the agent's MODE RULES see
+    // the exact message its own renderer would have produced.
+    const expected = [
+      'BATCH INTAKE SUBMISSION (form mode — see MODE RULES in your instructions).',
+      'The interview inputs were collected on a single LFX form and are provided',
+      'below, paired with your Step 1 questions. Do NOT re-ask them; proceed',
+      'directly to Step 2.',
+      '',
+      "Q1a. What's the name of the LF project?",
+      'A1a. Example Project',
+      '',
+      "Q1b. What's the URL of the project's GitHub repo or README?",
+      'A1b. https://github.com/example/project',
+      '',
+      'Q1c. Do you already have a `[Project Name] Brand Kit` I should use, and if so where is it?',
+      'A1c. Yes — the full Brand Kit document is provided below (BRAND KIT DOCUMENT block).',
+      '',
+      '===== BEGIN BRAND KIT DOCUMENT =====',
+      '# Example Project Brand Kit\n\nVoice: clear.',
+      '===== END BRAND KIT DOCUMENT =====',
+      '',
+      "The project's GitHub README content (pre-fetched — you cannot fetch URLs):",
+      '',
+      '===== BEGIN GITHUB README =====',
+      '# Readme body',
+      '===== END GITHUB README =====',
+      '',
+      'GAP-FILL NOTES (covers your Step 1d question areas):',
+      'Anchor to the v2 launch',
+      '',
+      'FEEDBACK on draft v2 — regenerate incorporating it and finalize as version 3:',
+      'Sharpen the pitch',
+      '',
+    ].join('\n');
+
+    expect(renderFoundationMessageFormText(payload)).toBe(expected);
+  });
+
+  it('renders the discovery branch with all five verbatim sub-questions and the no-README grounding lines', () => {
+    const text = renderFoundationMessageFormText(buildFoundationMessageFormPayload(discoveryAnswers()));
+
+    expect(text).toContain('A1c. No — brand-discovery answers provided instead:');
+    FOUNDATION_MESSAGE_DISCOVERY_QUESTIONS.forEach((entry, i) => {
+      expect(text).toContain(`Q1c.${i + 1}. ${entry.question}`);
+      expect(text).toContain(`A1c.${i + 1}. ${discoveryAnswers()[entry.key]}`);
+    });
+    expect(text).toContain('No README content was provided. You cannot fetch URLs — ground README-');
+    expect(text).not.toContain('===== BEGIN BRAND KIT DOCUMENT =====');
+    // First-run submission: no feedback block at all.
+    expect(text).not.toContain('FEEDBACK on draft');
   });
 });
 

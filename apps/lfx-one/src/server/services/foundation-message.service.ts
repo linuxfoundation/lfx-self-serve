@@ -3,7 +3,12 @@
 
 import { FOUNDATION_MESSAGE_CONTRACT_ID } from '@lfx-one/shared/constants';
 import { FoundationMessageEnvelope, FoundationMessageResultResponse } from '@lfx-one/shared/interfaces';
-import { buildFoundationMessageFormPayload, extractMktgEnvelopeCandidates, validateFoundationMessageEnvelope } from '@lfx-one/shared/utils';
+import {
+  buildFoundationMessageFormPayload,
+  extractMktgEnvelopeCandidates,
+  renderFoundationMessageFormText,
+  validateFoundationMessageEnvelope,
+} from '@lfx-one/shared/utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
 
@@ -16,11 +21,17 @@ import { logger } from './logger.service';
  * brand-kit flow's sibling with two twists:
  *
  * 1. The batch submission is the agent's typed
- *    `message_foundation_intake_form` payload sent as the Guild session's
- *    structured `agent_input` (the agent's own zod preprocess renders it) —
- *    not a BFF-rendered text message. The README is fetched server-side
- *    (the agent has no web access) and NEVER blocks the run: a failed fetch
- *    just omits `readme_markdown` and the agent marks gaps TBD.
+ *    `message_foundation_intake_form` payload, transported by default as a
+ *    BFF-rendered text message (`renderFoundationMessageFormText` — a
+ *    verbatim mirror of the agent's own form renderer). Live-smoked
+ *    2026-08-20: Guild coerces a structured `agent_input` to
+ *    `{type:'text', text: JSON.stringify(payload)}` before the agent's zod
+ *    preprocess runs, so sending the object raw feeds the model unrendered
+ *    JSON; `GUILD_STRUCTURED_AGENT_INPUT=true` flips back to the structured
+ *    transport without a redeploy once Guild passes objects through. The
+ *    README is fetched server-side (the agent has no web access) and NEVER
+ *    blocks the run: a failed fetch just omits `readme_markdown` and the
+ *    agent marks gaps TBD.
  * 2. Regeneration is a full resubmit on a FRESH session: the payload carries
  *    `feedback` + `prior_version`, and the agent finalizes as
  *    `prior_version + 1` — which is exactly what the result poll's
@@ -34,6 +45,18 @@ import { logger } from './logger.service';
 export class FoundationMessageService {
   private readonly guildService = new GuildService();
   private readonly githubReadmeService = new GithubReadmeService();
+
+  /**
+   * Whether the typed form payload is sent as the Guild session's structured
+   * `agent_input` instead of the default BFF-rendered text message. Default
+   * OFF: the live smoke (2026-08-20) showed Guild coercing structured inputs
+   * to `{type:'text', text:JSON.stringify(payload)}` before the agent's
+   * preprocess, bypassing its form renderer. Flip to `true` without a
+   * redeploy once Guild delivers structured inputs verbatim.
+   */
+  private get structuredAgentInputEnabled(): boolean {
+    return process.env['GUILD_STRUCTURED_AGENT_INPUT'] === 'true';
+  }
 
   /**
    * Start a one-shot form-mode generation session (fresh session for first
@@ -55,10 +78,17 @@ export class FoundationMessageService {
       priorVersion: options.priorVersion,
     });
 
-    // The typed form payload travels as the structured agent_input; the
-    // catalog handle rides as the explicit agent_id (no @mention can be
-    // prepended to a non-text input).
-    return this.guildService.createSession(req, { agentInput: payload as unknown as Record<string, unknown>, handle: guildAgentHandle });
+    // Structured transport (flag-gated): the typed payload travels as the
+    // Guild agent_input verbatim; the handle rides only as the explicit
+    // agent_id (no @mention can be prepended to a non-text input).
+    if (this.structuredAgentInputEnabled) {
+      return this.guildService.createSession(req, { agentInput: payload, handle: guildAgentHandle });
+    }
+
+    // Default: render the agent's own form-mode message text (verbatim
+    // mirror of its renderFormMessage) and ride the known-good text
+    // transport — @handle prepend AND explicit agent_id, belt and braces.
+    return this.guildService.createSession(req, { message: renderFoundationMessageFormText(payload), handle: guildAgentHandle });
   }
 
   /**

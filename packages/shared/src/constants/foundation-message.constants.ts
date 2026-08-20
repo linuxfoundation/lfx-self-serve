@@ -113,6 +113,21 @@ export const FOUNDATION_MESSAGE_INTAKE_ANSWERS_MAX = 15;
 // ---------------------------------------------------------------------------
 
 /**
+ * Preamble lines of the batch form-mode message, quoted VERBATIM from the
+ * agent's own `renderFormMessage` (marketing-os-agents
+ * `agents/foundation-message-ts` src/form.ts) — the exact text the agent's
+ * MODE RULES section tells the model to expect. Single copy: used by the
+ * BFF's `renderFoundationMessageFormText` and registered as the intake's
+ * `batchPreamble`.
+ */
+export const FOUNDATION_MESSAGE_FORM_PREAMBLE_LINES = [
+  'BATCH INTAKE SUBMISSION (form mode — see MODE RULES in your instructions).',
+  'The interview inputs were collected on a single LFX form and are provided',
+  'below, paired with your Step 1 questions. Do NOT re-ask them; proceed',
+  'directly to Step 2.',
+] as const;
+
+/**
  * Size cap (chars) for the server-fetched README passed as
  * `readme_markdown`. READMEs are prompt input, not storage — anything past
  * this is truncated with an explicit marker so the agent never sees a

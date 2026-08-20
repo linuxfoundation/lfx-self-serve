@@ -79,7 +79,7 @@ export class GuildService {
    * (default ON; set to `false` to drop the field without a redeploy in case
    * the API rejects unknown fields).
    */
-  public async createSession(req: Request, params: { message?: string; agentInput?: Record<string, unknown>; handle?: string }): Promise<string> {
+  public async createSession(req: Request, params: { message?: string; agentInput?: object; handle?: string }): Promise<string> {
     this.assertConfigured('guild_create_session', { requireWorkspace: true });
 
     if (params.agentInput === undefined && params.message === undefined) {
@@ -89,7 +89,7 @@ export class GuildService {
       });
     }
 
-    const agentInput: Record<string, unknown> = params.agentInput ?? { type: 'text', text: this.applyRouting(params.message ?? '', params.handle) };
+    const agentInput: object = params.agentInput ?? { type: 'text', text: this.applyRouting(params.message ?? '', params.handle) };
     const path = `/api/workspaces/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.workspace)}/sessions`;
 
     const body: Record<string, unknown> = {
@@ -97,7 +97,13 @@ export class GuildService {
       agent_input: agentInput,
     };
     if (params.handle && this.explicitAgentIdEnabled) {
-      body['agent_id'] = params.handle;
+      // Guild resolves agents by UUID or by FULL name `owner~name` — the bare
+      // name is not an identifier (404s, and is ambiguous across owners). The
+      // catalog `guildAgentHandle` is the name half; the workspace owner
+      // completes it. Verified live 2026-08-20: session creation with
+      // `agent_id: 'linux-foundation~foundation-message'` returns 201 and the
+      // trigger binds to that agent.
+      body['agent_id'] = `${this.owner}~${params.handle}`;
     }
 
     logger.debug(req, 'guild_create_session', 'Creating Guild session', {

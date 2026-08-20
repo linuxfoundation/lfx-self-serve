@@ -161,6 +161,10 @@ describe('GuildService.getRawEventPayloads', () => {
  * prepend on text messages — flippable off via GUILD_EXPLICIT_AGENT_ID
  * without a redeploy — and structured agent inputs (typed batch forms)
  * must pass through verbatim, where a mention cannot ride along.
+ *
+ * `agent_id` must be the Guild-resolvable FULL identifier `owner~name`
+ * (workspace owner + catalog handle) — the bare handle is not an agent
+ * identifier (404s against the live API and is ambiguous across owners).
  */
 describe('GuildService.createSession — explicit agent_id routing', () => {
   let service: GuildService;
@@ -185,12 +189,12 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
     vi.clearAllMocks();
   });
 
-  it('passes agent_id by default (flag unset) AND keeps the @handle prepend on text messages — belt and braces', async () => {
+  it('passes the full owner~name agent_id by default (flag unset) AND keeps the @handle prepend on text messages — belt and braces', async () => {
     const sessionId = await service.createSession(req, { message: 'hello there', handle: 'foundation-message' });
 
     expect(sessionId).toBe('session-new');
     const body = sentBody();
-    expect(body['agent_id']).toBe('foundation-message');
+    expect(body['agent_id']).toBe('owner~foundation-message');
     expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message hello there' });
   });
 
@@ -204,13 +208,13 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
     expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message hello there' });
   });
 
-  it('sends a structured agent input verbatim with agent_id (no mention can ride a typed form payload)', async () => {
+  it('sends a structured agent input verbatim with the owner~name agent_id (no mention can ride a typed form payload)', async () => {
     const form = { type: 'message_foundation_intake_form', project_name: 'X', github_url: 'https://github.com/x/y' };
 
     await service.createSession(req, { agentInput: form, handle: 'foundation-message' });
 
     const body = sentBody();
-    expect(body['agent_id']).toBe('foundation-message');
+    expect(body['agent_id']).toBe('owner~foundation-message');
     expect(body['agent_input']).toEqual(form);
   });
 

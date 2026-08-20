@@ -27,6 +27,10 @@ export const MKTG_OS_AGENTS_ROUTE_SEGMENT = 'mktg-os-agents';
 //
 // `guildAgentHandle` values must match a LIVE agent's name in the
 // linux-foundation/marketing-os Guild workspace, or routing silently fails.
+// The handle is the NAME half only: the BFF prepends it as the transitional
+// `@handle` mention on text messages, and composes the Guild-resolvable
+// agent identifier as `<GUILD_WORKSPACE_OWNER>~<handle>` for the explicit
+// `agent_id` (the bare name is not a Guild identifier — it 404s).
 // `brand-kit` is live (Guild agent linux-foundation~brand-kit).
 export const MKTG_AGENTS: MktgAgent[] = [
   {
