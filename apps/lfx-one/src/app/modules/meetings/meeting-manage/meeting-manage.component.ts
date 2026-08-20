@@ -141,7 +141,9 @@ export class MeetingManageComponent {
   // Owner hydrated from the loaded meeting (edit mode). prepareOwnerData() compares against this
   // to omit the owner key when the picker is untouched — upstream replaces owner as a whole
   // object, so re-sending an unchanged owner would silently drop its stored profile_picture.
-  private hydratedOwner: MeetingUserInfo | null = null;
+  // Exposed publicly so the wizard can pass it down as the organizer picker's revert-on-clear
+  // baseline (savedOwner input on lfx-meeting-details).
+  public readonly hydratedOwner = signal<MeetingUserInfo | null>(null);
   public registrantUpdates = signal<RegistrantPendingChanges>({
     toAdd: [],
     toUpdate: [],
@@ -628,7 +630,7 @@ export class MeetingManageComponent {
       return {};
     }
 
-    const hydrated = this.hydratedOwner;
+    const hydrated = this.hydratedOwner();
     if (hydrated && hydrated.username === username && hydrated.name === name && hydrated.email === email) {
       return {};
     }
@@ -655,7 +657,7 @@ export class MeetingManageComponent {
     const email = (formValue.ownerEmail || '').trim();
 
     if (username || name || email) {
-      this.hydratedOwner = { username, name, email };
+      this.hydratedOwner.set({ username, name, email });
     }
   }
 
@@ -1112,7 +1114,7 @@ export class MeetingManageComponent {
     // Hydrate the owner picker from the stored owner; zero-valued and service-account owners
     // resolve to null, so the picker shows empty and prepareOwnerData() omits the key on save.
     const ownerInfo = resolveMeetingOwner(meeting);
-    this.hydratedOwner = ownerInfo;
+    this.hydratedOwner.set(ownerInfo);
 
     this.form().patchValue({
       title: meeting.title,
