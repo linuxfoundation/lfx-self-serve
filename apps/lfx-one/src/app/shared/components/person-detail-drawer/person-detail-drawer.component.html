@@ -8,11 +8,11 @@
   position="right"
   [modal]="true"
   [showCloseIcon]="true"
-  styleClass="xl:w-[36%] lg:w-[46%] md:w-[60%] sm:w-[80%] w-full"
+  styleClass="person-detail-drawer xl:w-[36%] lg:w-[46%] md:w-[60%] sm:w-[80%] w-full"
   data-testid="person-detail-drawer">
   @if (drawer.activeContext(); as context) {
     <ng-template #header>
-      <div class="flex min-w-0 items-center gap-3" data-testid="person-detail-drawer-header">
+      <div class="flex min-w-0 items-start gap-3" data-testid="person-detail-drawer-header">
         @if (context.avatarUrl) {
           <img
             [src]="context.avatarUrl"
