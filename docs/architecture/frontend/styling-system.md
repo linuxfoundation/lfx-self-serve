@@ -242,15 +242,21 @@ options: {
 ### Breakpoint Strategy
 
 ```typescript
-// Tailwind breakpoints
+// Tailwind breakpoints — set via theme.screens in apps/lfx-one/tailwind.config.js.
+// `2xl` is overridden from Tailwind's 1536px default to 1440px; sm/md/lg/xl match the defaults.
 const breakpoints = {
   sm: '640px',
   md: '768px',
   lg: '1024px',
   xl: '1280px',
-  '2xl': '1536px',
+  '2xl': '1440px',
 };
 ```
+
+`theme.container.screens` is a separate config block that only sizes the `.container` utility
+class's max-width per breakpoint — it does not affect the `sm:`/`md:`/etc. responsive variant
+prefixes used everywhere else in templates. Those come from `theme.screens` above. Keep both in
+sync when changing a breakpoint value.
 
 ### Responsive Patterns
 

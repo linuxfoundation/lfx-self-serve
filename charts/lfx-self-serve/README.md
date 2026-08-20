@@ -191,12 +191,13 @@ Campaign endpoints are being moved off this application's vendor-direct integrat
 lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
 changing a value here rather than by shipping a revert.
 
-| Parameter                                             | Description                                                                                                                         | Required | Default |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`       | Serves campaign job status from campaign-service; see the accepted values below                                                     | No       | off     |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`     | Persists the generated brief in campaign-service instead of only in the browser tab                                                 | No       | off     |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`     | Creates campaigns through campaign-service instead of the per-platform Express services                                             | No       | off     |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below | No       | off     |
+| Parameter                                                | Description                                                                                                                         | Required | Default |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`          | Serves campaign job status from campaign-service; see the accepted values below                                                     | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`        | Persists the generated brief in campaign-service instead of only in the browser tab                                                 | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`        | Creates campaigns through campaign-service instead of the per-platform Express services                                             | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`    | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below | No       | off     |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                | No       | off     |
 
 Every cutover flag in the table above is ON for `true`, `1`, `yes`, or `on` — trimmed and matched
 case-insensitively, so `"True"` and `" on "` also enable it. Every other value is OFF, including
@@ -220,6 +221,31 @@ There is no version probe because campaign-service exposes no version endpoint, 
 support from a successful create is exactly the ambiguity that makes this dangerous. So the order
 is: deploy campaign-service with LFXV2-3257, confirm it, then set this. Left off, a Demand Gen
 create is refused with a message telling the user to select Search instead.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` moves campaign pause/resume onto campaign-service,
+and what it buys is REACH rather than a different backend. The path it replaces is a `switch` over
+Meta and Reddit whose default arm throws, so pause was unavailable for every other platform no
+matter what the allowlist said. Since pause is the primary cost-control lever on a mis-targeted or
+overspending campaign, "cannot pause Google Ads from the product" meant logging into Google Ads.
+
+**Turning it on does NOT give users a pause button.** It enables the SERVER path only. The app
+cannot call it yet — pausing a campaign-service campaign needs its UUID, brief id and ETag, and
+nothing in the UI can obtain any of them until the campaign read lands (LFXV2-3099). So the reach
+above is reach the API gains, not a control the product grows. An operator flipping this expecting
+a working pause control would find nothing changed on screen. Enable it when the UI half ships, or
+earlier if you want the endpoint reachable for direct API use.
+
+An overlapping rollout is SAFE here, and it is worth saying why, because the hazard recorded for
+`LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` looks identical and is not. Routing runs a campaign-id SHAPE
+check BEFORE and INDEPENDENTLY of this flag — that is the actual safety property. The two id
+spaces are disjoint (campaign-service keys campaigns by UUID; the legacy path uses the ad
+platform's numeric id), so no request can be claimed by both paths and a flag-on pod and a
+flag-off pod cannot disagree about where one belongs. A flag-off pod handed a UUID refuses with a
+clear error instead of answering the confident `not_found` that made the JOBS flag dangerous.
+
+It is INERT until `LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE` has been on long enough to produce
+UUID-keyed campaigns, because a campaign only has a UUID if campaign-service created it. Enabling
+it earlier is harmless, just useless.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` gates both halves of brief persistence: the write
 (`POST /api/campaigns/brief/persist`, called when a user approves a brief and moves to the

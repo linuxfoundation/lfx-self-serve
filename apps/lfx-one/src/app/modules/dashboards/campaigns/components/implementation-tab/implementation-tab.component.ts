@@ -13,6 +13,16 @@ import {
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
   META_CHAR_LIMITS,
+  META_DEFAULT_PLACEMENTS,
+  META_MESSENGER_INBOX_RETIRED_REASON,
+  META_NUMERIC_ID_PATTERN,
+  META_OBJECTIVE_LABELS,
+  META_PLACEMENT_LABELS,
+  META_SELECTABLE_PLACEMENTS,
+  META_INELIGIBLE_COUNTRIES,
+  normalizeGeoTargets,
+  CAMPAIGN_PLATFORMS,
+  REDDIT_MAX_BUDGET_USD,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -34,6 +44,8 @@ import type {
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
   MetaAdVariant,
+  MetaObjective,
+  MetaPlacement,
   RedditAdVariant,
 } from '@lfx-one/shared/interfaces';
 
@@ -110,6 +122,23 @@ export class ImplementationTabComponent implements OnInit {
   public readonly draft = input<CampaignImplementationDraft | null>(null);
 
   /**
+   * The HubSpot marketing-email id chosen in the email template picker, or '' when none is.
+   *
+   * Threaded through so the picker's selection reaches `hubspotConfig.sourceEmailId` on create.
+   * Until now `selectedEmailTemplateId` was write-only — set by the picker, read only for
+   * `aria-pressed` and row styling — so the choice never left the parent component.
+   *
+   * **This input is not yet reachable from the email UI.** The picker lives in the parent's Email
+   * container and this component renders only under Paid Marketing (`[style.display]` keyed on
+   * `isEmail()`), and its own `selectedPlatforms` is typed `CampaignPlatform[]`, which by
+   * construction excludes `'hubspot'` — only the wider `CampaignAnyPlatform` on the request
+   * admits it. There is therefore no email create trigger anywhere in the app today. The wiring
+   * below is the seam: it carries the value correctly the moment a trigger binds this input, and
+   * costs nothing while nothing does.
+   */
+  public readonly sourceEmailId = input<string>('');
+
+  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *
@@ -155,6 +184,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly charLimits = CAMPAIGN_CHAR_LIMITS;
   protected readonly linkedInCharLimits = LINKEDIN_CHAR_LIMITS;
   protected readonly metaCharLimits = META_CHAR_LIMITS;
+  protected readonly metaObjectiveLabels = META_OBJECTIVE_LABELS;
+  protected readonly metaObjectiveOptions = Object.keys(META_OBJECTIVE_LABELS) as MetaObjective[];
+  protected readonly metaPlacementLabels = META_PLACEMENT_LABELS;
+  protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
+  protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
+  protected readonly redditMaxBudget = REDDIT_MAX_BUDGET_USD;
   protected readonly allKnownGeos: LinkedInGeoTarget[] = [...new Map(Object.values(LINKEDIN_GEO_RESOLVE_MAP).map((g) => [g.urn, g])).values()];
   protected readonly todayDate = new Date().toISOString().split('T')[0];
   protected readonly defaultEndDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0];
@@ -176,6 +211,26 @@ export class ImplementationTabComponent implements OnInit {
     includeDemandGen: [true],
     headlines: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)])]),
     descriptions: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)])]),
+    // The LinkedIn ad account, geo targets and targeting profile, on the FORM rather than in
+    // signals (LFXV2-3230). All three are user-editable — a select, an add/remove chip list and a
+    // two-button toggle — and all three used to be destroyed by a tab switch, then silently
+    // re-stamped from the brief on remount, so the revert looked like the AI's recommendation
+    // standing rather than the user's choice being lost.
+    //
+    // Being on the form buys the RESTORE and the emission trigger: `valueChanges` already feeds
+    // `emitDraft`, so no handler emits by hand, and `applyDraft`'s existing `patchValue` replays
+    // them with no extra signal writes. It does NOT save the three members on
+    // `CampaignImplementationDraft` — `emitDraft` builds an object literal, so a control still has
+    // to be named there to reach the draft. The saving is that the value has one home instead of
+    // four (handler, `submit`, seed, snapshot).
+    //
+    // NO validators, deliberately. `canSubmit` already gates the LinkedIn section on a non-empty
+    // geo list, and it reads the whole form's validity for GOOGLE (`campaignForm.invalid`) — a
+    // required-validator here would make an empty LinkedIn geo list block a Google-only campaign
+    // that has nothing to do with LinkedIn.
+    linkedInAccountId: [''],
+    linkedInGeoTargets: [[] as LinkedInGeoTarget[]],
+    linkedInTargetingProfile: ['cloud-native' as LinkedInTargetingProfile],
   });
 
   // === WritableSignals ===
@@ -241,14 +296,11 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly briefHsToken = signal<string | null>(null);
   protected readonly briefDriveFolderUrl = signal('');
   protected readonly selectedPlatforms = signal<CampaignPlatform[]>(['google-ads']);
-  protected readonly linkedInGeoTargets = signal<LinkedInGeoTarget[]>([]);
-  protected readonly linkedInTargetingProfile = signal<LinkedInTargetingProfile>('cloud-native');
   protected readonly linkedInVariants = signal<LinkedInCreativeVariant[]>([]);
   protected readonly linkedInBudgetUsd = signal(500);
   protected readonly linkedInLifetimeBudget = signal(false);
   protected readonly linkedInAccounts = signal<LinkedInAccount[]>([]);
   protected readonly linkedInAccountsLoading = signal(false);
-  protected readonly linkedInAccountId = signal<string>('');
   protected readonly redditVariants = signal<RedditAdVariant[]>([]);
   protected readonly redditSubreddits = signal<string[]>([]);
   protected readonly redditInterests = signal<string[]>([]);
@@ -259,12 +311,208 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
   protected readonly metaLifetimeBudget = signal(false);
+  /**
+   * Meta campaign objective. Defaults to `traffic`, matching what campaign-service assumes when
+   * the field is absent, so turning the selector on does not silently change any existing
+   * caller's campaign.
+   */
+  protected readonly metaObjective = signal<MetaObjective>('traffic');
+  /**
+   * Placement toggles, seeded from the shared defaults so the initial state is the one the
+   * service would have applied anyway.
+   *
+   * Typed `MetaPlacement` (complete), not `Partial`, because the UI holds a definite answer for
+   * every key it renders. Only the entries that DIFFER from the defaults are sent — placements
+   * merge per-field upstream, so an override-only payload is both correct and smaller.
+   */
+  protected readonly metaPlacements = signal<MetaPlacement>({ ...META_DEFAULT_PLACEMENTS });
+  /** Meta Pixel id. Only read — and only required — under the `conversions` objective. */
+  protected readonly metaPixelId = signal('');
 
   // === Computed Signals ===
   protected readonly showGoogleSection = computed(() => this.selectedPlatforms().includes('google-ads'));
   protected readonly showLinkedInSection = computed(() => this.selectedPlatforms().includes('linkedin-ads'));
   protected readonly showRedditSection = computed(() => this.selectedPlatforms().includes('reddit-ads'));
+  /**
+   * The keywords a Reddit dispatch will actually carry.
+   *
+   * Mirrors `submit()`'s own fallback: brief-supplied Reddit keywords when present, otherwise the
+   * generic brief keywords. Showing only `redditKeywords()` would render an empty list for the
+   * common case where the fallback is what ships — the section would then be hiding exactly the
+   * targeting it exists to surface.
+   */
+  protected readonly redditEffectiveKeywords = computed<string[]>(() =>
+    this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term)
+  );
+
+  /**
+   * The geo targets a Reddit dispatch will actually carry.
+   *
+   * Same reason as `redditEffectiveKeywords`: `submit()` falls back to the form's country code
+   * when the brief recommends no geos, so rendering only `redditGeoTargets()` shows an empty
+   * list for a request that targets somewhere specific. A section built so the operator can
+   * review what dispatches has to show the value that dispatches.
+   */
+  /**
+   * The form's country code as a SIGNAL.
+   *
+   * `campaignForm.controls.countryCode.value` is a plain read — not a reactive dependency — so a
+   * `computed` over it memoises and never updates. An RxJS pipeline keyed on `valueChanges` has
+   * the mirror-image bug: it tracks the country but NOT `redditGeoTargets()`, which
+   * `populateFromBrief` assigns AFTER patching the form, so the recommended geos arrive with
+   * nothing left to re-run the map. Both inputs have to be signals for the derivation to hold.
+   */
+  private readonly countryCodeValue = toSignal(
+    this.campaignForm.controls.countryCode.valueChanges.pipe(startWith(this.campaignForm.controls.countryCode.value)),
+    { initialValue: this.campaignForm.controls.countryCode.value }
+  );
+
+  /**
+   * The three LinkedIn controls as SIGNALS, for the same reason `countryCodeValue` is one
+   * (LFXV2-3230).
+   *
+   * They moved from signals onto `campaignForm` so the draft carries them, but the template,
+   * `canSubmit` and `availableGeoTargets` all read them reactively. A plain
+   * `controls.linkedInGeoTargets.value` read is not a reactive dependency, so a `computed` over
+   * it would memoise on first read and never update — the chip list would stop re-rendering as
+   * the user adds and removes geos. Bridging through `toSignal` keeps every existing reader
+   * working unchanged while the value itself lives on the form.
+   *
+   * `startWith` seeds the current value rather than a literal, so these are correct from first
+   * read rather than only after the first edit.
+   */
+  protected readonly linkedInAccountId = toSignal(
+    this.campaignForm.controls.linkedInAccountId.valueChanges.pipe(startWith(this.campaignForm.controls.linkedInAccountId.value)),
+    { initialValue: this.campaignForm.controls.linkedInAccountId.value }
+  );
+
+  /**
+   * Coalesced to `[]` HERE rather than at each reader, because the readers are the whole surface:
+   * `canSubmit`, `availableGeoTargets`, `submit()` and two template blocks all read this, and four
+   * of the five would throw on an absent value (`.length`, `.map`, `@for`). Guarding one call site
+   * leaves the other four, and the crash in `availableGeoTargets` is reached from the TEMPLATE, so
+   * it takes down the tab rather than one control.
+   *
+   * The value can be absent even though `CampaignImplementationDraft` declares it non-optional:
+   * that is a compile-time claim, and `applyDraft` hands `patchValue` whatever the draft holds
+   * while `patchValue` passes `undefined` straight through. Unreachable today — `emitDraft` is the
+   * only non-null producer and the draft is in-memory — but a required TYPE is not what keeps it
+   * safe, so the guard belongs at the boundary the values flow through.
+   */
+  protected readonly linkedInGeoTargets = computed<LinkedInGeoTarget[]>(() => this.linkedInGeoTargetsRaw() ?? []);
+
+  private readonly linkedInGeoTargetsRaw = toSignal(
+    this.campaignForm.controls.linkedInGeoTargets.valueChanges.pipe(startWith(this.campaignForm.controls.linkedInGeoTargets.value)),
+    { initialValue: this.campaignForm.controls.linkedInGeoTargets.value }
+  );
+
+  protected readonly linkedInTargetingProfile = toSignal(
+    this.campaignForm.controls.linkedInTargetingProfile.valueChanges.pipe(startWith(this.campaignForm.controls.linkedInTargetingProfile.value)),
+    { initialValue: this.campaignForm.controls.linkedInTargetingProfile.value }
+  );
+
+  /**
+   * The geo targets a Reddit dispatch will actually carry.
+   *
+   * Mirrors `submit()`'s fallback to the form's country code, so the preview shows the value that
+   * ships rather than an empty list for a request that targets somewhere specific.
+   */
+  protected readonly redditEffectiveGeoTargets: Signal<string[]> = computed(() => {
+    // Normalise FIRST, then decide whether to fall back. Choosing the branch on the RAW
+    // recommendation strands the form's country: a brief carrying an unusable ['USA'] is
+    // non-empty, so it wins the branch, filters to nothing, and canSubmit blocks the section
+    // permanently — with a perfectly valid US sitting unread in the form. The fallback is for
+    // "the brief offers no usable geo", and non-empty is not the same test as usable.
+    const recommended = this.normaliseGeoCodes(this.redditGeoTargets());
+    if (recommended.length > 0) return recommended;
+    return this.normaliseGeoCodes([this.countryCodeValue()]);
+  });
+  /**
+   * Subreddit names as they will DISPATCH. A restored brief keeps whatever the generator wrote,
+   * and `r/k8s` is a real stored value (campaign-service.service.spec.ts asserts it survives
+   * restore verbatim). The dispatch side strips an optional `r/`, so rendering the raw value
+   * under a fixed `r/` prefix previews `r/r/k8s` — a section whose entire purpose is showing
+   * what will be sent must not show something else.
+   */
+  protected readonly redditEffectiveSubreddits: Signal<string[]> = computed(() =>
+    this.redditSubreddits()
+      .map((sub) => sub.trim().replace(/^\/?r\//i, ''))
+      .filter((sub) => sub.length > 0)
+  );
+
+  /**
+   * The geo list a Meta create would ACTUALLY send — one value for both the preview and `submit()`.
+   *
+   * They were derived separately, and that is what let them disagree: the preview printed
+   * `countryCode` raw while `submit()` sent `[countryCode]` through the server's normaliser. With
+   * `countryCode` blank (it carries no validator) the preview read "defaults to " and the request
+   * carried `['']`, which the server resolved to `US` — a paid US-targeted campaign the operator
+   * was never shown. Deriving both from here means the screen cannot claim one target while the
+   * request buys another.
+   *
+   * Empty is a real answer, not a bug: it means nothing usable was supplied, and `canSubmit`
+   * blocks on it rather than letting the server pick a country on the operator's behalf.
+   */
+  protected readonly metaEffectiveGeoTargets = computed<string[]>(() => {
+    const chips = normalizeGeoTargets(this.metaGeoTargets());
+    const eligibleChips = chips.filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
+    if (eligibleChips.length > 0) return eligibleChips;
+    return normalizeGeoTargets([this.countryCodeValue()]).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
+  });
+
   protected readonly showMetaSection = computed(() => this.selectedPlatforms().includes('meta-ads'));
+
+  /** Whether the pixel field applies at all — only `conversions` carries a promoted pixel object. */
+  protected readonly metaRequiresPixel = computed(() => this.metaObjective() === 'conversions');
+
+  /**
+   * Whether at least one SELECTABLE placement is on.
+   *
+   * Mirrors campaign-service's `buildPlacementTargeting`, which refuses a request whose
+   * `publisher_platforms` list comes out empty. `messengerInbox` is excluded from the count
+   * because it cannot contribute a platform there either — it is rejected outright before the
+   * emptiness check is even reached — so counting it would let the UI pass a config the service
+   * fails twice over.
+   */
+  protected readonly metaHasPlacement = computed(() => {
+    const placements = this.metaPlacements();
+    return this.metaSelectablePlacements.some((key) => placements[key]);
+  });
+
+  /**
+   * The placement entries that DIFFER from `META_DEFAULT_PLACEMENTS`, which is all the payload
+   * needs to carry: campaign-service merges the override map field-by-field over the same
+   * defaults, so an omitted key and a key repeating the default are indistinguishable upstream.
+   *
+   * `messengerInbox` can never appear. It is `false` in the defaults and no code path sets it
+   * `true`, so the difference filter drops it — the payload cannot carry the one value the
+   * service rejects outright.
+   */
+  protected readonly metaPlacementOverrides = computed<Partial<MetaPlacement>>(() => {
+    const placements = this.metaPlacements();
+    const overrides: Partial<MetaPlacement> = {};
+    for (const key of Object.keys(placements) as (keyof MetaPlacement)[]) {
+      if (placements[key] !== META_DEFAULT_PLACEMENTS[key]) overrides[key] = placements[key];
+    }
+    return overrides;
+  });
+
+  /**
+   * Whether the pixel id is acceptable for the CURRENT objective.
+   *
+   * True whenever no pixel is required, because a stale value left in the box after switching
+   * away from `conversions` is not sent and cannot fail. Under `conversions` the id must be
+   * non-empty AND numeric: campaign-service's `buildPromotedObject` applies exactly these two
+   * checks, and it applies them BEFORE any mutating call — so catching a malformed id here
+   * changes nothing about the outcome, only about whether the user waits for a round trip to
+   * hear it. Trimmed first because upstream trims before both checks, so `' '` must read as
+   * empty here too rather than passing a truthiness test locally and being refused there.
+   */
+  protected readonly metaPixelValid = computed(() => {
+    if (!this.metaRequiresPixel()) return true;
+    const trimmed = this.metaPixelId().trim();
+    return trimmed !== '' && META_NUMERIC_ID_PATTERN.test(trimmed);
+  });
   protected readonly selectedLinkedInAccount = computed(() => {
     const accounts = this.linkedInAccounts();
     return accounts.find((a) => a.accountId === this.linkedInAccountId()) ?? accounts[0];
@@ -287,8 +535,41 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
+    // The account must be one the CATALOG confirms, not merely a non-empty string.
+    //
+    // `ngOnInit`'s reconciliation only runs on a successful response, so it cannot cover the two
+    // windows either side of it: before the request returns, and permanently if it fails. In both
+    // the restored id is still on the form while `linkedInAccounts()` is empty, so a create would
+    // dispatch an account nothing has verified and the selector is not displaying — the same
+    // divergence the reconciliation closes, reached where it does not run.
+    //
+    // Membership is the test rather than "loading finished", because a failed fetch leaves
+    // loading false with an empty catalog, which is exactly when this matters most. It also
+    // covers the blank id for free. The gate is scoped to LinkedIn, so a Google-only or
+    // Reddit-only create is unaffected by an ad-account endpoint being down.
+    if (linkedInSelected && !this.linkedInAccounts().some((a) => a.accountId === this.linkedInAccountId())) return false;
     if (metaSelected && this.metaBudgetUsd() < 1) return false;
+    // No usable geo at all: every chip ineligible (or none) AND no usable countryCode. The request
+    // would otherwise carry nothing and let the server default to US — spending on a country the
+    // operator neither chose nor saw.
+    if (metaSelected && this.metaEffectiveGeoTargets().length === 0) return false;
+    // Reddit's client rejects a non-positive budget at dispatch (client.go: "invalid budget:
+    // must be a positive number"), and because creation is async that surfaces as a dead job
+    // rather than an error on the request. Refuse locally instead.
+    //
+    // Budget only: unlike Meta and LinkedIn, Reddit's remaining inputs are all AI-recommended
+    // from the brief and rendered read-only for review, so there is no user-entered value left to
+    // validate. The section exists so the operator SEES what will dispatch. Deliberately not an
+    // enumeration — listing which inputs those are is a claim the next added field falsifies.
+    if (redditSelected && !this.redditBudgetIsUsable()) return false;
+    // No usable geo at all — the brief recommended none AND the country code is blank. The
+    // request would carry [''], which Reddit cannot target and the operator cannot see, because
+    // the preview correctly renders nothing. countryCode has no validator, so this state is
+    // reachable by clearing one optional field.
+    if (redditSelected && this.redditEffectiveGeoTargets().length === 0) return false;
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
+    if (metaSelected && !this.metaHasPlacement()) return false;
+    if (metaSelected && !this.metaPixelValid()) return false;
 
     // Blocked while a brief save is in flight, because the create needs the id that save produces.
     //
@@ -402,10 +683,15 @@ export class ImplementationTabComponent implements OnInit {
       this.emitDraft();
     });
 
-    // Emit as the user types. `valueChanges` covers the form (copy, budget, flight, campaign
-    // types); it does NOT cover the platform signals, which is deliberate — see the draft
-    // interface for why this snapshot is scoped to the fields a user types rather than everything
-    // the component holds.
+    // Emit as the user edits. `valueChanges` covers everything on `campaignForm` — copy, budget,
+    // flight, campaign types, and since LFXV2-3230 the three LinkedIn picks (ad account, geo
+    // targets, targeting profile). Moving those three onto the form is what makes their restore
+    // work: this subscription emits on every pick with no per-handler plumbing.
+    //
+    // Still OUTSIDE it: the platform picks that remain signals — the LinkedIn budget pair and
+    // variants, and the Reddit fields — none of which `emitDraft` names, so they do not reach the
+    // draft at all. See the draft interface: the snapshot is scoped to the fields a user EDITS,
+    // which is broader than the ones they type, and excludes anything re-derived from a fetch.
     this.campaignForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       if (this.seeding) return;
       this.emitDraft();
@@ -421,8 +707,39 @@ export class ImplementationTabComponent implements OnInit {
       .subscribe({
         next: (accounts) => {
           this.linkedInAccounts.set(accounts);
-          if (accounts.length > 0 && !this.linkedInAccountId()) {
-            this.linkedInAccountId.set(accounts[0].accountId);
+          // Keep the restored selection only if this catalog still CONTAINS it; otherwise fall
+          // back to the first account.
+          //
+          // A blank-only check was enough until this commit and is not any more. Persisting the id
+          // (LFXV2-3230) makes a STALE one reachable for the first time: the list is refetched on
+          // every mount and an account can be revoked or lose permission between them. A stale id
+          // then splits the page in two — `selectedLinkedInAccount` resolves the label and
+          // org/status line through `accounts.find(...) ?? accounts[0]`, and the `<select>` cannot
+          // render an unmatched value either, so both show the FIRST account, while `submit()`
+          // sends `linkedInAccountId()` verbatim. The operator reads one account and spends money
+          // on another, with nothing on screen to say so.
+          //
+          // That fallback pre-dates this change but was unreachable while the id was not carried
+          // on the draft, which is why closing it belongs here rather than in a follow-up.
+          //
+          // Correcting silently rather than prompting: the operator never chose this state, the
+          // first account is what every other surface is already showing, and the alternative is a
+          // modal on a path that is noisy enough. Membership also subsumes the first-visit case —
+          // '' is never in the list.
+          //
+          // Writes through the form rather than a signal, since that is where the value now lives.
+          // `emitEvent` is left ON deliberately — this assignment CHANGES what `submit()` would
+          // send, so the parent's draft has to learn about it; suppressing the event would leave
+          // the draft carrying a value the form and the request no longer agree with.
+          // An EMPTY catalog is a real answer, not a skip. `loadLinkedInConfig` falls back to
+          // `accounts: []` when the LinkedIn config is absent or malformed, so a successful
+          // response can carry nothing — and a restored id would then survive with no account to
+          // match it, dispatching a stale value while the selector shows an empty list. Clearing
+          // is the honest result, and `canSubmit`'s membership gate then BLOCKS the create rather
+          // than letting it reach LinkedIn: an empty catalog contains no id, including ''. The
+          // operator sees Create disabled with an empty account list, which is the true state.
+          if (!accounts.some((a) => a.accountId === this.linkedInAccountId())) {
+            this.campaignForm.controls.linkedInAccountId.setValue(accounts[0]?.accountId ?? '');
           }
           this.linkedInAccountsLoading.set(false);
         },
@@ -467,20 +784,25 @@ export class ImplementationTabComponent implements OnInit {
     if (arr.length > 1) arr.removeAt(index);
   }
 
+  // The three handlers below write to `campaignForm` rather than to a signal (LFXV2-3230). That
+  // single change is what makes these edits survive a tab switch: `valueChanges` already drives
+  // `emitDraft`, so the parent's copy updates on every pick with no emission added here.
   protected removeGeoTarget(index: number): void {
-    this.linkedInGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
+    const current = this.campaignForm.controls.linkedInGeoTargets.value;
+    this.campaignForm.controls.linkedInGeoTargets.setValue(current.filter((_, i) => i !== index));
   }
 
   protected addGeoTarget(urn: string): void {
     if (!urn) return;
     const geo = this.allKnownGeos.find((g) => g.urn === urn);
-    if (geo && !this.linkedInGeoTargets().some((g) => g.urn === urn)) {
-      this.linkedInGeoTargets.update((targets) => [...targets, geo]);
+    const current = this.campaignForm.controls.linkedInGeoTargets.value;
+    if (geo && !current.some((g) => g.urn === urn)) {
+      this.campaignForm.controls.linkedInGeoTargets.setValue([...current, geo]);
     }
   }
 
   protected setLinkedInTargetingProfile(profile: LinkedInTargetingProfile): void {
-    this.linkedInTargetingProfile.set(profile);
+    this.campaignForm.controls.linkedInTargetingProfile.setValue(profile);
   }
 
   protected setLinkedInLifetimeBudget(value: boolean): void {
@@ -491,12 +813,12 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInBudgetUsd.set(value);
   }
 
-  protected setLinkedInAccount(accountId: string): void {
-    this.linkedInAccountId.set(accountId);
-  }
-
+  // `setLinkedInAccount` was removed here (LFXV2-3230). Nothing in this component's template
+  // called it — only a test did, which made the test pass against a broken `(change)` binding.
+  // `onLinkedInAccountChange` below is the real path and is what the round-trip test now drives.
+  // The identically-named methods on monitoring-tab and optimization-tab are live and untouched.
   protected onLinkedInAccountChange(event: Event): void {
-    this.linkedInAccountId.set((event.target as HTMLSelectElement).value);
+    this.campaignForm.controls.linkedInAccountId.setValue((event.target as HTMLSelectElement).value);
   }
 
   protected onGeoTargetChange(event: Event): void {
@@ -515,10 +837,101 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onMetaBudgetInput(event: Event): void {
     this.metaBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+    this.emitDraft();
+  }
+
+  /**
+   * Whether the Reddit budget is one the platform will accept.
+   *
+   * The CEILING and finiteness mirror the client's contract exactly
+   * (`internal/platform/reddit/client.go`: finite, within (0, 1e9]). Creation is ASYNC, so an
+   * over-cap budget is not a validation error the operator sees — it is a job that dies later and
+   * has to be gone and read.
+   *
+   * The 1 USD FLOOR is deliberately stricter than upstream, which accepts anything rounding to at
+   * least one micro-dollar. A sub-dollar Reddit campaign buys nothing, so a value in that range is
+   * far more likely a typo than an intent, and the siblings use the same 1 USD floor. Stated
+   * plainly rather than described as mirroring the client, because it does not.
+   *
+   * The siblings enforce neither bound; LFXV2-3315 covers bringing them into line.
+   */
+  protected redditBudgetIsUsable(): boolean {
+    const budget = this.redditBudgetUsd();
+    return Number.isFinite(budget) && budget >= 1 && budget <= REDDIT_MAX_BUDGET_USD;
+  }
+
+  protected onRedditBudgetInput(event: Event): void {
+    this.redditBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
   }
 
   protected onMetaLifetimeBudgetChange(event: Event): void {
     this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
+    this.emitDraft();
+  }
+
+  protected onMetaObjectiveChange(event: Event): void {
+    this.metaObjective.set((event.target as HTMLSelectElement).value as MetaObjective);
+    // Every Meta mutation emits. These signals are invisible to `campaignForm.valueChanges`, so
+    // without this the parent's draft never learns the edit and a tab switch reverts it.
+    this.emitDraft();
+  }
+
+  /**
+   * Toggle one placement.
+   *
+   * Refuses any key outside `META_SELECTABLE_PLACEMENTS`, which is what keeps `messengerInbox`
+   * unsettable even if a future template change bound a live control to it. The template renders
+   * that toggle disabled, but a disabled input is a presentation guarantee, not a state one.
+   */
+  protected onMetaPlacementChange(key: keyof MetaPlacement, event: Event): void {
+    if (!this.metaSelectablePlacements.includes(key)) return;
+    const enabled = (event.target as HTMLInputElement).checked;
+    this.metaPlacements.update((placements) => ({ ...placements, [key]: enabled }));
+    this.emitDraft();
+  }
+
+  protected onMetaPixelIdInput(event: Event): void {
+    this.metaPixelId.set((event.target as HTMLInputElement).value);
+    this.emitDraft();
+  }
+
+  protected removeMetaGeoTarget(index: number): void {
+    this.metaGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Add one Meta geo target, normalised through the shared `normalizeGeoTargets`.
+   *
+   * Runs the WHOLE list through the helper rather than just the new code, so an already-seeded
+   * chip list is normalised on first add too. Both the seed path and the server's
+   * `validateGeoTargets` call the same helper, so a `us` from the brief and a typed `US` collapse
+   * to one chip and one wire entry no matter which door they came through.
+   *
+   * Shape, ISO ASSIGNMENT and Meta ELIGIBILITY are all settled here, via `acceptedMetaGeos`.
+   * Eligibility is checked at every door rather than only at this one: a chip the operator can
+   * SEE must be a chip the request will BUY. `metaEffectiveGeoTargets` filters ineligible codes
+   * out of the dispatch, so a code displayed but not dispatched is precisely the display/dispatch
+   * divergence that computed exists to prevent.
+   *
+   * COMPLIANCE remains the service's call — it additionally drops regulated markets via
+   * `REGULATED_COUNTRIES`, and duplicating that list here would only let it drift.
+   */
+  protected addMetaGeoTarget(code: string): void {
+    // Ineligible codes are refused at the chip rather than accepted and dropped later. `IR`, `CU`
+    // and the uninhabited territories are ASSIGNED, so `normalizeGeoTargets` passes them, but Meta
+    // will not target them — and on the legacy path that rejection lands at the ad set, after the
+    // campaign POST. Same list the server and the Go client check, so the answer cannot depend on
+    // which path runs.
+    if (META_INELIGIBLE_COUNTRIES.has(code.trim().toUpperCase())) return;
+    this.metaGeoTargets.update((targets) => this.acceptedMetaGeos([...targets, code]));
+    this.emitDraft();
+  }
+
+  protected onMetaGeoTargetAdd(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.addMetaGeoTarget(input.value);
+    input.value = '';
   }
 
   protected submit(): void {
@@ -583,8 +996,14 @@ export class ImplementationTabComponent implements OnInit {
               budgetUsd: this.redditBudgetUsd(),
               startDate: form.startDate,
               endDate: form.endDate,
-              geoTargets: this.redditGeoTargets().length > 0 ? this.redditGeoTargets() : [form.countryCode],
-              subreddits: this.redditSubreddits(),
+              // The SAME derivation the preview renders. Reading `[form.countryCode]` here instead
+              // would let the two disagree: a cleared country code previews nothing and dispatches
+              // [''], which the operator cannot see and Reddit cannot use.
+              geoTargets: this.redditEffectiveGeoTargets(),
+              // The normalised list, matching the preview above for the same reason geoTargets
+              // does: dispatch strips an optional `r/`, so sending the raw value would submit
+              // something the operator was never shown.
+              subreddits: this.redditEffectiveSubreddits(),
               interests: this.redditInterests(),
               keywords: this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term),
               variants: this.redditVariants(),
@@ -603,12 +1022,29 @@ export class ImplementationTabComponent implements OnInit {
               lifetimeBudget: this.metaLifetimeBudget(),
               startDate: form.startDate,
               endDate: form.endDate,
-              geoTargets: this.metaGeoTargets().length > 0 ? this.metaGeoTargets() : [form.countryCode],
+              // The SAME value the preview renders — see `metaEffectiveGeoTargets`.
+              geoTargets: this.metaEffectiveGeoTargets(),
               variants: this.metaVariants(),
+              objective: this.metaObjective(),
+              placements: this.metaPlacementOverrides(),
+              // Sent only under `conversions`. Under every other objective the promoted object is
+              // a page id or nothing at all, so an id left in the box from an earlier selection
+              // would be a field the service ignores — and one a reader of the payload would
+              // reasonably take as meaningful. Trimmed to match the upstream trim.
+              ...(this.metaRequiresPixel() ? { pixelId: this.metaPixelId().trim() } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
             },
           }
         : {}),
+      // Gated on the id, NOT on `platforms.includes('hubspot')`. `selectedPlatforms` is typed
+      // `CampaignPlatform[]`, whose union has no 'hubspot' member, so a platform test here could
+      // never be true and would silently drop the value the day a trigger appears.
+      //
+      // Trimmed before the emptiness test so a whitespace-only id is treated as absent rather
+      // than sent as a present-but-blank config. The server applies the same rule
+      // (`buildHubSpotConfig` trims and returns null — UNCONFIGURED — when blank), so the two
+      // sides agree instead of the client sending something the server then has to reject.
+      ...(this.sourceEmailId().trim() ? { hubspotConfig: { sourceEmailId: this.sourceEmailId().trim() } } : {}),
     };
 
     // Read once, here, and carry it into the poll rather than re-reading per request. The
@@ -656,6 +1092,24 @@ export class ImplementationTabComponent implements OnInit {
    * class of bug the parent's `(project, event)` ownership keys exist to prevent. On a mismatch
    * the draft is ignored and the brief's own copy stands.
    */
+  /**
+   * Normalise a geo list AND drop what Meta cannot target — the single owner of that pair.
+   *
+   * Every path that WRITES `metaGeoTargets` routes through here: the chip add, the brief seed and
+   * the draft restore. Previously only the chip add checked eligibility, so a brief recommending
+   * `IR` — or a draft carrying one — rendered a chip that `metaEffectiveGeoTargets` then filtered
+   * out of the request. The empty-state warning is gated on `metaGeoTargets().length === 0`, so a
+   * surviving ineligible chip suppressed it, and `canSubmit` passed on the `countryCode` fallback:
+   * the operator read `IR` on screen and bought a US campaign.
+   *
+   * Eligibility belongs on the WRITE rather than only on the read so the two cannot disagree.
+   * `metaEffectiveGeoTargets` keeps its own filter regardless — it is the boundary `submit()`
+   * reads, and a guard there costs nothing.
+   */
+  private acceptedMetaGeos(codes: readonly string[]): string[] {
+    return normalizeGeoTargets(codes).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
+  }
+
   private applyDraft(): void {
     const draft = this.draft();
     if (!draft) return;
@@ -685,6 +1139,19 @@ export class ImplementationTabComponent implements OnInit {
       endDate: draft.endDate,
       includeSearch: draft.includeSearch,
       includeDemandGen: draft.includeDemandGen,
+      // The three LinkedIn controls (LFXV2-3230), restored in the SAME patch as everything else —
+      // which is the entire benefit of having moved them onto the form: no extra signal writes and
+      // no second emission. This runs AFTER `populateFromBrief`, so it deliberately overwrites the
+      // recommendation that seeded a moment ago; that ordering is what makes the restore win.
+      //
+      // Restored UNCONDITIONALLY, with no `|| draft.linkedInGeoTargets.length` guard. An empty
+      // geo list means the user removed every chip, and replacing it with the brief's
+      // recommendation would be the silent revert this ticket exists to stop; `canSubmit` already
+      // blocks a LinkedIn campaign with no geos, so the empty state is visible rather than
+      // dangerous.
+      linkedInAccountId: draft.linkedInAccountId,
+      linkedInGeoTargets: draft.linkedInGeoTargets,
+      linkedInTargetingProfile: draft.linkedInTargetingProfile,
     });
 
     // The copy arrays stay silent: nothing derives a display from them, and rebuilding a FormArray
@@ -692,6 +1159,30 @@ export class ImplementationTabComponent implements OnInit {
     // headline for no gain. The single patch above is enough to settle every derived signal.
     this.replaceCopyArray(this.headlinesArray, draft.headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline, false);
     this.replaceCopyArray(this.descriptionsArray, draft.descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription, false);
+
+    // Restored only when PRESENT. A draft persisted before these fields shipped has none of them,
+    // and absence there means "this draft predates Meta fields" — the seeded values must stand.
+    // Writing `?? 'traffic'` instead would let an old draft silently downgrade a Conversions
+    // campaign. A present-but-empty `metaPixelId` is a real cleared value and is restored as one,
+    // which is exactly the distinction `undefined` preserves and `''` would destroy.
+    if (draft.metaObjective !== undefined) {
+      this.metaObjective.set(draft.metaObjective);
+    }
+    if (draft.metaPlacements !== undefined) {
+      this.metaPlacements.set({ ...draft.metaPlacements });
+    }
+    if (draft.metaPixelId !== undefined) {
+      this.metaPixelId.set(draft.metaPixelId);
+    }
+    if (draft.metaGeoTargets !== undefined) {
+      this.metaGeoTargets.set(this.acceptedMetaGeos(draft.metaGeoTargets));
+    }
+    if (draft.metaBudgetUsd !== undefined) {
+      this.metaBudgetUsd.set(draft.metaBudgetUsd);
+    }
+    if (draft.metaLifetimeBudget !== undefined) {
+      this.metaLifetimeBudget.set(draft.metaLifetimeBudget);
+    }
   }
 
   /**
@@ -740,7 +1231,23 @@ export class ImplementationTabComponent implements OnInit {
       endDate: form.endDate,
       includeSearch: form.includeSearch,
       includeDemandGen: form.includeDemandGen,
+      // The three LinkedIn controls (LFXV2-3230). Listed EXPLICITLY, like every field above,
+      // because this emit is an object literal rather than a spread of `getRawValue()` — a
+      // control added to the form does not reach the draft until it is named here. That is the
+      // one step "just put it on the form" does not do for you.
+      linkedInAccountId: form.linkedInAccountId,
+      linkedInGeoTargets: form.linkedInGeoTargets,
+      linkedInTargetingProfile: form.linkedInTargetingProfile,
       eventSlug: form.eventSlug,
+      // Signal-backed, so `valueChanges` never carries them — they are snapshotted here and
+      // emitted explicitly by each Meta handler. `placements` is spread rather than referenced so
+      // the parent holds a value, not a live view of a signal this component is about to destroy.
+      metaObjective: this.metaObjective(),
+      metaPlacements: { ...this.metaPlacements() },
+      metaPixelId: this.metaPixelId(),
+      metaGeoTargets: [...this.metaGeoTargets()],
+      metaBudgetUsd: this.metaBudgetUsd(),
+      metaLifetimeBudget: this.metaLifetimeBudget(),
     });
   }
 
@@ -762,7 +1269,22 @@ export class ImplementationTabComponent implements OnInit {
     });
 
     if (brief.selectedPlatforms?.length) {
-      this.selectedPlatforms.set(brief.selectedPlatforms);
+      // A brief saved BEFORE a platform was disabled still names it, and the Plan picker cannot
+      // clear it — the tile is `[disabled]`, so the user has no way to deselect. Restoring it
+      // unfiltered would submit that platform's config on brief-derived values they never saw
+      // and cannot edit, which is the exact defect disabling the picker exists to prevent.
+      //
+      // Set the filtered list UNCONDITIONALLY, including when it is empty. Skipping the set on an
+      // empty result would leave the component's own `google-ads` default standing, so a
+      // Reddit-only brief would open as a GOOGLE campaign — the user's real choice silently
+      // replaced by one they never made, and `submit()` builds its request from this signal.
+      // campaign-service.service.ts:1505-1515 rejects exactly that substitution server-side; this
+      // is the same rule applied to the platforms it does still recognise.
+      //
+      // Empty is the honest answer: `canSubmit()` requires at least one selected platform, so the
+      // brief opens blocked rather than dispatching something unchosen.
+      const selectable = new Set(CAMPAIGN_PLATFORMS.filter((o) => !o.disabled).map((o) => o.id));
+      this.selectedPlatforms.set(brief.selectedPlatforms.filter((p) => selectable.has(p)));
     }
 
     const searchCopy = brief.structuredCopy?.['google_search'] as Record<string, unknown> | undefined;
@@ -776,8 +1298,29 @@ export class ImplementationTabComponent implements OnInit {
 
     if (brief.linkedInCopy) {
       this.linkedInVariants.set(brief.linkedInCopy.variants);
-      this.linkedInGeoTargets.set(brief.linkedInCopy.recommendedGeoTargets);
-      this.linkedInTargetingProfile.set(brief.linkedInCopy.recommendedTargetingProfile);
+      // Seeded UNCONDITIONALLY, and the ticket's premise that this needs a "only when the parent
+      // holds nothing" guard does not survive contact with the call order (LFXV2-3230).
+      //
+      // The constructor effect runs `populateFromBrief(brief)` and THEN
+      // `untracked(() => this.applyDraft())`. The restore is last, so it overwrites whatever this
+      // seeds — a guard here changes nothing for any field `applyDraft` restores. This was
+      // mutation-tested rather than reasoned about: with the guard replaced by `if (true)` the
+      // whole suite still passed, including the round-trip tests, because the restore had already
+      // done the work. Dead code that reads as load-bearing is worse than no code, so it is gone.
+      //
+      // The guard WOULD be needed if the two ever swapped order, or for a field this seeds but
+      // `applyDraft` does not restore. Neither is true today for these two controls.
+      //
+      // These EMIT, and must. The three controls are read through `toSignal` bridges over
+      // `valueChanges`, so a `{ emitEvent: false }` write updates the control while every reader —
+      // the template's chip list, `canSubmit`, `availableGeoTargets`, `submit()` — keeps the stale
+      // initial value. Suppressing here made the seed invisible: the form held the recommendation
+      // and the page rendered an empty geo list.
+      //
+      // Emitting is safe because `seeding` is true for the whole of this call, so the
+      // `valueChanges` subscription returns early rather than snapshotting a half-built form.
+      this.campaignForm.controls.linkedInGeoTargets.setValue(brief.linkedInCopy.recommendedGeoTargets);
+      this.campaignForm.controls.linkedInTargetingProfile.setValue(brief.linkedInCopy.recommendedTargetingProfile);
       // `budgetRecommendation` is guarded as well as `strategy`. Until LFXV2-3108 every brief
       // reaching here came straight from the generator, which always emits both; a RESTORED
       // brief is replayed from stored JSON, where `asVariantCopy` validates only the `variants`
@@ -819,10 +1362,10 @@ export class ImplementationTabComponent implements OnInit {
         }))
       );
       const rawGeos = metaCopy['recommended_geos'];
-      this.metaGeoTargets.set(Array.isArray(rawGeos) ? (rawGeos as string[]) : []);
+      this.metaGeoTargets.set(this.acceptedMetaGeos(Array.isArray(rawGeos) ? (rawGeos as string[]) : []));
     } else if (brief.metaCopy) {
       this.metaVariants.set(brief.metaCopy.variants);
-      this.metaGeoTargets.set(brief.metaCopy.recommendedGeos);
+      this.metaGeoTargets.set(this.acceptedMetaGeos(brief.metaCopy.recommendedGeos));
     }
 
     this.briefKeywords.set(brief.keywords);
@@ -891,5 +1434,19 @@ export class ImplementationTabComponent implements OnInit {
       ),
       { initialValue: '' }
     );
+  }
+  /**
+   * Shape only: two uppercase letters, the form campaign-service requires before it consults its
+   * ISO 3166-1 set. That catches every realistic typo reachable from this form — empty,
+   * lowercase, "USA", a single letter — while never rejecting a valid code.
+   *
+   * Deliberately NOT validated against the shared COUNTRIES constant: it holds 89 of the ~250
+   * assigned codes (Iceland yes, Monaco and Liechtenstein no), so using it as an allow-list
+   * would refuse real campaigns — a worse failure than the one it prevents. A well-formed but
+   * unassigned code like "ZZ" still reaches dispatch and is refused there; LFXV2-3316 covers
+   * porting a real ISO set into the shared package, which the whole app would use.
+   */
+  private normaliseGeoCodes(codes: string[]): string[] {
+    return codes.map((g) => g.trim().toUpperCase()).filter((g) => /^[A-Z]{2}$/.test(g));
   }
 }

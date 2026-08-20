@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Marketing OS Agents catalog (LFXAI-95 workstream). The shared catalog drives
-// both the marketplace tile grid and the per-agent chat surface, so it lives in
+// both the marketplace tile grid and the per-agent run pages, so it lives in
 // @lfx-one/shared and is consumed by the Angular app and the Express proxy.
 
 /**
@@ -46,12 +46,6 @@ export interface ActiveMktgAgent extends BaseMktgAgent {
    * messages so Guild routes them to this agent. Required for `active` agents.
    */
   guildAgentHandle: string;
-  /**
-   * In-page surface a tile click opens. Defaults to `chat` when unset.
-   * `brand-kit-form` opens the one-page Brand Kit intake form
-   * (dec-brand-kit-intake-form) instead of the chat panel.
-   */
-  surface?: 'chat' | 'brand-kit-form';
 }
 
 /**

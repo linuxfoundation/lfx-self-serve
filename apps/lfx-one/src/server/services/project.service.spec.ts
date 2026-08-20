@@ -898,3 +898,145 @@ describe('ProjectService — paid ads compatibility', () => {
     expect(execute.mock.calls.some(([sql]) => String(sql).includes('SUM(CONV)'))).toBe(true);
   });
 });
+
+/**
+ * The ED dashboard distinguishes "could not measure" from "measured zero" by turning a failed
+ * request into `undefined`, which the card renders as "Data unavailable". That only works if the
+ * failure reaches the client as an HTTP error.
+ *
+ * These five methods used to catch a Snowflake failure and return a zero-filled body with a 200,
+ * so the client saw a success, the undefined sentinel was never reached, and the card printed the
+ * zeros as if measured — the reported AAIF defect, one layer below where it was first fixed.
+ * getEventGrowth / getBrandReach / getBrandHealth already rethrew; these now match.
+ *
+ * A genuine no-data result (`rows.length === 0`) still returns its zero-filled shape — that is a
+ * measurement, and it must stay distinguishable from an outage.
+ */
+describe('ProjectService — a Snowflake failure must not become a zero-filled 200', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  const methods: { name: string; call: (s: ProjectService) => Promise<unknown> }[] = [
+    {
+      name: 'getWebActivitiesSummary',
+      call: (s) => s.getWebActivitiesSummary('aaif', undefined, { type: 'trailing', startDate: '2026-01-01', endDate: '2026-06-30', label: 'Last 6 months' }),
+    },
+    { name: 'getMemberRetention', call: (s) => s.getMemberRetention('aaif') },
+    { name: 'getMemberAcquisition', call: (s) => s.getMemberAcquisition('aaif') },
+    { name: 'getEngagedCommunity', call: (s) => s.getEngagedCommunity('aaif') },
+    { name: 'getFlywheelConversion', call: (s) => s.getFlywheelConversion('aaif') },
+  ];
+
+  for (const { name, call } of methods) {
+    it(`${name} rethrows instead of returning zeros`, async () => {
+      execute.mockRejectedValue(new Error('snowflake unavailable'));
+
+      await expect(call(service)).rejects.toThrow('snowflake unavailable');
+    });
+  }
+});
+
+/**
+ * getBrandReach runs two independent queries. A WEB failure fails the whole request (covered
+ * above), but a SOCIAL failure is deliberately non-fatal so the measured web half still reaches
+ * the user. Without a flag that partial success is indistinguishable from a foundation with no
+ * followers — the reported AAIF defect, behind an HTTP 200 no undefined sentinel can catch.
+ */
+describe('ProjectService — a social-only failure is flagged, not silently zeroed', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  it('sets socialUnavailable and still returns the measured web half', async () => {
+    // Both WEB queries (domains + daily trend) run in parallel first and must succeed; every
+    // social query after them rejects. Getting this order wrong fails the whole method and the
+    // assertion below would pass for the wrong reason.
+    execute
+      .mockResolvedValueOnce({ rows: [{ LF_SUB_DOMAIN_CLASSIFICATION: 'Docs', TOTAL_SESSIONS: 3482 }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValue(new Error('social query failed'));
+
+    const result = await service.getBrandReach('aaif');
+
+    expect(result.socialUnavailable).toBe(true);
+    // The fabricated half must be flagged rather than presented as measured.
+    expect(result.totalSocialFollowers).toBe(0);
+    // The half that DID resolve must survive — blanking it would trade a false zero for a
+    // false outage.
+    expect(result.totalMonthlySessions).toBeGreaterThan(0);
+  });
+});
+
+describe('ProjectService — a failed OPTIONAL email breakdown is flagged, not silently zeroed', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  const EMAIL_CTR_PERIOD: ResolvedPeriodRange = { type: 'month', startDate: '2026-03-01', endDate: '2026-04-01', label: 'March 2026' };
+
+  /**
+   * `getEmailCtr` fires four queries in one Promise.all — summary, monthly, campaign, then the
+   * per-send breakdown. Only the LAST is optional: it `.catch()`es to `rows: []` so a breakdown
+   * outage does not blank the CTR that was genuinely measured. But an unflagged empty array is
+   * indistinguishable from a period with no campaigns, and the drawer reduce()s over it — so the
+   * degradation has to be reported, not just survived.
+   *
+   * Mock order is load-bearing: rejecting an earlier query would fail the whole method and the
+   * assertions below would pass for the wrong reason rather than binding the optional path.
+   */
+  it('sets breakdownUnavailable and still returns the measured primary CTR', async () => {
+    execute
+      .mockResolvedValueOnce({ rows: [{ PROJECT_NAME: 'TLF', CTR_LAST_COMPLETED_MONTH: 2.5 }] })
+      .mockResolvedValueOnce({ rows: [{ PUBLISHED_MONTH: 'Mar', PUBLISHED_MONTH_DATE: '2026-03-01', TOTAL_SENDS: 1000, TOTAL_OPENS: 250 }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(new Error('breakdown query failed'));
+
+    const result = await service.getEmailCtr('tlf', undefined, EMAIL_CTR_PERIOD);
+
+    expect(result.breakdownUnavailable).toBe(true);
+    // The breakdown is empty because it FAILED, and the flag is the only thing that says so.
+    expect(result.emailTypeBreakdown ?? []).toEqual([]);
+    // The independent primary read must survive — rethrowing here would trade a partial
+    // outage for a total one and blank a figure that was actually measured.
+    expect(result.currentCtr).toBeGreaterThan(0);
+  });
+
+  it('leaves breakdownUnavailable false when every query succeeds', async () => {
+    // The other side of the contract: an empty breakdown that was genuinely READ must not be
+    // reported as an outage, or the fix trades a fabricated zero for a fabricated failure.
+    execute
+      .mockResolvedValueOnce({ rows: [{ PROJECT_NAME: 'TLF', CTR_LAST_COMPLETED_MONTH: 2.5 }] })
+      .mockResolvedValueOnce({ rows: [{ PUBLISHED_MONTH: 'Mar', PUBLISHED_MONTH_DATE: '2026-03-01', TOTAL_SENDS: 1000, TOTAL_OPENS: 250 }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const result = await service.getEmailCtr('tlf', undefined, EMAIL_CTR_PERIOD);
+
+    expect(result.breakdownUnavailable).toBe(false);
+  });
+
+  it('reports the breakdown failure even when the primary reads come back genuinely empty', async () => {
+    // The early-return path: `summaryResult`/`monthlyResult` empty short-circuits before the
+    // breakdown is ever mapped. The flag has to be carried there too — otherwise a period whose
+    // breakdown was never read reports as a confident "no campaigns".
+    execute
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(new Error('breakdown query failed'));
+
+    const result = await service.getEmailCtr('tlf', undefined, EMAIL_CTR_PERIOD);
+
+    expect(result.breakdownUnavailable).toBe(true);
+  });
+});

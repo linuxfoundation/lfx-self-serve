@@ -8,6 +8,7 @@
 
 import {
   BRAND_KIT_CONTRACT_ID,
+  BRAND_KIT_FORM_PREAMBLE_LINES,
   BRAND_KIT_INTAKE_QUESTIONS,
   BRAND_KIT_EXTRACTION_MAX_DEPTH,
   BRAND_KIT_INTAKE_ANSWER_COUNT,
@@ -297,13 +298,7 @@ function getUtf8ByteLength(value: string): number {
  * Callers must have validated that every intake key has a non-empty answer.
  */
 export function renderBrandKitFormMessage(answers: Record<string, string>): string {
-  const lines: string[] = [
-    'BATCH INTAKE SUBMISSION (form mode — see MODE RULES in your instructions).',
-    'All seven intake answers were collected on a single LFX form and are',
-    'provided below, in the same order as your Step 1 questions. Do NOT ask',
-    'the intake questions; proceed directly to Step 2.',
-    '',
-  ];
+  const lines: string[] = [...BRAND_KIT_FORM_PREAMBLE_LINES, ''];
   for (const q of BRAND_KIT_INTAKE_QUESTIONS) {
     lines.push(`Q${q.questionNumber}. ${q.question}`);
     lines.push(`A${q.questionNumber}. ${answers[q.key]}`);

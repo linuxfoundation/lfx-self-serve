@@ -8,20 +8,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AccessCheckService } from '../services/access-check.service';
 
 const { resolveCreatedByForMeetings } = vi.hoisted(() => ({
-  resolveCreatedByForMeetings: vi.fn<(req: unknown, uids: string[]) => Promise<Map<string, MeetingUserInfo>>>(),
+  resolveCreatedByForMeetings: vi.fn<(req: unknown, uids: string[]) => Promise<Map<string, Pick<Meeting, 'created_by' | 'owner'>>>>(),
 }));
 
 // This app's vitest config resolves plain Node modules only — the `@lfx-one/shared/*` tsconfig
 // path alias isn't wired here, so runtime shared subpaths must be mocked (mirrors
-// session-store.service.spec.ts). resolveMeetingOrganizer's real behavior is exhaustively covered
-// in packages/shared/src/utils/meeting.utils.spec.ts; this faithful stand-in keeps the helper's
-// enrich/omit orchestration under test (human creator → skip; service-account/empty → enrich).
+// session-store.service.spec.ts). resolveMeetingOrganizer/resolveMeetingOwner real behavior is
+// exhaustively covered in packages/shared/src/utils/meeting.utils.spec.ts; these faithful
+// stand-ins (human = named non-service identity) keep the helper's enrich/omit orchestration
+// under test (human creator → skip; service-account/empty/zero-valued → enrich).
 const SKIP = ['zoom.webhooks', 'zoom.events'];
+const isHumanIdentity = (identity: MeetingUserInfo | undefined | null): boolean => !!identity?.name && !SKIP.includes((identity.username ?? '').toLowerCase());
 vi.mock('@lfx-one/shared/utils', () => ({
-  resolveMeetingOrganizer: (meeting: { created_by?: MeetingUserInfo } | null | undefined) => {
-    const createdBy = meeting?.created_by;
-    if (createdBy?.name && !SKIP.includes((createdBy.username ?? '').toLowerCase())) {
-      return createdBy;
+  resolveMeetingOwner: (meeting: { owner?: MeetingUserInfo } | null | undefined) => (isHumanIdentity(meeting?.owner) ? meeting!.owner! : null),
+  resolveMeetingOrganizer: (meeting: { created_by?: MeetingUserInfo; owner?: MeetingUserInfo } | null | undefined) => {
+    if (isHumanIdentity(meeting?.owner)) {
+      return meeting!.owner!;
+    }
+    if (isHumanIdentity(meeting?.created_by)) {
+      return meeting!.created_by!;
     }
     return null;
   },
@@ -51,6 +56,8 @@ import { applyHostKeyVisibility, enrichMeetingsWithCreatedBy, isWithinHostKeyWin
 
 const req = {} as unknown as Request;
 const human: MeetingUserInfo = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
+const owner: MeetingUserInfo = { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' };
+const zeroValuedOwner = { user_id: '', name: '', username: '', email: '', profile_picture: '' };
 
 function pastMeeting(overrides: Partial<PastMeeting>): PastMeeting {
   return { id: 'pm-1', meeting_id: 'live-1', ...overrides } as PastMeeting;
@@ -62,7 +69,7 @@ describe('enrichMeetingsWithCreatedBy', () => {
   });
 
   it('joins past meetings to the live v1_meeting created_by by meeting_id', async () => {
-    resolveCreatedByForMeetings.mockResolvedValue(new Map([['live-1', human]]));
+    resolveCreatedByForMeetings.mockResolvedValue(new Map([['live-1', { created_by: human }]]));
     const meetings = [pastMeeting({ id: 'pm-1', meeting_id: 'live-1' })];
 
     const result = await enrichMeetingsWithCreatedBy(req, meetings, (m) => m.meeting_id);
@@ -80,23 +87,71 @@ describe('enrichMeetingsWithCreatedBy', () => {
     expect(result[0].created_by).toBeUndefined();
   });
 
-  it('leaves meetings that already carry a human created_by untouched and does not query', async () => {
+  it('queries for a human created_by without an owner (OR-gate) but never clobbers the human created_by', async () => {
+    // Past meetings carry created_by but never owner — the join must still run so a transferred
+    // ownership shows instead of the original creator, without overwriting the human creator.
+    resolveCreatedByForMeetings.mockResolvedValue(
+      new Map([['m-1', { created_by: { name: 'Someone Else', username: 'selse', email: 'se@example.com' }, owner }]])
+    );
     const meetings = [{ id: 'm-1', created_by: human } as Meeting];
 
     const result = await enrichMeetingsWithCreatedBy(req, meetings, (m) => m.id);
 
-    expect(resolveCreatedByForMeetings).not.toHaveBeenCalled();
+    expect(resolveCreatedByForMeetings).toHaveBeenCalledWith(req, ['m-1']);
     expect(result[0].created_by).toBe(human);
+    expect(result[0].owner).toEqual(owner);
+  });
+
+  it('leaves meetings that carry both a human created_by and a resolvable owner untouched, with no query', async () => {
+    const meetings = [{ id: 'm-1', created_by: human, owner } as Meeting];
+
+    const result = await enrichMeetingsWithCreatedBy(req, meetings, (m) => m.id);
+
+    expect(resolveCreatedByForMeetings).not.toHaveBeenCalled();
+    expect(result[0]).toBe(meetings[0]);
+  });
+
+  it('skips the join when a human owner is present without created_by — owner replaces the creator in every consumer', async () => {
+    // Deliberate: display is owner-first everywhere (collectMeetingOrganizers puts the owner in
+    // the created_by slot), so backfilling created_by here would spend a query on a field nothing
+    // reads. Upstream also defaults owner to the creator on create, so the creator identity still
+    // arrives via `owner` for meetings that were never transferred.
+    const meetings = [{ id: 'm-1', owner } as Meeting];
+
+    const result = await enrichMeetingsWithCreatedBy(req, meetings, (m) => m.id);
+
+    expect(resolveCreatedByForMeetings).not.toHaveBeenCalled();
+    expect(result[0]).toBe(meetings[0]);
+  });
+
+  it('never writes a zero-valued owner from the index', async () => {
+    resolveCreatedByForMeetings.mockResolvedValue(new Map([['m-1', { created_by: human, owner: zeroValuedOwner }]]));
+    const meetings = [{ id: 'm-1' } as Meeting];
+
+    const result = await enrichMeetingsWithCreatedBy(req, meetings, (m) => m.id);
+
+    expect(result[0].created_by).toEqual(human);
+    expect(result[0].owner).toBeUndefined();
   });
 
   it('enriches a service-account created_by (zoom.webhooks) since it is not a human', async () => {
-    resolveCreatedByForMeetings.mockResolvedValue(new Map([['live-2', human]]));
+    resolveCreatedByForMeetings.mockResolvedValue(new Map([['live-2', { created_by: human }]]));
     const meetings = [pastMeeting({ id: 'pm-2', meeting_id: 'live-2', created_by: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' } })];
 
     const result = await enrichMeetingsWithCreatedBy(req, meetings, (m) => m.meeting_id);
 
     expect(resolveCreatedByForMeetings).toHaveBeenCalledWith(req, ['live-2']);
     expect(result[0].created_by).toEqual(human);
+  });
+
+  it('populates both created_by and owner from a single join', async () => {
+    resolveCreatedByForMeetings.mockResolvedValue(new Map([['live-3', { created_by: human, owner }]]));
+    const meetings = [pastMeeting({ id: 'pm-3', meeting_id: 'live-3' })];
+
+    const result = await enrichMeetingsWithCreatedBy(req, meetings, (m) => m.meeting_id);
+
+    expect(result[0].created_by).toEqual(human);
+    expect(result[0].owner).toEqual(owner);
   });
 
   it('short-circuits with no query when nothing needs enrichment', async () => {
@@ -107,7 +162,7 @@ describe('enrichMeetingsWithCreatedBy', () => {
   });
 
   it('keys upcoming meetings on their own uid', async () => {
-    resolveCreatedByForMeetings.mockResolvedValue(new Map([['up-1', human]]));
+    resolveCreatedByForMeetings.mockResolvedValue(new Map([['up-1', { created_by: human }]]));
     const meetings = [{ id: 'up-1' } as Meeting];
 
     const result = await enrichMeetingsWithCreatedBy(req, meetings, (m) => m.id);

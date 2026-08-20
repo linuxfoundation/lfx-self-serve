@@ -98,11 +98,12 @@ test.describe('Docs portal — public access (US1)', () => {
     await expect(page.getByTestId('docs-article-title')).toBeVisible();
   });
 
-  test('a broken /docs/<missing> URL renders the 404 page with recovery links', async ({ page }) => {
+  test('a broken /docs/<missing> URL renders the 404 page in place with recovery links', async ({ page }) => {
     const response = await page.goto('/docs/this-slug-does-not-exist', { waitUntil: 'domcontentloaded' });
-    // The resolver redirects to /docs/not-found which is configured with
-    // status 404 in app.routes.server.ts.
+    // On a miss the not-found view renders inline; SSR emits a real 404 at the
+    // original URL (no redirect to /docs/not-found), mirroring /u/:username.
     expect(response?.status()).toBe(404);
+    await expect(page).toHaveURL(/\/docs\/this-slug-does-not-exist$/);
     await expect(page.getByTestId('docs-not-found')).toBeVisible();
     await expect(page.getByTestId('docs-not-found-back-link')).toHaveAttribute('href', '/docs');
   });

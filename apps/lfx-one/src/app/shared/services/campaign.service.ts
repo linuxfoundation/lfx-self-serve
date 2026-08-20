@@ -19,6 +19,8 @@ import {
   CampaignJobStatus,
   CampaignMonitorResponse,
   CampaignSSEEventType,
+  CampaignStatusToggleParams,
+  CampaignStatusUpdateResult,
   HubSpotEmailSearchResult,
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
@@ -238,6 +240,31 @@ export class CampaignService {
       params = params.set('q', query);
     }
     return this.http.get<HubSpotEmailSearchResult>('/api/campaigns/hubspot/emails', { params });
+  }
+
+  /**
+   * Pause or resume a campaign on its ad platform.
+   *
+   * This is the only write in this service that changes money-affecting state on a third party:
+   * a successful response means the ad platform itself moved, not that a row was updated. Pause
+   * is the primary cost-control lever on a mis-targeted or overspending campaign, which is why
+   * it is worth reaching from the UI rather than sending someone to the platform's own console.
+   *
+   * `etag` is REQUIRED, not defensive. The server sends it upstream as `If-Match`, and a 412 back
+   * means another editor moved the campaign since this view read it — the toggle is refused
+   * rather than applied on the strength of a stale view. Callers must pass the etag they read
+   * with the campaign, not one cached from an earlier render.
+   *
+   * `projectSlug` travels as a query param for the reason `searchHubSpotEmails` takes one: the
+   * campaign is addressed per-project upstream and the server refuses rather than defaulting.
+   */
+  public updateCampaignStatus(request: CampaignStatusToggleParams): Observable<CampaignStatusUpdateResult> {
+    const { projectSlug, briefId, campaignId, platform, status, etag } = request;
+    return this.http.patch<CampaignStatusUpdateResult>(
+      `/api/campaigns/${encodeURIComponent(campaignId)}/status`,
+      { platform, status, briefId, etag },
+      { params: new HttpParams().set('project', projectSlug) }
+    );
   }
 
   public lookupHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmLookupResult> {

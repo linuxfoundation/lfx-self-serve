@@ -314,18 +314,53 @@ export interface CampaignBriefPersistenceState {
  * every page load for a tab the user may never open. Lifting the edits out instead keeps the
  * component cheap to destroy while the user's typing survives (LFXV2-3229).
  *
- * Deliberately a SNAPSHOT of the fields a user TYPES, not the whole component state. Anything
- * re-derived from a fetch (results, progress, the LinkedIn account list) is left to re-derive —
- * restoring those would be restoring a cache, and a stale one.
+ * Deliberately a SNAPSHOT of the fields a user EDITS, not the whole component state. That is
+ * broader than typing: it covers the dropdown, chip list and toggle the LinkedIn picks are chosen
+ * through, because a choice made with the mouse is lost by a tab switch exactly as a typed one is.
+ * Anything re-derived from a fetch (results, progress, the LinkedIn account LIST itself) is left
+ * to re-derive — restoring those would be restoring a cache, and a stale one.
  *
  * `eventSlug` is the one carried field that is NOT restored: it is the draft's key, compared
  * against the brief on screen so one event's edits cannot replay onto another's.
  *
- * **Known gap, tracked as LFXV2-3230.** The per-platform signals — LinkedIn geo targets,
- * targeting profile, ad account and budget; Meta budget and lifetime-budget — are also
- * user-editable and are still discarded, because they live in signals rather than this form and
- * would need their own plumbing. The Google copy and budget carried here are the highest-volume
- * typing on the page; the platform fields are mostly AI-recommended values the user nudges.
+ * The LinkedIn ad account, geo targets and targeting profile are carried too (LFXV2-3230). They
+ * were moved from component signals onto `campaignForm`, which is what makes the RESTORE work:
+ * `applyDraft`'s existing `patchValue` replays them, and `valueChanges` emits on every pick with
+ * no per-handler plumbing. They were form state in everything but name — three controls the user
+ * picks from, whose only distinction was living in a signal.
+ *
+ * Moving them onto the form did NOT save this interface three members, and it is worth being
+ * precise about why. `emitDraft` builds an object LITERAL rather than spreading `getRawValue()`,
+ * so a control that is not named there never reaches the draft at all. The form buys the restore
+ * half and the emission trigger; the snapshot still has to list what it carries. Anyone extending
+ * this pays one line here either way.
+ *
+ * What the form DOES buy is that the value has exactly one home. A signal-backed field is written
+ * in a handler, read in `submit`, seeded in `populateFromBrief` and mirrored here — four places to
+ * keep in step. A form-backed one is stored once and derived everywhere else.
+ *
+ * The per-platform BUDGETS are NOT carried here yet. They remain component-local signals, so a tab
+ * switch still reverts them — the same defect this interface exists to prevent, still open for
+ * that half. LFXV2-3315 addresses it on a separate branch by adding budget members here and
+ * emitting from each budget handler, which is a DIFFERENT mechanism from the form controls above.
+ * Whichever lands second inherits a file with two ways of doing one thing, so unifying them is
+ * worth doing rather than deferring: the form is the better target, since it needs no per-handler
+ * emission and so cannot be forgotten when a control is added.
+ *
+ * That drift is not hypothetical, though none of it is visible HERE: this branch adds only the
+ * three LinkedIn picks, and no budget or Meta member appears on this interface yet. LFXV2-3315
+ * (budgets) and LFXV2-3227/3228 (four Meta controls — objective, placements, pixel id, geo
+ * targets) both carry their fields by the per-handler signal mechanism, and both are still open.
+ * When they land, two mechanisms will coexist in this file, which is the argument for unifying on
+ * the form rather than deferring it a third time.
+ *
+ * Any per-platform value not named on this interface is NOT carried across a tab switch. Those
+ * fall into two groups with opposite verdicts, and the distinction matters more than the
+ * membership: values the user cannot edit (creative variants, the Reddit targeting rendered
+ * read-only for review) are correctly discarded, since they re-derive from the brief identically;
+ * values the user CAN edit and that are not carried are simply still broken. Deliberately not
+ * enumerated — the second group shrinks as tickets land, and a list of members is exactly the kind
+ * of claim a later change falsifies with nothing to catch it.
  *
  * `null` means "nothing to restore", which is the state on first mount and after a reset. It is
  * NOT the same as an empty draft: an empty draft would mean the user deliberately cleared every
@@ -351,11 +386,63 @@ export interface CampaignImplementationDraft {
   includeSearch: boolean;
   includeDemandGen: boolean;
   /**
+   * The three LinkedIn controls the user picks rather than types (LFXV2-3230): the ad account,
+   * the geo target list, and the targeting profile.
+   *
+   * REQUIRED, not optional, and an empty `linkedInGeoTargets` is a meaningful value rather than a
+   * hole — the user removed every chip, and `canSubmit` blocks a LinkedIn campaign on exactly
+   * that. Optional members would make "cleared" and "not set" indistinguishable at the restore
+   * site, and the natural `?? recommendedGeoTargets` fallback would then put the AI's list back
+   * over a deliberate clearance, which is the defect rather than the fix.
+   *
+   * `linkedInAccountId` is '' before the ad-account fetch resolves, and is carried as-is. Note the
+   * restored value is NOT preserved unconditionally: the account list is refetched on every mount,
+   * and `ngOnInit` reconciles the restored id against it — keeping it when the catalog still
+   * offers it, replacing it with the first account otherwise, and clearing it when the catalog is
+   * empty. A choice that is still valid survives; one pointing at a revoked account does not,
+   * because the alternative is dispatching to an account the page cannot display.
+   */
+  linkedInAccountId: string;
+  linkedInGeoTargets: LinkedInGeoTarget[];
+  linkedInTargetingProfile: LinkedInTargetingProfile;
+  /**
    * The event this draft belongs to, so a draft cannot be replayed onto a different brief.
    * Without it, generating a brief for event B and opening Implement would restore event A's
    * copy over it — the same class of bug the `(project, event)` ownership keys exist to prevent.
    */
   eventSlug: string;
+  /**
+   * Meta settings as edited, and the reason this snapshot is not "the form fields only".
+   *
+   * These four live in component SIGNALS rather than in `campaignForm`, so the
+   * `campaignForm.valueChanges` subscription that drives every other field here never sees them.
+   * The parent destroys this component on a tab switch (`@switch`/`@case` in
+   * `campaigns.component.html`), so without them a user who selects Conversions, enters a pixel,
+   * turns off a placement or edits a geo chip, then glances at Insights, returns to Traffic and
+   * the defaults — silently, and the eventual paid request changes with it.
+   *
+   * `placements` is a full object rather than a list of enabled keys: the "at least one enabled"
+   * guard reads every member, and reconstructing the disabled half from an allow-list would
+   * reintroduce the omission `META_SELECTABLE_PLACEMENTS` exists to prevent.
+   *
+   * OPTIONAL, because a draft persisted before this shipped has none of them. Absent means "this
+   * draft predates Meta fields, keep the seeded values" — never "the user cleared them"; a
+   * present-but-empty `pixelId` is what records a deliberate clear.
+   */
+  metaObjective?: MetaObjective;
+  metaPlacements?: MetaPlacement;
+  metaPixelId?: string;
+  metaGeoTargets?: string[];
+  /**
+   * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
+   *
+   * Here for the same reason as the four above — signal-backed, so `campaignForm.valueChanges`
+   * never sees them — and called out separately because this pair is the one whose loss is
+   * measured in money: a silent revert puts the campaign back to $500/day, which is a spend
+   * decision the operator did not make and the form does not show them re-making.
+   */
+  metaBudgetUsd?: number;
+  metaLifetimeBudget?: boolean;
 }
 
 /**
@@ -1299,12 +1386,94 @@ export interface CampaignStatusUpdateRequest {
   platform: CampaignPlatform;
   status: CampaignToggleStatus;
   accountId?: string;
+  /**
+   * Parent brief, required by campaign-service's toggle route
+   * (`PATCH /projects/{p}/briefs/{brief_id}/campaigns/{c}/status`).
+   *
+   * Optional on this type only because the legacy Meta/Reddit path did not need it. A request
+   * without it cannot address the campaign-service endpoint at all, so the controller refuses it
+   * rather than defaulting — see `updateCampaignStatus`.
+   */
+  briefId?: string;
+  /**
+   * The campaign row's current ETag, sent as `If-Match`.
+   *
+   * campaign-service answers a missing header with 428, so this is required in practice. It is
+   * what makes a pause safe against a concurrent editor: a 412 means the row moved since the
+   * caller read it, and the toggle is refused rather than dispatched to an ad platform on the
+   * strength of a stale view.
+   */
+  etag?: string;
+}
+
+/**
+ * Everything needed to address and authorize one status toggle.
+ *
+ * Named rather than inline because it is an app-facing contract: campaign-service addresses a
+ * campaign by `(project, brief, campaign)` and gates the write on `If-Match`, so a caller that
+ * gets any one of these wrong gets a 404, a 428 or a 412 rather than a type error. Every field
+ * is required — there is nothing safe to default, which is the point.
+ */
+export interface CampaignStatusToggleParams {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  platform: CampaignPlatform;
+  status: CampaignToggleStatus;
+  /** The etag read WITH the campaign, not one cached from an earlier render. */
+  etag: string;
+}
+
+/**
+ * A campaign row as campaign-service returns it.
+ *
+ * Mirrors the `Campaign` schema in the service's generated OpenAPI contract; `etag` mirrors
+ * `version` and is what a subsequent toggle must send back as `If-Match`.
+ */
+export interface CampaignServiceCampaign {
+  id: string;
+  brief_id: string;
+  project_id: string;
+  platform: string;
+  campaign_name: string;
+  /** Absent until the ad platform confirms the create, so optional per the contract. */
+  platform_campaign_id?: string;
+  status: string;
+  version: number;
+  etag?: string;
 }
 
 export interface CampaignStatusUpdateResult {
   platform: CampaignPlatform;
   campaignId: string;
-  previousStatus: string;
+  /**
+   * The status the campaign held BEFORE this toggle, as OBSERVED — never inferred.
+   *
+   * Present only on the legacy per-platform path, which issues a read before the write and can
+   * therefore report a fact. campaign-service's toggle returns the post-toggle row alone, so on
+   * that path there is nothing to observe and the field is OMITTED rather than guessed. Inferring
+   * it as "the opposite of what was requested" would be wrong exactly where it matters most: a
+   * `created_degraded` campaign is pausable, and its true prior status is `created_degraded`, not
+   * `ACTIVE`. A caller wanting the prior state on that path must read the row before toggling.
+   */
+  previousStatus?: string;
   newStatus: CampaignToggleStatus;
   success: boolean;
+  /**
+   * The campaign row's NEW ETag, for chaining a follow-up toggle.
+   *
+   * Without it, pause-then-resume is impossible: the second call needs a fresh `If-Match`, and
+   * the caller's own etag went stale the moment the first toggle committed. Absent on the legacy
+   * per-platform path, which has no row and no version.
+   */
+  etag?: string;
+  /**
+   * The status the SERVICE reports after the toggle, which is not always the one requested.
+   *
+   * Pausing a `created_degraded` campaign pauses it upstream and deliberately leaves the row's
+   * status unchanged, so `newStatus` — an echo of the request — would claim a transition the
+   * service declined to record. Read this field to render actual state; read `newStatus` only as
+   * "what was asked for". Absent on the legacy path, whose SDK calls return no row.
+   */
+  serviceStatus?: string;
 }

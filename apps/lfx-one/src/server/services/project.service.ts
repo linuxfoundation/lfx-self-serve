@@ -2397,7 +2397,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return { totalSessions: 0, totalPageViews: 0, domainGroups: [], dailyData: [], dailyLabels: [] };
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -2475,6 +2479,8 @@ export class ProjectService {
       // email is published once per month — it is not one row per recipient delivery.
       // Filtered on PUBLISHED_DATE rather than PUBLISHED_MONTH_DATE so a mid-month range boundary
       // includes only the sends that actually fall inside it, instead of every send in that month.
+      // See EmailCtrResponse.breakdownUnavailable — set when the optional query below fails.
+      let breakdownUnavailable = false;
       const campaignPerfQuery = `
         SELECT
           MARKETING_EMAIL_NAME,
@@ -2517,6 +2523,13 @@ export class ProjectService {
             CTR: number;
           }>(campaignPerfQuery, [resolved.startDate, resolved.endDate, ...foundationParams])
           .catch((error) => {
+            // Non-fatal by design — the primary CTR read is independent, so rethrowing here would
+            // trade a partial outage for a total one and blank a measurement that did succeed.
+            // But the empty array below is NOT a measurement: the drawer's Sends/Opens/Open Rate/
+            // CTR tiles reduce() over it, so an unflagged failure renders as a confident 0. The
+            // flag is what keeps a failed read distinguishable from a genuinely campaign-less
+            // period — the same contract the rethrowing methods above enforce with an HTTP error.
+            breakdownUnavailable = true;
             logger.warning(undefined, 'get_email_ctr', 'Optional campaign breakdown query failed, degrading gracefully', {
               foundation_slug: foundationSlug,
               err: error,
@@ -2547,6 +2560,10 @@ export class ProjectService {
           campaignGroups: [],
           monthlySends: [],
           monthlyOpens: [],
+          // Carried on this path too: the breakdown query runs before this branch, so it can
+          // have failed even when the primary reads came back genuinely empty. Omitting it here
+          // would report "no campaigns" for a period whose breakdown was never actually read.
+          breakdownUnavailable,
         };
       }
 
@@ -2763,6 +2780,7 @@ export class ProjectService {
         campaignGroups,
         monthlySends,
         monthlyOpens,
+        breakdownUnavailable,
         emailTypeBreakdown,
         campaignInsightText,
       };
@@ -3894,14 +3912,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return {
-        renewalRate: 0,
-        netRevenueRetention: 0,
-        changePercentage: 0,
-        trend: 'up',
-        target: 85,
-        monthlyData: [],
-      };
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -3998,7 +4013,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return defaultResponse;
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -4130,21 +4149,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return {
-        totalMembers: 0,
-        changePercentage: 0,
-        trend: 'up',
-        breakdown: {
-          newsletterSubscribers: 0,
-          communityMembers: 0,
-          workingGroupMembers: 0,
-          certifiedIndividuals: 0,
-          webVisitors: 0,
-          codeContributors: 0,
-          trainingEnrollees: 0,
-        },
-        monthlyData: [],
-      };
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -4316,22 +4325,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return {
-        conversionRate: 0,
-        changePercentage: 0,
-        trend: 'up',
-        funnel: {
-          eventAttendees: 0,
-          convertedToNewsletter: 0,
-          convertedToCommunity: 0,
-          convertedToWorkingGroup: 0,
-          convertedToTraining: 0,
-          convertedToCode: 0,
-          convertedToWeb: 0,
-        },
-        reengagement: emptyReengagement,
-        monthlyData: [],
-      };
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -6023,6 +6021,9 @@ export class ProjectService {
         this.snowflakeService.execute<{ ACTIVITY_DATE: string; DAILY_SESSIONS: number }>(dailyQuery, foundationParams),
       ]);
 
+      // Tracks whether the social half failed, so a partial success cannot be mistaken for a
+      // measured zero. See BrandReachResponse.socialUnavailable.
+      let socialUnavailable = false;
       let totalSocialFollowers = 0;
       let followerGrowthPct = 0;
       let socialPlatforms: BrandReachResponse['socialPlatforms'] = [];
@@ -6065,6 +6066,10 @@ export class ProjectService {
           followers: row.FOLLOWERS ?? 0,
         }));
       } catch (socialError) {
+        // Deliberately non-fatal: the web half is independent and was measured fine, so
+        // blanking it would trade a false zero for a false outage. Flag it instead, so the
+        // Social card can say "unavailable" while the Web card keeps its real figure.
+        socialUnavailable = true;
         logger.debug(undefined, 'get_brand_reach', 'Social media query failed, returning web-only data', {
           err: socialError instanceof Error ? socialError : new Error(String(socialError)),
         });
@@ -6096,6 +6101,7 @@ export class ProjectService {
       }
 
       return {
+        socialUnavailable,
         totalSocialFollowers,
         totalMonthlySessions,
         activePlatforms: socialPlatforms.length,

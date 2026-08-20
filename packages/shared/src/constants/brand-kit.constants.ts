@@ -54,6 +54,20 @@ export const BRAND_KIT_ISO_TIMESTAMP_REGEX = /^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}
 export const BRAND_KIT_EXTRACTION_MAX_DEPTH = 16;
 
 /**
+ * Batch-mode preamble lines of the form-mode first message
+ * (dec-brand-kit-intake-form) — the exact wording the agent's MODE RULES key
+ * on to skip the conversational intake and draft directly. Single source for
+ * `renderBrandKitFormMessage` and the run-page intake registry
+ * (`BRAND_KIT_INTAKE.batchPreamble`) so the two copies can never drift.
+ */
+export const BRAND_KIT_FORM_PREAMBLE_LINES = [
+  'BATCH INTAKE SUBMISSION (form mode — see MODE RULES in your instructions).',
+  'All seven intake answers were collected on a single LFX form and are',
+  'provided below, in the same order as your Step 1 questions. Do NOT ask',
+  'the intake questions; proceed directly to Step 2.',
+] as const;
+
+/**
  * Paul's 7 intake questions, VERBATIM (dec-paul-prompt-fidelity) — the same
  * strings the agent's finalize wrapper stamps into the envelope intake log.
  * Rendered as the LFX one-page form (dec-brand-kit-intake-form); keys match

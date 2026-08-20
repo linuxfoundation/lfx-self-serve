@@ -8,6 +8,7 @@ import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { createHorizontalBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
+import { DRAWER_NO_ACTIVITY_BODY, DRAWER_UNAVAILABLE_BODY, DRAWER_UNAVAILABLE_HEADING } from '@lfx-one/shared/constants';
 import { formatNumber, formatPercent, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -33,6 +34,7 @@ export class WebsiteVisitsDrawerComponent {
   private readonly projectContextService = inject(ProjectContextService);
 
   // === Model Signals (two-way binding) ===
+  protected readonly noActivityBody = DRAWER_NO_ACTIVITY_BODY;
   public readonly visible = model<boolean>(false);
 
   // === WritableSignals ===
@@ -54,6 +56,15 @@ export class WebsiteVisitsDrawerComponent {
 
   protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().performingInsights);
 
+  /**
+   * Set when this drawer's own request fails. Like the Email drawer it fetches its own data,
+   * so the failure arrives through catchError rather than a parent input — and catchError
+   * resolves to a zero-filled default, which would otherwise render "No website traffic
+   * detected": an outage stated as a measurement.
+   */
+  protected readonly unavailable = signal(false);
+  protected readonly unavailableHeading = DRAWER_UNAVAILABLE_HEADING;
+  protected readonly unavailableBody = DRAWER_UNAVAILABLE_BODY;
   protected readonly hasNoData: Signal<boolean> = this.initHasNoData();
 
   protected readonly trendChartData: Signal<ChartData<'line'>> = this.initTrendChartData();
@@ -139,6 +150,7 @@ export class WebsiteVisitsDrawerComponent {
   // === Private Initializers ===
   private initHasNoData(): Signal<boolean> {
     return computed(() => {
+      if (this.unavailable()) return true;
       const { totalSessions, dailyData } = this.drawerData();
       return totalSessions === 0 && (dailyData.length === 0 || dailyData.every((v) => v === 0));
     });
@@ -164,12 +176,16 @@ export class WebsiteVisitsDrawerComponent {
       combineLatest([visible$, foundation$]).pipe(
         filter(([isVisible, slug]) => isVisible && !!slug),
         map(([, slug]) => slug),
-        tap(() => this.drawerLoading.set(true)),
+        tap(() => {
+          this.drawerLoading.set(true);
+          this.unavailable.set(false);
+        }),
         switchMap((foundationSlug) =>
           this.analyticsService.getWebActivitiesSummary(foundationSlug, undefined, 'last-6').pipe(
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
               this.drawerLoading.set(false);
+              this.unavailable.set(true);
               this.messageService.add({
                 severity: 'error',
                 summary: 'Error',
