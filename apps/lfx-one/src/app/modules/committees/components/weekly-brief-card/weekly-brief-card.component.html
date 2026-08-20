@@ -166,20 +166,15 @@
                 type="button"
                 class="inline-flex items-center gap-1 border-0 bg-transparent p-0 cursor-pointer hover:opacity-80 transition-opacity"
                 [attr.aria-expanded]="expandedSourceGroups().has(chip.id)"
-                [attr.aria-controls]="'weekly-brief-card-source-group-panel-' + chip.id"
                 (click)="onToggleSourceGroup(chip.id)"
                 [attr.data-testid]="'weekly-brief-card-source-group-toggle-' + chip.id">
                 <lfx-tag [value]="chip.label + ' (' + group.count + ')'" [icon]="chip.icon" [rounded]="true" [outlined]="true" />
                 <i class="fa-light fa-caret-down text-[10px] text-gray-500 transition-transform" [class.rotate-180]="expandedSourceGroups().has(chip.id)"></i>
               </button>
               @if (expandedSourceGroups().has(chip.id)) {
-                <!-- display:contents so this wrapper (needed only as the aria-controls id target)
-                     doesn't participate in the parent's flex-wrap layout as its own box. -->
-                <div class="contents" [id]="'weekly-brief-card-source-group-panel-' + chip.id">
-                  @for (instance of group.instances; track instance.id) {
-                    <ng-container [ngTemplateOutlet]="sourceChipTpl" [ngTemplateOutletContext]="{ chip: instance }" />
-                  }
-                </div>
+                @for (instance of group.instances; track instance.id) {
+                  <ng-container [ngTemplateOutlet]="sourceChipTpl" [ngTemplateOutletContext]="{ chip: instance }" />
+                }
               }
             } @else if (chip.action; as action) {
               <button
@@ -213,14 +208,13 @@
                   type="button"
                   class="flex items-center gap-1.5 self-start border-0 bg-transparent p-0 text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700 transition-colors"
                   [attr.aria-expanded]="sourcesExpanded()"
-                  [attr.aria-controls]="'weekly-brief-card-sources-panel-' + committee().uid"
                   (click)="onToggleSources()"
                   data-testid="weekly-brief-card-sources-toggle">
                   <span>Sources ({{ sourceRefCount() }})</span>
                   <i class="fa-light fa-chevron-down text-[10px] transition-transform" [class.rotate-180]="sourcesExpanded()"></i>
                 </button>
                 @if (sourcesExpanded()) {
-                  <div class="flex flex-col gap-2" [id]="'weekly-brief-card-sources-panel-' + committee().uid">
+                  <div class="flex flex-col gap-2">
                     @for (section of sourceChipSections(); track section.kind) {
                       <div class="flex flex-col gap-1" [attr.data-testid]="'weekly-brief-card-source-section-' + section.kind">
                         <span class="text-[11px] font-medium uppercase text-gray-400">{{ section.label }}</span>

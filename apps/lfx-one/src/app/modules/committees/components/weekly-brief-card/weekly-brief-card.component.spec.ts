@@ -308,6 +308,28 @@ describe('WeeklyBriefCardComponent — Sources disclosure (LFXV2-3335)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid^="weekly-brief-card-source-chip-"]')).toBeNull();
   });
 
+  it('renders a duplicate-label group chip with its own level-2 toggle even inside the flat (at-threshold) row — dedupe applies regardless of the disclosure', async () => {
+    await setup([
+      sourceRef('vote-1', { kind: 'vote', title: 'Q1 Budget' }),
+      sourceRef('vote-2', { kind: 'vote', title: 'Q1 Budget' }),
+      sourceRef('vote-3', { kind: 'vote', title: 'Q1 Budget' }),
+      sourceRef('doc-1', { kind: 'doc', title: 'Charter.pdf' }),
+      sourceRef('meeting-1', { kind: 'meeting', title: 'Weekly Sync' }),
+    ]);
+
+    // 5 raw refs, at the threshold — flat row, no level-1 disclosure toggle.
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-sources-toggle"]')).toBeNull();
+
+    const groupToggle = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-group-toggle-vote-1"]');
+    expect(groupToggle).not.toBeNull();
+    expect(groupToggle.textContent).toContain('Q1 Budget (3)');
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-chip-vote-2"]')).toBeNull();
+
+    await clickTestId('weekly-brief-card-source-group-toggle-vote-1');
+
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-chip-vote-2"]').textContent).toContain('Q1 Budget #2');
+  });
+
   it('still renders a chip of an unrecognized kind in the expanded view, under an "Other" section', async () => {
     await setup([
       ...Array.from({ length: WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })),

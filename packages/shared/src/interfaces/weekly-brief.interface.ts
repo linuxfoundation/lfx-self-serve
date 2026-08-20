@@ -48,10 +48,13 @@ export type WeeklyBriefSourceChipAction = PastMeetingActivityFeedAction | VoteDr
 /**
  * Precomputed display view-model for one "Sources" chip under a weekly brief — built from a
  * `WeeklyBriefSourceRef` by `mapWeeklyBriefSourceRefsToChips` (`../utils/weekly-brief.utils`).
- * `action: null` means the chip renders unlinked (no resolvable click target for that `kind` —
- * e.g. "mailing-list", which has no archive URL anywhere in this contract, or an unrecognized
- * future `kind`). `kind` is copied straight from the source `WeeklyBriefSourceRef` so the
- * template can group chips into kind-sections without resolving it again (frontend-checklist §4).
+ * `action: null` on a chip with no `group` means it renders unlinked — no resolvable click
+ * target for that `kind` (e.g. "mailing-list", which has no archive URL anywhere in this
+ * contract, or an unrecognized future `kind`). A chip *with* `group` also always has
+ * `action: null`, but for a different reason: it's not unlinked, it's a toggle button — the
+ * click opens `group.instances` rather than navigating, and each of those instances carries its
+ * own real `action` instead. `kind` is copied straight from the source `WeeklyBriefSourceRef` so
+ * the template can group chips into kind-sections without resolving it again (frontend-checklist §4).
  */
 export interface WeeklyBriefSourceChip {
   id: string;

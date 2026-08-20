@@ -75,6 +75,13 @@ export const WEEKLY_BRIEF_ARCHIVE_PAGE_SIZE = 10;
  * same as before this feature existed. Per-(kind, label) dedupe grouping (see
  * `mapWeeklyBriefSourceRefsToChips`) still applies at every count, threshold or not; a size-1
  * group renders unchanged either way, so this only matters when duplicate labels are present.
+ *
+ * Deliberately gated on the raw ref count, not the deduped `sourceChips().length` — matches
+ * the ticket's own worked example (a 16-ref week still shows "Sources (16)" pre-expansion,
+ * even though several of those refs dedupe down to one grouped chip once revealed). The
+ * disclosure and the dedupe solve two different problems (row height vs. duplicate-looking
+ * chips) and are gated independently on purpose, even though a heavily-duplicated week can hit
+ * both at once.
  */
 export const WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD = 5;
 
