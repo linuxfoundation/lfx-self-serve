@@ -24,7 +24,6 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { SelectComponent } from '@components/select/select.component';
 import {
   NEWSLETTER_DEFAULT_TEMPLATE_KEY,
   NEWSLETTER_GMAIL_CLIP_BYTES,
@@ -44,7 +43,6 @@ import {
   NewsletterComposerToolbarState,
   NewsletterFieldSchema,
   NewsletterLayout,
-  NewsletterTemplateInfo,
   NewsletterTemplateManifest,
 } from '@lfx-one/shared/interfaces';
 import { NewsletterManifestService } from '@services/newsletter-manifest.service';
@@ -92,7 +90,7 @@ import { NewsletterRendererService } from '../../services/newsletter-renderer.se
  */
 @Component({
   selector: 'lfx-newsletter-block-composer',
-  imports: [DragDropModule, ReactiveFormsModule, InputTextComponent, SelectComponent, NewsletterBlockFieldsComponent],
+  imports: [DragDropModule, ReactiveFormsModule, InputTextComponent, NewsletterBlockFieldsComponent],
   templateUrl: './newsletter-block-composer.component.html',
   styleUrl: './newsletter-block-composer.component.scss',
 })
@@ -122,9 +120,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // Palette search. Backed by a FormControl (LFX wrappers are FormGroup-bound);
   // `blockSearch` mirrors the control value as a signal for the filter computed.
   protected readonly searchForm = new FormGroup({ search: new FormControl<string>('', { nonNullable: true }) });
-  // Block-library picker. Form-bound (LFX select wrappers are FormGroup-bound);
-  // the control mirrors `selectedTemplateKey`. Seeded in ngOnInit.
-  protected readonly libraryForm = new FormGroup({ library: new FormControl<string>(NEWSLETTER_DEFAULT_TEMPLATE_KEY, { nonNullable: true }) });
 
   // === Writable Signals ===
   protected readonly isBrowser = signal<boolean>(false);
@@ -266,11 +261,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // block-search parity). Backed by `searchForm` (declared in the Forms slot).
   protected readonly blockSearch: Signal<string> = toSignal(this.searchForm.controls.search.valueChanges, { initialValue: '' });
 
-  // The libraries the picker offers: the loaded catalog, or a single synthesized
-  // entry for the active key when the catalog is empty / its endpoint is absent,
-  // so the picker always renders the current library.
-  protected readonly availableTemplates: Signal<NewsletterTemplateInfo[]> = this.initAvailableTemplates();
-
   // The wrapper chrome (header above / footer below the blocks), rendered from
   // the manifest's wrapper template. Recomputes when the manifest loads.
   protected readonly wrapperHeader: Signal<SafeHtml> = this.initWrapperHeader();
@@ -292,9 +282,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
   // Monotonic counter for unique per-instance block ids (CDK trackBy + child lists).
   private blockIdCounter = 0;
-  // Monotonic token for library switches, so a slow earlier manifest load can't
-  // land after a newer switch and desync the palette/canvas/key (see onLibraryChange).
-  private librarySwitchSeq = 0;
 
   // Last-rendered HTML per block id. `initRenderedBlocks` reuses the frozen
   // entry for `editingBlockId` so an in-progress inline edit is never wiped by
@@ -313,21 +300,21 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
     const seed = this.initialLayout();
     // Resolve the active library: the saved layout's key wins (a reopened draft
-    // keeps its library), then the bound input, then the default. The active key
-    // is persisted on save (toLayout), so send + preview match the picker.
+    // keeps its library), then the bound input, then the default. The block
+    // composer is an AAIF-only pilot with a single template, so there is no
+    // picker; the key is persisted on save (toLayout) so send + preview match.
     const seededKey = seed?.template_key;
     const activeKey = seededKey ?? this.templateKey();
     this.selectedTemplateKey.set(activeKey);
-    this.libraryForm.controls.library.setValue(activeKey, { emitEvent: false });
 
     if (seed?.blocks?.length) {
       this.blocks.set(seed.blocks.map((block) => this.hydrate(block)));
     }
 
-    // Browser-only: fetch the palette manifest for the active library and the
-    // catalog of libraries for the picker. Once the manifest resolves, reconcile
-    // any seeded container that hydrated as a leaf (an empty container comes back
-    // without a `blocks` array, and hydrate runs before the manifest is here).
+    // Browser-only: fetch the palette manifest for the active library. Once the
+    // manifest resolves, reconcile any seeded container that hydrated as a leaf
+    // (an empty container comes back without a `blocks` array, and hydrate runs
+    // before the manifest is here).
     if (isPlatformBrowser(this.platformId)) {
       this.manifestService
         .ensureLoaded(activeKey)
@@ -335,7 +322,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
         .subscribe((manifest) => {
           if (manifest) this.reconcileContainers(manifest);
         });
-      this.manifestService.loadTemplates().pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
     }
   }
 
@@ -383,58 +369,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
   protected toggleFields(): void {
     this.fieldsCollapsed.update((collapsed) => !collapsed);
     this.scheduleToolbarReposition();
-  }
-
-  /**
-   * Switch the active block library (template). Libraries define different block
-   * types, so we load the new library's manifest and KEEP the blocks it
-   * supports — the author's compatible content carries over and re-renders in
-   * the new template's styling — dropping only blocks the new library doesn't
-   * define (the server render hard-fails on an unknown type). The layout
-   * re-emits with the new key; a note reports any dropped blocks.
-   */
-  protected onLibraryChange(key: string): void {
-    const current = this.selectedTemplateKey();
-    if (!key || key === current) return;
-
-    if (!isPlatformBrowser(this.platformId)) {
-      this.selectedTemplateKey.set(key);
-      this.emit();
-      return;
-    }
-
-    // Guard against overlapping switches: a rapid B→C can otherwise let a slower
-    // B response land after C and overwrite the palette/canvas/key the author now
-    // sees. Only the latest switch's response is applied.
-    const seq = ++this.librarySwitchSeq;
-
-    // Load the new library's manifest, then retain the blocks IT supports (use
-    // the emitted manifest, not the shared signal, so a failed load can't filter
-    // the canvas against the stale previous library and orphan blocks).
-    this.manifestService
-      .ensureLoaded(key)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((manifest) => {
-        // A newer switch superseded this one — drop this stale response.
-        if (seq !== this.librarySwitchSeq) return;
-        if (!manifest) {
-          // The new library's manifest failed to load — keep the current library
-          // rather than switching to one we can't validate blocks against. Revert
-          // the picker and re-activate the current (cached, known-good) manifest so
-          // the palette recovers from the "Could not load" state the failed load
-          // set; nothing is emitted.
-          this.libraryForm.controls.library.setValue(current, { emitEvent: false });
-          this.manifestService.ensureLoaded(current).pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
-          window.alert('Could not load that template. Please try again.');
-          return;
-        }
-        this.selectedTemplateKey.set(key);
-        const dropped = this.retainSupportedBlocks(manifest);
-        if (dropped > 0) {
-          window.alert(`Removed ${dropped} block${dropped === 1 ? '' : 's'} not available in this template; the rest carried over.`);
-        }
-        this.emit();
-      });
   }
 
   /**
@@ -846,21 +780,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
     );
   }
 
-  /**
-   * The libraries offered by the picker: the loaded catalog, or a single
-   * synthesized entry for the active key (label humanized from the key) when the
-   * catalog is empty — so the picker always shows the current library even
-   * before the catalog endpoint responds (or when it isn't available).
-   */
-  private initAvailableTemplates(): Signal<NewsletterTemplateInfo[]> {
-    return computed(() => {
-      const catalog = this.manifestService.templates();
-      if (catalog.length) return catalog;
-      const key = this.selectedTemplateKey();
-      return [{ key, label: humanizeFieldKey(key) }];
-    });
-  }
-
   private initPaletteGroups(): Signal<NewsletterBlockPaletteGroup[]> {
     return computed(() => {
       const manifest = this.manifest();
@@ -1067,30 +986,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
       if (child) return child;
     }
     return null;
-  }
-
-  /**
-   * Keep only the canvas blocks (and container children) whose block_type exists
-   * in the given (new library's) manifest; drop the rest. Returns the number of
-   * blocks dropped, and clears the selection when the selected block was one.
-   */
-  private retainSupportedBlocks(manifest: NewsletterTemplateManifest): number {
-    const before = this.countBlocks(this.blocks());
-    const supported = new Set(manifest.blocks.map((entry) => entry.block_type));
-    const next = this.blocks()
-      .filter((block) => supported.has(block.block_type))
-      .map((block) => (block.children ? { ...block, children: block.children.filter((child) => supported.has(child.block_type)) } : block));
-    this.blocks.set(next);
-    const selected = this.selectedBlockId();
-    if (selected && !this.findBlock(next, selected)) {
-      this.clearSelectionState();
-    }
-    return before - this.countBlocks(next);
-  }
-
-  /** Total blocks including container children. */
-  private countBlocks(blocks: NewsletterComposerBlock[]): number {
-    return blocks.reduce((total, block) => total + 1 + (block.children?.length ?? 0), 0);
   }
 
   /** Drop the current block selection + inline-edit + toolbar state. */
