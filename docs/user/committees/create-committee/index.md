@@ -12,14 +12,14 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 
 ## Before you begin
 
-Make sure you have the correct project or foundation selected in the lens switcher. The new committee will be associated with the currently active project context.
+Make sure you have the correct project or foundation selected in the lens switcher. The new committee will be associated with the currently active project or foundation context.
 
 ## Steps
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Switch to your **Project** or **Foundation** lens using the lens switcher — creating a group isn't available in the **Me** lens.
 3. Select **Groups** from the left navigation sidebar.
-4. Select the option to create a new committee (route: `/groups/create`).
+4. Select the option to create a new committee (route: `/project/groups/create` or `/foundation/groups/create`).
 5. Fill in the required fields:
    - **Group name** — the display name for your committee
    - **Description** — a brief explanation of the committee's purpose and scope

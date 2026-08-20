@@ -28,7 +28,7 @@ All authenticated users can view their training enrollments.
 
 ### Navigation
 
-Go to **app.lfx.dev** and select **Training & Certifications** from the left navigation sidebar (route: `/me/training`). The page shows tabs for Certifications, Enrolled Trainings, and Rewards, plus a Useful links section in the right sidebar.
+Go to **app.lfx.dev** and select **Training & Certifications** from the left navigation sidebar (route: `/me/training`). The page shows tabs for Certifications, Enrolled Trainings, and Rewards, plus a **Useful links** section in the right sidebar.
 
 ### Relationship to badges
 
