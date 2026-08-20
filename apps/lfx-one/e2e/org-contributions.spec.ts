@@ -42,7 +42,7 @@ const MOCK_PERSON_DETAIL: OrgAllEmployeeDetail = {
   ],
   events: [],
   training: [],
-  companyEmails: ['aramirez@redhat.com', 'aramirez@redhat.co.uk'],
+  companyEmails: ['aramirez@acme-corp.example', 'aramirez@acme-corp.co.uk.example'],
 };
 
 const BASE_RESPONSE: OrgContributionsResponse = {
@@ -260,7 +260,7 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
 
     const emailSection = page.getByTestId('person-detail-drawer-email');
     await expect(emailSection).toBeVisible();
-    await expect(emailSection).toContainText('aramirez@redhat.com');
-    await expect(emailSection).toContainText('aramirez@redhat.co.uk');
+    await expect(emailSection).toContainText('aramirez@acme-corp.example');
+    await expect(emailSection).toContainText('aramirez@acme-corp.co.uk.example');
   });
 });

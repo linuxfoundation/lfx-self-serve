@@ -550,10 +550,31 @@ function isEmployeeDetailRaw(value: unknown): boolean {
 }
 
 /**
+ * Personal/free-mail domains that are never a company-affiliated domain — a roster email at one
+ * of these must not produce fabricated "sibling company domain" variants.
+ */
+const PERSONAL_EMAIL_DOMAINS: ReadonlySet<string> = new Set([
+  'gmail.com',
+  'googlemail.com',
+  'yahoo.com',
+  'ymail.com',
+  'outlook.com',
+  'hotmail.com',
+  'live.com',
+  'msn.com',
+  'icloud.com',
+  'me.com',
+  'aol.com',
+  'protonmail.com',
+  'proton.me',
+]);
+
+/**
  * TEMP-DEMO-ONLY (GH-1655): stands in for a future Salesforce Account multi-domain lookup joined
  * with an LF SSO multi-email lookup. Fabricates plausible sibling-domain variants of the person's
- * real local-part so the multi-email UI can be exercised before that pipeline exists. Remove once
- * the real data source is wired in.
+ * real local-part so the multi-email UI can be exercised before that pipeline exists. Returns []
+ * for personal/free-mail domains, since those never have a company-affiliated sibling domain to
+ * derive. Remove once the real data source is wired in.
  */
 function deriveDemoCompanyEmails(email: string | null): string[] {
   const trimmed = (email ?? '').trim().toLowerCase();
@@ -564,6 +585,10 @@ function deriveDemoCompanyEmails(email: string | null): string[] {
 
   const localPart = trimmed.slice(0, atIndex);
   const domain = trimmed.slice(atIndex + 1);
+  if (PERSONAL_EMAIL_DOMAINS.has(domain)) {
+    return [];
+  }
+
   const company = domain.split('.')[0];
   const siblingDomains = [domain, `${company}.co.uk`, `${company}.jp`];
 

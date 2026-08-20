@@ -15,6 +15,7 @@ import type {
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
 import { splitDisplayName } from '@lfx-one/shared/utils';
+import { createHash } from 'crypto';
 import { Request } from 'express';
 
 import { getEffectiveUsername } from '../utils/auth-helper';
@@ -402,9 +403,12 @@ export class OrgPeopleDirectoryService {
 
   /**
    * Build a live-only row (no stored activity). personKey is a pattern-safe token so a detail expand
-   * returns an empty (200) payload rather than a 400. It is derived from the merge key rather than
-   * the address, so a record identified only by username still gets a distinct token — deriving it
-   * from an absent address would collide every such row onto the same key.
+   * returns an empty (200) payload rather than a 400. It is a one-way hash of the merge key rather
+   * than a reversible encoding of it, since the merge key can be `email:<address>` — a plain
+   * base64url encoding would put a recoverable member email in the token, and therefore in request
+   * logs. It's still derived from the merge key (not the address alone) so a record identified only
+   * by username gets a distinct token — deriving it from an absent address would collide every such
+   * row onto the same key.
    */
   private liveRow(
     email: string,
@@ -419,7 +423,7 @@ export class OrgPeopleDirectoryService {
     const username = (lfUsername ?? '').trim().toLowerCase() || null;
     const name = [firstName, lastName].filter(Boolean).join(' ').trim() || email || username || '';
     return {
-      personKey: `live-${Buffer.from(key).toString('base64url')}`,
+      personKey: `live-${createHash('sha256').update(key).digest('base64url').slice(0, 32)}`,
       lfid: null,
       lfUsername: username,
       cdpMemberId: null,
