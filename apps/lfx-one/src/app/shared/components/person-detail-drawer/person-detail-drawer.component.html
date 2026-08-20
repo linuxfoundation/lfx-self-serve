@@ -36,13 +36,9 @@
           @if (companyEmails().length) {
             <span class="mt-1 flex flex-col gap-0.5" data-testid="person-detail-drawer-email">
               @for (companyEmail of companyEmails(); track companyEmail; let i = $index) {
-                <a
-                  class="truncate text-xs text-gray-500 hover:text-blue-600 hover:underline"
-                  [href]="'mailto:' + companyEmail"
-                  [title]="companyEmail"
-                  [attr.data-testid]="'person-detail-drawer-email-link-' + i"
-                  >{{ companyEmail }}</a
-                >
+                <span class="truncate text-xs text-gray-500" [title]="companyEmail" [attr.data-testid]="'person-detail-drawer-email-' + i">{{
+                  companyEmail
+                }}</span>
               }
             </span>
           }
