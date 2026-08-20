@@ -8,10 +8,12 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { OrgLeaderboardDetailDrawerComponent } from '../../components/org-leaderboard-detail-drawer/org-leaderboard-detail-drawer.component';
@@ -85,6 +87,7 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, 
     InputTextComponent,
     OrgLeaderboardDetailDrawerComponent,
     OrgProjectDetailTabBarComponent,
+    PersonDetailDrawerComponent,
     TableComponent,
     TagComponent,
     DrawerModule,
@@ -100,6 +103,7 @@ export class OrgProjectDetailComponent {
 
   protected readonly accountContext = inject(AccountContextService);
   private readonly detailService = inject(OrgLensProjectDetailService);
+  private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
@@ -465,6 +469,19 @@ export class OrgProjectDetailComponent {
     if (!cardKey) return;
     const rowsPerPage = event.rows && event.rows > 0 ? event.rows : this.rosterRowsPerPage();
     this.loadRosterPage(cardKey, event.first ?? 0, rowsPerPage);
+  }
+
+  // Roster rows (all 13 card types) carry only name/avatar/initials — no personKey/email (see
+  // OrgLensCardDetailCell). This is a UI-only ticket (GH-1655), so we synthesize a plausible email
+  // client-side from the org domain and let the drawer's existing email-based fetch derive
+  // company-affiliated variants server-side, same as the Board/Committee "no personKey" tabs.
+  protected onRosterPersonClick(person: { name: string; avatarUrl?: string; initials: string }): void {
+    this.drawer.open({
+      name: person.name,
+      avatarUrl: person.avatarUrl ?? null,
+      initials: person.initials,
+      email: this.buildRosterPersonEmail(person.name),
+    });
   }
 
   /** Scrolls a card track by one card slot (336 px = w-80 + gap-4). */
@@ -1057,6 +1074,17 @@ export class OrgProjectDetailComponent {
     });
 
     return { labels, datasets };
+  }
+
+  private buildRosterPersonEmail(name: string): string {
+    const orgSlug = (this.accountContext.selectedAccount()?.accountSlug || this.orgName()).toLowerCase().replace(/[^a-z0-9]+/g, '') || 'company';
+    const localPart =
+      name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .replace(/\s+/g, '.') || 'member';
+    return `${localPart}@${orgSlug}.com`;
   }
 
   /** Left-pads a monthly series with zeros so every org series aligns to the same length. */

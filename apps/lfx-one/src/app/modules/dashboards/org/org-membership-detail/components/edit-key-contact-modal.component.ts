@@ -7,6 +7,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { EMAIL_REGEX } from '@lfx-one/shared/constants';
 import type {
   EditKeyContactDialogData,
@@ -33,6 +34,7 @@ export class EditKeyContactModalComponent {
   private readonly directory = inject(OrgPeopleDirectoryStateService);
   private readonly dialogConfig = inject<DynamicDialogConfig<EditKeyContactDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
+  private readonly drawer = inject(PersonDetailDrawerService);
 
   // === Dialog-injected data ===
   protected readonly contact: OrgMembershipKeyContact | null = this.dialogConfig.data?.contact ?? null;
@@ -262,6 +264,18 @@ export class EditKeyContactModalComponent {
   protected onCancelClick(): void {
     if (this.isSaving()) return;
     this.dialogRef.close(null);
+  }
+
+  protected onCurrentPersonClick(): void {
+    const person = this.currentPerson();
+    if (!person) return;
+    this.drawer.open({
+      name: person.fullName,
+      title: person.jobTitle,
+      initials: person.initials,
+      avatarColorClass: 'bg-purple-500',
+      email: person.email,
+    });
   }
 
   // === Keyboard activation handlers (FR-035) ===

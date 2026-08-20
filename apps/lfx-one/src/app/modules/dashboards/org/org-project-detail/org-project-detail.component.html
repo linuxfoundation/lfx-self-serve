@@ -713,7 +713,11 @@
                       @for (cell of dataRow.cells; track $index) {
                         <td class="px-4 py-2.5">
                           @if (cell.person; as person) {
-                            <div class="flex items-center gap-2">
+                            <button
+                              type="button"
+                              class="flex items-center gap-2 text-left"
+                              data-testid="influence-card-detail-person"
+                              (click)="onRosterPersonClick(person)">
                               @if (person.avatarUrl) {
                                 <img [src]="person.avatarUrl" alt="" class="h-7 w-7 shrink-0 rounded-full object-cover" aria-hidden="true" />
                               } @else {
@@ -724,7 +728,7 @@
                                 </span>
                               }
                               <span class="font-medium text-blue-600">{{ person.name }}</span>
-                            </div>
+                            </button>
                           } @else {
                             <span class="text-gray-700">{{ cell.text }}</span>
                           }
@@ -753,3 +757,5 @@
   [isViewingOrg]="leaderboardDetailIsViewingOrg()"
   [projectName]="hero()?.projectName ?? ''"
   [(visible)]="leaderboardDetailOpen" />
+
+<lfx-person-detail-drawer />

@@ -14,7 +14,7 @@
   @if (user(); as person) {
     <div class="flex flex-col gap-5 py-1" data-testid="org-access-edit-modal">
       <!-- Person summary -->
-      <div class="flex items-center gap-3">
+      <button type="button" class="flex items-center gap-3 text-left" data-testid="org-access-edit-current-person" (click)="onPersonClick()">
         <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white" aria-hidden="true">
           {{ person.initials }}
         </span>
@@ -22,7 +22,7 @@
           <span class="truncate text-sm font-medium text-gray-900">{{ person.name }}</span>
           <span class="truncate text-xs text-gray-500">{{ person.email }}</span>
         </div>
-      </div>
+      </button>
 
       <!-- Current access (read-only) -->
       <div class="flex flex-col gap-1.5">
