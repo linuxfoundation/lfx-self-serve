@@ -70,6 +70,9 @@ export interface WeeklyBriefSourceChip {
    */
   group?: {
     count: number;
+    /** Precomputed "label (count)" display string for the group chip's tag — kept off the
+     *  template, which only reads signals/computeds (frontend-checklist §4). */
+    badgeLabel: string;
     /** Individual chips for level-2 expansion, each with its own action; label suffixed
      *  with an ordinal (" #1", " #2", ...) in source_refs order — WeeklyBriefSourceRef has
      *  no date field to sort/label by, see LFXV2-3335. */

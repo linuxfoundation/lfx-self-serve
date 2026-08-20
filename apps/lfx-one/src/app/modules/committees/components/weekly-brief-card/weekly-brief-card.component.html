@@ -162,16 +162,17 @@
           -->
           <ng-template #sourceChipTpl lfxSourceChipContext let-chip="chip">
             @if (chip.group; as group) {
+              @let groupExpanded = expandedSourceGroups().has(chip.id);
               <button
                 type="button"
                 class="inline-flex items-center gap-1 border-0 bg-transparent p-0 cursor-pointer hover:opacity-80 transition-opacity"
-                [attr.aria-expanded]="expandedSourceGroups().has(chip.id)"
+                [attr.aria-expanded]="groupExpanded"
                 (click)="onToggleSourceGroup(chip.id)"
                 [attr.data-testid]="'weekly-brief-card-source-group-toggle-' + chip.id">
-                <lfx-tag [value]="chip.label + ' (' + group.count + ')'" [icon]="chip.icon" [rounded]="true" [outlined]="true" />
-                <i class="fa-light fa-caret-down text-[10px] text-gray-500 transition-transform" [class.rotate-180]="expandedSourceGroups().has(chip.id)"></i>
+                <lfx-tag [value]="group.badgeLabel" [icon]="chip.icon" [rounded]="true" [outlined]="true" />
+                <i class="fa-light fa-caret-down text-[10px] text-gray-500 transition-transform" [class.rotate-180]="groupExpanded"></i>
               </button>
-              @if (expandedSourceGroups().has(chip.id)) {
+              @if (groupExpanded) {
                 @for (instance of group.instances; track instance.id) {
                   <ng-container [ngTemplateOutlet]="sourceChipTpl" [ngTemplateOutletContext]="{ chip: instance }" />
                 }

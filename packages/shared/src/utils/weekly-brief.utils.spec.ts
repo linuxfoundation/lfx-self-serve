@@ -110,6 +110,22 @@ describe('mapWeeklyBriefSourceRefsToChips', () => {
     expect(chips.every((chip) => chip.group === undefined)).toBe(true);
   });
 
+  it('never groups untitled refs together, even when they share a kind (and so a fallback label)', () => {
+    // Three untitled meeting refs would all resolve to the same fallback label ("Meeting"),
+    // but they're three distinct meetings that merely lack titles -- grouping on the resolved
+    // label would wrongly present them as one recurring meeting.
+    const chips = mapWeeklyBriefSourceRefsToChips([
+      sourceRef({ id: 'm-1', kind: 'meeting' }),
+      sourceRef({ id: 'm-2', kind: 'meeting' }),
+      sourceRef({ id: 'm-3', kind: 'meeting' }),
+    ]);
+
+    expect(chips).toHaveLength(3);
+    expect(chips.every((chip) => chip.group === undefined)).toBe(true);
+    expect(chips.every((chip) => chip.label === 'Meeting')).toBe(true);
+    expect(chips.map((c) => c.id)).toEqual(['m-1', 'm-2', 'm-3']);
+  });
+
   it('collapses same-kind-and-label refs into one group chip, leaving unique ones untouched', () => {
     const chips = mapWeeklyBriefSourceRefsToChips([
       sourceRef({ id: 'm-1', kind: 'meeting', title: 'AAIF Technical Committee Meeting' }),

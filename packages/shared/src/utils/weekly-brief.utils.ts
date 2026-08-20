@@ -75,34 +75,41 @@ function buildChip(ref: WeeklyBriefSourceRef): WeeklyBriefSourceChip {
   };
 }
 
+// A control character, built at runtime (not written as a literal or an escape sequence in this
+// file) so it can safely separate a kind from a title in groupChips's grouping key below without
+// ever risking a raw control byte landing in the source file itself.
+const GROUP_KEY_SEPARATOR = String.fromCharCode(0);
+
 /**
- * Collapses chips sharing the same `(kind, label)` into a single count-badged chip — e.g. 12
+ * Collapses chips sharing the same `(kind, title)` into a single count-badged chip — e.g. 12
  * instances of a recurring meeting all titled "AAIF Technical Committee Meeting" become one
- * chip with `group.count === 12` instead of 12 identical-looking chips (LFXV2-3335).
- * `WeeklyBriefSourceRef` has no date/timestamp field to distinguish same-label instances by
- * (confirmed against the upstream contract), so each collapsed instance is ordinal-labeled
- * (" #1", " #2", ...) in `source_refs` order rather than a date range.
+ * chip with `group.count === 12` instead of 12 identical-looking chips (LFXV2-3335). Keyed on
+ * the raw `ref.title`, not the resolved `chip.label`: an absent/empty title falls back to a
+ * kind-generic default label in `buildChip` (e.g. "Meeting"), and grouping on that would wrongly
+ * collapse unrelated untitled refs of the same kind into one group — an untitled ref is keyed by
+ * its own `id` instead, making it always its own group of one. `WeeklyBriefSourceRef` has no
+ * date/timestamp field to distinguish same-title instances by, so each collapsed instance is
+ * ordinal-labeled (" #1", " #2", ...) in `source_refs` order rather than a date range.
  *
- * A group of size 1 is returned unchanged — no `group` field is added, so the common case (a
- * committee with few, mostly-unique sources) keeps rendering exactly as it did pre-LFXV2-3335;
- * only the new `kind` field (added on every chip in `buildChip`, group or not) differs.
- *
- * Keyed with a NUL separator, not string concatenation, so a `kind`/`label` pair can't collide
- * with a different pair that happens to concatenate to the same string. No separate
- * first-occurrence-order tracking is needed: `Map` already iterates in insertion order, so
- * `groups.values()` yields groups in the same order their key first appeared in `chips`.
+ * A group of size 1 is returned unchanged (no `group` field), and `Map` insertion order already
+ * matches first-occurrence order in `refs`, so no separate order-tracking is needed.
  */
-function groupChips(chips: WeeklyBriefSourceChip[]): WeeklyBriefSourceChip[] {
+function groupChips(refs: WeeklyBriefSourceRef[], chips: WeeklyBriefSourceChip[]): WeeklyBriefSourceChip[] {
   const groups = new Map<string, WeeklyBriefSourceChip[]>();
-  for (const chip of chips) {
-    const key = `${chip.kind}\u0000${chip.label}`;
+  refs.forEach((ref, index) => {
+    const chip = chips[index];
+    // Separator-joined, not plain concatenation: a titled key can't collide with an untitled
+    // one (untitled keys start with the separator; kind is always non-empty), and a titled
+    // key's kind/title halves can't collide with each other regardless of what characters a
+    // title contains (e.g. a colon in "Q1: Budget Review").
+    const key = ref.title ? `${ref.kind}${GROUP_KEY_SEPARATOR}${ref.title}` : `${GROUP_KEY_SEPARATOR}${ref.id}`;
     const existing = groups.get(key);
     if (existing) {
       existing.push(chip);
     } else {
       groups.set(key, [chip]);
     }
-  }
+  });
 
   return Array.from(groups.values(), (members) => {
     if (members.length === 1) {
@@ -117,6 +124,9 @@ function groupChips(chips: WeeklyBriefSourceChip[]): WeeklyBriefSourceChip[] {
       action: null,
       group: {
         count: members.length,
+        // Precomputed, not built in the template (frontend-checklist §4) — the group chip's tag
+        // renders this directly.
+        badgeLabel: `${first.label} (${members.length})`,
         instances: members.map((member, index) => ({ ...member, label: `${member.label} #${index + 1}` })),
       },
     };
@@ -127,8 +137,8 @@ function groupChips(chips: WeeklyBriefSourceChip[]): WeeklyBriefSourceChip[] {
  * Maps a `WeeklyBrief.source_refs[]` to the "Sources" chip row's view-model — precomputed here,
  * not resolved per-chip in the template (repo rule: `docs/reviews/frontend-checklist.md` §4).
  * Deduped/grouped via `groupChips` (LFXV2-3335); overall chip order follows first-occurrence
- * order of each `(kind, label)` group in `source_refs`.
+ * order of each `(kind, title)` group in `source_refs`.
  */
 export function mapWeeklyBriefSourceRefsToChips(sourceRefs: WeeklyBriefSourceRef[]): WeeklyBriefSourceChip[] {
-  return groupChips(sourceRefs.map(buildChip));
+  return groupChips(sourceRefs, sourceRefs.map(buildChip));
 }
