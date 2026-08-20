@@ -10,17 +10,17 @@ import { docsArticleResolver } from './resolvers/docs-article.resolver';
  *
  * Routes (matched in order):
  *   - `''`           → `DocsLandingComponent`     — synthetic `/docs` landing (FR-002).
- *   - `'not-found'`  → `DocsNotFoundComponent`    — brand-styled 404 (FR-014, Edge Case 4);
- *                                                   the SSR layer pairs this with status 404 in
- *                                                   `app.routes.server.ts`.
- *   - `'**'`         → `DocsArticleComponent`     — any nested slug; the resolver redirects
- *                                                   miss-URLs to `/docs/not-found`.
+ *   - `'not-found'`  → `DocsNotFoundComponent`    — brand-styled 404, kept reachable for direct
+ *                                                   visits; SSR pairs it with status 404 (FR-014).
+ *   - `'**'`         → `DocsArticleComponent`     — any nested slug; on a miss the resolver returns
+ *                                                   `null` and the not-found view renders inline (404).
  *
  * Lazy-loaded via `loadComponent` so the article + landing chunks stay out
  * of the main browser bundle until a `/docs/**` URL is activated.
  *
- * Wildcard ordering matters: keep `not-found` BEFORE the `**` catch-all so
- * the static 404 page wins over the resolver-driven dynamic article match.
+ * Wildcard ordering matters: keep `not-found` BEFORE the `**` catch-all so a
+ * direct visit to `/docs/not-found` renders the dedicated page rather than
+ * falling into the resolver-driven dynamic article match.
  */
 export const DOCS_ROUTES: Routes = [
   {
