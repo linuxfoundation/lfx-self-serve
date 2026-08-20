@@ -36,6 +36,12 @@ export class PersonDetailDrawerService {
   private readonly _error = signal<boolean>(false);
   public readonly error = this._error.asReadonly();
 
+  // Separate from _error: a failed company-emails lookup must not flip the activity tabs to
+  // "Couldn't load this person's details" (see the personKey/email branches below), but the
+  // header still needs to distinguish "lookup failed" from a genuine "no company email" result.
+  private readonly _emailError = signal<boolean>(false);
+  public readonly emailError = this._emailError.asReadonly();
+
   public readonly isOpen = computed(() => this._activeContext() !== null);
 
   private readonly fetchResult = toSignal(
@@ -50,11 +56,13 @@ export class PersonDetailDrawerService {
         if (!context || !orgUid) {
           this._loading.set(false);
           this._error.set(false);
+          this._emailError.set(false);
           return of(EMPTY_FETCH_RESULT);
         }
         if (context.personKey) {
           this._loading.set(true);
           this._error.set(false);
+          this._emailError.set(false);
           const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/${encodeURIComponent(context.personKey)}/detail`;
           return this.http.get<OrgAllEmployeeDetail>(url).pipe(
             map((detail) => ({ detail, companyEmails: detail.companyEmails })),
@@ -75,6 +83,7 @@ export class PersonDetailDrawerService {
         if (context.email) {
           this._loading.set(true);
           this._error.set(false);
+          this._emailError.set(false);
           const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/company-emails`;
           return this.http.post<OrgLensCompanyEmailsResponse>(url, { email: context.email }).pipe(
             map((response) => ({ detail: null, companyEmails: response.companyEmails })),
@@ -82,8 +91,10 @@ export class PersonDetailDrawerService {
             // Keep failures local to this optional lookup — no personKey means no activity was ever
             // fetched, so setting the shared _error signal here would wrongly flip the activity tabs
             // to "Couldn't load this person's details" instead of the truthful "not available" state.
+            // _emailError instead lets the header distinguish "lookup failed" from "no company email".
             catchError((err) => {
               console.error('Failed to load company emails:', err);
+              this._emailError.set(true);
               this._loading.set(false);
               return of(EMPTY_FETCH_RESULT);
             })
@@ -91,6 +102,7 @@ export class PersonDetailDrawerService {
         }
         this._loading.set(false);
         this._error.set(false);
+        this._emailError.set(false);
         return of(EMPTY_FETCH_RESULT);
       })
     ),

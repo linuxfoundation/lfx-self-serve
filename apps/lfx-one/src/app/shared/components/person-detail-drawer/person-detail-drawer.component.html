@@ -41,6 +41,8 @@
                 }}</span>
               }
             </span>
+          } @else if (companyEmailsUnavailable()) {
+            <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-unavailable"> Company email unavailable </span>
           }
         </span>
       </div>

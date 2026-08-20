@@ -27,6 +27,7 @@ export class PersonDetailDrawerComponent implements OnDestroy {
   protected readonly governanceSeats: Signal<OrgAllEmployeeCommitteeMembership[]> = computed(() => this.initGovernanceSeats());
   protected readonly codeTotals: Signal<{ commits: number; projects: number }> = computed(() => this.initCodeTotals());
   protected readonly companyEmails: Signal<string[]> = computed(() => this.initCompanyEmails());
+  protected readonly companyEmailsUnavailable: Signal<boolean> = computed(() => this.drawer.emailError());
 
   public ngOnDestroy(): void {
     this.drawer.close();
