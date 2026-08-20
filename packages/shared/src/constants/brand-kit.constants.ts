@@ -11,6 +11,9 @@ export const BRAND_KIT_CONTRACT_ID = 'brand-kit-output/v1';
 /** Document kind within the contract. */
 export const BRAND_KIT_KIND = 'brand-kit';
 
+/** Key-prefix namespace for Brand Kit objects in the shared marketing artifacts bucket (dec-brand-kit-storage-v2). */
+export const BRAND_KIT_KEY_PREFIX = 'brand-kit';
+
 /** Hard per-object size cap (bytes) per the LFX object-store design (20 MB). */
 export const BRAND_KIT_MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 
