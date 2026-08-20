@@ -59,8 +59,12 @@ export class MentionReadStateService {
   }
 
   public toggleRead(mentionId: string, mentionTimestamp: string): void {
-    const { data: current, loading } = this.store.state();
-    if (loading) return;
+    const { data: current, loading, error } = this.store.state();
+    // A failed load leaves an empty fallback state — writing from it would clobber the persisted read state.
+    if (loading || error) {
+      if (error) this.notifyUnavailable();
+      return;
+    }
 
     const currentlyRead = isReadInState(current, mentionId, mentionTimestamp);
 
@@ -78,6 +82,8 @@ export class MentionReadStateService {
 
     this.store.commit({
       next,
+      // Re-derive at dequeue time: if an earlier queued commit failed and rolled back, the eager snapshot would resurrect it.
+      rebase: (current) => computeReadToggle(current, mentionId, mentionTimestamp, currentlyRead),
       // Targeted rollback: re-derive against current state so optimistic toggles queued after this one survive.
       rollback: () => {
         const wasReadAfterToggle = isReadInState(next, mentionId, mentionTimestamp);
@@ -88,7 +94,11 @@ export class MentionReadStateService {
   }
 
   public markAllAsRead(latestMentionTs: string | null): void {
-    if (this.store.state().loading) return;
+    const { loading, error } = this.store.state();
+    if (loading || error) {
+      if (error) this.notifyUnavailable();
+      return;
+    }
     this.overflowWarningShown = false;
 
     // No mentions loaded — nothing to mark. Never fall back to wall-clock: that would
@@ -103,12 +113,24 @@ export class MentionReadStateService {
   }
 
   public markAllAsUnread(): void {
-    if (this.store.state().loading) return;
+    const { loading, error } = this.store.state();
+    if (loading || error) {
+      if (error) this.notifyUnavailable();
+      return;
+    }
     this.overflowWarningShown = false;
 
     this.store.commit({
       next: emptyReadState(),
       onError: () => this.notifyFailure(),
+    });
+  }
+
+  private notifyUnavailable(): void {
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Read state unavailable',
+      detail: 'Your read state could not be loaded. Refresh the page and try again.',
     });
   }
 

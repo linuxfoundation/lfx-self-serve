@@ -56,6 +56,8 @@ export interface UserPreferenceCommitArgs<T> {
   next: T;
   /** When false, state updates only after the HTTP write succeeds. Defaults to true. */
   optimistic?: boolean;
+  /** Recomputes the write payload against current state at dequeue time, so a queued commit never serializes a snapshot that still contains a since-rolled-back mutation. */
+  rebase?: (current: T) => T;
   /** Defaults to restoring the pre-commit snapshot only when no later optimistic update changed state. */
   rollback?: () => void;
   onSuccess?: () => void;
@@ -66,6 +68,8 @@ export interface UserPreferenceCommitArgs<T> {
 export interface UserPreferenceQueuedCommit<T> {
   ctx: PreferenceContext;
   next: T;
+  /** See `UserPreferenceCommitArgs.rebase`. */
+  rebase?: (current: T) => T;
   optimistic: boolean;
   rollback: () => void;
   onSuccess?: () => void;

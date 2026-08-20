@@ -67,6 +67,7 @@ export class UserPreferenceStore<T> {
     this.commitTrigger$.next({
       ctx,
       next: args.next,
+      rebase: args.rebase,
       optimistic,
       rollback:
         args.rollback ??
@@ -131,10 +132,13 @@ export class UserPreferenceStore<T> {
 
     if (!isSameContext()) return EMPTY;
 
+    // Rebase against post-rollback state so a queued write never resurrects a mutation whose commit failed.
+    const next = q.rebase ? q.rebase(this.stateSignal().data) : q.next;
+
     const onSuccess = (): void => {
       if (!isSameContext()) return;
       if (!q.optimistic) {
-        this.replace(q.next);
+        this.replace(next);
       }
       q.onSuccess?.();
     };
@@ -146,9 +150,9 @@ export class UserPreferenceStore<T> {
     };
 
     const name = this.config.preferenceName(q.ctx.projectId);
-    const serialized = this.config.serialize(q.next);
+    const serialized = this.config.serialize(next);
 
-    if (this.config.shouldDeleteOnEmpty?.(q.next)) {
+    if (this.config.shouldDeleteOnEmpty?.(next)) {
       return from(this.config.transport.delete(name)).pipe(
         takeUntil(this.cancelPersist$),
         tap(() => onSuccess()),

@@ -236,10 +236,19 @@ export class SocialListeningComponent {
   private readonly unreadWindowMentions: Signal<Mention[]> = this.initUnreadWindowMentions();
 
   public readonly loading = computed(() => {
+    // Unread mode filters against the persisted read state — hold loading until it arrives so the
+    // "all caught up" empty state can't paint before unread mentions are actually known.
+    if (this.selectedReadFilter() === 'unread' && this.readState().loading) return true;
     const windowData = this.windowCache().get(this.windowIndex());
     // A miss means the fetch is in flight or queued behind the coalescing debounce — hold loading so stale rows never paint.
     if (!windowData) return this.feedRequest() !== null && !this.feedState().error;
     if (windowData.complete) return false;
+    if (this.selectedReadFilter() === 'unread') {
+      // Unread pages slice a client-filtered window — wait for phase 2 to fill enough unread rows.
+      const neededEnd = (this.currentPage() + 1) * this.pageSize();
+      if (neededEnd <= this.unreadWindowMentions().length) return false;
+      return this.backgroundLoading() || this.feedState().loading;
+    }
     // Partial window: the visible page extends past what phase 2 has filled so far.
     const neededEnd = this.localOffset() + this.pageSize();
     if (neededEnd <= windowData.mentions.length) return false;
@@ -456,7 +465,10 @@ export class SocialListeningComponent {
     const latestTs = source.mentions.reduce<string | null>((max, m) => {
       if (!m.MENTION_TS) return max;
       // Epoch-ms compare — Snowflake's space-separated timestamps don't lexicographically sort against ISO "T".
-      return max === null || new Date(m.MENTION_TS).getTime() > new Date(max).getTime() ? m.MENTION_TS : max;
+      const time = new Date(m.MENTION_TS).getTime();
+      // Skip unparseable timestamps — NaN never loses a `>` compare, so one bad value would stick as the cutoff.
+      if (Number.isNaN(time)) return max;
+      return max === null || time > new Date(max).getTime() ? m.MENTION_TS : max;
     }, null);
     this.mentionReadStateService.markAllAsRead(latestTs);
   }

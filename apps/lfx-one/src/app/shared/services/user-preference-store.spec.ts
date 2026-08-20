@@ -182,6 +182,38 @@ describe('UserPreferenceStore', () => {
     expect(store.state().data).toEqual({ ids: ['a', 'b'] });
   });
 
+  it('rebases a queued write against post-rollback state so a failed mutation is not resurrected', async () => {
+    const { store, transport } = createStore();
+    const putA = deferred<undefined>();
+    (transport.put as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce(putA.promise)
+      // Commit A's reconcile retry must also fail for the commit to error at all.
+      .mockRejectedValueOnce(new Error('retry lost'))
+      .mockResolvedValue(undefined);
+
+    store.setContext(ctxA);
+    await flush();
+
+    // A's targeted rollback removes only 'a', preserving B's optimistic 'b'; B rebases its payload at dequeue.
+    store.commit({
+      next: { ids: ['a'] },
+      rollback: () => store.replace({ ids: store.state().data.ids.filter((id) => id !== 'a') }),
+    });
+    store.commit({
+      next: { ids: ['a', 'b'] },
+      rebase: (current) => ({ ids: current.ids.includes('b') ? current.ids : [...current.ids, 'b'] }),
+    });
+    expect(store.state().data).toEqual({ ids: ['a', 'b'] });
+
+    putA.reject(new Error('lost'));
+    await flush();
+
+    // B's eager snapshot contained 'a', but the rebased payload reflects the rolled-back state.
+    expect(transport.put).toHaveBeenCalledTimes(3);
+    expect(transport.put).toHaveBeenNthCalledWith(3, 'Social Listening Bookmarks - p1', '{"ids":["b"]}');
+    expect(store.state().data).toEqual({ ids: ['b'] });
+  });
+
   it('restores the snapshot on failure when no later optimistic update landed', async () => {
     const { store, transport } = createStore();
     (transport.get as ReturnType<typeof vi.fn>).mockResolvedValue('{"ids":["x"]}');
