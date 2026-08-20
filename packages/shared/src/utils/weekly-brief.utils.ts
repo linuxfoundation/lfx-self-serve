@@ -88,10 +88,11 @@ function buildChip(ref: WeeklyBriefSourceRef): WeeklyBriefSourceChip {
  * only the new `kind` field (added on every chip in `buildChip`, group or not) differs.
  *
  * Keyed with a NUL separator, not string concatenation, so a `kind`/`label` pair can't collide
- * with a different pair that happens to concatenate to the same string.
+ * with a different pair that happens to concatenate to the same string. No separate
+ * first-occurrence-order tracking is needed: `Map` already iterates in insertion order, so
+ * `groups.values()` yields groups in the same order their key first appeared in `chips`.
  */
 function groupChips(chips: WeeklyBriefSourceChip[]): WeeklyBriefSourceChip[] {
-  const order: string[] = [];
   const groups = new Map<string, WeeklyBriefSourceChip[]>();
   for (const chip of chips) {
     const key = `${chip.kind}\u0000${chip.label}`;
@@ -100,12 +101,10 @@ function groupChips(chips: WeeklyBriefSourceChip[]): WeeklyBriefSourceChip[] {
       existing.push(chip);
     } else {
       groups.set(key, [chip]);
-      order.push(key);
     }
   }
 
-  return order.map((key) => {
-    const members = groups.get(key) as WeeklyBriefSourceChip[];
+  return Array.from(groups.values(), (members) => {
     if (members.length === 1) {
       return members[0];
     }
