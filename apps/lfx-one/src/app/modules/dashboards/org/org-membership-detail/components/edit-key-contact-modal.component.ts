@@ -170,6 +170,17 @@ export class EditKeyContactModalComponent {
     this.selectedRemoveId.set(personId);
   }
 
+  protected onRemoveCandidateClick(person: OrgMembershipKeyContactPerson): void {
+    this.selectRemoveCandidate(person.personId);
+    this.drawer.open({
+      name: person.fullName,
+      title: person.jobTitle,
+      initials: person.initials,
+      avatarColorClass: 'bg-purple-500',
+      email: person.email,
+    });
+  }
+
   // === Field validation (FR-017a — on blur) ===
   protected onEmailBlur(): void {
     // Close the suggestion list on blur. Option clicks use (mousedown)="$event.preventDefault()" so
@@ -286,10 +297,10 @@ export class EditKeyContactModalComponent {
     else this.selectRemoveCard();
   }
 
-  protected onRemoveCandidateKeydown(event: KeyboardEvent, personId: string): void {
+  protected onRemoveCandidateKeydown(event: KeyboardEvent, person: OrgMembershipKeyContactPerson): void {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
-    this.selectRemoveCandidate(personId);
+    this.onRemoveCandidateClick(person);
   }
 
   protected onFormEnter(event: KeyboardEvent): void {
