@@ -33,11 +33,7 @@
             [disabled]="tile.disabled"
             [attr.aria-disabled]="tile.disabled"
             [attr.data-testid]="'mktg-os-agents-tile-' + tile.agent.id"
-            [attr.aria-label]="
-              tile.disabled
-                ? tile.agent.name + (tile.agent.status === 'active' ? ' (requires ' + tile.missingDependencyNames.join(' and ') + ')' : ' (coming soon)')
-                : 'Open ' + tile.agent.name
-            "
+            [attr.aria-label]="tile.ariaLabel"
             (click)="onSelectAgent(tile)">
             <div class="flex items-center gap-3">
               <span class="flex items-center justify-center w-10 h-10 rounded-lg" [ngClass]="tile.iconClass">

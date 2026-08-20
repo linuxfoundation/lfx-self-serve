@@ -10,7 +10,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_OS_AGENTS_LABEL } from '@lfx-one/shared/constants';
-import { MktgAgent, MktgAgentAccent, MktgDependencyDocument, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MktgAgent, MktgAgentAccent, MktgAgentTile, MktgDependencyDocument, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -67,8 +67,7 @@ export class MktgOsAgentsComponent {
   private readonly searchTerm = toSignal(this.searchForm.controls.search.valueChanges, { initialValue: '' });
 
   // === Computed ===
-  protected readonly tiles: Signal<{ agent: MktgAgent; iconClass: string; borderClass: string; disabled: boolean; missingDependencyNames: string[] }[]> =
-    this.initTiles();
+  protected readonly tiles: Signal<MktgAgentTile[]> = this.initTiles();
 
   // === Catalog-derived (static for the component's lifetime) ===
   /** Every dependency agent id referenced by the catalog — resolved once per active project. */
@@ -124,7 +123,7 @@ export class MktgOsAgentsComponent {
   }
 
   // === Protected methods ===
-  protected onSelectAgent(tile: { agent: MktgAgent; disabled: boolean }): void {
+  protected onSelectAgent(tile: MktgAgentTile): void {
     // Only enabled tiles have a run page: `coming-soon` tiles and dependency-
     // gated tiles (dec-agent-dependency-gating) are inert.
     if (tile.disabled) {
@@ -134,7 +133,7 @@ export class MktgOsAgentsComponent {
   }
 
   // === Private initializers ===
-  private initTiles(): Signal<{ agent: MktgAgent; iconClass: string; borderClass: string; disabled: boolean; missingDependencyNames: string[] }[]> {
+  private initTiles(): Signal<MktgAgentTile[]> {
     return computed(() => {
       const term = this.searchTerm().trim().toLowerCase();
       const matches = term
@@ -154,18 +153,37 @@ export class MktgOsAgentsComponent {
         // project. Unresolved (still loading / SSR) counts as missing — fail-closed.
         const missingDependencyNames =
           agent.status === 'active' ? (agent.dependsOn ?? []).filter((id) => !dependencies[id]).map((id) => this.documentName(id)) : [];
+        const disabled = agent.status !== 'active' || missingDependencyNames.length > 0;
         return {
           agent,
           iconClass: this.accentIcon[accent],
           borderClass: this.accentBorder[accent],
-          disabled: agent.status !== 'active' || missingDependencyNames.length > 0,
+          disabled,
           missingDependencyNames,
+          ariaLabel: this.tileAriaLabel(agent, disabled, missingDependencyNames),
         };
       });
     });
   }
 
   // === Private helpers ===
+  /**
+   * Accessible name for a card, derived here rather than in the template: the
+   * grid's binding would otherwise need a nested conditional, which the repo
+   * prohibits, and the disabled reason belongs next to the `disabled` decision
+   * it must agree with. A disabled card always says WHY — the same reason its
+   * visible tag carries, so the tag and the accessible name cannot diverge.
+   */
+  private tileAriaLabel(agent: MktgAgent, disabled: boolean, missingDependencyNames: string[]): string {
+    if (!disabled) {
+      return `Open ${agent.name}`;
+    }
+    if (agent.status !== 'active') {
+      return `${agent.name} (coming soon)`;
+    }
+    return `${agent.name} (requires ${missingDependencyNames.join(' and ')})`;
+  }
+
   /** Display name of a dependency agent's document: its intake's document name, else the catalog agent name, else the id. */
   private documentName(agentId: string): string {
     return MKTG_AGENT_INTAKES[agentId]?.documentName ?? MKTG_AGENTS.find((candidate) => candidate.id === agentId)?.name ?? agentId;
