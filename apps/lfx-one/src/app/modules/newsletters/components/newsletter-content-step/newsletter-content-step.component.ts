@@ -54,6 +54,9 @@ export class NewsletterContentStepComponent implements OnInit {
   public readonly contextName = input<string>('');
   public readonly hasContext = input<boolean>(false);
   public readonly savedLabel = input<string | null>(null);
+  // Gates the block composer to the pilot projects. When false, only the simple
+  // rich-text editor is available and the Blocks/Simple toggle is hidden.
+  public readonly blocksEnabled = input<boolean>(false);
 
   // === Outputs ===
   public readonly generated = output<GenerateNewsletterResponse>();
@@ -86,6 +89,12 @@ export class NewsletterContentStepComponent implements OnInit {
   });
 
   public ngOnInit(): void {
+    // Blocks disabled for this project: only the simple editor is available,
+    // regardless of what the draft carries.
+    if (!this.blocksEnabled()) {
+      this.editorMode.set('simple');
+      return;
+    }
     // Infer the editor from the draft: a saved layout means the composer, a
     // saved html body means the simple editor, otherwise the default (blocks).
     const layout = this.form().get('bodyLayout')?.value as NewsletterLayout | null;
@@ -111,6 +120,8 @@ export class NewsletterContentStepComponent implements OnInit {
    * authored body_html).
    */
   protected setMode(mode: NewsletterEditorMode): void {
+    // Blocks is unavailable when the composer is gated off for this project.
+    if (mode === 'blocks' && !this.blocksEnabled()) return;
     if (mode === this.editorMode()) return;
     const leavingBlocks = this.editorMode() === 'blocks';
     // Read the LIVE control, not the memoized signal, so in-session blocks count.

@@ -89,6 +89,12 @@ export const NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES = 35;
 // larger value can never succeed at arm time regardless of what the UI allows.
 export const NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS = 72;
 
+// The block composer (structured body_layout editor) and its template library
+// are gated to these project slugs; every other project uses the simple
+// rich-text editor only, and the Blocks/Simple toggle is hidden. AAIF is the
+// pilot for the blocks editor.
+export const NEWSLETTER_BLOCKS_PROJECT_SLUGS: readonly string[] = ['agentic-ai-foundation'];
+
 // Gmail clips a message once its rendered HTML exceeds ~102 KB (hiding
 // everything past the cut behind a "[Message clipped] View entire message"
 // link). The block composer warns as the email approaches that ceiling and

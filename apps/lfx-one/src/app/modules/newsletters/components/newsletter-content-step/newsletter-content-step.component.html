@@ -10,35 +10,38 @@
       </p>
     </div>
 
-    <!-- Editor toggle: block composer vs. the simple rich-text + AI editor. -->
-    <div
-      class="flex shrink-0 overflow-hidden rounded-md border border-gray-200"
-      role="group"
-      aria-label="Body editor"
-      data-testid="newsletter-content-editor-toggle">
-      <button
-        type="button"
-        class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100"
-        [class.bg-blue-50]="editorMode() === 'blocks'"
-        [class.text-blue-600]="editorMode() === 'blocks'"
-        [attr.aria-pressed]="editorMode() === 'blocks'"
-        data-testid="newsletter-content-editor-blocks"
-        (click)="setMode('blocks')">
-        <i class="fa-light fa-cube" aria-hidden="true"></i>
-        Blocks
-      </button>
-      <button
-        type="button"
-        class="flex items-center gap-1.5 border-l border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100"
-        [class.bg-blue-50]="editorMode() === 'simple'"
-        [class.text-blue-600]="editorMode() === 'simple'"
-        [attr.aria-pressed]="editorMode() === 'simple'"
-        data-testid="newsletter-content-editor-simple"
-        (click)="setMode('simple')">
-        <i class="fa-light fa-pen-to-square" aria-hidden="true"></i>
-        Simple
-      </button>
-    </div>
+    <!-- Editor toggle: block composer vs. the simple rich-text + AI editor.
+         Shown only where the block composer is enabled (pilot projects). -->
+    @if (blocksEnabled()) {
+      <div
+        class="flex shrink-0 overflow-hidden rounded-md border border-gray-200"
+        role="group"
+        aria-label="Body editor"
+        data-testid="newsletter-content-editor-toggle">
+        <button
+          type="button"
+          class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100"
+          [class.bg-blue-50]="editorMode() === 'blocks'"
+          [class.text-blue-600]="editorMode() === 'blocks'"
+          [attr.aria-pressed]="editorMode() === 'blocks'"
+          data-testid="newsletter-content-editor-blocks"
+          (click)="setMode('blocks')">
+          <i class="fa-light fa-cube" aria-hidden="true"></i>
+          Blocks
+        </button>
+        <button
+          type="button"
+          class="flex items-center gap-1.5 border-l border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100"
+          [class.bg-blue-50]="editorMode() === 'simple'"
+          [class.text-blue-600]="editorMode() === 'simple'"
+          [attr.aria-pressed]="editorMode() === 'simple'"
+          data-testid="newsletter-content-editor-simple"
+          (click)="setMode('simple')">
+          <i class="fa-light fa-pen-to-square" aria-hidden="true"></i>
+          Simple
+        </button>
+      </div>
+    }
   </div>
 
   <div class="flex flex-col gap-2">
@@ -53,7 +56,7 @@
     </lfx-input-text>
   </div>
 
-  @if (editorMode() === 'blocks') {
+  @if (blocksEnabled() && editorMode() === 'blocks') {
     <div class="flex flex-1 flex-col gap-2">
       <span id="newsletter-body-label" class="text-sm font-medium text-gray-700">Body</span>
       <lfx-newsletter-block-composer

@@ -38,7 +38,9 @@ test.setTimeout(60_000);
 const PAGE_LOAD_TIMEOUT = 20_000;
 const ELEMENT_TIMEOUT = 10_000;
 
-const MOCK_FOUNDATION_SLUG = 'test-foundation';
+// The block composer is gated to NEWSLETTER_BLOCKS_PROJECT_SLUGS, so this suite
+// runs as the AAIF pilot project (otherwise the composer + toggle are hidden).
+const MOCK_FOUNDATION_SLUG = 'agentic-ai-foundation';
 const MOCK_FOUNDATION_UID = 'f0000000-0000-0000-0000-000000000001';
 const MOCK_NEWSLETTER_ID = 'n0000000-0000-0000-0000-000000000ccc';
 const MOCK_COMMITTEE_UID = 'c0000000-0000-0000-0000-000000000bbb';

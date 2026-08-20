@@ -9,6 +9,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  NEWSLETTER_BLOCKS_PROJECT_SLUGS,
   NEWSLETTER_COMMITTEE_CATEGORY,
   NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS,
   NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES,
@@ -184,6 +185,10 @@ export class NewsletterManageComponent {
   public readonly displayName: Signal<string> = computed(() => this.activeContext()?.name ?? '');
   private readonly fetchedLogoUrl = signal<string | undefined>(undefined);
   public readonly logoUrl: Signal<string | undefined> = computed(() => this.activeContext()?.logoUrl || this.fetchedLogoUrl());
+  // The block composer + its template library are gated to the pilot projects
+  // (see NEWSLETTER_BLOCKS_PROJECT_SLUGS); every other project uses the simple
+  // editor only and never sees the Blocks/Simple toggle.
+  public readonly blocksEnabled: Signal<boolean> = computed(() => NEWSLETTER_BLOCKS_PROJECT_SLUGS.includes(this.activeContext()?.slug ?? ''));
   public readonly hasContext: Signal<boolean> = computed(() => this.projectUid().length > 0);
 
   // === Auth-derived ===
