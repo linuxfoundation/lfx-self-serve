@@ -15,7 +15,7 @@ import type {
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
 import { splitDisplayName } from '@lfx-one/shared/utils';
-import { createHash } from 'crypto';
+import { createHmac } from 'crypto';
 import { Request } from 'express';
 
 import { getEffectiveUsername } from '../utils/auth-helper';
@@ -82,6 +82,11 @@ export function resolveMergeKey(record: { lfUsername?: string | null; email?: st
   if (username) return `identity:${username}`;
   const email = (record.email ?? '').trim().toLowerCase();
   return email ? `email:${email}` : null;
+}
+
+/** Signing key for live-only `personKey` HMACs — the app session secret, same default as `mktg-session-token.util.ts` and the auth config. */
+function personKeySigningSecret(): string {
+  return process.env['PCC_AUTH0_SECRET'] || 'sufficiently-long-string';
 }
 
 /** The badge a principal renders as: their role once accepted, `invited` while the invite is outstanding. */
@@ -403,12 +408,13 @@ export class OrgPeopleDirectoryService {
 
   /**
    * Build a live-only row (no stored activity). personKey is a pattern-safe token so a detail expand
-   * returns an empty (200) payload rather than a 400. It is a one-way hash of the merge key rather
-   * than a reversible encoding of it, since the merge key can be `email:<address>` — a plain
-   * base64url encoding would put a recoverable member email in the token, and therefore in request
-   * logs. It's still derived from the merge key (not the address alone) so a record identified only
-   * by username gets a distinct token — deriving it from an absent address would collide every such
-   * row onto the same key.
+   * returns an empty (200) payload rather than a 400. It is an HMAC-SHA256 of the merge key — not a
+   * reversible encoding, and not an unkeyed hash either — since the merge key can be `email:<address>`.
+   * Email addresses are low-entropy, so an unkeyed hash (or plain base64url) would let anyone who reads
+   * the logged token dictionary-attack candidate addresses and recover the member's identity; keying with
+   * the app session secret (same pattern as `mktg-session-token.util.ts`) closes that off. It's still
+   * derived from the merge key (not the address alone) so a record identified only by username gets a
+   * distinct token — deriving it from an absent address would collide every such row onto the same key.
    */
   private liveRow(
     email: string,
@@ -423,7 +429,7 @@ export class OrgPeopleDirectoryService {
     const username = (lfUsername ?? '').trim().toLowerCase() || null;
     const name = [firstName, lastName].filter(Boolean).join(' ').trim() || email || username || '';
     return {
-      personKey: `live-${createHash('sha256').update(key).digest('base64url').slice(0, 32)}`,
+      personKey: `live-${createHmac('sha256', personKeySigningSecret()).update(key).digest('base64url').slice(0, 32)}`,
       lfid: null,
       lfUsername: username,
       cdpMemberId: null,
