@@ -200,17 +200,32 @@ describe('MeetingManageComponent', () => {
 
     it('omits owner when the trimmed values still match the hydrated owner', async () => {
       const component = await createOwnerComponent();
-      component.hydratedOwner = { ...HYDRATED };
+      component.hydratedOwner.set({ ...HYDRATED });
       expect(component.prepareOwnerData({ ownerUsername: ' ghopper ', ownerName: 'Grace Hopper', ownerEmail: 'grace@example.com' })).toEqual({});
     });
 
     it('includes only the non-empty owner fields when the selection changed', async () => {
       const component = await createOwnerComponent();
-      component.hydratedOwner = { ...HYDRATED };
+      component.hydratedOwner.set({ ...HYDRATED });
       // Manual-entry shape: no username — the key must not appear as an empty string.
       expect(component.prepareOwnerData({ ownerUsername: '', ownerName: 'Radia Perlman', ownerEmail: 'radia@example.com' })).toEqual({
         owner: { name: 'Radia Perlman', email: 'radia@example.com' },
       });
+    });
+
+    it('omits owner after a revert-to-saved brings the picker back in line with the hydrated owner', async () => {
+      // Mirrors the organizer picker's revert affordance: the wizard patches the owner controls
+      // back to the saved baseline (meeting-details.component.ts's revertOwnerToSaved), and the
+      // next save must see no diff against hydratedOwner — same contract as an untouched picker.
+      const component = await createOwnerComponent();
+      component.hydratedOwner.set({ ...HYDRATED });
+      component.form().patchValue({ ownerUsername: 'someone-else', ownerName: 'Someone Else', ownerEmail: 'someone@example.com' });
+      expect(component.prepareOwnerData(component.form().getRawValue())).toEqual({
+        owner: { username: 'someone-else', name: 'Someone Else', email: 'someone@example.com' },
+      });
+
+      component.form().patchValue({ ownerUsername: HYDRATED.username, ownerName: HYDRATED.name, ownerEmail: HYDRATED.email });
+      expect(component.prepareOwnerData(component.form().getRawValue())).toEqual({});
     });
 
     it('re-baselines on syncHydratedOwnerFromForm so a repeat save omits the unchanged owner', async () => {
@@ -229,9 +244,9 @@ describe('MeetingManageComponent', () => {
 
     it('keeps the previous baseline when the form is empty — that save omitted the key, so the stored owner is unchanged', async () => {
       const component = await createOwnerComponent();
-      component.hydratedOwner = { ...HYDRATED };
+      component.hydratedOwner.set({ ...HYDRATED });
       component.syncHydratedOwnerFromForm();
-      expect(component.hydratedOwner).toEqual(HYDRATED);
+      expect(component.hydratedOwner()).toEqual(HYDRATED);
     });
   });
 });

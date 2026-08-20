@@ -15,7 +15,7 @@ Users with a **maintainer**, **board-member**, or **executive-director** persona
 
 ## Why can't I see a group I should be in?
 
-Contact LFX support through the Help Center and tell us which group you were expecting to see. If you're signed in, we can already see your account, so that's all we need from you.
+Contact LFX support via in-app messaging and tell us which group you were expecting to see. If you're signed in, we can already see your account, so that's all we need from you.
 
 Two things cause this: either you're not currently on that group's list, or you are and our records haven't linked you to your login yet. Support will check which and follow up. Your group's chair can also confirm your membership and send you meeting details directly in the meantime.
 
@@ -37,4 +37,4 @@ Contact your project administrator before deleting a committee, as this may affe
 
 ## Who do I contact if I need help with committees?
 
-Contact LFX support through the Help Center. Include your project name and the committee name in your request.
+Contact LFX support via in-app messaging. Include your project name and the committee name in your request.
