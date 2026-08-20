@@ -29,6 +29,7 @@ import {
   computeHealthyOrBetterCount,
   computeHealthyOrBetterPct,
   computeScoredCount,
+  mapV1DistributionToV2,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -133,6 +134,9 @@ export class ProjectHealthScoresDrawerComponent {
   // === Inputs ===
   public readonly data = input<FoundationHealthScoreDistributionResponse>(DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION);
 
+  // Maps v1 band names (stable/unsteady) from the API response to v2 names (fair/concerning) for display.
+  private readonly mappedData = computed(() => mapV1DistributionToV2(this.data()) as unknown as Record<HealthStatusFilterValue, number>);
+
   // True while the parent's foundation health-score distribution request is in flight.
   // Gates only the parts of the drawer that depend on `data` (summary + chart). The header
   // badge additionally waits on `totalProjectsLoading` via `distributionLoading`, because
@@ -166,9 +170,9 @@ export class ProjectHealthScoresDrawerComponent {
 
   // Mirrors the foundation-health card's focal KPI so the card's `%` and the drawer's
   // summary can never drift apart.
-  protected readonly healthyOrBetterCount: Signal<number> = computed(() => computeHealthyOrBetterCount(this.data()));
+  protected readonly healthyOrBetterCount: Signal<number> = computed(() => computeHealthyOrBetterCount(this.mappedData()));
 
-  protected readonly healthyOrBetterPct: Signal<number> = computed(() => computeHealthyOrBetterPct(this.data()));
+  protected readonly healthyOrBetterPct: Signal<number> = computed(() => computeHealthyOrBetterPct(this.mappedData()));
 
   // Pre-formatted labels so the template stays a pure binding (no toLocaleString in markup).
   protected readonly healthyOrBetterCountLabel: Signal<string> = computed(() => this.healthyOrBetterCount().toLocaleString('en-US'));
@@ -177,7 +181,7 @@ export class ProjectHealthScoresDrawerComponent {
   protected readonly hasData: Signal<boolean> = computed(() => this.scoredProjects() > 0);
   // Gates the chart itself: a foundation whose projects are all unscored still has a bar to
   // draw (the leading Unscored bar), so this must not collapse to hasData() (scored-only).
-  protected readonly hasChartData: Signal<boolean> = computed(() => this.scoredProjects() > 0 || this.data().unscored > 0);
+  protected readonly hasChartData: Signal<boolean> = computed(() => this.scoredProjects() > 0 || this.mappedData().unscored > 0);
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!this.search().trim() || this.selectedStatuses().size > 0);
   protected readonly chartData: Signal<ChartData<'bar'>> = this.initChartData();
 
@@ -215,7 +219,7 @@ export class ProjectHealthScoresDrawerComponent {
 
   // === Private Initializers ===
   private initScoredProjects(): number {
-    return computeScoredCount(this.data());
+    return computeScoredCount(this.mappedData());
   }
 
   private initScoredLabel(): string {
@@ -226,7 +230,7 @@ export class ProjectHealthScoresDrawerComponent {
 
   private initChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
-      const d = this.data();
+      const d = this.mappedData();
       const barColors = PROJECT_HEALTH_CHART_CATEGORIES.map((category) => this.chartColor[category]);
       return {
         labels: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => PROJECT_HEALTH_CHART_CATEGORY_LABEL[category]),
