@@ -47,6 +47,9 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   // Live Guild agent (linux-foundation~foundation-message) with its batch
   // intake form registered in MKTG_AGENT_INTAKES (wi-mf-lfx-selfserve).
+  // Consumes the Brand Kit (dec-agent-dependency-gating): the card stays
+  // disabled until the active project has a stored Brand Kit, and the intake
+  // auto-attaches that document instead of asking for it.
   {
     id: 'foundation-setup',
     number: 2,
@@ -58,6 +61,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
     icon: 'fa-light fa-landmark',
     accent: 'blue',
     guildAgentHandle: 'foundation-message',
+    dependsOn: ['brand-kit'],
   },
   {
     id: 'icp',

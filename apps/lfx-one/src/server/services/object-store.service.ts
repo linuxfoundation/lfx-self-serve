@@ -127,7 +127,14 @@ export class ObjectStoreService {
       }
 
       await client.send(
-        new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType, CacheControl: cacheControl, ...(metadata && { Metadata: metadata }) })
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+          CacheControl: cacheControl,
+          ...(metadata && { Metadata: metadata }),
+        })
       );
       logger.success(req, 'object_store_put_if_absent', startTime, { key, written: true });
       return true;

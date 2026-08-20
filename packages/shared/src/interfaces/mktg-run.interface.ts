@@ -50,43 +50,36 @@ export interface MktgIntakeField {
 }
 
 /**
- * How the user answers an intake's Brand Kit gate question (Q1c of the
- * Message Foundation interview): consume the project's stored Brand Kit,
- * paste one, or answer the brand-discovery questions instead.
+ * A dependency document auto-attached to an intake's submitted answers
+ * (dec-agent-dependency-gating): agents that CONSUME another agent's output
+ * (e.g. the Message Foundation consumes the Brand Kit) never ask for it —
+ * the run page fetches the dependency's stored document at submit time
+ * (server-persisted preferred, browser-stored run fallback) and submits it
+ * under the agent's own schema key. The form shows a non-interactive
+ * "Using <project>'s <document> (vN)" chip instead of any choice UI.
  */
-export type MktgBrandKitGateChoice = 'stored' | 'paste' | 'discovery';
-
-/** One selectable option of the Brand Kit gate. */
-export interface MktgIntakeGateOption {
-  /** Which gate branch this option selects. */
-  choice: MktgBrandKitGateChoice;
-  /** Option title. */
-  label: string;
-  /** One-line explanation under the title. */
-  sublabel: string;
+export interface MktgIntakeAttachment {
+  /** Catalog agent id whose stored output is attached — must appear in the consuming agent's `dependsOn`. */
+  sourceAgentId: string;
+  /** Answer key the document is submitted under (the agent's own batch schema key, e.g. `brand_kit_markdown`). */
+  answerKey: string;
+  /** Human name of the attached document for the on-form chip, e.g. `Brand Kit`. */
+  documentName: string;
 }
 
 /**
- * Brand Kit gate configuration for intakes whose agent CONSUMES a Brand Kit
- * (e.g. the Message Foundation). The gate question is quoted verbatim from
- * the agent's own intake wording; its three options branch the form:
- * `stored` submits the project's stored Brand Kit document, `paste` requires
- * the paste field, `discovery` requires the discovery fields. The `stored`
- * option is only offered when a stored document actually exists — until the
- * server-side Brand Kit persistence lands, the only stored-document source is
- * the browser-persisted Brand Kit agent run (`storedSourceAgentId`).
+ * A dependency agent's stored output document resolved for one project —
+ * what marketplace gating checks and intake attachments submit.
  */
-export interface MktgIntakeBrandKitGate {
-  /** The gate question, quoted VERBATIM from the agent's `src/questions.ts`. */
-  question: string;
-  /** The selectable options, in render order. */
-  options: MktgIntakeGateOption[];
-  /** Field key of the paste textarea — required only for the `paste` choice. */
-  pasteFieldKey: string;
-  /** Field keys required only for the `discovery` choice; hidden otherwise. */
-  discoveryFieldKeys: string[];
-  /** Catalog agent id whose stored run provides the `stored` option's document. */
-  storedSourceAgentId: string;
+export interface MktgDependencyDocument {
+  /** Catalog agent id that produced the document. */
+  agentId: string;
+  /** Where the document came from: BFF object-store persistence, or this browser's stored run. */
+  source: 'server' | 'browser';
+  /** Latest stored draft version. */
+  version: number;
+  /** The stored document (Markdown). */
+  document: string;
 }
 
 /** One word-count-locked derivative surfaced as a copyable chip on the result. */
@@ -192,8 +185,14 @@ export interface MktgAgentIntake {
   sections: string[];
   /** BFF endpoints for the agent's validated generation flow. */
   endpoints: MktgRunEndpoints;
-  /** Brand Kit gate configuration, for agents that consume a Brand Kit. */
-  brandKitGate?: MktgIntakeBrandKitGate;
+  /**
+   * Dependency documents auto-attached to the submitted answers at submit
+   * time (dec-agent-dependency-gating), for agents that consume another
+   * agent's stored output. Every `sourceAgentId` must appear in the catalog
+   * agent's `dependsOn`, which gates the marketplace card until the
+   * dependency's stored output exists.
+   */
+  attachments?: MktgIntakeAttachment[];
   /** Copyable derivative chips shown on the result, when the agent's envelope carries derivatives. */
   derivativeChips?: MktgIntakeDerivativeChip[];
   /**

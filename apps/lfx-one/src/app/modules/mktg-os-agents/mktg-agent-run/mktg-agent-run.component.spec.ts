@@ -5,8 +5,17 @@ import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { MktgGenerateProgress, MktgGenerateRequest, MktgStoredAgentRun, Project, ProjectContext, User } from '@lfx-one/shared/interfaces';
+import {
+  MktgDependencyDocument,
+  MktgGenerateProgress,
+  MktgGenerateRequest,
+  MktgStoredAgentRun,
+  Project,
+  ProjectContext,
+  User,
+} from '@lfx-one/shared/interfaces';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -36,9 +45,12 @@ describe('MktgAgentRunComponent', () => {
   let storedRuns: Record<string, MktgStoredAgentRun>;
   /** Project detail per slug, resolved by the mocked getProject. */
   let projects: Record<string, Partial<Project> | null>;
+  /** Resolved dependency document per `<projectUid>:<agentId>`, returned by the mocked dependency service. */
+  let dependencyDocs: Record<string, MktgDependencyDocument>;
   let loadRun: ReturnType<typeof vi.fn>;
   let getProject: ReturnType<typeof vi.fn>;
   let generate: ReturnType<typeof vi.fn>;
+  let resolveDependencies: ReturnType<typeof vi.fn>;
 
   const storedRun = (projectUid: string, document: string, answers: Record<string, string>): MktgStoredAgentRun => ({
     agentId: 'brand-kit',
@@ -68,12 +80,16 @@ describe('MktgAgentRunComponent', () => {
     userSignal = signal<User | null>({ sub: 'auth0|user-1' } as User);
     storedRuns = {};
     projects = {};
+    dependencyDocs = {};
     // Stored runs are keyed per agent: `<projectUid>` alone keeps the legacy
     // brand-kit fixtures working, `<projectUid>:<agentId>` scopes when a test
-    // needs both the page agent's run AND the gate's brand-kit source run.
+    // needs both the page agent's run AND a dependency source run.
     loadRun = vi.fn((projectUid: string, runAgentId: string) => storedRuns[`${projectUid}:${runAgentId}`] ?? storedRuns[projectUid] ?? null);
     getProject = vi.fn((slug: string) => of(projects[slug] ?? null));
     generate = vi.fn(() => of<MktgGenerateProgress>({ type: 'submitted' }));
+    resolveDependencies = vi.fn((projectUid: string, agentIds: string[]) =>
+      of(Object.fromEntries(agentIds.map((agentId) => [agentId, dependencyDocs[`${projectUid}:${agentId}`] ?? null])))
+    );
 
     await TestBed.configureTestingModule({
       imports: [MktgAgentRunComponent],
@@ -86,6 +102,7 @@ describe('MktgAgentRunComponent', () => {
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
         { provide: MktgAgentRunService, useValue: { loadRun, generate } },
+        { provide: MktgDependencyService, useValue: { resolveDependencies } },
         MessageService,
       ],
     }).compileComponents();
@@ -230,80 +247,58 @@ describe('MktgAgentRunComponent', () => {
     });
   });
 
-  describe('Message Foundation — Brand Kit gate logic (wi-mf-lfx-selfserve)', () => {
+  describe('Message Foundation — dependency auto-attach (dec-agent-dependency-gating)', () => {
     /** Fills the two always-required base fields. */
     const fillBase = (): void => {
       component['intakeForm'].controls['project_name'].setValue('TestOrbit');
       component['intakeForm'].controls['github_url'].setValue('https://github.com/example-org/testorbit');
     };
-    const fillDiscovery = (): void => {
-      for (const key of ['one_line_description', 'primary_audience', 'voice_adjectives', 'constraints', 'reference_brands']) {
-        component['intakeForm'].controls[key].setValue(`Answer for ${key}`);
-      }
-    };
-    const brandKitSourceRun = (document: string): MktgStoredAgentRun => ({
+    const brandKitDoc = (document: string, version = 2, source: 'server' | 'browser' = 'server'): MktgDependencyDocument => ({
       agentId: 'brand-kit',
-      projectUid: 'proj-1',
-      sessionId: 'sess-bk',
-      ownerToken: 'token-bk',
-      answers: {},
-      versions: [{ version: 2, document, createdAt: '2026-08-19T00:00:00.000Z' }],
-      savedAt: '2026-08-19T00:00:00.000Z',
+      source,
+      version,
+      document,
     });
     const submittedAnswers = (): Record<string, string> => (generate.mock.calls[0][0] as MktgGenerateRequest).answers;
 
     beforeEach(async () => configure('browser', 'foundation-setup'));
 
-    it('hides the stored-kit option when the project has no stored Brand Kit and defaults to discovery', async () => {
+    it('renders no Brand Kit gate UI: only project name, GitHub URL and the optional gap-fill notes', async () => {
+      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# TestOrbit Brand Kit v2') };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      expect(query('mktg-agent-run-gate')).not.toBeNull();
-      expect(query('mktg-agent-run-gate-stored')).toBeNull();
-      expect(query('mktg-agent-run-gate-paste')).not.toBeNull();
-      expect(query('mktg-agent-run-gate-discovery')).not.toBeNull();
-      // Discovery branch active: its five questions render, the paste textarea does not.
-      expect(host().querySelector('[data-test="mktg-intake-one_line_description"]')).not.toBeNull();
+      // The retired use/paste/discovery gate — and Paul's raw
+      // "[Project Name] Brand Kit" template string — must not render.
+      expect(query('mktg-agent-run-gate')).toBeNull();
+      expect(host().textContent).not.toContain('[Project Name]');
       expect(host().querySelector('[data-test="mktg-intake-brand_kit_markdown"]')).toBeNull();
-    });
+      expect(host().querySelector('[data-test="mktg-intake-one_line_description"]')).toBeNull();
+      expect(host().querySelector('[data-test="mktg-intake-project_name"]')).not.toBeNull();
+      expect(host().querySelector('[data-test="mktg-intake-github_url"]')).not.toBeNull();
+      expect(host().querySelector('[data-test="mktg-intake-gap_fill_notes"]')).not.toBeNull();
 
-    it('enforces the conditional contract: discovery answers required on discovery, only the paste field on paste', async () => {
-      activeContext.set(PROJECT_1);
-      await fixture.whenStable();
+      // The two base fields are all that is required.
       fillBase();
-
-      // Discovery choice: base fields alone are not enough.
-      expect(component['intakeForm'].valid).toBe(false);
-      fillDiscovery();
-      expect(component['intakeForm'].valid).toBe(true);
-
-      // Paste choice: the pasted document becomes the requirement; stale
-      // discovery text (cleared here) must not block, and empty paste blocks.
-      component['gateForm'].controls.choice.setValue('paste');
-      await fixture.whenStable();
-      expect(host().querySelector('[data-test="mktg-intake-brand_kit_markdown"]')).not.toBeNull();
-      expect(host().querySelector('[data-test="mktg-intake-one_line_description"]')).toBeNull();
-      expect(component['intakeForm'].valid).toBe(false);
-      component['intakeForm'].controls['brand_kit_markdown'].setValue('# TestOrbit Brand Kit');
       expect(component['intakeForm'].valid).toBe(true);
     });
 
-    it('offers the stored Brand Kit (with its version), defaults to it, and submits its document as brand_kit_markdown', async () => {
-      storedRuns = { 'proj-1:brand-kit': brandKitSourceRun('# TestOrbit Brand Kit v2') };
+    it('shows the non-interactive "Using <project>\'s Brand Kit (vN)" chip and always submits the stored document', async () => {
+      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# TestOrbit Brand Kit v2') };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      const storedOption = query('mktg-agent-run-gate-stored');
-      expect(storedOption).not.toBeNull();
-      expect(storedOption?.textContent).toContain('(v2)');
-      expect(component['gateChoice']()).toBe('stored');
-      // Neither branch's fields render for the stored choice.
-      expect(host().querySelector('[data-test="mktg-intake-brand_kit_markdown"]')).toBeNull();
-      expect(host().querySelector('[data-test="mktg-intake-one_line_description"]')).toBeNull();
+      const chip = query('mktg-agent-run-attachment-brand-kit');
+      expect(chip?.textContent).toContain('Using Project One’s Brand Kit (v2)');
+      // Non-interactive: a plain chip, not a form control or button.
+      expect(chip?.querySelector('input, button')).toBeNull();
 
       fillBase();
       component['onSubmit']();
 
+      // brand_kit_markdown is ALWAYS the stored kit's document, fetched at
+      // submit time — satisfying the agent's conditional contract with the
+      // discovery fields omitted.
       expect(generate).toHaveBeenCalledTimes(1);
       expect(submittedAnswers()).toEqual({
         project_name: 'TestOrbit',
@@ -312,30 +307,60 @@ describe('MktgAgentRunComponent', () => {
       });
     });
 
-    it('omits hidden-branch fields and the blank optional gap_fill_notes from the submitted answers', async () => {
+    it('falls back to the browser-stored Brand Kit run when server persistence has none', async () => {
+      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Browser-stored kit', 1, 'browser') };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
+
+      expect(query('mktg-agent-run-attachment-brand-kit')?.textContent).toContain('(v1)');
       fillBase();
-      fillDiscovery();
-      // Stale paste text from a previous choice must never leak into a discovery submission.
-      component['intakeForm'].controls['brand_kit_markdown'].setValue('# Stale pasted kit');
       component['onSubmit']();
 
-      const answers = submittedAnswers();
-      expect(answers['brand_kit_markdown']).toBeUndefined();
-      expect(answers['gap_fill_notes']).toBeUndefined();
-      expect(answers['one_line_description']).toBe('Answer for one_line_description');
+      expect(submittedAnswers()['brand_kit_markdown']).toBe('# Browser-stored kit');
     });
 
-    it('includes gap_fill_notes when the user filled it', async () => {
+    it('keeps submission disabled with an honest note when the project has no stored Brand Kit at all', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       fillBase();
-      fillDiscovery();
+
+      expect(query('mktg-agent-run-attachment-brand-kit')).toBeNull();
+      expect(query('mktg-agent-run-missing-dependency')).not.toBeNull();
+      expect(component['submitDisabled']()).toBe(true);
+      component['onSubmit']();
+      expect(generate).not.toHaveBeenCalled();
+    });
+
+    it('re-resolves the attachment at submit time — a kit stored after page load is picked up', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fillBase();
+      expect(component['submitDisabled']()).toBe(true);
+
+      // The user generates a Brand Kit in another tab, then a fresh resolution succeeds.
+      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Fresh kit', 3) };
+      component['startGeneration']();
+      await fixture.whenStable();
+
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(submittedAnswers()['brand_kit_markdown']).toBe('# Fresh kit');
+    });
+
+    it('omits the blank optional gap_fill_notes and includes it when filled', async () => {
+      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fillBase();
+      component['onSubmit']();
+      expect(submittedAnswers()['gap_fill_notes']).toBeUndefined();
+
+      generate.mockClear();
+      // The mocked generate never delivers a document, so the first submit
+      // parked the page on 'running' — return to the form for the second one.
+      component['phase'].set('form');
       component['intakeForm'].controls['gap_fill_notes'].setValue('Anchor to the v2 launch');
       component['onSubmit']();
-
-      expect(submittedAnswers()['gap_fill_notes']).toBe('Anchor to the v2 launch');
+      expect((generate.mock.calls[0][0] as MktgGenerateRequest).answers['gap_fill_notes']).toBe('Anchor to the v2 launch');
     });
 
     it('surfaces the five derivative chips as copyable values on the result', async () => {
@@ -420,7 +445,8 @@ describe('MktgAgentRunComponent', () => {
       }
     });
 
-    it('restores a run whose submission carried Brand Kit markdown onto the paste branch', async () => {
+    it('restores a run persisted by the retired gate UI cleanly — unknown answer keys are ignored', async () => {
+      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
       storedRuns = {
         'proj-1:foundation-setup': {
           agentId: 'foundation-setup',
@@ -438,8 +464,13 @@ describe('MktgAgentRunComponent', () => {
       component['onEditInputs']();
       await fixture.whenStable();
 
-      expect(component['gateChoice']()).toBe('paste');
-      expect(component['intakeForm'].getRawValue()).toMatchObject({ brand_kit_markdown: '# Kit' });
+      // The retired brand_kit_markdown answer has no control anymore; the
+      // surviving fields restore and the form is submit-ready.
+      expect(component['intakeForm'].getRawValue()).toEqual({
+        project_name: 'TestOrbit',
+        github_url: 'https://github.com/example-org/testorbit',
+        gap_fill_notes: '',
+      });
       expect(component['intakeForm'].valid).toBe(true);
     });
   });

@@ -36,6 +36,16 @@ interface BaseMktgAgent {
   icon: string;
   /** Tile accent color for the marketplace grid. Defaults to gray when unset. */
   accent?: MktgAgentAccent;
+  /**
+   * Catalog agent ids whose stored output this agent CONSUMES
+   * (dec-agent-dependency-gating). A dependent agent's marketplace card stays
+   * disabled — labeled `Requires <dependency document>` — until every
+   * dependency has stored output for the active project (server-persisted
+   * preferred, browser-stored run fallback), and its intake auto-attaches the
+   * dependency documents at submit time instead of asking for them.
+   * Dependency handling is generic: nothing keys on a specific agent id.
+   */
+  dependsOn?: string[];
 }
 
 /** An agent backed by a live Guild agent: clickable tile, routable chat. */

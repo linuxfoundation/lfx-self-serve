@@ -9,15 +9,20 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { MKTG_AGENTS, MKTG_OS_AGENTS_LABEL } from '@lfx-one/shared/constants';
-import { MktgAgent, MktgAgentAccent, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_OS_AGENTS_LABEL } from '@lfx-one/shared/constants';
+import { MktgAgent, MktgAgentAccent, MktgDependencyDocument, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { distinctUntilChanged, filter } from 'rxjs';
+import { distinctUntilChanged, filter, switchMap } from 'rxjs';
 
 // Marketplace landing for the Marketing OS marketplace (approved form-first
 // design): catalog grid with client-side search, "Coming soon" tags on
-// disabled cards, and a "vN generated" badge on agents with stored output.
+// disabled cards, a "vN generated" badge on agents with stored output, and
+// dependency gating (dec-agent-dependency-gating): an agent that `dependsOn`
+// another stays disabled — tagged "Requires <document>" — until every
+// dependency has stored output for the ACTIVE project (server-persisted
+// preferred, browser-stored run fallback), re-evaluated on project switch.
 // Card clicks route to the per-agent run page (/:agentId) — the form-first
 // run shell that replaced the earlier in-page chat-panel approach.
 @Component({
@@ -27,6 +32,7 @@ import { distinctUntilChanged, filter } from 'rxjs';
 })
 export class MktgOsAgentsComponent {
   // === Injections ===
+  private readonly dependencyService = inject(MktgDependencyService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly route = inject(ActivatedRoute);
@@ -49,11 +55,24 @@ export class MktgOsAgentsComponent {
   // Stored-output version count per agent id for the active project. Read from
   // localStorage after hydration only, so SSR output stays badge-free and stable.
   protected readonly storedVersions = signal<Record<string, number>>({});
+  /**
+   * Resolved stored output per DEPENDENCY agent id for the active project
+   * (dec-agent-dependency-gating): server-persisted preferred, browser-stored
+   * run fallback. Starts empty and clears on every project switch, so
+   * dependent cards are disabled (fail-closed) until resolution lands — on
+   * SSR they stay disabled, matching the badge-free SSR output.
+   */
+  protected readonly dependencyDocs = signal<Record<string, MktgDependencyDocument | null>>({});
 
   private readonly searchTerm = toSignal(this.searchForm.controls.search.valueChanges, { initialValue: '' });
 
   // === Computed ===
-  protected readonly tiles: Signal<{ agent: MktgAgent; iconClass: string; borderClass: string }[]> = this.initTiles();
+  protected readonly tiles: Signal<{ agent: MktgAgent; iconClass: string; borderClass: string; disabled: boolean; missingDependencyNames: string[] }[]> =
+    this.initTiles();
+
+  // === Catalog-derived (static for the component's lifetime) ===
+  /** Every dependency agent id referenced by the catalog — resolved once per active project. */
+  private readonly catalogDependencyIds: string[] = [...new Set(MKTG_AGENTS.flatMap((agent) => agent.dependsOn ?? []))];
 
   // Accent → Tailwind classes. Kept as class fields (not module-level) with literal
   // class names so Tailwind's content scan (./src/**/*.ts) generates them.
@@ -88,28 +107,34 @@ export class MktgOsAgentsComponent {
         .pipe(
           filter((context): context is ProjectContext => !!context),
           distinctUntilChanged((previous, current) => previous.uid === current.uid),
+          switchMap((context) => {
+            // Clear first so a project with no stored runs never keeps the
+            // previous project's badges or dependency gating.
+            this.storedVersions.set({});
+            this.dependencyDocs.set({});
+            this.loadStoredVersions(context.uid);
+            // switchMap drops a stale in-flight resolution on project switch,
+            // so the gating always reflects the CURRENT active project.
+            return this.dependencyService.resolveDependencies(context.uid, this.catalogDependencyIds);
+          }),
           takeUntilDestroyed()
         )
-        .subscribe((context) => {
-          // Clear first so a project with no stored runs never keeps the
-          // previous project's badges.
-          this.storedVersions.set({});
-          this.loadStoredVersions(context.uid);
-        });
+        .subscribe((dependencies) => this.dependencyDocs.set(dependencies));
     }
   }
 
   // === Protected methods ===
-  protected onSelectAgent(agent: MktgAgent): void {
-    // Only `active` agents have a run page; `coming-soon` tiles are inert.
-    if (agent.status !== 'active') {
+  protected onSelectAgent(tile: { agent: MktgAgent; disabled: boolean }): void {
+    // Only enabled tiles have a run page: `coming-soon` tiles and dependency-
+    // gated tiles (dec-agent-dependency-gating) are inert.
+    if (tile.disabled) {
       return;
     }
-    this.router.navigate([agent.id], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+    this.router.navigate([tile.agent.id], { relativeTo: this.route, queryParamsHandling: 'preserve' });
   }
 
   // === Private initializers ===
-  private initTiles(): Signal<{ agent: MktgAgent; iconClass: string; borderClass: string }[]> {
+  private initTiles(): Signal<{ agent: MktgAgent; iconClass: string; borderClass: string; disabled: boolean; missingDependencyNames: string[] }[]> {
     return computed(() => {
       const term = this.searchTerm().trim().toLowerCase();
       const matches = term
@@ -121,14 +146,31 @@ export class MktgOsAgentsComponent {
           )
         : MKTG_AGENTS;
 
+      const dependencies = this.dependencyDocs();
       return matches.map((agent) => {
         const accent = agent.accent ?? 'gray';
-        return { agent, iconClass: this.accentIcon[accent], borderClass: this.accentBorder[accent] };
+        // Dependency gating (dec-agent-dependency-gating): a dependent agent is
+        // disabled until every dependency has stored output for the active
+        // project. Unresolved (still loading / SSR) counts as missing — fail-closed.
+        const missingDependencyNames =
+          agent.status === 'active' ? (agent.dependsOn ?? []).filter((id) => !dependencies[id]).map((id) => this.documentName(id)) : [];
+        return {
+          agent,
+          iconClass: this.accentIcon[accent],
+          borderClass: this.accentBorder[accent],
+          disabled: agent.status !== 'active' || missingDependencyNames.length > 0,
+          missingDependencyNames,
+        };
       });
     });
   }
 
   // === Private helpers ===
+  /** Display name of a dependency agent's document: its intake's document name, else the catalog agent name, else the id. */
+  private documentName(agentId: string): string {
+    return MKTG_AGENT_INTAKES[agentId]?.documentName ?? MKTG_AGENTS.find((candidate) => candidate.id === agentId)?.name ?? agentId;
+  }
+
   private loadStoredVersions(projectUid: string): void {
     const counts: Record<string, number> = {};
     for (const agent of MKTG_AGENTS) {

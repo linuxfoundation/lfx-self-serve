@@ -63,7 +63,7 @@
                 <p class="mt-1 text-sm leading-relaxed text-gray-500">{{ intake.intro }}</p>
               </div>
 
-              <!-- One field block, rendered above AND below the Brand Kit gate — single-sourced via template outlet. -->
+              <!-- One field block per intake field — single-sourced via template outlet. -->
               <ng-template #fieldTpl let-field>
                 <div class="flex flex-col gap-1.5">
                   <div class="flex items-center gap-2 flex-wrap">
@@ -108,40 +108,26 @@
                 </div>
               </ng-template>
 
-              @for (field of preGateFields(); track field.key) {
+              @for (field of intake.fields; track field.key) {
                 <ng-container *ngTemplateOutlet="fieldTpl; context: { $implicit: field }" />
               }
 
-              <!-- Brand Kit gate (Q1c) — its choice branches the fields below it (interview order: 1a, 1b, 1c → discovery, 1d). -->
-              @if (intake.brandKitGate; as gate) {
-                <div class="flex flex-col gap-2" role="radiogroup" [attr.aria-label]="gate.question" data-testid="mktg-agent-run-gate">
-                  <span class="text-sm font-medium text-gray-700">
-                    {{ gate.question }}
-                    <span class="text-red-600">*</span>
-                  </span>
-                  @for (option of gateOptions(); track option.choice) {
-                    <label
-                      class="flex items-start gap-2.5 rounded-lg border bg-white px-3.5 py-2.5 cursor-pointer"
-                      [ngClass]="gateChoice() === option.choice ? 'border-blue-300 bg-blue-50' : 'border-gray-200 hover:border-gray-300'"
-                      [for]="'mktg-gate-' + option.choice"
-                      [attr.data-testid]="'mktg-agent-run-gate-' + option.choice">
-                      <lfx-radio-button
-                        [form]="gateForm"
-                        control="choice"
-                        name="brand-kit-gate"
-                        [value]="option.choice"
-                        [inputId]="'mktg-gate-' + option.choice" />
-                      <span class="flex flex-col gap-0.5 min-w-0">
-                        <span class="text-sm font-medium text-gray-900">{{ option.label }}</span>
-                        <span class="text-xs text-gray-500">{{ option.sublabel }}</span>
-                      </span>
-                    </label>
+              <!-- Auto-attached dependency documents (dec-agent-dependency-gating): non-interactive — the stored document is always what is submitted. -->
+              @if (attachmentChips().length > 0) {
+                <div class="flex flex-wrap gap-1.5" data-testid="mktg-agent-run-attachments">
+                  @for (chip of attachmentChips(); track chip.key) {
+                    <span
+                      class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700"
+                      [attr.data-testid]="'mktg-agent-run-attachment-' + chip.key">
+                      <i class="fa-light fa-paperclip" aria-hidden="true"></i>
+                      {{ chip.label }}
+                    </span>
                   }
                 </div>
               }
 
-              @for (field of postGateFields(); track field.key) {
-                <ng-container *ngTemplateOutlet="fieldTpl; context: { $implicit: field }" />
+              @if (missingDependencyNote()) {
+                <lfx-message severity="warn" [text]="missingDependencyNote()" data-testid="mktg-agent-run-missing-dependency" />
               }
 
               <div class="flex items-center gap-3 mt-2">

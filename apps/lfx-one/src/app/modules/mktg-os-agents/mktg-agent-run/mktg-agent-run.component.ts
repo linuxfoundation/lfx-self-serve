@@ -10,16 +10,13 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
-import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_RUN_STAGES } from '@lfx-one/shared/constants';
 import {
   MktgAgent,
   MktgAgentAccent,
   MktgAgentIntake,
-  MktgBrandKitGateChoice,
-  MktgIntakeField,
-  MktgIntakeGateOption,
+  MktgDependencyDocument,
   MktgIntakePrefillSource,
   MktgRunPhase,
   MktgRunVersion,
@@ -29,9 +26,10 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
-import { combineLatest, distinctUntilChanged, filter, map, Subscription, switchMap } from 'rxjs';
+import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -50,7 +48,6 @@ import { UserService } from '@services/user.service';
     ReactiveFormsModule,
     ButtonComponent,
     InputTextComponent,
-    RadioButtonComponent,
     TextareaComponent,
     MarkdownRendererComponent,
     MessageComponent,
@@ -59,6 +56,7 @@ import { UserService } from '@services/user.service';
 })
 export class MktgAgentRunComponent {
   // === Injections ===
+  private readonly dependencyService = inject(MktgDependencyService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
@@ -83,6 +81,8 @@ export class MktgAgentRunComponent {
   // === Catalog lookups (route param is stable for the component's lifetime) ===
   protected readonly agent: MktgAgent | null = this.resolveAgent();
   protected readonly intake: MktgAgentIntake | null = this.agent ? (MKTG_AGENT_INTAKES[this.agent.id] ?? null) : null;
+  /** Catalog dependency ids of this agent (dec-agent-dependency-gating); empty for independent agents. */
+  private readonly dependencyIds: string[] = this.agent?.dependsOn ?? [];
 
   // === Constants ===
   protected readonly stageLabels = MKTG_RUN_STAGES;
@@ -91,10 +91,6 @@ export class MktgAgentRunComponent {
   protected readonly intakeForm: FormGroup<Record<string, FormControl<string>>> = this.buildIntakeForm();
   protected readonly feedbackForm = new FormGroup({
     feedback: new FormControl('', { nonNullable: true }),
-  });
-  /** Brand Kit gate (Q1c) selection — a form control so the radio group and programmatic restore share one path. */
-  protected readonly gateForm = new FormGroup({
-    choice: new FormControl<MktgBrandKitGateChoice>('discovery', { nonNullable: true }),
   });
 
   // === Signals ===
@@ -114,20 +110,19 @@ export class MktgAgentRunComponent {
    */
   protected readonly lfxMissing = signal<Record<string, boolean>>({});
   /**
-   * The active project's stored Brand Kit document for the gate's `stored`
-   * option — currently the browser-persisted Brand Kit agent run (the only
-   * stored-document source until server-side Brand Kit persistence lands;
-   * the receipt/stored-document lookup slots in here). Null hides the option.
+   * Resolved stored output per dependency agent id for the active project
+   * (dec-agent-dependency-gating): server-persisted preferred, browser-stored
+   * run fallback. `null` means resolution is still in flight (or hasn't
+   * started); submission stays disabled until every dependency resolves, so a
+   * run can never be submitted without its attachments.
    */
-  protected readonly storedBrandKit = signal<{ version: number; document: string } | null>(null);
+  protected readonly dependencyDocs = signal<Record<string, MktgDependencyDocument | null> | null>(null);
   /** Derivative chip key whose value was just copied — drives the transient "Copied" state. */
   protected readonly copiedDerivative = signal('');
 
   // === Computed ===
   private readonly intakeValid = toSignal(this.intakeForm.statusChanges.pipe(map((status) => status === 'VALID')), { initialValue: this.intakeForm.valid });
   private readonly feedbackValue = toSignal(this.feedbackForm.controls.feedback.valueChanges, { initialValue: '' });
-  /** Current Brand Kit gate choice as a signal (form control is the single write path). */
-  protected readonly gateChoice = toSignal(this.gateForm.controls.choice.valueChanges, { initialValue: this.gateForm.controls.choice.value });
 
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name || 'Your Project');
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
@@ -138,17 +133,25 @@ export class MktgAgentRunComponent {
   protected readonly nextVersion = computed(() => (this.versions().at(-1)?.version ?? 0) + 1);
   protected readonly showVersionChips = computed(() => this.versions().length > 1 && this.phase() !== 'running');
   protected readonly feedbackNote = computed(() => (this.currentVersion()?.feedback ?? '').slice(0, 120));
-  protected readonly submitDisabled = computed(() => !this.intakeValid() || this.phase() === 'running' || !this.gateSatisfied());
+  protected readonly submitDisabled = computed(() => !this.intakeValid() || this.phase() === 'running' || !this.dependenciesSatisfied());
   /**
-   * Gate options actually offered: the `stored` option only exists when the
-   * project has a stored Brand Kit document (its label then names the draft
-   * version) — the form degrades gracefully to paste/discovery otherwise.
+   * Non-interactive "Using <project>'s <document> (vN)" chips for the
+   * intake's auto-attached dependency documents (dec-agent-dependency-gating)
+   * — there is no choice UI; the stored document is always what is submitted.
    */
-  protected readonly gateOptions: Signal<MktgIntakeGateOption[]> = this.initGateOptions();
-  /** Fields rendered ABOVE the gate block (or all fields when the intake has no gate). */
-  protected readonly preGateFields: Signal<MktgIntakeField[]> = this.initPreGateFields();
-  /** Gate-branched fields rendered BELOW the gate block, filtered to the active choice. */
-  protected readonly postGateFields: Signal<MktgIntakeField[]> = this.initPostGateFields();
+  protected readonly attachmentChips: Signal<{ key: string; label: string }[]> = this.initAttachmentChips();
+  /**
+   * Honest note shown when a dependency has no stored output for the active
+   * project (deep-link case — the marketplace card is disabled then). Empty
+   * while dependency resolution is still in flight and when all are met.
+   */
+  protected readonly missingDependencyNote = computed(() => {
+    const names = this.missingDependencyNames();
+    if (names.length === 0) {
+      return '';
+    }
+    return `This agent builds on the project’s ${names.join(' and ')} — generate ${names.length > 1 ? 'them' : 'it'} from the marketplace first.`;
+  });
   /** Copyable derivative chips for the current version (empty when the agent has none). */
   protected readonly derivativeChips: Signal<{ key: string; label: string; value: string; copied: boolean }[]> = this.initDerivativeChips();
   /** Screen-reader copy confirmation for the template's live region — the visible chip flip alone is never announced. */
@@ -200,12 +203,6 @@ export class MktgAgentRunComponent {
       this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
       return;
     }
-    // The Brand Kit gate toggles which controls are REQUIRED (paste vs the
-    // five discovery answers). One subscription covers user picks and
-    // programmatic restores alike — the form control is the single write path.
-    if (this.intake.brandKitGate) {
-      this.gateForm.controls.choice.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((choice) => this.applyGateValidators(choice));
-    }
     // Stored runs + LFX prefill read browser state (localStorage, HTTP-backed
     // project detail), and the project selector reuses this component on a
     // switch (it only rewrites ?project=) — so restore + prefill must re-run,
@@ -226,12 +223,19 @@ export class MktgAgentRunComponent {
           switchMap(([context]) => {
             this.resetForContext(context);
             // getProject memoizes per slug and maps errors to null, and
-            // switchMap drops a stale in-flight lookup on project change.
-            return this.projectService.getProject(context.slug, false);
+            // switchMap drops stale in-flight lookups on project change. The
+            // dependency resolution rides the same stream so the attachment
+            // chips / gating always reflect the ACTIVE project's stored
+            // documents (dec-agent-dependency-gating).
+            return combineLatest([
+              this.projectService.getProject(context.slug, false),
+              this.dependencyService.resolveDependencies(context.uid, this.dependencyIds),
+            ]);
           }),
           takeUntilDestroyed(this.destroyRef)
         )
-        .subscribe((project) => {
+        .subscribe(([project, dependencies]) => {
+          this.dependencyDocs.set(dependencies);
           if (!project) {
             return;
           }
@@ -365,51 +369,20 @@ export class MktgAgentRunComponent {
     });
   }
 
-  private initGateOptions(): Signal<MktgIntakeGateOption[]> {
+  private initAttachmentChips(): Signal<{ key: string; label: string }[]> {
     return computed(() => {
-      const gate = this.intake?.brandKitGate;
-      if (!gate) {
+      const docs = this.dependencyDocs();
+      if (!docs) {
         return [];
       }
-      const stored = this.storedBrandKit();
-      return gate.options
-        .filter((option) => option.choice !== 'stored' || stored !== null)
-        .map((option) => (option.choice === 'stored' && stored ? { ...option, label: `${option.label} (v${stored.version})` } : option));
-    });
-  }
-
-  private initPreGateFields(): Signal<MktgIntakeField[]> {
-    return computed(() => {
-      const fields = this.intake?.fields ?? [];
-      if (!this.intake?.brandKitGate) {
-        return fields;
-      }
-      const firstBranchIndex = fields.findIndex((field) => this.isGateBranchField(field));
-      return firstBranchIndex === -1 ? fields : fields.slice(0, firstBranchIndex);
-    });
-  }
-
-  private initPostGateFields(): Signal<MktgIntakeField[]> {
-    return computed(() => {
-      const gate = this.intake?.brandKitGate;
-      const fields = this.intake?.fields ?? [];
-      if (!gate) {
-        return [];
-      }
-      const firstBranchIndex = fields.findIndex((field) => this.isGateBranchField(field));
-      if (firstBranchIndex === -1) {
-        return [];
-      }
-      const choice = this.gateChoice();
-      return fields.slice(firstBranchIndex).filter((field) => {
-        if (field.key === gate.pasteFieldKey) {
-          return choice === 'paste';
+      const chips: { key: string; label: string }[] = [];
+      for (const attachment of this.intake?.attachments ?? []) {
+        const doc = docs[attachment.sourceAgentId];
+        if (doc) {
+          chips.push({ key: attachment.sourceAgentId, label: `Using ${this.projectName()}’s ${attachment.documentName} (v${doc.version})` });
         }
-        if (gate.discoveryFieldKeys.includes(field.key)) {
-          return choice === 'discovery';
-        }
-        return true;
-      });
+      }
+      return chips;
     });
   }
 
@@ -432,100 +405,72 @@ export class MktgAgentRunComponent {
 
   private buildIntakeForm(): FormGroup<Record<string, FormControl<string>>> {
     const controls: Record<string, FormControl<string>> = {};
-    const gate = this.intake?.brandKitGate;
     for (const field of this.intake?.fields ?? []) {
-      // Optional fields never carry the required validator; the gate's paste
-      // field starts without it because the initial choice is `discovery`
-      // (applyGateValidators keeps the branch validators in sync afterwards).
-      const required = !field.optional && field.key !== gate?.pasteFieldKey;
-      controls[field.key] = new FormControl('', { nonNullable: true, validators: required ? [trimmedRequired()] : [] });
+      // Optional fields never carry the required validator.
+      controls[field.key] = new FormControl('', { nonNullable: true, validators: field.optional ? [] : [trimmedRequired()] });
     }
     return new FormGroup(controls);
   }
 
-  /**
-   * Keeps the gate-branched validators aligned with the active choice: the
-   * paste field is required only on `paste`, the five discovery answers only
-   * on `discovery` (the agent contract's conditional requirement — required
-   * exactly when no brand_kit_markdown is submitted). Hidden branches lose
-   * their validator so stale text in them can never block submission.
-   */
-  private applyGateValidators(choice: MktgBrandKitGateChoice): void {
-    const gate = this.intake?.brandKitGate;
-    if (!gate) {
-      return;
-    }
-    const pasteControl = this.intakeForm.controls[gate.pasteFieldKey];
-    if (pasteControl) {
-      pasteControl.setValidators(choice === 'paste' ? [trimmedRequired()] : []);
-      pasteControl.updateValueAndValidity();
-    }
-    for (const key of gate.discoveryFieldKeys) {
-      const control = this.intakeForm.controls[key];
-      if (control) {
-        control.setValidators(choice === 'discovery' ? [trimmedRequired()] : []);
-        control.updateValueAndValidity();
-      }
-    }
-  }
-
-  /**
-   * Assembles the submitted answers from the form per the gate state:
-   * hidden branch fields are omitted, blank optional fields are omitted, and
-   * the `stored` choice submits the stored Brand Kit document as the paste
-   * key (the agent's v1 paste/pass-through path — the BFF receives the same
-   * `brand_kit_markdown` either way). Null aborts the submission (the stored
-   * document disappeared — should be unreachable while the option is shown).
-   */
-  private buildAnswers(): Record<string, string> | null {
-    if (!this.intake) {
-      return null;
-    }
-    const gate = this.intake.brandKitGate;
-    const choice = this.gateChoice();
+  /** Assembles the submitted answers from the form: blank optional fields are omitted. */
+  private buildAnswers(): Record<string, string> {
     const answers: Record<string, string> = {};
-
-    for (const field of this.intake.fields) {
-      if (gate && field.key === gate.pasteFieldKey && choice !== 'paste') {
-        continue;
-      }
-      if (gate && gate.discoveryFieldKeys.includes(field.key) && choice !== 'discovery') {
-        continue;
-      }
+    for (const field of this.intake?.fields ?? []) {
       const value = this.intakeForm.controls[field.key].value.trim();
       if (field.optional && !value) {
         continue;
       }
       answers[field.key] = value;
     }
-
-    if (gate && choice === 'stored') {
-      const stored = this.storedBrandKit();
-      if (!stored) {
-        this.errorText.set('No stored Brand Kit was found for this project — paste one or answer the discovery questions instead.');
-        return null;
-      }
-      answers[gate.pasteFieldKey] = stored.document;
-    }
-
     return answers;
   }
 
-  /** The `stored` choice is only satisfiable while a stored Brand Kit document actually exists. */
-  private gateSatisfied(): boolean {
-    if (!this.intake?.brandKitGate) {
+  /**
+   * Whether every catalog dependency of this agent has resolved stored output
+   * for the active project. Fail-closed while resolution is in flight (the
+   * record is null) — a run must never submit without its attachments.
+   */
+  private dependenciesSatisfied(): boolean {
+    if (this.dependencyIds.length === 0) {
       return true;
     }
-    return this.gateChoice() !== 'stored' || this.storedBrandKit() !== null;
-  }
-
-  /** Whether a field belongs to a gate branch (rendered below the gate, visibility driven by the choice). */
-  private isGateBranchField(field: MktgIntakeField): boolean {
-    const gate = this.intake?.brandKitGate;
-    if (!gate) {
+    const docs = this.dependencyDocs();
+    if (!docs) {
       return false;
     }
-    return field.key === gate.pasteFieldKey || gate.discoveryFieldKeys.includes(field.key);
+    return this.dependencyIds.every((agentId) => !!docs[agentId]);
+  }
+
+  /** Human names of the unresolved dependencies, once resolution has completed. */
+  private missingDependencyNames(): string[] {
+    const docs = this.dependencyDocs();
+    if (!docs) {
+      return [];
+    }
+    return this.dependencyIds.filter((agentId) => !docs[agentId]).map((agentId) => this.dependencyDocumentName(agentId));
+  }
+
+  /** Display name of a dependency agent's document: its intake's document name, else the catalog agent name, else the id. */
+  private dependencyDocumentName(agentId: string): string {
+    return MKTG_AGENT_INTAKES[agentId]?.documentName ?? MKTG_AGENTS.find((candidate) => candidate.id === agentId)?.name ?? agentId;
+  }
+
+  /**
+   * Overlays the intake's auto-attached dependency documents onto the
+   * submitted answers (dec-agent-dependency-gating): the stored document is
+   * ALWAYS what is submitted — there is no user-facing choice. Null when an
+   * attachment's document is missing (submission must abort).
+   */
+  private applyAttachments(answers: Record<string, string>, docs: Record<string, MktgDependencyDocument | null>): Record<string, string> | null {
+    const attached = { ...answers };
+    for (const attachment of this.intake?.attachments ?? []) {
+      const doc = docs[attachment.sourceAgentId];
+      if (!doc?.document) {
+        return null;
+      }
+      attached[attachment.answerKey] = doc.document;
+    }
+    return attached;
   }
 
   /**
@@ -552,39 +497,21 @@ export class MktgAgentRunComponent {
     this.copiedDerivative.set('');
     this.intakeForm.reset();
     this.feedbackForm.reset();
-
-    // Stored Brand Kit lookup for the gate's `stored` option — this project's
-    // browser-persisted Brand Kit agent run (per-project, so it resets with
-    // the rest of the context state).
-    const gate = this.intake.brandKitGate;
-    if (gate) {
-      const brandKitRun = this.runService.loadRun(context.uid, gate.storedSourceAgentId);
-      const latest = brandKitRun?.versions.at(-1);
-      this.storedBrandKit.set(latest?.document ? { version: latest.version, document: latest.document } : null);
-    }
+    // Dependency documents are per-project — back to "resolving" until the
+    // constructor stream's resolution for the NEW context lands (fail-closed:
+    // submission stays disabled meanwhile).
+    this.dependencyDocs.set(null);
 
     const stored = this.runService.loadRun(context.uid, this.agent.id);
     if (stored) {
       this.run.set(stored);
+      // patchValue ignores keys without a control — answers persisted by the
+      // retired Brand Kit gate UI (e.g. brand_kit_markdown) restore cleanly.
       this.intakeForm.patchValue(stored.answers);
       this.viewVersion.set(stored.versions.at(-1)?.version ?? null);
       if (stored.versions.length > 0) {
         this.phase.set('result');
       }
-    }
-
-    // Gate restore: a restored submission that carried Brand Kit markdown
-    // lands on `paste` (the document is right there in the textarea — honest
-    // even when it originally came from the stored option); otherwise a fresh
-    // form defaults to the stored Brand Kit when one exists, else discovery.
-    if (gate) {
-      let choice: MktgBrandKitGateChoice = 'discovery';
-      if (stored) {
-        choice = stored.answers[gate.pasteFieldKey]?.trim() ? 'paste' : 'discovery';
-      } else if (this.storedBrandKit()) {
-        choice = 'stored';
-      }
-      this.gateForm.controls.choice.setValue(choice);
     }
 
     // LFX prefill — fill only still-empty answers, and mark them "From LFX".
@@ -623,7 +550,9 @@ export class MktgAgentRunComponent {
 
   private startGeneration(feedback?: string): void {
     const projectUid = this.projectContext.activeContextUid();
-    if (!this.agent || !this.intake) {
+    const agent = this.agent;
+    const intake = this.intake;
+    if (!agent || !intake) {
       return;
     }
     if (!projectUid) {
@@ -632,9 +561,6 @@ export class MktgAgentRunComponent {
     }
 
     const answers = this.buildAnswers();
-    if (!answers) {
-      return;
-    }
 
     this.errorText.set('');
     this.docExpanded.set(false);
@@ -643,11 +569,28 @@ export class MktgAgentRunComponent {
 
     // The prior draft's version is NOT sent — the run service derives it from
     // the stored run so the follow-up's version directive always matches the
-    // version its result poll will accept.
+    // version its result poll will accept. Dependency documents are re-resolved
+    // AT SUBMIT TIME (server-persisted preferred, browser fallback) so the
+    // attached document is always the current stored one, then overlaid onto
+    // the answers (dec-agent-dependency-gating).
     this.generationSub?.unsubscribe();
-    this.generationSub = this.runService
-      .generate({ agentId: this.agent.id, projectUid, intake: this.intake, answers, feedback })
-      .pipe(takeUntilDestroyed(this.destroyRef))
+    this.generationSub = this.dependencyService
+      .resolveDependencies(projectUid, this.dependencyIds)
+      .pipe(
+        switchMap((docs) => {
+          this.dependencyDocs.set(docs);
+          const attached = this.applyAttachments(answers, docs);
+          if (!attached) {
+            // The stored dependency disappeared between page load and submit —
+            // surface the honest gate note instead of submitting an invalid run.
+            this.errorText.set(this.missingDependencyNote() || 'A required dependency document is no longer available for this project.');
+            this.phase.set(this.versions().length > 0 ? 'result' : 'form');
+            return EMPTY;
+          }
+          return this.runService.generate({ agentId: agent.id, projectUid, intake, answers: attached, feedback });
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe({
         next: (progress) => {
           if (progress.type === 'submitted') {

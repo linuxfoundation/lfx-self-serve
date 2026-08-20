@@ -30,11 +30,15 @@
             type="button"
             class="flex flex-col gap-3 text-left p-4 bg-white border border-gray-200 border-l-4 rounded-lg transition hover:border-gray-300 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:shadow-none"
             [ngClass]="tile.borderClass"
-            [disabled]="tile.agent.status !== 'active'"
-            [attr.aria-disabled]="tile.agent.status !== 'active'"
+            [disabled]="tile.disabled"
+            [attr.aria-disabled]="tile.disabled"
             [attr.data-testid]="'mktg-os-agents-tile-' + tile.agent.id"
-            [attr.aria-label]="tile.agent.status === 'active' ? 'Open ' + tile.agent.name : tile.agent.name + ' (coming soon)'"
-            (click)="onSelectAgent(tile.agent)">
+            [attr.aria-label]="
+              tile.disabled
+                ? tile.agent.name + (tile.agent.status === 'active' ? ' (requires ' + tile.missingDependencyNames.join(' and ') + ')' : ' (coming soon)')
+                : 'Open ' + tile.agent.name
+            "
+            (click)="onSelectAgent(tile)">
             <div class="flex items-center gap-3">
               <span class="flex items-center justify-center w-10 h-10 rounded-lg" [ngClass]="tile.iconClass">
                 <i [class]="tile.agent.icon + ' text-lg'" aria-hidden="true"></i>
@@ -51,6 +55,10 @@
               }
               @if (tile.agent.status !== 'active') {
                 <lfx-tag value="Coming soon" severity="secondary" [attr.data-testid]="'mktg-os-agents-coming-soon-' + tile.agent.id" />
+              }
+              <!-- Dependency gating (dec-agent-dependency-gating): honest tag on cards disabled until their dependency's stored output exists. -->
+              @for (dependencyName of tile.missingDependencyNames; track dependencyName) {
+                <lfx-tag [value]="'Requires ' + dependencyName" severity="secondary" [attr.data-testid]="'mktg-os-agents-requires-' + tile.agent.id" />
               }
               @if (storedVersions()[tile.agent.id]; as version) {
                 <lfx-tag

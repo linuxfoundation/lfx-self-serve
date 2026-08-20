@@ -5,10 +5,7 @@ import { MktgAgentIntake, MktgIntakeField } from '../interfaces';
 import { BRAND_KIT_FORM_PREAMBLE_LINES, BRAND_KIT_INTAKE_QUESTIONS } from './brand-kit.constants';
 import {
   FOUNDATION_MESSAGE_DERIVATIVE_CHIPS,
-  FOUNDATION_MESSAGE_DISCOVERY_KEYS,
-  FOUNDATION_MESSAGE_DISCOVERY_QUESTIONS,
   FOUNDATION_MESSAGE_FORM_PREAMBLE_LINES,
-  FOUNDATION_MESSAGE_Q_BRAND_KIT,
   FOUNDATION_MESSAGE_Q_GITHUB_URL,
   FOUNDATION_MESSAGE_Q_PROJECT_NAME,
   FOUNDATION_MESSAGE_REQUIRED_HEADINGS,
@@ -80,30 +77,20 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
 };
 
 /**
- * Presentation layered onto Paul's verbatim discovery questions
- * (dec-paul-prompt-fidelity — the wording itself lives once, in
- * foundation-message.constants.ts).
- */
-const FOUNDATION_MESSAGE_DISCOVERY_PRESENTATION: Record<string, Omit<MktgIntakeField, 'key' | 'question'>> = {
-  one_line_description: { kind: 'text' },
-  primary_audience: { kind: 'textarea', rows: 2 },
-  voice_adjectives: { kind: 'text' },
-  constraints: { kind: 'textarea', rows: 2 },
-  reference_brands: { kind: 'textarea', rows: 2 },
-};
-
-/**
  * Message Foundation batch intake (wi-mf-lfx-selfserve). Fixed question
  * wording is quoted VERBATIM from the agent's own `src/questions.ts`
  * (marketing-os-agents `agents/foundation-message-ts`), never paraphrased.
- * The Brand Kit gate (Q1c) branches the form: the project's stored Brand
- * Kit, a pasted document, or Paul's five discovery questions — enforced by
- * the shell's conditional validators and re-checked server-side against the
- * agent's zod contract. Every follow-up is a full resubmit through the
- * generate endpoint (`regenerateViaGenerate`): the BFF re-fetches the README
- * and submits the typed `message_foundation_intake_form` payload with
- * `feedback` + `prior_version`, so a chat-text follow-up (which could carry
- * neither) is never used.
+ * The agent consumes the Brand Kit as a dependency
+ * (dec-agent-dependency-gating): the form never asks for it — the project's
+ * stored Brand Kit document (server-persisted preferred, browser-stored run
+ * fallback) is auto-attached as `brand_kit_markdown` at submit time, which
+ * satisfies the agent's conditional contract (discovery answers are required
+ * exactly when no Brand Kit is provided, so they are never collected here).
+ * Every follow-up is a full resubmit through the generate endpoint
+ * (`regenerateViaGenerate`): the BFF re-fetches the README and submits the
+ * typed `message_foundation_intake_form` payload with `feedback` +
+ * `prior_version`, so a chat-text follow-up (which could carry neither) is
+ * never used.
  */
 export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   agentId: 'foundation-setup',
@@ -125,20 +112,6 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
       prefill: 'repository-url',
       hint: 'The README is fetched automatically from this repo and passed to the agent.',
     },
-    // Paste branch of the Q1c gate — the label is form plumbing (Paul's Q1c
-    // wording itself is the gate question above the options).
-    {
-      key: 'brand_kit_markdown',
-      question: 'Paste the Brand Kit document (Markdown)',
-      kind: 'textarea',
-      rows: 4,
-      placeholder: '# [Project Name] Brand Kit …',
-    },
-    ...FOUNDATION_MESSAGE_DISCOVERY_QUESTIONS.map((entry) => ({
-      key: entry.key,
-      question: entry.question,
-      ...FOUNDATION_MESSAGE_DISCOVERY_PRESENTATION[entry.key],
-    })),
     // Paul's Step 1d gap areas, offered as one optional free-text field — the
     // placeholder names his five areas so form mode never has to ask.
     {
@@ -151,25 +124,7 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
         'Proof points to cite (adopters, benchmarks) · audiences beyond technical personas + outreach goals · who this is positioned against (“unlike ___”) · a specific membership tier or CTA · an upcoming milestone or event to anchor to',
     },
   ],
-  brandKitGate: {
-    question: FOUNDATION_MESSAGE_Q_BRAND_KIT,
-    options: [
-      {
-        choice: 'stored',
-        label: 'Use this project’s Brand Kit',
-        sublabel: 'The messaging extends the Brand Kit draft you generated with the Brand Kit Agent.',
-      },
-      { choice: 'paste', label: 'Paste a Brand Kit document', sublabel: 'Provide an existing Brand Kit as Markdown.' },
-      {
-        choice: 'discovery',
-        label: 'No Brand Kit — answer five discovery questions',
-        sublabel: 'Paul’s brand-discovery questions, answered in your own words.',
-      },
-    ],
-    pasteFieldKey: 'brand_kit_markdown',
-    discoveryFieldKeys: [...FOUNDATION_MESSAGE_DISCOVERY_KEYS],
-    storedSourceAgentId: 'brand-kit',
-  },
+  attachments: [{ sourceAgentId: 'brand-kit', answerKey: 'brand_kit_markdown', documentName: 'Brand Kit' }],
   derivativeChips: [...FOUNDATION_MESSAGE_DERIVATIVE_CHIPS],
   regenerateViaGenerate: true,
   sections: FOUNDATION_MESSAGE_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),

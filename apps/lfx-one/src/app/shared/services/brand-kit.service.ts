@@ -3,7 +3,13 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { BrandKitGenerateRequest, BrandKitGenerateResponse, BrandKitResultRequest, BrandKitResultResponse, BrandKitStoredResponse } from '@lfx-one/shared/interfaces';
+import {
+  BrandKitGenerateRequest,
+  BrandKitGenerateResponse,
+  BrandKitResultRequest,
+  BrandKitResultResponse,
+  BrandKitStoredResponse,
+} from '@lfx-one/shared/interfaces';
 import { Observable } from 'rxjs';
 
 /**

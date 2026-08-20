@@ -29,7 +29,15 @@ vi.mock('./logger.service', () => ({
   },
 }));
 
-import { CreateBucketCommand, GetObjectCommand, HeadBucketCommand, HeadObjectCommand, ListObjectsV2Command, NotFound, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  CreateBucketCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  NotFound,
+  PutObjectCommand,
+} from '@aws-sdk/client-s3';
 
 import { logger } from './logger.service';
 import { ObjectStoreService } from './object-store.service';
@@ -266,10 +274,7 @@ describe('ObjectStoreService', () => {
   describe('listObjects', () => {
     it('lists keys and last-modified under the prefix without any ensureBucket call', async () => {
       sendMock.mockResolvedValueOnce({
-        Contents: [
-          { Key: 'brand-kit/testorbit/a.md', LastModified: new Date('2026-08-15T00:00:00Z') },
-          { Key: 'brand-kit/testorbit/b.md' },
-        ],
+        Contents: [{ Key: 'brand-kit/testorbit/a.md', LastModified: new Date('2026-08-15T00:00:00Z') }, { Key: 'brand-kit/testorbit/b.md' }],
         IsTruncated: false,
       });
 

@@ -27,7 +27,12 @@ export const FOUNDATION_MESSAGE_Q_PROJECT_NAME = "What's the name of the LF proj
 /** Q1b — GitHub / README URL (verbatim). */
 export const FOUNDATION_MESSAGE_Q_GITHUB_URL = "What's the URL of the project's GitHub repo or README?";
 
-/** Q1c — brand kit or brand discovery (verbatim; the form's gate question). */
+/**
+ * Q1c — brand kit or brand discovery (verbatim). Rendered ONLY inside the
+ * agent-facing batch message (`renderFoundationMessageFormText`), never in
+ * the LFX UI: per dec-agent-dependency-gating the form auto-attaches the
+ * project's stored Brand Kit instead of asking this question.
+ */
 export const FOUNDATION_MESSAGE_Q_BRAND_KIT = 'Do you already have a `[Project Name] Brand Kit` I should use, and if so where is it?';
 
 /**
