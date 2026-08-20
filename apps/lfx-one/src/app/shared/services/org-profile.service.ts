@@ -4,7 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import type { OrgAddressesResponse, OrgCanonicalRecord, OrgUpdateRequest } from '@lfx-one/shared/interfaces';
-import { Observable } from 'rxjs';
+import { Observable, take } from 'rxjs';
 
 /** Spec 021 — Client service wrapping the three Org Profile BFF endpoints: GET canonical record, GET addresses (mock in v1), PUT partial-update. */
 @Injectable({
@@ -23,5 +23,14 @@ export class OrgProfileService {
 
   public updateOrg(uid: string, payload: OrgUpdateRequest): Observable<OrgCanonicalRecord> {
     return this.http.put<OrgCanonicalRecord>(`/api/orgs/uid/${encodeURIComponent(uid)}`, payload);
+  }
+
+  /**
+   * LFXV2-3288 — raw-body upload to the BFF logo proxy; returns the updated canonical record (new `logoUrl`).
+   * `take(1)` mirrors `UserService.uploadProfilePicture` — it is what lets the caller subscribe without
+   * `takeUntilDestroyed` (so an in-flight upload survives component destroy) and still not leak.
+   */
+  public uploadLogo(uid: string, file: File): Observable<OrgCanonicalRecord> {
+    return this.http.post<OrgCanonicalRecord>(`/api/orgs/uid/${encodeURIComponent(uid)}/logo`, file, { headers: { 'Content-Type': file.type } }).pipe(take(1));
   }
 }

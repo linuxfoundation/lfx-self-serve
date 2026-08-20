@@ -24,10 +24,18 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  */
 
 const getAccessAwareOrgs = vi.fn();
+const proxyRequest = vi.fn();
+const proxyRequestWithResponse = vi.fn();
 
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
+  },
+}));
+vi.mock('../services/microservice-proxy.service', () => ({
+  MicroserviceProxyService: class {
+    public proxyRequest = proxyRequest;
+    public proxyRequestWithResponse = proxyRequestWithResponse;
   },
 }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'lguerra' }));
@@ -108,5 +116,64 @@ describe('orgs router — Org Lens read gate', () => {
     const res = await fetch(`${baseUrl}/api/orgs/me/role-grants`);
 
     expect(res.status).not.toBe(403);
+  });
+});
+
+/**
+ * LFXV2-3288 — the logo upload route's `express.raw()` middleware and its 413-conversion handler.
+ * Router-level (real HTTP, real body-size enforcement) because the size limit and content-type
+ * filter are configured on the route registration, not inside the controller — a unit test that
+ * calls the controller directly would keep passing even if the raw-parser wiring were removed.
+ */
+describe('orgs router — POST /uid/:uid/logo', () => {
+  const UID = '0014100000Te2ovAAB';
+  const rawOrg = { uid: UID, name: 'Acme', logo_url: 'https://cdn.example.com/logo.png?v=1' };
+
+  it('parses an allowed content type as a raw buffer and proxies it', async () => {
+    proxyRequestWithResponse.mockResolvedValue({ data: rawOrg, status: 200, statusText: 'OK', headers: { etag: 'W/"etag-1"' } });
+    proxyRequest.mockResolvedValue(rawOrg);
+    const body = Buffer.from('fake-png-bytes');
+
+    const res = await fetch(`${baseUrl}/api/orgs/uid/${UID}/logo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png' },
+      body,
+    });
+
+    expect(res.status).toBe(200);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/b2b_orgs/${UID}/logo`, 'POST', undefined, expect.any(Buffer), {
+      'Content-Type': 'image/png',
+      'If-Match': 'W/"etag-1"',
+    });
+  });
+
+  it('rejects a disallowed content type with a 400 and never forwards it upstream', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/uid/${UID}/logo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/pdf' },
+      body: Buffer.from('not-an-image'),
+    });
+
+    // express.raw()'s type filter skips parsing for a non-matching content-type, so req.body is
+    // never populated as a Buffer; the controller's own empty-body check then rejects it (400),
+    // rather than ever forwarding to member-service.
+    expect(res.status).toBe(400);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('converts an oversized body to 413 rather than a generic 500', async () => {
+    // MAX_ORG_LOGO_SIZE_BYTES is enforced by express.raw({ limit }); one byte over it must trip
+    // handleLogoUploadParseError's entity.too.large branch.
+    const { MAX_ORG_LOGO_SIZE_BYTES } = await import('@lfx-one/shared/constants');
+    const oversized = Buffer.alloc(MAX_ORG_LOGO_SIZE_BYTES + 1);
+
+    const res = await fetch(`${baseUrl}/api/orgs/uid/${UID}/logo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png' },
+      body: oversized,
+    });
+
+    expect(res.status).toBe(413);
+    expect(proxyRequest).not.toHaveBeenCalled();
   });
 });

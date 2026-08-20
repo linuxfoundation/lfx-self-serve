@@ -2,10 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, EventEmitter, inject, input, OnInit, Output, signal } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, EventEmitter, inject, input, OnInit, Output, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { INDUSTRY_OPTIONS, ORG_DESCRIPTION_MAX_LENGTH, SECTOR_OPTIONS } from '@lfx-one/shared/constants';
+import {
+  ALLOWED_ORG_LOGO_MIME_TYPES,
+  INDUSTRY_OPTIONS,
+  MAX_ORG_LOGO_DIMENSION_PX,
+  MAX_ORG_LOGO_SIZE_BYTES,
+  MIN_ORG_LOGO_DIMENSION_PX,
+  ORG_DESCRIPTION_MAX_LENGTH,
+  SECTOR_OPTIONS,
+} from '@lfx-one/shared/constants';
 import type { OrgCanonicalRecord, OrgProfileEditableFields, OrgUpdateRequest } from '@lfx-one/shared/interfaces';
 import { httpsUrlValidator } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
@@ -16,6 +24,7 @@ import { SelectModule } from 'primeng/select';
 import { TextareaModule } from 'primeng/textarea';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
+import { finalize } from 'rxjs';
 
 import { InitialsPipe } from '@pipes/initials.pipe';
 import { OrgProfileService } from '@services/org-profile.service';
@@ -47,6 +56,9 @@ export class OrgProfileEditComponent implements OnInit {
   /** Emitted on cancel — parent exits edit mode and discards changes. */
   @Output() public readonly cancelled = new EventEmitter<void>();
 
+  /** Emitted after a successful logo upload — parent patches its cached record without exiting edit mode (logo saves immediately, independent of the form's Save/Cancel). */
+  @Output() public readonly logoUpdated = new EventEmitter<OrgCanonicalRecord>();
+
   private readonly fb = inject(FormBuilder);
   private readonly orgProfileService = inject(OrgProfileService);
   private readonly messageService = inject(MessageService);
@@ -67,22 +79,39 @@ export class OrgProfileEditComponent implements OnInit {
   protected readonly dirty = signal(false);
   protected readonly formValid = signal(true);
 
+  // Logo upload (LFXV2-3288). Uploads immediately on selection — mirrors the avatar-upload pattern
+  // (profile-edit-drawer.component.ts), independent of this form's own Save/Cancel.
+  private readonly logoInput = viewChild<ElementRef<HTMLInputElement>>('logoInput');
+  protected readonly logoUploading = signal(false);
+  protected readonly logoDragActive = signal(false);
+  /** Overrides `record().logoUrl` after a successful upload so the preview updates without waiting on the parent's own record refresh. */
+  protected readonly logoUrl = signal<string | null>(null);
+
   /** Per-field touched-and-invalid flags — keep `form.get(...)` out of the template (CLAUDE.md "No functions in HTML templates"). */
   protected readonly descriptionInvalid = signal(false);
   protected readonly employeesInvalid = signal(false);
   protected readonly crunchbaseInvalid = signal(false);
 
   /** Disabled until the user changes a field AND all validation passes (FR-007). */
-  protected readonly canSave = computed(() => this.dirty() && this.formValid() && !this.saving());
+  protected readonly canSave = computed(() => this.dirty() && this.formValid() && !this.busy());
+
+  // True while either mutation (form save or logo upload) is in flight — mirrors
+  // profile-edit-drawer.component.ts's `busy` gate for avatar uploads. Both mutation entry points
+  // and every dismissal path must gate on this, not on their own signal alone: otherwise a Save
+  // during an in-flight logo upload (or a logo upload started during Save) can race the parent
+  // destroying this component on Cancel, leaving an upload whose later `logoUpdated` emission has
+  // no listener and a persisted logo that can go stale in the cached profile.
+  protected readonly busy = computed(() => this.saving() || this.logoUploading());
 
   private original!: OrgProfileEditableFields;
 
   public ngOnInit(): void {
+    this.logoUrl.set(this.record().logoUrl ?? null);
     this.initForm();
   }
 
   protected onCancel(): void {
-    if (this.saving()) return;
+    if (this.busy()) return;
     this.cancelled.emit();
   }
 
@@ -127,6 +156,38 @@ export class OrgProfileEditComponent implements OnInit {
       }
     }
     this.refreshFieldFlags();
+  }
+
+  /** Open the OS file picker via the hidden input — keeps the trigger a real, keyboard-operable `<button>`. */
+  protected triggerLogoUpload(): void {
+    if (this.busy()) return;
+    this.logoInput()?.nativeElement.click();
+  }
+
+  protected onLogoFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    // Clear the input so re-selecting the same file (e.g. after a rejected upload) still fires change.
+    input.value = '';
+    if (file) this.handleLogoFile(file);
+  }
+
+  protected onLogoDragOver(event: DragEvent): void {
+    event.preventDefault();
+    if (!this.busy()) this.logoDragActive.set(true);
+  }
+
+  protected onLogoDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    this.logoDragActive.set(false);
+  }
+
+  protected onLogoDrop(event: DragEvent): void {
+    event.preventDefault();
+    this.logoDragActive.set(false);
+    if (this.busy()) return;
+    const file = event.dataTransfer?.files?.[0];
+    if (file) this.handleLogoFile(file);
   }
 
   private initForm(): void {
@@ -175,6 +236,82 @@ export class OrgProfileEditComponent implements OnInit {
       detail: 'Something went wrong while saving. Please try again.',
       life: 5000,
     };
+  }
+
+  private handleLogoFile(file: File): void {
+    if (!(ALLOWED_ORG_LOGO_MIME_TYPES as readonly string[]).includes(file.type)) {
+      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Please choose a PNG, JPEG, or SVG image.' });
+      return;
+    }
+    if (file.size > MAX_ORG_LOGO_SIZE_BYTES) {
+      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Logo must be 2MB or smaller.' });
+      return;
+    }
+
+    // Fire concurrently, not sequentially: the dimension check is advisory-only, so the upload
+    // must not wait on it — chaining it in front would turn a "non-blocking" warning into a
+    // delay on every upload. A decode failure here is swallowed; it's just a missed warning.
+    this.warnIfDimensionsOutOfRange(file).catch(() => undefined);
+    this.uploadLogoFile(file);
+  }
+
+  /** Non-blocking dimension warnings (LFXV2-3288): under MIN, may look blurry; over MAX, member-service
+   * will downscale it server-side (`MaxLogoDimensionPx`, `pkg/constants/logo.go`) — told upfront so the
+   * shrink isn't a surprise. SVG is vector (no fixed pixel dimensions), so it's skipped entirely. */
+  private async warnIfDimensionsOutOfRange(file: File): Promise<void> {
+    if (file.type === 'image/svg+xml') return;
+
+    const bitmap = await createImageBitmap(file);
+    const { width, height } = bitmap;
+    bitmap.close();
+
+    if (width < MIN_ORG_LOGO_DIMENSION_PX || height < MIN_ORG_LOGO_DIMENSION_PX) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Small image',
+        detail: `This logo is ${width}×${height}px. Images under ${MIN_ORG_LOGO_DIMENSION_PX}px may look blurry.`,
+        life: 6000,
+      });
+      return;
+    }
+    if (width > MAX_ORG_LOGO_DIMENSION_PX || height > MAX_ORG_LOGO_DIMENSION_PX) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Large image',
+        detail: `This logo is ${width}×${height}px and will be resized down to fit within ${MAX_ORG_LOGO_DIMENSION_PX}px.`,
+        life: 6000,
+      });
+    }
+  }
+
+  private uploadLogoFile(file: File): void {
+    this.logoUploading.set(true);
+    // No takeUntilDestroyed — same reviewed exception as the avatar-upload precedent: the upload
+    // itself (not just its data) is the user-visible operation, so unsubscribing on component
+    // destroy would silently drop it. `uploadLogo()` applies take(1), so no-bare-subscribe is
+    // satisfied without the leak risk. Do not reinstate takeUntilDestroyed on this subscribe.
+    this.orgProfileService
+      .uploadLogo(this.record().uid, file)
+      .pipe(finalize(() => this.logoUploading.set(false)))
+      .subscribe({
+        next: (updated) => {
+          this.logoUrl.set(updated.logoUrl ?? null);
+          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Logo updated!' });
+          this.logoUpdated.emit(updated);
+        },
+        error: (error: unknown) => {
+          this.messageService.add(this.toastForLogoError(error));
+        },
+      });
+  }
+
+  /** FR-010-equivalent for the logo upload — mirrors toastForError's status mapping with upload-specific copy. */
+  private toastForLogoError(error: unknown): { severity: string; summary: string; detail: string; life: number } {
+    const status = error instanceof HttpErrorResponse ? error.status : 0;
+    if (status === 403) {
+      return { severity: 'error', summary: 'Permission denied', detail: 'You no longer have permission to edit this organization.', life: 5000 };
+    }
+    return { severity: 'error', summary: 'Upload failed', detail: 'Unable to upload logo. Please try again.', life: 5000 };
   }
 
   private refreshFieldFlags(): void {
