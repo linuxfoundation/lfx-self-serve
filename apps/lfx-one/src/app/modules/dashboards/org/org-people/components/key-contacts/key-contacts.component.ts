@@ -14,6 +14,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { EMPTY_ORG_KEY_CONTACTS_RESPONSE, roleToContactType } from '@lfx-one/shared/constants';
 import { avatarInitials } from '@lfx-one/shared/utils';
 import type {
@@ -69,6 +70,7 @@ export class KeyContactsComponent {
   private readonly dataService = inject(KeyContactsService);
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly roleGrants = inject(OrgRoleGrantsService);
+  private readonly drawer = inject(PersonDetailDrawerService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
@@ -162,6 +164,18 @@ export class KeyContactsComponent {
 
   protected retry(): void {
     this.retryTrigger.update((v) => v + 1);
+  }
+
+  // Key Contacts has no personKey — group.email is the grouping key so it's always present.
+  protected onPersonClick(group: OrgKeyContactPersonGroupVm, event: Event): void {
+    event.stopPropagation();
+    this.drawer.open({
+      name: group.displayName,
+      title: group.title,
+      initials: group.initials,
+      avatarUrl: group.avatarUrl,
+      email: group.email,
+    });
   }
 
   // Expanded-row Edit pencil — opens the spec-024 4-state modal scoped to one (membership, role-TYPE).
