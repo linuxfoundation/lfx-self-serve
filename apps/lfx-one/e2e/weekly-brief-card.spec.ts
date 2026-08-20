@@ -48,7 +48,7 @@
  */
 
 import { expect, Page, Route, test } from '@playwright/test';
-import { WEEKLY_BRIEF_ERROR_REASON } from '@lfx-one/shared/constants';
+import { WEEKLY_BRIEF_ERROR_REASON, WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, PollStatus } from '@lfx-one/shared/enums';
 import {
   Committee,
@@ -122,6 +122,13 @@ const BRIEF_WITH_SOURCES: WeeklyBrief = {
     { id: 'src-unknown-1', kind: 'some_future_kind' },
   ],
 };
+// Fails loudly at collection time, not with an opaque "element not found" from every test
+// using this fixture, if WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD ever changes.
+if (BRIEF_WITH_SOURCES.source_refs.length !== WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD) {
+  throw new Error(
+    `BRIEF_WITH_SOURCES must have exactly WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD (${WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD}) source_refs to stay at the flat-render threshold — update this fixture (add/remove a distinct-label ref) to match.`
+  );
+}
 
 // Two distinct vote refs — for the concurrent-click race test only (PR #1363 review: Copilot,
 // Cursor Bugbot, and a human reviewer all independently caught that a single in-flight boolean
@@ -149,6 +156,11 @@ const BRIEF_WITH_MANY_SOURCES: WeeklyBrief = {
     { id: 'src-ml-1', kind: 'mailing-list', title: 'tsc-discuss' },
   ],
 };
+if (BRIEF_WITH_MANY_SOURCES.source_refs.length <= WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD) {
+  throw new Error(
+    `BRIEF_WITH_MANY_SOURCES must have more than WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD (${WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD}) source_refs to exercise the disclosure — update this fixture to match.`
+  );
+}
 
 function buildCommitteeFixture(overrides: Partial<Committee> = {}): Committee {
   return {
@@ -902,9 +914,9 @@ test.describe('WG Weekly Brief card — Sources disclosure & dedupe (LFXV2-3335)
     const sources = page.getByTestId('weekly-brief-card-sources');
     await expect(sources).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    // 6 raw refs > the 5-ref threshold — collapsed behind the disclosure, no chips visible yet.
+    // Raw refs > the threshold — collapsed behind the disclosure, no chips visible yet.
     const toggle = page.getByTestId('weekly-brief-card-sources-toggle');
-    await expect(toggle).toContainText('Sources (6)');
+    await expect(toggle).toContainText(`Sources (${BRIEF_WITH_MANY_SOURCES.source_refs.length})`);
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect(sources.getByTestId('weekly-brief-card-source-chip-src-vote-1')).toHaveCount(0);
 

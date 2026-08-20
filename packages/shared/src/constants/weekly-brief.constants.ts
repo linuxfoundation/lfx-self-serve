@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { WeeklyBriefState } from '../interfaces/weekly-brief.interface';
+import { WeeklyBriefSourceSection, WeeklyBriefState } from '../interfaces/weekly-brief.interface';
 
 /**
  * Brief states a "Share to Mailing List" action may fire from — i.e. states
@@ -88,7 +88,7 @@ export const WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD = 5;
  * key set today, not the same lookup table split across files. A `kind` missing from this
  * list still renders, grouped under the component's "Other" catch-all section.
  */
-export const WEEKLY_BRIEF_SOURCE_SECTIONS: readonly { kind: string; label: string }[] = [
+export const WEEKLY_BRIEF_SOURCE_SECTIONS: readonly WeeklyBriefSourceSection[] = [
   { kind: 'meeting', label: 'Meetings' },
   { kind: 'vote', label: 'Votes' },
   { kind: 'mailing-list', label: 'Mailing List' },

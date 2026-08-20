@@ -5,6 +5,7 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
+import { WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD } from '@lfx-one/shared/constants';
 import { Committee, WeeklyBriefCurrentResponse, WeeklyBriefSourceRef } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
@@ -279,50 +280,86 @@ describe('WeeklyBriefCardComponent — Sources disclosure (LFXV2-3335)', () => {
     await fixture.whenStable();
   }
 
-  it('renders flat with no disclosure toggle at the collapse threshold (5 sources)', async () => {
-    await setup(Array.from({ length: 5 }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })));
+  const OVER_THRESHOLD_COUNT = WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD + 1;
+
+  /** Clicks a data-testid element and flushes it, failing loudly if the element isn't there. */
+  async function clickTestId(testId: string): Promise<HTMLElement> {
+    const el = fixture.nativeElement.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null;
+    expect(el).not.toBeNull();
+    el!.click();
+    await fixture.whenStable();
+    return el!;
+  }
+
+  it(`renders flat with no disclosure toggle at the collapse threshold (${WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD} sources)`, async () => {
+    await setup(Array.from({ length: WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })));
 
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-sources-toggle"]')).toBeNull();
-    expect(fixture.nativeElement.querySelectorAll('[data-testid^="weekly-brief-card-source-chip-"]')).toHaveLength(5);
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="weekly-brief-card-source-chip-"]')).toHaveLength(WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD);
   });
 
-  it('collapses behind a disclosure toggle above the threshold (6 sources)', async () => {
-    await setup(Array.from({ length: 6 }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })));
+  it(`collapses behind a disclosure toggle above the threshold (${OVER_THRESHOLD_COUNT} sources)`, async () => {
+    await setup(Array.from({ length: OVER_THRESHOLD_COUNT }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })));
 
     const toggle = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-sources-toggle"]');
     expect(toggle).not.toBeNull();
-    expect(toggle.textContent).toContain('Sources (6)');
+    expect(toggle.textContent).toContain(`Sources (${OVER_THRESHOLD_COUNT})`);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(fixture.nativeElement.querySelector('[data-testid^="weekly-brief-card-source-chip-"]')).toBeNull();
   });
 
   it('still renders a chip of an unrecognized kind in the expanded view, under an "Other" section', async () => {
     await setup([
-      ...Array.from({ length: 5 }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })),
+      ...Array.from({ length: WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })),
       sourceRef('future-1', { kind: 'some_future_kind', title: 'A Brand New Source Kind' }),
     ]);
 
-    component.onToggleSources();
-    await fixture.whenStable();
+    await clickTestId('weekly-brief-card-sources-toggle');
 
     // sourceRefCount still counts it even though it isn't one of the five known kinds.
-    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-sources-toggle"]').textContent).toContain('Sources (6)');
-    const chip = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-chip-future-1"]');
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-sources-toggle"]').textContent).toContain(`Sources (${OVER_THRESHOLD_COUNT})`);
+    const otherSection = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-section-other"]');
+    expect(otherSection).not.toBeNull();
+    expect(otherSection.textContent).toContain('Other');
+    const chip = otherSection.querySelector('[data-testid="weekly-brief-card-source-chip-future-1"]');
     expect(chip).not.toBeNull();
     expect(chip.textContent).toContain('A Brand New Source Kind');
   });
 
+  it('renders sections in the fixed Meetings / Votes / Mailing List / Documents / Membership / Other order', async () => {
+    await setup([
+      sourceRef('members-1', { kind: 'members', title: 'Member roster changes' }),
+      sourceRef('doc-1', { kind: 'doc', title: 'Charter.pdf' }),
+      sourceRef('ml-1', { kind: 'mailing-list', title: 'Announce List' }),
+      sourceRef('vote-1', { kind: 'vote', title: 'Q1 Budget' }),
+      sourceRef('meeting-1', { kind: 'meeting', title: 'Weekly Sync' }),
+      sourceRef('future-1', { kind: 'some_future_kind', title: 'A Brand New Source Kind' }),
+    ]);
+
+    await clickTestId('weekly-brief-card-sources-toggle');
+
+    const sectionKinds = Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="weekly-brief-card-source-section-"]')).map((el) =>
+      (el as HTMLElement).getAttribute('data-testid')
+    );
+    expect(sectionKinds).toEqual([
+      'weekly-brief-card-source-section-meeting',
+      'weekly-brief-card-source-section-vote',
+      'weekly-brief-card-source-section-mailing-list',
+      'weekly-brief-card-source-section-doc',
+      'weekly-brief-card-source-section-members',
+      'weekly-brief-card-source-section-other',
+    ]);
+  });
+
   it('level-1 toggle expands and re-collapses the sectioned view', async () => {
-    await setup(Array.from({ length: 6 }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })));
+    await setup(Array.from({ length: OVER_THRESHOLD_COUNT }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })));
 
-    component.onToggleSources();
-    await fixture.whenStable();
+    const toggle = await clickTestId('weekly-brief-card-sources-toggle');
     expect(component.sourcesExpanded()).toBe(true);
-    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-sources-toggle"]').getAttribute('aria-expanded')).toBe('true');
-    expect(fixture.nativeElement.querySelectorAll('[data-testid^="weekly-brief-card-source-chip-"]')).toHaveLength(6);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="weekly-brief-card-source-chip-"]')).toHaveLength(OVER_THRESHOLD_COUNT);
 
-    component.onToggleSources();
-    await fixture.whenStable();
+    await clickTestId('weekly-brief-card-sources-toggle');
     expect(component.sourcesExpanded()).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid^="weekly-brief-card-source-chip-"]')).toBeNull();
   });
@@ -337,8 +374,7 @@ describe('WeeklyBriefCardComponent — Sources disclosure (LFXV2-3335)', () => {
       sourceRef('members-1', { kind: 'members', title: 'Member roster changes' }),
     ]);
 
-    component.onToggleSources();
-    await fixture.whenStable();
+    await clickTestId('weekly-brief-card-sources-toggle');
 
     const groupToggle = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-group-toggle-vote-1"]');
     expect(groupToggle).not.toBeNull();
@@ -349,8 +385,7 @@ describe('WeeklyBriefCardComponent — Sources disclosure (LFXV2-3335)', () => {
     const voteDrawerRequested = vi.fn();
     component.voteDrawerRequested.subscribe(voteDrawerRequested);
 
-    component.onToggleSourceGroup('vote-1');
-    await fixture.whenStable();
+    await clickTestId('weekly-brief-card-source-group-toggle-vote-1');
 
     expect(groupToggle.getAttribute('aria-expanded')).toBe('true');
     const instanceButton = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-chip-vote-2"]');
@@ -371,9 +406,8 @@ describe('WeeklyBriefCardComponent — Sources disclosure (LFXV2-3335)', () => {
       sourceRef('mailing-1', { kind: 'mailing-list', title: 'Announce List' }),
     ]);
 
-    component.onToggleSources();
-    component.onToggleSourceGroup('vote-1');
-    await fixture.whenStable();
+    await clickTestId('weekly-brief-card-sources-toggle');
+    await clickTestId('weekly-brief-card-source-group-toggle-vote-1');
     expect(component.sourcesExpanded()).toBe(true);
     expect(component.expandedSourceGroups().has('vote-1')).toBe(true);
 

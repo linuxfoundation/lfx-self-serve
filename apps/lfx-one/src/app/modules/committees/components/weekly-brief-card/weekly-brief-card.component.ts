@@ -12,6 +12,7 @@ import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { WeeklyBriefArchiveDrawerComponent } from '../weekly-brief-archive-drawer/weekly-brief-archive-drawer.component';
+import { SourceChipContextDirective } from './source-chip-context.directive';
 import {
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_MAX_POLL_ATTEMPTS,
@@ -33,6 +34,7 @@ import {
   WeeklyBriefRating,
   WeeklyBriefSourceChip,
   WeeklyBriefSourceChipAction,
+  WeeklyBriefSourceChipSection,
   WeeklyBriefThrottle,
 } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel, mapWeeklyBriefSourceRefsToChips } from '@lfx-one/shared/utils';
@@ -76,6 +78,7 @@ import {
     TagComponent,
     WeeklyBriefArchiveDrawerComponent,
     NgTemplateOutlet,
+    SourceChipContextDirective,
   ],
   templateUrl: './weekly-brief-card.component.html',
   styleUrl: './weekly-brief-card.component.scss',
@@ -219,7 +222,7 @@ export class WeeklyBriefCardComponent {
   // sourceChips() grouped into fixed-order kind-sections for the expanded disclosure view
   // (LFXV2-3335) — precomputed here rather than re-derived in the template (frontend-checklist
   // §4). See initSourceChipSections for the "Other" catch-all rationale.
-  public readonly sourceChipSections: Signal<{ kind: string; label: string; chips: WeeklyBriefSourceChip[] }[]> = this.initSourceChipSections();
+  public readonly sourceChipSections: Signal<WeeklyBriefSourceChipSection[]> = this.initSourceChipSections();
 
   // "no_sources" is the only error_reason meaningful to the UI today (LFXV2-3000) —
   // a committee with zero activity in the lookback window, not a genuine generation
@@ -582,7 +585,7 @@ export class WeeklyBriefCardComponent {
   // catch-all an unrecognized future kind would silently vanish from the expanded view while
   // still counted in sourceRefCount(), contradicting mapWeeklyBriefSourceRefsToChips's "renders
   // unlinked instead of breaking" contract. A section with no chips is omitted entirely.
-  private initSourceChipSections(): Signal<{ kind: string; label: string; chips: WeeklyBriefSourceChip[] }[]> {
+  private initSourceChipSections(): Signal<WeeklyBriefSourceChipSection[]> {
     return computed(() => {
       const chips = this.sourceChips();
       const known = new Set(WEEKLY_BRIEF_SOURCE_SECTIONS.map((section) => section.kind));

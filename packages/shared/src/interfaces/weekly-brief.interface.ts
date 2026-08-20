@@ -74,6 +74,22 @@ export interface WeeklyBriefSourceChip {
   };
 }
 
+/**
+ * One entry of `WEEKLY_BRIEF_SOURCE_SECTIONS` (`../constants/weekly-brief.constants`) — the
+ * fixed display order/label for a Sources-disclosure kind-section. Kept alongside
+ * `WeeklyBriefSourceChipSection` below since the two shapes are the same concept before and
+ * after `sourceChips()` is filtered into each section (LFXV2-3335).
+ */
+export interface WeeklyBriefSourceSection {
+  kind: string;
+  label: string;
+}
+
+/** A `WeeklyBriefSourceSection` populated with the chips that fell into it (LFXV2-3335). */
+export interface WeeklyBriefSourceChipSection extends WeeklyBriefSourceSection {
+  chips: WeeklyBriefSourceChip[];
+}
+
 export interface WeeklyBrief {
   uid: string;
   committee_uid: string;
