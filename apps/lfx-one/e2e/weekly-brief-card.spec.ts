@@ -107,9 +107,8 @@ const USED_THROTTLE_AFTER_GENERATE: WeeklyBriefThrottle = {
 // open-string fallback a future upstream value must not break. Exactly 5 refs, all with
 // distinct (kind, label) pairs — at WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD, so this fixture
 // renders flat with no disclosure toggle and no dedupe grouping (see the dedicated "Sources
-// disclosure & dedupe (LFXV2-3335)" describe block below for the >threshold / grouped case;
-// the "doc" kind — documented only as a Goa design example, never emitted — isn't covered
-// here since a 6th ref would push this fixture over the threshold).
+// disclosure & dedupe (LFXV2-3335)" describe block below for the >threshold / grouped case,
+// including "doc" kind coverage via BRIEF_WITH_MANY_SOURCES).
 const BRIEF_WITH_SOURCES: WeeklyBrief = {
   ...GENERATED_BRIEF,
   source_refs: [
@@ -142,9 +141,10 @@ const BRIEF_WITH_TWO_VOTES: WeeklyBrief = {
 };
 
 // Duplicate-label meeting refs (recurring-meeting instances) alongside distinct-kind refs —
-// 6 total, one over WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD — covering both halves of
-// LFXV2-3335: the disclosure gating the row above the threshold, and same-(kind, label) refs
-// collapsing into one count-badged, ordinally-labeled group.
+// 7 total, over WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD — covering both halves of LFXV2-3335:
+// the disclosure gating the row above the threshold, and same-(kind, label) refs collapsing
+// into one count-badged, ordinally-labeled group. Also the only fixture covering "doc" — moved
+// here from BRIEF_WITH_SOURCES so that fixture could stay exactly at the collapse threshold.
 const BRIEF_WITH_MANY_SOURCES: WeeklyBrief = {
   ...GENERATED_BRIEF,
   source_refs: [
@@ -154,6 +154,7 @@ const BRIEF_WITH_MANY_SOURCES: WeeklyBrief = {
     { id: 'src-vote-1', kind: 'vote', title: 'Q1 Budget' },
     { id: 'src-members-1', kind: 'members', title: 'Member roster changes' },
     { id: 'src-ml-1', kind: 'mailing-list', title: 'tsc-discuss' },
+    { id: 'src-doc-1', kind: 'doc', title: 'Charter.pdf' },
   ],
 };
 if (BRIEF_WITH_MANY_SOURCES.source_refs.length <= WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD) {
@@ -935,6 +936,7 @@ test.describe('WG Weekly Brief card — Sources disclosure & dedupe (LFXV2-3335)
     await expect(sources.getByTestId('weekly-brief-card-source-chip-src-vote-1')).toContainText('Q1 Budget');
     await expect(sources.getByTestId('weekly-brief-card-source-chip-src-members-1')).toContainText('Member roster changes');
     await expect(sources.getByTestId('weekly-brief-card-source-chip-src-ml-1')).toContainText('tsc-discuss');
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-doc-1')).toContainText('Charter.pdf');
 
     await groupToggle.click();
     await expect(groupToggle).toHaveAttribute('aria-expanded', 'true');

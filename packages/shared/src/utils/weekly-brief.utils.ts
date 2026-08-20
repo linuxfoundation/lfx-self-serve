@@ -75,9 +75,7 @@ function buildChip(ref: WeeklyBriefSourceRef): WeeklyBriefSourceChip {
   };
 }
 
-// A control character, built at runtime (not written as a literal or an escape sequence in this
-// file) so it can safely separate a kind from a title in groupChips's grouping key below without
-// ever risking a raw control byte landing in the source file itself.
+// A separator for groupChips's grouping key that can't appear in a kind or a title.
 const GROUP_KEY_SEPARATOR = String.fromCharCode(0);
 
 /**
@@ -94,10 +92,9 @@ const GROUP_KEY_SEPARATOR = String.fromCharCode(0);
  * A group of size 1 is returned unchanged (no `group` field), and `Map` insertion order already
  * matches first-occurrence order in `refs`, so no separate order-tracking is needed.
  */
-function groupChips(refs: WeeklyBriefSourceRef[], chips: WeeklyBriefSourceChip[]): WeeklyBriefSourceChip[] {
+function groupChips(refs: WeeklyBriefSourceRef[]): WeeklyBriefSourceChip[] {
   const groups = new Map<string, WeeklyBriefSourceChip[]>();
-  refs.forEach((ref, index) => {
-    const chip = chips[index];
+  for (const ref of refs) {
     // Separator-joined, not plain concatenation: a titled key can't collide with an untitled
     // one (untitled keys start with the separator; kind is always non-empty), and a titled
     // key's kind/title halves can't collide with each other regardless of what characters a
@@ -105,11 +102,11 @@ function groupChips(refs: WeeklyBriefSourceRef[], chips: WeeklyBriefSourceChip[]
     const key = ref.title ? `${ref.kind}${GROUP_KEY_SEPARATOR}${ref.title}` : `${GROUP_KEY_SEPARATOR}${ref.id}`;
     const existing = groups.get(key);
     if (existing) {
-      existing.push(chip);
+      existing.push(buildChip(ref));
     } else {
-      groups.set(key, [chip]);
+      groups.set(key, [buildChip(ref)]);
     }
-  });
+  }
 
   return Array.from(groups.values(), (members) => {
     if (members.length === 1) {
@@ -140,5 +137,5 @@ function groupChips(refs: WeeklyBriefSourceRef[], chips: WeeklyBriefSourceChip[]
  * order of each `(kind, title)` group in `source_refs`.
  */
 export function mapWeeklyBriefSourceRefsToChips(sourceRefs: WeeklyBriefSourceRef[]): WeeklyBriefSourceChip[] {
-  return groupChips(sourceRefs, sourceRefs.map(buildChip));
+  return groupChips(sourceRefs);
 }

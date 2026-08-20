@@ -215,8 +215,8 @@ export class WeeklyBriefCardComponent {
 
   // Raw source_refs count, duplicates included — NOT the deduped sourceChips() length. Drives
   // both the collapse threshold comparison and the "Sources (N)" disclosure header (LFXV2-3335).
-  // `?? []` before `.length`, not `?.source_refs.length ?? 0`, matches sourceChips()'s guard two
-  // lines up: a brief response missing source_refs must not throw through this computed.
+  // `?? []` before `.length`, not `?.source_refs.length ?? 0`, matches the sourceChips computed
+  // above's guard: a brief response missing source_refs must not throw through this computed.
   public readonly sourceRefCount: Signal<number> = computed(() => (this.renderableBrief()?.source_refs ?? []).length);
 
   // sourceChips() grouped into fixed-order kind-sections for the expanded disclosure view
