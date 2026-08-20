@@ -159,7 +159,16 @@ export class MktgAgentRunComponent {
     const copied = this.derivativeChips().find((chip) => chip.copied);
     return copied ? `${copied.label} copied to the clipboard` : '';
   });
-  protected readonly regenerateDisabled = computed(() => !this.feedbackValue().trim() || !this.intakeValid() || this.phase() === 'running');
+  /**
+   * Regeneration is a full resubmit, so it gates exactly like the first
+   * submit — including the dependency gate. Without it a "Request changes"
+   * could fire while the project's dependency documents are still resolving
+   * (or gone), flipping the page to `running` only for submit-time resolution
+   * to abort it.
+   */
+  protected readonly regenerateDisabled = computed(
+    () => !this.feedbackValue().trim() || !this.intakeValid() || this.phase() === 'running' || !this.dependenciesSatisfied()
+  );
   protected readonly stages: Signal<{ label: string; state: 'done' | 'active' | 'pending'; labelClass: string }[]> = this.initStages();
   protected readonly sectionChecklist: Signal<{ label: string; present: boolean; iconClass: string; srText: string }[]> = this.initSectionChecklist();
 

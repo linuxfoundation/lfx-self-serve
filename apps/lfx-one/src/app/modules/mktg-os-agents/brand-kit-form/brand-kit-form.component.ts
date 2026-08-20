@@ -15,6 +15,7 @@ import { BRAND_KIT_INTAKE_QUESTIONS } from '@lfx-one/shared/constants';
 import { BrandKitResultResponse } from '@lfx-one/shared/interfaces';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { BrandKitService } from '@services/brand-kit.service';
+import { ProjectContextService } from '@services/project-context.service';
 
 /** Client-side poll cadence and cap for the generation session (~5 min). */
 const RESULT_POLL_INTERVAL_MS = 10_000;
@@ -49,6 +50,7 @@ export class BrandKitFormComponent implements OnDestroy {
   private readonly brandKitService = inject(BrandKitService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly projectContext = inject(ProjectContextService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -75,6 +77,14 @@ export class BrandKitFormComponent implements OnDestroy {
   // poll responses (which a cleared timer cannot cancel) are discarded instead
   // of resurrecting a cancelled generation.
   private pollEpoch = 0;
+  /**
+   * Active project uid captured AT SUBMIT — the scope the BFF persists the
+   * ready document under (writer-entitled, server-resolved). Captured once
+   * rather than read per poll so a project switch mid-generation can never
+   * redirect this run's write into another project's partition. Empty when no
+   * project is selected: the document is still shown, just not persisted.
+   */
+  private runProjectUid = '';
 
   public ngOnDestroy(): void {
     this.clearPollTimer();
@@ -95,6 +105,7 @@ export class BrandKitFormComponent implements OnDestroy {
     this.generating.set(true);
     this.errorMessage.set('');
     this.result.set(null);
+    this.runProjectUid = this.projectContext.activeContextUid();
     const epoch = ++this.pollEpoch;
 
     this.brandKitService
@@ -157,7 +168,7 @@ export class BrandKitFormComponent implements OnDestroy {
   // === Private methods ===
   private pollResult(epoch: number, sessionId: string, ownerToken: string, attempt: number, consecutiveErrors: number, persistRetries: number): void {
     this.brandKitService
-      .getResult(sessionId, ownerToken)
+      .getResult(sessionId, ownerToken, this.runProjectUid || undefined)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (response) => {

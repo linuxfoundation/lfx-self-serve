@@ -13,6 +13,7 @@ import {
 } from '../constants/foundation-message.constants';
 import {
   buildFoundationMessageFormPayload,
+  countFoundationMessageWords,
   findMissingFoundationMessageHeadings,
   renderFoundationMessageFormText,
   validateFoundationMessageEnvelope,
@@ -197,9 +198,26 @@ describe('renderFoundationMessageFormText — verbatim mirror of the agent rende
 });
 
 describe('validateFoundationMessageEnvelope — schema + structure gates', () => {
+  /**
+   * Contract-true derivatives: inside the §1a word caps, boilerplate inside
+   * the 50-250 band, `llms_txt` opening with an H1, and every value embedded
+   * verbatim in the document (gate G3) — what the agent's finalize tool emits.
+   */
+  const derivatives = (): Record<string, string> => ({
+    summary_25: 'Example Project is an open source toolkit that helps platform teams ship reliable services faster.',
+    summary_50:
+      'Example Project is an open source toolkit that helps platform teams ship reliable services faster, with sensible defaults, transparent governance, and a contributor community that reviews every change in the open.',
+    boilerplate:
+      'Example Project is an open source toolkit for platform teams who need to ship reliable services without assembling their own release toolchain. It packages opinionated defaults for building, testing, and rolling out changes, and keeps every decision inspectable so teams can adapt it to their own environment. Governed in the open under the Linux Foundation, Example Project is maintained by contributors from a range of organisations who review each change in public. Adopters use it to shorten the path from a merged pull request to a production release while keeping the audit trail their compliance teams expect.',
+    llms_txt: '# Example Project\n\nExample Project is an open source toolkit for platform teams.',
+    elevator_pitch_headline: 'Ship reliable services faster with Example Project',
+  });
+
   const document = (): string => {
     const body = FOUNDATION_MESSAGE_REQUIRED_HEADINGS.map((heading) => `${heading}\n\nContent for the section goes here.`).join('\n\n');
-    return `# Example Project Message Foundation\n\n${body}\n\n${'Padding to satisfy the minimum length gate. '.repeat(20)}`;
+    // The document is the single source for the derivatives (gate G3).
+    const derivativeBlock = Object.values(derivatives()).join('\n\n');
+    return `# Example Project Message Foundation\n\n${body}\n\n${derivativeBlock}\n\n${'Padding to satisfy the minimum length gate. '.repeat(20)}`;
   };
 
   const validEnvelope = (): Record<string, unknown> => ({
@@ -210,13 +228,7 @@ describe('validateFoundationMessageEnvelope — schema + structure gates', () =>
     version: 1,
     document_markdown: document(),
     content_sha256: 'a'.repeat(64),
-    derivatives: {
-      summary_25: 'Short summary.',
-      summary_50: 'Longer summary.',
-      boilerplate: 'Boilerplate paragraph.',
-      llms_txt: '# Example Project\nAbout.',
-      elevator_pitch_headline: 'Example does the thing',
-    },
+    derivatives: derivatives(),
     inputs: { brand_kit_provided: false },
     intake: {
       mode: 'form',
@@ -249,6 +261,46 @@ describe('validateFoundationMessageEnvelope — schema + structure gates', () =>
     const envelope = validEnvelope();
     envelope['derivatives'] = { ...(envelope['derivatives'] as Record<string, string>), llms_txt: '' };
     expect(validateFoundationMessageEnvelope(envelope).valid).toBe(false);
+  });
+
+  it('re-enforces the §1a hard word caps (G1) instead of trusting the agent wrapper', () => {
+    const envelope = validEnvelope();
+    const overLong = 'This elevator pitch headline runs well past the contract hard cap of ten words easily';
+    envelope['derivatives'] = { ...derivatives(), elevator_pitch_headline: overLong };
+    envelope['document_markdown'] = `${document()}\n\n${overLong}`;
+
+    const result = validateFoundationMessageEnvelope(envelope);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(' ')).toContain('hard cap is 10');
+  });
+
+  it('re-enforces the boilerplate word band and the llms_txt H1 shape (G2)', () => {
+    const envelope = validEnvelope();
+    envelope['derivatives'] = { ...derivatives(), boilerplate: 'Too short to be a boilerplate.', llms_txt: 'TestOrbit without an H1 line.' };
+    envelope['document_markdown'] = `${document()}\n\nToo short to be a boilerplate.\n\nTestOrbit without an H1 line.`;
+
+    const result = validateFoundationMessageEnvelope(envelope);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(' ')).toContain('derivatives.boilerplate is 6 words');
+    expect(result.errors.join(' ')).toContain("derivatives.llms_txt must start with an '# ' H1 line");
+  });
+
+  it('rejects a derivative that is not verbatim inside document_markdown (G3) — the document is the single source', () => {
+    const envelope = validEnvelope();
+    envelope['derivatives'] = { ...derivatives(), summary_25: 'A summary the document itself never contains.' };
+
+    const result = validateFoundationMessageEnvelope(envelope);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(' ')).toContain('derivatives.summary_25 does not appear verbatim inside document_markdown');
+  });
+
+  it('counts words the way the contract does — punctuation-only tokens do not count', () => {
+    expect(countFoundationMessageWords('one — two')).toBe(2);
+    expect(countFoundationMessageWords('  spaced   out  words ')).toBe(3);
+    expect(countFoundationMessageWords('')).toBe(0);
   });
 
   it('tolerates trailing heading qualifiers like the template’s own "(when a Brand Kit exists)"', () => {

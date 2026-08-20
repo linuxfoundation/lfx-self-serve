@@ -257,10 +257,16 @@ export class MktgAgentsController {
    * POST /api/mktg-agents/brand-kit/result
    * Polls a generation session for the validated Brand Kit document.
    * Only the session's creator may read the result (owner-token proof).
+   *
+   * `project` (the run's LFX project uid) scopes the persistence write that
+   * rides a ready result: the service resolves it server-side and requires
+   * the caller's writer grant before the document can enter that project's
+   * storage partition. It is passed through untrusted — the partition is the
+   * RESOLVED project's uid, never this raw value.
    */
   public async brandKitResult(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { sessionId, ownerToken } = (req.body ?? {}) as Partial<BrandKitResultRequest>;
+    const { sessionId, ownerToken, project } = (req.body ?? {}) as Partial<BrandKitResultRequest>;
 
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     if (!validSessionId) {
@@ -299,10 +305,14 @@ export class MktgAgentsController {
       return;
     }
 
+    // Type-gate the run scope like every other body field; an absent one means
+    // "no project to persist into", never "persist wherever the agent said".
+    const validProjectUid = typeof project === 'string' && project.trim() ? project.trim() : undefined;
+
     const startTime = logger.startOperation(req, 'brand_kit_result', {});
 
     try {
-      const result: BrandKitResultResponse = await this.brandKitService.getResult(req, validSessionId);
+      const result: BrandKitResultResponse = await this.brandKitService.getResult(req, validSessionId, validProjectUid);
       logger.success(req, 'brand_kit_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
@@ -320,8 +330,9 @@ export class MktgAgentsController {
    * must hold writer entitlement on the requested project (the
    * `ProjectService.getProjectById` + `project.writer` precedent shared with
    * writer.guard). The storage partition is derived from the SERVER-resolved
-   * project slug, never from client input, so one project's caller can never
-   * be served another project's partition.
+   * project uid — the same identifier the write path derives it from — never
+   * from client input, so one project's caller can never be served another
+   * project's partition.
    */
   public async storedBrandKit(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectParam = req.query['project'];
@@ -355,10 +366,10 @@ export class MktgAgentsController {
         return;
       }
 
-      const stored: BrandKitStoredResponse | null = await this.brandKitService.getStoredBrandKit(req, project.slug);
+      const stored: BrandKitStoredResponse | null = await this.brandKitService.getStoredBrandKit(req, project.uid);
       if (!stored) {
         next(
-          new ResourceNotFoundError('Stored Brand Kit', project.slug, {
+          new ResourceNotFoundError('Stored Brand Kit', project.uid, {
             operation: 'brand_kit_stored',
             service: 'mktg_agents_controller',
             path: req.path,
@@ -367,7 +378,7 @@ export class MktgAgentsController {
         return;
       }
 
-      logger.success(req, 'brand_kit_stored', startTime, { project: project.slug, version: stored.receipt.version });
+      logger.success(req, 'brand_kit_stored', startTime, { project: project.uid, version: stored.receipt.version });
       res.json(stored);
     } catch (error) {
       next(error);

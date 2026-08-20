@@ -57,11 +57,31 @@ const answers = (): Record<string, string> => ({
   brand_kit_markdown: '# TestOrbit Brand Kit\n\nVoice: clear.',
 });
 
+/**
+ * Contract-true derivatives: inside the §1a word caps, boilerplate inside the
+ * 50-250 band, `llms_txt` opening with an H1, and every value embedded
+ * verbatim in the document below (gate G3) — the same envelope the agent's
+ * finalize tool would emit.
+ */
+const DERIVATIVES: Record<string, string> = {
+  summary_25: 'TestOrbit is an open source toolkit that helps platform teams ship reliable services faster.',
+  summary_50:
+    'TestOrbit is an open source toolkit that helps platform teams ship reliable services faster, with sensible defaults, transparent governance, and a contributor community that reviews every change in the open.',
+  boilerplate:
+    'TestOrbit is an open source toolkit for platform teams who need to ship reliable services without assembling their own release toolchain. It packages opinionated defaults for building, testing, and rolling out changes, and keeps every decision inspectable so teams can adapt it to their own environment. Governed in the open under the Linux Foundation, TestOrbit is maintained by contributors from a range of organisations who review each change in public. Adopters use it to shorten the path from a merged pull request to a production release while keeping the audit trail their compliance teams expect.',
+  llms_txt: '# TestOrbit\n\nTestOrbit is an open source toolkit for platform teams.',
+  elevator_pitch_headline: 'Ship reliable services faster with TestOrbit',
+};
+
 function buildDocument(): string {
   const filler = 'Synthetic fixture prose for the Message Foundation structural gate. '.repeat(3);
   const sections = ['# TestOrbit Message Foundation', ''];
   for (const heading of FOUNDATION_MESSAGE_REQUIRED_HEADINGS) {
     sections.push(heading, '', filler, '');
+    if (heading.startsWith('## 1a.')) {
+      // The document is the single source for the derivatives (gate G3).
+      sections.push(...Object.values(DERIVATIVES), '');
+    }
   }
   return sections.join('\n');
 }
@@ -76,13 +96,7 @@ function buildEnvelope(overrides: Record<string, unknown> = {}): Record<string, 
     version: 1,
     document_markdown: documentMarkdown,
     content_sha256: createHash('sha256').update(documentMarkdown, 'utf8').digest('hex'),
-    derivatives: {
-      summary_25: 'Twenty-five word summary.',
-      summary_50: 'Fifty word summary.',
-      boilerplate: 'Boilerplate paragraph.',
-      llms_txt: '# TestOrbit\nAbout the project.',
-      elevator_pitch_headline: 'TestOrbit orbits tests',
-    },
+    derivatives: { ...DERIVATIVES },
     inputs: { brand_kit_provided: true },
     intake: {
       mode: 'form',
@@ -200,8 +214,28 @@ describe('FoundationMessageService.getResult', () => {
     expect(result.version).toBe(1);
     expect(result.projectName).toBe('TestOrbit');
     expect(result.intakeMode).toBe('form');
-    expect(result.derivatives).toMatchObject({ summary_25: 'Twenty-five word summary.', elevator_pitch_headline: 'TestOrbit orbits tests' });
+    expect(result.derivatives).toMatchObject({ summary_25: DERIVATIVES['summary_25'], elevator_pitch_headline: DERIVATIVES['elevator_pitch_headline'] });
     expect(result.documentMarkdown).toContain('## 6. Messaging Pillars');
+  });
+
+  it('suppresses an envelope whose derivatives break the §1a word-count locks (never surfaced as "word-count-locked")', async () => {
+    const overLongHeadline = 'This elevator pitch headline runs well past the contract hard cap of ten words easily';
+    const document = `${buildDocument()}\n${overLongHeadline}\n`;
+    const forged = buildEnvelope({
+      document_markdown: document,
+      content_sha256: createHash('sha256').update(document, 'utf8').digest('hex'),
+      derivatives: { ...DERIVATIVES, elevator_pitch_headline: overLongHeadline },
+    });
+    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(forged)]);
+
+    expect(await service.getResult(req, 'session-1')).toEqual({ status: 'pending' });
+  });
+
+  it('suppresses an envelope whose derivative is not verbatim in the hash-verified document (gate G3)', async () => {
+    const forged = buildEnvelope({ derivatives: { ...DERIVATIVES, summary_25: 'A summary that the document itself never contains.' } });
+    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(forged)]);
+
+    expect(await service.getResult(req, 'session-1')).toEqual({ status: 'pending' });
   });
 
   it('discards a candidate whose content_sha256 does not match the document bytes — an older hash-valid envelope still wins', async () => {

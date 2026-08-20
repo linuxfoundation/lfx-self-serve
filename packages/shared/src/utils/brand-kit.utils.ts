@@ -16,6 +16,7 @@ import {
   BRAND_KIT_KIND,
   BRAND_KIT_MAX_DOCUMENT_BYTES,
   BRAND_KIT_MIN_DOCUMENT_LENGTH,
+  BRAND_KIT_PROJECT_PARTITION_REGEX,
   BRAND_KIT_PROJECT_SLUG_REGEX,
   BRAND_KIT_REQUIRED_HEADINGS,
   BRAND_KIT_SHA256_REGEX,
@@ -126,12 +127,21 @@ export function findMissingBrandKitHeadings(documentMarkdown: string): string[] 
   return missing;
 }
 
-/** Derive the content-addressed object key from validated fields only (contract §3.5). */
-export function buildBrandKitObjectKey(project: string, contentSha256: string): string {
-  if (!BRAND_KIT_PROJECT_SLUG_REGEX.test(project) || !BRAND_KIT_SHA256_REGEX.test(contentSha256)) {
-    throw new Error('buildBrandKitObjectKey requires already-validated project and content_sha256 values');
+/**
+ * Derive the content-addressed object key from validated fields only
+ * (contract §3.5).
+ *
+ * `projectPartition` is the SERVER-RESOLVED LFX project uid that owns the
+ * document — never `envelope.project`, whose slug comes from the free-text
+ * project name the user typed and therefore identifies no LFX project. The
+ * read path lists the same server-resolved partition, so both sides address
+ * one identifier.
+ */
+export function buildBrandKitObjectKey(projectPartition: string, contentSha256: string): string {
+  if (!BRAND_KIT_PROJECT_PARTITION_REGEX.test(projectPartition) || !BRAND_KIT_SHA256_REGEX.test(contentSha256)) {
+    throw new Error('buildBrandKitObjectKey requires an already-validated project partition and content_sha256');
   }
-  return `${BRAND_KIT_KEY_PREFIX}/${project}/${contentSha256}.md`;
+  return `${BRAND_KIT_KEY_PREFIX}/${projectPartition}/${contentSha256}.md`;
 }
 
 /**

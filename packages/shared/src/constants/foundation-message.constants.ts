@@ -88,6 +88,22 @@ export const FOUNDATION_MESSAGE_REQUIRED_HEADINGS = [
 /** The five derivative keys the contract's `derivatives` object requires. */
 export const FOUNDATION_MESSAGE_DERIVATIVE_KEYS = ['summary_25', 'summary_50', 'boilerplate', 'llms_txt', 'elevator_pitch_headline'] as const;
 
+/**
+ * Hard word caps of the length-locked derivatives (contract §1a gate G1),
+ * quoted from the agent's own `derivativeViolations`. The BFF re-checks them
+ * rather than trusting the wrapper: the envelope scanner reads every event
+ * payload, so a shape-compatible draft that never passed the finalize tool
+ * could otherwise be surfaced to the user as "word-count-locked".
+ */
+export const FOUNDATION_MESSAGE_DERIVATIVE_WORD_CAPS = {
+  summary_25: 25,
+  summary_50: 50,
+  elevator_pitch_headline: 10,
+} as const;
+
+/** Boilerplate sanity band in words (contract §1a gate G2; Paul's target is ~100-150). */
+export const FOUNDATION_MESSAGE_BOILERPLATE_WORD_BAND = { min: 50, max: 250 } as const;
+
 /** Result-surface chips for the five word-count-locked derivatives, in display order. */
 export const FOUNDATION_MESSAGE_DERIVATIVE_CHIPS = [
   { key: 'summary_25', label: '25-word summary' },

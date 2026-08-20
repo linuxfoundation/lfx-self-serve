@@ -31,9 +31,16 @@ export class BrandKitService {
     return this.http.post<BrandKitGenerateResponse>('/api/mktg-agents/brand-kit/generate', body);
   }
 
-  /** Poll the generation session for the validated document. */
-  public getResult(sessionId: string, ownerToken: string): Observable<BrandKitResultResponse> {
-    const body: BrandKitResultRequest = { sessionId, ownerToken };
+  /**
+   * Poll the generation session for the validated document.
+   *
+   * `projectUid` scopes the server-side persistence write that rides a ready
+   * result: the BFF resolves the project, requires the caller's writer grant,
+   * and partitions storage by the resolved project. Without an active project
+   * the document still comes back — it simply isn't persisted (no receipt).
+   */
+  public getResult(sessionId: string, ownerToken: string, projectUid?: string): Observable<BrandKitResultResponse> {
+    const body: BrandKitResultRequest = { sessionId, ownerToken, ...(projectUid && { project: projectUid }) };
     return this.http.post<BrandKitResultResponse>('/api/mktg-agents/brand-kit/result', body);
   }
 

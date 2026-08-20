@@ -7,6 +7,7 @@ import { provideRouter } from '@angular/router';
 import { BRAND_KIT_INTAKE_QUESTIONS } from '@lfx-one/shared/constants';
 import { BrandKitResultResponse } from '@lfx-one/shared/interfaces';
 import { BrandKitService } from '@services/brand-kit.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -55,7 +56,13 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
 
     await TestBed.configureTestingModule({
       imports: [BrandKitFormComponent],
-      providers: [provideRouter([]), provideNoopAnimations(), { provide: BrandKitService, useValue: { generate, getResult } }],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: BrandKitService, useValue: { generate, getResult } },
+        // The run's project scope: the uid the BFF persists the ready document under.
+        { provide: ProjectContextService, useValue: { activeContextUid: () => 'proj-uid-1' } },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(BrandKitFormComponent);
@@ -97,6 +104,16 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
     // Ready is terminal — no further polls are scheduled.
     vi.advanceTimersByTime(POLL_INTERVAL_MS * 3);
     expect(getResult).toHaveBeenCalledTimes(2);
+  });
+
+  it('scopes every result poll to the project captured at submit — the partition the BFF persists into', () => {
+    getResult.mockReturnValueOnce(of(PENDING)).mockReturnValueOnce(of(READY));
+
+    submitGenerationForm();
+    vi.advanceTimersByTime(POLL_INTERVAL_MS);
+
+    expect(getResult).toHaveBeenNthCalledWith(1, 'session-1', 'owner-1', 'proj-uid-1');
+    expect(getResult).toHaveBeenNthCalledWith(2, 'session-1', 'owner-1', 'proj-uid-1');
   });
 
   it('fails with a timeout message at the 30-attempt budget and never polls past it', () => {
@@ -224,7 +241,13 @@ describe('BrandKitFormComponent — persistence retry polling', () => {
 
     await TestBed.configureTestingModule({
       imports: [BrandKitFormComponent],
-      providers: [provideRouter([]), provideNoopAnimations(), { provide: BrandKitService, useValue: { generate, getResult } }],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: BrandKitService, useValue: { generate, getResult } },
+        // The run's project scope: the uid the BFF persists the ready document under.
+        { provide: ProjectContextService, useValue: { activeContextUid: () => 'proj-uid-1' } },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(BrandKitFormComponent);

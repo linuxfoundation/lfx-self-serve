@@ -12,6 +12,11 @@ const projectMocks = vi.hoisted(() => ({
 }));
 const brandKitMocks = vi.hoisted(() => ({
   getStoredBrandKit: vi.fn(),
+  getResult: vi.fn(),
+}));
+const tokenMocks = vi.hoisted(() => ({
+  createSessionOwnerToken: vi.fn(),
+  verifySessionOwnerToken: vi.fn(() => true),
 }));
 const loggerMocks = vi.hoisted(() => ({
   startOperation: vi.fn(() => 0),
@@ -37,6 +42,7 @@ vi.mock('../services/guild.service', () => ({
 vi.mock('../services/brand-kit.service', () => ({
   BrandKitService: class {
     public getStoredBrandKit = brandKitMocks.getStoredBrandKit;
+    public getResult = brandKitMocks.getResult;
   },
 }));
 vi.mock('../services/foundation-message.service', () => ({
@@ -53,10 +59,7 @@ vi.mock('../services/logger.service', () => ({
 vi.mock('../utils/auth-helper', () => ({
   getEffectiveSub: vi.fn(() => 'auth0|user-1'),
 }));
-vi.mock('../utils/mktg-session-token.util', () => ({
-  createSessionOwnerToken: vi.fn(),
-  verifySessionOwnerToken: vi.fn(),
-}));
+vi.mock('../utils/mktg-session-token.util', () => tokenMocks);
 
 import type { NextFunction, Request, Response } from 'express';
 
@@ -65,6 +68,10 @@ import { MktgAgentsController } from './mktg-agents.controller';
 
 function buildReq(query: Record<string, unknown> = {}): Request {
   return { path: '/api/mktg-agents/brand-kit/stored', query } as unknown as Request;
+}
+
+function buildResultReq(body: Record<string, unknown>): Request {
+  return { path: '/api/mktg-agents/brand-kit/result', body } as unknown as Request;
 }
 
 function buildRes(): Response & { json: ReturnType<typeof vi.fn> } {
@@ -100,7 +107,7 @@ describe('MktgAgentsController', () => {
       expect(res.json).not.toHaveBeenCalled();
     });
 
-    it('serves the stored document to a writer-entitled caller, partitioned by the SERVER-resolved slug', async () => {
+    it('serves the stored document to a writer-entitled caller, partitioned by the SERVER-resolved project uid', async () => {
       projectMocks.getProjectById.mockResolvedValue({ uid: 'proj-uid-1', slug: 'testorbit', writer: true });
       brandKitMocks.getStoredBrandKit.mockResolvedValue(STORED);
       const req = buildReq({ project: 'proj-uid-1' });
@@ -111,9 +118,10 @@ describe('MktgAgentsController', () => {
       expect(next).not.toHaveBeenCalled();
       // The entitlement lookup runs with the access annotation requested.
       expect(projectMocks.getProjectById).toHaveBeenCalledWith(req, 'proj-uid-1', true);
-      // The partition comes from the resolved project's slug — never the raw
-      // client input — so a caller can never address another partition.
-      expect(brandKitMocks.getStoredBrandKit).toHaveBeenCalledWith(req, 'testorbit');
+      // The partition comes from the RESOLVED project's uid — never the raw
+      // client input, and never the agent's own slug — so a caller can never
+      // address another partition and the write path addresses the same one.
+      expect(brandKitMocks.getStoredBrandKit).toHaveBeenCalledWith(req, 'proj-uid-1');
       expect(res.json).toHaveBeenCalledWith(STORED);
     });
 
@@ -143,6 +151,15 @@ describe('MktgAgentsController', () => {
       expect(res.json).not.toHaveBeenCalled();
     });
 
+    it('reports 404 with the resolved uid, never the caller’s raw input, as the missing resource id', async () => {
+      projectMocks.getProjectById.mockResolvedValue({ uid: 'proj-uid-1', slug: 'testorbit', writer: true });
+      brandKitMocks.getStoredBrandKit.mockResolvedValue(null);
+
+      await controller.storedBrandKit(buildReq({ project: 'proj-uid-1' }), buildRes(), next);
+
+      expect((next.mock.calls[0][0] as ResourceNotFoundError).message).toContain('proj-uid-1');
+    });
+
     it('forwards a project-resolution failure (unknown uid / upstream error) to the error handler', async () => {
       const failure = new ResourceNotFoundError('Project', 'proj-uid-1');
       projectMocks.getProjectById.mockRejectedValue(failure);
@@ -152,6 +169,37 @@ describe('MktgAgentsController', () => {
 
       expect(next).toHaveBeenCalledWith(failure);
       expect(brandKitMocks.getStoredBrandKit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('brandKitResult (POST /api/mktg-agents/brand-kit/result)', () => {
+    it('passes the run’s project scope to the service so the write is entitlement-checked and partitioned', async () => {
+      brandKitMocks.getResult.mockResolvedValue({ status: 'pending' });
+      const req = buildResultReq({ sessionId: 'sess-1', ownerToken: 'token-1', project: ' proj-uid-1 ' });
+      const res = buildRes();
+
+      await controller.brandKitResult(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(brandKitMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1');
+    });
+
+    it('treats a non-string / blank project as no scope rather than coercing it into a partition', async () => {
+      brandKitMocks.getResult.mockResolvedValue({ status: 'pending' });
+      const req = buildResultReq({ sessionId: 'sess-1', ownerToken: 'token-1', project: { uid: 'proj-uid-1' } });
+
+      await controller.brandKitResult(req, buildRes(), next);
+
+      expect(brandKitMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined);
+    });
+
+    it('never reaches the service when the owner token does not verify', async () => {
+      tokenMocks.verifySessionOwnerToken.mockReturnValueOnce(false);
+
+      await controller.brandKitResult(buildResultReq({ sessionId: 'sess-1', ownerToken: 'nope', project: 'proj-uid-1' }), buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
+      expect(brandKitMocks.getResult).not.toHaveBeenCalled();
     });
   });
 });

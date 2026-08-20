@@ -20,6 +20,18 @@ export const BRAND_KIT_MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 /** Project slug pattern (lowercase kebab-case, ≤64 chars) from the contract schema. */
 export const BRAND_KIT_PROJECT_SLUG_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
+/**
+ * Shape gate for the storage partition segment of `brand-kit/{project}/…`.
+ *
+ * The partition is the SERVER-RESOLVED LFX project uid that owns the document
+ * — never the agent envelope's own slug (which is derived from a free-text
+ * project name and identifies nothing in LFX). Deliberately wider than
+ * {@link BRAND_KIT_PROJECT_SLUG_REGEX} because LFX uids are opaque upstream
+ * identifiers, but still exactly one safe key segment: no separators, no
+ * dots, so no traversal.
+ */
+export const BRAND_KIT_PROJECT_PARTITION_REGEX = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+
 /** Lowercase hex SHA-256 pattern. */
 export const BRAND_KIT_SHA256_REGEX = /^[0-9a-f]{64}$/;
 

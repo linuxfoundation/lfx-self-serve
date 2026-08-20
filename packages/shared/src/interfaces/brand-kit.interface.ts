@@ -108,7 +108,12 @@ export interface BrandKitPersistReceipt {
   s3_key: string;
   /** Validated + recomputed document SHA-256. */
   content_sha256: string;
-  /** Project slug (storage partition). */
+  /**
+   * Storage partition: the SERVER-RESOLVED LFX project uid the document was
+   * written for (the caller held its writer grant), never the envelope's own
+   * free-text-derived slug — the write and read paths must address the same
+   * identifier or a persisted kit is invisible to the project that owns it.
+   */
   project: string;
   /** Document draft version from the envelope. */
   version: number;
@@ -120,7 +125,7 @@ export interface BrandKitPersistReceipt {
  * Response of `GET /api/mktg-agents/brand-kit/stored?project=<uid>` — the
  * project's LATEST server-persisted Brand Kit document (dec-agent-dependency-gating
  * read path). The endpoint is entitlement-gated (project writer) and the
- * storage partition is derived from the server-resolved project slug, never
+ * storage partition is derived from the server-resolved project uid, never
  * client input; a project with nothing persisted returns 404.
  */
 export interface BrandKitStoredResponse {

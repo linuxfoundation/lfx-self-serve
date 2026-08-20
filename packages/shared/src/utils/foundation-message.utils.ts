@@ -9,8 +9,10 @@
 // recompute the hash and compare against `envelope.content_sha256`.
 
 import {
+  FOUNDATION_MESSAGE_BOILERPLATE_WORD_BAND,
   FOUNDATION_MESSAGE_CONTRACT_ID,
   FOUNDATION_MESSAGE_DERIVATIVE_KEYS,
+  FOUNDATION_MESSAGE_DERIVATIVE_WORD_CAPS,
   FOUNDATION_MESSAGE_DISCOVERY_KEYS,
   FOUNDATION_MESSAGE_DISCOVERY_QUESTIONS,
   FOUNDATION_MESSAGE_FORM_PREAMBLE_LINES,
@@ -244,11 +246,84 @@ export function findMissingFoundationMessageHeadings(documentMarkdown: string): 
 }
 
 /**
+ * Contract §1a normative word count: a word is a whitespace-delimited token
+ * containing at least one Unicode letter or digit, so bare punctuation (an
+ * em-dash on its own) does not count. Reproduces the agent wrapper's
+ * `countWords` exactly — the two must agree or a legitimate envelope could
+ * fail the BFF's re-check.
+ */
+export function countFoundationMessageWords(text: string): number {
+  return text.split(/\s+/).filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
+}
+
+/**
+ * Derivative gates G1–G3 (contract §1a), re-run BFF-side over the derivative
+ * values that passed the presence gate. Returns human-readable violations
+ * (empty = pass), mirroring the agent wrapper's `derivativeViolations`:
+ *
+ * - G1 hard word caps (25 / 50 / 10);
+ * - G2 sanity bands — boilerplate 50-250 words, `llms_txt` opening with an
+ *   `# ` H1 line;
+ * - G3 every derivative appears verbatim inside `document_markdown`, so the
+ *   hash-verified document stays the single source for the copy chips.
+ *
+ * These are the wrapper's own deterministic gates, so an envelope that really
+ * came from the finalize tool always passes them. Re-running them is what
+ * makes that provenance checkable: the envelope scanner reads EVERY event
+ * payload, so a shape-compatible draft the model printed mid-run must not be
+ * surfaced as a "word-count-locked" derivative. G3 is skipped when the
+ * document itself failed its own gates — the missing document is already the
+ * reported error.
+ */
+export function findFoundationMessageDerivativeViolations(derivatives: Record<string, string>, documentMarkdown: string): string[] {
+  const violations: string[] = [];
+
+  for (const [key, cap] of Object.entries(FOUNDATION_MESSAGE_DERIVATIVE_WORD_CAPS)) {
+    const value = derivatives[key];
+    if (value === undefined) {
+      continue;
+    }
+    const words = countFoundationMessageWords(value);
+    if (words > cap) {
+      violations.push(`derivatives.${key} is ${words} words — the contract's hard cap is ${cap}`);
+    }
+  }
+
+  const boilerplate = derivatives['boilerplate'];
+  if (boilerplate !== undefined) {
+    const words = countFoundationMessageWords(boilerplate);
+    if (words < FOUNDATION_MESSAGE_BOILERPLATE_WORD_BAND.min || words > FOUNDATION_MESSAGE_BOILERPLATE_WORD_BAND.max) {
+      violations.push(
+        `derivatives.boilerplate is ${words} words — the contract expects ${FOUNDATION_MESSAGE_BOILERPLATE_WORD_BAND.min}-${FOUNDATION_MESSAGE_BOILERPLATE_WORD_BAND.max}`
+      );
+    }
+  }
+
+  const llmsTxt = derivatives['llms_txt'];
+  if (llmsTxt !== undefined) {
+    const firstLine = llmsTxt.split(/\r?\n/).find((line) => line.trim() !== '');
+    if (firstLine === undefined || !firstLine.trimStart().startsWith('# ')) {
+      violations.push("derivatives.llms_txt must start with an '# ' H1 line (llms.txt convention)");
+    }
+  }
+
+  if (documentMarkdown) {
+    for (const key of FOUNDATION_MESSAGE_DERIVATIVE_KEYS) {
+      const value = derivatives[key];
+      if (value !== undefined && !documentMarkdown.includes(value)) {
+        violations.push(`derivatives.${key} does not appear verbatim inside document_markdown`);
+      }
+    }
+  }
+
+  return violations;
+}
+
+/**
  * Validate a candidate Message Foundation envelope against the v1 contract's
  * schema gates, the 13-heading structural presence gate, and the derivative
- * presence gate. Hash equality is the caller's job — see module note. The
- * word-count locks themselves are the agent wrapper's deterministic gates;
- * the BFF re-checks shape and structure, not word counts.
+ * gates (presence + the §1a word-count locks G1-G3). Hash equality is the
+ * caller's job — see module note.
  */
 export function validateFoundationMessageEnvelope(candidate: unknown): FoundationMessageValidationResult {
   const errors: string[] = [];
@@ -292,12 +367,19 @@ export function validateFoundationMessageEnvelope(candidate: unknown): Foundatio
   if (typeof derivatives !== 'object' || derivatives === null) {
     errors.push('derivatives must be an object');
   } else {
+    const present: Record<string, string> = {};
     for (const key of FOUNDATION_MESSAGE_DERIVATIVE_KEYS) {
       const value = (derivatives as Record<string, unknown>)[key];
       if (typeof value !== 'string' || !value.trim()) {
         errors.push(`derivatives.${key} must be a non-empty string`);
+        continue;
       }
+      present[key] = value;
     }
+    // The §1a locks are re-checked here, not taken on trust: "word-count-locked"
+    // is what the result surface promises the user about these chips.
+    const documentMarkdown = typeof envelope.document_markdown === 'string' ? envelope.document_markdown : '';
+    errors.push(...findFoundationMessageDerivativeViolations(present, documentMarkdown));
   }
 
   const inputs = envelope.inputs;

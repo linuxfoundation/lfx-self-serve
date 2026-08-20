@@ -331,6 +331,24 @@ describe('MktgAgentRunComponent', () => {
       expect(generate).not.toHaveBeenCalled();
     });
 
+    it('gates "Request changes" on the dependency exactly like the first submit — both are full resubmits', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fillBase();
+      component['feedbackForm'].controls.feedback.setValue('Sharpen the pitch.');
+      await fixture.whenStable();
+
+      // No stored Brand Kit for this project: neither submit path may fire.
+      expect(component['submitDisabled']()).toBe(true);
+      expect(component['regenerateDisabled']()).toBe(true);
+      component['onRegenerate']();
+      expect(generate).not.toHaveBeenCalled();
+
+      // Once the dependency resolves, both paths open together.
+      component['dependencyDocs'].set({ 'brand-kit': brandKitDoc('# Kit') });
+      expect(component['regenerateDisabled']()).toBe(false);
+    });
+
     it('re-resolves the attachment at submit time — a kit stored after page load is picked up', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();

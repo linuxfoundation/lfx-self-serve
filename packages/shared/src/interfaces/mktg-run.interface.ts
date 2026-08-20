@@ -134,6 +134,14 @@ export interface MktgRunResultBody {
   sessionId: string;
   /** Creator-binding owner token returned by the generate endpoint. */
   ownerToken: string;
+  /**
+   * LFX project uid the run is scoped to. Agents that persist their output
+   * use the SERVER-RESOLVED project as the storage partition and require the
+   * caller's writer grant on it before writing (dec-brand-kit-storage-v2);
+   * omitting it (no active project) means the document is returned but never
+   * persisted, never that it lands in an unverified partition.
+   */
+  project?: string;
 }
 
 /** Response of an agent's `generate` endpoint — the session to poll. */

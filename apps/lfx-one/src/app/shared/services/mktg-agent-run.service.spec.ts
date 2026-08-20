@@ -115,7 +115,10 @@ describe('MktgAgentRunService', () => {
 
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
 
-    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.result, { sessionId: 'sess-1', ownerToken: 'token-1' });
+    // The run's project uid rides the poll too: agents that persist their
+    // output partition storage by the SERVER-resolved project and check the
+    // caller's writer grant on it before writing.
+    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.result, { sessionId: 'sess-1', ownerToken: 'token-1', project: 'proj-1' });
   });
 
   it('keeps polling through pending results and stores the ready document under the user-scoped key', async () => {

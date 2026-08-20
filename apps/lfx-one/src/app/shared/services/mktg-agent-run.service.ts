@@ -85,7 +85,7 @@ export class MktgAgentRunService {
       switchMap(({ session, priorVersion }) =>
         concat(
           of<MktgGenerateProgress>({ type: 'submitted' }),
-          this.pollForDocument(request.intake.endpoints.result, session, priorVersion).pipe(
+          this.pollForDocument(request.intake.endpoints.result, session, priorVersion, request.projectUid).pipe(
             map((result) => ({ type: 'document' as const, run: this.appendVersion(request, session, result) }))
           )
         )
@@ -229,9 +229,13 @@ export class MktgAgentRunService {
    * `switchMap`, result-endpoint latency consistently above the interval would
    * abort every attempt before it resolved, timing out a multi-minute
    * generation whose document may already be ready.
+   *
+   * The run's project uid rides every poll: agents that persist their output
+   * partition storage by the SERVER-resolved project and require the caller's
+   * writer grant on it, so the run must say which project it belongs to.
    */
-  private pollForDocument(resultPath: string, session: MktgSessionInfo, priorVersion: number): Observable<MktgRunResultResponse> {
-    const body: MktgRunResultBody = { sessionId: session.sessionId, ownerToken: session.ownerToken };
+  private pollForDocument(resultPath: string, session: MktgSessionInfo, priorVersion: number, projectUid: string): Observable<MktgRunResultResponse> {
+    const body: MktgRunResultBody = { sessionId: session.sessionId, ownerToken: session.ownerToken, ...(projectUid && { project: projectUid }) };
     return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
       exhaustMap(() =>
         this.http.post<MktgRunResultResponse>(resultPath, body).pipe(
