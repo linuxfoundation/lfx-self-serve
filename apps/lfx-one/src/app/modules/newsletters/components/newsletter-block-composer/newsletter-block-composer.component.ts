@@ -148,7 +148,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // email widths) and the backdrop behind the email card (light / dark) —
   // Gatewaze parity for previewing how the email reads on each.
   protected readonly previewViewport = signal<'desktop' | 'mobile'>('desktop');
-  protected readonly previewBackdrop = signal<'light' | 'dark'>('light');
   // When true, the preview swaps the live canvas for a read-only view of the
   // rendered email HTML (Gatewaze HTML-source parity).
   protected readonly showSource = signal<boolean>(false);
@@ -478,11 +477,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
   protected setViewport(viewport: 'desktop' | 'mobile'): void {
     this.previewViewport.set(viewport);
     this.scheduleToolbarReposition();
-  }
-
-  /** Toggle the preview backdrop between light and dark. */
-  protected toggleBackdrop(): void {
-    this.previewBackdrop.update((mode) => (mode === 'light' ? 'dark' : 'light'));
   }
 
   /** Toggle the read-only HTML-source view of the rendered email. */
