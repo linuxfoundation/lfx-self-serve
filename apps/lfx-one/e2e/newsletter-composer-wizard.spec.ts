@@ -359,11 +359,10 @@ test.describe('Newsletter composer in the wizard — Phase 1', () => {
     const blockTypes = (payload.body_layout?.blocks ?? []).map((b) => b.block_type);
     expect(blockTypes).toContain('intro_paragraph');
     expect(blockTypes).toContain('sponsored_ad');
-    // The draft is keyless and the author never picked a library, so the layout
-    // stays keyless — the composer omits template_key rather than stamping the
-    // default palette's key, and the service renders neutral chrome over the
-    // block superset. (Picking a library via the picker would persist that key.)
-    expect(payload.body_layout?.template_key).toBeUndefined();
+    // The layout persists the Template picker's selected library so the send and
+    // preview render with the SAME template shown in the composer (WYSIWYG). With
+    // no library switch, that is the default palette key.
+    expect(payload.body_layout?.template_key).toBe('aaif-user-community');
   });
 
   test('switching to the simple editor confirms before discarding in-session blocks', async ({ page }) => {
