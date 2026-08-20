@@ -24,6 +24,7 @@ import { SelectModule } from 'primeng/select';
 import { TextareaModule } from 'primeng/textarea';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
+import { finalize } from 'rxjs';
 
 import { InitialsPipe } from '@pipes/initials.pipe';
 import { OrgProfileService } from '@services/org-profile.service';
@@ -286,19 +287,22 @@ export class OrgProfileEditComponent implements OnInit {
   private uploadLogoFile(file: File): void {
     this.logoUploading.set(true);
     // No takeUntilDestroyed — same reviewed exception as the avatar-upload precedent: the upload
-    // itself is the user-visible operation and shouldn't abort on component destroy.
-    this.orgProfileService.uploadLogo(this.record().uid, file).subscribe({
-      next: (updated) => {
-        this.logoUploading.set(false);
-        this.logoUrl.set(updated.logoUrl ?? null);
-        this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Logo updated!' });
-        this.logoUpdated.emit(updated);
-      },
-      error: (error: unknown) => {
-        this.logoUploading.set(false);
-        this.messageService.add(this.toastForLogoError(error));
-      },
-    });
+    // itself (not just its data) is the user-visible operation, so unsubscribing on component
+    // destroy would silently drop it. `uploadLogo()` applies take(1), so no-bare-subscribe is
+    // satisfied without the leak risk. Do not reinstate takeUntilDestroyed on this subscribe.
+    this.orgProfileService
+      .uploadLogo(this.record().uid, file)
+      .pipe(finalize(() => this.logoUploading.set(false)))
+      .subscribe({
+        next: (updated) => {
+          this.logoUrl.set(updated.logoUrl ?? null);
+          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Logo updated!' });
+          this.logoUpdated.emit(updated);
+        },
+        error: (error: unknown) => {
+          this.messageService.add(this.toastForLogoError(error));
+        },
+      });
   }
 
   /** FR-010-equivalent for the logo upload — mirrors toastForError's status mapping with upload-specific copy. */

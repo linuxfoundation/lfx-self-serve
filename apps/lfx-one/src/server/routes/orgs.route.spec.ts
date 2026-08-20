@@ -147,7 +147,7 @@ describe('orgs router — POST /uid/:uid/logo', () => {
     });
   });
 
-  it('rejects a disallowed content type before it reaches the controller', async () => {
+  it('rejects a disallowed content type with a 400 and never forwards it upstream', async () => {
     const res = await fetch(`${baseUrl}/api/orgs/uid/${UID}/logo`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/pdf' },

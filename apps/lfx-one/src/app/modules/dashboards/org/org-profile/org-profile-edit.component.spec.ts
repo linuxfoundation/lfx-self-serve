@@ -7,7 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import type { OrgCanonicalRecord } from '@lfx-one/shared/interfaces';
 import { OrgProfileService } from '@services/org-profile.service';
 import { MessageService } from 'primeng/api';
-import { Observable, Subject } from 'rxjs';
+import { Observable, Subject, take } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgProfileEditComponent } from './org-profile-edit.component';
@@ -50,7 +50,9 @@ describe('OrgProfileEditComponent — logo upload', () => {
 
   beforeEach(async () => {
     uploadLogo$ = new Subject<OrgCanonicalRecord>();
-    uploadLogoMock = vi.fn(() => uploadLogo$.asObservable() as Observable<OrgCanonicalRecord>);
+    // `take(1)` mirrors the real OrgProfileService.uploadLogo: without it the stream never completes
+    // and the component's finalize() — which clears the in-flight flag — would never run.
+    uploadLogoMock = vi.fn(() => uploadLogo$.pipe(take(1)) as Observable<OrgCanonicalRecord>);
 
     await TestBed.configureTestingModule({
       imports: [OrgProfileEditComponent],

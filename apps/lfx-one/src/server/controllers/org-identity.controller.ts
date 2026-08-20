@@ -155,8 +155,9 @@ export class OrgIdentityController {
    */
   public async uploadLogo(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'upload_org_logo', {
-      content_type: req.headers['content-type'],
-      content_length: req.headers['content-length'],
+      // Client-controlled and unbounded until the checks below run — cap them so a crafted header can't bloat the log line.
+      content_type: this.truncateForLog(req.headers['content-type']),
+      content_length: this.truncateForLog(req.headers['content-length']),
     });
 
     try {
@@ -181,6 +182,8 @@ export class OrgIdentityController {
       }
 
       const buffer: unknown = req.body;
+      // `Array.isArray` is redundant against `Buffer.isBuffer` at runtime; it is kept because CodeQL's
+      // js/type-confusion only clears the express body once the array shape is excluded explicitly.
       if (Array.isArray(buffer) || !Buffer.isBuffer(buffer) || buffer.length === 0) {
         throw ServiceValidationError.forField('body', 'Request body must contain logo image data', {
           operation: 'upload_org_logo',
@@ -198,7 +201,16 @@ export class OrgIdentityController {
         `/b2b_orgs/${encodeURIComponent(uid)}`,
         'GET'
       );
-      const ifMatch = orgHeaders[HTTP_HEADERS.ETAG.toLowerCase()];
+      const ifMatch = orgHeaders[HTTP_HEADERS.ETAG.toLowerCase()] || orgHeaders[HTTP_HEADERS.ETAG];
+      if (!ifMatch) {
+        // Forwarding an absent ETag would stringify to the literal "undefined", which satisfies
+        // member-service's Required("if_match") and then fails the Salesforce compare — surfacing
+        // as a 409 "updated elsewhere" the user can never clear by refreshing. Fail closed instead,
+        // matching ETagService.fetchWithETag's ETAG_MISSING handling.
+        logger.warning(req, 'upload_org_logo', 'ETag header absent from the pre-upload fetch', { uid, available_headers: Object.keys(orgHeaders) });
+        res.status(502).json({ error: 'Unable to upload logo. Please try again.' });
+        return;
+      }
 
       const raw = await this.microserviceProxy.proxyRequest<MemberServiceB2bOrgResponse>(
         req,
@@ -306,6 +318,12 @@ export class OrgIdentityController {
       });
     }
     return uid;
+  }
+
+  private truncateForLog(value: string | string[] | undefined, max = 128): string | undefined {
+    const raw = Array.isArray(value) ? value[0] : value;
+    if (raw === undefined) return undefined;
+    return raw.length > max ? `${raw.slice(0, max)}…` : raw;
   }
 
   private assertNonEmpty(value: string | undefined, field: string, operation: string, path: string): asserts value is string {

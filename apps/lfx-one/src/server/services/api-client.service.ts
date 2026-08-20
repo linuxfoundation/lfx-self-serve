@@ -222,6 +222,8 @@ export class ApiClientService {
     };
 
     if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+      // `!Array.isArray` is redundant against `Buffer.isBuffer` at runtime; kept for CodeQL's
+      // js/type-confusion, which only clears this assignment once the array shape is excluded.
       if (isBuffer && !Array.isArray(data)) {
         headers['Content-Length'] = String(data.length);
         requestInit.body = data as BodyInit;

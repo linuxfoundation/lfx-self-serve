@@ -57,13 +57,15 @@ describe('OrgProfileComponent — onLogoUpdated', () => {
     await fixture.whenStable();
   });
 
-  it('patches the local record and propagates it to AccountContextService without entering edit mode', () => {
+  it('patches the local record and propagates it to AccountContextService without leaving edit mode', () => {
     const updated = { ...record, logoUrl: 'https://cdn.example.com/logo.png?v=2' };
+    fixture.componentInstance['editMode'].set(true);
 
     fixture.componentInstance['onLogoUpdated'](updated);
 
     expect(fixture.componentInstance['record']()).toEqual(updated);
     expect(updateCanonicalRecord).toHaveBeenCalledWith(updated);
-    expect(fixture.componentInstance['editMode']()).toBe(false);
+    // A logo upload saves independently of the form's Save/Cancel, so it must not kick the user out.
+    expect(fixture.componentInstance['editMode']()).toBe(true);
   });
 });

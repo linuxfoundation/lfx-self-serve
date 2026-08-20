@@ -85,6 +85,18 @@ describe('OrgIdentityController.uploadLogo', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ uid: VALID_UID, logoUrl: rawOrg.logo_url }));
   });
 
+  it('fails closed with a 502 when the pre-upload fetch carries no ETag, rather than forwarding "undefined"', async () => {
+    proxyRequestWithResponse.mockResolvedValue({ data: rawOrg, status: 200, statusText: 'OK', headers: {} });
+    const res = buildRes();
+    const req = { params: { uid: VALID_UID }, headers: { 'content-type': 'image/png' }, body: Buffer.from('abc') } as any;
+
+    await new OrgIdentityController().uploadLogo(req, res, vi.fn());
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(502);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Unable to upload logo. Please try again.' });
+  });
+
   it('maps a 403 upstream rejection to a 403 permission-denied envelope', async () => {
     proxyRequest.mockRejectedValue(new MicroserviceError('forbidden', 403, 'FORBIDDEN', { service: 'member_service' }));
     const res = buildRes();
