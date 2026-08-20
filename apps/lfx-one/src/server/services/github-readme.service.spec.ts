@@ -23,11 +23,20 @@ const req = { path: '/api/mktg-agents/foundation-message/generate' } as unknown 
 const textResponse = (text: string, ok = true, status = 200, headers: Record<string, string> = {}): Response =>
   ({ ok, status, headers: new Headers(headers), text: () => Promise.resolve(text) }) as unknown as Response;
 
+/** ok JSON Response stand-in (repo metadata endpoint). */
+const jsonResponse = (body: unknown, ok = true, status = 200, headers: Record<string, string> = {}): Response =>
+  ({ ok, status, headers: new Headers(headers), json: () => Promise.resolve(body) }) as unknown as Response;
+
+/** Repo metadata for a plain public repository. */
+const publicRepoMetadata = { private: false, visibility: 'public' };
+
 /**
  * The README fetch is strictly best-effort input plumbing for an agent with
  * no web access: the SSRF guard (only api.github.com is ever fetched, and
- * only for URLs that parse as github.com repos), the size cap with an
- * explicit truncation marker, and the never-throws contract are the
+ * only for URLs that parse as github.com repos), the confused-deputy guard
+ * (an authenticated fetch first verifies the repo is public, so the BFF's
+ * token cannot leak private READMEs for user-named repos), the size cap with
+ * an explicit truncation marker, and the never-throws contract are the
  * behaviors a regression would silently break.
  */
 describe('GithubReadmeService', () => {
@@ -108,11 +117,58 @@ describe('GithubReadmeService', () => {
 
     it('sends a Bearer Authorization header when GITHUB_API_TOKEN is set (raises the 60/hr shared-IP cap)', async () => {
       vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+      fetchMock.mockResolvedValueOnce(jsonResponse(publicRepoMetadata)).mockResolvedValueOnce(textResponse('# Readme'));
+
+      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBe('# Readme');
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      for (const call of fetchMock.mock.calls) {
+        expect((call[1] as { headers: Record<string, string> }).headers['Authorization']).toBe('Bearer ghp_test-token');
+      }
+    });
+
+    it('verifies repo visibility BEFORE the authenticated README request when a token is set', async () => {
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+      fetchMock.mockResolvedValueOnce(jsonResponse(publicRepoMetadata)).mockResolvedValueOnce(textResponse('# Readme'));
 
       await service.fetchReadme(req, 'https://github.com/example-org/example-repo');
 
-      const headers = (fetchMock.mock.calls[0][1] as { headers: Record<string, string> }).headers;
-      expect(headers['Authorization']).toBe('Bearer ghp_test-token');
+      expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/example-org/example-repo');
+      expect(fetchMock.mock.calls[1][0]).toBe('https://api.github.com/repos/example-org/example-repo/readme');
+    });
+
+    it('refuses the authenticated README fetch for a private repo — the BFF token must not be a read oracle', async () => {
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+      fetchMock.mockResolvedValueOnce(jsonResponse({ private: true, visibility: 'private' }));
+
+      expect(await service.fetchReadme(req, 'https://github.com/example-org/secret-repo')).toBeNull();
+
+      // Only the metadata call — the README endpoint was never hit.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/example-org/secret-repo');
+    });
+
+    it('refuses org-internal repos (visibility !== public) even when not marked private', async () => {
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+      fetchMock.mockResolvedValueOnce(jsonResponse({ private: false, visibility: 'internal' }));
+
+      expect(await service.fetchReadme(req, 'https://github.com/example-org/internal-repo')).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('fails closed when the visibility check itself fails — no README fetch on an unverified repo', async () => {
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+      fetchMock.mockResolvedValueOnce(jsonResponse({}, false, 404));
+
+      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips the visibility check without a token — unauthenticated GitHub cannot see private repos anyway', async () => {
+      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBe('# Readme');
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/example-org/example-repo/readme');
     });
 
     it('logs a spent rate limit (403 + x-ratelimit-remaining: 0) distinctly from an ordinary missing README', async () => {
