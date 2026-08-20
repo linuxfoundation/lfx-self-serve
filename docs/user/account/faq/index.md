@@ -61,6 +61,7 @@ Go to [**Profile & Account**](/profile) and open the **Individual Enrollment** t
 If your membership supports automatic renewal, the **Individual Enrollment** tab shows a **Disable auto-renew** control — select it and confirm. Your membership then stays active until its expiration date and won't renew automatically; there is no separate immediate-cancel step. Memberships that renew manually don't show an auto-renew control. See [Individual Enrollment](../individual-enrollment/).
 
 ## Where do I find CLAs?
+
 Go to [**Profile & Account**](/profile) and open the **CLAs** tab (`/profile/clas`). For full detail, see [CLAs](../my-clas/).
 
 ## What is the difference between an ICLA and an ECLA?
