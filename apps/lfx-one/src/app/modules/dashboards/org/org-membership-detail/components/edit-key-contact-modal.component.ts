@@ -170,8 +170,7 @@ export class EditKeyContactModalComponent {
     this.selectedRemoveId.set(personId);
   }
 
-  protected onRemoveCandidateClick(person: OrgMembershipKeyContactPerson): void {
-    this.selectRemoveCandidate(person.personId);
+  protected onPersonDetailsClick(person: OrgMembershipKeyContactPerson): void {
     this.drawer.open({
       name: person.fullName,
       title: person.jobTitle,
@@ -297,10 +296,10 @@ export class EditKeyContactModalComponent {
     else this.selectRemoveCard();
   }
 
-  protected onRemoveCandidateKeydown(event: KeyboardEvent, person: OrgMembershipKeyContactPerson): void {
+  protected onRemoveCandidateKeydown(event: KeyboardEvent, personId: string): void {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
-    this.onRemoveCandidateClick(person);
+    this.selectRemoveCandidate(personId);
   }
 
   protected onFormEnter(event: KeyboardEvent): void {
