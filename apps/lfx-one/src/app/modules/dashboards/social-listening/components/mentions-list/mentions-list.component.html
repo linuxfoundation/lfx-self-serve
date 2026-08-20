@@ -6,15 +6,34 @@
   <div class="flex items-center justify-between">
     <div class="flex items-center gap-3">
       <h2 class="text-xs font-bold tracking-wide text-gray-500">LATEST MENTIONS</h2>
-      @if (!loading() && totalMentions() > 0 && mentions().length > 0) {
+      @if (!loading() && totalMentions() > 0 && mentions().length > 0 && !hideTotal()) {
         <span class="text-xs text-gray-400" data-testid="mentions-list-count"
           >{{ first() + 1 }}–{{ first() + mentions().length }} of {{ totalMentions() }}</span
         >
       }
     </div>
-    @if (dataComputedAt(); as computedAt) {
-      <span class="text-xs text-gray-400" data-testid="mentions-list-computed-at">Data as of {{ computedAt | date: 'short' }}</span>
-    }
+    <div class="flex items-center gap-2">
+      @if (!loading() && totalMentions() > 0) {
+        <lfx-button
+          label="Mark all as read"
+          icon="fa-light fa-check-double"
+          [text]="true"
+          styleClass="mark-all-btn"
+          (onClick)="markAllRead.emit()"
+          data-testid="mentions-list-mark-all-read" />
+        <lfx-button
+          label="Mark all as unread"
+          icon="fa-light fa-eye-slash"
+          [text]="true"
+          styleClass="mark-all-btn"
+          (onClick)="markAllUnread.emit()"
+          data-testid="mentions-list-mark-all-unread" />
+        <span class="text-xs text-gray-300">&middot;</span>
+      }
+      @if (dataComputedAt(); as computedAt) {
+        <span class="text-xs text-gray-400" data-testid="mentions-list-computed-at">Data as of {{ computedAt | date: 'short' }}</span>
+      }
+    </div>
   </div>
 
   <!-- Cards + paginator (lfx-table is the confirmed paginator wrapper; one card per single-cell row) -->
@@ -28,7 +47,7 @@
     [first]="first()"
     [totalRecords]="paginatorTotalRecords()"
     [rowsPerPageOptions]="rowsPerPageOptions()"
-    [showCurrentPageReport]="true"
+    [showCurrentPageReport]="!hideTotal()"
     currentPageReportTemplate="Showing {first} to {last} of {totalRecords} mentions"
     [alwaysShowPaginator]="totalMentions() > 0 || countError()"
     [skeletonColumns]="1"
@@ -43,7 +62,9 @@
             [mention]="mention"
             [timeTick]="timeTick()"
             [isBookmarked]="isBookmarkedFn()(mention.id)"
-            (bookmarkToggled)="bookmarkToggled.emit($event)" />
+            [isRead]="isReadFn()(mention.id)"
+            (bookmarkToggled)="bookmarkToggled.emit($event)"
+            (readToggled)="readToggled.emit($event)" />
         </td>
       </tr>
     </ng-template>
@@ -93,6 +114,12 @@
               ctaIcon="fa-light fa-arrow-rotate-left"
               (ctaClick)="retry.emit()"
               data-testid="mentions-list-window-error" />
+          } @else if (hideTotal()) {
+            <lfx-empty-state
+              icon="fa-light fa-circle-check"
+              title="You're all caught up"
+              subtitle="No unread mentions in the loaded window."
+              data-testid="mentions-list-all-read-state" />
           } @else {
             <lfx-empty-state
               icon="fa-light fa-ear-listen"

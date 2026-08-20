@@ -31,6 +31,7 @@ describe('FiltersPanelComponent', () => {
     fixture.componentRef.setInput('selectedLanguage', 'all');
     fixture.componentRef.setInput('selectedHasTitle', 'all');
     fixture.componentRef.setInput('selectedBookmarkFilter', 'all');
+    fixture.componentRef.setInput('selectedReadFilter', 'all');
     fixture.componentRef.setInput('selectedKeywords', []);
     fixture.componentRef.setInput('selectedTags', []);
     fixture.componentRef.setInput('selectedAuthors', []);
@@ -113,6 +114,19 @@ describe('FiltersPanelComponent', () => {
     form.controls.bookmarkFilter.setValue('all');
     await fixture.whenStable();
     expect(fixture.componentInstance.selectedBookmarkFilter()).toBe('all');
+  });
+
+  it('bridges the read filter between the model and the form control', async () => {
+    const form = (fixture.componentInstance as unknown as { filtersForm: { controls: { readFilter: { value: string; setValue: (v: string) => void } } } })
+      .filtersForm;
+
+    fixture.componentRef.setInput('selectedReadFilter', 'unread');
+    await fixture.whenStable();
+    expect(form.controls.readFilter.value).toBe('unread');
+
+    form.controls.readFilter.setValue('all');
+    await fixture.whenStable();
+    expect(fixture.componentInstance.selectedReadFilter()).toBe('all');
   });
 
   it('does not intercept Tab from a middle element', () => {

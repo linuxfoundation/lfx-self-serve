@@ -21,6 +21,9 @@ export type SocialListeningTab = 'feed' | 'analytics';
 /** Bookmark filter: `bookmarked` restricts the feed to the user's persisted bookmark IDs — all-time, so the server skips the date window. */
 export type SocialListeningBookmarkFilter = 'all' | 'bookmarked';
 
+/** Read filter: `unread` narrows the loaded feed window to mentions the user hasn't read — a client-side view filter, never a request param. */
+export type SocialListeningReadFilter = 'all' | 'unread';
+
 /** Preference-name prefixes the BFF proxy accepts — derived from the constants tuple so the two can never drift. */
 export type SocialListeningPreferenceNamePrefix = (typeof SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES)[number];
 
@@ -353,16 +356,29 @@ export interface LoadableState<T> {
 }
 
 // ---------------------------------------------------------------------------
+// Per-user preference payloads (LFXV2-3002)
+// ---------------------------------------------------------------------------
+
+/** Persisted read-state doc (preference `Social Listening Read State - <projectId>`): the mark-all cutoff plus explicit per-mention overrides on either side of it. */
+export interface ReadStateData {
+  /** Newest loaded `MENTION_TS` at mark-all-as-read time — never wall-clock, so backfilled mentions aren't silently hidden. */
+  readBeforeTs: string | null;
+  readIds: string[];
+  unreadIds: string[];
+}
+
+// ---------------------------------------------------------------------------
 // Filter predicate + URL-synced scope
 // ---------------------------------------------------------------------------
 
-/** URL-synced filter state. PCC's `readFilter` key is dropped (Block 2); everything else round-trips through query params. */
+/** URL-synced filter state. `readFilter` stays client-side (a view over the loaded window) — it round-trips through query params but never reaches feed/count requests. */
 export interface FilterPredicate {
   sentiment: string;
   relevance: string;
   language: string;
   hasTitle: string;
   bookmarkFilter: SocialListeningBookmarkFilter;
+  readFilter: SocialListeningReadFilter;
   keywords: string[];
   tags: string[];
   authors: string[];
@@ -411,6 +427,7 @@ export interface SocialListeningSignals {
   selectedLanguage: WritableSignalLike<string>;
   selectedHasTitle: WritableSignalLike<string>;
   selectedBookmarkFilter: WritableSignalLike<string>;
+  selectedReadFilter: WritableSignalLike<string>;
   selectedKeywords: WritableSignalLike<string[]>;
   selectedTags: WritableSignalLike<string[]>;
   selectedAuthors: WritableSignalLike<string[]>;

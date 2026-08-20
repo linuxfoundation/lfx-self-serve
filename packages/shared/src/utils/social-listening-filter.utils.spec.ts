@@ -81,6 +81,16 @@ describe('encode / decode round-trip', () => {
     expect(encodePredicateToQueryParams(predicate(), scope(), DEFAULT_PERIOD)[q.bookmarks]).toBeNull();
   });
 
+  it('round-trips the read filter and elides it at the default', () => {
+    const original = predicate({ readFilter: 'unread' });
+
+    const encoded = encodePredicateToQueryParams(original, scope(), DEFAULT_PERIOD);
+    expect(encoded[q.read]).toBe('unread');
+    expect(decodePredicateFromQueryParams(encoded, DEFAULT_PERIOD).predicate).toEqual(original);
+
+    expect(encodePredicateToQueryParams(predicate(), scope(), DEFAULT_PERIOD)[q.read]).toBeNull();
+  });
+
   it('resolves the period from the runtime default rather than the constant placeholder', () => {
     const encoded = encodePredicateToQueryParams(predicate(), scope({ period: DEFAULT_PERIOD }), DEFAULT_PERIOD);
     expect(encoded[q.period]).toBeNull();
@@ -151,6 +161,11 @@ describe('decode coercion', () => {
   it('coerces an unknown bookmarks value back to the default', () => {
     expect(decodePredicateFromQueryParams({ [q.bookmarks]: 'everything' }, DEFAULT_PERIOD).predicate.bookmarkFilter).toBe('all');
     expect(normalizePredicate({ bookmarkFilter: 'everything' }).bookmarkFilter).toBe('all');
+  });
+
+  it('coerces an unknown read value back to the default', () => {
+    expect(decodePredicateFromQueryParams({ [q.read]: 'everything' }, DEFAULT_PERIOD).predicate.readFilter).toBe('all');
+    expect(normalizePredicate({ readFilter: 'everything' }).readFilter).toBe('all');
   });
 
   it('only recognizes the analytics tab, defaulting anything else to feed', () => {
@@ -231,6 +246,7 @@ describe('predicate helpers', () => {
   it('detects a scalar difference', () => {
     expect(predicatesEqual(predicate(), predicate())).toBe(true);
     expect(predicatesEqual(predicate(), predicate({ search: 'x' }))).toBe(false);
+    expect(predicatesEqual(predicate(), predicate({ readFilter: 'unread' }))).toBe(false);
   });
 
   it('reports emptiness and counts one per active dimension', () => {
@@ -241,6 +257,7 @@ describe('predicate helpers', () => {
     expect(isEmptyPredicate(active)).toBe(false);
     // Two keywords are one active dimension, not two.
     expect(countActiveFilters(active)).toBe(4);
+    expect(countActiveFilters(predicate({ readFilter: 'unread' }))).toBe(1);
   });
 
   it('coerces a corrupted stored predicate rather than throwing', () => {

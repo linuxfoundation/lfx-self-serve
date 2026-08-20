@@ -4,6 +4,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  EMPTY_READ_STATE,
+  MAX_READ_IDS,
   MENTION_IDS_MAX_VALUES,
   MENTION_SENTIMENT_CONFIG,
   SOCIAL_LISTENING_BOOKMARKS_PREFERENCE_PREFIX,
@@ -11,10 +13,13 @@ import {
   SOCIAL_LISTENING_READ_STATE_PREFERENCE_PREFIX,
   SOCIAL_LISTENING_SAVED_FILTERS_PREFERENCE_PREFIX,
 } from '../constants/social-listening.constants';
-import type { SocialListeningMention } from '../interfaces/social-listening.interface';
+import type { ReadStateData, SocialListeningMention } from '../interfaces/social-listening.interface';
 import {
   buildMentionFilters,
+  computeReadToggle,
   formatTag,
+  garbageCollectReadState,
+  isReadInState,
   isSocialListeningPreferenceName,
   mapRawToMention,
   mergeSelectedAuthors,
@@ -22,6 +27,7 @@ import {
   normalizePlatformKey,
   normalizeSentiment,
   parseBookmarkIds,
+  parseReadState,
   socialListeningPreferenceName,
 } from './social-listening.utils';
 
@@ -248,6 +254,97 @@ describe('parseBookmarkIds', () => {
     expect(parseBookmarkIds('{not json')).toEqual([]);
     expect(parseBookmarkIds('{"ids":["m1"]}')).toEqual([]);
     expect(parseBookmarkIds(null)).toEqual([]);
+  });
+});
+
+describe('parseReadState', () => {
+  it('parses a JSON string and accepts a pre-parsed object', () => {
+    const doc = { readBeforeTs: '2026-02-01 12:00:00', readIds: ['m1'], unreadIds: ['m2'] };
+    expect(parseReadState(JSON.stringify(doc))).toEqual(doc);
+    expect(parseReadState(doc)).toEqual(doc);
+  });
+
+  it('returns the empty state for non-object or array payloads', () => {
+    expect(parseReadState(null)).toEqual(EMPTY_READ_STATE);
+    expect(parseReadState('42')).toEqual(EMPTY_READ_STATE);
+    expect(parseReadState(['m1'])).toEqual(EMPTY_READ_STATE);
+  });
+
+  it('filters per-field type drift', () => {
+    expect(parseReadState({ readBeforeTs: 42, readIds: ['m1', 7, null], unreadIds: 'nope' })).toEqual({ readBeforeTs: null, readIds: ['m1'], unreadIds: [] });
+  });
+
+  it('returns the empty state for corrupt JSON', () => {
+    expect(parseReadState('{not json')).toEqual(EMPTY_READ_STATE);
+  });
+});
+
+describe('garbageCollectReadState', () => {
+  it('slices both arrays to the cap (newest tail) and keeps the cutoff', () => {
+    const overCap = Array.from({ length: MAX_READ_IDS + 50 }, (_, i) => `m${i}`);
+    const gc = garbageCollectReadState({ readBeforeTs: '2026-02-01T00:00:00Z', readIds: overCap, unreadIds: overCap });
+
+    expect(gc.readBeforeTs).toBe('2026-02-01T00:00:00Z');
+    expect(gc.readIds).toHaveLength(MAX_READ_IDS);
+    expect(gc.unreadIds).toHaveLength(MAX_READ_IDS);
+    expect(gc.readIds[0]).toBe('m50');
+  });
+});
+
+describe('isReadInState', () => {
+  const state: ReadStateData = { readBeforeTs: '2026-02-01 12:00:00', readIds: ['explicit-read'], unreadIds: ['explicit-unread'] };
+
+  it('prefers explicit readIds, then unreadIds, then the cutoff', () => {
+    expect(isReadInState(state, 'explicit-read', '2026-03-01 00:00:00')).toBe(true);
+    expect(isReadInState(state, 'explicit-unread', '2026-01-01 00:00:00')).toBe(false);
+  });
+
+  it('compares against the cutoff with space-separated timestamps normalized to epoch ms', () => {
+    expect(isReadInState(state, 'other', '2026-02-01 11:59:59')).toBe(true);
+    expect(isReadInState(state, 'other', '2026-02-01 12:00:00')).toBe(true);
+    expect(isReadInState(state, 'other', '2026-02-01 12:00:01')).toBe(false);
+  });
+
+  it('treats an empty timestamp as unread (NaN comparisons are false)', () => {
+    expect(isReadInState(state, 'other', '')).toBe(false);
+    expect(isReadInState({ ...state, readBeforeTs: null }, 'other', '')).toBe(false);
+  });
+});
+
+describe('computeReadToggle', () => {
+  const base: ReadStateData = { readBeforeTs: null, readIds: [], unreadIds: [] };
+
+  it('appends to readIds when marking read beyond any cutoff', () => {
+    expect(computeReadToggle(base, 'm1', '2026-03-01 00:00:00', false)).toEqual({ readBeforeTs: null, readIds: ['m1'], unreadIds: [] });
+  });
+
+  it('appends to unreadIds when un-reading a cutoff-covered mention', () => {
+    const withCutoff: ReadStateData = { ...base, readBeforeTs: '2026-02-01 00:00:00' };
+    expect(computeReadToggle(withCutoff, 'm1', '2026-01-01 00:00:00', true)).toEqual({ readBeforeTs: '2026-02-01 00:00:00', readIds: [], unreadIds: ['m1'] });
+  });
+
+  it('drops the explicit read id instead of adding an unread override when the cutoff does not cover the mention', () => {
+    const state: ReadStateData = { readBeforeTs: null, readIds: ['m1'], unreadIds: [] };
+    expect(computeReadToggle(state, 'm1', '2026-03-01 00:00:00', true)).toEqual(base);
+  });
+
+  it('drops the unread override instead of adding a read id when re-reading a cutoff-covered mention', () => {
+    const state: ReadStateData = { readBeforeTs: '2026-02-01 00:00:00', readIds: [], unreadIds: ['m1'] };
+    expect(computeReadToggle(state, 'm1', '2026-01-01 00:00:00', false)).toEqual({ readBeforeTs: '2026-02-01 00:00:00', readIds: [], unreadIds: [] });
+  });
+
+  it('is idempotent when the state already implies the toggle', () => {
+    const state: ReadStateData = { readBeforeTs: null, readIds: ['m1'], unreadIds: [] };
+    expect(computeReadToggle(state, 'm1', '2026-03-01 00:00:00', false)).toEqual(state);
+  });
+
+  it('slices the appended array to the cap, dropping the oldest entry', () => {
+    const full = Array.from({ length: MAX_READ_IDS }, (_, i) => `m${i}`);
+    const next = computeReadToggle({ readBeforeTs: null, readIds: full, unreadIds: [] }, 'new', '2026-03-01 00:00:00', false);
+
+    expect(next.readIds).toHaveLength(MAX_READ_IDS);
+    expect(next.readIds.at(-1)).toBe('new');
+    expect(next.readIds).not.toContain('m0');
   });
 });
 

@@ -4,8 +4,9 @@
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
-import { getDefaultMarketingImpactPeriod } from '@lfx-one/shared/utils';
+import { getDefaultMarketingImpactPeriod, isReadInState } from '@lfx-one/shared/utils';
 import { MentionBookmarkService } from '@services/mention-bookmark.service';
+import { MentionReadStateService } from '@services/mention-read-state.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SocialListeningService } from '@services/social-listening.service';
 import { UserService } from '@services/user.service';
@@ -14,6 +15,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   Mention,
+  ReadStateData,
   SocialListeningFeedRequest,
   SocialListeningFeedResponse,
   SocialListeningMention,
@@ -43,12 +45,23 @@ describe('SocialListeningComponent', () => {
   let bookmarkState: WritableSignal<UserPreferenceState<Set<string>>>;
   let toggleBookmark: ReturnType<typeof vi.fn>;
   let setBookmarkContext: ReturnType<typeof vi.fn>;
+  /** MentionReadStateService harness — `isRead` delegates to the real pure function over the harness state. */
+  let readState: WritableSignal<UserPreferenceState<ReadStateData>>;
+  let isRead: ReturnType<typeof vi.fn>;
+  let toggleRead: ReturnType<typeof vi.fn>;
+  let markAllAsRead: ReturnType<typeof vi.fn>;
+  let markAllAsUnread: ReturnType<typeof vi.fn>;
+  let setReadContext: ReturnType<typeof vi.fn>;
   let foundationSignal: ReturnType<typeof signal>;
   let foundationSfid: WritableSignal<string | null>;
   let userSignal: WritableSignal<User | null>;
 
   function rawMention(id: string): SocialListeningMention {
     return { MENTION_ID: id, MENTION_TS: '2026-08-01T00:00:00Z' } as SocialListeningMention;
+  }
+
+  function readStateWith(data: Partial<ReadStateData> = {}, loading = false): UserPreferenceState<ReadStateData> {
+    return { data: { readBeforeTs: null, readIds: [], unreadIds: [], ...data }, loading, readOnly: false, error: null };
   }
 
   /** A full page/window of fake rows, id'd by absolute offset so slices are identifiable. */
@@ -106,6 +119,12 @@ describe('SocialListeningComponent', () => {
     bookmarkState = signal<UserPreferenceState<Set<string>>>({ data: new Set<string>(), loading: false, readOnly: false, error: null });
     toggleBookmark = vi.fn();
     setBookmarkContext = vi.fn();
+    readState = signal<UserPreferenceState<ReadStateData>>(readStateWith());
+    isRead = vi.fn((id: string, ts: string) => isReadInState(readState().data, id, ts));
+    toggleRead = vi.fn();
+    markAllAsRead = vi.fn();
+    markAllAsUnread = vi.fn();
+    setReadContext = vi.fn();
     foundationSignal = signal(FOUNDATION);
     foundationSfid = signal<string | null>(null);
     userSignal = signal<User | null>(null);
@@ -143,8 +162,14 @@ describe('SocialListeningComponent', () => {
       .overrideComponent(SocialListeningComponent, {
         set: {
           template: '',
-          // The page scopes MentionBookmarkService to itself — swap it here or the real store would hit the transport.
-          providers: [{ provide: MentionBookmarkService, useValue: { state: bookmarkState, setContext: setBookmarkContext, toggleBookmark } }],
+          // The page scopes both preference services to itself — swap them here or the real stores would hit the transport.
+          providers: [
+            { provide: MentionBookmarkService, useValue: { state: bookmarkState, setContext: setBookmarkContext, toggleBookmark } },
+            {
+              provide: MentionReadStateService,
+              useValue: { state: readState, setContext: setReadContext, isRead, toggleRead, markAllAsRead, markAllAsUnread },
+            },
+          ],
         },
       })
       .compileComponents();
@@ -443,6 +468,163 @@ describe('SocialListeningComponent', () => {
       // Sub-project + platform still reset on the switch — only the bookmark filter survives.
       expect(fixture.componentInstance.selectedProject()).toBe('all');
       expect(fixture.componentInstance.selectedPlatform()).toBe('all');
+    });
+  });
+
+  describe('read state', () => {
+    it('sets the read-state context together with the bookmark context as the user and foundation resolve', async () => {
+      expect(setReadContext).toHaveBeenCalledWith(null);
+
+      userSignal.set({ sub: 'u1' } as User);
+      foundationSfid.set('001ABC0000XYZDEFAAA');
+      await settle();
+
+      expect(setReadContext).toHaveBeenLastCalledWith({ userId: 'u1', projectId: '001ABC0000XYZDEFAAA' });
+    });
+
+    it('filters the loaded window client-side in unread mode and recomputes totalRecords', async () => {
+      // Window 0 holds m0–m99; the first five read leaves 95 unread.
+      readState.set(readStateWith({ readIds: ['m0', 'm1', 'm2', 'm3', 'm4'] }));
+      const feedCallCount = getMentionsFeed.mock.calls.length;
+      const countCallCount = getMentionsCount.mock.calls.length;
+
+      fixture.componentInstance.selectedReadFilter.set('unread');
+      await settle();
+
+      expect(fixture.componentInstance.totalRecords()).toBe(95);
+      expect(mentionIds()).toHaveLength(20);
+      expect(mentionIds()[0]).toBe('m5');
+      // No refetch — the unread view is a client-side filter over the cached window.
+      expect(getMentionsFeed).toHaveBeenCalledTimes(feedCallCount);
+      expect(getMentionsCount).toHaveBeenCalledTimes(countCallCount);
+      expect(currentParams['read']).toBe('unread');
+    });
+
+    it('returns empty unread views while the read state loads (no unread flash)', async () => {
+      readState.set(readStateWith({}, true));
+      fixture.componentInstance.selectedReadFilter.set('unread');
+      await settle();
+
+      expect(fixture.componentInstance.totalRecords()).toBe(0);
+      expect(fixture.componentInstance.mentions()).toEqual([]);
+      expect(fixture.componentInstance.readMentionIds().size).toBe(0);
+    });
+
+    it('clamps the page when marking all as read shrinks the unread total', async () => {
+      fixture.componentInstance.selectedReadFilter.set('unread');
+      await settle();
+      // 100 unread rows in window 0 → 5 pages of 20.
+      fixture.componentInstance.onPageChange({ page: 4, rows: 20 });
+      await settle();
+      expect(fixture.componentInstance.currentPage()).toBe(4);
+
+      // Mark-all covers every loaded row (all stamped 2026-08-01T00:00:00Z).
+      readState.set(readStateWith({ readBeforeTs: '2026-08-01 23:59:59' }));
+      await settle();
+
+      expect(fixture.componentInstance.totalRecords()).toBe(0);
+      expect(fixture.componentInstance.currentPage()).toBe(0);
+    });
+
+    it('derives the mark-all cutoff from the newest loaded MENTION_TS, skipping null timestamps', async () => {
+      getMentionsFeed.mockImplementation(() =>
+        of({
+          mentions: [
+            { MENTION_ID: 'old', MENTION_TS: '2026-07-30 10:00:00' },
+            // Space-separated Snowflake format — the reduce must normalize to epoch ms, not compare lexicographically.
+            { MENTION_ID: 'newest', MENTION_TS: '2026-08-01 15:30:00' },
+            { MENTION_ID: 'no-ts', MENTION_TS: null },
+          ] as SocialListeningMention[],
+          computedAt: null,
+        })
+      );
+      // Rebuild so the feed pipeline fetches the custom rows (the seed reads at construction).
+      fixture.destroy();
+      fixture = TestBed.createComponent(SocialListeningComponent);
+      fixture.detectChanges();
+      await settle();
+
+      fixture.componentInstance.onMarkAllAsRead();
+
+      expect(markAllAsRead).toHaveBeenCalledWith('2026-08-01 15:30:00');
+    });
+
+    it('derives the mark-all cutoff from window 0 even when paged into a later window', async () => {
+      // Window 0 rows stamp newer than window 1's — the cutoff must come from window 0 regardless of the current page.
+      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => {
+        const response = feedResponse(req);
+        const ts = (req.offset ?? 0) === 0 ? '2026-08-01T00:00:00Z' : '2026-07-01T00:00:00Z';
+        return of({ ...response, mentions: response.mentions.map((m) => ({ ...m, MENTION_TS: ts })) });
+      });
+      fixture.destroy();
+      fixture = TestBed.createComponent(SocialListeningComponent);
+      fixture.detectChanges();
+      await settle();
+
+      // pageSize 20 × page 5 = offset 100 → window 1 (serverWindowSize is 100).
+      fixture.componentInstance.onPageChange({ page: 5, rows: 20 });
+      await settle();
+      expect(cachedWindows()).toEqual([0, 1]);
+
+      fixture.componentInstance.onMarkAllAsRead();
+
+      expect(markAllAsRead).toHaveBeenCalledWith('2026-08-01T00:00:00Z');
+    });
+
+    it('resets the page on read-filter change without clearing the window cache or refetching', async () => {
+      fixture.componentInstance.onPageChange({ page: 4, rows: 20 });
+      await settle();
+      expect(fixture.componentInstance.currentPage()).toBe(4);
+      expect(cachedWindows()).toEqual([0]);
+      const feedCallCount = getMentionsFeed.mock.calls.length;
+
+      fixture.componentInstance.selectedReadFilter.set('unread');
+      await settle();
+
+      expect(fixture.componentInstance.currentPage()).toBe(0);
+      expect(cachedWindows()).toEqual([0]);
+      expect(getMentionsFeed).toHaveBeenCalledTimes(feedCallCount);
+    });
+
+    it('leaves the feed and count request fingerprints unchanged across read-filter flips', async () => {
+      const feedFingerprint = feedCalls().map((req) => JSON.stringify(req));
+      const countCallCount = getMentionsCount.mock.calls.length;
+
+      fixture.componentInstance.selectedReadFilter.set('unread');
+      await settle();
+      fixture.componentInstance.selectedReadFilter.set('all');
+      await settle();
+
+      expect(feedCalls().map((req) => JSON.stringify(req))).toEqual(feedFingerprint);
+      expect(getMentionsCount).toHaveBeenCalledTimes(countCallCount);
+    });
+
+    it('keeps the read filter across a foundation switch while the read state reloads per foundation', async () => {
+      fixture.componentInstance.selectedReadFilter.set('unread');
+      fixture.componentInstance.selectedProject.set('proj-1');
+      await settle();
+
+      userSignal.set({ sub: 'u1' } as User);
+      foundationSfid.set('001ABC0000XYZDEFAAA');
+      await settle();
+
+      foundationSignal.set({ uid: 'f2', name: 'LF', slug: 'linuxfoundation' });
+      foundationSfid.set('001XYZ0000ABCDEFAAA');
+      await settle();
+
+      expect(fixture.componentInstance.selectedReadFilter()).toBe('unread');
+      expect(currentParams['read']).toBe('unread');
+      // Sub-project still resets on the switch — only the read filter survives.
+      expect(fixture.componentInstance.selectedProject()).toBe('all');
+      expect(setReadContext).toHaveBeenLastCalledWith({ userId: 'u1', projectId: '001XYZ0000ABCDEFAAA' });
+    });
+
+    it('delegates card toggles and mark-all actions to the read-state service', () => {
+      fixture.componentInstance.onReadToggled({ id: 'm1', timestamp: '2026-08-01T00:00:00Z' } as Mention);
+      expect(toggleRead).toHaveBeenCalledWith('m1', '2026-08-01T00:00:00Z');
+
+      fixture.componentInstance.onMarkAllAsUnread();
+      expect(markAllAsUnread).toHaveBeenCalledTimes(1);
     });
   });
 });

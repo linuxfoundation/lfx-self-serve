@@ -3,6 +3,7 @@
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, ElementRef, inject, input, output, PLATFORM_ID, Signal, viewChild } from '@angular/core';
+import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import { DEFAULT_MENTION_PAGE_SIZE, MENTION_PAGE_SIZE_OPTIONS } from '@lfx-one/shared/constants';
@@ -18,7 +19,7 @@ import { MentionCardComponent } from '../mention-card/mention-card.component';
  */
 @Component({
   selector: 'lfx-mentions-list',
-  imports: [DatePipe, TableComponent, MentionCardComponent, EmptyStateComponent, SkeletonModule],
+  imports: [DatePipe, TableComponent, MentionCardComponent, EmptyStateComponent, SkeletonModule, ButtonComponent],
   templateUrl: './mentions-list.component.html',
   styleUrl: './mentions-list.component.scss',
 })
@@ -43,14 +44,24 @@ export class MentionsListComponent {
   public readonly countError = input(false);
   /** Bookmarked mention IDs for the current foundation (LFXV2-3002 Block 1) — decorates each card's bookmark toggle. */
   public readonly bookmarkedIds = input<Set<string>>(new Set());
+  /** Read mention IDs for the current foundation (LFXV2-3002 Block 2) — decorates each card's read toggle. */
+  public readonly readMentionIds = input<Set<string>>(new Set());
+  /** Unread mode hides the range count + paginator report — the window-scoped total would misread as the true total. */
+  public readonly hideTotal = input(false);
 
   public readonly pageChange = output<{ page: number; rows: number }>();
   /** Manual retry of a phase-2-failed window. */
   public readonly retry = output<void>();
   /** Re-emitted card toggle — the page owns the write via MentionBookmarkService. */
   public readonly bookmarkToggled = output<Mention>();
+  /** Re-emitted card toggle — the page owns the write via MentionReadStateService. */
+  public readonly readToggled = output<Mention>();
+  /** Header bulk actions (LFXV2-3002 Block 2) — the page derives the cutoff from the loaded window. */
+  public readonly markAllRead = output<void>();
+  public readonly markAllUnread = output<void>();
 
   public readonly isBookmarkedFn: Signal<(id: string) => boolean> = this.initIsBookmarkedFn();
+  public readonly isReadFn: Signal<(id: string) => boolean> = this.initIsReadFn();
 
   private readonly listContainer = viewChild<ElementRef<HTMLElement>>('listContainer');
 
@@ -63,6 +74,14 @@ export class MentionsListComponent {
   private initIsBookmarkedFn(): Signal<(id: string) => boolean> {
     return computed(() => {
       const ids = this.bookmarkedIds();
+      return (id: string) => ids.has(id);
+    });
+  }
+
+  /** Per-card read lookup (PCC port): one computed over the input set, not a per-row method call. */
+  private initIsReadFn(): Signal<(id: string) => boolean> {
+    return computed(() => {
+      const ids = this.readMentionIds();
       return (id: string) => ids.has(id);
     });
   }

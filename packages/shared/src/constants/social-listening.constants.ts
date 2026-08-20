@@ -11,6 +11,7 @@ import type {
   MentionRelevanceConfigEntry,
   MentionSentiment,
   MentionSentimentConfigEntry,
+  ReadStateData,
   SavedViewScope,
   ScopeState,
   SocialListeningOption,
@@ -74,6 +75,11 @@ export const MENTION_BOOKMARK_FILTER_OPTIONS: SocialListeningOption[] = [
   { label: 'Bookmarked', value: 'bookmarked' },
 ];
 
+export const MENTION_READ_FILTER_OPTIONS: SocialListeningOption[] = [
+  { label: 'All', value: 'all' },
+  { label: 'Unread', value: 'unread' },
+];
+
 // ---------------------------------------------------------------------------
 // Pagination + limits
 // ---------------------------------------------------------------------------
@@ -96,6 +102,9 @@ export const MENTION_FILTER_UI_MAX_VALUES = 50;
 
 /** Cap for the bookmarked-mentions filter — bounds the bookmark store, the HTTP boundary, and the SQL builder. */
 export const MENTION_IDS_MAX_VALUES = 500;
+
+/** Cap per read-state ID array (`readIds`/`unreadIds`) — same value as the bookmark cap, distinct semantic: cutoff overrides, not a query bound. */
+export const MAX_READ_IDS = 500;
 
 /** Row cap for the `mentions-tags` endpoint — serves both the tag filter dropdown and the analytics top-tags panel. */
 export const MENTION_TOP_TAGS_LIMIT = 10;
@@ -150,7 +159,7 @@ export const FILTERS_PANEL_FOCUSABLE_SELECTOR = 'a[href], button:not([disabled])
 // ---------------------------------------------------------------------------
 
 /**
- * URL query-param keys for the predicate + scope round-trip; PCC's `read`/`view` keys are dropped (Blocks 2–3) and `range` is renamed to `period`.
+ * URL query-param keys for the predicate + scope round-trip; PCC's `view` key is dropped (Block 3) and `range` is renamed to `period`.
  * This page must own its route — before any embedded-shell composition, namespace the generic keys (`tab`, `q`, e.g. `slTab`).
  */
 export const SOCIAL_LISTENING_QUERY_PARAMS = {
@@ -165,6 +174,7 @@ export const SOCIAL_LISTENING_QUERY_PARAMS = {
   language: 'language',
   hasTitle: 'hasTitle',
   bookmarks: 'bookmarks',
+  read: 'read',
   keywords: 'keywords',
   tags: 'tags',
   authors: 'authors',
@@ -178,6 +188,7 @@ export const DEFAULT_MENTION_PREDICATE: FilterPredicate = {
   language: 'all',
   hasTitle: 'all',
   bookmarkFilter: 'all',
+  readFilter: 'all',
   keywords: [],
   tags: [],
   authors: [],
@@ -216,3 +227,6 @@ export const SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES = [
   SOCIAL_LISTENING_READ_STATE_PREFERENCE_PREFIX,
   SOCIAL_LISTENING_SAVED_FILTERS_PREFERENCE_PREFIX,
 ] as const;
+
+/** Empty read-state doc — mark-all-as-unread writes it (no DELETE) and corrupt docs parse to it. */
+export const EMPTY_READ_STATE: ReadStateData = { readBeforeTs: null, readIds: [], unreadIds: [] };

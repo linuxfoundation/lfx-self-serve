@@ -3,6 +3,8 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { provideRouter } from '@angular/router';
+import { TableComponent } from '@components/table/table.component';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { Mention } from '@lfx-one/shared/interfaces';
@@ -38,7 +40,8 @@ describe('MentionsListComponent', () => {
   let fixture: ComponentFixture<MentionsListComponent>;
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({ imports: [MentionsListComponent] }).compileComponents();
+    // provideRouter: the header's lfx-button imports RouterModule, and its <a> branch instantiates RouterLink.
+    await TestBed.configureTestingModule({ imports: [MentionsListComponent], providers: [provideRouter([])] }).compileComponents();
     fixture = TestBed.createComponent(MentionsListComponent);
   });
 
@@ -82,5 +85,80 @@ describe('MentionsListComponent', () => {
     await fixture.whenStable();
 
     expect(cards().map((card) => card.isBookmarked())).toEqual([false]);
+  });
+
+  it('decorates each card from the read ID set', async () => {
+    setMentions([baseMention('m1'), baseMention('m2')]);
+    fixture.componentRef.setInput('readMentionIds', new Set(['m2']));
+    await fixture.whenStable();
+
+    expect(cards().map((card) => card.isRead())).toEqual([false, true]);
+  });
+
+  it('re-emits a card read toggle as its own output', async () => {
+    const mention = baseMention('m1');
+    setMentions([mention]);
+    await fixture.whenStable();
+
+    const emitted: Mention[] = [];
+    fixture.componentInstance.readToggled.subscribe((m) => emitted.push(m));
+
+    cards()[0].readToggled.emit(mention);
+
+    expect(emitted).toEqual([mention]);
+  });
+
+  it('emits markAllRead / markAllUnread from the header buttons', async () => {
+    setMentions([baseMention('m1')]);
+    await fixture.whenStable();
+
+    const events: string[] = [];
+    fixture.componentInstance.markAllRead.subscribe(() => events.push('read'));
+    fixture.componentInstance.markAllUnread.subscribe(() => events.push('unread'));
+
+    // data-testid lands on the lfx-button host; the native button PrimeNG renders sits inside it.
+    (fixture.nativeElement.querySelector('[data-testid="mentions-list-mark-all-read"] button') as HTMLButtonElement).click();
+    (fixture.nativeElement.querySelector('[data-testid="mentions-list-mark-all-unread"] button') as HTMLButtonElement).click();
+
+    expect(events).toEqual(['read', 'unread']);
+  });
+
+  it('hides the mark-all buttons while loading or empty', async () => {
+    setMentions([baseMention('m1')]);
+    fixture.componentRef.setInput('loading', true);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-mark-all-read"]')).toBeNull();
+
+    fixture.componentRef.setInput('loading', false);
+    fixture.componentRef.setInput('totalMentions', 0);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-mark-all-read"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-mark-all-unread"]')).toBeNull();
+  });
+
+  it('hideTotal gates the range count and the paginator report', async () => {
+    setMentions([baseMention('m1')]);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-count"]')).not.toBeNull();
+
+    fixture.componentRef.setInput('hideTotal', true);
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-count"]')).toBeNull();
+    const table = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
+    expect(table.showCurrentPageReport()).toBe(false);
+  });
+
+  it('swaps the empty state for all-caught-up copy in unread mode', async () => {
+    setMentions([]);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-empty-state"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-all-read-state"]')).toBeNull();
+
+    fixture.componentRef.setInput('hideTotal', true);
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-empty-state"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-all-read-state"]')).not.toBeNull();
   });
 });

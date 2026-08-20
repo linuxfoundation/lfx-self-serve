@@ -8,10 +8,13 @@ import type { ChartData } from 'chart.js';
 import {
   ANALYTICS_TOP_PLATFORMS_LIMIT,
   DEFAULT_MENTION_PREDICATE,
+  EMPTY_READ_STATE,
+  MAX_READ_IDS,
   MENTION_BOOKMARK_FILTER_OPTIONS,
   MENTION_HAS_TITLE_OPTIONS,
   MENTION_IDS_MAX_VALUES,
   MENTION_PLATFORM_CONFIG,
+  MENTION_READ_FILTER_OPTIONS,
   MENTION_RELEVANCE_OPTIONS,
   MENTION_SENTIMENT_CONFIG,
   MENTION_SENTIMENT_OPTIONS,
@@ -27,6 +30,7 @@ import type {
   MentionPlatform,
   MentionRelevance,
   MentionSentiment,
+  ReadStateData,
   SocialListeningMention,
   SocialListeningMentionAuthor,
   SocialListeningOption,
@@ -365,6 +369,9 @@ export function buildActiveFilterPills(predicate: FilterPredicate): FilterPillOp
   if (predicate.bookmarkFilter !== DEFAULT_MENTION_PREDICATE.bookmarkFilter) {
     pills.push(pill('bookmarkFilter', 'Bookmarks', labelFor(MENTION_BOOKMARK_FILTER_OPTIONS, predicate.bookmarkFilter)));
   }
+  if (predicate.readFilter !== DEFAULT_MENTION_PREDICATE.readFilter) {
+    pills.push(pill('readFilter', 'Read Status', labelFor(MENTION_READ_FILTER_OPTIONS, predicate.readFilter)));
+  }
   if (predicate.keywords.length > 0) {
     const { summary, full } = summarizePillValues(predicate.keywords);
     pills.push(pill('keywords', 'Keywords', summary, full));
@@ -405,4 +412,65 @@ export function socialListeningPreferenceName(prefix: SocialListeningPreferenceN
 /** Server-side allowlist gate: known prefix + `" - "` + non-empty project suffix. */
 export function isSocialListeningPreferenceName(name: string): boolean {
   return SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES.some((prefix) => name.startsWith(`${prefix} - `) && name.length > `${prefix} - `.length);
+}
+
+// ---------------------------------------------------------------------------
+// Read state (LFXV2-3002 Block 2, PCC port)
+// ---------------------------------------------------------------------------
+
+/** Fresh empty read-state doc per call — spreading the constant would share its array references across states. */
+export function emptyReadState(): ReadStateData {
+  return { readBeforeTs: EMPTY_READ_STATE.readBeforeTs, readIds: [...EMPTY_READ_STATE.readIds], unreadIds: [...EMPTY_READ_STATE.unreadIds] };
+}
+
+/** Parses the persisted read-state doc: tolerates string/parsed input and per-field type drift; a corrupt doc yields the empty state so the user can rewrite over it. */
+export function parseReadState(raw: unknown): ReadStateData {
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return emptyReadState();
+    const doc = parsed as Partial<Record<keyof ReadStateData, unknown>>;
+    const ids = (value: unknown): string[] => (Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []);
+    return {
+      readBeforeTs: typeof doc.readBeforeTs === 'string' ? doc.readBeforeTs : null,
+      readIds: ids(doc.readIds),
+      unreadIds: ids(doc.unreadIds),
+    };
+  } catch {
+    return emptyReadState();
+  }
+}
+
+/** Cheap slice-on-load GC: mark-all-as-read clears both arrays when setting the cutoff, and `computeReadToggle`'s cutoff guard prevents redundant accumulation. */
+export function garbageCollectReadState(state: ReadStateData): ReadStateData {
+  return {
+    readBeforeTs: state.readBeforeTs,
+    readIds: state.readIds.slice(-MAX_READ_IDS),
+    unreadIds: state.unreadIds.slice(-MAX_READ_IDS),
+  };
+}
+
+/** Explicit IDs win over the cutoff; timestamps normalize to epoch ms before comparing (Snowflake emits space-separated timestamps). */
+export function isReadInState(state: ReadStateData, mentionId: string, mentionTimestamp: string): boolean {
+  const { readBeforeTs, readIds, unreadIds } = state;
+  if (readIds.includes(mentionId)) return true;
+  if (unreadIds.includes(mentionId)) return false;
+  if (readBeforeTs && new Date(mentionTimestamp).getTime() <= new Date(readBeforeTs).getTime()) return true;
+  return false;
+}
+
+/** Appends to the array not already implied by the cutoff, keeping the persisted doc small. */
+export function computeReadToggle(current: ReadStateData, mentionId: string, mentionTimestamp: string, currentlyRead: boolean): ReadStateData {
+  const { readBeforeTs, readIds, unreadIds } = current;
+  const coveredByCutoff = readBeforeTs !== null && new Date(mentionTimestamp).getTime() <= new Date(readBeforeTs).getTime();
+
+  if (currentlyRead) {
+    const newReadIds = readIds.filter((id) => id !== mentionId);
+    // Only track the unread override when the cutoff would otherwise still cover the mention.
+    const newUnreadIds = coveredByCutoff && !unreadIds.includes(mentionId) ? [...unreadIds, mentionId].slice(-MAX_READ_IDS) : unreadIds;
+    return { readBeforeTs, readIds: newReadIds, unreadIds: newUnreadIds };
+  }
+
+  const newUnreadIds = unreadIds.filter((id) => id !== mentionId);
+  const newReadIds = !coveredByCutoff && !readIds.includes(mentionId) ? [...readIds, mentionId].slice(-MAX_READ_IDS) : readIds;
+  return { readBeforeTs, readIds: newReadIds, unreadIds: newUnreadIds };
 }

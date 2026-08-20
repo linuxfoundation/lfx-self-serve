@@ -2,10 +2,17 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (mention(); as mention) {
-  <div class="mention-card flex gap-5 p-5" data-testid="mention-card">
+  <div class="mention-card flex gap-5 p-5" [class.mention-card--read]="isRead()" data-testid="mention-card">
     <!-- Stretched link: covers the whole card, sits below the interactive elements -->
     @if (mention.originalUrl | validExternalUrl; as url) {
-      <a [href]="url" target="_blank" rel="noopener noreferrer" class="card-link" aria-label="Open mention" tabindex="0"></a>
+      <a
+        [href]="url"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="card-link"
+        [attr.aria-label]="isRead() ? 'Open mention' : 'Open mention (marks as read)'"
+        tabindex="0"
+        (click)="onCardClick()"></a>
     }
 
     <!-- Left: text content -->
@@ -93,6 +100,17 @@
           (click)="onCopyLink()"
           data-testid="mention-card-copy-link">
           <i [class]="copied() ? 'fa-light fa-check text-base text-emerald-600' : 'fa-light fa-link text-base'"></i>
+        </button>
+        <button
+          type="button"
+          class="card-interactive icon-btn"
+          [pTooltip]="isRead() ? 'Mark as Unread' : 'Mark as Read'"
+          tooltipPosition="top"
+          [attr.aria-label]="isRead() ? 'Mark mention as unread' : 'Mark mention as read'"
+          [attr.aria-pressed]="isRead()"
+          (click)="onToggleRead()"
+          data-testid="mention-card-read-toggle">
+          <i [class]="isRead() ? 'fa-solid fa-eye-slash text-base text-gray-400' : 'fa-light fa-eye text-base'"></i>
         </button>
         <a
           [href]="forwardEmailHref()"

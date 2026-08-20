@@ -59,7 +59,7 @@ describe('MentionCardComponent', () => {
     expect(cardLink.getAttribute('href')).toBe('https://reddit.com/r/kubernetes/comments/m1');
     expect(cardLink.getAttribute('target')).toBe('_blank');
     expect(cardLink.getAttribute('rel')).toBe('noopener noreferrer');
-    expect(cardLink.getAttribute('aria-label')).toBe('Open mention');
+    expect(cardLink.getAttribute('aria-label')).toBe('Open mention (marks as read)');
   });
 
   it('drops the stretched card link when originalUrl is a javascript: scheme', async () => {
@@ -187,6 +187,68 @@ describe('MentionCardComponent', () => {
     expect(button.getAttribute('aria-label')).toBe('Remove bookmark');
     expect(iconClass).toContain('fa-solid');
     expect(iconClass).toContain('text-blue-600');
+  });
+
+  it('emits readToggled with the mention when the read toggle is clicked', async () => {
+    const mention = baseMention();
+    setMention(mention);
+    await fixture.whenStable();
+
+    const emitted: Mention[] = [];
+    fixture.componentInstance.readToggled.subscribe((m) => emitted.push(m));
+
+    (querySelector('[data-testid="mention-card-read-toggle"]') as HTMLButtonElement).click();
+
+    expect(emitted).toEqual([mention]);
+  });
+
+  it('marks an unread mention read on card click, and does not re-emit for a read one', async () => {
+    const mention = baseMention();
+    setMention(mention);
+    fixture.componentRef.setInput('isRead', false);
+    await fixture.whenStable();
+
+    const emitted: Mention[] = [];
+    fixture.componentInstance.readToggled.subscribe((m) => emitted.push(m));
+
+    (querySelector('.card-link') as HTMLAnchorElement).click();
+    expect(emitted).toEqual([mention]);
+
+    fixture.componentRef.setInput('isRead', true);
+    await fixture.whenStable();
+    (querySelector('.card-link') as HTMLAnchorElement).click();
+    expect(emitted).toEqual([mention]);
+  });
+
+  it('reflects the read state in aria-pressed, dims the card, and swaps the eye icon', async () => {
+    setMention(baseMention());
+    fixture.componentRef.setInput('isRead', false);
+    await fixture.whenStable();
+
+    let button = querySelector('[data-testid="mention-card-read-toggle"]') as HTMLButtonElement;
+    // Angular's [class] binding dedupes and reorders tokens — assert tokens, not substrings.
+    let iconClass = button.querySelector('i')?.className ?? '';
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    expect(button.getAttribute('aria-label')).toBe('Mark mention as read');
+    expect(iconClass).toContain('fa-light');
+    expect(iconClass).toContain('fa-eye');
+    expect(iconClass).not.toContain('fa-solid');
+    expect(querySelector('[data-testid="mention-card"]')?.className).not.toContain('mention-card--read');
+    expect(querySelector('.card-link')?.getAttribute('aria-label')).toBe('Open mention (marks as read)');
+
+    fixture.componentRef.setInput('isRead', true);
+    await fixture.whenStable();
+
+    button = querySelector('[data-testid="mention-card-read-toggle"]') as HTMLButtonElement;
+    iconClass = button.querySelector('i')?.className ?? '';
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(button.getAttribute('aria-label')).toBe('Mark mention as unread');
+    expect(iconClass).toContain('fa-solid');
+    expect(iconClass).toContain('fa-eye-slash');
+    expect(iconClass).toContain('text-gray-400');
+    expect(querySelector('[data-testid="mention-card"]')?.className).toContain('mention-card--read');
+    // Read cards no longer mark on click — the stretched link's label must not promise it.
+    expect(querySelector('.card-link')?.getAttribute('aria-label')).toBe('Open mention');
   });
 
   it('exposes the stretched link as the sole keyboard tab stop to the original URL', async () => {

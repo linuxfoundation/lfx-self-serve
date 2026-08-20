@@ -29,7 +29,7 @@ const COPIED_STATE_MS = 1000;
 
 /**
  * A single mention in the Social Listening feed (LFXV2-3016): a stretched link to `originalUrl` with
- * interactive elements above it via `.card-interactive`. Read state is deferred (Block 2).
+ * interactive elements above it via `.card-interactive`; read state (LFXV2-3002 Block 2) dims read cards.
  */
 @Component({
   selector: 'lfx-mention-card',
@@ -47,6 +47,9 @@ export class MentionCardComponent {
   /** Bookmark decoration (LFXV2-3002 Block 1) — the page owns persistence via MentionBookmarkService. */
   public readonly isBookmarked = input<boolean>(false);
   public readonly bookmarkToggled = output<Mention>();
+  /** Read decoration (LFXV2-3002 Block 2) — the page owns persistence via MentionReadStateService. */
+  public readonly isRead = input<boolean>(false);
+  public readonly readToggled = output<Mention>();
 
   public readonly copied = signal(false);
   /** Keyed by URL, not a boolean: row components are reused across pages, so a flag would hide the next mention's thumbnail. */
@@ -88,6 +91,18 @@ export class MentionCardComponent {
   /** Re-emits the toggle intent — the page decides whether the write proceeds (cap/loading gates live in the service). */
   public onToggleBookmark(): void {
     this.bookmarkToggled.emit(this.mention());
+  }
+
+  /** Re-emits the toggle intent — the loading gate lives in the service. */
+  public onToggleRead(): void {
+    this.readToggled.emit(this.mention());
+  }
+
+  /** Clicking an unread card marks it read; re-emitting for an already-read card would churn a no-op write. */
+  public onCardClick(): void {
+    if (!this.isRead()) {
+      this.readToggled.emit(this.mention());
+    }
   }
 
   /** Copies the mention's canonical URL to the clipboard with a transient "Copied!" state. */

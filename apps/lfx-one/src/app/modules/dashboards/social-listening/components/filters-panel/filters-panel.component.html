@@ -97,6 +97,21 @@
       data-testid="social-listening-filters-bookmarked" />
   </div>
 
+  <!-- Read Status -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-read-status">Read Status</label>
+    <lfx-select
+      [form]="filtersForm"
+      control="readFilter"
+      [options]="readFilterOptions"
+      optionLabel="label"
+      optionValue="value"
+      inputId="sl-filter-read-status"
+      ariaLabel="Filter by read status"
+      styleClass="w-full"
+      data-testid="social-listening-filters-read-status" />
+  </div>
+
   <!-- Authors (options cascade off every other filter) -->
   <div class="filter-group">
     <label class="filter-label" for="sl-filter-authors">Authors</label>

@@ -11,6 +11,16 @@
   &:hover {
     @apply border-gray-400 shadow-md;
   }
+
+  &--read {
+    // 30% opacity separates read from unread; hover/focus lifts to 80% so the card stays interactive.
+    opacity: 0.3;
+
+    &:hover,
+    &:focus-within {
+      opacity: 0.8;
+    }
+  }
 }
 
 // Stretched link: an invisible anchor covering the entire card, giving native link/keyboard

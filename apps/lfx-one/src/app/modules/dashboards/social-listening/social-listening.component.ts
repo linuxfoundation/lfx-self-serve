@@ -42,6 +42,7 @@ import {
   scopesEqual,
 } from '@lfx-one/shared/utils';
 import { MentionBookmarkService } from '@services/mention-bookmark.service';
+import { MentionReadStateService } from '@services/mention-read-state.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SocialListeningService } from '@services/social-listening.service';
 import { UserService } from '@services/user.service';
@@ -108,9 +109,9 @@ const EMPTY_FEED_RESPONSE: SocialListeningFeedResponse = { mentions: [], compute
   ],
   templateUrl: './social-listening.component.html',
   styleUrl: './social-listening.component.scss',
-  // Component-scoped (PCC parity): the store's destroyRef/injector scope to the page, so the
-  // bookmark set reloads on foundation switch and is dropped on page leave.
-  providers: [MentionBookmarkService],
+  // Component-scoped (PCC parity): each store's destroyRef/injector scopes to the page, so the
+  // preference state reloads on foundation switch and is dropped on page leave.
+  providers: [MentionBookmarkService, MentionReadStateService],
 })
 export class SocialListeningComponent {
   private readonly destroyRef = inject(DestroyRef);
@@ -120,6 +121,7 @@ export class SocialListeningComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly socialListeningService = inject(SocialListeningService);
   private readonly mentionBookmarkService = inject(MentionBookmarkService);
+  private readonly mentionReadStateService = inject(MentionReadStateService);
   private readonly userService = inject(UserService);
 
   private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
@@ -140,6 +142,7 @@ export class SocialListeningComponent {
   public readonly selectedLanguage = signal('all');
   public readonly selectedHasTitle = signal('all');
   public readonly selectedBookmarkFilter = signal('all');
+  public readonly selectedReadFilter = signal('all');
   public readonly selectedKeywords = signal<string[]>([]);
   public readonly selectedTags = signal<string[]>([]);
   public readonly selectedAuthors = signal<string[]>([]);
@@ -176,6 +179,7 @@ export class SocialListeningComponent {
   public readonly hasFoundation = computed(() => !!this.foundationSlug());
   /** Live bookmark set for the active user+foundation (empty while loading — decoration only until then). */
   public readonly bookmarkedIds = computed(() => this.mentionBookmarkService.state().data);
+  private readonly readState = this.mentionReadStateService.state;
 
   private readonly windowIndex = computed(() => Math.floor((this.currentPage() * this.pageSize()) / this.serverWindowSize));
   // The paginator is capped at the last servable window, so serverOffset stays within MENTION_MAX_FEED_OFFSET (100,000).
@@ -192,8 +196,8 @@ export class SocialListeningComponent {
   private readonly countRequest: Signal<SocialListeningCountRequest | null> = this.initCountRequest();
   private readonly feedCacheKey: Signal<string | null> = this.initFeedCacheKey();
   private readonly feedState: Signal<LoadableState<SocialListeningFeedResponse>> = this.initFeedState();
-  private readonly countState: Signal<LoadableState<number>> = this.initTotalRecords();
-  public readonly totalRecords = computed(() => this.countState().data ?? 0);
+  private readonly countState: Signal<LoadableState<number>> = this.initCountState();
+  public readonly totalRecords: Signal<number> = this.initTotalRecords();
   // The server clamps offset at MENTION_MAX_FEED_OFFSET — never advertise pages past the last servable window.
   public readonly paginatorTotalRecords = computed(() => Math.min(this.totalRecords(), MENTION_MAX_FEED_OFFSET + this.serverWindowSize));
   public readonly countError = computed(() => this.countState().error);
@@ -229,6 +233,7 @@ export class SocialListeningComponent {
 
   // No feedState fallback: on a cache miss the feed's data belongs to a prior window/filter set, so serving it flashes stale rows.
   private readonly currentWindowData = computed(() => this.windowCache().get(this.windowIndex()) ?? EMPTY_FEED_RESPONSE);
+  private readonly unreadWindowMentions: Signal<Mention[]> = this.initUnreadWindowMentions();
 
   public readonly loading = computed(() => {
     const windowData = this.windowCache().get(this.windowIndex());
@@ -245,6 +250,7 @@ export class SocialListeningComponent {
   public readonly phase2Failed = computed(() => this.windowCache().get(this.windowIndex())?.phase2Failed === true);
   public readonly first = computed(() => this.currentPage() * this.pageSize());
   public readonly mentions: Signal<Mention[]> = this.initMentions();
+  public readonly readMentionIds: Signal<Set<string>> = this.initReadMentionIds();
   public readonly dataComputedAt: Signal<Date | null> = this.initDataComputedAt();
 
   // === Predicate/scope codec state ===
@@ -254,6 +260,7 @@ export class SocialListeningComponent {
     selectedLanguage: this.selectedLanguage,
     selectedHasTitle: this.selectedHasTitle,
     selectedBookmarkFilter: this.selectedBookmarkFilter,
+    selectedReadFilter: this.selectedReadFilter,
     selectedKeywords: this.selectedKeywords,
     selectedTags: this.selectedTags,
     selectedAuthors: this.selectedAuthors,
@@ -355,16 +362,20 @@ export class SocialListeningComponent {
       });
     });
 
-    // The bookmark set is per user + foundation: reload it as either resolves or changes (PCC port).
+    // Preference state is per user + foundation: reload it as either resolves or changes (PCC port).
     effect(() => {
       const userId = this.userService.user()?.sub;
       const projectId = this.projectContextService.selectedFoundationSfid();
       const ctx = userId && projectId ? { userId, projectId } : null;
-      untracked(() => this.mentionBookmarkService.setContext(ctx));
+      untracked(() => {
+        this.mentionBookmarkService.setContext(ctx);
+        this.mentionReadStateService.setContext(ctx);
+      });
     });
 
     // Foundation switch resets the sub-project + platform scope (their option lists rescope).
-    // selectedBookmarkFilter is intentionally NOT reset — bookmarks are date-independent (PCC parity).
+    // selectedBookmarkFilter/selectedReadFilter are intentionally NOT reset — both are date-independent
+    // user state (PCC parity); the persisted read state itself reloads via the context effect above.
     effect(() => {
       const current = this.foundationSlug();
       const previous = this.previousFoundationSlug;
@@ -373,6 +384,21 @@ export class SocialListeningComponent {
         this.selectedPlatform.set('all');
       }
       this.previousFoundationSlug = current;
+    });
+
+    // Unread mode is a client-side view over the loaded window — reset the page but keep windowCache (no refetch).
+    effect(() => {
+      this.selectedReadFilter();
+      untracked(() => this.currentPage.set(0));
+    });
+
+    // Clamp currentPage when the unread total shrinks (e.g. marking the page's last unread mention as read).
+    effect(() => {
+      if (this.selectedReadFilter() !== 'unread') return;
+      const maxPage = Math.max(0, Math.ceil(this.totalRecords() / this.pageSize()) - 1);
+      if (this.currentPage() > maxPage) {
+        untracked(() => this.currentPage.set(maxPage));
+      }
     });
 
     // A foundation with a single sub-project locks the scope to it (ported from PCC). It lives here,
@@ -417,6 +443,28 @@ export class SocialListeningComponent {
     this.mentionBookmarkService.toggleBookmark(mention.id);
   }
 
+  /** Card toggle → the read-state service owns the loading gate, the optimistic write, and the toasts. */
+  public onReadToggled(mention: Mention): void {
+    this.mentionReadStateService.toggleRead(mention.id, mention.timestamp);
+  }
+
+  /** The cutoff is the newest loaded MENTION_TS — never wall-clock, so backfilled mentions aren't silently hidden. */
+  public onMarkAllAsRead(): void {
+    // Window 0's newest row is the global newest (feed sorts newest-first and loads first) — prefer it so a
+    // mark-all from a deep page doesn't leave newer windows unread; fall back to the current window if evicted.
+    const source = this.windowCache().get(0) ?? this.currentWindowData();
+    const latestTs = source.mentions.reduce<string | null>((max, m) => {
+      if (!m.MENTION_TS) return max;
+      // Epoch-ms compare — Snowflake's space-separated timestamps don't lexicographically sort against ISO "T".
+      return max === null || new Date(m.MENTION_TS).getTime() > new Date(max).getTime() ? m.MENTION_TS : max;
+    }, null);
+    this.mentionReadStateService.markAllAsRead(latestTs);
+  }
+
+  public onMarkAllAsUnread(): void {
+    this.mentionReadStateService.markAllAsUnread();
+  }
+
   /** Manual retry of a phase-2-failed window: the tick re-runs the fetch pipeline; a successful refetch overwrites the flagged cache entry (clearing it here would flash the bare empty state for a frame). */
   public retryWindow(): void {
     this.feedRetryTick.update((tick) => tick + 1);
@@ -447,6 +495,7 @@ export class SocialListeningComponent {
       language: () => this.selectedLanguage.set(DEFAULT_MENTION_PREDICATE.language),
       hasTitle: () => this.selectedHasTitle.set(DEFAULT_MENTION_PREDICATE.hasTitle),
       bookmarkFilter: () => this.selectedBookmarkFilter.set(DEFAULT_MENTION_PREDICATE.bookmarkFilter),
+      readFilter: () => this.selectedReadFilter.set(DEFAULT_MENTION_PREDICATE.readFilter),
       keywords: () => this.selectedKeywords.set([]),
       tags: () => this.selectedTags.set([]),
       authors: () => this.selectedAuthors.set([]),
@@ -627,7 +676,7 @@ export class SocialListeningComponent {
     );
   }
 
-  private initTotalRecords(): Signal<LoadableState<number>> {
+  private initCountState(): Signal<LoadableState<number>> {
     return toSignal(
       toObservable(this.countRequest).pipe(
         debounceTime(0), // Coalesce synchronous signal changes into one emission
@@ -778,10 +827,47 @@ export class SocialListeningComponent {
 
   private initMentions(): Signal<Mention[]> {
     return computed(() => {
+      // Unread mode slices the client-filtered window list — the server-offset window slice no longer applies.
+      if (this.selectedReadFilter() === 'unread') {
+        const start = this.currentPage() * this.pageSize();
+        return this.unreadWindowMentions().slice(start, start + this.pageSize());
+      }
       const start = this.localOffset();
       return this.currentWindowData()
         .mentions.slice(start, start + this.pageSize())
         .map(mapRawToMention);
+    });
+  }
+
+  private initUnreadWindowMentions(): Signal<Mention[]> {
+    return computed(() => {
+      // Empty while the read state loads — without the guard the unread view flashes every mention as unread.
+      if (this.readState().loading) return [];
+      return this.currentWindowData()
+        .mentions.map(mapRawToMention)
+        .filter((m) => !this.mentionReadStateService.isRead(m.id, m.timestamp));
+    });
+  }
+
+  private initReadMentionIds(): Signal<Set<string>> {
+    return computed(() => {
+      // Empty while the read state loads — cards must not flash read before the persisted state arrives.
+      if (this.readState().loading) return new Set<string>();
+      const ids = new Set<string>();
+      for (const m of this.mentions()) {
+        if (this.mentionReadStateService.isRead(m.id, m.timestamp)) ids.add(m.id);
+      }
+      return ids;
+    });
+  }
+
+  private initTotalRecords(): Signal<number> {
+    return computed(() => {
+      // Unread totals are window-scoped: the count endpoint can't know the user's read state.
+      if (this.selectedReadFilter() === 'unread') {
+        return this.unreadWindowMentions().length;
+      }
+      return this.countState().data ?? 0;
     });
   }
 
