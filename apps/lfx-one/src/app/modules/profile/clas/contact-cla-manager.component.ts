@@ -45,6 +45,7 @@ export const CLA_MANAGER_MODAL_COPY: Record<ClaManagerRequestMode, { title: stri
   selector: 'lfx-contact-cla-manager',
   imports: [ReactiveFormsModule, ButtonComponent, MessageComponent, TextareaComponent],
   templateUrl: './contact-cla-manager.component.html',
+  styleUrl: './contact-cla-manager.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ContactClaManagerComponent {
