@@ -212,7 +212,28 @@ describe('ProfileClasComponent', () => {
   it('shows a disabled Covered by Corporate CLA item on an ECLA row', async () => {
     await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' })]);
 
-    expect(menuItems('s-ecla')).toEqual([expect.objectContaining({ label: 'Covered by Corporate CLA (CCLA)', disabled: true })]);
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual(['Covered by Corporate CLA (CCLA)', 'Request Removal']);
+    expect(menuItems('s-ecla')[0].disabled).toBe(true);
+  });
+
+  it('offers Request approval, Request Removal, and Contact on a Needs-attention ECLA off the Approved List', async () => {
+    await render([
+      agreement({
+        id: 's-attn',
+        kind: 'ECLA',
+        pdfAvailable: false,
+        status: 'needs_attention',
+        statusReason: 'not_on_approval_list',
+        companyName: 'Acme',
+      }),
+    ]);
+
+    expect(menuItems('s-attn').map((item) => item.label)).toEqual([
+      'Covered by Corporate CLA (CCLA)',
+      'Request approval',
+      'Request Removal',
+      'Contact CLA Manager',
+    ]);
   });
 
   it('keeps a stable menu model across change detection so the popup can open on the first click', async () => {
@@ -223,7 +244,7 @@ describe('ProfileClasComponent', () => {
     expect(menuItems('s-icla')).toBe(first);
   });
 
-  it('does not render placeholder Invalidate or Request approval items', async () => {
+  it('does not render a placeholder Invalidate item', async () => {
     await render([
       agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true }),
       agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, status: 'needs_attention' }),
@@ -231,7 +252,7 @@ describe('ProfileClasComponent', () => {
     ]);
 
     const labels = ['s-icla', 's-ecla', 's-inv'].flatMap((id) => (rowMenu(id)?.model() ?? []).map((item) => item.label ?? ''));
-    expect(labels.some((label) => /invalidate|request approval/i.test(label))).toBe(false);
+    expect(labels.some((label) => /invalidate/i.test(label))).toBe(false);
   });
 
   it('renders no actions trigger on an ICLA row with no retrievable document', async () => {

@@ -23,6 +23,7 @@ import { MyClasService } from '@services/my-clas.service';
 import { UserService } from '@services/user.service';
 
 import { ClaGroupSelectComponent } from './cla-group-select.component';
+import { buildContactClaManagerMenuItems } from './contact-cla-manager-menu';
 import { GithubAccountSelectComponent } from './github-account-select.component';
 
 /** Precomputed status cell for one row. */
@@ -448,6 +449,7 @@ export class ProfileClasComponent {
           label: 'Covered by Corporate CLA (CCLA)',
           disabled: true,
         },
+        ...buildContactClaManagerMenuItems(agreement, this.dialogService),
       ];
     }
     return [];
