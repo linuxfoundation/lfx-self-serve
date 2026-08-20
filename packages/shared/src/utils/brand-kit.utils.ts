@@ -16,7 +16,7 @@ import {
   BRAND_KIT_KIND,
   BRAND_KIT_MAX_DOCUMENT_BYTES,
   BRAND_KIT_MIN_DOCUMENT_LENGTH,
-  BRAND_KIT_PROJECT_PARTITION_REGEX,
+  BRAND_KIT_PROJECT_UID_REGEX,
   BRAND_KIT_PROJECT_SLUG_REGEX,
   BRAND_KIT_REQUIRED_HEADINGS,
   BRAND_KIT_SHA256_REGEX,
@@ -138,7 +138,7 @@ export function findMissingBrandKitHeadings(documentMarkdown: string): string[] 
  * one identifier.
  */
 export function buildBrandKitObjectKey(projectPartition: string, contentSha256: string): string {
-  if (!BRAND_KIT_PROJECT_PARTITION_REGEX.test(projectPartition) || !BRAND_KIT_SHA256_REGEX.test(contentSha256)) {
+  if (!BRAND_KIT_PROJECT_UID_REGEX.test(projectPartition) || !BRAND_KIT_SHA256_REGEX.test(contentSha256)) {
     throw new Error('buildBrandKitObjectKey requires an already-validated project partition and content_sha256');
   }
   return `${BRAND_KIT_KEY_PREFIX}/${projectPartition}/${contentSha256}.md`;

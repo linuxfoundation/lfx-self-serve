@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_AGENTS } from '@lfx-one/shared/constants';
+import { BRAND_KIT_PROJECT_UID_REGEX, MKTG_AGENTS } from '@lfx-one/shared/constants';
 import {
   BrandKitGenerateRequest,
   BrandKitGenerateResponse,
@@ -307,6 +307,10 @@ export class MktgAgentsController {
 
     // Type-gate the run scope like every other body field; an absent one means
     // "no project to persist into", never "persist wherever the agent said".
+    // Its SHAPE gate (one safe path segment, before the uid is spent on the
+    // unencoded `/projects/{uid}` lookup) lives with the resolution itself in
+    // BrandKitService.resolveWritablePartition, so it degrades like every
+    // other persistence refusal: the caller still gets the document.
     const validProjectUid = typeof project === 'string' && project.trim() ? project.trim() : undefined;
 
     const startTime = logger.startOperation(req, 'brand_kit_result', {});
@@ -333,13 +337,18 @@ export class MktgAgentsController {
    * project uid — the same identifier the write path derives it from — never
    * from client input, so one project's caller can never be served another
    * project's partition.
+   *
+   * The raw uid is shape-gated to ONE safe path segment before it is used:
+   * `getProjectById` interpolates it unencoded into `/projects/{uid}`, so an
+   * ungated value carrying `/`, `?` or `#` could reshape the authenticated
+   * upstream request that the writer check is then read from.
    */
   public async storedBrandKit(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectParam = req.query['project'];
     const projectUid = typeof projectParam === 'string' ? projectParam.trim() : '';
-    if (!projectUid) {
+    if (!projectUid || !BRAND_KIT_PROJECT_UID_REGEX.test(projectUid)) {
       next(
-        ServiceValidationError.forField('project', 'project is required and must be a non-empty project uid', {
+        ServiceValidationError.forField('project', 'project is required and must be a single-segment project uid', {
           operation: 'brand_kit_stored',
           service: 'mktg_agents_controller',
           path: req.path,

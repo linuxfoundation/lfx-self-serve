@@ -28,8 +28,9 @@ const loggerMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@lfx-one/shared/constants', async () => {
-  const constants = await vi.importActual('../../../../../packages/shared/src/constants/mktg-os-agents.constants');
-  return constants;
+  const agents = await vi.importActual('../../../../../packages/shared/src/constants/mktg-os-agents.constants');
+  const brandKit = await vi.importActual('../../../../../packages/shared/src/constants/brand-kit.constants');
+  return { ...agents, ...brandKit };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', () => ({
@@ -106,6 +107,24 @@ describe('MktgAgentsController', () => {
       expect(brandKitMocks.getStoredBrandKit).not.toHaveBeenCalled();
       expect(res.json).not.toHaveBeenCalled();
     });
+
+    it.each(['../projects/other', 'proj/../../admin', 'proj-uid-1?access=all', 'proj-uid-1#frag', 'proj uid'])(
+      'refuses %j before the upstream lookup — a uid is one path segment, never a URL fragment',
+      async (projectUid) => {
+        const res = buildRes();
+
+        await controller.storedBrandKit(buildReq({ project: projectUid }), res, next);
+
+        expect(next).toHaveBeenCalledOnce();
+        expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+        // `getProjectById` interpolates the uid unencoded into
+        // `/projects/{uid}`, so the gate has to run BEFORE the authenticated
+        // upstream request the writer check is read from.
+        expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+        expect(brandKitMocks.getStoredBrandKit).not.toHaveBeenCalled();
+        expect(res.json).not.toHaveBeenCalled();
+      }
+    );
 
     it('serves the stored document to a writer-entitled caller, partitioned by the SERVER-resolved project uid', async () => {
       projectMocks.getProjectById.mockResolvedValue({ uid: 'proj-uid-1', slug: 'testorbit', writer: true });

@@ -25,7 +25,7 @@ export type BrandKitIntakeMode = 'form' | 'conversational';
 export interface BrandKitIntake {
   /** How the 7 answers were collected. */
   mode: BrandKitIntakeMode;
-  /** ISO-8601 UTC timestamp when intake completed. */
+  /** ISO-8601 timestamp when intake completed — UTC by producer contract, but the shape gate accepts any offset. */
   completed_at: string;
   /** Exactly 7 entries, in Paul's fixed question order. */
   answers: BrandKitIntakeAnswer[];
@@ -64,7 +64,7 @@ export interface BrandKitEnvelope {
   content_sha256: string;
   /** Verbatim intake log. */
   intake: BrandKitIntake;
-  /** ISO-8601 UTC timestamp when this draft was emitted. */
+  /** ISO-8601 timestamp when this draft was emitted — UTC by producer contract, but the shape gate accepts any offset. */
   generated_at?: string;
   /** Producer provenance. */
   agent?: BrandKitAgentProvenance;

@@ -19,6 +19,19 @@ const GITHUB_HOSTS = new Set(['github.com', 'www.github.com']);
 const GITHUB_SEGMENT_RE = /^[A-Za-z0-9_.-]+$/;
 
 /**
+ * How long a successfully fetched README stays reusable in-process. A Message
+ * Foundation regeneration is a full resubmit of the SAME answers on a fresh
+ * session, so without this every revision pays another GitHub round-trip (up
+ * to {@link GITHUB_README_TIMEOUT_MS}) plus rate-limit budget for a
+ * `github_url` that has not changed. Short enough that a user who edits their
+ * README and re-runs a few minutes later still sees the new one.
+ */
+const GITHUB_README_CACHE_TTL_MS = 5 * 60_000;
+
+/** Hard cap on cached repos — the cache is a revision-loop optimisation, not a store. */
+const GITHUB_README_CACHE_MAX_ENTRIES = 100;
+
+/**
  * Best-effort server-side README fetch for agents with no web access (the
  * Message Foundation's `readme_markdown` input). Strictly best-effort by
  * contract: EVERY failure — unparsable URL, non-GitHub host, missing README,
@@ -40,8 +53,24 @@ const GITHUB_SEGMENT_RE = /^[A-Za-z0-9_.-]+$/;
  * private and org-internal repos return null exactly like a missing README,
  * regardless of what the token itself could read. Tokenless requests need no
  * check: unauthenticated GitHub hides private repos already.
+ *
+ * Successful fetches are memoised per repo for
+ * {@link GITHUB_README_CACHE_TTL_MS} so the regeneration loop (a full
+ * resubmit of unchanged answers on a fresh session) does not re-pay the
+ * round-trip and the rate-limit budget each revision. Only PUBLIC content is
+ * ever cached — an entry can only be written after the visibility gate above
+ * has passed, and the short TTL bounds how long a repo that has since been
+ * made private could still be served from memory. Failures are never cached:
+ * a transient 5xx or timeout must not suppress the next attempt.
  */
 export class GithubReadmeService {
+  /**
+   * Per-repo memo of successful fetches, keyed `owner/repo` (lowercased —
+   * GitHub treats both case-insensitively). Process-local and bounded; the
+   * routes hold one controller instance, so one cache per pod.
+   */
+  private readonly readmeCache = new Map<string, { readme: string; expiresAt: number }>();
+
   /**
    * Optional server-side GitHub token (`GITHUB_API_TOKEN`). Unauthenticated
    * GitHub REST calls are capped at 60/hour PER SOURCE IP, so a deployment
@@ -59,6 +88,18 @@ export class GithubReadmeService {
     if (!repo) {
       logger.debug(req, 'github_readme_fetch', 'URL is not a recognizable github.com repo — skipping README fetch', {});
       return null;
+    }
+
+    // Regeneration resubmits the same `github_url`; serve it from memory
+    // rather than re-paying the round-trip and the rate-limit budget.
+    const cacheKey = `${repo.owner.toLowerCase()}/${repo.repo.toLowerCase()}`;
+    const cached = this.readCache(cacheKey);
+    if (cached !== null) {
+      logger.debug(req, 'github_readme_fetch', 'Serving README from the in-process cache — no GitHub round-trip', {
+        owner: repo.owner,
+        repo: repo.repo,
+      });
+      return cached;
     }
 
     const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/readme`;
@@ -86,10 +127,12 @@ export class GithubReadmeService {
       if (!text.trim()) {
         return null;
       }
-      if (text.length > FOUNDATION_MESSAGE_README_MAX_CHARS) {
-        return text.slice(0, FOUNDATION_MESSAGE_README_MAX_CHARS) + FOUNDATION_MESSAGE_README_TRUNCATION_MARKER;
-      }
-      return text;
+      const readme =
+        text.length > FOUNDATION_MESSAGE_README_MAX_CHARS
+          ? text.slice(0, FOUNDATION_MESSAGE_README_MAX_CHARS) + FOUNDATION_MESSAGE_README_TRUNCATION_MARKER
+          : text;
+      this.writeCache(cacheKey, readme);
+      return readme;
     } catch (error) {
       logger.warning(req, 'github_readme_fetch', 'GitHub README fetch errored — generation proceeds without a README', {
         error: error instanceof Error ? error.message : String(error),
@@ -98,6 +141,41 @@ export class GithubReadmeService {
       });
       return null;
     }
+  }
+
+  /** The repo's cached README while it is still fresh; null on a miss or an expired entry (which is dropped). */
+  private readCache(cacheKey: string): string | null {
+    const entry = this.readmeCache.get(cacheKey);
+    if (!entry) {
+      return null;
+    }
+    if (entry.expiresAt <= Date.now()) {
+      this.readmeCache.delete(cacheKey);
+      return null;
+    }
+    return entry.readme;
+  }
+
+  /**
+   * Memoise a successful fetch, evicting expired entries first and then the
+   * oldest one if the cap is still reached (Map preserves insertion order).
+   * Re-inserting refreshes both the value and its position.
+   */
+  private writeCache(cacheKey: string, readme: string): void {
+    const now = Date.now();
+    for (const [key, entry] of this.readmeCache) {
+      if (entry.expiresAt <= now) {
+        this.readmeCache.delete(key);
+      }
+    }
+    this.readmeCache.delete(cacheKey);
+    if (this.readmeCache.size >= GITHUB_README_CACHE_MAX_ENTRIES) {
+      const oldest = this.readmeCache.keys().next();
+      if (!oldest.done) {
+        this.readmeCache.delete(oldest.value);
+      }
+    }
+    this.readmeCache.set(cacheKey, { readme, expiresAt: now + GITHUB_README_CACHE_TTL_MS });
   }
 
   /**

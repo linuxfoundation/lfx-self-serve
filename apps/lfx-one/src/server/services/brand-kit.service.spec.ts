@@ -233,6 +233,27 @@ describe('BrandKitService', () => {
       expect(result.persistence).toBeUndefined();
     });
 
+    it.each(['../projects/other', 'proj/../../admin', 'proj-uid-1?access=all', 'proj-uid-1#frag'])(
+      'never spends the caller’s token resolving %j — a run scope is one path segment',
+      async (scope) => {
+        const envelope = buildEnvelope();
+        guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: envelope })]);
+
+        const result = await service.getResult(req, 's', scope);
+
+        // `getProjectById` interpolates the uid unencoded into
+        // `/projects/{uid}`; the shape gate runs BEFORE that request so a
+        // delimiter can never reshape the authenticated upstream lookup.
+        expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+        expect(objectStoreMocks.putObjectIfAbsent).not.toHaveBeenCalled();
+        // Same degrade as every other persistence refusal: document intact.
+        expect(result.status).toBe('ready');
+        expect(result.persistence).toBeUndefined();
+        expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_persist', expect.stringContaining('single-segment'), expect.any(Object));
+        expect(loggerMocks.error).not.toHaveBeenCalled();
+      }
+    );
+
     it('degrades an unresolvable project to no receipt at WARN, document intact', async () => {
       projectMocks.getProjectById.mockRejectedValue(new Error('project service unavailable'));
       const envelope = buildEnvelope();

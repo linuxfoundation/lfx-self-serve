@@ -21,16 +21,22 @@ export const BRAND_KIT_MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 export const BRAND_KIT_PROJECT_SLUG_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
 /**
- * Shape gate for the storage partition segment of `brand-kit/{project}/…`.
+ * Shape gate for an LFX project uid wherever it becomes ONE PATH SEGMENT:
+ * the storage partition of `brand-kit/{project}/…` AND the upstream
+ * `/projects/{uid}` lookup the Brand Kit endpoints run before it. Both
+ * interpolate the uid unencoded, so a value carrying `/`, `.`, `?` or `#`
+ * would reshape a key or an authenticated upstream URL — this pattern is what
+ * makes "one safe segment" true instead of assumed (the
+ * `document.controller.ts` UID_PATTERN precedent).
  *
- * The partition is the SERVER-RESOLVED LFX project uid that owns the document
- * — never the agent envelope's own slug (which is derived from a free-text
+ * The partition is always the SERVER-RESOLVED uid that owns the document —
+ * never the agent envelope's own slug (which is derived from a free-text
  * project name and identifies nothing in LFX). Deliberately wider than
  * {@link BRAND_KIT_PROJECT_SLUG_REGEX} because LFX uids are opaque upstream
- * identifiers, but still exactly one safe key segment: no separators, no
- * dots, so no traversal.
+ * identifiers, but still exactly one safe segment: no separators, no dots, so
+ * no traversal.
  */
-export const BRAND_KIT_PROJECT_PARTITION_REGEX = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+export const BRAND_KIT_PROJECT_UID_REGEX = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 /** Lowercase hex SHA-256 pattern. */
 export const BRAND_KIT_SHA256_REGEX = /^[0-9a-f]{64}$/;

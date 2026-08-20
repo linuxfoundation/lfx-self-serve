@@ -71,7 +71,9 @@ describe('GithubReadmeService', () => {
         'github.com/example-org/example-repo',
       ]) {
         fetchMock.mockClear();
-        await service.fetchReadme(req, url);
+        // A fresh instance per URL: all three resolve to the same repo, and a
+        // shared instance would serve iterations 2+ from the README cache.
+        await new GithubReadmeService().fetchReadme(req, url);
         expect(fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/example-org/example-repo/readme');
       }
     });
@@ -213,6 +215,68 @@ describe('GithubReadmeService', () => {
     it('passes a within-cap README through untouched', async () => {
       fetchMock.mockResolvedValue(textResponse('# Small'));
       expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBe('# Small');
+    });
+  });
+
+  /**
+   * Message Foundation regeneration is a full resubmit of the same answers on
+   * a fresh session, so an uncached fetch would spend another round-trip (and
+   * another slice of the shared-IP rate-limit budget) per revision for a
+   * `github_url` that has not changed.
+   */
+  describe('README cache', () => {
+    it('serves a repeat fetch of the same repo from memory — one GitHub round-trip per revision loop', async () => {
+      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBe('# Readme');
+      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBe('# Readme');
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('matches on the repo, not the URL spelling (GitHub is case-insensitive)', async () => {
+      await service.fetchReadme(req, 'https://github.com/Example-Org/Example-Repo');
+      await service.fetchReadme(req, 'https://github.com/example-org/example-repo/blob/main/README.md');
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('caches the repo, never the whole answer set — a different repo still fetches', async () => {
+      await service.fetchReadme(req, 'https://github.com/example-org/example-repo');
+      await service.fetchReadme(req, 'https://github.com/example-org/other-repo');
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('re-fetches once the entry expires so an edited README is picked up', async () => {
+      vi.useFakeTimers();
+      try {
+        await service.fetchReadme(req, 'https://github.com/example-org/example-repo');
+        vi.advanceTimersByTime(5 * 60_000 + 1);
+        fetchMock.mockResolvedValue(textResponse('# Edited'));
+
+        expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBe('# Edited');
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('never caches a failure — a transient error must not suppress the next attempt', async () => {
+      fetchMock.mockResolvedValueOnce(textResponse('', false, 500)).mockResolvedValueOnce(textResponse('# Readme'));
+
+      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBeNull();
+      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBe('# Readme');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('caches only what passed the visibility gate — a refused private repo leaves no entry', async () => {
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+      fetchMock.mockResolvedValue(jsonResponse({ private: true, visibility: 'private' }));
+
+      expect(await service.fetchReadme(req, 'https://github.com/example-org/secret-repo')).toBeNull();
+      expect(await service.fetchReadme(req, 'https://github.com/example-org/secret-repo')).toBeNull();
+
+      // Re-checked every time: the gate is never short-circuited by the cache.
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
   });
 });

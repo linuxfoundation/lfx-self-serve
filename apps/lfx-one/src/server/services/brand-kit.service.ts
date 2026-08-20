@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BRAND_KIT_KEY_PREFIX, BRAND_KIT_MAX_DOCUMENT_BYTES, BRAND_KIT_PROJECT_PARTITION_REGEX, BRAND_KIT_SHA256_REGEX } from '@lfx-one/shared/constants';
+import { BRAND_KIT_KEY_PREFIX, BRAND_KIT_MAX_DOCUMENT_BYTES, BRAND_KIT_PROJECT_UID_REGEX, BRAND_KIT_SHA256_REGEX } from '@lfx-one/shared/constants';
 import { BrandKitEnvelope, BrandKitIntakeMode, BrandKitPersistReceipt, BrandKitResultResponse, BrandKitStoredResponse } from '@lfx-one/shared/interfaces';
 import { buildBrandKitObjectKey, extractBrandKitEnvelopeCandidates, renderBrandKitFormMessage, validateBrandKitEnvelope } from '@lfx-one/shared/utils';
 import { createHash } from 'node:crypto';
@@ -104,7 +104,7 @@ export class BrandKitService {
   public async getStoredBrandKit(req: Request, project: string): Promise<BrandKitStoredResponse | null> {
     // The partition uid comes from the server-resolved project — but it must
     // still be a single safe key segment before it can form a key.
-    if (!BRAND_KIT_PROJECT_PARTITION_REGEX.test(project)) {
+    if (!BRAND_KIT_PROJECT_UID_REGEX.test(project)) {
       return null;
     }
 
@@ -256,8 +256,14 @@ export class BrandKitService {
    * Resolve the storage partition a document may be written to: the LFX
    * project uid, as the PROJECTS SERVICE reports it, for a project the caller
    * holds the writer grant on. Null means "do not write" — no project scope,
-   * an unresolvable uid, a caller without the writer grant, or a uid that is
-   * not a single safe key segment.
+   * a uid that is not one safe segment, an unresolvable uid, or a caller
+   * without the writer grant.
+   *
+   * The CALLER'S raw uid is shape-gated before it is spent upstream:
+   * `getProjectById` interpolates it unencoded into `/projects/{uid}`, so a
+   * value carrying `/`, `?` or `#` could reshape the authenticated lookup
+   * whose answer the writer check is read from. The resolved uid is gated
+   * again below, because only that one becomes a storage key segment.
    *
    * Called only once a ready envelope exists, so `pending` polls (the vast
    * majority of a multi-minute generation) cost no upstream lookups.
@@ -270,6 +276,10 @@ export class BrandKitService {
     const uid = projectUid?.trim();
     if (!uid) {
       logger.warning(req, 'brand_kit_persist', 'No project scope on the result request — document returned but not persisted', {});
+      return null;
+    }
+    if (!BRAND_KIT_PROJECT_UID_REGEX.test(uid)) {
+      logger.warning(req, 'brand_kit_persist', 'Run project scope is not a single-segment project uid — not resolved, not persisted', {});
       return null;
     }
 
@@ -286,7 +296,7 @@ export class BrandKitService {
       }
       // Partition from the SERVER-resolved uid (never the client's echo), and
       // only when it is one safe key segment.
-      if (!BRAND_KIT_PROJECT_PARTITION_REGEX.test(project.uid)) {
+      if (!BRAND_KIT_PROJECT_UID_REGEX.test(project.uid)) {
         logger.warning(req, 'brand_kit_persist', 'Resolved project uid is not a valid storage partition — not persisted', { project: project.uid });
         return null;
       }

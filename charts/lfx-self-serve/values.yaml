@@ -536,6 +536,20 @@ environment:
   GUILD_WORKSPACE_NAME:
     value:
 
+  # Transport for the Message Foundation batch intake payload. Default "false"
+  # sends the BFF-rendered form text; set to "true" (no redeploy needed beyond
+  # this value) once Guild delivers structured agent inputs verbatim.
+  GUILD_STRUCTURED_AGENT_INPUT:
+    value: "false"
+
+  # Optional GitHub token for the server-side README fetch that grounds the
+  # Message Foundation agent. Unauthenticated GitHub REST is capped at 60/hour
+  # PER SOURCE IP, so a deployment behind one egress IP silently degrades to
+  # README-less generations under load; any token with public-repo read access
+  # raises the cap to 5,000/hour. Unset = unauthenticated (still functional).
+  GITHUB_API_TOKEN:
+    value:
+
   # Public Intercom Messenger workspace App ID. Identity verification rides on the
   # `http://lfx.dev/claims/intercom` Auth0 claim — not on this value.
   INTERCOM_APP_ID:

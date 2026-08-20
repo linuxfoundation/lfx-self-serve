@@ -26,7 +26,7 @@ export type FoundationMessageIntakeMode = 'form' | 'conversational';
 export interface FoundationMessageIntake {
   /** How the answers were collected. */
   mode: FoundationMessageIntakeMode;
-  /** ISO-8601 UTC timestamp when intake completed. */
+  /** ISO-8601 timestamp when intake completed — UTC by producer contract, but the shape gate accepts any offset. */
   completed_at: string;
   /** 2–15 entries, in the order asked. */
   answers: FoundationMessageIntakeAnswer[];
@@ -93,7 +93,7 @@ export interface FoundationMessageEnvelope {
   inputs: FoundationMessageInputs;
   /** Verbatim intake log. */
   intake: FoundationMessageIntake;
-  /** ISO-8601 UTC timestamp when this draft was emitted. */
+  /** ISO-8601 timestamp when this draft was emitted — UTC by producer contract, but the shape gate accepts any offset. */
   generated_at?: string;
   /** Producer provenance. */
   agent?: FoundationMessageAgentProvenance;
