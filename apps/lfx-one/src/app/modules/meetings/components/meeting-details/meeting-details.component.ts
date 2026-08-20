@@ -549,12 +549,15 @@ export class MeetingDetailsComponent implements OnInit {
   private revertOwnerToSaved(): void {
     const form = this.form();
     const saved = this.savedOwner();
+    // The Revert button is also the manual-entry mode's clear affordance (no autocomplete there,
+    // so no in-field ⊗) — flip modes *before* patching the controls below. The manual-edit guard
+    // in ngOnInit only drops ownerUsername while ownerManualEntry() is true; patching name/email
+    // first would make it mistake this programmatic revert for a hand edit and wipe the
+    // just-restored username.
+    this.ownerManualEntry.set(false);
     form.get('ownerUsername')?.setValue(saved?.username || null);
     form.get('ownerName')?.setValue(saved?.name || null);
     form.get('ownerEmail')?.setValue(saved?.email || null);
-    // The Revert button is also the manual-entry mode's clear affordance (no autocomplete there,
-    // so no in-field ⊗) — reverting always returns to search mode.
-    this.ownerManualEntry.set(false);
   }
 
   private buildTimezoneOptions(date: Date): { label: string; value: string }[] {

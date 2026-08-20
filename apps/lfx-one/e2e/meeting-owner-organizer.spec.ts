@@ -66,6 +66,21 @@ const PICKED_USER = {
   type: 'committee_member',
 };
 
+// Distinct from OWNER/PICKED_USER — the revert test hydrates OWNER as the saved baseline and
+// then picks this person, so the saved-owner row actually has something to disagree with
+// (picking PICKED_USER there would just re-select OWNER and the row would never appear).
+const DIFFERENT_PICKED_USER = {
+  uid: 'user-e2e-owner-2',
+  email: 'radia-e2e@example.com',
+  first_name: 'Radia',
+  last_name: 'Perlman',
+  username: 'rperlman-e2e',
+  job_title: null,
+  organization: null,
+  committee: null,
+  type: 'committee_member',
+};
+
 function fulfillJson(route: Route, body: unknown): Promise<void> {
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
 }
@@ -416,7 +431,7 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
 
   test('reverting a fresh pick restores the saved owner in the box and the save omits the owner key', async ({ page }) => {
     const captured = await stubMeetingEdit(page, buildEditMeeting({ user_id: 'u-owner-e2e', ...OWNER }));
-    await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [PICKED_USER] }));
+    await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [DIFFERENT_PICKED_USER] }));
 
     await gotoEditPage(page);
     await openDetailsStep(page);
@@ -426,9 +441,10 @@ test.describe('Meeting edit wizard — owner picker (GH-1673)', () => {
 
     // Pick a different organizer — the box re-renders with the fresh pick, and the saved-owner row
     // appears since the picker now disagrees with the saved baseline.
-    await input.fill('Grace');
-    await page.getByRole('option').filter({ hasText: OWNER.name }).click();
-    await expect(input).toHaveValue(`${OWNER.name} (${OWNER.email})`);
+    const pickedName = `${DIFFERENT_PICKED_USER.first_name} ${DIFFERENT_PICKED_USER.last_name}`;
+    await input.fill('Radia');
+    await page.getByRole('option').filter({ hasText: pickedName }).click();
+    await expect(input).toHaveValue(`${pickedName} (${DIFFERENT_PICKED_USER.email})`);
     await expect(page.getByTestId('meeting-details-organizer-saved')).toContainText(`Saved organizer: ${OWNER.name} (${OWNER.email})`);
 
     // Revert restores the saved owner and hides the row again.

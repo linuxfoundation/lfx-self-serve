@@ -1,14 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, effect, inject, input, output, Signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { Component, DestroyRef, inject, input, output, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { UserSearchResult } from '@lfx-one/shared/interfaces';
 import { rankUserSearchResults } from '@lfx-one/shared/utils';
 import { SearchService } from '@services/search.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
 
 import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
 
@@ -19,6 +19,7 @@ import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
 })
 export class UserSearchComponent {
   private readonly searchService = inject(SearchService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Required inputs
   public form = input.required<FormGroup>();
@@ -102,34 +103,29 @@ export class UserSearchComponent {
       initialValue: [],
     });
 
-    // Effect to keep the input box in sync with the parent-composed committed label. Writes both
-    // ways: a non-null label renders it (hydration or a fresh pick), and null clears the box —
-    // callers that want a revert-on-clear pass the saved label back through this same input rather
-    // than leaving the box empty.
-    effect(() => {
-      const label = this.displayValue();
-      this.userSearchForm.get('userSearch')?.setValue(label ?? '', { emitEvent: false });
-    });
-
-    // Fallback for consumers that don't supply displayValue (e.g. registrant-form): seed the box
-    // from the parent form's email control on hydrate, but never clear it — this consumer's
-    // onUserSelected() still blanks the box itself after a pick.
-    effect(() => {
-      if (this.displayValue() !== null) {
-        return;
-      }
-
-      const parentForm = this.form();
-      const emailControlName = this.emailControl();
-
-      if (parentForm && emailControlName) {
-        const emailControlValue = parentForm.get(emailControlName)?.value;
-
-        if (emailControlValue && emailControlValue.trim()) {
-          this.userSearchForm.get('userSearch')?.setValue(emailControlValue, { emitEvent: false });
+    // Keep the input box in sync with the parent-composed committed label — a non-null label
+    // renders it (hydration, a fresh pick, or a revert-to-empty), and consumers that don't supply
+    // one (e.g. registrant-form) fall back to seeding the box from the parent form's email control
+    // on hydrate, but never clearing it (that consumer's onUserSelected() still blanks the box
+    // itself after a pick). toObservable()+subscribe rather than effect(): writing into a
+    // FormControl from an effect risks ExpressionChangedAfterItHasBeenCheckedError under zoneless
+    // change detection.
+    combineLatest([toObservable(this.displayValue), toObservable(this.form), toObservable(this.emailControl)])
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(([label, parentForm, emailControlName]) => {
+        if (label !== null) {
+          this.userSearchForm.get('userSearch')?.setValue(label, { emitEvent: false });
+          return;
         }
-      }
-    });
+
+        if (parentForm && emailControlName) {
+          const emailControlValue = parentForm.get(emailControlName)?.value;
+
+          if (emailControlValue && emailControlValue.trim()) {
+            this.userSearchForm.get('userSearch')?.setValue(emailControlValue, { emitEvent: false });
+          }
+        }
+      });
   }
 
   public onSearchComplete(event: AutoCompleteCompleteEvent): void {
