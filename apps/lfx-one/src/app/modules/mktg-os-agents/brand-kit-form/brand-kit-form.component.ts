@@ -178,6 +178,18 @@ export class BrandKitFormComponent implements OnDestroy {
             this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1), RESULT_POLL_INTERVAL_MS);
             return;
           }
+          if (this.result()) {
+            // A non-ready payload while the document is already displayed can
+            // only be a background persistence-retry poll — it must never
+            // surface a timeout error over the rendered document or spin until
+            // the attempt budget. Spend the bounded persist-retry budget
+            // instead, mirroring the error branch below. (Once the document is
+            // displayed, `attempt` is never consulted again on any branch.)
+            if (persistRetries < PERSIST_RETRY_MAX_ATTEMPTS) {
+              this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1), RESULT_POLL_INTERVAL_MS);
+            }
+            return;
+          }
           if (attempt >= RESULT_POLL_MAX_ATTEMPTS) {
             this.failGeneration('The generation is taking longer than expected. Please try again later.');
             return;

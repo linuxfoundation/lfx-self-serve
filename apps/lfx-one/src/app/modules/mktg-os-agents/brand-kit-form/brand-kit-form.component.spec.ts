@@ -317,4 +317,29 @@ describe('BrandKitFormComponent — persistence retry polling', () => {
     const errorMessage = (fixture.componentInstance as unknown as { errorMessage: () => string }).errorMessage();
     expect(errorMessage).toBe('');
   });
+
+  it('never overlays a timeout error when persist-retry polls come back non-ready (Bugbot: fail after success)', () => {
+    // After a receipt-less ready, a later poll can return a non-ready payload
+    // (e.g. a stale `pending`). The regression: that response fell through to
+    // the generation-timeout branch, which called failGeneration without
+    // checking that the document is already displayed — polling with a frozen
+    // retry count until the 30-attempt budget surfaced a spurious timeout
+    // error over the rendered document. Non-ready responses must consume the
+    // same bounded persist-retry budget as retry errors.
+    const PENDING: BrandKitResultResponse = { status: 'pending' };
+    getResult.mockReturnValueOnce(of(READY_WITHOUT_RECEIPT)).mockReturnValue(of(PENDING));
+
+    submitForm();
+    expect(getResult).toHaveBeenCalledTimes(1);
+    expect(resultSignal()).toEqual(READY_WITHOUT_RECEIPT);
+
+    // Far past the 30-attempt budget: 3 bounded retries fire (all pending),
+    // then the budget is spent — no 5th call and, critically, no failGeneration.
+    vi.advanceTimersByTime(POLL_INTERVAL_MS * 40);
+    expect(getResult).toHaveBeenCalledTimes(4);
+
+    expect(resultSignal()).toEqual(READY_WITHOUT_RECEIPT);
+    const errorMessage = (fixture.componentInstance as unknown as { errorMessage: () => string }).errorMessage();
+    expect(errorMessage).toBe('');
+  });
 });
