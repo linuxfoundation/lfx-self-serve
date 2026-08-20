@@ -13,6 +13,7 @@ import type {
   OrgAllEmployeeTrainingStatus,
   OrgAllEmployeeVotingStatus,
   OrgAllEmployeesResponse,
+  OrgLensCompanyEmailsResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, splitDisplayName } from '@lfx-one/shared/utils';
@@ -177,6 +178,11 @@ export class OrgLensPeopleService {
       training,
       companyEmails: deriveDemoCompanyEmails(resolvedEmail),
     };
+  }
+
+  /** Company-affiliated emails for a raw email — used by tabs (Board/Committee) whose rows have no personKey to fetch the full detail payload on. */
+  public getCompanyEmailsByEmail(email: string): OrgLensCompanyEmailsResponse {
+    return { companyEmails: deriveDemoCompanyEmails(email) };
   }
 
   /** Looks up a live-only person's merged address from the live roster (access/board/committee/keyContact sources). */

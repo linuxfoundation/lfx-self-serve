@@ -111,6 +111,8 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/people/event-attendees', (req, res, next) => orgLensPeopleController.getEventAttendees(req, res, next));
   // LFXV2-1874 — People → Contributors tab. Same guard rationale as above ('contributors' must not be consumed as a personKey).
   router.get('/:orgUid/lens/people/contributors', (req, res, next) => orgLensPeopleController.getContributors(req, res, next));
+  // GH-1655 — company-emails lookup for tabs (Board/Committee) whose rows have no personKey. Same guard rationale as above ('company-emails' must not be consumed as a personKey).
+  router.get('/:orgUid/lens/people/company-emails', (req, res, next) => orgLensPeopleController.getCompanyEmails(req, res, next));
   router.get('/:orgUid/lens/people/:personKey/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetail(req, res, next));
 
   // Spec 025 — People → Org Lens Access tab (list + manager-only role change / remove).

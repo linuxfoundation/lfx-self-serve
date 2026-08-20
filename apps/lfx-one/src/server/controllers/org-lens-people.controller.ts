@@ -104,6 +104,27 @@ export class OrgLensPeopleController {
     }
   }
 
+  /** GET /api/orgs/:orgUid/lens/people/company-emails?email=... — company-affiliated emails for tabs (Board/Committee) whose rows have no personKey (GH-1655). */
+  public async getCompanyEmails(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const operation = 'get_org_lens_people_company_emails';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      const email = this.assertEmailQueryParam(getStringQueryParam(req, 'email'), operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
+
+      const response = this.service.getCompanyEmailsByEmail(email);
+
+      logger.success(req, operation, startTime, { org_uid: orgUid, company_email_count: response.companyEmails.length });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** GET /api/orgs/:orgUid/lens/people/key-contacts — org-wide read for the People tab. Membership-scoped reads + writes live on OrgLensKeyContactsController (spec 024). */
   public async getKeyContacts(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
@@ -336,6 +357,15 @@ export class OrgLensPeopleController {
     if (!PERSON_KEY_PATTERN.test(personKey)) {
       throw ServiceValidationError.forField('personKey', 'Invalid personKey format', { operation });
     }
+  }
+
+  /** Validate the `email` query param (required, valid email format) before it reaches the demo-derivation helper. */
+  private assertEmailQueryParam(email: string | undefined, operation: string): string {
+    const trimmed = (email ?? '').trim();
+    if (!trimmed || !EMAIL_REGEX.test(trimmed)) {
+      throw ServiceValidationError.forField('email', 'email query parameter is required and must be a valid email address', { operation });
+    }
+    return trimmed.toLowerCase();
   }
 
   /** Validate the seat id before it is interpolated into the upstream committee-service path (400, not an upstream 5xx). Mirrors OrgLensBoardCommitteeController.assertSeatId. */

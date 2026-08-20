@@ -181,3 +181,11 @@ export interface OrgAllEmployeeDetail {
    */
   companyEmails: string[];
 }
+
+/**
+ * Response for the email-based company-emails lookup — used by Org Lens tabs (Board/Committee)
+ * whose rows have no `personKey` to fetch the full `OrgAllEmployeeDetail` payload on.
+ */
+export interface OrgLensCompanyEmailsResponse {
+  companyEmails: string[];
+}

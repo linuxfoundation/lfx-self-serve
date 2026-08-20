@@ -4,7 +4,8 @@
 import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import type { OrgAllEmployeeDetail, PersonDrawerContext, PersonDrawerTab } from '@lfx-one/shared/interfaces';
+import { EMPTY_ORG_ALL_EMPLOYEE_DETAIL } from '@lfx-one/shared/constants';
+import type { OrgAllEmployeeDetail, OrgLensCompanyEmailsResponse, PersonDrawerContext, PersonDrawerTab } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { catchError, combineLatest, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
 
@@ -39,23 +40,44 @@ export class PersonDetailDrawerService {
       toObservable(this._activeContext),
     ]).pipe(
       switchMap(([orgUid, context]) => {
-        // No personKey → skip fetch; Board/Committee openers supply governanceSeats instead.
-        if (!context || !orgUid || !context.personKey) {
+        if (!context || !orgUid) {
           this._loading.set(false);
           this._error.set(false);
           return of(null);
         }
-        this._loading.set(true);
+        if (context.personKey) {
+          this._loading.set(true);
+          this._error.set(false);
+          const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/${encodeURIComponent(context.personKey)}/detail`;
+          return this.http.get<OrgAllEmployeeDetail>(url).pipe(
+            tap(() => this._loading.set(false)),
+            catchError(() => {
+              this._error.set(true);
+              this._loading.set(false);
+              return of(null);
+            })
+          );
+        }
+        // No personKey (Board/Committee openers) — governanceSeats are pre-supplied via context, but
+        // companyEmails still need a server-side lookup by the raw email so both tabs share the same
+        // deriveDemoCompanyEmails logic as the personKey-based path.
+        if (context.email) {
+          this._loading.set(true);
+          this._error.set(false);
+          const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/company-emails?email=${encodeURIComponent(context.email)}`;
+          return this.http.get<OrgLensCompanyEmailsResponse>(url).pipe(
+            map((response) => ({ ...EMPTY_ORG_ALL_EMPLOYEE_DETAIL, companyEmails: response.companyEmails })),
+            tap(() => this._loading.set(false)),
+            catchError(() => {
+              this._error.set(true);
+              this._loading.set(false);
+              return of(null);
+            })
+          );
+        }
+        this._loading.set(false);
         this._error.set(false);
-        const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/${encodeURIComponent(context.personKey)}/detail`;
-        return this.http.get<OrgAllEmployeeDetail>(url).pipe(
-          tap(() => this._loading.set(false)),
-          catchError(() => {
-            this._error.set(true);
-            this._loading.set(false);
-            return of(null);
-          })
-        );
+        return of(null);
       })
     ),
     { initialValue: null }
