@@ -104,18 +104,28 @@ describe('claStatusLabel', () => {
   it('maps each status to its label', () => {
     expect(claStatusLabel('valid')).toBe('Valid');
     expect(claStatusLabel('needs_attention')).toBe('Needs attention');
-    // The wire token is `invalidated`; the reviewed user-facing copy is Revoked.
-    expect(claStatusLabel('invalidated')).toBe('Revoked');
+    expect(claStatusLabel('revoked')).toBe('Revoked');
+    expect(claStatusLabel('invalidated')).toBe('Invalidated');
     expect(claStatusLabel('unknown')).toBe('—');
     expect(claStatusLabel('superseded')).toBe('Superseded');
   });
 
-  // The wording was reviewed, and the retired terms are the ones a rename is most likely to
-  // reintroduce — the wire token is still `invalidated`, so the old copy stays one edit away.
-  it('never labels a status with the retired self-serve wording', () => {
-    const statuses: ClaStatus[] = ['valid', 'needs_attention', 'invalidated', 'unknown', 'superseded'];
+  // "Revoked" is the reviewed copy for a sanctions screen. An approval-list removal, a PCC
+  // invalidation and a deleted CLA group all arrive as `invalidated`, so lending them this word
+  // tells those contributors they were screened. The two labels sharing one word is the specific
+  // regression worth pinning, because the token names invite it.
+  it('reserves "Revoked" for the sanctions state alone', () => {
+    const statuses: ClaStatus[] = ['valid', 'needs_attention', 'revoked', 'invalidated', 'unknown', 'superseded'];
+    const revokedLabels = statuses.filter((status) => /revoke/i.test(claStatusLabel(status)));
 
-    expect(statuses.map(claStatusLabel).some((label) => /invalid|cancel/i.test(label))).toBe(false);
+    expect(revokedLabels).toEqual(['revoked']);
+  });
+
+  // Retired in review and, unlike "Invalidated", never reinstated.
+  it('never labels a status "Canceled"', () => {
+    const statuses: ClaStatus[] = ['valid', 'needs_attention', 'revoked', 'invalidated', 'unknown', 'superseded'];
+
+    expect(statuses.map(claStatusLabel).some((label) => /cancel/i.test(label))).toBe(false);
   });
 });
 
@@ -123,6 +133,8 @@ describe('claStatusSeverity', () => {
   it('maps each status to a tag severity', () => {
     expect(claStatusSeverity('valid')).toBe('success');
     expect(claStatusSeverity('needs_attention')).toBe('warn');
+    // Revoked is deliberately the quiet one: the design renders it neutral gray and Invalidated red.
+    expect(claStatusSeverity('revoked')).toBe('secondary');
     expect(claStatusSeverity('invalidated')).toBe('danger');
     expect(claStatusSeverity('unknown')).toBe('secondary');
     expect(claStatusSeverity('superseded')).toBe('warn');

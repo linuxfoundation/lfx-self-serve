@@ -286,7 +286,7 @@ export function collectClaEmails(primaryEmail: string | null, emailData: EmailMa
 // contract break on the producer's side and must not reach the template, where the label and
 // severity helpers are exhaustive switches with no fallthrough — an unrecognised value would
 // render an unlabelled, severity-less pill.
-const KNOWN_CLA_STATUSES = new Set<string>(['valid', 'needs_attention', 'invalidated', 'unknown', 'superseded']);
+const KNOWN_CLA_STATUSES = new Set<string>(['valid', 'needs_attention', 'revoked', 'invalidated', 'unknown', 'superseded']);
 
 /** Narrows the wire `status` to `ClaStatus`, or null when it is absent or out of contract. */
 function asClaStatus(status: string | undefined): ClaStatus | null {

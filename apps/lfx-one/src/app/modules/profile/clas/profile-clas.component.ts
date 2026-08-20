@@ -260,6 +260,8 @@ export class ProfileClasComponent {
         return 'fa-light fa-circle-check';
       case 'needs_attention':
         return 'fa-light fa-triangle-exclamation';
+      case 'revoked':
+        return 'fa-light fa-ban';
       case 'invalidated':
         return 'fa-light fa-circle-xmark';
       case 'unknown':
@@ -419,8 +421,15 @@ export class ProfileClasComponent {
    * An ICLA with no retrievable document yields no items — the row then renders no ⋮ trigger,
    * rather than one that opens an empty overlay (`contracts/my-clas-row-actions.md`: nothing is
    * offered on such a row).
+   *
+   * A `revoked` row takes that path deliberately: it is read-only, and the ECLA fallback below
+   * would otherwise tell someone whose employer failed sanctions screening that they are still
+   * covered by a Corporate CLA.
    */
   private buildRowMenuItems(agreement: MyClaAgreement): MenuItem[] {
+    if (agreement.status === 'revoked') {
+      return [];
+    }
     if (agreement.pdfAvailable) {
       return [
         {

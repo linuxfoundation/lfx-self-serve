@@ -264,6 +264,15 @@ describe('toMyClaAgreement', () => {
     expect(unknown.statusReason).toBe('unknown');
   });
 
+  // Sanctions screening is the only source of `revoked`, and it is the one status a contributor
+  // must not see mislabelled: degrading it to `unknown` renders an em dash where the pill belongs,
+  // and mapping it onto `invalidated` accuses everyone in that far larger bucket.
+  it('passes revoked through untouched on an ECLA', () => {
+    const revoked = toMyClaAgreement(ecla({ status: 'revoked', approved: true, valid: false }));
+
+    expect(revoked.status).toBe('revoked');
+  });
+
   it('never maps an ICLA to needs_attention, even if a spurious reason is present', () => {
     const spurious = toMyClaAgreement(icla({ status: 'needs_attention', statusReason: 'not_on_approval_list' }));
     expect(spurious.status).not.toBe('needs_attention');
@@ -275,7 +284,7 @@ describe('toMyClaAgreement', () => {
     expect(unknown.statusReason).toBeUndefined();
   });
 
-  // The wire type declares the four producer values, so an out-of-contract status can only arrive
+  // The wire type declares the five producer values, so an out-of-contract status can only arrive
   // from a producer that broke the contract. It still has to be survivable: `claStatusLabel` and
   // `claStatusSeverity` are exhaustive switches with no default, so an unrecognised value reaching
   // the template renders a pill with no label and no severity.

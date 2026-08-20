@@ -98,10 +98,11 @@ describe('ProfileClasComponent', () => {
     return Array.from(fixture.nativeElement.querySelectorAll('th') as NodeListOf<HTMLElement>).map((th) => th.textContent?.trim() ?? '');
   }
 
-  it('renders Valid / Needs attention / Revoked with the matching severities', async () => {
+  it('renders Valid / Needs attention / Revoked / Invalidated with the matching severities', async () => {
     await render([
       agreement({ id: 's-valid', status: 'valid' }),
       agreement({ id: 's-attn', kind: 'ECLA', status: 'needs_attention', pdfAvailable: false, companyName: 'Acme' }),
+      agreement({ id: 's-rev', kind: 'ECLA', status: 'revoked', pdfAvailable: false, companyName: 'Acme' }),
       agreement({ id: 's-inv', status: 'invalidated', pdfAvailable: false }),
     ]);
 
@@ -109,8 +110,9 @@ describe('ProfileClasComponent', () => {
     expect(statusTag('s-valid').severity()).toBe('success');
     expect(statusTag('s-attn').value()).toBe('Needs attention');
     expect(statusTag('s-attn').severity()).toBe('warn');
-    // Wire token `invalidated`, reviewed copy "Revoked".
-    expect(statusTag('s-inv').value()).toBe('Revoked');
+    expect(statusTag('s-rev').value()).toBe('Revoked');
+    expect(statusTag('s-rev').severity()).toBe('secondary');
+    expect(statusTag('s-inv').value()).toBe('Invalidated');
     expect(statusTag('s-inv').severity()).toBe('danger');
   });
 
@@ -184,7 +186,7 @@ describe('ProfileClasComponent', () => {
     ]);
 
     expect(statusTag('s-icla').value()).toBe('Valid');
-    expect(statusTag('s-inv').value()).toBe('Revoked');
+    expect(statusTag('s-inv').value()).toBe('Invalidated');
     expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-s-icla"]')?.textContent).not.toContain('Needs attention');
     expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-s-icla"]')?.textContent?.trim()).not.toBe('—');
     expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-note-s-icla"]')).toBeNull();
@@ -248,6 +250,16 @@ describe('ProfileClasComponent', () => {
     // Rows that do have an item keep the trigger — including the ECLA explanation item.
     expect(actionsTrigger('s-pdf')).not.toBeNull();
     expect(actionsTrigger('s-ecla')).not.toBeNull();
+  });
+
+  it('renders no actions trigger on a revoked row', async () => {
+    await render([agreement({ id: 's-rev', kind: 'ECLA', status: 'revoked', pdfAvailable: false, companyName: 'Acme' })]);
+
+    // A revoked row is read-only, and without this it would take the ECLA fallback and tell
+    // someone whose employer failed sanctions screening that a Corporate CLA still covers them.
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-row-s-rev"]')).toBeTruthy();
+    expect(actionsTrigger('s-rev')).toBeNull();
+    expect(rowMenu('s-rev')).toBeNull();
   });
 });
 
