@@ -1,7 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BucketLocationConstraint, CreateBucketCommand, HeadBucketCommand, HeadObjectCommand, NotFound, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  BucketLocationConstraint,
+  CreateBucketCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  NoSuchKey,
+  NotFound,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { Request } from 'express';
 
 import { buildAvatarUrl, getAvatarCdnPrefix, toAvatarKeySegment } from '../utils/avatar-url.util';
@@ -89,7 +100,8 @@ export class ObjectStoreService {
     key: string,
     body: Buffer,
     contentType: string,
-    cacheControl: string
+    cacheControl: string,
+    metadata?: Record<string, string>
   ): Promise<boolean> {
     // degradable: a readiness failure here rethrows to consumers that catch and degrade
     // gracefully (same rationale as the WARN in the catch below), so it must log WARN — not
@@ -114,7 +126,9 @@ export class ObjectStoreService {
         }
       }
 
-      await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType, CacheControl: cacheControl }));
+      await client.send(
+        new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType, CacheControl: cacheControl, ...(metadata && { Metadata: metadata }) })
+      );
       logger.success(req, 'object_store_put_if_absent', startTime, { key, written: true });
       return true;
     } catch (error) {
@@ -127,6 +141,87 @@ export class ObjectStoreService {
       // page on every transient outage of a path that returns a successful
       // response.
       logger.warning(req, 'object_store_put_if_absent', 'Object HEAD/PUT failed — rethrowing for the caller to handle', {
+        purpose,
+        key,
+        duration: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * List the objects under a key prefix in a purpose-keyed bucket (key +
+   * last-modified only — enough for callers to pick a latest object without
+   * fetching bodies). Paginates through every ListObjectsV2 page; the
+   * consuming partitions (content-addressed artifact prefixes) stay small,
+   * so no page cap is needed.
+   *
+   * No ensureBucket first: reads never create buckets, and a missing bucket
+   * surfaces as an S3 error the caller handles like any other read failure
+   * (the Brand Kit stored-document consumer degrades it to "none stored").
+   */
+  public async listObjects(req: Request, purpose: ObjectStorePurpose, prefix: string): Promise<{ key: string; lastModified?: Date }[]> {
+    const bucket = this.getBucket(purpose);
+    const client = this.getClient();
+    const startTime = logger.startOperation(req, 'object_store_list_objects', { purpose, prefix });
+
+    try {
+      const objects: { key: string; lastModified?: Date }[] = [];
+      let continuationToken: string | undefined;
+      do {
+        const page = await client.send(
+          new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ...(continuationToken && { ContinuationToken: continuationToken }) })
+        );
+        for (const entry of page.Contents ?? []) {
+          if (entry.Key) {
+            objects.push({ key: entry.Key, lastModified: entry.LastModified });
+          }
+        }
+        continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+      } while (continuationToken);
+
+      logger.success(req, 'object_store_list_objects', startTime, { prefix, count: objects.length });
+      return objects;
+    } catch (error) {
+      // WARN, not ERROR: same graceful-degradation rationale as putObjectIfAbsent —
+      // the consumers of this read primitive (Brand Kit stored lookup) catch and
+      // degrade to "none stored"; an unrecovered rethrow still reaches the
+      // centralized apiErrorHandler, which logs at ERROR.
+      logger.warning(req, 'object_store_list_objects', 'Object list failed — rethrowing for the caller to handle', {
+        purpose,
+        prefix,
+        duration: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch one object's UTF-8 body and user metadata from a purpose-keyed
+   * bucket. Returns null only on a CONFIRMED missing object (404/NoSuchKey) —
+   * anything else (403, timeout, 5xx) rethrows, never masquerades as absent.
+   */
+  public async getObject(req: Request, purpose: ObjectStorePurpose, key: string): Promise<{ body: string; metadata: Record<string, string> } | null> {
+    const bucket = this.getBucket(purpose);
+    const client = this.getClient();
+    const startTime = logger.startOperation(req, 'object_store_get_object', { purpose, key });
+
+    try {
+      const response = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+      const body = (await response.Body?.transformToString('utf-8')) ?? '';
+      logger.success(req, 'object_store_get_object', startTime, { key, size: body.length });
+      return { body, metadata: response.Metadata ?? {} };
+    } catch (error) {
+      const isConfirmedNotFound =
+        error instanceof NoSuchKey || error instanceof NotFound || (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === 404;
+      if (isConfirmedNotFound) {
+        logger.success(req, 'object_store_get_object', startTime, { key, found: false });
+        return null;
+      }
+      // WARN, not ERROR — same graceful-degradation contract as listObjects.
+      logger.warning(req, 'object_store_get_object', 'Object GET failed — rethrowing for the caller to handle', {
         purpose,
         key,
         duration: Date.now() - startTime,

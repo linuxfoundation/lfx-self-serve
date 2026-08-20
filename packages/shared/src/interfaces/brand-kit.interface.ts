@@ -117,6 +117,27 @@ export interface BrandKitPersistReceipt {
 }
 
 /**
+ * Response of `GET /api/mktg-agents/brand-kit/stored?project=<uid>` — the
+ * project's LATEST server-persisted Brand Kit document (dec-agent-dependency-gating
+ * read path). The endpoint is entitlement-gated (project writer) and the
+ * storage partition is derived from the server-resolved project slug, never
+ * client input; a project with nothing persisted returns 404.
+ */
+export interface BrandKitStoredResponse {
+  /** The persisted Brand Kit document (Markdown), integrity-checked against the content-addressed key. */
+  documentMarkdown: string;
+  /**
+   * Receipt metadata of the returned object — the same fields minted by the
+   * write path (dec-brand-kit-storage-v2). `version` / `intake_mode` are read
+   * back from the object's metadata; objects persisted before metadata was
+   * written report the documented defaults (version 1, `form`).
+   */
+  receipt: BrandKitPersistReceipt;
+  /** ISO-8601 timestamp the object was stored (S3 LastModified), when the store reports one. */
+  storedAt?: string;
+}
+
+/**
  * Response of `POST /api/mktg-agents/brand-kit/result`.
  * `pending` until the session emits a valid envelope; then `ready` with the
  * validated document. On `ready` the BFF also persists the document to

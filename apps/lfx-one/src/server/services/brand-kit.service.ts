@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BRAND_KIT_MAX_DOCUMENT_BYTES } from '@lfx-one/shared/constants';
-import { BrandKitEnvelope, BrandKitPersistReceipt, BrandKitResultResponse } from '@lfx-one/shared/interfaces';
+import { BRAND_KIT_KEY_PREFIX, BRAND_KIT_MAX_DOCUMENT_BYTES, BRAND_KIT_PROJECT_SLUG_REGEX, BRAND_KIT_SHA256_REGEX } from '@lfx-one/shared/constants';
+import { BrandKitEnvelope, BrandKitIntakeMode, BrandKitPersistReceipt, BrandKitResultResponse, BrandKitStoredResponse } from '@lfx-one/shared/interfaces';
 import { buildBrandKitObjectKey, extractBrandKitEnvelopeCandidates, renderBrandKitFormMessage, validateBrandKitEnvelope } from '@lfx-one/shared/utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
@@ -77,6 +77,89 @@ export class BrandKitService {
   }
 
   /**
+   * Fetch the project's LATEST persisted Brand Kit document from the
+   * content-addressed partition `brand-kit/{project}/` (the
+   * dec-agent-dependency-gating read path). Objects are ordered by store
+   * LastModified (newest first) and each candidate's sha256 is recomputed
+   * against the sha embedded in its key before it can be served — a corrupted
+   * object is skipped, never surfaced. Returns null when the partition holds
+   * nothing servable.
+   *
+   * Storage failures degrade to null (WARN, not ERROR) — the caller treats
+   * "store unreachable" exactly like "nothing stored" (404), and the client
+   * falls back to its browser-stored run; same graceful-degradation contract
+   * as the write path, whose bucket env var is intentionally absent in some
+   * deployed environments.
+   */
+  public async getStoredBrandKit(req: Request, project: string): Promise<BrandKitStoredResponse | null> {
+    // The partition slug comes from the server-resolved project — but it must
+    // still satisfy the contract's slug shape before it can form a key.
+    if (!BRAND_KIT_PROJECT_SLUG_REGEX.test(project)) {
+      return null;
+    }
+
+    const prefix = `${BRAND_KIT_KEY_PREFIX}/${project}/`;
+    const startTime = logger.startOperation(req, 'brand_kit_stored', { project });
+
+    try {
+      const objects = await this.objectStore.listObjects(req, 'marketing-os-artifacts', prefix);
+
+      // Content-addressed document objects only (brand-kit/{project}/{sha}.md),
+      // newest first. Undated entries sort last — a dated object always wins.
+      const candidates = objects
+        .filter((object) => this.extractKeySha(object.key, prefix) !== null)
+        .sort((a, b) => (b.lastModified?.getTime() ?? 0) - (a.lastModified?.getTime() ?? 0));
+
+      for (const candidate of candidates) {
+        // Non-null by the filter above.
+        const keySha = this.extractKeySha(candidate.key, prefix) as string;
+        const object = await this.objectStore.getObject(req, 'marketing-os-artifacts', candidate.key);
+        if (!object) {
+          continue;
+        }
+
+        // Same integrity gate as the result path (contract §3 step 2): the
+        // served bytes must hash to the content-addressed key's sha.
+        const recomputedSha = createHash('sha256').update(Buffer.from(object.body, 'utf8')).digest('hex');
+        if (recomputedSha !== keySha) {
+          logger.warning(req, 'brand_kit_stored', 'Stored object bytes do not match the content-addressed key — skipping', {
+            key: candidate.key,
+            recomputed: recomputedSha,
+          });
+          continue;
+        }
+
+        const version = Number.parseInt(object.metadata['version'] ?? '', 10);
+        const intakeMode: BrandKitIntakeMode = object.metadata['intake-mode'] === 'conversational' ? 'conversational' : 'form';
+
+        logger.success(req, 'brand_kit_stored', startTime, { project, key: candidate.key });
+        return {
+          documentMarkdown: object.body,
+          receipt: {
+            s3_key: candidate.key,
+            content_sha256: keySha,
+            project,
+            // Objects persisted before metadata was written default to v1.
+            version: Number.isInteger(version) && version >= 1 ? version : 1,
+            intake_mode: intakeMode,
+          },
+          ...(candidate.lastModified && { storedAt: candidate.lastModified.toISOString() }),
+        };
+      }
+
+      logger.success(req, 'brand_kit_stored', startTime, { project, found: false });
+      return null;
+    } catch (error) {
+      logger.warning(req, 'brand_kit_stored', 'Object-store read failed — reporting no stored document', {
+        project,
+        duration: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /**
    * Persist the validated envelope's raw document bytes to the shared private
    * marketing artifacts bucket (contract §3 steps 4–5: size gate, key derived
    * from validated fields only). Idempotent under polling — content-addressed
@@ -106,7 +189,13 @@ export class BrandKitService {
       // the document bytes in findAuthoritativeEnvelope before selection.
       const key = buildBrandKitObjectKey(envelope.project, envelope.content_sha256);
 
-      const written = await this.objectStore.putObjectIfAbsent(req, 'marketing-os-artifacts', key, documentBytes, 'text/markdown; charset=utf-8', 'private');
+      // The version / intake mode ride as object metadata so the stored-document
+      // read path can rebuild the receipt without re-parsing the envelope —
+      // content-addressed keys carry only the sha.
+      const written = await this.objectStore.putObjectIfAbsent(req, 'marketing-os-artifacts', key, documentBytes, 'text/markdown; charset=utf-8', 'private', {
+        version: String(envelope.version),
+        'intake-mode': envelope.intake.mode,
+      });
 
       logger.success(req, 'brand_kit_persist', startTime, {
         key,
@@ -137,6 +226,15 @@ export class BrandKitService {
       });
       return null;
     }
+  }
+
+  /** The sha256 half of a content-addressed key `{prefix}{sha}.md`, or null when the key is not one. */
+  private extractKeySha(key: string, prefix: string): string | null {
+    if (!key.startsWith(prefix) || !key.endsWith('.md')) {
+      return null;
+    }
+    const sha = key.slice(prefix.length, -'.md'.length);
+    return BRAND_KIT_SHA256_REGEX.test(sha) ? sha : null;
   }
 
   /**

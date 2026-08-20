@@ -7,6 +7,7 @@ import {
   BrandKitGenerateResponse,
   BrandKitResultRequest,
   BrandKitResultResponse,
+  BrandKitStoredResponse,
   FoundationMessageGenerateRequest,
   FoundationMessageGenerateResponse,
   FoundationMessageResultRequest,
@@ -19,11 +20,12 @@ import {
 import { validateBrandKitIntakeAnswers, validateFoundationMessageIntakeAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { BrandKitService } from '../services/brand-kit.service';
 import { FoundationMessageService } from '../services/foundation-message.service';
 import { GuildService } from '../services/guild.service';
 import { logger } from '../services/logger.service';
+import { ProjectService } from '../services/project.service';
 import { getEffectiveSub } from '../utils/auth-helper';
 import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-session-token.util';
 
@@ -31,6 +33,7 @@ export class MktgAgentsController {
   private readonly guildService = new GuildService();
   private readonly brandKitService = new BrandKitService();
   private readonly foundationMessageService = new FoundationMessageService();
+  private readonly projectService = new ProjectService();
 
   /**
    * POST /api/mktg-agents/chat
@@ -302,6 +305,70 @@ export class MktgAgentsController {
       const result: BrandKitResultResponse = await this.brandKitService.getResult(req, validSessionId);
       logger.success(req, 'brand_kit_result', startTime, { status: result.status });
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/mktg-agents/brand-kit/stored?project=<uid>
+   * Returns the project's LATEST server-persisted Brand Kit document with its
+   * receipt metadata (the dec-agent-dependency-gating read path), or 404 when
+   * nothing is stored for the project.
+   *
+   * AUTHZ — this is the read boundary for the persisted partition: the caller
+   * must hold writer entitlement on the requested project (the
+   * `ProjectService.getProjectById` + `project.writer` precedent shared with
+   * writer.guard). The storage partition is derived from the SERVER-resolved
+   * project slug, never from client input, so one project's caller can never
+   * be served another project's partition.
+   */
+  public async storedBrandKit(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectParam = req.query['project'];
+    const projectUid = typeof projectParam === 'string' ? projectParam.trim() : '';
+    if (!projectUid) {
+      next(
+        ServiceValidationError.forField('project', 'project is required and must be a non-empty project uid', {
+          operation: 'brand_kit_stored',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'brand_kit_stored', {});
+
+    try {
+      // Entitlement gate: resolve the project by uid WITH the caller's access
+      // annotation and require the writer grant — the same per-project write
+      // entitlement that gates the agents that produce these documents.
+      const project = await this.projectService.getProjectById(req, projectUid, true);
+      if (!project.writer) {
+        next(
+          new AuthorizationError('You do not have permission to read this project’s Brand Kit.', {
+            operation: 'brand_kit_stored',
+            service: 'mktg_agents_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const stored: BrandKitStoredResponse | null = await this.brandKitService.getStoredBrandKit(req, project.slug);
+      if (!stored) {
+        next(
+          new ResourceNotFoundError('Stored Brand Kit', project.slug, {
+            operation: 'brand_kit_stored',
+            service: 'mktg_agents_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      logger.success(req, 'brand_kit_stored', startTime, { project: project.slug, version: stored.receipt.version });
+      res.json(stored);
     } catch (error) {
       next(error);
     }

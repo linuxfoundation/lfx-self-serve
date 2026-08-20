@@ -20,6 +20,9 @@ router.post('/brand-kit/generate', (req, res, next) => mktgAgentsController.gene
 // POST /api/mktg-agents/brand-kit/result - poll a generation session for the validated document
 router.post('/brand-kit/result', (req, res, next) => mktgAgentsController.brandKitResult(req, res, next));
 
+// GET /api/mktg-agents/brand-kit/stored - the project's latest persisted document (writer-entitled callers only)
+router.get('/brand-kit/stored', (req, res, next) => mktgAgentsController.storedBrandKit(req, res, next));
+
 // POST /api/mktg-agents/foundation-message/generate - start a one-shot form-mode Message Foundation generation
 router.post('/foundation-message/generate', (req, res, next) => mktgAgentsController.generateFoundationMessage(req, res, next));
 

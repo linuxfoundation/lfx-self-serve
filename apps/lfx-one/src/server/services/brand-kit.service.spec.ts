@@ -16,6 +16,8 @@ const guildMocks = vi.hoisted(() => ({
 }));
 const objectStoreMocks = vi.hoisted(() => ({
   putObjectIfAbsent: vi.fn(),
+  listObjects: vi.fn(),
+  getObject: vi.fn(),
 }));
 const loggerMocks = vi.hoisted(() => ({
   startOperation: vi.fn(() => 0),
@@ -44,6 +46,8 @@ vi.mock('./guild.service', () => ({
 vi.mock('./object-store.service', () => ({
   ObjectStoreService: class {
     public putObjectIfAbsent = objectStoreMocks.putObjectIfAbsent;
+    public listObjects = objectStoreMocks.listObjects;
+    public getObject = objectStoreMocks.getObject;
   },
 }));
 vi.mock('./logger.service', () => ({
@@ -163,13 +167,16 @@ describe('BrandKitService', () => {
 
       const expectedKey = `brand-kit/testorbit/${envelope['content_sha256']}.md`;
       expect(objectStoreMocks.putObjectIfAbsent).toHaveBeenCalledOnce();
-      const [, purpose, key, body, contentType, cacheControl] = objectStoreMocks.putObjectIfAbsent.mock.calls[0];
+      const [, purpose, key, body, contentType, cacheControl, metadata] = objectStoreMocks.putObjectIfAbsent.mock.calls[0];
       expect(purpose).toBe('marketing-os-artifacts');
       expect(key).toBe(expectedKey);
       expect(Buffer.isBuffer(body)).toBe(true);
       expect(body.toString('utf8')).toBe(envelope['document_markdown']);
       expect(contentType).toBe('text/markdown; charset=utf-8');
       expect(cacheControl).toBe('private');
+      // Receipt fields ride as object metadata so the stored-document read
+      // path can rebuild the receipt without re-parsing the envelope.
+      expect(metadata).toEqual({ version: '1', 'intake-mode': 'form' });
 
       expect(result.persistence).toEqual({
         s3_key: expectedKey,
@@ -242,6 +249,81 @@ describe('BrandKitService', () => {
       guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'runtime_done', content: abridged })]);
 
       await expect(service.getResult(req, 's')).resolves.toEqual({ status: 'pending' });
+    });
+  });
+
+  describe('getStoredBrandKit', () => {
+    const doc = 'Stored Brand Kit document body';
+    const docSha = createHash('sha256').update(doc, 'utf8').digest('hex');
+    const key = `brand-kit/testorbit/${docSha}.md`;
+
+    it('returns null without listing when the project slug is not contract-shaped', async () => {
+      await expect(service.getStoredBrandKit(req, 'Not A Slug!')).resolves.toBeNull();
+      expect(objectStoreMocks.listObjects).not.toHaveBeenCalled();
+    });
+
+    it('returns null when the partition holds no objects', async () => {
+      objectStoreMocks.listObjects.mockResolvedValue([]);
+
+      await expect(service.getStoredBrandKit(req, 'testorbit')).resolves.toBeNull();
+      expect(objectStoreMocks.listObjects).toHaveBeenCalledWith(req, 'marketing-os-artifacts', 'brand-kit/testorbit/');
+    });
+
+    it('returns the newest content-addressed object with its receipt rebuilt from metadata', async () => {
+      const olderDoc = 'Older stored document';
+      const olderSha = createHash('sha256').update(olderDoc, 'utf8').digest('hex');
+      const olderKey = `brand-kit/testorbit/${olderSha}.md`;
+      objectStoreMocks.listObjects.mockResolvedValue([
+        { key: olderKey, lastModified: new Date('2026-08-01T00:00:00Z') },
+        { key, lastModified: new Date('2026-08-15T00:00:00Z') },
+        // Non-document keys in the partition are ignored, whatever their date.
+        { key: 'brand-kit/testorbit/notes.txt', lastModified: new Date('2026-08-19T00:00:00Z') },
+      ]);
+      objectStoreMocks.getObject.mockResolvedValue({ body: doc, metadata: { version: '3', 'intake-mode': 'conversational' } });
+
+      const stored = await service.getStoredBrandKit(req, 'testorbit');
+
+      expect(objectStoreMocks.getObject).toHaveBeenCalledOnce();
+      expect(objectStoreMocks.getObject).toHaveBeenCalledWith(req, 'marketing-os-artifacts', key);
+      expect(stored).toEqual({
+        documentMarkdown: doc,
+        receipt: { s3_key: key, content_sha256: docSha, project: 'testorbit', version: 3, intake_mode: 'conversational' },
+        storedAt: '2026-08-15T00:00:00.000Z',
+      });
+    });
+
+    it('defaults version/intake_mode for objects persisted before metadata was written', async () => {
+      objectStoreMocks.listObjects.mockResolvedValue([{ key, lastModified: new Date('2026-08-15T00:00:00Z') }]);
+      objectStoreMocks.getObject.mockResolvedValue({ body: doc, metadata: {} });
+
+      const stored = await service.getStoredBrandKit(req, 'testorbit');
+
+      expect(stored?.receipt.version).toBe(1);
+      expect(stored?.receipt.intake_mode).toBe('form');
+    });
+
+    it('skips an object whose bytes do not hash to its content-addressed key and serves the next candidate', async () => {
+      const tamperedKey = `brand-kit/testorbit/${'a'.repeat(64)}.md`;
+      objectStoreMocks.listObjects.mockResolvedValue([
+        { key: tamperedKey, lastModified: new Date('2026-08-16T00:00:00Z') },
+        { key, lastModified: new Date('2026-08-15T00:00:00Z') },
+      ]);
+      objectStoreMocks.getObject.mockResolvedValueOnce({ body: 'tampered bytes', metadata: { version: '9', 'intake-mode': 'form' } });
+      objectStoreMocks.getObject.mockResolvedValueOnce({ body: doc, metadata: { version: '2', 'intake-mode': 'form' } });
+
+      const stored = await service.getStoredBrandKit(req, 'testorbit');
+
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_stored', expect.stringContaining('do not match'), expect.any(Object));
+      expect(stored?.receipt.content_sha256).toBe(docSha);
+      expect(stored?.receipt.version).toBe(2);
+    });
+
+    it('degrades a storage failure to null at WARN (graceful degradation), never ERROR', async () => {
+      objectStoreMocks.listObjects.mockRejectedValue(new Error('bucket unreachable'));
+
+      await expect(service.getStoredBrandKit(req, 'testorbit')).resolves.toBeNull();
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_stored', expect.stringContaining('Object-store read failed'), expect.any(Object));
+      expect(loggerMocks.error).not.toHaveBeenCalled();
     });
   });
 });
