@@ -104,14 +104,14 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/company-emails?email=... — company-affiliated emails for tabs (Board/Committee) whose rows have no personKey (GH-1655). */
+  /** POST /api/orgs/:orgUid/lens/people/company-emails — company-affiliated emails for tabs (Board/Committee) whose rows have no personKey (GH-1655). Email travels in the body, not the query string, so it never lands in `originalUrl` request logs. */
   public async getCompanyEmails(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_company_emails';
 
     try {
       assertOrgUid(orgUid, operation);
-      const email = this.assertEmailQueryParam(getStringQueryParam(req, 'email'), operation);
+      const email = this.assertEmailBody(req.body, operation);
       const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
 
       const response = this.service.getCompanyEmailsByEmail(email);
@@ -359,11 +359,12 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** Validate the `email` query param (required, valid email format) before it reaches the demo-derivation helper. */
-  private assertEmailQueryParam(email: string | undefined, operation: string): string {
-    const trimmed = (email ?? '').trim();
+  /** Validate the `email` request-body field (required, valid email format) before it reaches the demo-derivation helper. */
+  private assertEmailBody(body: unknown, operation: string): string {
+    const email = (body as { email?: unknown } | undefined)?.email;
+    const trimmed = typeof email === 'string' ? email.trim() : '';
     if (!trimmed || !EMAIL_REGEX.test(trimmed)) {
-      throw ServiceValidationError.forField('email', 'email query parameter is required and must be a valid email address', { operation });
+      throw ServiceValidationError.forField('email', 'email body field is required and must be a valid email address', { operation });
     }
     return trimmed.toLowerCase();
   }

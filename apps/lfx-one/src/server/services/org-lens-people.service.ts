@@ -576,6 +576,12 @@ const PERSONAL_EMAIL_DOMAINS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Matches academic-institution domains (`.edu`, `.edu.<cc>`, `.ac.<cc>`) — these are institutional,
+ * not company, domains and must not produce fabricated "sibling company domain" variants either.
+ */
+const ACADEMIC_EMAIL_DOMAIN_PATTERN = /(^|\.)(edu|ac)(\.[a-z]{2,3})?$/;
+
+/**
  * TEMP-DEMO-ONLY (GH-1655): stands in for a future Salesforce Account multi-domain lookup joined
  * with an LF SSO multi-email lookup. Fabricates plausible sibling-domain variants of the person's
  * real local-part so the multi-email UI can be exercised before that pipeline exists. Returns []
@@ -591,7 +597,7 @@ function deriveDemoCompanyEmails(email: string | null): string[] {
 
   const localPart = trimmed.slice(0, atIndex);
   const domain = trimmed.slice(atIndex + 1);
-  if (PERSONAL_EMAIL_DOMAINS.has(domain)) {
+  if (PERSONAL_EMAIL_DOMAINS.has(domain) || ACADEMIC_EMAIL_DOMAIN_PATTERN.test(domain)) {
     return [];
   }
 

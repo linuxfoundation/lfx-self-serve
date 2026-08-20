@@ -60,12 +60,13 @@ export class PersonDetailDrawerService {
         }
         // No personKey (Board/Committee openers) — governanceSeats are pre-supplied via context, but
         // companyEmails still need a server-side lookup by the raw email so both tabs share the same
-        // deriveDemoCompanyEmails logic as the personKey-based path.
+        // deriveDemoCompanyEmails logic as the personKey-based path. POST (not GET) so the email
+        // travels in the body, not the query string, keeping it out of request-log URLs.
         if (context.email) {
           this._loading.set(true);
           this._error.set(false);
-          const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/company-emails?email=${encodeURIComponent(context.email)}`;
-          return this.http.get<OrgLensCompanyEmailsResponse>(url).pipe(
+          const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/company-emails`;
+          return this.http.post<OrgLensCompanyEmailsResponse>(url, { email: context.email }).pipe(
             map((response) => ({ ...EMPTY_ORG_ALL_EMPLOYEE_DETAIL, companyEmails: response.companyEmails })),
             tap(() => this._loading.set(false)),
             catchError(() => {
