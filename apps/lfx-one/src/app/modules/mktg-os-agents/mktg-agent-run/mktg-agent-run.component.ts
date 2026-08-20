@@ -28,6 +28,7 @@ import {
   User,
 } from '@lfx-one/shared/interfaces';
 import { trimmedRequired } from '@lfx-one/shared/validators';
+import { MessageService } from 'primeng/api';
 import { combineLatest, distinctUntilChanged, filter, map, Subscription, switchMap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
@@ -59,6 +60,7 @@ import { UserService } from '@services/user.service';
 export class MktgAgentRunComponent {
   // === Injections ===
   private readonly destroyRef = inject(DestroyRef);
+  private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
@@ -149,6 +151,11 @@ export class MktgAgentRunComponent {
   protected readonly postGateFields: Signal<MktgIntakeField[]> = this.initPostGateFields();
   /** Copyable derivative chips for the current version (empty when the agent has none). */
   protected readonly derivativeChips: Signal<{ key: string; label: string; value: string; copied: boolean }[]> = this.initDerivativeChips();
+  /** Screen-reader copy confirmation for the template's live region — the visible chip flip alone is never announced. */
+  protected readonly copiedAnnouncement = computed(() => {
+    const copied = this.derivativeChips().find((chip) => chip.copied);
+    return copied ? `${copied.label} copied to the clipboard` : '';
+  });
   protected readonly regenerateDisabled = computed(() => !this.feedbackValue().trim() || !this.intakeValid() || this.phase() === 'running');
   protected readonly stages: Signal<{ label: string; state: 'done' | 'active' | 'pending'; labelClass: string }[]> = this.initStages();
   protected readonly sectionChecklist: Signal<{ label: string; present: boolean; iconClass: string; srText: string }[]> = this.initSectionChecklist();
@@ -288,15 +295,23 @@ export class MktgAgentRunComponent {
   }
 
   /** Copies a derivative chip's value; the chip flashes "Copied" for a moment. */
-  protected async onCopyDerivative(chip: { key: string; value: string }): Promise<void> {
+  protected async onCopyDerivative(chip: { key: string; label: string; value: string }): Promise<void> {
     // SSR guard: navigator/clipboard are browser-only (ssr-safety rule).
-    if (!isPlatformBrowser(this.platformId) || !navigator.clipboard?.writeText) {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    // Failure must be visible (badge-card clipboard precedent): a silent
+    // return would leave the button looking dead, indistinguishable from a
+    // successful copy that just didn't flash yet.
+    if (!navigator.clipboard?.writeText) {
+      this.messageService.add({ severity: 'error', summary: 'Copy not supported', detail: 'Clipboard access is unavailable in this browser.' });
       return;
     }
     try {
       await navigator.clipboard.writeText(chip.value);
     } catch {
-      // Clipboard permission denied — leave the chip un-flashed rather than lie.
+      // Clipboard permission denied — surface it and leave the chip un-flashed rather than lie.
+      this.messageService.add({ severity: 'error', summary: 'Copy failed', detail: `Unable to copy the ${chip.label} to the clipboard.` });
       return;
     }
     this.copiedDerivative.set(chip.key);

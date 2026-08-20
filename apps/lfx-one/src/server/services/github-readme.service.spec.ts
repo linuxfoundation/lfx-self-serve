@@ -20,7 +20,8 @@ import { GithubReadmeService } from './github-readme.service';
 const req = { path: '/api/mktg-agents/foundation-message/generate' } as unknown as Request;
 
 /** ok text Response stand-in. */
-const textResponse = (text: string, ok = true, status = 200): Response => ({ ok, status, text: () => Promise.resolve(text) }) as unknown as Response;
+const textResponse = (text: string, ok = true, status = 200, headers: Record<string, string> = {}): Response =>
+  ({ ok, status, headers: new Headers(headers), text: () => Promise.resolve(text) }) as unknown as Response;
 
 /**
  * The README fetch is strictly best-effort input plumbing for an agent with
@@ -40,6 +41,7 @@ describe('GithubReadmeService', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
@@ -93,6 +95,52 @@ describe('GithubReadmeService', () => {
     it('returns null for a blank README body', async () => {
       fetchMock.mockResolvedValue(textResponse('   \n  '));
       expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBeNull();
+    });
+  });
+
+  describe('authentication & rate limiting', () => {
+    it('sends no Authorization header when GITHUB_API_TOKEN is unset', async () => {
+      await service.fetchReadme(req, 'https://github.com/example-org/example-repo');
+
+      const headers = (fetchMock.mock.calls[0][1] as { headers: Record<string, string> }).headers;
+      expect('Authorization' in headers).toBe(false);
+    });
+
+    it('sends a Bearer Authorization header when GITHUB_API_TOKEN is set (raises the 60/hr shared-IP cap)', async () => {
+      vi.stubEnv('GITHUB_API_TOKEN', 'ghp_test-token');
+
+      await service.fetchReadme(req, 'https://github.com/example-org/example-repo');
+
+      const headers = (fetchMock.mock.calls[0][1] as { headers: Record<string, string> }).headers;
+      expect(headers['Authorization']).toBe('Bearer ghp_test-token');
+    });
+
+    it('logs a spent rate limit (403 + x-ratelimit-remaining: 0) distinctly from an ordinary missing README', async () => {
+      const { logger } = await import('./logger.service');
+      fetchMock.mockResolvedValue(textResponse('', false, 403, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1750000000' }));
+
+      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBeNull();
+
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'github_readme_fetch',
+        expect.stringContaining('rate-limited'),
+        expect.objectContaining({ status: 403, rate_limited: true })
+      );
+    });
+
+    it('logs a plain 404 as a non-rate-limit failure', async () => {
+      const { logger } = await import('./logger.service');
+      fetchMock.mockResolvedValue(textResponse('', false, 404));
+
+      expect(await service.fetchReadme(req, 'https://github.com/example-org/example-repo')).toBeNull();
+
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'github_readme_fetch',
+        expect.not.stringContaining('rate-limited'),
+        expect.objectContaining({ status: 404, rate_limited: false })
+      );
     });
   });
 

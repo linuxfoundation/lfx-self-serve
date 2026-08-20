@@ -10,6 +10,7 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -85,6 +86,7 @@ describe('MktgAgentRunComponent', () => {
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
         { provide: MktgAgentRunService, useValue: { loadRun, generate } },
+        MessageService,
       ],
     }).compileComponents();
 
@@ -372,6 +374,47 @@ describe('MktgAgentRunComponent', () => {
         await fixture.whenStable();
         expect(writeText).toHaveBeenCalledWith('Twenty-five words.');
         expect(query('mktg-agent-run-derivative-summary_25')?.textContent).toContain('Copied');
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it('surfaces a copy failure as an error toast instead of a silently dead button', async () => {
+      storedRuns = {
+        'proj-1:foundation-setup': {
+          agentId: 'foundation-setup',
+          projectUid: 'proj-1',
+          sessionId: 'sess-mf',
+          ownerToken: 'token-mf',
+          answers: { project_name: 'TestOrbit', github_url: 'https://github.com/example-org/testorbit', brand_kit_markdown: '# Kit' },
+          versions: [{ version: 1, document: '# Doc', derivatives: { summary_25: 'Twenty-five words.' }, createdAt: '2026-08-19T00:00:00.000Z' }],
+          savedAt: new Date().toISOString(),
+        },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      const toast = vi.spyOn(TestBed.inject(MessageService), 'add');
+
+      // Clipboard API unavailable (insecure context / unsupported browser).
+      vi.stubGlobal('navigator', { ...navigator, clipboard: undefined });
+      try {
+        query('mktg-agent-run-derivative-summary_25')?.click();
+        await fixture.whenStable();
+        expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Copy not supported' }));
+        expect(query('mktg-agent-run-derivative-summary_25')?.textContent).not.toContain('Copied');
+      } finally {
+        vi.unstubAllGlobals();
+      }
+
+      // Write rejected (permission denied) — also surfaced, chip never flashes.
+      toast.mockClear();
+      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn(() => Promise.reject(new Error('denied'))) } });
+      try {
+        query('mktg-agent-run-derivative-summary_25')?.click();
+        await fixture.whenStable();
+        expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Copy failed' }));
+        expect(query('mktg-agent-run-derivative-summary_25')?.textContent).not.toContain('Copied');
       } finally {
         vi.unstubAllGlobals();
       }

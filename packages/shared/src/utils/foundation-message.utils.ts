@@ -69,7 +69,7 @@ export function validateFoundationMessageIntakeAnswers(answers: unknown): Founda
       continue;
     }
     if (!hasBrandKit && (typeof value !== 'string' || !value.trim())) {
-      errors.push(`answers.${key} is required when no brand_kit_markdown is provided (Paul's five brand-discovery questions apply)`);
+      errors.push(`answers.${key} is required when no brand_kit_markdown is provided`);
     }
   }
 

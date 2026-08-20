@@ -218,6 +218,23 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
     expect(body['agent_input']).toEqual(form);
   });
 
+  it('keeps agent_id on structured inputs even when GUILD_EXPLICIT_AGENT_ID=false (no @handle fallback exists for a typed payload)', async () => {
+    vi.stubEnv('GUILD_EXPLICIT_AGENT_ID', 'false');
+    const form = { type: 'message_foundation_intake_form', project_name: 'X', github_url: 'https://github.com/x/y' };
+
+    await service.createSession(req, { agentInput: form, handle: 'foundation-message' });
+
+    const body = sentBody();
+    expect(body['agent_id']).toBe('owner~foundation-message');
+    expect(body['agent_input']).toEqual(form);
+  });
+
+  it('rejects a structured agent input without a handle instead of creating an unrouted session', async () => {
+    await expect(service.createSession(req, { agentInput: { type: 'form' } })).rejects.toMatchObject({ code: 'guild_unrouted_structured_input' });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('never emits agent_id without a handle', async () => {
     await service.createSession(req, { message: 'hello' });
 

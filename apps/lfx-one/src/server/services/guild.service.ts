@@ -57,10 +57,12 @@ export class GuildService {
   }
 
   /**
-   * Whether session creation passes the target agent explicitly as
-   * `agent_id` (Guild's `{agent_id, agent_input}` format — the fix for the
+   * Whether TEXT-message session creation passes the target agent explicitly
+   * as `agent_id` (Guild's `{agent_id, agent_input}` format — the fix for the
    * broken `@handle` mention routing). Defaults ON; `GUILD_EXPLICIT_AGENT_ID=false`
    * drops the field without a redeploy if the API rejects unknown fields.
+   * Structured agent inputs are NOT gated by this flag — they have no
+   * `@handle` fallback, so `agent_id` is always sent (see createSession).
    */
   private get explicitAgentIdEnabled(): boolean {
     return process.env['GUILD_EXPLICIT_AGENT_ID'] !== 'false';
@@ -75,15 +77,28 @@ export class GuildService {
    * Routing is belt-and-braces during the Guild mention-routing outage: the
    * `@handle` prepend stays on text messages, AND the request body carries an
    * explicit `agent_id` (Guild's recommended `{agent_id, agent_input}`
-   * format). The `agent_id` field is gated behind `GUILD_EXPLICIT_AGENT_ID`
-   * (default ON; set to `false` to drop the field without a redeploy in case
-   * the API rejects unknown fields).
+   * format). On TEXT messages the `agent_id` field is gated behind
+   * `GUILD_EXPLICIT_AGENT_ID` (default ON; set to `false` to drop the field
+   * without a redeploy in case the API rejects unknown fields — the `@handle`
+   * prepend still routes). Structured inputs IGNORE the flag: no mention can
+   * ride a typed payload, so `agent_id` is the ONLY routing and dropping it
+   * would silently create an unrouted session. For the same reason a
+   * structured input without a handle is rejected outright.
    */
   public async createSession(req: Request, params: { message?: string; agentInput?: object; handle?: string }): Promise<string> {
     this.assertConfigured('guild_create_session', { requireWorkspace: true });
 
     if (params.agentInput === undefined && params.message === undefined) {
       throw new MicroserviceError('Guild session creation requires a message or a structured agent input.', 500, 'guild_invalid_session_input', {
+        service: 'guild',
+        operation: 'guild_create_session',
+      });
+    }
+
+    // A structured input carries no @handle fallback, so without a handle the
+    // session would bind to no agent (or the wrong one). Fail loudly instead.
+    if (params.agentInput !== undefined && !params.handle) {
+      throw new MicroserviceError('Guild structured agent input requires a target agent handle for routing.', 500, 'guild_unrouted_structured_input', {
         service: 'guild',
         operation: 'guild_create_session',
       });
@@ -96,7 +111,7 @@ export class GuildService {
       session_type: 'api_trigger',
       agent_input: agentInput,
     };
-    if (params.handle && this.explicitAgentIdEnabled) {
+    if (params.handle && (params.agentInput !== undefined || this.explicitAgentIdEnabled)) {
       // Guild resolves agents by UUID or by FULL name `owner~name` — the bare
       // name is not an identifier (404s, and is ambiguous across owners). The
       // catalog `guildAgentHandle` is the name half; the workspace owner

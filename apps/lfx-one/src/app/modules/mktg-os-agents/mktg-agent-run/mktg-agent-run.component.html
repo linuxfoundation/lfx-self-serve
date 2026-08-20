@@ -232,7 +232,7 @@
                         [ngClass]="
                           chip.copied ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'
                         "
-                        [attr.aria-label]="'Copy the ' + chip.label + ' to the clipboard'"
+                        [attr.aria-label]="chip.copied ? chip.label + ' copied to the clipboard' : 'Copy the ' + chip.label + ' to the clipboard'"
                         [attr.data-testid]="'mktg-agent-run-derivative-' + chip.key"
                         (click)="onCopyDerivative(chip)">
                         <!-- Copied state is conveyed by text + icon, never color alone. -->
@@ -245,6 +245,8 @@
                         }
                       </button>
                     }
+                    <!-- aria-label swaps alone aren't announced — this live region tells screen-reader users the copy succeeded. -->
+                    <span class="sr-only" role="status">{{ copiedAnnouncement() }}</span>
                   </div>
                 }
 

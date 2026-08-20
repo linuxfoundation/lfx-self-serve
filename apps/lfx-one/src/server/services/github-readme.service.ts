@@ -33,6 +33,17 @@ const GITHUB_SEGMENT_RE = /^[A-Za-z0-9_.-]+$/;
  * non-standard README filenames and the default branch for us.
  */
 export class GithubReadmeService {
+  /**
+   * Optional server-side GitHub token (`GITHUB_API_TOKEN`). Unauthenticated
+   * GitHub REST calls are capped at 60/hour PER SOURCE IP, so a deployment
+   * sharing one egress IP would silently degrade to README-less generations
+   * under load; a token raises the cap to 5,000/hour. Absent token = the
+   * unauthenticated cap, which the rate-limit logging below makes visible.
+   */
+  private get apiToken(): string {
+    return process.env['GITHUB_API_TOKEN'] || '';
+  }
+
   /** Fetch the repo's README as raw markdown, size-capped; null on any failure. */
   public async fetchReadme(req: Request, githubUrl: string): Promise<string | null> {
     const repo = this.parseRepo(githubUrl);
@@ -44,20 +55,36 @@ export class GithubReadmeService {
     const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/readme`;
 
     try {
+      const headers: Record<string, string> = {
+        // Raw media type returns the README body directly (no base64 step).
+        Accept: 'application/vnd.github.raw+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'lfx-one',
+      };
+      if (this.apiToken) {
+        headers['Authorization'] = `Bearer ${this.apiToken}`;
+      }
+
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          // Raw media type returns the README body directly (no base64 step).
-          Accept: 'application/vnd.github.raw+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          'User-Agent': 'lfx-one',
-        },
+        headers,
         signal: AbortSignal.timeout(GITHUB_README_TIMEOUT_MS),
       });
 
       if (!response.ok) {
-        logger.warning(req, 'github_readme_fetch', 'GitHub README fetch failed — generation proceeds without a README', {
+        // GitHub signals a spent rate limit as 403 or 429 with
+        // x-ratelimit-remaining: 0 — log it distinctly so operators can tell
+        // "we're being throttled, configure GITHUB_API_TOKEN" apart from an
+        // ordinary missing/private README.
+        const rateLimited = (response.status === 403 || response.status === 429) && response.headers.get('x-ratelimit-remaining') === '0';
+        const detail = rateLimited
+          ? 'GitHub README fetch rate-limited — set GITHUB_API_TOKEN to raise the cap; generation proceeds without a README'
+          : 'GitHub README fetch failed — generation proceeds without a README';
+        logger.warning(req, 'github_readme_fetch', detail, {
           status: response.status,
+          rate_limited: rateLimited,
+          rate_limit_reset: response.headers.get('x-ratelimit-reset') || undefined,
+          authenticated: !!this.apiToken,
           owner: repo.owner,
           repo: repo.repo,
         });
