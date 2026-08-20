@@ -28,6 +28,8 @@ export class MentionsListComponent {
   public readonly mentions = input<Mention[]>([]);
   public readonly loading = input(false);
   public readonly totalMentions = input(0);
+  /** Paginator-navigable total — the page caps this at the server's deepest servable offset; `totalMentions` keeps the true count. */
+  public readonly paginatorTotalRecords = input(0);
   public readonly first = input(0);
   public readonly rows = input(DEFAULT_MENTION_PAGE_SIZE);
   public readonly rowsPerPageOptions = input<number[]>(MENTION_PAGE_SIZE_OPTIONS);

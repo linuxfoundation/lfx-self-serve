@@ -83,6 +83,9 @@ export const DEFAULT_MENTION_PAGE_SIZE = 20;
 
 /** Server fetch window: the client caches ±2 windows of this size around the visible page. */
 export const MENTION_SERVER_WINDOW_SIZE = 100;
+
+/** Deepest feed offset the server honors — past ~1000 windows a paginated request is a scan, not navigation. */
+export const MENTION_MAX_FEED_OFFSET = 100_000;
 export const MENTION_MAX_CACHED_WINDOWS = 2;
 
 /** Cap for array-valued filters (keywords / tags / authors) — enforced at the HTTP boundary and in the SQL builder. */

@@ -12,6 +12,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   MENTION_FEED_BODY_MAX_CHARS: 1000,
   MENTION_FILTER_MAX_VALUES: 200,
   MENTION_IDS_MAX_VALUES: 500,
+  MENTION_MAX_FEED_OFFSET: 100_000,
   MENTION_TOP_TAGS_LIMIT: 10,
   VALKEY_CACHE: { SOCIAL_LISTENING_TTL_SECONDS: 1800 },
 }));
@@ -19,7 +20,6 @@ vi.mock('@lfx-one/shared/constants', () => ({
 // The params helper pulls in the whole shared validation surface; only its bounds matter here.
 vi.mock('../helpers/social-listening-params.helper', () => ({
   MAX_FEED_LIMIT: 100,
-  MAX_FEED_OFFSET: 100_000,
   MAX_ANALYTICS_LIMIT: 100,
 }));
 

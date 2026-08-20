@@ -6,6 +6,7 @@ import {
   MENTION_FEED_BODY_MAX_CHARS,
   MENTION_FILTER_MAX_VALUES,
   MENTION_IDS_MAX_VALUES,
+  MENTION_MAX_FEED_OFFSET,
   MENTION_TOP_TAGS_LIMIT,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
@@ -33,7 +34,7 @@ import {
 import { Request } from 'express';
 
 import { socialListeningFeedTable } from '../helpers/snowflake-schema.helper';
-import { MAX_ANALYTICS_LIMIT, MAX_FEED_LIMIT, MAX_FEED_OFFSET } from '../helpers/social-listening-params.helper';
+import { MAX_ANALYTICS_LIMIT, MAX_FEED_LIMIT } from '../helpers/social-listening-params.helper';
 import { escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
@@ -122,7 +123,7 @@ export class SocialListeningService {
     const scope = this.buildScope(params);
     const filters = this.buildFilters(req, params);
     const limit = this.clampInteger(params.limit, 1, MAX_FEED_LIMIT);
-    const offset = this.clampInteger(params.offset, 0, MAX_FEED_OFFSET);
+    const offset = this.clampInteger(params.offset, 0, MENTION_MAX_FEED_OFFSET);
 
     const sql = `
       SELECT ${FEED_COLUMNS}

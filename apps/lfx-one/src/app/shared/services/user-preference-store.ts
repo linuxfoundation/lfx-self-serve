@@ -37,6 +37,9 @@ export class UserPreferenceStore<T> {
 
   public setContext(ctx: PreferenceContext | null): void {
     if (!this.config.isBrowser) return;
+    // Same logical context: skip the cancel — distinctUntilChanged suppresses the reload, so an in-flight write would die silently.
+    const current = this.contextSignal();
+    if (current?.userId === ctx?.userId && current?.projectId === ctx?.projectId) return;
     this.cancelPersist$.next();
     this.contextSignal.set(ctx);
   }

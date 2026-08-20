@@ -14,6 +14,7 @@ import {
   DEFAULT_MENTION_PREDICATE,
   MENTION_FILTER_MAX_VALUES,
   MENTION_MAX_CACHED_WINDOWS,
+  MENTION_MAX_FEED_OFFSET,
   MENTION_PAGE_SIZE_OPTIONS,
   MENTION_SEARCH_DEBOUNCE_MS,
   MENTION_SEARCH_MIN_CHARS,
@@ -177,7 +178,7 @@ export class SocialListeningComponent {
   public readonly bookmarkedIds = computed(() => this.mentionBookmarkService.state().data);
 
   private readonly windowIndex = computed(() => Math.floor((this.currentPage() * this.pageSize()) / this.serverWindowSize));
-  // The server clamps offset at MAX_FEED_OFFSET (100,000) — past ~1000 windows the response is clamped, not window-accurate.
+  // The paginator is capped at the last servable window, so serverOffset stays within MENTION_MAX_FEED_OFFSET (100,000).
   private readonly serverOffset = computed(() => this.windowIndex() * this.serverWindowSize);
   private readonly localOffset = computed(() => this.currentPage() * this.pageSize() - this.serverOffset());
 
@@ -193,6 +194,8 @@ export class SocialListeningComponent {
   private readonly feedState: Signal<LoadableState<SocialListeningFeedResponse>> = this.initFeedState();
   private readonly countState: Signal<LoadableState<number>> = this.initTotalRecords();
   public readonly totalRecords = computed(() => this.countState().data ?? 0);
+  // The server clamps offset at MENTION_MAX_FEED_OFFSET — never advertise pages past the last servable window.
+  public readonly paginatorTotalRecords = computed(() => Math.min(this.totalRecords(), MENTION_MAX_FEED_OFFSET + this.serverWindowSize));
   public readonly countError = computed(() => this.countState().error);
   private readonly subProjectsState: Signal<LoadableState<SocialListeningSubProject[]>> = this.initSubProjectsState();
   private readonly platformsState: Signal<LoadableState<SocialListeningPlatform[]>> = this.initPlatformsState();
@@ -342,7 +345,8 @@ export class SocialListeningComponent {
     // (foundationSlug + selectedPeriod are explicit deps; the selects feed in via currentFilters.)
     effect(() => {
       this.foundationSlug();
-      this.selectedPeriod();
+      // Bookmark mode freezes the request's period — depending on it here clears the cache with no refetch (skeleton hang).
+      if (this.selectedBookmarkFilter() !== 'bookmarked') this.selectedPeriod();
       this.currentFilters();
       untracked(() => {
         this.currentPage.set(0);

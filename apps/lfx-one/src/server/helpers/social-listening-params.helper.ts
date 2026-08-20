@@ -5,6 +5,7 @@ import {
   MENTION_FILTER_MAX_VALUES,
   MENTION_HAS_TITLE_OPTIONS,
   MENTION_IDS_MAX_VALUES,
+  MENTION_MAX_FEED_OFFSET,
   MENTION_RELEVANCE_OPTIONS,
   MENTION_SENTIMENT_OPTIONS,
   MENTION_SERVER_WINDOW_SIZE,
@@ -36,9 +37,6 @@ const SEARCH_MAX_LENGTH = 500;
 
 /** A page can never exceed the server window the client is built around. */
 export const MAX_FEED_LIMIT = MENTION_SERVER_WINDOW_SIZE;
-
-/** ~1000 windows deep. Past this, a paginated request is a scan, not navigation. */
-export const MAX_FEED_OFFSET = 100_000;
 
 /** Ceiling for the caller-supplied `limit` on the analytics top-projects panel. */
 export const MAX_ANALYTICS_LIMIT = 100;
@@ -115,7 +113,7 @@ export function parseSocialListeningAuthorFilters(req: Request, operation: strin
 export function parseSocialListeningPagination(req: Request, operation: string): { limit: number; offset: number } {
   return {
     limit: parseIntegerParam(req, 'limit', operation, { fallback: MAX_FEED_LIMIT, min: 1, max: MAX_FEED_LIMIT }),
-    offset: parseIntegerParam(req, 'offset', operation, { fallback: 0, min: 0, max: MAX_FEED_OFFSET }),
+    offset: parseIntegerParam(req, 'offset', operation, { fallback: 0, min: 0, max: MENTION_MAX_FEED_OFFSET }),
   };
 }
 

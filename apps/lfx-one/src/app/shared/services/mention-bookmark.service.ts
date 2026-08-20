@@ -46,8 +46,18 @@ export class MentionBookmarkService {
   }
 
   public toggleBookmark(mentionId: string): void {
-    const { data: ids, loading } = this.store.state();
-    if (loading) return;
+    const { data: ids, loading, error } = this.store.state();
+    // A failed load leaves an empty fallback set — writing from it would clobber the persisted bookmarks.
+    if (loading || error) {
+      if (error) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Bookmarks unavailable',
+          detail: 'Your bookmarks could not be loaded. Refresh the page and try again.',
+        });
+      }
+      return;
+    }
 
     const adding = !ids.has(mentionId);
     if (adding && ids.size >= MENTION_IDS_MAX_VALUES) {
