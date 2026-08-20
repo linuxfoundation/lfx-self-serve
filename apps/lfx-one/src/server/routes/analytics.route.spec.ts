@@ -215,14 +215,23 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
   // Regression guard: these routes' authorization is intentionally owned by LFXV2-2235's
   // marketing-ops-aware middleware, not this PR — a future rebase should not silently reintroduce
   // requireExecutiveDashboardAccess/requireExecutiveDirector here and create a conflicting gate.
-  it.each(['/event-growth', '/events-overview-summary', '/event-roster', '/event-detail', '/brand-reach', '/brand-health', '/revenue-impact', '/marketing-attribution', '/web-activities-summary', '/email-ctr', '/social-reach'])(
-    'leaves %s ungated at this PR (owned by LFXV2-2235)',
-    async (path) => {
-      getPersonas.mockResolvedValue(NON_ED);
+  it.each([
+    '/event-growth',
+    '/events-overview-summary',
+    '/event-roster',
+    '/event-detail',
+    '/brand-reach',
+    '/brand-health',
+    '/revenue-impact',
+    '/marketing-attribution',
+    '/web-activities-summary',
+    '/email-ctr',
+    '/social-reach',
+  ])('leaves %s ungated at this PR (owned by LFXV2-2235)', async (path) => {
+    getPersonas.mockResolvedValue(NON_ED);
 
-      const res = await fetch(`${baseUrl}/api/analytics${path}`);
+    const res = await fetch(`${baseUrl}/api/analytics${path}`);
 
-      expect(res.status).not.toBe(403);
-    }
-  );
+    expect(res.status).not.toBe(403);
+  });
 });
