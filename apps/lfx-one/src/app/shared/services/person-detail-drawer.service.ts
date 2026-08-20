@@ -79,8 +79,10 @@ export class PersonDetailDrawerService {
           return this.http.post<OrgLensCompanyEmailsResponse>(url, { email: context.email }).pipe(
             map((response) => ({ detail: null, companyEmails: response.companyEmails })),
             tap(() => this._loading.set(false)),
+            // Keep failures local to this optional lookup — no personKey means no activity was ever
+            // fetched, so setting the shared _error signal here would wrongly flip the activity tabs
+            // to "Couldn't load this person's details" instead of the truthful "not available" state.
             catchError(() => {
-              this._error.set(true);
               this._loading.set(false);
               return of(EMPTY_FETCH_RESULT);
             })
