@@ -192,10 +192,14 @@ export class UserSearchComponent {
     this.onUserSelect.emit(selectedUser);
   }
 
-  // Only meaningful alongside displayValue: arbitrary typed text that was never selected (or
-  // stale text left after a blur without a pick) shouldn't linger — snap back to the committed
-  // label. Consumers without displayValue don't get an onBlur binding in the template, so this
-  // never fires for them.
+  /**
+   * Snaps the input box back to the committed `displayValue` on blur.
+   *
+   * Only meaningful alongside `displayValue`: arbitrary typed text that was never selected (or
+   * stale text left after a blur without a pick) shouldn't linger — snap back to the committed
+   * label. Consumers without `displayValue` don't get an `onBlur` binding in the template, so
+   * this never fires for them.
+   */
   public onSearchBlur(): void {
     const label = this.displayValue();
     if (label === null) {

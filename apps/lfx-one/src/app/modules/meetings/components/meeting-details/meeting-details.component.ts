@@ -119,6 +119,23 @@ export class MeetingDetailsComponent implements OnInit {
     { initialValue: '' }
   );
 
+  // The committed organizer's username, tracked alongside selectedOwnerLabel so
+  // showSavedOwnerRevert can distinguish two different people who happen to share a display label
+  // (matches prepareOwnerData()'s own username+name+email comparison in meeting-manage.component.ts).
+  public readonly selectedOwnerUsername = toSignal(
+    toObservable(this.form).pipe(
+      switchMap((f) => {
+        const usernameCtrl = f.get('ownerUsername');
+        if (!usernameCtrl) return of(null);
+        return usernameCtrl.valueChanges.pipe(
+          startWith(usernameCtrl.value),
+          map((value) => (value as string | null) || null)
+        );
+      })
+    ),
+    { initialValue: null }
+  );
+
   // Same "Name (email)" formatting, applied to the saved-owner baseline rather than the live form
   // — used for the "Saved organizer: …" row so it reads identically to the picker's own display.
   public readonly savedOwnerLabel = computed(() => {
@@ -133,11 +150,16 @@ export class MeetingDetailsComponent implements OnInit {
   });
 
   // The saved-organizer row only makes sense once there's a saved owner to revert to, and only
-  // while the picker currently shows something else — once reverted, the picker's own label
-  // already matches and the row would be redundant.
+  // while the picker currently shows something else — once reverted, the picker's own label and
+  // username already match and the row would be redundant. Username is compared alongside the
+  // label (not just name+email) so two people who happen to share a display label still trip the
+  // saved-owner row, matching prepareOwnerData()'s own identity comparison.
   public readonly showSavedOwnerRevert = computed(() => {
     const savedLabel = this.savedOwnerLabel();
-    return Boolean(savedLabel) && savedLabel !== this.selectedOwnerLabel();
+    if (!savedLabel) return false;
+    const labelDiffers = savedLabel !== this.selectedOwnerLabel();
+    const usernameDiffers = (this.savedOwner()?.username || null) !== this.selectedOwnerUsername();
+    return labelDiffers || usernameDiffers;
   });
 
   // Duration options from shared constants
