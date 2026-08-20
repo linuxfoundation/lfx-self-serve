@@ -381,6 +381,10 @@
                   cdkDrag
                   [cdkDragData]="block"
                   (click)="selectBlock(block.id)"
+                  (keydown.enter)="selectBlock(block.id)"
+                  (keydown.space)="selectBlock(block.id); $event.preventDefault()"
+                  role="button"
+                  tabindex="0"
                   [attr.data-testid]="'newsletter-composer-block-' + block.block_type"
                   [attr.aria-pressed]="selectedBlockId() === block.id">
                   <!-- Drag-handle chip (browser-only). Label + duplicate / delete /
@@ -431,6 +435,10 @@
                           cdkDrag
                           [cdkDragData]="child"
                           (click)="selectBlock(child.id); $event.stopPropagation()"
+                          (keydown.enter)="selectBlock(child.id); $event.stopPropagation()"
+                          (keydown.space)="selectBlock(child.id); $event.preventDefault(); $event.stopPropagation()"
+                          role="button"
+                          tabindex="0"
                           [attr.data-testid]="'newsletter-composer-child-' + child.block_type"
                           [attr.aria-pressed]="selectedBlockId() === child.id">
                           @if (isBrowser()) {

@@ -27,6 +27,8 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import {
   NEWSLETTER_DEFAULT_TEMPLATE_KEY,
+  NEWSLETTER_GMAIL_CLIP_BYTES,
+  NEWSLETTER_GMAIL_WARN_BYTES,
   NEWSLETTER_SPACING_DEFAULT,
   NEWSLETTER_SPACING_MARGIN_KEY,
   NEWSLETTER_SPACING_PADDING_KEY,
@@ -211,8 +213,8 @@ export class NewsletterBlockComposerComponent implements OnInit {
   protected readonly emailSizeLabel: Signal<string> = computed(() => `${(this.emailBytes() / 1024).toFixed(1)} KB`);
   protected readonly emailSizeStatus: Signal<'ok' | 'warn' | 'clip'> = computed(() => {
     const bytes = this.emailBytes();
-    if (bytes >= GMAIL_CLIP_BYTES) return 'clip';
-    if (bytes >= GMAIL_WARN_BYTES) return 'warn';
+    if (bytes >= NEWSLETTER_GMAIL_CLIP_BYTES) return 'clip';
+    if (bytes >= NEWSLETTER_GMAIL_WARN_BYTES) return 'warn';
     return 'ok';
   });
   // One stable drop-list id per container block, so the palette / canvas / other
@@ -1395,14 +1397,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
 /** Vertical gap (px) between the floating toolbar and the top of its block. */
 const TOOLBAR_OFFSET = 32;
-
-/**
- * Gmail clips a message once its HTML exceeds ~102 KB (hiding everything past
- * the cut behind a "[Message clipped] View entire message" link). We warn as
- * the rendered email approaches that ceiling. Matches Gatewaze's thresholds.
- */
-const GMAIL_WARN_BYTES = 90 * 1024;
-const GMAIL_CLIP_BYTES = 102 * 1024;
 
 /**
  * Read a dotted/indexed path out of a content object (`jobs.0.company`). A bare

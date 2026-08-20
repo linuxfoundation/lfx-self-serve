@@ -238,7 +238,7 @@ export class NewsletterController {
       const payload = req.body as NewsletterRenderPreviewPayload;
       this.validateRenderPreviewPayload(payload, req.path, 'newsletter_render_preview');
       const result = await this.newsletterService.renderPreview(req, projectUid, payload);
-      logger.success(req, 'newsletter_render_preview', startTime, { bytes: Buffer.byteLength(result.body_html, 'utf8') });
+      logger.success(req, 'newsletter_render_preview', startTime, { bytes: Buffer.byteLength(result.body_html ?? '', 'utf8') });
       res.json(result);
     } catch (error) {
       next(error);

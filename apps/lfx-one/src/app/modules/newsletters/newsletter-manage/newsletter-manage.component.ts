@@ -280,7 +280,13 @@ export class NewsletterManageComponent {
   // RESPONSE — the rendered value — which is what the form then holds; comparing
   // against it never loops. scheduledAt is included so a schedule-only edit
   // (picker changed, nothing else) isn't deduped as "nothing to save".
-  private readonly lastSavedSnapshot = signal<{ subject: string; bodyHtml: string; bodyLayout: string; committeeUids: string[]; scheduledAt: string | null } | null>(null);
+  private readonly lastSavedSnapshot = signal<{
+    subject: string;
+    bodyHtml: string;
+    bodyLayout: string;
+    committeeUids: string[];
+    scheduledAt: string | null;
+  } | null>(null);
   private readonly saveTrigger$ = new Subject<boolean>();
 
   // === Recipient summary ===
@@ -349,6 +355,12 @@ export class NewsletterManageComponent {
   // consume body_html (preview, test-send, send) so none acts on stale or empty
   // HTML — e.g. a test email must never go out with an unrendered body.
   private readonly bodyRendered = computed(() => this.bodyHtmlValue().trim().length > 0);
+  // Canonicalized serialization of the current layout, memoized so the full
+  // recursive key-sort + JSON.stringify runs once per layout change rather than
+  // on every isDirty recomputation. isDirty feeds canSend/canSchedule/
+  // canSendTest/canPreview and re-runs on every keystroke (subject/body edits),
+  // so without this memo the whole body_layout was re-canonicalized per keystroke.
+  private readonly bodyLayoutSerialized = computed(() => this.serializeLayout(this.bodyLayoutValue()));
   private readonly isDirty = computed(() => this.computeIsDirty());
   // Blocks mode: body_html is server-derived, valid only after a save syncs the
   // render → require a clean snapshot. Simple mode: body_html is authored live in
@@ -398,7 +410,13 @@ export class NewsletterManageComponent {
   );
   public readonly canSendTest = computed(
     () =>
-      this.subjectFilled() && this.bodyUsable() && this.bodyFilled() && this.hasContext() && this.edEmail().length > 0 && !this.testSending() && !this.isScheduleReadOnly()
+      this.subjectFilled() &&
+      this.bodyUsable() &&
+      this.bodyFilled() &&
+      this.hasContext() &&
+      this.edEmail().length > 0 &&
+      !this.testSending() &&
+      !this.isScheduleReadOnly()
   );
   // Same gates as canSend (including the block-composer bodyRendered/!isDirty gates
   // so a scheduled send can't arm on stale, unrendered server-derived body_html —
@@ -1566,7 +1584,7 @@ export class NewsletterManageComponent {
     return !(
       saved.subject === this.subjectValue() &&
       saved.bodyHtml === this.bodyHtmlValue() &&
-      saved.bodyLayout === this.serializeLayout(this.bodyLayoutValue()) &&
+      saved.bodyLayout === this.bodyLayoutSerialized() &&
       this.uidsEqual(saved.committeeUids, this.committeeUidsValue())
     );
   }

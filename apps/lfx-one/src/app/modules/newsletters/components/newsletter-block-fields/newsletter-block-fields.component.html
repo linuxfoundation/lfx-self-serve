@@ -70,7 +70,9 @@
 
                       @for (nested of entry.nested; track trackByKey($index, nested)) {
                         <div role="group" [attr.aria-labelledby]="'nlfld-' + entry.key + '-' + itemIdx + '-' + nested.key" class="flex flex-col gap-1.5">
-                          <label [id]="'nlfld-' + entry.key + '-' + itemIdx + '-' + nested.key" class="text-xs font-medium text-gray-600">{{ nested.displayLabel }}</label>
+                          <label [id]="'nlfld-' + entry.key + '-' + itemIdx + '-' + nested.key" class="text-xs font-medium text-gray-600">{{
+                            nested.displayLabel
+                          }}</label>
                           @switch (nested.type) {
                             @case ('richtext') {
                               <lfx-rich-editor

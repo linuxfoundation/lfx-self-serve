@@ -88,3 +88,10 @@ export const NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES = 35;
 // NEWSLETTER_SCHEDULE_MAX_HORIZON defaults to and is hard-capped at 72h, so a
 // larger value can never succeed at arm time regardless of what the UI allows.
 export const NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS = 72;
+
+// Gmail clips a message once its rendered HTML exceeds ~102 KB (hiding
+// everything past the cut behind a "[Message clipped] View entire message"
+// link). The block composer warns as the email approaches that ceiling and
+// flags a clip once it is crossed.
+export const NEWSLETTER_GMAIL_WARN_BYTES = 90 * 1024;
+export const NEWSLETTER_GMAIL_CLIP_BYTES = 102 * 1024;
