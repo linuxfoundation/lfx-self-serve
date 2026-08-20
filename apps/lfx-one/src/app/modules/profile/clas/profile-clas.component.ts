@@ -429,9 +429,13 @@ export class ProfileClasComponent {
    * A `revoked` row takes that path deliberately: it is read-only, and the ECLA fallback below
    * would otherwise tell someone whose employer failed sanctions screening that they are still
    * covered by a Corporate CLA.
+   *
+   * An invalidated ICLA also has no ⋮, matching the v17-after-legal HTML (FDC3): empty
+   * `actionscell` even when a PDF exists. Invalidated ECLA is not drawn there and still
+   * keeps Request Removal.
    */
   private buildRowMenuItems(agreement: MyClaAgreement): MenuItem[] {
-    if (agreement.status === 'revoked') {
+    if (agreement.status === 'revoked' || (agreement.kind === 'ICLA' && agreement.status === 'invalidated')) {
       return [];
     }
     if (agreement.pdfAvailable) {
@@ -446,8 +450,11 @@ export class ProfileClasComponent {
     if (agreement.kind === 'ECLA') {
       return [
         {
-          label: 'Covered by Corporate CLA (CCLA)',
+          label: 'Download PDF',
+          icon: 'fa-light fa-download',
           disabled: true,
+          title: 'Covered by Corporate CLA (CCLA)',
+          tooltipOptions: { tooltipLabel: 'Covered by Corporate CLA (CCLA)' },
         },
         ...buildContactClaManagerMenuItems(agreement, this.dialogService),
       ];

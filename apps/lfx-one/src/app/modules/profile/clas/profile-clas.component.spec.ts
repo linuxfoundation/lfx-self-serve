@@ -209,11 +209,15 @@ describe('ProfileClasComponent', () => {
     expect(items[0].disabled).toBeFalsy();
   });
 
-  it('shows a disabled Covered by Corporate CLA item on an ECLA row', async () => {
+  it('shows a disabled Download PDF item with a Covered by Corporate CLA tooltip on an ECLA row', async () => {
     await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' })]);
 
-    expect(menuItems('s-ecla').map((item) => item.label)).toEqual(['Covered by Corporate CLA (CCLA)', 'Request Removal']);
-    expect(menuItems('s-ecla')[0].disabled).toBe(true);
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual(['Download PDF', 'Request Removal']);
+    expect(menuItems('s-ecla')[0]).toMatchObject({
+      disabled: true,
+      title: 'Covered by Corporate CLA (CCLA)',
+      tooltipOptions: { tooltipLabel: 'Covered by Corporate CLA (CCLA)' },
+    });
   });
 
   it('offers Request approval, Request Removal, and Contact on a Needs-attention ECLA off the Approved List', async () => {
@@ -229,7 +233,7 @@ describe('ProfileClasComponent', () => {
     ]);
 
     expect(menuItems('s-attn').map((item) => item.label)).toEqual([
-      'Covered by Corporate CLA (CCLA)',
+      'Download PDF',
       'Request approval',
       'Request Removal',
       'Contact CLA Manager',
@@ -283,6 +287,13 @@ describe('ProfileClasComponent', () => {
     expect(rowMenu('s-rev')).toBeNull();
   });
 
+  it('keeps Request Removal on an invalidated ECLA — that row is not in the prototype', async () => {
+    await render([agreement({ id: 's-inv-ecla', kind: 'ECLA', status: 'invalidated', pdfAvailable: false, companyName: 'Acme' })]);
+
+    expect(menuItems('s-inv-ecla').map((item) => item.label)).toEqual(['Download PDF', 'Request Removal']);
+    expect(menuItems('s-inv-ecla')[0].disabled).toBe(true);
+  });
+
   function signedAs(id: string): HTMLElement | null {
     return fixture.nativeElement.querySelector(`[data-testid="agreement-signed-as-${id}"]`);
   }
@@ -309,7 +320,15 @@ describe('ProfileClasComponent', () => {
     expect(signedAs('s-rev')?.textContent?.trim()).toBe('Signed as jellis (GitHub)');
     expect(signedAs('s-inv')?.textContent?.trim()).toBe('Signed as jellis (GitHub)');
     expect(actionsTrigger('s-rev')).toBeNull();
-    expect(menuItems('s-inv')[0].label).toBe('Download PDF');
+    expect(actionsTrigger('s-inv')).toBeNull();
+  });
+
+  it('renders no actions trigger on an invalidated ICLA even when a document exists', async () => {
+    await render([agreement({ id: 's-inv', kind: 'ICLA', status: 'invalidated', pdfAvailable: true })]);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="agreement-row-s-inv"]')).toBeTruthy();
+    expect(actionsTrigger('s-inv')).toBeNull();
+    expect(rowMenu('s-inv')).toBeNull();
   });
 
   it('omits the identity line when the producer sent no identity', async () => {
