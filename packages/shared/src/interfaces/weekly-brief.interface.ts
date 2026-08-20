@@ -50,13 +50,28 @@ export type WeeklyBriefSourceChipAction = PastMeetingActivityFeedAction | VoteDr
  * `WeeklyBriefSourceRef` by `mapWeeklyBriefSourceRefsToChips` (`../utils/weekly-brief.utils`).
  * `action: null` means the chip renders unlinked (no resolvable click target for that `kind` —
  * e.g. "mailing-list", which has no archive URL anywhere in this contract, or an unrecognized
- * future `kind`).
+ * future `kind`). `kind` is copied straight from the source `WeeklyBriefSourceRef` so the
+ * template can group chips into kind-sections without resolving it again (frontend-checklist §4).
  */
 export interface WeeklyBriefSourceChip {
   id: string;
   label: string;
   icon: string;
+  kind: string;
   action: WeeklyBriefSourceChipAction | null;
+
+  /**
+   * Present when this chip represents 2+ source refs collapsed under the same kind+label —
+   * e.g. 12 instances of a recurring meeting. Absent for a chip backed by a single,
+   * unique source ref, which renders exactly as it did before this field existed.
+   */
+  group?: {
+    count: number;
+    /** Individual chips for level-2 expansion, each with its own action; label suffixed
+     *  with an ordinal (" #1", " #2", ...) in source_refs order — WeeklyBriefSourceRef has
+     *  no date field to sort/label by, see LFXV2-3335. */
+    instances: WeeklyBriefSourceChip[];
+  };
 }
 
 export interface WeeklyBrief {

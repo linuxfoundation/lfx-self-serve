@@ -67,3 +67,10 @@ export const WEEKLY_BRIEF_ERROR_REASON = { NO_SOURCES: 'no_sources' } as const;
 
 /** Number of past briefs fetched per page in the archive drawer (LFXV2-3046). The BFF caps all limit values at 50. */
 export const WEEKLY_BRIEF_ARCHIVE_PAGE_SIZE = 10;
+
+/**
+ * Raw `source_refs` count above which the weekly-brief card's Sources row collapses behind a
+ * `Sources (N)` disclosure toggle instead of rendering every chip flat (LFXV2-3335). At or
+ * below this threshold, the row renders exactly as it did before this feature existed.
+ */
+export const WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD = 5;
