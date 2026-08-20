@@ -6,6 +6,9 @@ import {
   EVENT_GROWTH_TOP_EVENTS_LIMIT,
   getYearForRange,
   EMAIL_CAMPAIGN_LIMIT,
+  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH,
+  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
+  FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
   NATS_CONFIG,
@@ -15,7 +18,7 @@ import {
   PROJECT_HEALTH_SCORE_CATEGORIES,
   ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
-import { NatsSubjects } from '@lfx-one/shared/enums';
+import { NatsSubjects, ProjectStage } from '@lfx-one/shared/enums';
 import {
   BoardMeetingInviteeRow,
   BoardMeetingParticipationSummaryResponse,
@@ -67,6 +70,8 @@ import {
   FoundationMaintainersMonthlyResponse,
   FoundationMaintainersMonthlyRow,
   FoundationMaintainersResponse,
+  FoundationProjectsDetailGroup,
+  FoundationProjectsDetailGroupedResponse,
   FoundationProjectsDetailResponse,
   FoundationProjectsDetailRow,
   FoundationProjectsLifecycleDistributionResponse,
@@ -1981,6 +1986,92 @@ export class ProjectService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Get per-project detail rows for a foundation AND every nested sub-foundation, grouped by
+   * which foundation slug they were fetched under (GH-1607). FOUNDATION_TOTAL_PROJECTS_DETAIL's
+   * `FOUNDATION_SLUG` column only rolls up direct-parent projects, not multi-level descendants
+   * (e.g. NeoNephos's projects aren't attributed to Linux Foundation Europe), so this walks the
+   * project-service hierarchy to discover nested sub-foundations and fans out the existing
+   * per-slug Snowflake query across all of them.
+   * @param req - Express request object, needed to walk the project-service descendant tree
+   * @param foundationSlug - Top-level foundation slug to filter by (e.g., 'lfeurope')
+   */
+  public async getFoundationProjectsDetailGrouped(req: Request, foundationSlug: string): Promise<FoundationProjectsDetailGroupedResponse> {
+    logger.debug(req, 'get_foundation_projects_detail_grouped', 'Fetching grouped project detail', { foundation_slug: foundationSlug });
+
+    const rootProject = await this.getProjectBySlug(req, foundationSlug, false);
+    const subFoundations = await this.discoverSubFoundations(req, rootProject.uid);
+
+    // The root query is not allowed to degrade gracefully like a sub-foundation branch can: a
+    // failed root means no reliable root group to anchor the frontend's grouping fallback, so
+    // let it throw and propagate to the caller instead of returning an incomplete 200 (GH-1607 review).
+    const rootDetail = await this.getFoundationProjectsDetail(rootProject.slug);
+
+    // Fan out through a bounded worker pool rather than firing all N sub-foundation queries at
+    // once: a wide foundation can have up to FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES of them,
+    // which can overflow the shared Snowflake pool's waiting-client queue and cause otherwise
+    // healthy queries to be rejected (GH-1607 review, same pattern as organization.service.ts's
+    // getOrgLensAccountContext).
+    const subDetails: (FoundationProjectsDetailGroup | null)[] = new Array(subFoundations.length).fill(null);
+    let cursor = 0;
+    const worker = async (): Promise<void> => {
+      while (cursor < subFoundations.length) {
+        const index = cursor++;
+        const { uid, slug, name } = subFoundations[index];
+        try {
+          const detail = await this.getFoundationProjectsDetail(slug);
+          subDetails[index] = {
+            foundationSlug: slug,
+            foundationName: name,
+            foundationUid: uid,
+            projects: detail.projects.map((project) => ({ ...project, groupFoundationSlug: slug, groupFoundationName: name })),
+          };
+        } catch (error) {
+          logger.warning(req, 'get_foundation_projects_detail_grouped', 'Failed to fetch detail for a sub-foundation, omitting it from the response', {
+            foundation_slug: slug,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    };
+    const poolSize = Math.min(FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY, subFoundations.length);
+    await Promise.all(Array.from({ length: poolSize }, () => worker()));
+
+    // Only a sub-foundation that actually resolved its own section gets its rows stripped out of
+    // whichever parent's detail list they also show up in (the cube rolls up direct children).
+    // A sub-foundation whose own fetch failed above must NOT be stripped from its parent — it has
+    // no section of its own, so its parent's leaf row is its only remaining representation.
+    // Filtering by the full discovered set regardless of fetch outcome would make a failed
+    // sub-foundation vanish entirely instead of falling back to that parent row (GH-1607 review).
+    const renderedSlugs = new Set(subDetails.filter((group): group is FoundationProjectsDetailGroup => group !== null).map((group) => group.foundationSlug));
+
+    const rootGroup: FoundationProjectsDetailGroup = {
+      foundationSlug: rootProject.slug,
+      foundationName: rootProject.name,
+      foundationUid: rootProject.uid,
+      projects: rootDetail.projects
+        .filter((project) => !renderedSlugs.has(project.projectSlug))
+        .map((project) => ({ ...project, groupFoundationSlug: rootProject.slug, groupFoundationName: rootProject.name })),
+    };
+
+    const groups: FoundationProjectsDetailGroup[] = [rootGroup];
+    for (const group of subDetails) {
+      if (group !== null) {
+        groups.push({ ...group, projects: group.projects.filter((project) => !renderedSlugs.has(project.projectSlug)) });
+      }
+    }
+
+    const totalCount = groups.reduce((sum, group) => sum + group.projects.length, 0);
+
+    logger.debug(req, 'get_foundation_projects_detail_grouped', 'Fetched grouped project detail', {
+      foundation_slug: foundationSlug,
+      group_count: groups.length,
+      total_count: totalCount,
+    });
+
+    return { groups, totalCount };
   }
 
   /**
@@ -7439,6 +7530,80 @@ export class ProjectService {
         originalError: error instanceof Error ? error : new Error(String(error)),
       });
     }
+  }
+
+  /**
+   * Recursively discovers nested sub-foundations beneath a foundation (or sub-foundation) UID,
+   * depth-capped by FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH and, since the depth cap alone
+   * doesn't bound worst-case fan-out under a true umbrella foundation (e.g. selecting The Linux
+   * Foundation itself, whose direct children are dozens of foundations), also capped in total by
+   * FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES via the shared `budget` counter. A "sub-foundation"
+   * is any child project that itself satisfies `computeIsFoundation` AND is public + Active — the
+   * stricter visibility gate (beyond `computeIsFoundation`, which also accepts non-public/
+   * pre-launch `Formation - Engaged` foundations for other, unrelated callers) keeps GH-1607's
+   * exclusion requirement intact for group metadata (slug/name) that gets serialized straight
+   * into the response. Reuses the same `parent: project:<uid>` query-service filter as
+   * `getFoundationProjectUids`/`getChildProjects`, but recurses into each discovered
+   * sub-foundation instead of stopping at one level.
+   */
+  private async discoverSubFoundations(
+    req: Request,
+    parentUid: string,
+    depth: number = 0,
+    budget: { remaining: number } = { remaining: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES }
+  ): Promise<{ uid: string; slug: string; name: string }[]> {
+    if (depth >= FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH) {
+      logger.warning(req, 'discover_sub_foundations', 'Hit max traversal depth, stopping this branch', {
+        parent_uid: parentUid,
+        depth,
+      });
+      return [];
+    }
+
+    const children = await fetchAllQueryResources<Project>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'project',
+          parent: `project:${parentUid}`,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      // A later-page failure must not silently keep only the earlier pages: that can drop a
+      // nested sub-foundation that happened to land on a later page with no signal beyond a
+      // warning (Cursor). failOnPartial makes a partial fetch throw instead, which the outer
+      // .catch() below turns into a clean "stop this branch" rather than a silent undercount.
+      { failOnPartial: true }
+    ).catch((error) => {
+      logger.warning(req, 'discover_sub_foundations', 'Failed to resolve children, stopping traversal at this branch', {
+        parent_uid: parentUid,
+        depth,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [] as Project[];
+    });
+
+    const subFoundations: { uid: string; slug: string; name: string }[] = [];
+    for (const child of children) {
+      if (budget.remaining <= 0) {
+        logger.warning(req, 'discover_sub_foundations', 'Hit max discovered sub-foundation count, stopping traversal', {
+          parent_uid: parentUid,
+          depth,
+          max_nodes: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
+        });
+        break;
+      }
+      if (child.slug === ROOT_PROJECT_SLUG || !computeIsFoundation(child)) {
+        continue;
+      }
+      if (!child.public || child.stage !== ProjectStage.Active) {
+        continue;
+      }
+      subFoundations.push({ uid: child.uid, slug: child.slug, name: child.name });
+      budget.remaining -= 1;
+      const nested = await this.discoverSubFoundations(req, child.uid, depth + 1, budget);
+      subFoundations.push(...nested);
+    }
+    return subFoundations;
   }
 
   /**

@@ -85,6 +85,9 @@ router.get('/foundation-events-attendance-distribution', (req, res, next) => ana
 // Foundation projects detail endpoint (total projects drill-down table)
 router.get('/foundation-projects-detail', (req, res, next) => analyticsController.getFoundationProjectsDetail(req, res, next));
 
+// Foundation projects detail grouped endpoint (Foundation Projects page, sub-foundations included)
+router.get('/foundation-projects-detail-grouped', (req, res, next) => analyticsController.getFoundationProjectsDetailGrouped(req, res, next));
+
 // Foundation projects lifecycle distribution endpoint (total projects drill-down secondary chart)
 router.get('/foundation-projects-lifecycle-distribution', (req, res, next) => analyticsController.getFoundationProjectsLifecycleDistribution(req, res, next));
 

@@ -273,6 +273,27 @@ export interface ProjectTableRow {
   lastUpdated: string | null;
   // Newest health-score category from PROJECT_HEALTH_METRICS_LATEST; null when unscored.
   healthScoreCategory: FoundationHealthScore | null;
+  /**
+   * Populated only by the Foundation Projects page's grouped endpoint
+   * (`getFoundationProjectsDetailGrouped`) — the slug/name of the foundation or
+   * sub-foundation this row's Snowflake query was fetched under, so the page can
+   * render sub-foundations as their own section instead of flattening them under
+   * the top-level foundation (GH-1607). Absent for rows from the plain
+   * `getFoundationProjectsDetail` endpoint used by the drawers.
+   */
+  groupFoundationSlug?: string;
+  groupFoundationName?: string;
+}
+
+/**
+ * One rendered section of the Foundation Projects page's table — a foundation or nested
+ * sub-foundation, derived client-side from the already-filtered flat row list by grouping on
+ * `ProjectTableRow.groupFoundationSlug` (GH-1607).
+ */
+export interface ProjectTableGroup {
+  foundationSlug: string;
+  foundationName: string;
+  projects: ProjectTableRow[];
 }
 
 // Health-status filter value for the drawer table; 'unscored' covers null-category rows.

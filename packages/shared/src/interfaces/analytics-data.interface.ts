@@ -2266,6 +2266,30 @@ export interface FoundationProjectsDetailResponse {
   totalCount: number;
 }
 
+/**
+ * One foundation's (or sub-foundation's) project rows within a grouped detail response —
+ * see {@link FoundationProjectsDetailGroupedResponse}.
+ */
+export interface FoundationProjectsDetailGroup {
+  foundationSlug: string;
+  foundationName: string;
+  // Project-service UID of this group's foundation/sub-foundation. Lets the frontend resolve
+  // slug→uid mappings per group (for lens navigation) without re-walking the descendant tree.
+  foundationUid: string;
+  projects: ProjectTableRow[];
+}
+
+/**
+ * API response for the Foundation Projects page's grouped detail endpoint (GH-1607).
+ * Groups the top-level foundation's own rows plus one group per discovered nested
+ * sub-foundation, since FOUNDATION_TOTAL_PROJECTS_DETAIL's `FOUNDATION_SLUG` column
+ * does not roll up multi-level descendants on its own.
+ */
+export interface FoundationProjectsDetailGroupedResponse {
+  groups: FoundationProjectsDetailGroup[];
+  totalCount: number;
+}
+
 // ============================================
 // Foundation Total Projects Monthly
 // ============================================
