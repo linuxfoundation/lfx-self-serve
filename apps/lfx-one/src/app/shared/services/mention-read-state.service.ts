@@ -4,7 +4,14 @@
 import { isPlatformBrowser } from '@angular/common';
 import { DestroyRef, Injectable, Injector, PLATFORM_ID, inject } from '@angular/core';
 import { MAX_READ_IDS, SOCIAL_LISTENING_READ_STATE_PREFERENCE_PREFIX } from '@lfx-one/shared/constants';
-import { computeReadToggle, emptyReadState, garbageCollectReadState, isReadInState, parseReadState, socialListeningPreferenceName } from '@lfx-one/shared/utils';
+import {
+  computeReadToggle,
+  emptyReadState,
+  garbageCollectReadState,
+  isReadInState,
+  parseReadState,
+  socialListeningPreferenceName,
+} from '@lfx-one/shared/utils';
 import { SocialListeningService } from '@services/social-listening.service';
 import { MessageService } from 'primeng/api';
 import { firstValueFrom } from 'rxjs';
