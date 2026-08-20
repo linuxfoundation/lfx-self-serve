@@ -4,7 +4,7 @@
 <div class="newsletter-preview" data-testid="newsletter-preview">
   <div class="newsletter-preview__frame">
     @if (hasContent()) {
-      @if (fullDocument()) {
+      @if (isFullDocument()) {
         <!-- A complete email document: render it verbatim in a sandboxed iframe so
              its <head> styles survive and no frontend chrome is layered on top. -->
         <iframe
