@@ -4,7 +4,6 @@ description: How to view, edit, and analyze surveys in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, manage, responses, nps, analytics]
-last_generated: 2026-05-22
 last_updated: 2026-05-22
 intercom_collection: Surveys
 ---

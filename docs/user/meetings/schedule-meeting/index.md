@@ -3,7 +3,6 @@ title: Schedule a Meeting
 description: How to create a new project meeting in LFX Self Serve.
 product_area: Meetings
 tags: [meetings, schedule, create, calendar]
-last_generated: 2026-05-22
 last_updated: 2026-08-10
 intercom_collection: Meetings
 ---

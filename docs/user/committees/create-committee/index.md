@@ -4,8 +4,7 @@ description: How to create a new committee for your project in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, create, governance]
-last_generated: 2026-05-22
-last_updated: 2026-05-22
+last_updated: 2026-08-19
 intercom_collection: Committees
 ---
 
@@ -13,18 +12,19 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 
 ## Before you begin
 
-Make sure you have the correct project or foundation selected in the lens switcher. The new committee will be associated with the currently active project context.
+Make sure you have the correct project or foundation selected in the lens switcher. The new committee will be associated with the currently active project or foundation context.
 
 ## Steps
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Groups** from the left navigation sidebar.
-3. Select the option to create a new committee (route: `/groups/manage`).
-4. Fill in the required fields:
-   - **Committee name** — the display name for your committee
+2. Switch to your **Project** or **Foundation** lens using the lens switcher — creating a group isn't available in the **Me** lens.
+3. Select **Groups** from the left navigation sidebar.
+4. Select the option to create a new committee (route: `/project/groups/create` or `/foundation/groups/create`).
+5. Fill in the required fields:
+   - **Group name** — the display name for your committee
    - **Description** — a brief explanation of the committee's purpose and scope
-5. Add initial members if needed.
-6. Save the committee.
+6. Add initial members if needed.
+7. Save the committee.
 
 ## After creation
 

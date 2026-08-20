@@ -4,7 +4,6 @@ description: How to view your donation history, stats, and recurring donations i
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, donations, view, history, recurring, one-time]
-last_generated: 2026-06-16
 last_updated: 2026-06-29
 intercom_collection: Crowdfunding
 ---
