@@ -3,7 +3,7 @@
 
 import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
-import { MeetingInviteEmail } from '@lfx-one/shared/interfaces';
+import { MeetingInviteEmail, SetMeetingInviteResult } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -72,7 +72,7 @@ export class MeetingPreferenceService {
     req: Request,
     v1Token: string,
     email: string
-  ): Promise<{ success: boolean; data?: MeetingInviteEmail; message?: string; error?: string }> {
+  ): Promise<SetMeetingInviteResult> {
     const codec = this.natsService.getCodec();
 
     logger.debug(req, 'set_meeting_invite_email', 'Setting preferred meeting-invite email via NATS', { email });
@@ -90,7 +90,7 @@ export class MeetingPreferenceService {
         logger.warning(req, 'set_meeting_invite_email', 'NATS preferred_email.set returned an error', {
           error: parsed.error,
         });
-        return { success: false, error: parsed.error, message: 'Failed to update meeting invitation email. Please try again.' };
+        return { success: false, reason: this.classifyPreferredEmailError(parsed.error), error: parsed.error };
       }
 
       return { success: true, data: { email_id: parsed.email_id ?? null, email: parsed.email ?? null } };
@@ -101,18 +101,23 @@ export class MeetingPreferenceService {
       });
 
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
-        return {
-          success: false,
-          error: 'Service temporarily unavailable',
-          message: 'Unable to reach the meeting service. Please try again later.',
-        };
+        return { success: false, reason: 'unavailable', error: 'Service temporarily unavailable' };
       }
 
-      return {
-        success: false,
-        error: 'Internal server error',
-        message: 'Failed to update meeting invitation email. Please try again.',
-      };
+      return { success: false, reason: 'upstream', error: 'Internal server error' };
     }
+  }
+
+  // Classify the upstream error string (the NATS reply carries only `{ error }`, no code) so the
+  // controller can map it to an HTTP status: validation → 4xx, unavailable → 503, anything else → 502.
+  private classifyPreferredEmailError(error: string): 'validation' | 'unavailable' | 'upstream' {
+    const normalized = error.toLowerCase();
+    if (normalized.includes('not an active, verified address')) {
+      return 'validation';
+    }
+    if (normalized.includes('not yet available') || normalized.includes('retry')) {
+      return 'unavailable';
+    }
+    return 'upstream';
   }
 }

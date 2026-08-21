@@ -686,8 +686,27 @@ export class ProfileController {
       const result = await this.meetingPreferenceService.setMeetingInviteEmail(req, v1Token, emailAddress);
 
       if (!result.success) {
+        const errorOptions = { operation: 'set_meeting_invite_email', service: 'profile_controller', path: req.path };
+
+        // Not an active, verified record — retrying won't help. Build ServiceValidationError directly
+        // so its top-level `message` (what the frontend reads) keeps the text; `forField` would replace it.
+        if (result.reason === 'validation') {
+          const validationMessage = 'This email is not an active, verified address on your account yet. Choose a different email, or verify it and try again.';
+          return next(new ServiceValidationError([{ field: 'email', message: validationMessage, code: 'FIELD_VALIDATION_ERROR' }], validationMessage, errorOptions));
+        }
+
+        // Upstream/SFDC sync not ready or the meeting service is unreachable — retryable.
+        if (result.reason === 'unavailable') {
+          return next(
+            new MicroserviceError('This email was added recently and is not ready to use yet. Please try again in a few minutes.', 503, 'SERVICE_UNAVAILABLE', {
+              operation: 'set_meeting_invite_email',
+              service: 'profile_controller',
+            })
+          );
+        }
+
         return next(
-          new MicroserviceError(result.message || 'Failed to set meeting invitation email', 502, 'BAD_GATEWAY', {
+          new MicroserviceError('Failed to update meeting invitation email. Please try again.', 502, 'BAD_GATEWAY', {
             operation: 'set_meeting_invite_email',
             service: 'profile_controller',
           })

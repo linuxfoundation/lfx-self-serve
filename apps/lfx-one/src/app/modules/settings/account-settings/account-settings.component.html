@@ -77,6 +77,18 @@
           </div>
         } @else {
           <div class="flex flex-col gap-6">
+            <!-- Meeting-invite validation error (address not an active, verified record upstream) -->
+            @if (meetingInviteError()) {
+              <lfx-message severity="error" [closable]="true" (onClose)="dismissMeetingInviteError()" data-testid="meeting-invite-error-banner">
+                <ng-template #content>
+                  <p class="text-sm">
+                    {{ meetingInviteError() }} If you believe this is an error,
+                    <button type="button" lfxOpenIntercom class="font-medium underline">contact support</button>.
+                  </p>
+                </ng-template>
+              </lfx-message>
+            }
+
             <!-- Email Addresses Card -->
             <div class="bg-white rounded-lg shadow-sm p-6" data-testid="email-list-card">
               <h3 class="text-sm font-semibold text-slate-900 mb-4">Email Addresses</h3>

@@ -9,8 +9,10 @@ import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
+import { MessageComponent } from '@components/message/message.component';
 import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ActivatedRoute } from '@angular/router';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { clearPendingProfileSave } from '@shared/utils/pending-profile-save.util';
@@ -34,6 +36,8 @@ import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs
     ButtonComponent,
     InputTextComponent,
     MenuComponent,
+    MessageComponent,
+    OpenIntercomDirective,
     ConfirmDialogModule,
     ToastModule,
     TooltipModule,
@@ -97,6 +101,10 @@ export class AccountSettingsComponent {
   // Preferred meeting-invitation email (meeting-service). Null address = no override (uses primary).
   public meetingInviteData: Signal<MeetingInviteEmail | null> = this.initMeetingInviteData();
   public meetingInviteEmail = computed((): string | null => this.meetingInviteData()?.email ?? null);
+
+  // Inline banner for a meeting-invite validation failure (the address isn't an active, verified
+  // record upstream). Held in a signal rather than a toast so it can host a "contact support" link.
+  public meetingInviteError = signal<string | null>(null);
 
   public allEmails = computed((): UserEmail[] => {
     const data = this.emailData();
@@ -298,15 +306,27 @@ export class AccountSettingsComponent {
       return;
     }
 
+    this.meetingInviteError.set(null);
+
     this.userService.setMeetingInviteEmail(email.email).subscribe({
       next: () => {
         this.emailRefresh.next();
         this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Meeting invitation email updated successfully' });
       },
       error: (err: HttpErrorResponse) => {
+        // A 400 means the address exists but isn't an active, verified record upstream — retrying
+        // won't help, so surface a persistent banner with a support link instead of a transient toast.
+        if (err.status === 400) {
+          this.meetingInviteError.set(err.error?.message || 'This email is not an active, verified address on your account yet.');
+          return;
+        }
         this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || 'Failed to update meeting invitation email' });
       },
     });
+  }
+
+  public dismissMeetingInviteError(): void {
+    this.meetingInviteError.set(null);
   }
 
   public deleteEmail(email: UserEmail): void {

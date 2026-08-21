@@ -55,6 +55,15 @@ export interface MeetingInviteEmail {
   email: string | null;
 }
 
+// Result of setting the preferred meeting-invitation email. `reason` maps a failure to an HTTP status
+// (validation → 4xx, unavailable → 503, upstream → 502); `error` is the raw upstream message, for logs.
+export interface SetMeetingInviteResult {
+  success: boolean;
+  data?: MeetingInviteEmail;
+  reason?: 'validation' | 'unavailable' | 'upstream';
+  error?: string;
+}
+
 /**
  * Request to send an OTP to a new email address (step 1 of add-email flow)
  */
