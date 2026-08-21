@@ -104,6 +104,7 @@ export class ClaGroupSelectComponent {
           if (searchTerm.length < CLA_GROUP_SEARCH_MIN_CHARS) {
             this.loading.set(false);
             this.error.set(false);
+            this.clearResults();
             return of<ClaGroupSearchResponse | null>(null);
           }
 
@@ -114,6 +115,7 @@ export class ClaGroupSelectComponent {
               // Every failure takes this one branch, including a 400 or 422 from a short term
               // that slipped past the gate above: same mistake, same message, one Retry.
               this.error.set(true);
+              this.clearResults();
               return of<ClaGroupSearchResponse | null>(null);
             })
           );
@@ -140,8 +142,11 @@ export class ClaGroupSelectComponent {
         }
 
         // A typed character invalidates the confirmed choice: the summary and CTA must never
-        // describe a project the text no longer matches.
+        // describe a project the text no longer matches. The highlight is a position in the
+        // previous list, so it has to drop here rather than after the debounce — Enter during
+        // the request window would otherwise confirm a CLA group the text no longer describes.
         this.selected.set(null);
+        this.highlightedIndex.set(-1);
         this.resultsOpen.set(true);
         this.pushSearch(value ?? '');
       });
@@ -211,7 +216,11 @@ export class ClaGroupSelectComponent {
     }
 
     const options = this.options();
-    if (!this.resultsOpen() || options.length === 0) return;
+    // Match the template: keep-typing / error copy hide the rows, so the keyboard must not
+    // treat those leftover options as still on screen.
+    if (!this.resultsOpen() || this.error() || this.queryBand() !== 'searchable' || options.length === 0) {
+      return;
+    }
 
     switch (event.key) {
       case 'ArrowDown':
@@ -264,5 +273,12 @@ export class ClaGroupSelectComponent {
   private pushSearch(value: string): void {
     this.query.set(value);
     this.search$.next(value);
+  }
+
+  /** Drops a list the template is no longer drawing, so Arrow/Enter cannot confirm a hidden row. */
+  private clearResults(): void {
+    this.options.set([]);
+    this.truncated.set(false);
+    this.highlightedIndex.set(-1);
   }
 }

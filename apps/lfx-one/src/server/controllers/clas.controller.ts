@@ -20,6 +20,30 @@ import { getUsernameFromAuth } from '../utils/auth-helper';
 // Anchored with fixed-length runs, so it cannot backtrack.
 const CLA_GROUP_ID_PATTERN = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 
+/**
+ * Every recipient must already be a non-empty string. Coercing mixed arrays would turn
+ * `null` / `true` / `1` into identifiers and drop the bad entries, so a malformed payload
+ * would still reach the producer as a partial request.
+ */
+function parseManagerRecipients(raw: unknown): string[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return null;
+  }
+
+  const recipients: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    recipients.push(trimmed);
+  }
+  return recipients;
+}
+
 export class ClasController {
   private readonly claService = new ClaService();
 
@@ -230,9 +254,8 @@ export class ClasController {
         return;
       }
 
-      const rawRecipients = Array.isArray(body?.recipients) ? body.recipients : [];
-      const recipients = rawRecipients.map((value) => String(value ?? '').trim()).filter((value) => value.length > 0);
-      if (recipients.length === 0) {
+      const recipients = parseManagerRecipients(body?.recipients);
+      if (!recipients) {
         res.status(400).json({ message: 'At least one CLA manager is required' });
         return;
       }

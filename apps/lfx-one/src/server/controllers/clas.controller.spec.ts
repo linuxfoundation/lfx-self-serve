@@ -462,6 +462,32 @@ describe('ClasController.createClaManagerRequest', () => {
     expect(createClaManagerRequest).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['jdoe', null],
+    ['jdoe', 1],
+    ['jdoe', true],
+    ['jdoe', '  '],
+  ])('rejects a recipient list that is not all non-empty strings (%j)', async (...recipients) => {
+    const res = buildRes();
+
+    await new ClasController().createClaManagerRequest({ params: { signatureId: SIGNATURE_ID }, body: body({ recipients }) } as any, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(createClaManagerRequest).not.toHaveBeenCalled();
+  });
+
+  it('trims valid recipient strings rather than coercing mixed values', async () => {
+    createClaManagerRequest.mockResolvedValue(receipt);
+
+    await new ClasController().createClaManagerRequest(
+      { params: { signatureId: SIGNATURE_ID }, body: body({ recipients: ['  jdoe  '] }) } as any,
+      buildRes(),
+      vi.fn()
+    );
+
+    expect(createClaManagerRequest).toHaveBeenCalledWith(expect.anything(), SIGNATURE_ID, resolvedIdentity, expect.objectContaining({ recipients: ['jdoe'] }));
+  });
+
   it('rejects a message longer than 4096 characters', async () => {
     const res = buildRes();
 

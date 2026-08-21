@@ -341,6 +341,17 @@ describe('ClaGroupSelectComponent', () => {
       expect(close).not.toHaveBeenCalledWith(VENUS);
     });
 
+    it('drops the highlight as soon as the query changes, before the next list arrives', () => {
+      press('ArrowDown');
+      expect((fixture.componentInstance as any).highlightedIndex()).toBe(0);
+
+      queryControl().setValue('venus test');
+      fixture.detectChanges();
+
+      // Enter during the debounce would otherwise confirm the previous highlight.
+      expect((fixture.componentInstance as any).highlightedIndex()).toBe(-1);
+    });
+
     it('drops the highlight when a new result set arrives, so Enter cannot pick a stale row', async () => {
       press('ArrowDown');
 
@@ -350,6 +361,26 @@ describe('ClaGroupSelectComponent', () => {
       // The highlighted index refers to a position in a list that no longer exists; keeping it
       // would confirm whichever project happened to land at that offset.
       expect((fixture.componentInstance as any).highlightedIndex()).toBe(-1);
+    });
+
+    it('cannot confirm a result that the keep-typing copy has already replaced', async () => {
+      press('ArrowDown');
+      await type('ve');
+      press('Enter');
+
+      expect((fixture.componentInstance as any).selected()).toBeNull();
+      expect((fixture.componentInstance as any).options()).toEqual([]);
+    });
+
+    it('cannot confirm a result after a later search fails', async () => {
+      press('ArrowDown');
+      getClaGroupOptions.mockReturnValue(throwError(() => new Error('boom')));
+      await type('venus test');
+      press('Enter');
+
+      expect((fixture.componentInstance as any).error()).toBe(true);
+      expect((fixture.componentInstance as any).selected()).toBeNull();
+      expect((fixture.componentInstance as any).options()).toEqual([]);
     });
   });
 
