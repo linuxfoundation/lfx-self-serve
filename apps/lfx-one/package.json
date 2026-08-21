@@ -63,6 +63,7 @@
     "@opentelemetry/semantic-conventions": "^1.39.0",
     "@primeuix/themes": "^2.0.2",
     "@tiptap/core": "^2",
+    "@tiptap/extension-image": "^2",
     "@tiptap/extension-link": "^2",
     "@tiptap/extension-placeholder": "^2",
     "@tiptap/extension-underline": "^2",

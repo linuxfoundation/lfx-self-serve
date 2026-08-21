@@ -33,6 +33,7 @@ export class NewsletterContentStepComponent {
   public readonly contextName = input.required<string>();
   public readonly hasContext = input<boolean>(false);
   public readonly savedLabel = input<string | null>(null);
+  public readonly projectUid = input.required<string>(); // Required for image uploads in the rich editor
 
   // === Outputs ===
   public readonly generated = output<GenerateNewsletterResponse>();

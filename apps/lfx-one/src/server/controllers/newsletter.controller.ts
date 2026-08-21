@@ -106,6 +106,48 @@ export class NewsletterController {
   }
 
   /**
+   * POST /api/projects/:projectUid/newsletters/images
+   *
+   * Upload a newsletter body image. Receives raw binary, forwards to the
+   * upstream newsletter-service as multipart/form-data.
+   */
+  public async uploadImage(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = this.requireProjectUid(req);
+    const contentType = req.headers['content-type'];
+    const byteSize = req.body && Buffer.isBuffer(req.body) ? req.body.length : 0;
+    const startTime = logger.startOperation(req, 'newsletter_upload_image', {
+      project_uid: projectUid,
+      content_type: contentType,
+      byte_size: byteSize,
+    });
+
+    try {
+      // Validate image buffer and content-type
+      if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+        throw ServiceValidationError.forField('image', 'Image file is required and must be non-empty', {
+          operation: 'newsletter_upload_image',
+          service: 'newsletter_controller',
+          path: req.path,
+        });
+      }
+
+      if (!contentType || typeof contentType !== 'string') {
+        throw ServiceValidationError.forField('content-type', 'Content-Type header is required', {
+          operation: 'newsletter_upload_image',
+          service: 'newsletter_controller',
+          path: req.path,
+        });
+      }
+
+      const result = await this.newsletterService.uploadImage(req, projectUid, req.body as Buffer, contentType);
+      logger.success(req, 'newsletter_upload_image', startTime, { hash: result.hash });
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/newsletters/my-newsletters
    *
    * Not project-scoped: the Me-lens feed of sent newsletters reachable via the
