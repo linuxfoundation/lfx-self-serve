@@ -579,7 +579,15 @@ export class NewsletterManageComponent {
       // in-flight save and captures the current form state. manualSaving already
       // true means a manual save is already queued, so just acknowledge it.
       if (this.savingDraft()) {
-        if (this.manualSaving()) {
+        // Only QUEUE a manual save when a PLAIN autosave is in flight. During a
+        // send or schedule, savingDraft() is also true — runSend/runSchedule call
+        // saveDraft(true) OFF the concatMap channel (see ensureSaved$) — so
+        // queueing a PUT then would bump the newsletter's version mid-send and
+        // reopen the LFXV2-2604 duplicate-send race the autosave filter guards
+        // against with these same conditions. In that window (or when a manual
+        // save is already queued) just acknowledge the click instead.
+        const busyWithSendOrSchedule = this.submitting() || this.resolvingSend() || this.scheduling() || this.isScheduleReadOnly();
+        if (this.manualSaving() || busyWithSendOrSchedule) {
           this.messageService.add({ severity: 'info', summary: 'Saving…', detail: 'Your draft is already being saved.' });
           return;
         }
