@@ -526,6 +526,10 @@ export interface MyGroupsCardVm {
   committee: MyCommittee;
   roleBadgeSeverity: BadgeSeverity;
   lastActivityLabel: string;
+  /** Canonical tier-prefixed view-link commands (`getGroupCommands`), falling back to the flat `/groups/:uid` path when the row carries no `is_foundation`. Pre-computed per card so the template stays binding-only (GH-1566). */
+  viewCommands: string[];
+  /** `?project=` for the view link — present only when the committee carries a `project_slug`. */
+  viewQueryParams: { project: string } | null;
   /**
    * Full accessible name for the card `<a>`. `[attr.aria-label]` replaces the link's computed
    * accessible name outright, so every visible field (class label, project/foundation name, role,
@@ -533,6 +537,21 @@ export interface MyGroupsCardVm {
    * by assistive tech. See `MyGroupsCardGridComponent.initCards()`.
    */
   ariaLabel: string;
+}
+
+/**
+ * A committee-table row decorated with template-friendly link state (mirrors the
+ * `DecoratedPendingAction` precedent): the entity fields pass through untouched, and the
+ * canonical view/edit router commands + `?project=` params are pre-computed once per input
+ * change instead of per change-detection cycle (angular-reactive-data §3.5). `viewCommands` /
+ * `editCommands` already contain the flat `/groups/:uid` fallback when the row carries no
+ * `is_foundation`, so the template never branches (GH-1566).
+ */
+export interface CommitteeTableRowVm extends Committee {
+  viewCommands: string[];
+  editCommands: string[];
+  /** `?project=` for the view/edit links — present only when the committee carries a `project_slug`. */
+  linkQueryParams: { project: string } | null;
 }
 
 /**

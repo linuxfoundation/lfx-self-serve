@@ -33,7 +33,7 @@ import {
   WorkExperienceCreateUpdateBody,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { catchError, distinctUntilChanged, map, Observable, of, shareReplay, skip, startWith, Subject, switchMap, take, takeUntil } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, map, Observable, of, shareReplay, skip, startWith, Subject, switchMap, take, takeUntil } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -127,19 +127,19 @@ export class UserService {
         return;
       }
       this.getCurrentUserProfile()
-        .pipe(take(1))
-        .subscribe({
-          next: (profile) => {
-            // Only seed from this fetch if nothing has set the signal since it was kicked off —
-            // an in-session upload (onProfileSaved) that completes first must win, not get
-            // clobbered by this slower, now-stale fetch resolving afterward.
-            if (profile.profile?.picture && this.uploadedAvatarUrl() === null) {
-              this.uploadedAvatarUrl.set(profile.profile.picture);
-            }
-          },
-          // Best-effort: leave uploadedAvatarUrl null so effectiveAvatarUrl falls back to the
-          // Auth0 picture claim, which is already showing.
-          error: () => {},
+        .pipe(
+          take(1),
+          // Best-effort: on failure leave uploadedAvatarUrl null so effectiveAvatarUrl falls back
+          // to the Auth0 picture claim, which is already showing.
+          catchError(() => EMPTY)
+        )
+        .subscribe((profile) => {
+          // Only seed from this fetch if nothing has set the signal since it was kicked off —
+          // an in-session upload (onProfileSaved) that completes first must win, not get
+          // clobbered by this slower, now-stale fetch resolving afterward.
+          if (profile.profile?.picture && this.uploadedAvatarUrl() === null) {
+            this.uploadedAvatarUrl.set(profile.profile.picture);
+          }
         });
     });
   }

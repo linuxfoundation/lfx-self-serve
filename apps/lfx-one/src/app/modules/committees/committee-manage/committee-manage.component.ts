@@ -2,26 +2,31 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, signal, viewChild } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, signal, Signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, NavigationEnd, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { COMMITTEE_FORM_STEPS, COMMITTEE_INVITE_CONCURRENCY, COMMITTEE_LABEL, COMMITTEE_STEP_TITLES, COMMITTEE_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import {
   Committee,
   CommitteeMember,
+  EntityWithProject,
   MemberOperationResult,
   MemberOperationType,
   MemberPendingChanges,
+  ProjectContext,
   SucceededMemberOperations,
 } from '@lfx-one/shared/interfaces';
+import { computeIsFoundation } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, concat, EMPTY, filter, finalize, from, map, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
+import { catchError, concat, distinctUntilChanged, EMPTY, filter, finalize, from, map, merge, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
+import { applyEntityProjectContext, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 
@@ -52,6 +57,8 @@ export class CommitteeManageComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly messageService = inject(MessageService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
+  private readonly destroyRef = inject(DestroyRef);
   // Mode and state signals
   public mode = signal<'create' | 'edit'>('create');
   public committeeId = signal<string | null>(null);
@@ -60,6 +67,13 @@ export class CommitteeManageComponent {
   // Initialize committee data
   public committee = this.initializeCommittee();
   public project = computed(() => this.projectContextService.activeContext());
+  // Committee → EntityWithProject adapter so the active project context syncs from the loaded
+  // committee rather than the cookie-restored last-visited project (GH-1566).
+  private readonly committeeEntityContext: Signal<EntityWithProject | null> = this.initializeCommitteeEntityContext();
+  // Access predicate for evictOnWriteAccessLoss — keys the project-writer check off the
+  // COMMITTEE's own project (the target writerGuard authorized against), not the transient
+  // active context, so the context switch can't evict guard-admitted users mid-edit (GH-1566).
+  private readonly writeAccess: Signal<boolean> = this.initWriteAccess();
 
   // Member management state
   public memberUpdates = signal<MemberPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [], toInvite: [] });
@@ -115,7 +129,17 @@ export class CommitteeManageComponent {
   public readonly committeeLabelPlural = COMMITTEE_LABEL.plural;
 
   public constructor() {
-    evictOnWriteAccessLoss();
+    evictOnWriteAccessLoss(this.writeAccess);
+
+    // Derive the project context from the loaded committee so a context-less edit link
+    // (/project/groups/:id/edit without ?project=) lands in the committee's project, not the
+    // cookie-restored last-visited project. The fallback covers BFF project-enrichment failure.
+    // preferEntityKind: a foundation-owned group can be edited under a /project/* URL, so the
+    // committee's own is_foundation (not the route prefix) picks the slot and re-points the route
+    // lens kind (mirror: meeting-manage post-GH-1432).
+    syncEntityProjectContext(this.committeeEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
+    this.initCommitteeContextFallback();
+
     // Initialize step based on mode
     this.currentStep = toSignal(
       this.route.queryParamMap.pipe(
@@ -152,7 +176,7 @@ export class CommitteeManageComponent {
   public goToStep(step: number | undefined): void {
     if (step !== undefined && this.canNavigateToStep(step)) {
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step: step } });
+        this.router.navigate([], { queryParams: { step: step }, queryParamsHandling: 'merge' });
       } else {
         this.internalStep.set(step);
       }
@@ -169,7 +193,7 @@ export class CommitteeManageComponent {
       }
 
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step: next } });
+        this.router.navigate([], { queryParams: { step: next }, queryParamsHandling: 'merge' });
       } else {
         this.internalStep.set(next);
       }
@@ -181,7 +205,7 @@ export class CommitteeManageComponent {
     const previous = this.currentStep() - 1;
     if (previous >= 1) {
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step: previous } });
+        this.router.navigate([], { queryParams: { step: previous }, queryParamsHandling: 'merge' });
       } else {
         this.internalStep.set(previous);
       }
@@ -379,6 +403,123 @@ export class CommitteeManageComponent {
     );
   }
 
+  /**
+   * Maps the loaded committee to the {@link EntityWithProject} shape consumed by
+   * syncEntityProjectContext — pre-enrichment payloads can lack the project fields entirely,
+   * so absent values map to null there (mirror: meeting-manage's initializeMeetingEntityContext;
+   * Committee already carries `uid`, so no id remap is needed).
+   */
+  private initializeCommitteeEntityContext(): Signal<EntityWithProject | null> {
+    return computed(() => {
+      const committee = this.committee();
+      if (!committee) {
+        return null;
+      }
+      return {
+        uid: committee.uid,
+        project_uid: committee.project_uid,
+        project_slug: committee.project_slug,
+        project_name: committee.project_name,
+        foundation_name: committee.foundation_name,
+        is_foundation: committee.is_foundation ?? null,
+      };
+    });
+  }
+
+  /**
+   * Fallback context sync for when the BFF project enrichment failed (the detail payload has
+   * `project_uid` but no `project_slug`): resolve the project by uid and set context from it.
+   * `getProject(uid, false)` — `current: false` so the fetch doesn't clobber ProjectService's
+   * shared `project` state — resolves to null on failure, so a failed fallback leaves the
+   * (stale) context untouched rather than erroring the page. (Mirror: meeting-manage's
+   * initMeetingContextFallback, minus its uncached-detail last resort — `fetchCommittee` is
+   * never cached, so a "fresh" refetch cannot return a different payload.)
+   *
+   * Runs whenever the payload lacks `project_slug`, even when the uid already matches the active
+   * context: the lookup is also what corrects the lens *kind* via `computeIsFoundation`. As in
+   * syncEntityProjectContext, NavigationEnd re-applies the correction: query-param step
+   * navigations re-assert the route's declared kind via syncLensFromRoute without re-running
+   * guards. The re-apply hits the shareReplay-cached getProject, so it costs no extra request.
+   */
+  private initCommitteeContextFallback(): void {
+    const unresolvedEntity$ = toObservable(this.committeeEntityContext).pipe(
+      distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.project_uid === b?.project_uid)
+    );
+    const navigationReapply$ = this.router.events.pipe(
+      filter((event) => event instanceof NavigationEnd),
+      map(() => this.committeeEntityContext())
+    );
+    merge(unresolvedEntity$, navigationReapply$)
+      .pipe(
+        filter((entity): entity is EntityWithProject => !!entity?.project_uid && !entity.project_slug),
+        switchMap((entity) => this.projectService.getProject(entity.project_uid, false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((project) => {
+        if (!project) {
+          // Relation-gated or failed lookup — nothing more to try; the context self-corrects on
+          // the next navigation once the detail payload carries its slug again.
+          return;
+        }
+        const context: ProjectContext = { uid: project.uid, name: project.name, slug: project.slug };
+        // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
+        const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
+        applyEntityProjectContext(this.projectContextService, context, computeIsFoundation(project), syncUrl);
+      });
+  }
+
+  /**
+   * Access predicate for evictOnWriteAccessLoss — mirrors writerGuard's committees standard
+   * (project writer only: 'committees' is not in COMMITTEE_WRITE_FEATURES, so no committee-writer
+   * leg, and meetingCoordinator doesn't apply to this feature) so the context switch to the
+   * committee's project doesn't evict guard-admitted users.
+   *
+   * In edit mode the leg keys off the COMMITTEE's own project (slug, falling back to uid — the
+   * BFF getProject route sniffs UUIDs), the same target writerGuard authorized against. Keying
+   * off activeContext instead would evaluate the stale cookie-restored boot context, and its
+   * false could win the race against syncEntityProjectContext's correction (a cached boot project
+   * resolves faster than the committee fetch that triggers the switch). Create mode has no
+   * committee, so the guard-checked active context (?project=) is the key.
+   *
+   * The leg is pending (undefined) until its first resolution, and the predicate stays
+   * provisionally true while pending — writerGuard already authorized this navigation, so an
+   * unresolved leg is not an access-lost signal (mirror: meeting-manage's initWriteAccess).
+   */
+  private initWriteAccess(): Signal<boolean> {
+    const editCommitteeId = this.route.snapshot.paramMap.get('id');
+    const projectKey$: Observable<string | null | undefined> = editCommitteeId
+      ? toObservable(this.committee).pipe(
+          map((committee) => {
+            if (!committee) {
+              // Pending — in edit mode the authorization target comes from the committee itself.
+              return undefined;
+            }
+            // Mirror writerGuard's resolution order; the active-context fallback covers a committee
+            // carrying neither slug nor uid (the manage component owns that error path).
+            return committee.project_slug ?? committee.project_uid ?? this.projectContextService.activeContext()?.slug ?? null;
+          })
+        )
+      : toObservable(this.projectContextService.activeContext).pipe(map((ctx) => ctx?.slug ?? null));
+
+    const projectAccess = toSignal(
+      projectKey$.pipe(
+        filter((key): key is string | null => key !== undefined),
+        distinctUntilChanged(),
+        switchMap((key) => {
+          if (!key) {
+            return of(false);
+          }
+          return this.projectService.getProject(key, false).pipe(
+            map((project) => project?.writer === true),
+            catchError(() => of(false))
+          );
+        })
+      )
+      // No initialValue: undefined doubles as the leg's pending state (see the doc above).
+    );
+    return computed(() => projectAccess() !== false);
+  }
+
   private populateFormWithCommitteeData(committee: Committee): void {
     this.form.patchValue({
       name: committee.name,
@@ -464,7 +605,7 @@ export class CommitteeManageComponent {
 
     if (this.isEditMode()) {
       // In edit mode, navigate to step 4 for members
-      this.router.navigate([], { queryParams: { step: this.formSteps.ADD_MEMBERS } });
+      this.router.navigate([], { queryParams: { step: this.formSteps.ADD_MEMBERS }, queryParamsHandling: 'merge' });
     } else {
       this.router.navigate(['/groups']);
     }
