@@ -10,6 +10,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensAccessService } from '@services/org-lens-access.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import {
   EMPTY_ORG_ACCESS_LIST_RESPONSE,
   ORG_ACCESS_INITIAL_LIMIT,
@@ -69,6 +70,7 @@ export class OrgLensAccessComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly drawer = inject(PersonDetailDrawerService);
 
   protected readonly initialLimit = ORG_ACCESS_INITIAL_LIMIT;
   protected readonly typeFilterOptions: OrgAccessTypeFilterOption[] = [...ORG_ACCESS_TYPE_FILTER_OPTIONS];
@@ -211,6 +213,19 @@ export class OrgLensAccessComponent {
           });
         },
       });
+  }
+
+  // OrgAccessUser has no personKey — email is always present (identity key for access rows), so it
+  // drives the drawer's company-emails-only lookup, same as the Key Contacts pattern.
+  protected onPersonClick(user: OrgAccessUser, event: Event): void {
+    event.stopPropagation();
+    this.drawer.open({
+      name: user.name,
+      title: user.jobTitle,
+      initials: user.initials,
+      avatarUrl: user.avatarUrl,
+      email: user.email,
+    });
   }
 
   protected openEdit(user: OrgAccessUser): void {

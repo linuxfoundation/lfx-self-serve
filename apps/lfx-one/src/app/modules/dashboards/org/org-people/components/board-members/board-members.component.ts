@@ -165,9 +165,13 @@ export class BoardMembersComponent {
     this.toggleExpansion(email);
   }
 
-  // Open the drawer on Governance from already-loaded seats (Board rows have no personKey).
+  // Open the drawer on Governance from already-loaded seats (Board rows have no personKey); companyEmails
+  // are still fetched server-side by email so this tab shares the same demo-derivation as the personKey path.
   protected onPersonClick(group: BoardMemberPersonGroupVm, event: Event): void {
     event.stopPropagation();
+    // `group.email` is the grouping key and falls back to a seat `memberUid` when the upstream email is
+    // blank — source the person's real email from the assignments instead (see onMainPencilClick above).
+    const email = group.assignments.find((a) => a.person.email)?.person.email;
     this.drawer.open({
       name: group.displayName,
       title: group.jobTitle,
@@ -175,6 +179,7 @@ export class BoardMembersComponent {
       avatarColorClass: 'bg-purple-500',
       defaultTab: 'governance',
       governanceSeats: toDrawerGovernanceSeats(group.assignments),
+      email,
     });
   }
 

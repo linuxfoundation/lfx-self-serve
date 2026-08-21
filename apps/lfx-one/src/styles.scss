@@ -405,3 +405,12 @@ html {
 [data-testid='profile-visibility-drawer-mode'] .p-togglebutton.p-togglebutton-checked {
   @apply bg-white shadow-sm;
 }
+
+// Person-detail drawer header can grow past one line (name + title + company emails), so PrimeNG's
+// default vertically-centered header row would drift the close icon away from the top. PrimeNG
+// appends the drawer to <body>, so this is styled globally. The plain `data-testid` on <p-drawer>
+// stays on the light-DOM placeholder and isn't forwarded to the portaled overlay — styleClass IS
+// forwarded, so a custom marker class in styleClass is used as the selector root instead.
+.person-detail-drawer .p-drawer-header {
+  @apply items-start;
+}

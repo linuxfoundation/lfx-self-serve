@@ -9,6 +9,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { OrgLensTrainingService } from '@app/shared/services/org-lens-training.service';
 import { computePersonInitials } from '@app/shared/utils/person-avatar.util';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { MAX_ORG_CERT_EMPLOYEES } from '@lfx-one/shared/constants';
 import type { OrgCertEmployeesResponse, OrgCertEmployeeStatus, OrgCertEmployeeVm } from '@lfx-one/shared/interfaces';
 import { avatarColorClass } from '@lfx-one/shared/utils';
@@ -23,6 +24,7 @@ import { catchError, finalize, of, switchMap } from 'rxjs';
 })
 export class CertEmployeesDrawerComponent {
   private readonly trainingService = inject(OrgLensTrainingService);
+  private readonly drawer = inject(PersonDetailDrawerService);
 
   public readonly visible = model<boolean>(false);
   public readonly orgUid = input<string>('');
@@ -52,6 +54,16 @@ export class CertEmployeesDrawerComponent {
   // The roster is capped server-side at MAX_ORG_CERT_EMPLOYEES, while count() is the org-wide total — surface the gap so a truncated list isn't mistaken for the full set.
   protected readonly rosterCap = MAX_ORG_CERT_EMPLOYEES;
   protected readonly isRosterCapped = computed<boolean>(() => this.count() > MAX_ORG_CERT_EMPLOYEES);
+
+  protected onPersonClick(employee: OrgCertEmployeeVm): void {
+    this.drawer.open({
+      personKey: employee.contactId,
+      name: employee.name,
+      title: employee.jobTitle,
+      initials: employee.initials,
+      avatarColorClass: employee.avatarColorClass,
+    });
+  }
 
   private initEmployeesData() {
     // Key the fetch off the full target (visible + orgUid + courseId + status), not visible alone,

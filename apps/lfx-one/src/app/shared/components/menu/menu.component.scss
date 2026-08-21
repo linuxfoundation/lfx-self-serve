@@ -3,9 +3,34 @@
 
 ::ng-deep {
   .p-menu {
+    .p-menu-item:not(.p-disabled):not([data-p-disabled='true']) {
+      cursor: pointer;
+
+      .p-menu-item-link {
+        cursor: pointer;
+      }
+    }
+
     .p-menu-item-link {
       .p-menu-item-icon {
         @apply w-5;
+      }
+    }
+
+    // Disabled items default to pointer-events: none, which also blocks hover.
+    // Clicks are still no-ops (PrimeNG itemClick returns early when item.disabled).
+    .p-menu-item.p-disabled,
+    .p-menu-item[data-p-disabled='true'] {
+      pointer-events: auto;
+      cursor: not-allowed;
+
+      .p-menu-item-link {
+        cursor: not-allowed;
+      }
+
+      .p-menu-item-icon,
+      .p-menu-item-label {
+        @apply text-slate-400;
       }
     }
   }
