@@ -58,3 +58,5 @@ export * from './committee-engagement-freshness.utils';
 export * from './public-profile.utils';
 export * from './brand-kit.utils';
 export * from './newsletter.utils';
+export * from './social-listening.utils';
+export * from './social-listening-filter.utils';

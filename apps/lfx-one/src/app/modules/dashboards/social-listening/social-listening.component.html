@@ -1,0 +1,128 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto flex w-full flex-col gap-4 px-4 sm:px-6 lg:px-8" data-testid="social-listening-page">
+  <div class="flex flex-col gap-1">
+    <h1 class="text-2xl font-semibold text-gray-900" data-testid="social-listening-title">Social Listening</h1>
+    <p class="text-sm text-gray-500" data-testid="social-listening-subtitle">Mentions and sentiment across your foundation's projects.</p>
+  </div>
+
+  @if (!hasFoundation()) {
+    <lfx-empty-state
+      icon="fa-light fa-ear-listen"
+      title="Select a foundation"
+      subtitle="Choose a foundation from the sidebar context picker to see its social listening feed."
+      data-testid="social-listening-no-foundation" />
+  } @else {
+    <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="social-listening-card">
+      <!-- Positioning context for the filters panel dropdown (ports PCC's relative wrapper) -->
+      <div class="relative z-20">
+        <lfx-feed-header
+          [(activeTab)]="activeTab"
+          [(selectedPeriod)]="selectedPeriod"
+          [(selectedProject)]="selectedProject"
+          [(selectedPlatform)]="selectedPlatform"
+          [(searchInput)]="searchInput"
+          [(filtersVisible)]="filtersOpen"
+          [activeFilterCount]="activeFilterCount()"
+          [projectOptions]="subProjectOptions()"
+          [platformOptions]="platformOptions()"
+          [optionsLoading]="optionsLoading()"
+          [exporting]="exporting()"
+          [exportDisabled]="analyticsPanelsLoading()"
+          (filtersPrefetch)="prefetchFilterOptions()"
+          (exportAnalytics)="onExportAnalytics()" />
+
+        @if (filtersOpen() && activeTab() === 'feed') {
+          <lfx-filters-panel
+            [(visible)]="filtersOpen"
+            [(selectedSentiment)]="selectedSentiment"
+            [(selectedRelevance)]="selectedRelevance"
+            [(selectedLanguage)]="selectedLanguage"
+            [(selectedHasTitle)]="selectedHasTitle"
+            [(selectedBookmarkFilter)]="selectedBookmarkFilter"
+            [(selectedReadFilter)]="selectedReadFilter"
+            [(selectedKeywords)]="selectedKeywords"
+            [(selectedTags)]="selectedTags"
+            [(selectedAuthors)]="selectedAuthors"
+            [languageOptions]="languageOptions()"
+            [languagesLoading]="languagesLoading()"
+            [availableKeywords]="availableKeywords()"
+            [keywordsLoading]="keywordsLoading()"
+            [availableTags]="availableTags()"
+            [tagsLoading]="tagsLoading()"
+            [availableAuthors]="availableAuthors()"
+            [authorsLoading]="authorsLoading()"
+            [activeFilterCount]="activeFilterCount()"
+            (filtersCleared)="clearAllFilters()" />
+        }
+      </div>
+
+      <div class="flex flex-col gap-4 px-5 py-5">
+        <!-- Active-filter summary on BOTH tabs: analytics applies the feed predicate too (M1), so the pills are the only on-tab indication. Click a pill to remove that filter -->
+        @if (activeFilterPills().length > 0) {
+          <div class="flex flex-wrap items-center gap-2" aria-label="Active filters" data-testid="social-listening-filter-pills">
+            <lfx-filter-pills [options]="activeFilterPills()" selectedFilter="" (filterChange)="removeFilterPill($event)" />
+            <button
+              type="button"
+              class="cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+              data-testid="social-listening-filter-pills-clear-all"
+              (click)="clearAllFilters()">
+              Clear all
+            </button>
+          </div>
+        }
+
+        @if (activeTab() === 'feed') {
+          @if (error(); as errorMessage) {
+            <lfx-message severity="error" [text]="errorMessage" data-testid="social-listening-error" />
+          }
+
+          @if (countError(); as countErrorMessage) {
+            <lfx-message severity="error" [text]="countErrorMessage" data-testid="social-listening-count-error" />
+          }
+
+          <!-- The list (and its empty state) stays hidden behind an error banner so the two never contradict -->
+          @if (!error()) {
+            <lfx-mentions-list
+              [mentions]="mentions()"
+              [loading]="loading()"
+              [bookmarkedIds]="bookmarkedIds()"
+              [readMentionIds]="readMentionIds()"
+              [hideTotal]="selectedReadFilter() === 'unread'"
+              (bookmarkToggled)="onBookmarkToggled($event)"
+              (readToggled)="onReadToggled($event)"
+              (markAllRead)="onMarkAllAsRead()"
+              (markAllUnread)="onMarkAllAsUnread()"
+              [totalMentions]="totalRecords()"
+              [paginatorTotalRecords]="paginatorTotalRecords()"
+              [first]="first()"
+              [rows]="pageSize()"
+              [rowsPerPageOptions]="rowsPerPageOptions"
+              [dataComputedAt]="dataComputedAt()"
+              [timeTick]="timeTick()"
+              [phase2Failed]="phase2Failed()"
+              [countError]="countError() !== null"
+              (pageChange)="onPageChange($event)"
+              (retry)="retryWindow()" />
+          }
+
+          <!-- Octolens data attribution (legal requirement — ported verbatim from PCC) -->
+          <p class="text-center text-xs text-gray-400" data-testid="social-listening-attribution">
+            The social listening data displayed here is provided by Octolens and consists exclusively of publicly available content sourced from third-party
+            platforms across the web. The Linux Foundation does not independently collect, enrich, or modify this data.
+          </p>
+        } @else {
+          <lfx-social-listening-analytics
+            [foundationSlug]="foundationSlug()"
+            [period]="selectedPeriod()"
+            [platform]="selectedPlatform()"
+            [filters]="analyticsFilters()"
+            [exportNonce]="exportNonce()"
+            [(isExporting)]="exporting"
+            [(panelsLoading)]="analyticsPanelsLoading" />
+        }
+      </div>
+    </lfx-card>
+  }
+</div>

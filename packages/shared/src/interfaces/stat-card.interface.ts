@@ -12,6 +12,8 @@ export interface StatCardDelta {
   /** Text rendered next to the delta arrow (e.g., "+8% vs. prior period"). */
   label: string;
   direction: StatCardDeltaDirection;
+  /** Flips the color mapping (up renders red, down emerald) while the arrow keeps numeric direction — for metrics where an increase is bad (e.g. negative sentiment). */
+  inverted?: boolean;
 }
 
 /**

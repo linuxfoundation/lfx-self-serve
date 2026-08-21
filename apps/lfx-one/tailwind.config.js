@@ -13,6 +13,8 @@ import {
   GROUPS_ENGAGEMENT_ICON_CLASS,
   lfxColors,
   lfxFontSizes,
+  MENTION_PLATFORM_CONFIG,
+  MENTION_SENTIMENT_CONFIG,
   ORG_MEETINGS_KPI_ICON_CLASS,
 } from '@lfx-one/shared/constants';
 import PrimeUI from 'tailwindcss-primeui';
@@ -28,6 +30,11 @@ export default {
     // Person-avatar palette: built at runtime by avatarColorClass() from AVATAR_COLORS in
     // @lfx-one/shared (outside `content`), so it would be purged. Spread the source list to avoid drift.
     ...AVATAR_COLORS,
+    // Social Listening platform icon colors (MENTION_PLATFORM_CONFIG in @lfx-one/shared, not scanned here)
+    ...Object.values(MENTION_PLATFORM_CONFIG).map((c) => c.colorClass),
+    // Social Listening analytics distribution bars (barClass on MENTION_PLATFORM_CONFIG / MENTION_SENTIMENT_CONFIG)
+    ...Object.values(MENTION_PLATFORM_CONFIG).map((c) => c.barClass),
+    ...Object.values(MENTION_SENTIMENT_CONFIG).map((c) => c.barClass),
     // Stat card grid columns/dividers: `GRID_COLS_CLASS`/`GRID_DIVIDER_CLASS` are defined in
     // @lfx-one/shared (outside `content`), and their responsive/arbitrary utilities need to be
     // scanned directly since they never appear as literal strings inside `content`.

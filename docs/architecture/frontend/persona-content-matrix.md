@@ -89,7 +89,7 @@ Available to `board-member`, `executive-director`, and root writers.
 | → Newsletters              | `/foundation/newsletters`      | `canSeeNewsletters()`                                                                         |
 | **Metrics** section        |                                | `canViewExecutiveDashboards()` — ED or LF Staff                                               |
 | → Health Metrics           | `/foundation/health-metrics`   | `canViewExecutiveDashboards()`                                                                |
-| → Social Listening         | _(PCC external link)_          | `canViewExecutiveDashboards()` — **only when** `selectedFoundationSfid()` is set              |
+| → Social Listening         | `/foundation/social-listening` | `canViewExecutiveDashboards()`                                                                |
 | **Marketing** section      |                                | `canViewExecutiveDashboards()` — ED or LF Staff                                               |
 | → Marketing Impact         | `/foundation/marketing-impact` | `canViewExecutiveDashboards()` — LF Staff see Social Listening only (no tabs/focus/Campaigns) |
 | → Campaigns                | `/foundation/campaigns`        | `executive-director` only                                                                     |

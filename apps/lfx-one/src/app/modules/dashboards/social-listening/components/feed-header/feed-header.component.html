@@ -1,0 +1,94 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card-tabs-bar [options]="tabOptions" [selectedFilter]="activeTab()" (filterChange)="onTabChange($event)" data-testid="social-listening-tabs">
+  <div class="flex flex-wrap items-center gap-3">
+    <!-- Sub-project selector (static badge when the foundation has exactly one) -->
+    @if (hasSingleProject()) {
+      <span class="inline-flex items-center rounded-md bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700" data-testid="feed-header-single-project">{{
+        singleProjectName()
+      }}</span>
+    } @else {
+      <lfx-select
+        [form]="headerForm"
+        control="sourceProject"
+        [options]="projectOptions()"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="All Projects"
+        ariaLabel="Filter by project"
+        [loading]="optionsLoading()"
+        styleClass="w-44"
+        data-testid="feed-header-project-select" />
+    }
+
+    <!-- Platform selector -->
+    <lfx-select
+      [form]="headerForm"
+      control="platform"
+      [options]="platformOptions()"
+      optionLabel="label"
+      optionValue="value"
+      placeholder="All Platforms"
+      ariaLabel="Filter by platform"
+      [loading]="optionsLoading()"
+      styleClass="w-44"
+      data-testid="feed-header-platform-select" />
+
+    <!-- Period selector -->
+    <lfx-select
+      [form]="headerForm"
+      control="period"
+      [options]="periodOptions"
+      optionLabel="label"
+      optionValue="value"
+      placeholder="Select period"
+      ariaLabel="Select reporting period"
+      styleClass="w-44"
+      data-testid="feed-header-period-select" />
+
+    <!-- Search (feed tab only; debounce + min-chars enforced by the page pipeline) -->
+    @if (!isAnalyticsTab()) {
+      <lfx-input-text
+        [form]="headerForm"
+        control="search"
+        type="text"
+        icon="fa-light fa-search"
+        placeholder="Search mentions..."
+        styleClass="w-56"
+        data-testid="feed-header-search" />
+    }
+
+    <!-- Filters trigger (feed tab only) — hover/focus arms the page's lazy option fetches -->
+    @if (!isAnalyticsTab()) {
+      <lfx-button
+        #filtersTrigger
+        icon="fa-light fa-sliders"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        ariaLabel="Filters"
+        [ariaPressed]="filtersVisible()"
+        [badge]="activeFilterCount() > 0 ? activeFilterCount().toString() : undefined"
+        badgeSeverity="info"
+        (onClick)="toggleFilters()"
+        (focusin)="filtersPrefetch.emit()"
+        (mouseenter)="filtersPrefetch.emit()"
+        data-testid="social-listening-filters-button" />
+    }
+
+    <!-- Export trigger (analytics tab only) — the page increments the analytics component's exportNonce -->
+    @if (isAnalyticsTab()) {
+      <lfx-button
+        icon="fa-light fa-arrow-down-to-bracket"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        ariaLabel="Export analytics as PNG"
+        [loading]="exporting()"
+        [disabled]="exporting() || exportDisabled()"
+        (onClick)="exportAnalytics.emit()"
+        data-testid="social-listening-analytics-export" />
+    }
+  </div>
+</lfx-card-tabs-bar>

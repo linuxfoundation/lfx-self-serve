@@ -189,6 +189,9 @@ export * from './supabase.interface';
 // Stat card interfaces
 export * from './stat-card.interface';
 
+// Download-card (PNG export) interfaces
+export * from './download-card.interface';
+
 // Intercom interfaces
 export * from './intercom.interface';
 
@@ -321,3 +324,9 @@ export * from './org-lens-roi.interface';
 export * from './org-lens-roi.internal.interface';
 // Brand Kit generation contract interfaces
 export * from './brand-kit.interface';
+
+// Social Listening interfaces (LFXV2-3002)
+export * from './social-listening.interface';
+
+// Per-user preference store + BFF wire contracts (LFXV2-3002 Block 0)
+export * from './user-preference.interface';
