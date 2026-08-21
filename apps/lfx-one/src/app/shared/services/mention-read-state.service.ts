@@ -132,10 +132,12 @@ export class MentionReadStateService {
   private mergeRollback(previous: ReadStateData): () => void {
     return () => {
       const current = this.store.state().data;
+      // A queued toggle's list wins over the restored snapshot — an id in both lists renders as read even when the persisted doc says unread.
+      const toggledIds = new Set([...current.readIds, ...current.unreadIds]);
       this.store.replace({
         readBeforeTs: previous.readBeforeTs,
-        readIds: [...new Set([...previous.readIds, ...current.readIds])],
-        unreadIds: [...new Set([...previous.unreadIds, ...current.unreadIds])],
+        readIds: [...new Set([...previous.readIds.filter((id) => !toggledIds.has(id)), ...current.readIds])],
+        unreadIds: [...new Set([...previous.unreadIds.filter((id) => !toggledIds.has(id)), ...current.unreadIds])],
       });
     };
   }

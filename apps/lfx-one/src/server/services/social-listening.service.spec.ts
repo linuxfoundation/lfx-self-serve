@@ -148,16 +148,37 @@ describe('scope clause', () => {
     expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'proj-1', 'reddit']);
   });
 
-  it('caches the count under the scope + filter binds (count is pagination-invariant)', async () => {
+  it('caches the count under the scope + filter discriminator (count is pagination-invariant)', async () => {
     await service().getMentionsCount(req, { ...SCOPE, sentiment: 'positive' });
 
     expect(withSocialListeningCache).toHaveBeenCalledWith(
       'cncf',
       'mentions-count',
-      ['cncf', '2026-01-01', '2026-02-01', 'positive'],
+      ['cncf', '2026-01-01', '2026-02-01', 'positive', 'sentiment', 'positive'],
       1800,
       expect.any(Function)
     );
+  });
+
+  it('marks the discriminator per dimension so identical values under different filters cannot share an entry', async () => {
+    // `keywords=['alice']`, `tags=['alice']`, and `authors=['alice']` all bind the same value but run different SQL.
+    const lastDiscriminator = (): unknown => withSocialListeningCache.mock.calls.at(-1)?.[2];
+
+    await service().getMentionsCount(req, { ...SCOPE, keywords: ['alice'] });
+    const byKeywords = lastDiscriminator();
+
+    await service().getMentionsCount(req, { ...SCOPE, tags: ['alice'] });
+    expect(lastDiscriminator()).not.toEqual(byKeywords);
+
+    await service().getMentionsCount(req, { ...SCOPE, authors: ['alice'] });
+    expect(lastDiscriminator()).not.toEqual(byKeywords);
+
+    // A source-project value equal to a platform value must not collide either.
+    await service().getMentionsCount(req, { ...SCOPE, sourceProjectId: 'reddit' });
+    const byProject = lastDiscriminator();
+
+    await service().getMentionsCount(req, { ...SCOPE, platform: 'reddit' });
+    expect(lastDiscriminator()).not.toEqual(byProject);
   });
 });
 
@@ -384,12 +405,12 @@ describe('option queries', () => {
     expect(withSocialListeningCache).toHaveBeenCalledWith('cncf', 'mentions-authors', ['cncf', '2026-01-01', '2026-02-01'], 1800, expect.any(Function));
   });
 
-  it('keys the language and keyword caches on the scope binds', async () => {
+  it('keys the language and keyword caches on the scope discriminator', async () => {
     await service().getMentionsLanguages(req, SCOPE);
     expect(withSocialListeningCache).toHaveBeenCalledWith('cncf', 'languages', ['cncf', '2026-01-01', '2026-02-01'], 1800, expect.any(Function));
 
     await service().getMentionsKeywords(req, { ...SCOPE, platform: 'reddit' });
-    expect(withSocialListeningCache).toHaveBeenLastCalledWith('cncf', 'keywords', ['cncf', '2026-01-01', '2026-02-01', 'reddit'], 1800, expect.any(Function));
+    expect(withSocialListeningCache).toHaveBeenLastCalledWith('cncf', 'keywords', ['cncf', '2026-01-01', '2026-02-01', 'reddit', 'platform', 'reddit'], 1800, expect.any(Function));
   });
 });
 
@@ -525,11 +546,11 @@ describe('analytics', () => {
     expect(normalized).toContain('SPLIT(REGEXP_REPLACE(LOWER(TRIM(m.TAGS))');
     expect(normalized).toContain('m.AUTHOR IN (?)');
     expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'ai', '@alice']);
-    // The filter binds discriminate the cache entry alongside the row cap.
+    // The filter discriminator (binds + dimension markers) keys the cache entry alongside the row cap.
     expect(withSocialListeningCache).toHaveBeenLastCalledWith(
       'cncf',
       'tags',
-      ['cncf', '2026-01-01', '2026-02-01', 'ai', '@alice', 10],
+      ['cncf', '2026-01-01', '2026-02-01', 'ai', '@alice', 'tags', 'ai', 'authors', '@alice', 10],
       1800,
       expect.any(Function)
     );

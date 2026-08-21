@@ -89,7 +89,7 @@ type QueryBind = string | number;
 interface SqlFragment {
   clause: string;
   binds: QueryBind[];
-  /** Cache-key discriminator: binds plus markers for literal clauses that carry no bind, so their variants can't share one cache entry. */
+  /** Cache-key discriminator: binds plus per-dimension markers, so predicates with identical values (or no bind) can't share one cache entry. */
   discriminator: QueryBind[];
 }
 
@@ -209,7 +209,7 @@ export class SocialListeningService {
       ORDER BY LANGUAGE
     `;
 
-    return this.cached(req, params.foundationSlug, 'languages', scope.binds, async () => {
+    return this.cached(req, params.foundationSlug, 'languages', scope.discriminator, async () => {
       const result = await this.snowflakeService.execute<{ LANGUAGE: string }>(sql, scope.binds);
       return (result.rows ?? []).map((row) => row.LANGUAGE);
     });
@@ -227,7 +227,7 @@ export class SocialListeningService {
       ORDER BY KEYWORD
     `;
 
-    return this.cached(req, params.foundationSlug, 'keywords', scope.binds, async () => {
+    return this.cached(req, params.foundationSlug, 'keywords', scope.discriminator, async () => {
       const result = await this.snowflakeService.execute<{ KEYWORD: string }>(sql, scope.binds);
       return (result.rows ?? []).map((row) => row.KEYWORD);
     });
@@ -484,18 +484,21 @@ export class SocialListeningService {
       ? [`${col('PROJECT_SLUG')} = ?`, `${col('MENTION_TS')} >= TO_DATE(?)`, `${col('MENTION_TS')} < TO_DATE(?)`]
       : [`${col('PROJECT_SLUG')} = ?`];
     const binds: QueryBind[] = windowed ? [params.foundationSlug, params.startDate, params.endDate] : [params.foundationSlug];
+    const markers: QueryBind[] = [];
 
     if (params.sourceProjectId && params.sourceProjectId !== 'all') {
       clauses.push(`${col('SOURCE_PROJECT_ID')} = ?`);
       binds.push(params.sourceProjectId);
+      markers.push('project', params.sourceProjectId);
     }
 
     if (params.platform && params.platform !== 'all') {
       clauses.push(`LOWER(${col('SOURCE_PLATFORM')}) = ?`);
       binds.push(params.platform.toLowerCase());
+      markers.push('platform', params.platform.toLowerCase());
     }
 
-    return { clause: clauses.join('\n        AND '), binds, discriminator: binds };
+    return { clause: clauses.join('\n        AND '), binds, discriminator: [...binds, ...markers] };
   }
 
   /**
@@ -508,22 +511,26 @@ export class SocialListeningService {
     const col = (name: string): string => (alias ? `${alias}.${name}` : name);
     const clauses: string[] = [];
     const binds: QueryBind[] = [];
-    // Literal clauses carry no bind, so they must mark the cache discriminator explicitly.
+    // Dimension markers keep the cache key predicate-aware: identical values under different filters
+    // (`keywords=['a']` vs `authors=['a']`) hash identically without them, and literal clauses carry no bind.
     const markers: QueryBind[] = [];
 
     if (filters.sentiment && filters.sentiment !== 'all') {
       clauses.push(`LOWER(TRIM(${col('SENTIMENT')})) = ?`);
       binds.push(filters.sentiment.toLowerCase());
+      markers.push('sentiment', filters.sentiment.toLowerCase());
     }
 
     if (filters.relevance && filters.relevance !== 'all') {
       clauses.push(`LOWER(${col('RELEVANCE_SCORE')}) = ?`);
       binds.push(filters.relevance.toLowerCase());
+      markers.push('relevance', filters.relevance.toLowerCase());
     }
 
     if (filters.language && filters.language !== 'all') {
       clauses.push(`LOWER(${col('LANGUAGE')}) = ?`);
       binds.push(filters.language.toLowerCase());
+      markers.push('language', filters.language.toLowerCase());
     }
 
     if (filters.hasTitle === 'yes') {
@@ -540,6 +547,7 @@ export class SocialListeningService {
     if (keywords.length > 0) {
       clauses.push(`LOWER(${col('KEYWORD')}) IN (${this.placeholders(keywords.length)})`);
       binds.push(...keywords);
+      markers.push('keywords', ...keywords);
     }
 
     // TAGS is a comma-joined string upstream, so it is split into exact tokens before comparing —
@@ -551,12 +559,16 @@ export class SocialListeningService {
       clauses.push(`ARRAY_CONTAINS(?::VARIANT, SPLIT(REGEXP_REPLACE(LOWER(TRIM(${col('TAGS')})), '${TAG_DELIMITER_PATTERN}', ','), ','))`);
       binds.push(tag);
     }
+    if (tags.length > 0) {
+      markers.push('tags', ...tags);
+    }
 
     // Authors match verbatim (the predicate is case-sensitive), so they sort but never lowercase.
     const authors = this.capValues(req, filters.authors, MENTION_FILTER_MAX_VALUES).sort();
     if (authors.length > 0) {
       clauses.push(`${col('AUTHOR')} IN (${this.placeholders(authors.length)})`);
       binds.push(...authors);
+      markers.push('authors', ...authors);
     }
 
     if (filters.search) {
@@ -564,6 +576,7 @@ export class SocialListeningService {
       // ILIKE is case-insensitive, so lowering the pattern only canonicalizes the cache key.
       const pattern = `%${escapeSqlLikePattern(filters.search.toLowerCase())}%`;
       binds.push(pattern, pattern);
+      markers.push('search', pattern);
     }
 
     if (filters.mentionIds) {
@@ -571,9 +584,11 @@ export class SocialListeningService {
       if (mentionIds.length > 0) {
         clauses.push(`${col('_KEY')} IN (${this.placeholders(mentionIds.length)})`);
         binds.push(...mentionIds);
+        markers.push('mentionIds', ...mentionIds);
       } else {
         // An explicitly empty id list means "nothing selected", not "no filter".
         clauses.push('1 = 0');
+        markers.push('mentionIds=empty');
       }
     }
 
@@ -614,13 +629,13 @@ export class SocialListeningService {
    * Read-through cache for the filter-option and analytics queries (foundation-scoped, shared across
    * callers). The feed itself is never cached (near-zero hit rate); binds discriminate each entry.
    */
-  private cached<T>(req: Request, foundationSlug: string, resource: string, binds: QueryBind[], fetcher: () => Promise<T>): Promise<T> {
+  private cached<T>(req: Request, foundationSlug: string, resource: string, discriminator: QueryBind[], fetcher: () => Promise<T>): Promise<T> {
     logger.debug(req, 'social_listening_cached_query', 'Resolving cached Social Listening query', {
       foundation_slug: foundationSlug,
       resource,
     });
 
-    return withSocialListeningCache(foundationSlug, resource, binds, VALKEY_CACHE.SOCIAL_LISTENING_TTL_SECONDS, fetcher);
+    return withSocialListeningCache(foundationSlug, resource, discriminator, VALKEY_CACHE.SOCIAL_LISTENING_TTL_SECONDS, fetcher);
   }
 
   private capValues(req: Request, values: string[] | undefined, cap: number): string[] {
