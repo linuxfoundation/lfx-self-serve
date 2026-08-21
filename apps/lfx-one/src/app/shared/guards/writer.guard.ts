@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 import { COMMITTEE_WRITE_FEATURES } from '@lfx-one/shared/constants';
+import { EntityWithProject } from '@lfx-one/shared/interfaces';
 import { HttpErrorResponse } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
@@ -11,7 +12,7 @@ import { MeetingService } from '../services/meeting.service';
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
 import { ProjectService } from '../services/project.service';
-import { hasMeetingWriteAccess, resolveMeetingWriteSlug } from '../utils/write-access.util';
+import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-access.util';
 
 /**
  * Protects create/edit/admin routes that require project write permission.
@@ -73,27 +74,30 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   // back to the active context only on a 404 (it may simply not exist — the manage component
   // handles that error path), and fail closed on any other read failure.
   const writeFeature: string | undefined = route.data?.['writeFeature'];
+  // Entity probes keyed by writeFeature — a follow-up entity ticket adds one registry line, one
+  // inject(), and one route flag; the fail-closed semantics below exist in exactly one place.
+  const entityProbes: Record<string, (id: string) => Observable<Pick<EntityWithProject, 'project_slug' | 'project_uid'> | null>> = {
+    meetings: (id) => meetingService.getMeetingDetail(id),
+  };
   const resolveSlug = (): Observable<string | null> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
-    if (writeFeature !== 'meetings') {
+    const probe = writeFeature ? entityProbes[writeFeature] : undefined;
+    const entityId = route.paramMap.get('id');
+    if (!probe || !entityId || route.data?.['entityScopedSlug'] !== true) {
       return of(fromContext);
     }
-    const meetingId = route.paramMap.get('id');
-    if (!meetingId || route.data?.['entityScopedSlug'] !== true) {
-      return of(fromContext);
-    }
-    // Resolve from the meeting payload itself, preferring the BFF-enriched slug but falling back
+    // Resolve from the entity payload itself, preferring the BFF-enriched slug but falling back
     // to the uid — the BFF `GET /api/projects/:slug` route sniffs UUIDs, so the downstream
     // getProject access check resolves either identifier. Never fall back to the active context
-    // while the meeting is readable: doing so would authorize against a stale, unrelated project.
-    // A failed project probe now denies against the meeting's own project instead of
-    // silently switching to that stale context. Only a 404 falls back — the meeting may simply not
+    // while the entity is readable: doing so would authorize against a stale, unrelated project.
+    // A failed project probe now denies against the entity's own project instead of
+    // silently switching to that stale context. Only a 404 falls back — the entity may simply not
     // exist and the manage component owns that error path; every other failure resolves null and
     // fails closed via the `if (!slug)` redirect, so no check runs against a stale project.
     // Probe-friendly: getMeetingDetail is tap-free and short-TTL-cached, sharing the request with
     // MeetingManageComponent's fetch on the same navigation.
-    return meetingService.getMeetingDetail(meetingId).pipe(
-      map((meeting) => resolveMeetingWriteSlug(meeting, fromContext)),
+    return probe(entityId).pipe(
+      map((entity) => resolveEntityWriteSlug(entity, fromContext)),
       catchError((error) => of(error instanceof HttpErrorResponse && error.status === 404 ? fromContext : null))
     );
   };

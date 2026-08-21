@@ -135,4 +135,16 @@ describe('writerGuard', () => {
     expect(getMeetingDetail).not.toHaveBeenCalled();
     expect(getProject).toHaveBeenCalledWith(STALE_SLUG, false, { meetingCoordinator: false });
   });
+
+  it('resolves from the active context without probing when the writeFeature has no registered entity probe', async () => {
+    getProject.mockReturnValue(of({ uid: 'stale-uid', slug: STALE_SLUG, writer: true }));
+
+    // entityScopedSlug alone must not trigger a probe — registry membership is the gate, so a
+    // feature that never registered a probe can't accidentally fire one after a route-flag flip.
+    const result = await runGuard(meetingRoute({ writeFeature: 'newsletters', entityScopedSlug: true }));
+
+    expect(result).toBe(true);
+    expect(getMeetingDetail).not.toHaveBeenCalled();
+    expect(getProject).toHaveBeenCalledWith(STALE_SLUG, false, { meetingCoordinator: false });
+  });
 });
