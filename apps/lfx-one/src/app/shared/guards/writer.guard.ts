@@ -86,16 +86,8 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
     if (!probe || !entityId || route.data?.['entityScopedSlug'] !== true) {
       return of(fromContext);
     }
-    // Resolve from the entity payload itself, preferring the BFF-enriched slug but falling back
-    // to the uid — the BFF `GET /api/projects/:slug` route sniffs UUIDs, so the downstream
-    // getProject access check resolves either identifier. Never fall back to the active context
-    // while the entity is readable: doing so would authorize against a stale, unrelated project.
-    // A failed project probe now denies against the entity's own project instead of
-    // silently switching to that stale context. Only a 404 falls back — the entity may simply not
-    // exist and the manage component owns that error path; every other failure resolves null and
-    // fails closed via the `if (!slug)` redirect, so no check runs against a stale project.
-    // Probe-friendly: getMeetingDetail is tap-free and short-TTL-cached, sharing the request with
-    // MeetingManageComponent's fetch on the same navigation.
+    // Resolve from the entity payload, never the active context — a readable entity with a stale
+    // context would authorize against the wrong project; only a 404 falls back, else fail closed.
     return probe(entityId).pipe(
       map((entity) => resolveEntityWriteSlug(entity, fromContext)),
       catchError((error) => of(error instanceof HttpErrorResponse && error.status === 404 ? fromContext : null))

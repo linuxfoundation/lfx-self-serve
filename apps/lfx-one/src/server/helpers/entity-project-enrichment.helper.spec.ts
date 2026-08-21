@@ -10,10 +10,8 @@ const { computeIsFoundation, warning } = vi.hoisted(() => ({
   warning: vi.fn(),
 }));
 
-// This app's vitest config resolves plain Node modules only — the `@lfx-one/shared/*` tsconfig
-// path alias isn't wired here, so runtime shared subpaths must be mocked (mirrors
-// meeting.helper.spec.ts). computeIsFoundation's real behavior is covered in the shared
-// package; here a stub is enough to assert the mapping passes it through.
+// `@lfx-one/shared/*` aliases aren't wired into this app's vitest config — mock runtime
+// subpaths (mirrors meeting.helper.spec.ts); a computeIsFoundation stub suffices here.
 vi.mock('@lfx-one/shared/utils', () => ({ computeIsFoundation }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning, debug: vi.fn(), info: vi.fn() },
