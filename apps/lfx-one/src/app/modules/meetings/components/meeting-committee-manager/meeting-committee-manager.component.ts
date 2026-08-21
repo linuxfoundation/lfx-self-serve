@@ -187,7 +187,7 @@ export class MeetingCommitteeManagerComponent {
         }),
         map((value) => value === this.meetingVisibility.PUBLIC)
       ),
-      { initialValue: this.form().get('visibility')?.value === this.meetingVisibility.PUBLIC }
+      { initialValue: false }
     );
   }
 
