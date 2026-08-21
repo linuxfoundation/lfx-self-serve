@@ -348,6 +348,21 @@ export class NewsletterBlockComposerComponent implements OnInit {
   }
 
   /**
+   * Keyboard activation (Enter/Space) of a block wrapper. Only fires when the
+   * wrapper itself is the event target — NOT a key bubbling up from an inline
+   * contentEditable field inside it. Without this guard, pressing Space while
+   * inline-editing a title/richtext field would select the block and
+   * preventDefault() the space, so authors could not type spaces. `stopProp`
+   * keeps a nested child's activation from also reaching its parent wrapper.
+   */
+  protected activateBlockFromKeyboard(event: Event, id: string, stopProp = false): void {
+    if (event.target !== event.currentTarget) return;
+    if (stopProp) event.stopPropagation();
+    this.selectBlock(id);
+    event.preventDefault();
+  }
+
+  /**
    * Switch the active left-rail tab — or, when the tab is already active, toggle
    * the panel collapsed/expanded (a second click on Blocks/Outline hides the
    * panel to widen the preview; a third re-opens it). Selection persists across

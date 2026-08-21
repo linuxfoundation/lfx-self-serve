@@ -191,10 +191,12 @@ export class NewsletterController {
    * GET /api/projects/:projectUid/newsletters/templates
    */
   public async getTemplates(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectUid = this.requireProjectUid(req);
-    const startTime = logger.startOperation(req, 'newsletter_templates_list', { project_uid: projectUid });
-
+    // requireProjectUid / startOperation live INSIDE the try: on Express 4 a
+    // synchronous throw before the first await rejects the returned promise with
+    // no next(error), leaving the request unhandled (see renderPreview).
     try {
+      const projectUid = this.requireProjectUid(req);
+      const startTime = logger.startOperation(req, 'newsletter_templates_list', { project_uid: projectUid });
       const result = await this.newsletterService.getTemplates(req, projectUid);
       logger.success(req, 'newsletter_templates_list', startTime, { count: result.templates.length });
       res.json(result);
@@ -207,11 +209,13 @@ export class NewsletterController {
    * GET /api/projects/:projectUid/newsletters/templates/:templateKey/manifest
    */
   public async getTemplateManifest(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectUid = this.requireProjectUid(req);
-    const templateKey = String(req.params['templateKey'] || '').trim();
-    const startTime = logger.startOperation(req, 'newsletter_template_manifest', { project_uid: projectUid, template_key: templateKey });
-
+    // requireProjectUid / startOperation live INSIDE the try: on Express 4 a
+    // synchronous throw before the first await rejects the returned promise with
+    // no next(error), leaving the request unhandled (see renderPreview).
     try {
+      const projectUid = this.requireProjectUid(req);
+      const templateKey = String(req.params['templateKey'] || '').trim();
+      const startTime = logger.startOperation(req, 'newsletter_template_manifest', { project_uid: projectUid, template_key: templateKey });
       const manifest = await this.newsletterService.getTemplateManifest(req, projectUid, templateKey);
       logger.success(req, 'newsletter_template_manifest', startTime, { template_key: templateKey, block_count: manifest.blocks.length });
       res.json(manifest);
@@ -646,28 +650,36 @@ export class NewsletterController {
     // only on the HTML-only path. Otherwise a large composed newsletter — one the
     // composer only WARNS about at the ~102 KB Gmail-clipping threshold — cannot
     // be test-sent. Size-cap the layout itself instead.
-    const layoutValid =
-      payload?.body_layout !== undefined && payload?.body_layout !== null && Array.isArray(payload.body_layout.blocks) && payload.body_layout.blocks.length > 0;
-    if (!layoutValid) {
-      if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
-        fieldErrors['body_html'] = 'Body is required';
-      } else if (payload.body_html.length > NEWSLETTER_BODY_MAX_LENGTH) {
-        fieldErrors['body_html'] = `Body must be ${NEWSLETTER_BODY_MAX_LENGTH} characters or fewer`;
+    // A PRESENT body_layout is the upstream test-send trigger and is
+    // authoritative (body_html is ignored), so route on presence — not on
+    // whether it has blocks. An empty present layout must be REJECTED (it would
+    // send a wrapper-only email), not fall through to the HTML path. Only an
+    // absent/null layout uses body_html.
+    const layout = payload?.body_layout;
+    if (layout !== undefined && layout !== null) {
+      if (!Array.isArray(layout.blocks) || layout.blocks.length === 0) {
+        fieldErrors['body_layout'] = 'Add at least one block before sending';
+      } else if (JSON.stringify(layout).length > NEWSLETTER_BODY_LAYOUT_MAX_LENGTH) {
+        fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_LENGTH} characters or fewer when serialized`;
       }
-    } else if (JSON.stringify(payload.body_layout).length > NEWSLETTER_BODY_LAYOUT_MAX_LENGTH) {
-      fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_LENGTH} characters or fewer when serialized`;
+    } else if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
+      fieldErrors['body_html'] = 'Body is required';
+    } else if (payload.body_html.length > NEWSLETTER_BODY_MAX_LENGTH) {
+      fieldErrors['body_html'] = `Body must be ${NEWSLETTER_BODY_MAX_LENGTH} characters or fewer`;
     }
 
     if (!payload?.to_email || typeof payload.to_email !== 'string' || !payload.to_email.includes('@')) {
       fieldErrors['to_email'] = 'A valid to_email is required';
     }
 
-    // Parity with validateCommonPayload: the client sends ed_reply_email on every
-    // test send, and a layout test recompiles the wrapper's "To reply, email …"
-    // row (and the email's reply-to) from it, so require a valid address here too
-    // rather than silently accepting a missing/malformed one.
-    if (!payload?.ed_reply_email || typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@')) {
-      fieldErrors['ed_reply_email'] = 'A valid ed_reply_email is required';
+    // ed_reply_email is OPTIONAL on a test send (the upstream TestSendRequest and
+    // the shared interface both mark it optional; when absent the wrapper omits
+    // the "To reply, email …" row). The app sends it, but don't reject an older
+    // client that omits it — validate the format only when a value is supplied.
+    if (payload?.ed_reply_email !== undefined && payload?.ed_reply_email !== null && payload.ed_reply_email !== '') {
+      if (typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@')) {
+        fieldErrors['ed_reply_email'] = 'ed_reply_email must be a valid email address';
+      }
     }
 
     if (Object.keys(fieldErrors).length > 0) {

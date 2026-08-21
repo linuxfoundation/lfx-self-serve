@@ -345,8 +345,8 @@
                   cdkDrag
                   [cdkDragData]="block"
                   (click)="selectBlock(block.id)"
-                  (keydown.enter)="selectBlock(block.id)"
-                  (keydown.space)="selectBlock(block.id); $event.preventDefault()"
+                  (keydown.enter)="activateBlockFromKeyboard($event, block.id)"
+                  (keydown.space)="activateBlockFromKeyboard($event, block.id)"
                   role="button"
                   tabindex="0"
                   [attr.data-testid]="'newsletter-composer-block-' + block.block_type"
@@ -399,8 +399,8 @@
                           cdkDrag
                           [cdkDragData]="child"
                           (click)="selectBlock(child.id); $event.stopPropagation()"
-                          (keydown.enter)="selectBlock(child.id); $event.stopPropagation()"
-                          (keydown.space)="selectBlock(child.id); $event.preventDefault(); $event.stopPropagation()"
+                          (keydown.enter)="activateBlockFromKeyboard($event, child.id, true)"
+                          (keydown.space)="activateBlockFromKeyboard($event, child.id, true)"
                           role="button"
                           tabindex="0"
                           [attr.data-testid]="'newsletter-composer-child-' + child.block_type"
