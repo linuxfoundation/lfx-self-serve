@@ -81,11 +81,9 @@
         }
       </p>
 
-      @if (form().get('visibility')?.value === meetingVisibility.PUBLIC) {
+      @if (isPublicVisibility()) {
         <div class="flex flex-col gap-1">
-          <label for="cancel-on-committee-removal" class="block text-neutral-950 mb-2"
-            >Registration on {{ committeeLabel.singular.toLowerCase() }} removal</label
-          >
+          <label for="cancel-on-committee-removal" class="block text-neutral-950 mb-2">Registration on {{ committeeLabelSingularLower }} removal</label>
           <lfx-select
             [form]="form()"
             control="cancel_on_committee_removal"
@@ -94,7 +92,7 @@
             inputId="cancel-on-committee-removal"
             data-testid="cancel-on-committee-removal-select"></lfx-select>
           <p class="mt-1 text-sm text-gray-500">
-            Whether removing someone from a linked {{ committeeLabel.singular.toLowerCase() }} also cancels their registration on this meeting
+            Whether removing someone from a linked {{ committeeLabelSingularLower }} also cancels their registration on this meeting
           </p>
         </div>
       }

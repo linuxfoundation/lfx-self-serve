@@ -13,7 +13,7 @@ import { sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids } from '@lfx-on
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, filter, forkJoin, map, of, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, filter, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
 
 interface CommitteeMemberDisplay extends CommitteeMember {
   committeeName: string;
@@ -56,6 +56,7 @@ export class MeetingCommitteeManagerComponent {
   // Voting status options for dropdown
   public readonly votingStatusOptions = MEETING_VOTING_STATUSES;
   public readonly committeeLabel = COMMITTEE_LABEL;
+  public readonly committeeLabelSingularLower = COMMITTEE_LABEL.singular.toLowerCase();
   public readonly cancelOnCommitteeRemovalOptions = CANCEL_ON_COMMITTEE_REMOVAL_OPTIONS;
   public readonly meetingVisibility = MeetingVisibility;
 
@@ -65,6 +66,7 @@ export class MeetingCommitteeManagerComponent {
     const committees = this.committeeOptions();
     return committees.some((c) => selectedIds.includes(c.uid) && c.enable_voting);
   });
+  public isPublicVisibility: Signal<boolean> = this.initIsPublicVisibility();
 
   public constructor() {
     this.committeeForm = new FormGroup({
@@ -169,6 +171,23 @@ export class MeetingCommitteeManagerComponent {
         )
       ),
       { initialValue: [] }
+    );
+  }
+
+  /**
+   * Tracks the parent form's visibility control reactively, so the template can bind a
+   * signal instead of calling form().get('visibility')?.value on every check cycle.
+   */
+  private initIsPublicVisibility(): Signal<boolean> {
+    return toSignal(
+      toObservable(this.form).pipe(
+        switchMap((form) => {
+          const control = form.get('visibility');
+          return control ? control.valueChanges.pipe(startWith(control.value)) : of(null);
+        }),
+        map((value) => value === this.meetingVisibility.PUBLIC)
+      ),
+      { initialValue: this.form().get('visibility')?.value === this.meetingVisibility.PUBLIC }
     );
   }
 
