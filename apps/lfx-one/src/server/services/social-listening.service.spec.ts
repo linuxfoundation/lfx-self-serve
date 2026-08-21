@@ -410,7 +410,13 @@ describe('option queries', () => {
     expect(withSocialListeningCache).toHaveBeenCalledWith('cncf', 'languages', ['cncf', '2026-01-01', '2026-02-01'], 1800, expect.any(Function));
 
     await service().getMentionsKeywords(req, { ...SCOPE, platform: 'reddit' });
-    expect(withSocialListeningCache).toHaveBeenLastCalledWith('cncf', 'keywords', ['cncf', '2026-01-01', '2026-02-01', 'reddit', 'platform', 'reddit'], 1800, expect.any(Function));
+    expect(withSocialListeningCache).toHaveBeenLastCalledWith(
+      'cncf',
+      'keywords',
+      ['cncf', '2026-01-01', '2026-02-01', 'reddit', 'platform', 'reddit'],
+      1800,
+      expect.any(Function)
+    );
   });
 });
 
