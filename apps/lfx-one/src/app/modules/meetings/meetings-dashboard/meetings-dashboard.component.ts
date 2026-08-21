@@ -108,7 +108,9 @@ export class MeetingsDashboardComponent {
 
   /**
    * Create Meeting dropdown: a quick start per meeting type, then the full drawer.
-   * @description A type row opens the quick dialog pre-selected, so its template prefill runs immediately.
+   * @description The button has no default action of its own — creating a meeting always starts by
+   * choosing one of these rows, so this model is the only entry point into either composer surface.
+   * A type row opens the quick dialog pre-selected, so its template prefill runs immediately.
    * Types come from the same persona filter the composer's type select uses — otherwise a maintainer
    * could seed a type here that the select then hides, leaving it set but uneditable.
    */
@@ -288,11 +290,6 @@ export class MeetingsDashboardComponent {
     toObservable(this.composer.saveCount)
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.refreshMeetings());
-  }
-
-  /** Main button: the quick create dialog. The dropdown covers per-type quick starts and the drawer. */
-  public onCreateMeeting(): void {
-    this.composer.open({ mode: 'create', variant: 'quick' });
   }
 
   public onQuickCreateMeeting(meetingType: MeetingType): void {

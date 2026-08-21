@@ -13,22 +13,16 @@
         <div class="flex justify-between items-center w-full gap-4">
           <h1 class="font-display font-light text-2xl">{{ activeLens() === 'me' ? 'My Meetings' : 'Meetings' }}</h1>
           @if (activeLens() !== 'me' && canWriteMeetings()) {
-            <div class="flex items-center gap-1">
+            <div class="flex items-center">
+              <!-- One button, not a split: every create path starts by picking a meeting type or Advanced,
+                   so there is no default action for a separate primary half to perform. -->
               <lfx-button
-                icon="fa-light fa-calendar"
+                icon="fa-light fa-chevron-down"
+                iconPos="right"
                 severity="info"
                 [attr.data-testid]="'meeting-create-button'"
                 label="Create Meeting"
                 size="small"
-                (onClick)="onCreateMeeting()">
-              </lfx-button>
-              <lfx-button
-                icon="fa-light fa-chevron-down"
-                severity="info"
-                [outlined]="true"
-                size="small"
-                ariaLabel="More create options"
-                [attr.data-testid]="'meeting-create-options-button'"
                 (onClick)="createMenu.toggle($event)">
               </lfx-button>
               <lfx-menu #createMenu [model]="createMenuItems()" [popup]="true" appendTo="body" styleClass="w-[22rem] py-2">
