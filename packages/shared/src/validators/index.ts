@@ -3,6 +3,7 @@
 
 export * from './committee.validators';
 export * from './date.validators';
+export * from './github-repo-url.validator';
 export * from './https-url.validator';
 export * from './linux-alias.validator';
 export * from './mailing-list.validators';

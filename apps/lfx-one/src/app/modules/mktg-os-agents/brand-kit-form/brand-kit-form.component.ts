@@ -1,23 +1,24 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, OnDestroy, output, PLATFORM_ID, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, OnDestroy, output, PLATFORM_ID, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { isPlatformBrowser } from '@angular/common';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { BRAND_KIT_INTAKE, BRAND_KIT_INTAKE_QUESTIONS, MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS } from '@lfx-one/shared/constants';
-import { BrandKitResultResponse } from '@lfx-one/shared/interfaces';
-import { trimmedRequired } from '@lfx-one/shared/validators';
+import { BRAND_KIT_INTAKE, BRAND_KIT_INTAKE_QUESTIONS, MKTG_INTAKE_FORMAT_ERRORS, MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS } from '@lfx-one/shared/constants';
+import { BrandKitResultResponse, GithubRepoUrlError } from '@lfx-one/shared/interfaces';
+import { githubRepoUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { BrandKitService } from '@services/brand-kit.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { map } from 'rxjs';
 
 /** Client-side poll cadence and cap for the generation session (~5 min). */
 const RESULT_POLL_INTERVAL_MS = 10_000;
@@ -57,11 +58,42 @@ export class BrandKitFormComponent implements OnDestroy {
   protected readonly questions = BRAND_KIT_INTAKE_QUESTIONS;
 
   // === Forms ===
+  // Validators come from the SHARED intake definition, so this standalone form
+  // and the form-first run shell enforce the same rules on the same questions —
+  // a repo URL refused on one surface can't sail through the other.
   protected readonly intakeForm = new FormGroup(
     Object.fromEntries(
-      BRAND_KIT_INTAKE_QUESTIONS.map((q) => [q.key, new FormControl('', { nonNullable: true, validators: [Validators.required, trimmedRequired()] })])
+      BRAND_KIT_INTAKE_QUESTIONS.map((q) => [
+        q.key,
+        new FormControl('', { nonNullable: true, validators: [Validators.required, trimmedRequired(), ...this.formatValidators(q.key)] }),
+      ])
     )
   );
+
+  // === Computed ===
+  private readonly intakeValue = toSignal(this.intakeForm.valueChanges, { initialValue: this.intakeForm.getRawValue() });
+  private readonly intakeValid = toSignal(this.intakeForm.statusChanges.pipe(map((status) => status === 'VALID')), { initialValue: this.intakeForm.valid });
+  /** Submission is inert until every answer is present AND usable — a refused repo URL blocks the run, it is not warned about. */
+  protected readonly submitDisabled = computed(() => !this.intakeValid());
+  /**
+   * Blocking format-error copy per question key for the value currently typed
+   * (e.g. an organization URL where a repository URL is required). The control
+   * carries the validator, so this is only the message — the submit button is
+   * already inert through the form's validity.
+   */
+  protected readonly fieldFormatErrors = computed<Record<string, string>>(() => {
+    // Depend on the form's value so the message follows every keystroke;
+    // Angular re-runs the validators before valueChanges emits.
+    this.intakeValue();
+    const messages: Record<string, string> = {};
+    for (const field of BRAND_KIT_INTAKE.fields) {
+      const error = this.intakeForm.controls[field.key]?.errors?.['githubRepoUrl'] as GithubRepoUrlError | undefined;
+      if (field.format && error) {
+        messages[field.key] = MKTG_INTAKE_FORMAT_ERRORS[field.format][error.reason];
+      }
+    }
+    return messages;
+  });
 
   // === Signals ===
   protected readonly generating = signal(false);
@@ -166,6 +198,12 @@ export class BrandKitFormComponent implements OnDestroy {
   }
 
   // === Private methods ===
+  /** The shared intake's format rule for a question, as validators (empty when it has none). */
+  private formatValidators(key: string): ValidatorFn[] {
+    const format = BRAND_KIT_INTAKE.fields.find((field) => field.key === key)?.format;
+    return format === 'github-repo-url' ? [githubRepoUrlValidator()] : [];
+  }
+
   private pollResult(epoch: number, sessionId: string, ownerToken: string, attempt: number, consecutiveErrors: number, persistRetries: number): void {
     this.brandKitService
       .getResult(sessionId, ownerToken, this.runProjectUid || undefined)

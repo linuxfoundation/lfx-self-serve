@@ -22,12 +22,13 @@ export type MktgIntakeFieldKind = 'text' | 'textarea';
 export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'project-description';
 
 /**
- * Non-blocking format check applied to a field's value as the user types.
- * Guidance NEVER invalidates the form: the agents' intake contracts keep these
- * answers free text and tolerate an unusable value, so the honest response to
- * a suspect one is to say so before submission, not to refuse it.
+ * Format rule enforced on a field's value. Unlike the agents' own contracts —
+ * which keep these answers free text (dec-paul-prompt-fidelity) — the LFX
+ * collection UI REFUSES a value that provably cannot do what the field is for:
+ * the field shows why and submission stays disabled until it is corrected.
+ * Product ruling; the question wording itself is still quoted verbatim.
  */
-export type MktgIntakeFieldGuidance = 'github-repo-url';
+export type MktgIntakeFieldFormat = 'github-repo-url';
 
 /** Where a README the BFF fetched for an agent came from. */
 export type MktgReadmeSource = 'repository' | 'org-profile';
@@ -86,10 +87,10 @@ export interface MktgIntakeField {
   /** Always-visible helper text under the control (e.g. the README auto-fetch note). */
   hint?: string;
   /**
-   * Non-blocking format check on the typed value. When it does not pass, the
-   * field shows inline guidance and submission stays enabled.
+   * Format rule the answer must satisfy. When it does not, the field shows the
+   * reason and submission is blocked until it is fixed.
    */
-  guidance?: MktgIntakeFieldGuidance;
+  format?: MktgIntakeFieldFormat;
   /**
    * Optional answer: no required validator, no asterisk, and the key is
    * omitted from the submitted answers when the trimmed value is empty.

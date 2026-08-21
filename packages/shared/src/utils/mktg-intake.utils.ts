@@ -1,9 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_INTAKE_GUIDANCE_NOTES } from '../constants/mktg-run.constants';
-import { MktgAgentIntake, MktgIntakeField } from '../interfaces';
-import { parseGithubUrlTarget } from './github-url.utils';
+import { MktgAgentIntake } from '../interfaces';
 
 /**
  * Renders a batch intake submission into the structured chat message a
@@ -41,35 +39,4 @@ export function renderMktgIntakeMessage(intake: MktgAgentIntake, answers: Record
   }
 
   return lines.join('\n');
-}
-
-/**
- * Inline guidance for one intake field's current value — empty string when
- * there is nothing to say (no guidance configured, an empty control, or a
- * value that checks out).
- *
- * Deliberately ADVISORY: it returns copy, never a validation error. The agents
- * keep these answers free text and tolerate an unusable one (the Message
- * Foundation simply generates without a README), so blocking submission would
- * contradict the agent contract. What the user must not experience is the
- * silent version — an organization URL like `https://github.com/some-org` was
- * accepted, dropped server-side, and surfaced only as a thinner document.
- */
-export function mktgIntakeFieldGuidance(field: MktgIntakeField, value: string): string {
-  if (!field.guidance) {
-    return '';
-  }
-  const trimmed = (value ?? '').trim();
-  if (!trimmed) {
-    return '';
-  }
-  const notes = MKTG_INTAKE_GUIDANCE_NOTES[field.guidance];
-  const target = parseGithubUrlTarget(trimmed);
-  if (!target) {
-    return notes.unrecognized;
-  }
-  if (target.kind === 'organization') {
-    return notes.organization;
-  }
-  return '';
 }

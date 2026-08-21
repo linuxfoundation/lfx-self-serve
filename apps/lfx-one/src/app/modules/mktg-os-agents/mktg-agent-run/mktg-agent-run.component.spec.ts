@@ -73,7 +73,7 @@ describe('MktgAgentRunComponent', () => {
   const query = (testId: string): HTMLElement | null => host().querySelector(`[data-testid="${testId}"]`);
   const fromLfxChip = (fieldKey: string): HTMLElement | null => query(`mktg-agent-run-from-lfx-${fieldKey}`);
   const priorRunChip = (fieldKey: string): HTMLElement | null => query(`mktg-agent-run-from-prior-run-${fieldKey}`);
-  const guidance = (fieldKey: string): HTMLElement | null => query(`mktg-agent-run-guidance-${fieldKey}`);
+  const fieldError = (fieldKey: string): HTMLElement | null => query(`mktg-agent-run-field-error-${fieldKey}`);
   /** The checklist row's icon + SR state for one configured section label. */
   const sectionState = (label: string): { icon: string; sr: string } | null => {
     const rows = Array.from(host().querySelectorAll<HTMLElement>('[data-testid="mktg-agent-run-sections"] > div'));
@@ -274,13 +274,19 @@ describe('MktgAgentRunComponent', () => {
       dependencyDocs = {};
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-      for (const [key, value] of Object.entries(component['intakeForm'].controls)) {
-        value.setValue(`answer for ${key}`);
+      for (const [key, control] of Object.entries(component['intakeForm'].controls)) {
+        // github_url carries a blocking format rule — a placeholder there
+        // would refuse the submission this test is about.
+        control.setValue(key === 'github_url' ? 'https://github.com/example-org/example-repo' : `answer for ${key}`);
       }
 
       component['onSubmit']();
 
-      expect(rememberAnswers).toHaveBeenCalledWith('proj-1', 'brand-kit', expect.objectContaining({ github_url: 'answer for github_url' }));
+      expect(rememberAnswers).toHaveBeenCalledWith(
+        'proj-1',
+        'brand-kit',
+        expect.objectContaining({ github_url: 'https://github.com/example-org/example-repo', project_name: 'answer for project_name' })
+      );
     });
   });
 
@@ -586,56 +592,90 @@ describe('MktgAgentRunComponent', () => {
     /**
      * `https://github.com/aaif` — an organization, not a repository — was
      * accepted by this form, dropped by the BFF's README fetch at debug level,
-     * and surfaced only as a document that said no README was provided. Both
-     * ends of that are covered here: the form warns before submission, and the
-     * result states plainly that the document was generated without a README.
+     * and surfaced only as a document that said no README was provided. The UI
+     * now refuses it outright (product ruling: don't accept a URL that
+     * provably cannot yield a README). Paul's contract still governs what the
+     * AGENT accepts — free text, missing README tolerated — and the question
+     * wording is untouched; it simply doesn't bind the collection UI.
      */
-    describe('github_url guidance — advisory, never a blocker', () => {
-      it('warns that an organization URL has no repository README, naming the fix', async () => {
+    describe('github_url format rule — blocking', () => {
+      const fillNameAndUrl = (url: string): void => {
+        component['intakeForm'].controls['project_name'].setValue('TestOrbit');
+        component['intakeForm'].controls['github_url'].setValue(url);
+      };
+
+      it('blocks submission on an organization URL and says why', async () => {
         dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
         activeContext.set(PROJECT_1);
         await fixture.whenStable();
 
-        component['intakeForm'].controls['project_name'].setValue('TestOrbit');
-        component['intakeForm'].controls['github_url'].setValue('https://github.com/aaif');
+        fillNameAndUrl('https://github.com/aaif');
         await fixture.whenStable();
 
-        expect(guidance('github_url')?.textContent).toContain('organization URL');
-        expect(guidance('github_url')?.textContent).toContain('https://github.com/org/repo');
+        expect(fieldError('github_url')?.textContent).toContain('organization URL');
+        expect(fieldError('github_url')?.textContent).toContain('https://github.com/org/repo');
+        expect(component['intakeForm'].valid).toBe(false);
+        expect(component['submitDisabled']()).toBe(true);
+        component['onSubmit']();
+        expect(generate).not.toHaveBeenCalled();
       });
 
-      it('does NOT block submission — the agent tolerates a missing README by contract', async () => {
+      it('blocks submission on a URL that is not a GitHub repository at all', async () => {
         dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
         activeContext.set(PROJECT_1);
         await fixture.whenStable();
 
-        component['intakeForm'].controls['project_name'].setValue('TestOrbit');
-        component['intakeForm'].controls['github_url'].setValue('https://github.com/aaif');
+        fillNameAndUrl('https://gitlab.com/example-org/example-repo');
         await fixture.whenStable();
 
-        expect(component['intakeForm'].valid).toBe(true);
+        expect(fieldError('github_url')?.textContent).toContain('doesn’t look like a GitHub repository URL');
+        expect(component['submitDisabled']()).toBe(true);
+        component['onSubmit']();
+        expect(generate).not.toHaveBeenCalled();
+      });
+
+      it('clears the error and re-enables submission once a real repository URL is entered', async () => {
+        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        fillNameAndUrl('https://github.com/aaif');
+        await fixture.whenStable();
+        expect(component['submitDisabled']()).toBe(true);
+
+        component['intakeForm'].controls['github_url'].setValue('https://github.com/example-org/example-repo');
+        await fixture.whenStable();
+
+        expect(fieldError('github_url')).toBeNull();
         expect(component['submitDisabled']()).toBe(false);
         component['onSubmit']();
         expect(generate).toHaveBeenCalledTimes(1);
       });
 
-      it('warns on a non-GitHub URL and says nothing for a real repository URL or an empty box', async () => {
+      it('leaves an empty box to the required rule — no format error, and no double message', async () => {
         dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
         activeContext.set(PROJECT_1);
         await fixture.whenStable();
-        const control = component['intakeForm'].controls['github_url'];
 
-        control.setValue('https://gitlab.com/example-org/example-repo');
+        fillNameAndUrl('');
         await fixture.whenStable();
-        expect(guidance('github_url')?.textContent).toContain('doesn’t look like a GitHub repository URL');
 
-        control.setValue('https://github.com/example-org/example-repo');
-        await fixture.whenStable();
-        expect(guidance('github_url')).toBeNull();
+        expect(fieldError('github_url')).toBeNull();
+        expect(component['submitDisabled']()).toBe(true);
+      });
 
-        control.setValue('');
+      it('blocks the regenerate path on the same rule — a resubmit is a full submit', async () => {
+        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
+        activeContext.set(PROJECT_1);
         await fixture.whenStable();
-        expect(guidance('github_url')).toBeNull();
+
+        fillNameAndUrl('https://github.com/aaif');
+        component['feedbackForm'].controls.feedback.setValue('Sharpen the pitch.');
+        await fixture.whenStable();
+
+        expect(component['regenerateDisabled']()).toBe(true);
+        component['onRegenerate']();
+        expect(generate).not.toHaveBeenCalled();
       });
     });
 

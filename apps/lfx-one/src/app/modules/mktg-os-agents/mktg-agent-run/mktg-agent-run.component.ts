@@ -11,8 +11,9 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_README_SKIP_NOTES, MKTG_RUN_STAGES } from '@lfx-one/shared/constants';
+import { MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_INTAKE_FORMAT_ERRORS, MKTG_README_SKIP_NOTES, MKTG_RUN_STAGES } from '@lfx-one/shared/constants';
 import {
+  GithubRepoUrlError,
   MktgAgent,
   MktgAgentAccent,
   MktgAgentIntake,
@@ -24,8 +25,7 @@ import {
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
-import { mktgIntakeFieldGuidance } from '@lfx-one/shared/utils';
-import { trimmedRequired } from '@lfx-one/shared/validators';
+import { githubRepoUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap } from 'rxjs';
 
@@ -165,14 +165,14 @@ export class MktgAgentRunComponent {
     return `This agent builds on the project’s ${names.join(' and ')} — generate ${names.length > 1 ? 'them' : 'it'} from the marketplace first.`;
   });
   /**
-   * Inline, NON-BLOCKING guidance per field key for the value currently typed
-   * — e.g. a `github_url` that names an organization rather than a repository.
-   * Submission stays enabled (the agents keep these answers free text and
-   * tolerate an unusable one); what changes is that the user sees the problem
-   * BEFORE spending a generation on it, instead of discovering it as an
-   * unexplained thin document.
+   * Blocking format error per field key for the value currently typed — e.g. a
+   * `github_url` that names an organization rather than a repository. The
+   * control carries the validator, so this signal is only the MESSAGE:
+   * submission is already blocked by the form's own validity. The user is told
+   * which mistake they made, at the moment they make it, instead of
+   * discovering it minutes later as an unexplained thin document.
    */
-  protected readonly fieldGuidance: Signal<Record<string, string>> = this.initFieldGuidance();
+  protected readonly fieldFormatErrors: Signal<Record<string, string>> = this.initFieldFormatErrors();
   /**
    * Field keys that should show the "not set on your LFX project" hint: the
    * LFX source came back empty AND nothing else filled the control. A field
@@ -445,17 +445,20 @@ export class MktgAgentRunComponent {
     });
   }
 
-  private initFieldGuidance(): Signal<Record<string, string>> {
+  private initFieldFormatErrors(): Signal<Record<string, string>> {
     return computed(() => {
-      const values = this.intakeValue();
-      const guidance: Record<string, string> = {};
+      // Depend on the form's value so the message follows every keystroke.
+      // Angular re-runs the validators BEFORE valueChanges emits, so the
+      // control's errors are already current when this recomputes.
+      this.intakeValue();
+      const messages: Record<string, string> = {};
       for (const field of this.intake?.fields ?? []) {
-        const note = mktgIntakeFieldGuidance(field, values[field.key] ?? '');
-        if (note) {
-          guidance[field.key] = note;
+        const error = this.intakeForm.controls[field.key]?.errors?.['githubRepoUrl'] as GithubRepoUrlError | undefined;
+        if (field.format && error) {
+          messages[field.key] = MKTG_INTAKE_FORMAT_ERRORS[field.format][error.reason];
         }
       }
-      return guidance;
+      return messages;
     });
   }
 
@@ -479,8 +482,13 @@ export class MktgAgentRunComponent {
   private buildIntakeForm(): FormGroup<Record<string, FormControl<string>>> {
     const controls: Record<string, FormControl<string>> = {};
     for (const field of this.intake?.fields ?? []) {
-      // Optional fields never carry the required validator.
-      controls[field.key] = new FormControl('', { nonNullable: true, validators: field.optional ? [] : [trimmedRequired()] });
+      // Optional fields never carry the required validator; a format rule
+      // applies either way — an answer that IS given has to be usable.
+      const validators = field.optional ? [] : [trimmedRequired()];
+      if (field.format === 'github-repo-url') {
+        validators.push(githubRepoUrlValidator());
+      }
+      controls[field.key] = new FormControl('', { nonNullable: true, validators });
     }
     return new FormGroup(controls);
   }

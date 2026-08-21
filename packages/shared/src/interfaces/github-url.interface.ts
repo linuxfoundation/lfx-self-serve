@@ -31,3 +31,16 @@ export interface GithubOrganizationTarget {
 
 /** A parsed github.com URL, or `null` from the parser when the URL is neither. */
 export type GithubUrlTarget = GithubRepositoryTarget | GithubOrganizationTarget;
+
+/**
+ * Why a value failed the repository-URL requirement. An organization URL and
+ * an unparsable one are different mistakes with different fixes, so the reason
+ * travels with the error and the field says which one happened.
+ */
+export type GithubRepoUrlErrorReason = 'organization' | 'unrecognized';
+
+/** Payload of the `githubRepoUrl` control error raised by `githubRepoUrlValidator`. */
+export interface GithubRepoUrlError {
+  /** What the value turned out to be instead of a repository. */
+  reason: GithubRepoUrlErrorReason;
+}

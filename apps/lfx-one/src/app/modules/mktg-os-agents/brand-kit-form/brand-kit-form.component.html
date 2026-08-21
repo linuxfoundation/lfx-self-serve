@@ -85,7 +85,16 @@
             [describedBy]="'brand-kit-q-' + q.questionNumber + '-error'"
             [invalid]="intakeForm.controls[q.key].touched && intakeForm.controls[q.key].invalid"
             [dataTest]="'brand-kit-form-answer-' + q.key" />
-          @if (intakeForm.controls[q.key].touched && intakeForm.controls[q.key].invalid) {
+          <!-- A format failure names the ACTUAL problem; the generic required message only covers a blank answer. -->
+          @if (fieldFormatErrors()[q.key]; as formatError) {
+            <span
+              [id]="'brand-kit-q-' + q.questionNumber + '-error'"
+              class="text-xs text-red-500"
+              role="alert"
+              [attr.data-testid]="'brand-kit-form-field-error-' + q.key"
+              >{{ formatError }}</span
+            >
+          } @else if (intakeForm.controls[q.key].touched && intakeForm.controls[q.key].invalid) {
             <span [id]="'brand-kit-q-' + q.questionNumber + '-error'" class="text-xs text-red-500">This answer is required.</span>
           }
         </div>
@@ -96,6 +105,7 @@
           label="Generate Brand Kit"
           icon="fa-light fa-wand-magic-sparkles"
           ariaLabel="Submit the intake answers and generate the Brand Kit"
+          [disabled]="submitDisabled()"
           data-testid="brand-kit-form-submit-button" />
       </div>
     </form>

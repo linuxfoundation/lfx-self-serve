@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MktgAgentIntake, MktgIntakeField, MktgIntakeFieldGuidance, MktgReadmeSkipReason } from '../interfaces';
+import { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeField, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
 import { BRAND_KIT_FORM_PREAMBLE_LINES, BRAND_KIT_INTAKE_QUESTIONS } from './brand-kit.constants';
 import {
   FOUNDATION_MESSAGE_DERIVATIVE_CHIPS,
@@ -23,7 +23,9 @@ import {
  */
 const BRAND_KIT_FIELD_PRESENTATION: Record<(typeof BRAND_KIT_INTAKE_QUESTIONS)[number]['key'], Omit<MktgIntakeField, 'key' | 'question'>> = {
   project_name: { kind: 'text', prefill: 'project-name' },
-  github_url: { kind: 'text', prefill: 'repository-url' },
+  // Q2 asks for the repo or README URL, and an organization URL answers
+  // neither — refused here rather than accepted and quietly under-used.
+  github_url: { kind: 'text', prefill: 'repository-url', format: 'github-repo-url' },
   one_line_description: {
     kind: 'text',
     prefill: 'project-description',
@@ -117,11 +119,13 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
       kind: 'text',
       prefill: 'repository-url',
       hint: 'The README is fetched automatically from this repo and passed to the agent.',
-      // Non-blocking: the agent tolerates a missing README (Paul's contract
-      // keeps this field free text), but the user must SEE that an
-      // organization URL or a typo will cost them the README before they
-      // spend a generation on it.
-      guidance: 'github-repo-url',
+      // Blocking. Paul's contract keeps this answer free text for the AGENT
+      // (which tolerates a missing README) — it does not bind the LFX
+      // collection UI, and the question wording above is still verbatim.
+      // Product ruling: a URL that provably cannot yield a README is not
+      // accepted, because the user would only find out minutes later, as a
+      // thinner document.
+      format: 'github-repo-url',
     },
     // Paul's Step 1d gap areas, offered as one optional free-text field — the
     // placeholder names his five areas so form mode never has to ask.
@@ -159,16 +163,15 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
 export const MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH = 16;
 
 /**
- * Inline, non-blocking guidance shown under an intake field whose typed value
- * will not do what the field promises. Keyed by the field's `guidance` check
- * and by what the value turned out to be, so the wording names the ACTUAL
- * problem instead of a generic "invalid" — an organization URL and a typo are
- * different mistakes with different fixes.
+ * Blocking field-error copy for an intake value that fails its `format` rule.
+ * Keyed by the rule and by what the value turned out to be, so the message
+ * names the ACTUAL problem instead of a generic "invalid" — an organization
+ * URL and a typo are different mistakes with different fixes.
  */
-export const MKTG_INTAKE_GUIDANCE_NOTES: Record<MktgIntakeFieldGuidance, Record<'organization' | 'unrecognized', string>> = {
+export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Record<GithubRepoUrlErrorReason, string>> = {
   'github-repo-url': {
     organization:
-      'That’s an organization URL — it has no repository README to read. Enter a repository URL, e.g. https://github.com/org/repo. (We’ll try the organization’s profile README as a fallback, but most organizations don’t have one.)',
+      'That’s an organization URL, not a repository — there’s no repository README behind it. Enter a repository URL, e.g. https://github.com/org/repo.',
     unrecognized: 'That doesn’t look like a GitHub repository URL. Enter one like https://github.com/org/repo so the agent can read the repository’s README.',
   },
 };
