@@ -28,8 +28,8 @@ import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-ac
  *    `'surveys'`, or `'votes'`. The backend ruleset allows committee:uid#writer to
  *    create resources associated with their committee.
  *
- * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting edit), resolves
- * the slug from the meeting itself first — the active context can belong to a different project
+ * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting/group edit), resolves
+ * the slug from the entity itself first — the active context can belong to a different project
  * when the edit link carried no `?project=`. A non-404 failure on that read resolves no slug at all,
  * so the guard redirects instead of authorizing against a stale context. Otherwise prefers the `?project=` query param
  * (authoritative for the navigation target, works before the lens has synced), then falls back
@@ -69,10 +69,13 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   // A missing/stale `?project=` can authorize against a different project than the entity being
   // edited — resolve the slug from the entity itself; only a 404 falls back, else fail closed.
   const writeFeature: string | undefined = route.data?.['writeFeature'];
-  // Entity probes keyed by writeFeature — a follow-up ticket adds one registry line + inject() +
-  // route flag; probes must be tap-free and short-TTL-cached so the guard shares the manage fetch.
+  // Entity probes keyed by writeFeature — a new entity adds one registry line + the route's
+  // entityScopedSlug flag. Probes must be tap-free: fetchCommittee, not getCommittee (which sets
+  // the shared committee signal), so a guard probe can't leak stale state into other pages. A
+  // short-TTL-cached probe (meetings) shares the manage component's fetch on the same navigation.
   const entityProbes: Record<string, (id: string) => Observable<Pick<EntityWithProject, 'project_slug' | 'project_uid'> | null>> = {
     meetings: (id) => meetingService.getMeetingDetail(id),
+    committees: (id) => committeeService.fetchCommittee(id),
   };
   const resolveSlug = (): Observable<string | null> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;

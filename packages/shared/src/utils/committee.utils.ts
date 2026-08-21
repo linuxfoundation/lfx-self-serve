@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
-import { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
-import { CommitteeMember } from '../interfaces/member.interface';
-import { BadgeSeverity } from '../interfaces/components.interface';
-import { StatCardItem } from '../interfaces/stat-card.interface';
+import type { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
+import type { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
+import type { CommitteeMember } from '../interfaces/member.interface';
+import type { BadgeSeverity } from '../interfaces/components.interface';
+import type { StatCardItem } from '../interfaces/stat-card.interface';
 import {
   CATEGORY_BEHAVIORAL_CLASS,
   FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL,
@@ -68,6 +68,23 @@ export function getGroupBehavioralClass(category: string | undefined): GroupBeha
   }
 
   return 'other';
+}
+
+/**
+ * Builds the canonical Angular router commands for a group's view or edit page, prefixing the
+ * path with the GROUP's own project tier (`is_foundation`) rather than the viewer's transient
+ * active lens: foundation-owned groups live under `/foundation/groups/{uid}`, all other
+ * projects under `/project/groups/{uid}`. Returns null when `is_foundation` is absent
+ * (unenriched payload) so callers can fall back to the flat `/groups/{uid}` path handled by
+ * `lensRedirectGuard`. Pass `leaf: 'edit'` for the edit route — one helper serves both so the
+ * view/edit tier logic can't drift apart (mirror: `getMeetingEditCommands`).
+ */
+export function getGroupCommands(committee: Pick<Committee, 'uid' | 'is_foundation'>, leaf?: 'edit'): string[] | null {
+  if (committee.is_foundation === undefined) {
+    return null;
+  }
+
+  return ['/', committee.is_foundation ? 'foundation' : 'project', 'groups', committee.uid, ...(leaf ? [leaf] : [])];
 }
 
 /**

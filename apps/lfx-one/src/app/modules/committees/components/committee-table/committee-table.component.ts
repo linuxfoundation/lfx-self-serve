@@ -11,6 +11,8 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
+import { CommitteeTableRowVm } from '@lfx-one/shared/interfaces';
+import { getGroupCommands } from '@lfx-one/shared/utils';
 import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
 import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
 import { PersonaService } from '@services/persona.service';
@@ -71,7 +73,24 @@ export class CommitteeTableComponent {
   protected readonly isBoardMember = computed(() => this.personaService.currentPersona() === 'board-member');
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.committees().length > 10 ? [10, 25, 50] : undefined));
 
-  protected onRowSelect(event: { data: Committee }): void {
+  /**
+   * Rows decorated with their canonical view/edit link state (GH-1566): `getGroupCommands`
+   * prefixes the path with the row's OWN project tier (`is_foundation`) instead of the viewer's
+   * transient active lens, and `?project=` rides along when the row carries a `project_slug`.
+   * Rows without tier data keep the flat `/groups/:uid` fallback (the `??` inside the mapping),
+   * which `lensRedirectGuard` handles as before. Pre-computed once per input change rather than
+   * per change-detection cycle (angular-reactive-data §3.5).
+   */
+  protected readonly tableRows = computed<CommitteeTableRowVm[]>(() =>
+    this.committees().map((committee) => ({
+      ...committee,
+      viewCommands: getGroupCommands(committee) ?? ['/groups', committee.uid],
+      editCommands: getGroupCommands(committee, 'edit') ?? ['/groups', committee.uid, 'edit'],
+      linkQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
+    }))
+  );
+
+  protected onRowSelect(event: { data: CommitteeTableRowVm }): void {
     this.rowClick.emit(event.data);
   }
 
