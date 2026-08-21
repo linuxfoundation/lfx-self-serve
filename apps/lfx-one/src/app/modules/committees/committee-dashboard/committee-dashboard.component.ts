@@ -21,7 +21,7 @@ import {
   StatCardGridColumns,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
-import { buildEngagementStatCards, getGroupBehavioralClass, groupCommitteesByFoundation } from '@lfx-one/shared/utils';
+import { buildEngagementStatCards, getGroupBehavioralClass, getGroupCommands, groupCommitteesByFoundation } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { InvitationService } from '@services/invitation.service';
@@ -310,7 +310,11 @@ export class CommitteeDashboardComponent {
   }
 
   public onCommitteeClick(committee: Committee): void {
-    this.router.navigate(['/groups', committee.uid], {
+    // Canonical tier-prefixed view link (GH-1566): the group's own `is_foundation` picks
+    // /foundation vs /project instead of the viewer's transient active lens; `?project=` rides
+    // along when the row carries a slug. Unenriched rows keep the flat /groups/:uid fallback.
+    this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], {
+      queryParams: committee.project_slug ? { project: committee.project_slug } : undefined,
       state: { backLabel: this.isMeLens() ? 'My Groups' : 'Groups' },
     });
   }

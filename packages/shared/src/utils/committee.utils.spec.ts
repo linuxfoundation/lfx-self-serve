@@ -13,7 +13,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { Committee, CommitteeMember, GroupsEngagementStats } from '../interfaces';
+import type { Committee, CommitteeMember, GroupsEngagementStats } from '../interfaces';
 import { FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL } from '../constants/committees.constants';
 import { CommitteeMemberRole } from '../enums/committee-member.enum';
 import {
@@ -21,6 +21,7 @@ import {
   buildEngagementStatCards,
   canManageCommitteeMembers,
   countVotingReps,
+  getGroupCommands,
   groupCommitteesByFoundation,
   resolveCommitteeMemberPermission,
   resolveGroupsCardRoleSeverity,
@@ -131,6 +132,26 @@ describe('buildCommitteeCreateQueryParams', () => {
 
   it('omits the project key when the committee has no project slug', () => {
     expect(buildCommitteeCreateQueryParams(committee({ uid: 'cmte-9' }))).toEqual({ committee_uid: 'cmte-9' });
+  });
+});
+
+describe('getGroupCommands', () => {
+  it('prefixes foundation-owned groups with /foundation', () => {
+    expect(getGroupCommands(committee({ uid: 'cmte-9', is_foundation: true }))).toEqual(['/', 'foundation', 'groups', 'cmte-9']);
+  });
+
+  it('prefixes non-foundation groups with /project', () => {
+    expect(getGroupCommands(committee({ uid: 'cmte-9', is_foundation: false }))).toEqual(['/', 'project', 'groups', 'cmte-9']);
+  });
+
+  it('appends the edit leaf when requested, sharing the same tier logic', () => {
+    expect(getGroupCommands(committee({ uid: 'cmte-9', is_foundation: true }), 'edit')).toEqual(['/', 'foundation', 'groups', 'cmte-9', 'edit']);
+    expect(getGroupCommands(committee({ uid: 'cmte-9', is_foundation: false }), 'edit')).toEqual(['/', 'project', 'groups', 'cmte-9', 'edit']);
+  });
+
+  it('returns null when is_foundation is absent so callers fall back to the flat /groups/:uid path', () => {
+    expect(getGroupCommands(committee({ uid: 'cmte-9' }))).toBeNull();
+    expect(getGroupCommands(committee({ uid: 'cmte-9' }), 'edit')).toBeNull();
   });
 });
 
