@@ -107,6 +107,35 @@
     color: #4086c6;
   }
 
+  // Restore list rendering for richtext content: Tailwind preflight resets
+  // ul/ol to list-style:none with no margin/padding, so an authored bullet or
+  // numbered list would render as flat lines in the canvas even though the send
+  // email (and the Preview drawer) show it correctly. Mirror the drawer's values
+  // so the canvas matches. Applied at the .nl-preview root (not a body class) so
+  // it catches lists in any richtext container.
+  ul,
+  ol {
+    margin: 0.75rem 0 1rem 1.5rem;
+    padding: 0 0 0 0.5rem;
+  }
+
+  ul {
+    list-style-type: disc;
+  }
+
+  ol {
+    list-style-type: decimal;
+  }
+
+  li {
+    margin: 0 0 0.5rem;
+    line-height: 1.6;
+
+    > p {
+      margin: 0;
+    }
+  }
+
   // Brick heading — community sub-items (BRICK_TITLE).
   .nl-brick-title {
     margin: 0 0 8px;
