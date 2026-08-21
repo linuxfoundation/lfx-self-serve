@@ -282,9 +282,9 @@ describe('toMyClaAgreement', () => {
     expect(gitlab.signedVia).toBe('gitlab');
     expect(gitlab.signedAs).toBe('jellis');
 
-    const gerrit = toMyClaAgreement(icla({ signedVia: 'gerrit', signedAs: 'jellis@linuxfoundation.org' }));
+    const gerrit = toMyClaAgreement(icla({ signedVia: 'gerrit', signedAs: 'jellis@acme-motors.example' }));
     expect(gerrit.signedVia).toBe('gerrit');
-    expect(gerrit.signedAs).toBe('jellis@linuxfoundation.org');
+    expect(gerrit.signedAs).toBe('jellis@acme-motors.example');
   });
 
   it('trims signedAs and drops a blank identity', () => {

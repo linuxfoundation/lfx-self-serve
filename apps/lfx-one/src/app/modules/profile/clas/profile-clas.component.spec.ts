@@ -302,12 +302,12 @@ describe('ProfileClasComponent', () => {
     await render([
       agreement({ id: 's-gh', signedVia: 'github', signedAs: 'jellis' }),
       agreement({ id: 's-gl', signedVia: 'gitlab', signedAs: 'jellis' }),
-      agreement({ id: 's-email', signedVia: 'gerrit', signedAs: 'jellis@linuxfoundation.org' }),
+      agreement({ id: 's-email', signedVia: 'gerrit', signedAs: 'jellis@acme-motors.example' }),
     ]);
 
     expect(signedAs('s-gh')?.textContent?.trim()).toBe('Signed as jellis (GitHub)');
     expect(signedAs('s-gl')?.textContent?.trim()).toBe('Signed as jellis (GitLab)');
-    expect(signedAs('s-email')?.textContent?.trim()).toBe('Signed as jellis@linuxfoundation.org');
+    expect(signedAs('s-email')?.textContent?.trim()).toBe('Signed as jellis@acme-motors.example');
     expect(headers()).toEqual(['Project', 'Type', 'Status', 'Signed', 'Actions']);
   });
 

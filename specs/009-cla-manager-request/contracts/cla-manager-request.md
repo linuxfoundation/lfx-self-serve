@@ -6,17 +6,17 @@
 
 ## Self Serve routes
 
-```
+```text
 GET  /api/me/clas/:signatureId/cla-managers
 POST /api/me/clas/:signatureId/cla-manager-requests
 ```
 
-| | GET | POST |
-|---|---|---|
-| Auth | Session (`getUsernameFromAuth`) | Session |
-| Impersonation | Allowed (read). Target `bearerToken` upstream | **`blockDuringImpersonation`** |
-| Success | `200` + `{ signatureId, managers, resultCount }` | `200` + `{ requestId, signatureId, requestType, status, recipients }` |
-| Identity | `resolveIdentity` + `identityQuery` | same |
+|               | GET                                              | POST                                                                  |
+| ------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
+| Auth          | Session (`getUsernameFromAuth`)                  | Session                                                               |
+| Impersonation | Allowed (read). Target `bearerToken` upstream    | **`blockDuringImpersonation`**                                        |
+| Success       | `200` + `{ signatureId, managers, resultCount }` | `200` + `{ requestId, signatureId, requestType, status, recipients }` |
+| Identity      | `resolveIdentity` + `identityQuery`              | same                                                                  |
 
 POST body: `{ "requestType": "approval"|"removal", "recipients": ["lfuser"], "message?": "..." }`.
 
@@ -28,7 +28,7 @@ GET 404 when producer 404s (unknown / not-owned / ICLA). Do not map 404 to an em
 
 ## Upstream
 
-```
+```text
 GET  {claServiceBaseUrl()}/v4/my-clas/{signatureID}/cla-managers?{identityQuery}
 POST {claServiceBaseUrl()}/v4/my-clas/{signatureID}/cla-manager-requests?{identityQuery}
 ```
@@ -59,13 +59,13 @@ Headers: usual gateway. BFF does not set `X-ACL`.
 
 ## Errors
 
-| Producer / BFF | Client |
-|---|---|
-| Bad UUID / body | 400 |
-| Impersonated POST | 403 `IMPERSONATION_READ_ONLY` |
-| Producer 404 | 404 `Signed agreement not found` (same class as PDF) |
-| Producer 400 | 400, message passed through |
-| 401 / ACS 403 | existing gateway mapping |
-| 500 / timeout | existing `MicroserviceError` |
+| Producer / BFF    | Client                                               |
+| ----------------- | ---------------------------------------------------- |
+| Bad UUID / body   | 400                                                  |
+| Impersonated POST | 403 `IMPERSONATION_READ_ONLY`                        |
+| Producer 404      | 404 `Signed agreement not found` (same class as PDF) |
+| Producer 400      | 400, message passed through                          |
+| 401 / ACS 403     | existing gateway mapping                             |
+| 500 / timeout     | existing `MicroserviceError`                         |
 
 Unauthenticated DEV: plain-text `401 no token provided`.

@@ -7,9 +7,9 @@
 
 Delivery git branch is **`feat/GH-1372`**. Spec-kit directory name and git branch are independent. Do not edit `profile-clas.component.{ts,html,spec.ts}` in this pass — export a menu-item factory for Agent A to spread.
 
-## Background *(why this exists)*
+## Background _(why this exists)_
 
-#1372 originally deep-linked into the Contributor Console request-approval flow. The 2026-08-14 legal/stakeholder review replaced that with an in-app **Contact CLA Manager** message modal (`openMgrModal(..., 'approval')`). #1574 is the same modal in `removal` mode. v17 also has a `contact` mode.
+[#1372](https://github.com/linuxfoundation/lfx-self-serve/issues/1372) originally deep-linked into the Contributor Console request-approval flow. The 2026-08-14 legal/stakeholder review replaced that with an in-app **Contact CLA Manager** message modal (`openMgrModal(..., 'approval')`). #1574 is the same modal in `removal` mode. v17 also has a `contact` mode.
 
 The producer already emails CLA managers for **Approved-List changes only**. `POST /v4/my-clas/{signatureID}/cla-manager-requests` accepts `requestType: "approval" | "removal"`. The email template tells the manager to update the Approved List. There is no `contact` type, and inventing one by posting `approval` or `removal` would claim a list change the contributor did not ask for.
 
@@ -25,10 +25,10 @@ This specification is the Self Serve consume: one modal, two live writes, one no
 - Q: Contact CLA Manager — new ticket? API? → A: **No new ticket.** Same modal, v17 `contact` copy (“Send a message to the CLA manager(s)…”). **GET managers still runs** so the list matches the copy. **Send is a no-op — no POST.** Explicit exception to 002 `my-clas-row-actions.md` “real actions only”: Contact is a product-complete no-op, not a stub.
 - Q: Empty recipient list? → A: **Send disabled when no manager is checked.** BFF rejects an empty `recipients` array. Zero resolved managers: explanatory support copy, no Send, no silent POST on open.
 - Q: Impersonation? → A: **Block the POST** (`blockDuringImpersonation`, same as prepare-sign). GET stays a read.
-- Q: Feature flag? → A: LaunchDarkly **`my-clas-m2-enabled`** (kebab family of `my-clas-enabled`; default off) gates Sign CLA, Status column, kebab/actions, Signed-as. This pass does **not** wire it into profile-clas. The exported factory is only *used* when that flag is on. Do not hide the modal behind a second flag name.
+- Q: Feature flag? → A: LaunchDarkly **`my-clas-m2-enabled`** (kebab family of `my-clas-enabled`; default off) gates Sign CLA, Status column, kebab/actions, Signed-as. This pass does **not** wire it into profile-clas. The exported factory is only _used_ when that flag is on. Do not hide the modal behind a second flag name.
 - Q: Who edits the kebab in profile-clas? → A: **Agent A.** This pass exports `buildContactClaManagerMenuItems`. One spread in `buildRowMenuItems`. Factory returns `[]` for ICLA and Revoked.
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - Request approval from a Needs-attention ECLA (Priority: P1)
 
@@ -123,7 +123,7 @@ An administrator viewing someone’s CLAs can still see who the managers would b
 - **`my-clas-m2-enabled` off.** Factory is not called (caller’s job). Modal is not behind a second flag.
 - **002 “real actions only”.** Contact is the documented exception (Clarifications). Do not hide the item; do not POST a lying `requestType`.
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
@@ -150,7 +150,7 @@ An administrator viewing someone’s CLAs can still see who the managers would b
 - **Manager request**: `approval` or `removal`, selected LF usernames, optional message. Receipt `sent` or `recorded`.
 - **Modal mode**: `approval` | `removal` | `contact` (copy). Only the first two are request types.
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 

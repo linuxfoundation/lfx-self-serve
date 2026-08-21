@@ -146,7 +146,7 @@ describe('signedAsLine', () => {
   it('adds a platform suffix for GitHub and GitLab, and none for Gerrit/email', () => {
     expect(signedAsLine('github', 'jellis')).toBe('Signed as jellis (GitHub)');
     expect(signedAsLine('gitlab', 'jellis')).toBe('Signed as jellis (GitLab)');
-    expect(signedAsLine('gerrit', 'jellis@linuxfoundation.org')).toBe('Signed as jellis@linuxfoundation.org');
+    expect(signedAsLine('gerrit', 'jellis@acme-motors.example')).toBe('Signed as jellis@acme-motors.example');
   });
 
   it('omits the line when the identity is missing, empty, or whitespace', () => {
