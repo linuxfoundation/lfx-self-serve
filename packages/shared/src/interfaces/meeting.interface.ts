@@ -1534,3 +1534,20 @@ export interface MeetingLinkDialogResult {
   title: string;
   url: string;
 }
+
+/**
+ * Extra per-row fields the meetings dashboard's Create Meeting dropdown renders alongside the
+ * label and icon a PrimeNG `MenuItem` already carries.
+ * @description Deliberately free of any PrimeNG import so it can live here — the dashboard
+ * intersects it with `MenuItem` at the boundary and reads these fields from the menu's `item`
+ * template. The dropdown is a descriptive picker rather than a plain list, so each row needs
+ * supporting copy and its own icon tile, neither of which `MenuItem` can express.
+ */
+export interface MeetingCreateMenuRow {
+  /** Supporting copy shown under the row's title. */
+  description: string;
+  /** Tailwind classes for the row's icon tile — background plus icon colour. */
+  tileClass: string;
+  /** `data-testid` for the row, since the template replaces PrimeNG's own item markup. */
+  testId: string;
+}

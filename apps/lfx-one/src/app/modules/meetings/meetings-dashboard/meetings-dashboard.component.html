@@ -31,7 +31,22 @@
                 [attr.data-testid]="'meeting-create-options-button'"
                 (onClick)="createMenu.toggle($event)">
               </lfx-button>
-              <lfx-menu #createMenu [model]="createMenuItems()" [popup]="true" appendTo="body"></lfx-menu>
+              <lfx-menu #createMenu [model]="createMenuItems()" [popup]="true" appendTo="body" styleClass="w-[22rem] py-2">
+                <ng-template #submenuheader let-item>
+                  <span class="text-[0.6875rem] font-semibold uppercase tracking-wide text-gray-500">{{ item.label }}</span>
+                </ng-template>
+                <ng-template #item let-item>
+                  <div class="flex w-full items-start gap-3 px-2 py-1.5" [attr.data-testid]="item.testId">
+                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" [class]="item.tileClass">
+                      <i class="text-sm" [class]="item.icon"></i>
+                    </span>
+                    <span class="flex min-w-0 flex-col gap-0.5">
+                      <span class="text-sm font-semibold text-gray-900">{{ item.label }}</span>
+                      <span class="whitespace-normal text-xs leading-snug text-gray-500">{{ item.description }}</span>
+                    </span>
+                  </div>
+                </ng-template>
+              </lfx-menu>
             </div>
           }
         </div>

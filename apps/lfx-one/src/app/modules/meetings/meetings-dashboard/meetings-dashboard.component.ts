@@ -17,7 +17,17 @@ import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
 import { MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
-import { Lens, MeLensMeetingFilters, Meeting, MeetingCalendarClickProps, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
+import {
+  Lens,
+  MeetingCalendarClickProps,
+  MeetingCreateMenuRow,
+  MeLensMeetingFilters,
+  Meeting,
+  PageResult,
+  PastMeeting,
+  ProjectContext,
+  ViewMode,
+} from '@lfx-one/shared/interfaces';
 import {
   getCurrentOrNextOccurrence,
   getLargestSessionShareUrl,
@@ -389,22 +399,34 @@ export class MeetingsDashboardComponent {
   }
 
   private initCreateMenuItems(): Signal<MenuItem[]> {
-    return computed(() => [
-      {
-        label: 'Quick start',
-        items: getSelectableMeetingTypeOptions(this.personaService.currentPersona()).map((option) => ({
-          label: option.label,
-          icon: option.info.icon,
-          command: () => this.onQuickCreateMeeting(option.value),
-        })),
-      },
-      { separator: true },
-      {
+    return computed(() => {
+      const typeRows: (MenuItem & MeetingCreateMenuRow)[] = getSelectableMeetingTypeOptions(this.personaService.currentPersona()).map((option) => ({
+        label: option.label,
+        icon: option.info.icon,
+        // Reuses the type's composer description so the dropdown and the Details & Access select
+        // never explain the same meeting type two different ways.
+        description: option.info.description,
+        tileClass: 'bg-gray-100 text-gray-500',
+        testId: `meeting-create-quick-${option.value.toLowerCase()}`,
+        command: () => this.onQuickCreateMeeting(option.value),
+      }));
+      const advancedRow: MenuItem & MeetingCreateMenuRow = {
         label: 'Advanced',
         icon: 'fa-light fa-sliders',
+        description: 'Configure every aspect of your meeting',
+        // Tinted rather than neutral: this row leaves the quick path for the full composer, so it
+        // shouldn't read as a seventh meeting type.
+        tileClass: 'bg-blue-50 text-blue-600',
+        testId: 'meeting-create-advanced',
         command: () => this.onAdvancedCreateMeeting(),
-      },
-    ]);
+      };
+
+      // One group, not two: PrimeNG renders every *top-level* entry as a submenu label once any entry
+      // has children, so a top-level Advanced would come out as a second section heading. Keeping it
+      // inside the group behind an item separator also matches the prototype, which shows a single
+      // "Quick start" heading and a divider above Advanced.
+      return [{ label: 'Quick start', items: [...typeRows, { separator: true }, advancedRow] }];
+    });
   }
 
   private initCanWriteMeetings(): Signal<boolean> {
