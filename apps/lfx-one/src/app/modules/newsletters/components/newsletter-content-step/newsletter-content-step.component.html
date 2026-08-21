@@ -6,11 +6,11 @@
     <div>
       <h2 class="text-base font-semibold text-gray-900">Write your newsletter</h2>
       <p class="mt-1 text-sm text-gray-500">
-        Add a subject line, then build the body — with content blocks, or as a simple written body you can generate with AI.
+        Add a subject line, then build the body as a basic written body you can generate with AI, or with content blocks.
       </p>
     </div>
 
-    <!-- Editor toggle: block composer vs. the simple rich-text + AI editor.
+    <!-- Editor toggle: the basic rich-text + AI editor vs. the block composer.
          Shown only where the block composer is enabled (pilot projects). -->
     @if (blocksEnabled()) {
       <div
@@ -21,6 +21,17 @@
         <button
           type="button"
           class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100"
+          [class.bg-blue-50]="editorMode() === 'simple'"
+          [class.text-blue-600]="editorMode() === 'simple'"
+          [attr.aria-pressed]="editorMode() === 'simple'"
+          data-testid="newsletter-content-editor-simple"
+          (click)="setMode('simple')">
+          <i class="fa-light fa-pen-to-square" aria-hidden="true"></i>
+          Basic
+        </button>
+        <button
+          type="button"
+          class="flex items-center gap-1.5 border-l border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100"
           [class.bg-blue-50]="editorMode() === 'blocks'"
           [class.text-blue-600]="editorMode() === 'blocks'"
           [attr.aria-pressed]="editorMode() === 'blocks'"
@@ -28,17 +39,6 @@
           (click)="setMode('blocks')">
           <i class="fa-light fa-cube" aria-hidden="true"></i>
           Blocks
-        </button>
-        <button
-          type="button"
-          class="flex items-center gap-1.5 border-l border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100"
-          [class.bg-blue-50]="editorMode() === 'simple'"
-          [class.text-blue-600]="editorMode() === 'simple'"
-          [attr.aria-pressed]="editorMode() === 'simple'"
-          data-testid="newsletter-content-editor-simple"
-          (click)="setMode('simple')">
-          <i class="fa-light fa-pen-to-square" aria-hidden="true"></i>
-          Simple
         </button>
       </div>
     }

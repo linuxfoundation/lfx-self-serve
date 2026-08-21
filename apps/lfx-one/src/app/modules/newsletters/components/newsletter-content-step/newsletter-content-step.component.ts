@@ -18,15 +18,16 @@ import { NewsletterGenerateDrawerComponent } from '../newsletter-generate-drawer
 /**
  * The wizard's Content step. Hosts two mutually-exclusive body editors the
  * author toggles between:
- *   - blocks: the structured block composer (authors `body_layout`), the
- *     default; the server renders it to `body_html` on save.
- *   - simple: a rich-text editor over `body_html` plus AI generation (the
- *     original pre-composer editor).
+ *   - simple ("Basic" in the UI): a rich-text editor over `body_html` plus AI
+ *     generation (the original pre-composer editor), and the default for a new
+ *     draft.
+ *   - blocks: the structured block composer (authors `body_layout`); the server
+ *     renders it to `body_html` on save.
  *
  * Switching modes clears the other representation so only one body source is
  * ever authoritative (a confirm guards the discard when the outgoing editor
  * holds content). The mode is inferred on init from whichever representation the
- * loaded draft already carries.
+ * loaded draft already carries, defaulting to the basic editor for a new draft.
  */
 @Component({
   selector: 'lfx-newsletter-content-step',
@@ -67,8 +68,9 @@ export class NewsletterContentStepComponent implements OnInit {
   protected readonly generateDrawerVisible = signal<boolean>(false);
 
   // === Writable signals ===
-  // Which body editor is showing. Seeded from the loaded draft in ngOnInit.
-  protected readonly editorMode = signal<NewsletterEditorMode>('blocks');
+  // Which body editor is showing. Defaults to the basic (simple) editor for a
+  // new draft; ngOnInit reseeds it to blocks when a loaded draft carries a layout.
+  protected readonly editorMode = signal<NewsletterEditorMode>('simple');
 
   // === Reactive form mirrors ===
   protected readonly subjectValue: Signal<string> = this.initControlValue('subject');
@@ -95,17 +97,15 @@ export class NewsletterContentStepComponent implements OnInit {
       this.editorMode.set('simple');
       return;
     }
-    // Infer the editor from the draft: a saved layout means the composer, a
-    // saved html body means the simple editor, otherwise the default (blocks).
+    // Infer the editor from the draft: a saved layout means the composer,
+    // otherwise the basic editor (the signal default) — so a new draft opens in
+    // the basic editor and the author opts in to blocks.
     const layout = this.form().get('bodyLayout')?.value as NewsletterLayout | null;
-    const html = (this.form().get('bodyHtml')?.value as string) ?? '';
     // A PRESENT layout means the composer, even after its last block is removed
-    // (an empty-but-present layout is still authoritative upstream). Only a null
-    // layout with authored html is the simple editor.
+    // (an empty-but-present layout is still authoritative upstream). A null
+    // layout (new draft or an authored html body) stays on the basic editor.
     if (layout !== null) {
       this.editorMode.set('blocks');
-    } else if (stripHtml(html).length > 0) {
-      this.editorMode.set('simple');
     }
   }
 
@@ -133,7 +133,7 @@ export class NewsletterContentStepComponent implements OnInit {
         key: 'newsletter-content-step',
         header: 'Switch editor?',
         message: leavingBlocks
-          ? 'Switching to the simple editor discards the blocks you have added. Continue?'
+          ? 'Switching to the basic editor discards the blocks you have added. Continue?'
           : 'Switching to the block editor discards the body you have written. Continue?',
         icon: 'pi pi-exclamation-triangle',
         acceptLabel: 'Switch',
