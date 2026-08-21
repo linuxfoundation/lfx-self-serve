@@ -44,7 +44,7 @@ import {
   DEFAULT_MEETING_TYPE_CONFIG,
   getCurrentOrNextOccurrence,
   getLargestSessionShareUrl,
-  getMeetingEditCommands,
+  getEntityCommands,
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   getUpcomingMeetingStartTime,
@@ -213,7 +213,9 @@ export class MeetingCardComponent implements OnInit {
   });
   // Canonical edit URL derives from the MEETING's project tier (is_foundation), not the viewer's
   // active lens; falls back to the flat path (lensRedirectGuard) when the tier is unenriched.
-  public readonly editCommands: Signal<string[]> = computed(() => getMeetingEditCommands(this.meeting()) ?? ['/meetings', this.meeting().id, 'edit']);
+  public readonly editCommands: Signal<string[]> = computed(
+    () => getEntityCommands('meetings', this.meeting().id, this.meeting().is_foundation, 'edit') ?? ['/meetings', this.meeting().id, 'edit']
+  );
 
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
@@ -312,7 +314,18 @@ export class MeetingCardComponent implements OnInit {
 
   public copyMeetingLink(): void {
     const meeting = this.meeting();
-    const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + meeting.id);
+
+    let meetingUrl: URL;
+    try {
+      meetingUrl = new URL(environment.urls.home + '/meetings/' + meeting.id);
+    } catch {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Copy Failed',
+        detail: 'Unable to build the meeting link. Please try again.',
+      });
+      return;
+    }
 
     if (meeting.password) {
       meetingUrl.searchParams.set('password', meeting.password);

@@ -6827,7 +6827,7 @@ export class ProjectService {
         project_name: project?.name || (item as any).project_name || '',
         project_slug: project?.slug || (item as any).project_slug || '',
         // Leave is_foundation absent (not false) when the lookup fails — consumers like
-        // getMeetingEditCommands treat undefined as "tier unknown" and fall back safely,
+        // getEntityCommands treat undefined as "tier unknown" and fall back safely,
         // whereas a coerced false would mislabel a foundation-owned entity as project-owned.
         // Mirrors the meeting-detail enrichment's fail-soft contract.
         is_foundation: project ? computeIsFoundation(project) : ((item as any).is_foundation ?? undefined),

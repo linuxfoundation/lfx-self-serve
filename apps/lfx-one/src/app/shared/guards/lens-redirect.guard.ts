@@ -12,7 +12,7 @@ import { LensService } from '../services/lens.service';
  * when foundation or project lens is active. Lets the request through unchanged
  * for `me` and `org` lenses, where the flat routes are the canonical destination.
  * Carve-out: ENRICHED meeting EDIT links bypass this guard entirely — they canonicalize on the
- * meeting's own project tier (`is_foundation`) via `getMeetingEditCommands`, so me/org-lens
+ * meeting's own project tier (`is_foundation`) via `getEntityCommands`, so me/org-lens
  * users land on the tier-prefixed `/foundation|project/meetings/{id}/edit` URL. When
  * `is_foundation` is absent (unenriched payload), callers fall back to the flat
  * `/meetings/{id}/edit` path, which still runs this guard and redirects by active lens.
