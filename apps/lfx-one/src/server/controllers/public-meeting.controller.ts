@@ -150,25 +150,8 @@ export class PublicMeetingController {
         stripHostKey(meeting);
       }
 
-      // Fetch registrant counts for organizers, otherwise default to 0
-      if (meeting.organizer) {
-        try {
-          const registrants = await this.meetingService.getMeetingRegistrants(req, id);
-          const committeeMembers = registrants.filter((r) => r.type === 'committee').length;
-          meeting.individual_registrants_count = registrants.length - committeeMembers;
-          meeting.committee_members_count = committeeMembers;
-        } catch (error) {
-          logger.warning(req, 'get_public_meeting_by_id', 'Failed to fetch registrant counts for organizer', {
-            meeting_id: id,
-            err: error,
-          });
-          meeting.individual_registrants_count = 0;
-          meeting.committee_members_count = 0;
-        }
-      } else {
-        meeting.individual_registrants_count = 0;
-        meeting.committee_members_count = 0;
-      }
+      // Registrant counts are no longer fetched here — the full roster read was purely to derive
+      // two integers. Clients fetch them lazily via GET /meetings/:uid/registrant-counts (GH-1731).
 
       // The organizer is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
       // created_by/owner from the live v1_meeting index (the ITX detail payload omits created_by);

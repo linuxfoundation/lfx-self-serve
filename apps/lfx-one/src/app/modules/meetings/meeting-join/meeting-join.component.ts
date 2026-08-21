@@ -41,6 +41,7 @@ import {
   MeetingRecurrence,
   getMeetingSeriesUid,
   MeetingRegistrant,
+  MeetingRegistrantCounts,
   MeetingRsvp,
   OccurrenceNavItem,
   resolveOccurrenceRecurrence,
@@ -55,7 +56,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { getUserTimezone, isHostKeyVisible, isPastMeetingCompositeId } from '@lfx-one/shared/utils';
+import { getUserTimezone, isHostKeyVisible, isPastMeetingCompositeId, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -256,6 +257,10 @@ export class MeetingJoinComponent implements OnInit {
   // Pre-loaded with the meeting so the Show Members drawer renders instantly from cache.
   protected registrants: Signal<MeetingRegistrant[]>;
   protected registrantsLoading: WritableSignal<boolean> = signal(false);
+  // Registrant counts (individual/committee split), fetched lazily alongside the registrant list
+  // instead of riding on the meeting payload — the backend no longer pages the full roster just
+  // to compute these two integers (GH-1731). Null until resolved.
+  protected registrantCounts: Signal<MeetingRegistrantCounts | null>;
   // Re-fires the registrants fetch (e.g. after a guest is added from the drawer).
   private registrantsRefresh$ = new BehaviorSubject<void>(undefined);
   // Counts from actual data
@@ -263,8 +268,7 @@ export class MeetingJoinComponent implements OnInit {
   // Optimistic + actual: post-add we bump optimisticAdditional immediately and let the refetch
   // catch up; the max keeps the count stable while query indexing settles.
   public additionalRegistrantsCount = computed(() => {
-    const meeting = this.meeting();
-    const baseCount = (meeting?.individual_registrants_count || 0) + (meeting?.committee_members_count || 0);
+    const baseCount = this.resolveBaseRegistrantCount();
     const fetched = Math.max(0, this.registrants().length - baseCount);
     return Math.max(fetched, this.optimisticAdditional());
   });
@@ -392,6 +396,7 @@ export class MeetingJoinComponent implements OnInit {
     this.alertMessage = this.initializeAlertMessage();
     this.emailError = this.initializeEmailError();
     this.registrants = this.initializeRegistrants();
+    this.registrantCounts = this.initializeRegistrantCounts();
     this.parentProject = this.initializeParentProject();
     this.initializeAutoJoin();
     this.initializePublicMeetingPageviewTracking();
@@ -1374,6 +1379,35 @@ export class MeetingJoinComponent implements OnInit {
       });
   }
 
+  /**
+   * Resolves the "base" registrant count (before the fetched roster's additional guests) —
+   * prefers the lazily-fetched `registrantCounts` signal, falling back to whatever split/total
+   * count the meeting payload itself carries (list views still enrich these), and finally 0. An
+   * `exhaustive: false` counts payload is still used as a best-effort lower bound; it is never
+   * treated as "no registrants".
+   */
+  private resolveBaseRegistrantCount(): number {
+    const counts = this.registrantCounts();
+    if (counts) {
+      return resolveMeetingBaseCount(counts) ?? 0;
+    }
+    return resolveMeetingBaseCount(this.meeting() ?? {}) ?? 0;
+  }
+
+  private initializeRegistrantCounts(): Signal<MeetingRegistrantCounts | null> {
+    return toSignal(
+      combineLatest([toObservable(this.meeting).pipe(distinctUntilChanged((a, b) => a?.id === b?.id)), toObservable(this.authenticated)]).pipe(
+        switchMap(([meeting, authenticated]) => {
+          if (!meeting?.id || !authenticated || !(meeting.organizer || meeting.invited || this.optimisticInvited()) || this.isPastMeeting()) {
+            return of(null);
+          }
+          return this.meetingService.getMeetingRegistrantCounts(meeting.id);
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
   private initializeRegistrants(): Signal<MeetingRegistrant[]> {
     return toSignal(
       combineLatest([
@@ -1388,7 +1422,7 @@ export class MeetingJoinComponent implements OnInit {
             return of([] as MeetingRegistrant[]);
           }
           this.registrantsLoading.set(true);
-          const baseCount = (meeting.individual_registrants_count || 0) + (meeting.committee_members_count || 0);
+          const baseCount = this.resolveBaseRegistrantCount();
           const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
           return this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId).pipe(
             tap((list) => {
