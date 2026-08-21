@@ -194,7 +194,7 @@ export class NewsletterRendererService {
           // Track the indexed path to this item (e.g. `jobs.0`) so inline-edit
           // markers inside resolve back to `content.jobs[0].<field>` on commit.
           const itemPrefix = [ctx.pathPrefix, attrs['each'], String(i)].filter(Boolean).join('.');
-          return this.renderNode({ kind: 'element', tag, attrs: rest, children }, { ...ctx, content: mergeItem(ctx.content, item), pathPrefix: itemPrefix });
+          return this.renderNode({ kind: 'element', tag, attrs: rest, children }, { ...ctx, content: itemContext(item), pathPrefix: itemPrefix });
         })
         .join('');
     }
@@ -447,9 +447,14 @@ function resolveAttr(text: string, content: Record<string, unknown>): string {
   });
 }
 
-function mergeItem(content: Record<string, unknown>, item: unknown): Record<string, unknown> {
-  if (item && typeof item === 'object') return { ...content, ...(item as Record<string, unknown>), $item: item };
-  return { ...content, $item: item };
+// itemContext builds the binding context for one `each=` array item. It matches
+// the server (bind.go sets `itemCtx.content = item`): the item REPLACES the
+// parent binding context, so parent fields do not leak into the item's `{{}}`
+// bindings — a client that merged the parent in would render fields the sent
+// email leaves empty. `$item` keeps a handle to the raw item.
+function itemContext(item: unknown): Record<string, unknown> {
+  if (item && typeof item === 'object') return { ...(item as Record<string, unknown>), $item: item };
+  return { $item: item };
 }
 
 /**
