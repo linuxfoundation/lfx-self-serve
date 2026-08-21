@@ -27,6 +27,10 @@ export const MKTG_OS_AGENTS_ROUTE_SEGMENT = 'mktg-os-agents';
 //
 // `guildAgentHandle` values must match a LIVE agent's name in the
 // linux-foundation/marketing-os Guild workspace, or routing silently fails.
+// The handle is the NAME half only: the BFF prepends it as the transitional
+// `@handle` mention on text messages, and composes the Guild-resolvable
+// agent identifier as `<GUILD_WORKSPACE_OWNER>~<handle>` for the explicit
+// `agent_id` (the bare name is not a Guild identifier — it 404s).
 // `brand-kit` is live (Guild agent linux-foundation~brand-kit).
 export const MKTG_AGENTS: MktgAgent[] = [
   {
@@ -41,20 +45,23 @@ export const MKTG_AGENTS: MktgAgent[] = [
     accent: 'violet',
     guildAgentHandle: 'brand-kit',
   },
-  // Live Guild agent (linux-foundation~foundation-message), but its batch
-  // intake form ships separately (wi-mf-lfx-selfserve). The form-first UI has
-  // no run surface for it until then, so it stays `coming-soon` — flipping it
-  // back to `active` (handle `foundation-message`) lands with its intake form.
+  // Live Guild agent (linux-foundation~foundation-message) with its batch
+  // intake form registered in MKTG_AGENT_INTAKES (wi-mf-lfx-selfserve).
+  // Consumes the Brand Kit (dec-agent-dependency-gating): the card stays
+  // disabled until the active project has a stored Brand Kit, and the intake
+  // auto-attaches that document instead of asking for it.
   {
     id: 'foundation-setup',
     number: 2,
     name: 'Message Foundation Agent',
     tags: ['Messaging', 'Summaries'],
-    status: 'coming-soon',
+    status: 'active',
     description:
       'Builds the messaging foundation for a Linux Foundation project — positioning, audiences, pillars, talking points, plus the 25/50-word summaries, boilerplate, llms.txt, and elevator pitch.',
     icon: 'fa-light fa-landmark',
     accent: 'blue',
+    guildAgentHandle: 'foundation-message',
+    dependsOn: ['brand-kit'],
   },
   {
     id: 'icp',

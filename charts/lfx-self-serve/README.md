@@ -327,12 +327,14 @@ reviewed chart commit — a values override is invisible to review, a chart chan
 
 Server-side credentials for the Marketing OS agents proxy. Consumed only by the SSR server — never exposed to the browser.
 
-| Parameter                           | Description                            | Required | Default                |
-| ----------------------------------- | -------------------------------------- | -------- | ---------------------- |
-| `environment.GUILD_API_URL`         | Guild API base URL                     | No       | `https://app.guild.ai` |
-| `environment.GUILD_API_KEY`         | API key for Guild workspace operations | **Yes**  | -                      |
-| `environment.GUILD_WORKSPACE_OWNER` | Guild workspace owner identifier       | **Yes**  | -                      |
-| `environment.GUILD_WORKSPACE_NAME`  | Guild workspace name                   | **Yes**  | -                      |
+| Parameter                                  | Description                                                                                                                                            | Required | Default                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ---------------------- |
+| `environment.GUILD_API_URL`                | Guild API base URL                                                                                                                                     | No       | `https://app.guild.ai` |
+| `environment.GUILD_API_KEY`                | API key for Guild workspace operations                                                                                                                 | **Yes**  | -                      |
+| `environment.GUILD_WORKSPACE_OWNER`        | Guild workspace owner identifier                                                                                                                       | **Yes**  | -                      |
+| `environment.GUILD_WORKSPACE_NAME`         | Guild workspace name                                                                                                                                   | **Yes**  | -                      |
+| `environment.GUILD_STRUCTURED_AGENT_INPUT` | Send the Message Foundation intake as a structured Guild `agent_input` instead of BFF-rendered text                                                    | No       | `"false"`              |
+| `environment.GITHUB_API_TOKEN`             | Token for the server-side README fetch. Unset uses unauthenticated GitHub (60 req/hour **per egress IP**); a public-repo token raises it to 5,000/hour | No       | -                      |
 
 #### Runtime Client Configuration
 
