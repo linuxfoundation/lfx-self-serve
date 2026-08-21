@@ -64,7 +64,7 @@ describe('NewsletterController.listNewsletters — status allowlist', () => {
     await new NewsletterController().listNewsletters({ params: { projectUid: 'p1' }, query: { status }, path: '/x' } as any, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(listNewsletters).toHaveBeenCalledWith(expect.anything(), 'p1', { status, page_token: undefined });
+    expect(listNewsletters).toHaveBeenCalledWith(expect.anything(), 'p1', { status, page_token: undefined, publication_id: undefined });
     expect(res.json).toHaveBeenCalled();
   });
 
@@ -76,6 +76,21 @@ describe('NewsletterController.listNewsletters — status allowlist', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(listNewsletters).not.toHaveBeenCalled();
+  });
+
+  it('forwards publication_id to scope the editions view to one publication', async () => {
+    listNewsletters.mockResolvedValue({ newsletters: [], next_page_token: undefined });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new NewsletterController().listNewsletters(
+      { params: { projectUid: 'p1' }, query: { status: 'sent', publication_id: 'pub-9' }, path: '/x' } as any,
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(listNewsletters).toHaveBeenCalledWith(expect.anything(), 'p1', { status: 'sent', page_token: undefined, publication_id: 'pub-9' });
   });
 });
 

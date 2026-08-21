@@ -9,12 +9,8 @@ export const NEWSLETTER_ROUTES: Routes = [
   {
     path: '',
     pathMatch: 'full',
-    redirectTo: 'list',
-  },
-  {
-    path: 'list',
     canActivate: [authGuard, newsletterAccessGuard],
-    loadComponent: () => import('./newsletter-list/newsletter-list.component').then((m) => m.NewsletterListComponent),
+    loadComponent: () => import('./newsletter-publication-list/newsletter-publication-list.component').then((m) => m.NewsletterPublicationListComponent),
     data: { preload: false },
   },
   {
@@ -33,9 +29,21 @@ export const NEWSLETTER_ROUTES: Routes = [
     data: { preload: false },
   },
   {
-    // projectUid is in the URL so edit/analytics survive a foundation-vs-project
-    // context switch — the owning project travels with the link rather than being
-    // re-derived from whatever context happens to be active when the route loads.
+    // Flat, cross-publication list of the project's newsletters (with draft/
+    // scheduled/sent tabs). NewsletterListComponent renders unfiltered when no
+    // :pubId is present. This is the post-action landing target for the manage
+    // and analytics flows (goToList / goBack navigate to ['list']); it must
+    // stay a real route so those navigations don't fall through to the generic
+    // :pubId matcher below and render a broken "publication 'list'" editions
+    // view. Single-segment, so it precedes :pubId.
+    path: 'list',
+    canActivate: [authGuard, newsletterAccessGuard],
+    loadComponent: () => import('./newsletter-list/newsletter-list.component').then((m) => m.NewsletterListComponent),
+    data: { preload: false },
+  },
+  {
+    // Specific routes with two segments must come before the generic :pubId
+    // to avoid being caught by the :pubId matcher.
     path: ':projectUid/:id/edit',
     canActivate: [authGuard, newsletterAccessGuard],
     loadComponent: () => import('./newsletter-manage/newsletter-manage.component').then((m) => m.NewsletterManageComponent),
@@ -54,4 +62,12 @@ export const NEWSLETTER_ROUTES: Routes = [
   // newsletterAccessGuard) — either mount would break the any-authenticated-user
   // access model. The reader is mounted directly in app.routes.ts, ahead of the
   // flat mount.
+  {
+    // Publication editions list: /newsletters/:pubId shows all editions for that publication.
+    // This must come after the more specific two-segment routes.
+    path: ':pubId',
+    canActivate: [authGuard, newsletterAccessGuard],
+    loadComponent: () => import('./newsletter-list/newsletter-list.component').then((m) => m.NewsletterListComponent),
+    data: { preload: false },
+  },
 ];

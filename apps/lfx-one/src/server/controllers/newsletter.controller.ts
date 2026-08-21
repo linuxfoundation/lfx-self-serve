@@ -138,6 +138,9 @@ export class NewsletterController {
     try {
       const statusParam = req.query['status'] ? String(req.query['status']) : undefined;
       const pageToken = req.query['page_token'] ? String(req.query['page_token']) : undefined;
+      // Scopes the list to one publication's editions. Forwarded to the upstream
+      // service, which validates it as a UUID (400 on malformed / cross-project).
+      const publicationId = req.query['publication_id'] ? String(req.query['publication_id']) : undefined;
 
       if (statusParam && statusParam !== 'draft' && statusParam !== 'sending' && statusParam !== 'scheduled' && statusParam !== 'sent') {
         throw ServiceValidationError.forField('status', "status must be 'draft', 'sending', 'scheduled', or 'sent'", {
@@ -150,6 +153,7 @@ export class NewsletterController {
       const params: NewsletterListParams = {
         status: statusParam as NewsletterStatus | undefined,
         page_token: pageToken,
+        publication_id: publicationId,
       };
       const result = await this.newsletterService.listNewsletters(req, projectUid, params);
 
