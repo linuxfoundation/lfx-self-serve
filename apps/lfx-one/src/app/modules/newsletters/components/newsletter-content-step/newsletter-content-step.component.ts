@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, OnInit, output, Signal, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, inject, input, OnInit, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -45,6 +46,7 @@ export class NewsletterContentStepComponent implements OnInit {
   // === Services ===
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
   public readonly form = input.required<FormGroup>();
@@ -72,6 +74,13 @@ export class NewsletterContentStepComponent implements OnInit {
   // new draft; ngOnInit reseeds it to blocks when a loaded draft carries a layout.
   protected readonly editorMode = signal<NewsletterEditorMode>('simple');
 
+  // True on small viewports (below Tailwind's `md`, 768px). The block composer is
+  // a desktop drag-and-drop surface that does not work on a phone, so on mobile
+  // the Blocks toggle is disabled and a blocks draft shows a "use a desktop"
+  // notice instead of the composer. Defaults false so SSR renders the desktop
+  // shape; the browser reseeds it from matchMedia on init (see ngOnInit).
+  protected readonly isMobile = signal<boolean>(false);
+
   // === Reactive form mirrors ===
   protected readonly subjectValue: Signal<string> = this.initControlValue('subject');
   protected readonly bodyValue: Signal<string> = this.initControlValue('bodyHtml');
@@ -91,6 +100,18 @@ export class NewsletterContentStepComponent implements OnInit {
   });
 
   public ngOnInit(): void {
+    // Track the viewport size browser-side so the composer is steered off mobile.
+    // Guarded on isPlatformBrowser: matchMedia does not exist during SSR. The
+    // handler and query stay local to this closure; DestroyRef removes the
+    // listener on teardown.
+    if (isPlatformBrowser(this.platformId)) {
+      const mq = window.matchMedia('(max-width: 767px)');
+      const onChange = (e: MediaQueryListEvent): void => this.isMobile.set(e.matches);
+      this.isMobile.set(mq.matches);
+      mq.addEventListener('change', onChange);
+      this.destroyRef.onDestroy(() => mq.removeEventListener('change', onChange));
+    }
+
     // Blocks disabled for this project: only the simple editor is available,
     // regardless of what the draft carries.
     if (!this.blocksEnabled()) {
@@ -120,8 +141,9 @@ export class NewsletterContentStepComponent implements OnInit {
    * authored body_html).
    */
   protected setMode(mode: NewsletterEditorMode): void {
-    // Blocks is unavailable when the composer is gated off for this project.
-    if (mode === 'blocks' && !this.blocksEnabled()) return;
+    // Blocks is unavailable when the composer is gated off for this project, and
+    // on mobile where the desktop drag-and-drop composer cannot be used.
+    if (mode === 'blocks' && (!this.blocksEnabled() || this.isMobile())) return;
     if (mode === this.editorMode()) return;
     const leavingBlocks = this.editorMode() === 'blocks';
     // Read the LIVE control, not the memoized signal, so in-session blocks count.

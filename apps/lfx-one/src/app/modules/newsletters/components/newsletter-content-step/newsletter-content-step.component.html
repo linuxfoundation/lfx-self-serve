@@ -11,35 +11,44 @@
     </div>
 
     <!-- Editor toggle: the basic rich-text + AI editor vs. the block composer.
-         Shown only where the block composer is enabled (pilot projects). -->
+         Shown only where the block composer is enabled (pilot projects). On
+         mobile the Blocks button is disabled because the composer is a desktop
+         drag-and-drop surface; a hint below the toggle explains why. -->
     @if (blocksEnabled()) {
-      <div
-        class="flex shrink-0 overflow-hidden rounded-md border border-gray-200"
-        role="group"
-        aria-label="Body editor"
-        data-testid="newsletter-content-editor-toggle">
-        <button
-          type="button"
-          class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100"
-          [class.bg-blue-50]="editorMode() === 'simple'"
-          [class.text-blue-600]="editorMode() === 'simple'"
-          [attr.aria-pressed]="editorMode() === 'simple'"
-          data-testid="newsletter-content-editor-simple"
-          (click)="setMode('simple')">
-          <i class="fa-light fa-pen-to-square" aria-hidden="true"></i>
-          Basic
-        </button>
-        <button
-          type="button"
-          class="flex items-center gap-1.5 border-l border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100"
-          [class.bg-blue-50]="editorMode() === 'blocks'"
-          [class.text-blue-600]="editorMode() === 'blocks'"
-          [attr.aria-pressed]="editorMode() === 'blocks'"
-          data-testid="newsletter-content-editor-blocks"
-          (click)="setMode('blocks')">
-          <i class="fa-light fa-cube" aria-hidden="true"></i>
-          Blocks
-        </button>
+      <div class="flex shrink-0 flex-col gap-1.5 sm:items-end">
+        <div
+          class="flex overflow-hidden rounded-md border border-gray-200"
+          role="group"
+          aria-label="Body editor"
+          data-testid="newsletter-content-editor-toggle">
+          <button
+            type="button"
+            class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100"
+            [class.bg-blue-50]="editorMode() === 'simple'"
+            [class.text-blue-600]="editorMode() === 'simple'"
+            [attr.aria-pressed]="editorMode() === 'simple'"
+            data-testid="newsletter-content-editor-simple"
+            (click)="setMode('simple')">
+            <i class="fa-light fa-pen-to-square" aria-hidden="true"></i>
+            Basic
+          </button>
+          <button
+            type="button"
+            class="flex items-center gap-1.5 border-l border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+            [class.bg-blue-50]="editorMode() === 'blocks'"
+            [class.text-blue-600]="editorMode() === 'blocks'"
+            [attr.aria-pressed]="editorMode() === 'blocks'"
+            [disabled]="isMobile()"
+            [attr.title]="isMobile() ? 'The Blocks editor is available on desktop only' : null"
+            data-testid="newsletter-content-editor-blocks"
+            (click)="setMode('blocks')">
+            <i class="fa-light fa-cube" aria-hidden="true"></i>
+            Blocks
+          </button>
+        </div>
+        @if (isMobile()) {
+          <p class="text-xs text-gray-400 sm:text-right" data-testid="newsletter-content-editor-desktop-hint">Blocks editor is available on desktop only.</p>
+        }
       </div>
     }
   </div>
@@ -59,13 +68,42 @@
   @if (blocksEnabled() && editorMode() === 'blocks') {
     <div class="flex flex-1 flex-col gap-2">
       <span id="newsletter-body-label" class="text-sm font-medium text-gray-700">Body</span>
-      <lfx-newsletter-block-composer
-        ngSkipHydration
-        aria-labelledby="newsletter-body-label"
-        [initialLayout]="initialLayout()"
-        (layoutChange)="onLayoutChange($event)"
-        data-testid="newsletter-content-composer">
-      </lfx-newsletter-block-composer>
+      @if (isMobile()) {
+        <!-- A blocks draft opened on mobile: the composer cannot run here, so
+             show a notice rather than the drag-and-drop surface. Switching to
+             Basic routes through setMode's confirm so blocks are not lost
+             silently. -->
+        <div
+          class="flex flex-col items-start gap-3 rounded-md border border-gray-200 bg-gray-50 p-4"
+          role="note"
+          aria-labelledby="newsletter-body-label"
+          data-testid="newsletter-content-composer-mobile-notice">
+          <div class="flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <i class="fa-light fa-desktop text-blue-600" aria-hidden="true"></i>
+            The Blocks editor needs a desktop
+          </div>
+          <p class="text-sm text-gray-600">
+            This newsletter was built with the Blocks editor, which is designed for desktop and is not available on mobile. Open it on a desktop to edit the blocks. You can switch
+            to the Basic editor to continue on this device, but that replaces the block content.
+          </p>
+          <button
+            type="button"
+            class="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700"
+            data-testid="newsletter-content-composer-mobile-switch"
+            (click)="setMode('simple')">
+            <i class="fa-light fa-pen-to-square" aria-hidden="true"></i>
+            Switch to Basic editor
+          </button>
+        </div>
+      } @else {
+        <lfx-newsletter-block-composer
+          ngSkipHydration
+          aria-labelledby="newsletter-body-label"
+          [initialLayout]="initialLayout()"
+          (layoutChange)="onLayoutChange($event)"
+          data-testid="newsletter-content-composer">
+        </lfx-newsletter-block-composer>
+      }
     </div>
   } @else {
     <div class="flex flex-1 flex-col gap-2">
