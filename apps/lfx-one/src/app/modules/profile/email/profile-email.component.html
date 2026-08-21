@@ -55,11 +55,15 @@
                           </span>
                         }
                       </div>
-                      @if (emailItem.isPrimary) {
-                        <span class="text-xs text-gray-500">Used for account communications</span>
-                      }
-                      @if (emailItem.isMeetingInvite) {
-                        <span class="text-xs text-gray-500">Used for meeting invitations</span>
+                      @if (emailItem.isPrimary || emailItem.isMeetingInvite) {
+                        <span class="flex flex-col text-xs text-gray-500">
+                          @if (emailItem.isPrimary) {
+                            <span>Used for account communications</span>
+                          }
+                          @if (emailItem.isMeetingInvite) {
+                            <span>Used for meeting invitations</span>
+                          }
+                        </span>
                       }
                     </div>
                   </div>

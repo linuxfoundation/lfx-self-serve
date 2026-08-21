@@ -323,7 +323,9 @@ export class AccountSettingsComponent {
           this.meetingInviteError.set(extractErrorMessage(err, 'This email is not an active, verified address on your account yet.'));
           return;
         }
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || 'Failed to update meeting invitation email' });
+        // Retryable errors (503 sync_pending/unavailable, etc.) also carry copy under `error`, not
+        // `message` — use extractErrorMessage so the crafted retry guidance reaches the toast.
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(err, 'Failed to update meeting invitation email') });
       },
     });
   }
