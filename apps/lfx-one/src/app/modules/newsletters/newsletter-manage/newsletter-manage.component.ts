@@ -571,13 +571,29 @@ export class NewsletterManageComponent {
 
   protected onSaveAsDraft(): void {
     if (!this.canSaveDraft()) {
-      // A save is already running (canSaveDraft gates on !savingDraft). The
-      // manual button only shows its spinner for MANUAL saves (manualSaving), so
-      // during a background autosave it looks idle — acknowledge the click with
-      // feedback instead of silently dropping it. The in-flight save persists the
-      // current state, so there's nothing more to trigger.
+      // A background autosave is in flight (canSaveDraft gates on !savingDraft).
+      // saveDraft snapshots the form when it RUNS, so that in-flight save may not
+      // include the user's latest edits. Rather than drop the click — and rely on
+      // the debounced autosave, which is lost if the user navigates away first —
+      // QUEUE a manual save on the same concatMap channel: it runs after the
+      // in-flight save and captures the current form state. manualSaving already
+      // true means a manual save is already queued, so just acknowledge it.
       if (this.savingDraft()) {
-        this.messageService.add({ severity: 'info', summary: 'Saving…', detail: 'Your draft is already being saved.' });
+        if (this.manualSaving()) {
+          this.messageService.add({ severity: 'info', summary: 'Saving…', detail: 'Your draft is already being saved.' });
+          return;
+        }
+        const missing = this.missingDraftRequirements();
+        if (missing.length > 0) {
+          this.messageService.add({
+            severity: 'warn',
+            summary: "Can't save draft yet",
+            detail: `Add ${this.formatMissing(missing)} before saving your draft.`,
+          });
+          return;
+        }
+        this.manualSaving.set(true);
+        this.saveTrigger$.next(true);
         return;
       }
       const missing = this.missingDraftRequirements();
