@@ -497,6 +497,20 @@ describe('PublicMeetingController.getMeetingById organizer privacy (LFXV2-2802)'
     expect(payload.meeting.created_by).toEqual(createdBy);
     expect(payload.meeting.owner).toEqual(owner);
   });
+
+  // GH-1731: registrant counts moved off this hot path to the lazy /registrant-counts endpoint —
+  // the roster read here existed only to derive two integers.
+  it('issues zero registrant-roster queries and carries no registrant count fields on the response', async () => {
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.meeting.individual_registrants_count).toBeUndefined();
+    expect(payload.meeting.committee_members_count).toBeUndefined();
+  });
 });
 
 describe('PublicMeetingController.getPublicPastMeetingById organizer privacy (LFXV2-2802)', () => {

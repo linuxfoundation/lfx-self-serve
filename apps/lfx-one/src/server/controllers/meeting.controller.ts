@@ -13,6 +13,7 @@ import {
   GenerateAgendaResponse,
   Meeting,
   MeetingRegistrant,
+  MeetingRegistrantCounts,
   PresignAttachmentRequest,
   UpdateMeetingAttachmentRequest,
   UpdateMeetingRegistrantRequest,
@@ -36,7 +37,7 @@ import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -158,16 +159,10 @@ export class MeetingController {
       // meeting far in the future or past — the key would be stripped anyway.
       const withinHostKeyWindow = isWithinHostKeyWindow(meeting);
 
-      // Run registrant counts, invited status, and host-key fetch in parallel.
-      const [registrants, meetingWithInvitedStatus, hostKey] = await Promise.all([
-        // TODO: Remove this once we have a way to get the registrants count
-        this.meetingService.getMeetingRegistrants(req, meeting.id).catch((error) => {
-          logger.warning(req, 'get_meeting_by_id', 'Failed to fetch registrants for meeting', {
-            meeting_id: uid,
-            err: error,
-          });
-          return null;
-        }),
+      // Registrant counts are no longer derived here — the full roster read was purely to derive
+      // two integers with no consumer once the join page holds its own roster (GH-1731). Run
+      // invited status and host-key fetch in parallel.
+      const [meetingWithInvitedStatus, hostKey] = await Promise.all([
         addInvitedStatusToMeeting(req, meeting, userEmail),
         withinHostKeyWindow
           ? this.meetingService.getMeetingHostKey(req, uid).catch((error) => {
@@ -179,15 +174,6 @@ export class MeetingController {
             })
           : Promise.resolve(null),
       ]);
-
-      if (registrants) {
-        const committeeMembers = registrants.filter((r) => r.type === 'committee').length;
-        meetingWithInvitedStatus.individual_registrants_count = registrants.length - committeeMembers;
-        meetingWithInvitedStatus.committee_members_count = committeeMembers;
-      } else {
-        meetingWithInvitedStatus.individual_registrants_count = 0;
-        meetingWithInvitedStatus.committee_members_count = 0;
-      }
 
       // Gate the Zoom host key: the query-service enforces FGA `host` on v1_meeting_host_credentials
       // (covering direct co-hosts AND organizer-derived writers/coordinators), so a null return
@@ -601,6 +587,45 @@ export class MeetingController {
       res.json(enrichedRegistrants);
     } catch (error) {
       // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * GET /meetings/:uid/registrant-counts
+   * @description Lazily resolves registrant counts (individual/committee split) for a meeting
+   * without paging the full registrant roster (GH-1731). Carries the same authorization gate as
+   * `/my-meeting-registrants` — a registrant or the organizer — so that endpoint's PII-adjacent
+   * hazard (roster size leaking to an arbitrary authenticated caller) isn't reopened here.
+   */
+  public async getMeetingRegistrantCounts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_meeting_registrant_counts', { meeting_id: uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_meeting_registrant_counts',
+          service: 'meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const m2mToken = await generateM2MToken(req);
+
+      const isAuthorized = await this.assertRegistrantOrOrganizer(req, uid, m2mToken);
+      if (!isAuthorized) {
+        logger.success(req, 'get_meeting_registrant_counts', startTime, { meeting_id: uid, authorized: false });
+        res.json({ individual_registrants_count: 0, committee_members_count: 0, exhaustive: false } satisfies MeetingRegistrantCounts);
+        return;
+      }
+
+      const counts = await this.meetingService.getMeetingRegistrantCounts(req, uid, m2mToken);
+
+      logger.success(req, 'get_meeting_registrant_counts', startTime, { meeting_id: uid, ...counts });
+      res.json(counts);
+    } catch (error) {
       next(error);
     }
   }
@@ -1534,6 +1559,30 @@ export class MeetingController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * Authorization gate shared by the registrant-counts and (eventually) my-meeting-registrants
+   * endpoints: the caller must either be a registrant of the meeting or its organizer. Runs the
+   * organizer access check and the registrant lookup concurrently — both depend only on `uid`
+   * plus the caller's own email/username, never on each other's result. `req.bearerToken` is left
+   * untouched; the registrant lookup carries M2M identity explicitly (`v1_meeting_registrant` is
+   * FGA-private, so a user-token query would return no rows regardless of registration status).
+   */
+  private async assertRegistrantOrOrganizer(req: Request, meetingUid: string, m2mToken?: string): Promise<boolean> {
+    const userEmail = getEffectiveEmail(req) ?? undefined;
+    const username = getEffectiveUsername(req) ?? undefined;
+
+    if (!userEmail && !username) {
+      return false;
+    }
+
+    const [isOrganizer, matchingRegistrants] = await Promise.all([
+      this.accessCheckService.checkSingleAccess(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' }),
+      this.meetingService.getMeetingRegistrantsForUser(req, meetingUid, userEmail, username, m2mToken),
+    ]);
+
+    return isOrganizer || matchingRegistrants.length > 0;
   }
 
   /**

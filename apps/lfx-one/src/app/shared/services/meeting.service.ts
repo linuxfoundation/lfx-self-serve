@@ -24,6 +24,7 @@ import {
   MeetingAttachment,
   MeetingJoinURL,
   MeetingRegistrant,
+  MeetingRegistrantCounts,
   MeetingRegistrantWithState,
   MeetingRsvp,
   PaginatedResponse,
@@ -432,6 +433,20 @@ export class MeetingService {
       catchError((error) => {
         console.error(`Failed to load my registrants for meeting ${meetingUid}:`, error);
         return of([]);
+      })
+    );
+  }
+
+  /**
+   * Lazily resolves registrant counts (individual/committee split) for a meeting without paging
+   * the full registrant roster (GH-1731). Falls back to a non-exhaustive zero count on failure —
+   * callers should treat `exhaustive: false` as "unknown", not "no registrants".
+   */
+  public getMeetingRegistrantCounts(meetingUid: string): Observable<MeetingRegistrantCounts> {
+    return this.http.get<MeetingRegistrantCounts>(`/api/meetings/${meetingUid}/registrant-counts`).pipe(
+      catchError((error) => {
+        console.error(`Failed to load registrant counts for meeting ${meetingUid}:`, error);
+        return of({ individual_registrants_count: 0, committee_members_count: 0, exhaustive: false });
       })
     );
   }
