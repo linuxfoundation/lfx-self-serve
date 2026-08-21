@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
-import { MY_CLAS_M2_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import type { ClaGroupOption, ClaStatus, GithubAccountOption, MyClaAgreement, MyClasState, PrepareSignResponse, TagSeverity } from '@lfx-one/shared/interfaces';
+import { ECLA_COVERED_DOWNLOAD_LABEL, MY_CLAS_M2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import type { ClaGroupOption, ClaRow, ClaStatus, GithubAccountOption, MyClaAgreement, MyClasState, PrepareSignResponse } from '@lfx-one/shared/interfaces';
 import { claStatusLabel, claStatusSeverity, downloadFromUrl, isMyClasEmpty, signedAsLine } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -27,37 +27,6 @@ import { UserService } from '@services/user.service';
 import { ClaGroupSelectComponent } from './cla-group-select.component';
 import { buildContactClaManagerMenuItems } from './contact-cla-manager-menu';
 import { GithubAccountSelectComponent } from './github-account-select.component';
-
-/** Precomputed status cell for one row. */
-interface ClaRowStatus {
-  /** True for `unknown`, which renders as a plain-text em dash rather than a fourth named pill. */
-  plainText: boolean;
-  label: string;
-  severity: TagSeverity;
-  icon: string;
-  /** Explanatory sentence beneath the pill; absent on every row that has nothing to explain. */
-  note?: string;
-}
-
-/**
- * One CLAs table row, fully resolved before the template sees it. The template binds these
- * fields and calls nothing — per the frontend checklist's no-template-functions rule
- * (`docs/reviews/frontend-checklist.md`), which a per-cell `claStatusLabel(...)` /
- * `statusNote(...)` call would re-run on every change-detection pass.
- */
-interface ClaRow {
-  id: string;
-  agreement: MyClaAgreement;
-  status: ClaRowStatus;
-  /** Second line under the signed date; absent when the producer sent no identity. */
-  signedAsLine?: string;
-  menuItems: MenuItem[];
-  /** False ⇒ render no ⋮ trigger at all, rather than one that opens an empty menu. */
-  hasActions: boolean;
-}
-
-/** Hover tooltips on a right-edge kebab open off-screen; keep the CCLA reason in the item. */
-const ECLA_COVERED_DOWNLOAD_LABEL = 'Download PDF<br><span class="mt-0.5 block text-xs font-normal">Covered by Corporate CLA (CCLA)</span>';
 
 /**
  * "CLAs" Profile tab (Me lens). Lists every signed agreement (ICLA + ECLA)
@@ -107,24 +76,7 @@ export class ProfileClasComponent {
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
 
-  private readonly state = toSignal(
-    this.refresh$.pipe(
-      switchMap(() => {
-        // Skip the fetch during SSR. The server's HTTP call doesn't carry the user's session
-        // cookie reliably, so it tends to fail and bakes a false "Couldn't load your CLAs" error
-        // into the SSR HTML — a red-banner flash on hydration before the browser fetch resolves.
-        if (!isPlatformBrowser(this.platformId)) {
-          return of<MyClasState>({ data: null, error: false, loaded: false });
-        }
-
-        return this.myClasService.getMyClas().pipe(
-          switchMap((data) => of<MyClasState>({ data, error: false, loaded: true })),
-          catchError(() => of<MyClasState>({ data: null, error: true, loaded: true }))
-        );
-      })
-    ),
-    { initialValue: { data: null, error: false, loaded: false } as MyClasState }
-  );
+  private readonly state = this.initState();
 
   protected readonly loading = computed(() => !this.state().loaded);
   protected readonly error = computed(() => this.state().error);
@@ -137,26 +89,7 @@ export class ProfileClasComponent {
    * otherwise, which is also what keeps each row's `MenuItem[]` referentially stable —
    * a fresh model per change-detection pass makes the PrimeNG popup miss the first click.
    */
-  protected readonly rows = computed<ClaRow[]>(() => {
-    const m2 = this.myClasM2Enabled();
-    return this.agreements().map((agreement) => {
-      const menuItems = m2 ? this.buildRowMenuItems(agreement) : [];
-      return {
-        id: agreement.id,
-        agreement,
-        status: {
-          plainText: agreement.status === 'unknown',
-          label: claStatusLabel(agreement.status),
-          severity: claStatusSeverity(agreement.status),
-          icon: this.statusIcon(agreement.status),
-          note: this.statusNote(agreement),
-        },
-        signedAsLine: m2 ? signedAsLine(agreement.signedVia, agreement.signedAs) : undefined,
-        menuItems,
-        hasActions: menuItems.length > 0,
-      };
-    });
-  });
+  protected readonly rows: Signal<ClaRow[]> = this.initRows();
 
   // --- Sign CLA hand-off (#1251) -------------------------------------------
 
@@ -470,5 +403,49 @@ export class ProfileClasComponent {
       ];
     }
     return [];
+  }
+
+  private initState(): Signal<MyClasState> {
+    return toSignal(
+      this.refresh$.pipe(
+        switchMap(() => {
+          // Skip the fetch during SSR. The server's HTTP call doesn't carry the user's session
+          // cookie reliably, so it tends to fail and bakes a false "Couldn't load your CLAs" error
+          // into the SSR HTML — a red-banner flash on hydration before the browser fetch resolves.
+          if (!isPlatformBrowser(this.platformId)) {
+            return of<MyClasState>({ data: null, error: false, loaded: false });
+          }
+
+          return this.myClasService.getMyClas().pipe(
+            switchMap((data) => of<MyClasState>({ data, error: false, loaded: true })),
+            catchError(() => of<MyClasState>({ data: null, error: true, loaded: true }))
+          );
+        })
+      ),
+      { initialValue: { data: null, error: false, loaded: false } as MyClasState }
+    );
+  }
+
+  private initRows(): Signal<ClaRow[]> {
+    return computed(() => {
+      const m2 = this.myClasM2Enabled();
+      return this.agreements().map((agreement) => {
+        const menuItems = m2 ? this.buildRowMenuItems(agreement) : [];
+        return {
+          id: agreement.id,
+          agreement,
+          status: {
+            plainText: agreement.status === 'unknown',
+            label: claStatusLabel(agreement.status),
+            severity: claStatusSeverity(agreement.status),
+            icon: this.statusIcon(agreement.status),
+            note: this.statusNote(agreement),
+          },
+          signedAsLine: m2 ? signedAsLine(agreement.signedVia, agreement.signedAs) : undefined,
+          menuItems,
+          hasActions: menuItems.length > 0,
+        };
+      });
+    });
   }
 }

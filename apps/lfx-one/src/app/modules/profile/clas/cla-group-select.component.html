@@ -72,15 +72,15 @@ SPDX-License-Identifier: MIT
                 [class.bg-slate-50]="highlightedIndex() === index"
                 [attr.data-testid]="'cla-group-select-' + option.claGroupId"
                 (click)="onSelect(option)">
-                <span class="block truncate text-sm font-medium text-slate-900">{{ primaryName(option) }}</span>
-                @if (secondaryName(option); as secondary) {
+                <span class="block truncate text-sm font-medium text-slate-900">{{ option.primaryName }}</span>
+                @if (option.secondaryName; as secondary) {
                   <span class="block truncate text-xs text-slate-500">{{ secondary }}</span>
                 }
 
-                @if (option.matchTypes.length) {
+                @if (option.matchTypeLabels.length) {
                   <span class="mt-1 flex flex-wrap gap-1" data-testid="cla-group-select-match-types">
-                    @for (matchType of option.matchTypes; track matchType) {
-                      <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[0.65rem] font-medium text-slate-600">{{ matchTypeLabel(matchType) }}</span>
+                    @for (label of option.matchTypeLabels; track label) {
+                      <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[0.65rem] font-medium text-slate-600">{{ label }}</span>
                     }
                   </span>
                 }
@@ -92,34 +92,34 @@ SPDX-License-Identifier: MIT
                   </span>
                 }
 
-                @if (option.organizations.length === 1) {
-                  @let org = option.organizations[0];
+                @if (option.orgViews.length === 1) {
+                  @let org = option.orgViews[0];
                   <span class="mt-1 flex items-center gap-1.5 text-xs text-slate-500" data-testid="cla-group-select-org">
-                    <i [class]="orgSourceIcon(org.source) + ' text-slate-400'"></i>
+                    <i [class]="org.sourceIcon + ' text-slate-400'"></i>
                     <span class="truncate">{{ org.name }}</span>
-                    <span class="text-slate-400">{{ orgSourceLabel(org.source) }}</span>
+                    <span class="text-slate-400">{{ org.sourceLabel }}</span>
                   </span>
                 }
               </div>
 
-              @if (option.organizations.length > 1) {
+              @if (option.orgViews.length > 1) {
                 <button
                   type="button"
                   class="flex w-full cursor-pointer items-center gap-1.5 px-4 pb-2.5 text-left text-xs text-slate-500 hover:text-slate-700"
-                  [attr.aria-expanded]="orgsExpanded(option)"
+                  [attr.aria-expanded]="option.expanded"
                   [attr.data-testid]="'cla-group-select-orgs-toggle-' + option.claGroupId"
                   (click)="toggleOrgs($event, option)">
-                  <i class="fa-light" [class.fa-chevron-right]="!orgsExpanded(option)" [class.fa-chevron-down]="orgsExpanded(option)"></i>
-                  {{ option.organizations.length }} linked orgs
+                  <i class="fa-light" [class.fa-chevron-right]="!option.expanded" [class.fa-chevron-down]="option.expanded"></i>
+                  {{ option.orgViews.length }} linked orgs
                 </button>
 
-                @if (orgsExpanded(option)) {
+                @if (option.expanded) {
                   <ul class="px-4 pb-2.5 pl-9" [attr.data-testid]="'cla-group-select-orgs-' + option.claGroupId">
-                    @for (org of option.organizations; track org.source + '/' + org.name) {
+                    @for (org of option.orgViews; track org.source + '/' + org.name) {
                       <li class="flex items-center gap-1.5 py-0.5 text-xs text-slate-500">
-                        <i [class]="orgSourceIcon(org.source) + ' text-slate-400'"></i>
+                        <i [class]="org.sourceIcon + ' text-slate-400'"></i>
                         <span class="truncate">{{ org.name }}</span>
-                        <span class="text-slate-400">{{ orgSourceLabel(org.source) }}</span>
+                        <span class="text-slate-400">{{ org.sourceLabel }}</span>
                       </li>
                     }
                   </ul>
@@ -143,8 +143,8 @@ SPDX-License-Identifier: MIT
     <div class="mt-4 flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3" data-testid="cla-group-select-summary">
       <i class="fa-light fa-diagram-project text-slate-400"></i>
       <div class="min-w-0 flex-1">
-        <div class="truncate text-sm font-medium text-slate-900">{{ primaryName(selection) }}</div>
-        @if (secondaryName(selection); as secondary) {
+        <div class="truncate text-sm font-medium text-slate-900">{{ selection.primaryName }}</div>
+        @if (selection.secondaryName; as secondary) {
           <div class="truncate text-xs text-slate-500">{{ secondary }}</div>
         }
       </div>

@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { TagSeverity } from './components.interface';
+
 // UI-facing shapes for the read-only "CLAs" view (Me lens → Profile tab).
 // Normalized by the LFX One server from upstream EasyCLA signature records.
 // See specs/001-easycla-ss-integration-fable/m1-my-cla/data-model.md.
@@ -23,7 +25,8 @@ export type ClaKind = 'ICLA' | 'ECLA';
  *                       Rendered as plain-text "—", not a named pill.
  * - `superseded`      — reserved: an older document version than the CLA group's current.
  *                       Not produced today (the my-clas endpoint does not expose the
- *                       current version); kept for forward compatibility. Do not render it.
+ *                       current version); kept for forward compatibility. If a row arrives
+ *                       with this status, the UI renders a labeled "Superseded" pill.
  */
 export type ClaStatus = 'valid' | 'needs_attention' | 'revoked' | 'invalidated' | 'unknown' | 'superseded';
 
@@ -176,6 +179,23 @@ export interface ClaGroupSearchResponse {
   results: ClaGroupOption[];
 }
 
+/** Picker row: a search result with display fields precomputed so the template calls nothing. */
+export interface ClaGroupOptionView extends ClaGroupOption {
+  primaryName: string;
+  secondaryName: string | null;
+  matchTypeLabels: string[];
+  orgViews: ClaGroupOrgView[];
+  expanded: boolean;
+}
+
+/** One linked org on a picker row, with source label and icon precomputed. */
+export interface ClaGroupOrgView {
+  name: string;
+  source: ClaGroupOrgSource;
+  sourceLabel: string;
+  sourceIcon: string;
+}
+
 /**
  * One GitHub account the contributor has already linked, offered in the picker (#1252).
  *
@@ -189,6 +209,12 @@ export interface GithubAccountOption {
   /** Display handle. Never matched on. */
   githubUsername: string;
   avatarUrl?: string;
+}
+
+/** Picker row: the linked account plus the label the template binds. */
+export interface GithubAccountChoice extends GithubAccountOption {
+  /** `githubUsername`, or a numbered fallback when the handle is blank. */
+  label: string;
 }
 
 /** Response for `GET /api/me/clas/github-accounts`. */
@@ -280,4 +306,60 @@ export interface ClaManagerRequestResult {
    */
   status: 'sent' | 'recorded';
   recipients: string[];
+}
+
+/** Dialog data for the shared Contact CLA Manager modal. */
+export interface ContactClaManagerDialogData {
+  signatureId: string;
+  projectName: string;
+  mode: ClaManagerRequestMode;
+}
+
+/** Title and hint factory for one Contact CLA Manager copy mode. */
+export interface ClaManagerModalCopy {
+  title: string;
+  hint: (project: string) => string;
+}
+
+/** Manager row in the modal, with the display label precomputed. */
+export interface ClaManagerView extends ClaManager {
+  label: string;
+}
+
+/** Precomputed status cell for one CLAs table row. */
+export interface ClaRowStatus {
+  /** True for `unknown`, which renders as a plain-text em dash rather than a fourth named pill. */
+  plainText: boolean;
+  label: string;
+  severity: TagSeverity;
+  icon: string;
+  /** Explanatory sentence beneath the pill; absent on every row that has nothing to explain. */
+  note?: string;
+}
+
+/**
+ * One kebab item on a CLAs row. Structural subset of PrimeNG `MenuItem` so `@lfx-one/shared`
+ * does not take a PrimeNG runtime dependency. Command handlers stay on the PrimeNG object
+ * the component builds; they are not part of this wire shape.
+ */
+export interface ClaRowMenuItem {
+  label?: string;
+  icon?: string;
+  disabled?: boolean;
+  escape?: boolean;
+}
+
+/**
+ * One CLAs table row, fully resolved before the template sees it. The template binds these
+ * fields and calls nothing.
+ */
+export interface ClaRow {
+  id: string;
+  agreement: MyClaAgreement;
+  status: ClaRowStatus;
+  /** Second line under the signed date; absent when the producer sent no identity. */
+  signedAsLine?: string;
+  menuItems: ClaRowMenuItem[];
+  /** False ⇒ render no ⋮ trigger at all, rather than one that opens an empty menu. */
+  hasActions: boolean;
 }

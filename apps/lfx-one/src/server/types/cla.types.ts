@@ -192,3 +192,10 @@ export interface EasyClaMyClaManagerRequestResult {
   status?: 'sent' | 'recorded';
   recipients?: string[];
 }
+
+/** The GitHub account the CLA service verified, recovered from its identity keys. */
+export interface RecordedGithubIdentity {
+  /** Decimal digits, as the picker's options carry it. */
+  githubId: string;
+  githubUsername?: string;
+}

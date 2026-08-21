@@ -7,6 +7,8 @@ import { PROFILE_TABS } from '../constants/profile.constants';
 import { ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
 import {
   buildProfileTabs,
+  claGroupPrimaryName,
+  claGroupSecondaryName,
   claKindSeverity,
   claStatusLabel,
   claStatusSeverity,
@@ -14,6 +16,7 @@ import {
   shouldShowGithubCta,
   signedAsLine,
   splitAgreementsByKind,
+  toClaGroupOptionView,
 } from './cla-view.utils';
 
 function agreement(overrides: Partial<MyClaAgreement> = {}): MyClaAgreement {
@@ -158,5 +161,35 @@ describe('signedAsLine', () => {
 
   it('prints the identity with no suffix when the platform is missing', () => {
     expect(signedAsLine(undefined, 'jellis')).toBe('Signed as jellis');
+  });
+});
+
+describe('claGroupPrimaryName / claGroupSecondaryName', () => {
+  it('names a result by its CLA group when the producer resolved no project', () => {
+    expect(claGroupPrimaryName({ claGroupName: 'CNCF' })).toBe('CNCF');
+    expect(claGroupSecondaryName({ claGroupName: 'CNCF' })).toBeNull();
+  });
+
+  it('falls back to the unnamed literal only when the producer resolved neither name', () => {
+    expect(claGroupPrimaryName({})).toBe('Unnamed CLA group');
+    expect(claGroupSecondaryName({})).toBeNull();
+  });
+});
+
+describe('toClaGroupOptionView', () => {
+  it('precomputes labels so the picker template does not have to', () => {
+    const view = toClaGroupOptionView({
+      claGroupId: 'cg-1',
+      projectName: 'Venus test',
+      claGroupName: 'Venus ICLA',
+      matchTypes: ['project'],
+      organizations: [{ name: 'cncf', source: 'github' }],
+    });
+
+    expect(view.primaryName).toBe('Venus test');
+    expect(view.secondaryName).toBe('Venus ICLA');
+    expect(view.matchTypeLabels).toEqual(['Project name']);
+    expect(view.orgViews[0]).toEqual({ name: 'cncf', source: 'github', sourceLabel: 'GitHub', sourceIcon: 'fa-brands fa-github' });
+    expect(view.expanded).toBe(false);
   });
 });

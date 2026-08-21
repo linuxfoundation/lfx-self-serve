@@ -4,7 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import type { ClaManager, ClaManagerList, ClaManagerRequestMode, ClaManagerRequestResult } from '@lfx-one/shared/interfaces';
+import type { ClaManager, ClaManagerList, ClaManagerRequestMode, ClaManagerRequestResult, ContactClaManagerDialogData } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { of, throwError } from 'rxjs';
@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MyClasService } from '@services/my-clas.service';
 
-import { ContactClaManagerComponent, type ContactClaManagerDialogData } from './contact-cla-manager.component';
+import { ContactClaManagerComponent } from './contact-cla-manager.component';
 
 const SIG = '3fee6d72-0c80-4145-99c2-fb382b3a93fb';
 const JANE: ClaManager = { lfUsername: 'jdoe', name: 'Jane Doe' };
@@ -72,9 +72,7 @@ describe('ContactClaManagerComponent', () => {
   }
 
   function uncheck(lfUsername: string): void {
-    (fixture.componentInstance as unknown as { toggleManager: (id: string, event: Event) => void }).toggleManager(lfUsername, {
-      target: { checked: false },
-    } as unknown as Event);
+    (fixture.componentInstance as any).managerForm.get(lfUsername)?.setValue(false);
     fixture.detectChanges();
   }
 
@@ -88,8 +86,8 @@ describe('ContactClaManagerComponent', () => {
 
   it('checks every manager by default', () => {
     expect(query('contact-cla-manager-jdoe')).not.toBeNull();
-    expect((query('contact-cla-manager-jdoe') as HTMLInputElement).checked).toBe(true);
-    expect((query('contact-cla-manager-akim') as HTMLInputElement).checked).toBe(true);
+    expect((fixture.componentInstance as any).managerForm.get('jdoe')?.value).toBe(true);
+    expect((fixture.componentInstance as any).managerForm.get('akim')?.value).toBe(true);
   });
 
   it('posts approval for the checked LF usernames on Send', async () => {
@@ -146,7 +144,12 @@ describe('ContactClaManagerComponent', () => {
 
     expect(createClaManagerRequest).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledWith(null);
-    expect(add).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'info',
+        summary: 'Message not sent',
+      })
+    );
   });
 
   it('shows support copy and no Send when no managers resolve', async () => {

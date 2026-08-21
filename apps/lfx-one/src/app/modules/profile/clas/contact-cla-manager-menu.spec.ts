@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CLA_MANAGER_MODAL_COPY } from '@lfx-one/shared/constants';
 import type { MyClaAgreement } from '@lfx-one/shared/interfaces';
 import { DialogService } from 'primeng/dynamicdialog';
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildContactClaManagerMenuItems } from './contact-cla-manager-menu';
-import { CLA_MANAGER_MODAL_COPY, ContactClaManagerComponent } from './contact-cla-manager.component';
+import { ContactClaManagerComponent } from './contact-cla-manager.component';
 
 function agreement(overrides: Partial<MyClaAgreement> = {}): MyClaAgreement {
   return {

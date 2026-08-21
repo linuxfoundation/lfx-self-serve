@@ -4,7 +4,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import type { GithubAccountOption } from '@lfx-one/shared/interfaces';
+import type { GithubAccountChoice, GithubAccountOption } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
@@ -47,25 +47,22 @@ export class GithubAccountSelectComponent {
     githubId: new FormControl<string | null>(null),
   });
 
-  protected readonly accounts = signal<GithubAccountOption[]>(this.config.data?.accounts ?? []);
-  protected readonly selectedId = signal<string | null>(null);
-
-  public constructor() {
-    this.selectForm
-      .get('githubId')!
-      .valueChanges.pipe(takeUntilDestroyed())
-      .subscribe((value) => this.selectedId.set(value));
-  }
-
   /**
    * The handle can be blank: the server maps a missing `profileData.nickname` to `''` rather
    * than guessing one. Labelling that option with the account number keeps the two accounts
-   * distinguishable, which is the entire purpose of the step — an unnamed row asks the
-   * contributor to choose between two identical-looking things. The blank handle itself is
-   * left alone, because what gets recorded is not this component's to invent.
+   * distinguishable. The blank handle itself is left alone — what gets recorded is not this
+   * component's to invent.
    */
-  protected accountLabel(account: GithubAccountOption): string {
-    return account.githubUsername || `GitHub account ${account.githubId}`;
+  protected readonly accounts = signal<GithubAccountChoice[]>(
+    (this.config.data?.accounts ?? []).map((account) => ({
+      ...account,
+      label: account.githubUsername || `GitHub account ${account.githubId}`,
+    }))
+  );
+  protected readonly selectedId = signal<string | null>(null);
+
+  public constructor() {
+    this.selectForm.controls.githubId.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.selectedId.set(value));
   }
 
   protected onContinue(): void {

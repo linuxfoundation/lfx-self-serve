@@ -5,10 +5,11 @@
 // branching logic (ICLA/ECLA split, empty/CTA rules, status labels) is unit-testable without
 // an Angular component-test harness.
 
+import { CLA_GROUP_MATCH_TYPE_LABELS, CLA_GROUP_ORG_SOURCE_ICONS, CLA_GROUP_ORG_SOURCE_LABELS, UNNAMED_CLA_GROUP } from '../constants/cla.constants';
 import { PROFILE_TABS } from '../constants/profile.constants';
 import { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
 import { ProfileTab } from '../interfaces';
-import { ClaSignedVia, ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
+import { ClaGroupOption, ClaGroupOptionView, ClaSignedVia, ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
 
 /**
  * Profile subtab list, with the read-only "CLAs" tab appended (before Transactions)
@@ -114,4 +115,34 @@ export function signedAsLine(signedVia: ClaSignedVia | undefined, signedAs: stri
     default:
       return `Signed as ${identity}`;
   }
+}
+
+/**
+ * Primary line for a Sign CLA search result. The CLA group name is used when there is no
+ * project name; the unnamed literal is only for the both-absent case (FR-008).
+ */
+export function claGroupPrimaryName(option: Pick<ClaGroupOption, 'projectName' | 'claGroupName'>): string {
+  return option.projectName || option.claGroupName || UNNAMED_CLA_GROUP;
+}
+
+/** Secondary line — only when it says something the primary line does not. */
+export function claGroupSecondaryName(option: Pick<ClaGroupOption, 'projectName' | 'claGroupName'>): string | null {
+  return option.claGroupName && option.claGroupName !== claGroupPrimaryName(option) ? option.claGroupName : null;
+}
+
+/** Maps a producer search result to the picker view model. */
+export function toClaGroupOptionView(option: ClaGroupOption, expanded = false): ClaGroupOptionView {
+  return {
+    ...option,
+    primaryName: claGroupPrimaryName(option),
+    secondaryName: claGroupSecondaryName(option),
+    matchTypeLabels: option.matchTypes.map((type) => CLA_GROUP_MATCH_TYPE_LABELS[type]),
+    orgViews: option.organizations.map((org) => ({
+      name: org.name,
+      source: org.source,
+      sourceLabel: CLA_GROUP_ORG_SOURCE_LABELS[org.source],
+      sourceIcon: CLA_GROUP_ORG_SOURCE_ICONS[org.source],
+    })),
+    expanded,
+  };
 }

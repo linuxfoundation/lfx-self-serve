@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MyClaAgreement } from '@lfx-one/shared/interfaces';
+import { CLA_MANAGER_MODAL_COPY } from '@lfx-one/shared/constants';
+import type { ContactClaManagerDialogData, MyClaAgreement } from '@lfx-one/shared/interfaces';
 import { canContactClaManager, canRequestClaApproval, canRequestClaRemoval } from '@lfx-one/shared/utils';
 import { MenuItem } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 
-import { CLA_MANAGER_MODAL_COPY, ContactClaManagerComponent, type ContactClaManagerDialogData } from './contact-cla-manager.component';
+import { ContactClaManagerComponent } from './contact-cla-manager.component';
 
 /**
  * Kebab items for Request approval / Request Removal / Contact CLA Manager.

@@ -42,6 +42,7 @@ import {
   EasyClaSearchList,
   EasyClaSearchOrg,
   EasyClaSearchResult,
+  RecordedGithubIdentity,
   ResolvedClaIdentity,
 } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
@@ -188,13 +189,6 @@ export function claReturnUrl(req: Request): string {
 // list and in `skippedIdentities`.
 const GITHUB_ID_KEY_PREFIX = 'github-id:';
 const GITHUB_USERNAME_KEY_PREFIX = 'github-username:';
-
-/** The GitHub account the CLA service verified, recovered from its identity keys. */
-export interface RecordedGithubIdentity {
-  /** Decimal digits, as the picker's options carry it. */
-  githubId: string;
-  githubUsername?: string;
-}
 
 /**
  * Reads the verified GitHub account out of a prepare-sign `identity` list.

@@ -5,6 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import type { ClaGroupOption, ClaGroupSearchResponse } from '@lfx-one/shared/interfaces';
+import { toClaGroupOptionView } from '@lfx-one/shared/utils';
 import { MyClasService } from '@services/my-clas.service';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
@@ -23,6 +24,7 @@ const SEARCH_SETTLE_MS = 400;
  */
 describe('ClaGroupSelectComponent', () => {
   const VENUS: ClaGroupOption = { claGroupId: 'cg-1', projectName: 'Venus test', claGroupName: 'Venus ICLA', matchTypes: ['project'], organizations: [] };
+  const VENUS_VIEW = toClaGroupOptionView(VENUS);
 
   /** The route answers with the producer's envelope, not a bare array (#1250). */
   function envelope(results: ClaGroupOption[], overrides: Partial<ClaGroupSearchResponse> = {}): ClaGroupSearchResponse {
@@ -75,7 +77,7 @@ describe('ClaGroupSelectComponent', () => {
     // #1250 replaces the route behind this call with the real four-source search; a component
     // that filtered locally would have to change again.
     expect(getClaGroupOptions).toHaveBeenCalledWith('venus');
-    expect((fixture.componentInstance as any).options()).toEqual([VENUS]);
+    expect((fixture.componentInstance as any).options()).toEqual([VENUS_VIEW]);
   });
 
   it('coalesces keystrokes into a single query', async () => {
@@ -90,10 +92,10 @@ describe('ClaGroupSelectComponent', () => {
   it('closes with the chosen option so the caller can resolve the hand-off', async () => {
     await type('venus');
 
-    (fixture.componentInstance as any).onSelect(VENUS);
+    (fixture.componentInstance as any).onSelect(VENUS_VIEW);
     (fixture.componentInstance as any).onContinue();
 
-    expect(close).toHaveBeenCalledWith(VENUS);
+    expect(close).toHaveBeenCalledWith(VENUS_VIEW);
   });
 
   it('closes with null when the contributor backs out', async () => {
@@ -112,7 +114,7 @@ describe('ClaGroupSelectComponent', () => {
 
   it('invalidates a confirmed choice as soon as the text changes', async () => {
     await type('venus');
-    (fixture.componentInstance as any).onSelect(VENUS);
+    (fixture.componentInstance as any).onSelect(VENUS_VIEW);
 
     await type('venu');
 
@@ -124,7 +126,7 @@ describe('ClaGroupSelectComponent', () => {
     await type('venus');
     getClaGroupOptions.mockClear();
 
-    (fixture.componentInstance as any).onSelect(VENUS);
+    (fixture.componentInstance as any).onSelect(VENUS_VIEW);
     await new Promise((resolve) => setTimeout(resolve, SEARCH_SETTLE_MS));
 
     expect(queryControl().value).toBe('Venus test — Venus ICLA');
@@ -134,7 +136,7 @@ describe('ClaGroupSelectComponent', () => {
 
   it('keeps searching after the write-back, so the next keystroke is not swallowed', async () => {
     await type('venus');
-    (fixture.componentInstance as any).onSelect(VENUS);
+    (fixture.componentInstance as any).onSelect(VENUS_VIEW);
     getClaGroupOptions.mockClear();
 
     // Guards a suppression flag that clears too late.
@@ -164,25 +166,7 @@ describe('ClaGroupSelectComponent', () => {
     fixture.detectChanges();
 
     expect((fixture.componentInstance as any).error()).toBe(false);
-    expect((fixture.componentInstance as any).options()).toEqual([VENUS]);
-  });
-
-  it('names a result by its CLA group when the producer resolved no project', async () => {
-    // Live shape: a search for `cncf` returns several groups named CNCF with no projectName.
-    const UNPROJECTED: ClaGroupOption = { claGroupId: 'cg-9', claGroupName: 'CNCF', matchTypes: ['claGroup'], organizations: [] };
-
-    expect((fixture.componentInstance as any).primaryName(UNPROJECTED)).toBe('CNCF');
-    // Repeating it underneath would be a second line that says nothing.
-    expect((fixture.componentInstance as any).secondaryName(UNPROJECTED)).toBeNull();
-  });
-
-  it('falls back to the literal only when the producer resolved neither name', async () => {
-    const NAMELESS: ClaGroupOption = { claGroupId: 'cg-8', matchTypes: ['organization'], organizations: [] };
-
-    // A truncated UUID here would read as a broken row rather than a nameless one, and the row
-    // must stay selectable either way — the hand-off only needs the id.
-    expect((fixture.componentInstance as any).primaryName(NAMELESS)).toBe('Unnamed CLA group');
-    expect((fixture.componentInstance as any).secondaryName(NAMELESS)).toBeNull();
+    expect((fixture.componentInstance as any).options()).toEqual([VENUS_VIEW]);
   });
 
   it('does not search a term that is shorter than three characters once trimmed', async () => {
@@ -200,6 +184,16 @@ describe('ClaGroupSelectComponent', () => {
     getClaGroupOptions.mockClear();
 
     await type('ve');
+
+    expect(getClaGroupOptions).not.toHaveBeenCalled();
+  });
+
+  it('does not re-issue the same producer search when the field is refocused', async () => {
+    await type('venus');
+    getClaGroupOptions.mockClear();
+
+    (fixture.componentInstance as any).onFocus();
+    await new Promise((resolve) => setTimeout(resolve, SEARCH_SETTLE_MS));
 
     expect(getClaGroupOptions).not.toHaveBeenCalled();
   });
@@ -324,7 +318,7 @@ describe('ClaGroupSelectComponent', () => {
       press('ArrowDown');
       press('Enter');
 
-      expect((fixture.componentInstance as any).selected()).toEqual(MARS);
+      expect((fixture.componentInstance as any).selected()).toEqual(toClaGroupOptionView(MARS));
     });
 
     it('does not select on Enter when nothing is highlighted', () => {
@@ -399,6 +393,6 @@ describe('ClaGroupSelectComponent', () => {
     first.next(envelope([VENUS]));
     fixture.detectChanges();
 
-    expect((fixture.componentInstance as any).options()).toEqual([MARS]);
+    expect((fixture.componentInstance as any).options()).toEqual([toClaGroupOptionView(MARS)]);
   });
 });

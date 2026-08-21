@@ -4,46 +4,26 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import type { ClaManager, ClaManagerRequestMode, ClaManagerRequestResult } from '@lfx-one/shared/interfaces';
+import { CLA_MANAGER_MODAL_COPY } from '@lfx-one/shared/constants';
+import type { ClaManagerRequestResult, ClaManagerView, ContactClaManagerDialogData } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { take } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
+import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { MyClasService } from '@services/my-clas.service';
 
-export interface ContactClaManagerDialogData {
-  signatureId: string;
-  projectName: string;
-  mode: ClaManagerRequestMode;
-}
-
-/** v17 `mgrCopy` — titles also used as DialogService headers by the kebab factory. */
-export const CLA_MANAGER_MODAL_COPY: Record<ClaManagerRequestMode, { title: string; hint: (project: string) => string }> = {
-  approval: {
-    title: 'Request approval',
-    hint: (project) => `Ask the CLA manager(s) below to re-approve your ECLA for ${project}.`,
-  },
-  removal: {
-    title: 'Request Removal',
-    hint: (project) => `Ask the CLA manager(s) below to remove your ECLA for ${project}. This starts the process to invalidate it on your behalf.`,
-  },
-  contact: {
-    title: 'Contact CLA Manager',
-    hint: (project) => `Send a message to the CLA manager(s) for ${project}.`,
-  },
-};
-
 /**
  * Shared Contact CLA Manager modal (#1372 / #1574). Three copy modes; approval and removal
- * POST to the producer; contact Send is a no-op (the producer email always claims an
- * Approved-List change).
+ * POST to the producer; contact Send is a documented no-op (the producer email always claims an
+ * Approved-List change) and tells the contributor that nothing was sent.
  */
 @Component({
   selector: 'lfx-contact-cla-manager',
-  imports: [ReactiveFormsModule, ButtonComponent, MessageComponent, TextareaComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, CheckboxComponent, MessageComponent, TextareaComponent],
   templateUrl: './contact-cla-manager.component.html',
   styleUrl: './contact-cla-manager.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -66,24 +46,35 @@ export class ContactClaManagerComponent {
   protected readonly loadError = signal(false);
   protected readonly sending = signal(false);
   protected readonly sendError = signal(false);
-  protected readonly managers = signal<ClaManager[]>([]);
-  protected readonly selected = signal<ReadonlySet<string>>(new Set());
+  protected readonly managers = signal<ClaManagerView[]>([]);
+  protected readonly selectedCount = signal(0);
 
+  protected readonly managerForm = new FormGroup({});
   protected readonly form = new FormGroup({
     message: new FormControl('', { nonNullable: true }),
+    managers: this.managerForm,
   });
 
   protected readonly hasManagers = computed(() => this.managers().length > 0);
-  protected readonly canSend = computed(() => this.selected().size > 0 && !this.sending() && !this.loading() && this.hasManagers());
+  protected readonly canSend = computed(() => this.selectedCount() > 0 && !this.sending() && !this.loading() && this.hasManagers());
 
   public constructor() {
+    this.managerForm.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.syncSelectedCount());
+
     this.myClasService
       .getClaManagers(this.data.signatureId)
       .pipe(takeUntilDestroyed())
       .subscribe({
         next: (list) => {
-          this.managers.set(list.managers);
-          this.selected.set(new Set(list.managers.map((manager) => manager.lfUsername)));
+          const views = list.managers.map((manager) => ({
+            ...manager,
+            label: manager.name || manager.lfUsername,
+          }));
+          for (const manager of views) {
+            this.managerForm.addControl(manager.lfUsername, new FormControl(true, { nonNullable: true }));
+          }
+          this.managers.set(views);
+          this.syncSelectedCount();
           this.loading.set(false);
         },
         error: () => {
@@ -91,22 +82,6 @@ export class ContactClaManagerComponent {
           this.loading.set(false);
         },
       });
-  }
-
-  protected managerLabel(manager: ClaManager): string {
-    return manager.name || manager.lfUsername;
-  }
-
-  protected isSelected(lfUsername: string): boolean {
-    return this.selected().has(lfUsername);
-  }
-
-  protected toggleManager(lfUsername: string, event: Event): void {
-    const checked = (event.target as HTMLInputElement).checked;
-    const next = new Set(this.selected());
-    if (checked) next.add(lfUsername);
-    else next.delete(lfUsername);
-    this.selected.set(next);
   }
 
   protected onCancel(): void {
@@ -119,6 +94,11 @@ export class ContactClaManagerComponent {
     // Contact is a product-complete no-op: the producer has no contact requestType, and posting
     // approval/removal would tell the manager to change the Approved List.
     if (this.data.mode === 'contact') {
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Message not sent',
+        detail: "Contacting CLA managers isn't available yet — no message was sent.",
+      });
       this.ref.close(null);
       return;
     }
@@ -130,7 +110,7 @@ export class ContactClaManagerComponent {
     this.myClasService
       .createClaManagerRequest(this.data.signatureId, {
         requestType: this.data.mode,
-        recipients: [...this.selected()],
+        recipients: this.selectedUsernames(),
         ...(message ? { message } : {}),
       })
       .pipe(take(1))
@@ -141,6 +121,16 @@ export class ContactClaManagerComponent {
           this.sendError.set(true);
         },
       });
+  }
+
+  private selectedUsernames(): string[] {
+    return Object.entries(this.managerForm.getRawValue())
+      .filter(([, checked]) => checked)
+      .map(([lfUsername]) => lfUsername);
+  }
+
+  private syncSelectedCount(): void {
+    this.selectedCount.set(this.selectedUsernames().length);
   }
 
   private onSent(result: ClaManagerRequestResult): void {

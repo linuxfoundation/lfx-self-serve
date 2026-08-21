@@ -18,15 +18,13 @@ SPDX-License-Identifier: MIT
     <p class="mb-2 text-sm font-medium text-slate-700">CLA manager(s)</p>
     <div class="flex flex-col gap-2" data-testid="contact-cla-manager-list">
       @for (manager of managers(); track manager.lfUsername) {
-        <label class="flex cursor-pointer items-center gap-2 rounded border border-slate-200 px-3 py-2 text-sm">
-          <input
-            type="checkbox"
-            class="size-4"
-            [checked]="isSelected(manager.lfUsername)"
-            [attr.data-testid]="'contact-cla-manager-' + manager.lfUsername"
-            (change)="toggleManager(manager.lfUsername, $event)" />
-          <span>{{ managerLabel(manager) }}</span>
-        </label>
+        <div class="rounded border border-slate-200 px-3 py-2">
+          <lfx-checkbox
+            [form]="managerForm"
+            [control]="manager.lfUsername"
+            [label]="manager.label"
+            [attr.data-testid]="'contact-cla-manager-' + manager.lfUsername" />
+        </div>
       }
     </div>
 

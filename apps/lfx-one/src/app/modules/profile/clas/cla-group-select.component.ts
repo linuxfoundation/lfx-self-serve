@@ -1,40 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CLA_GROUP_SEARCH_DEBOUNCE_MS, CLA_GROUP_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
-import type { ClaGroupMatchType, ClaGroupOption, ClaGroupOrgSource, ClaGroupSearchResponse } from '@lfx-one/shared/interfaces';
+import type { ClaGroupOptionView, ClaGroupSearchResponse } from '@lfx-one/shared/interfaces';
+import { toClaGroupOptionView } from '@lfx-one/shared/utils';
 import { MyClasService } from '@services/my-clas.service';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, debounceTime, map, of, Subject, switchMap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-
-/** Stands in for a result the producer could name neither by project nor by CLA group (FR-008). */
-const UNNAMED_CLA_GROUP = 'Unnamed CLA group';
-
-/** Why a result matched, in contributor language rather than the producer's enum. */
-const MATCH_TYPE_LABELS: Record<ClaGroupMatchType, string> = {
-  claGroup: 'CLA group name',
-  project: 'Project name',
-  organization: 'Linked organization',
-  repository: 'Repository link',
-};
-
-const ORG_SOURCE_LABELS: Record<ClaGroupOrgSource, string> = {
-  github: 'GitHub',
-  gitlab: 'GitLab',
-  gerrit: 'Gerrit',
-};
-
-const ORG_SOURCE_ICONS: Record<ClaGroupOrgSource, string> = {
-  github: 'fa-brands fa-github',
-  gitlab: 'fa-brands fa-gitlab',
-  gerrit: 'fa-light fa-code-branch',
-};
 
 /**
  * "Sign a CLA" picker, opened via DialogService (#1251), following the approved M2 prototype:
@@ -62,15 +40,13 @@ export class ClaGroupSelectComponent {
     query: new FormControl(''),
   });
 
-  protected readonly options = signal<ClaGroupOption[]>([]);
+  protected readonly options = signal<ClaGroupOptionView[]>([]);
   protected readonly loading = signal(false);
   protected readonly error = signal(false);
-  protected readonly selected = signal<ClaGroupOption | null>(null);
+  protected readonly selected = signal<ClaGroupOptionView | null>(null);
   protected readonly resultsOpen = signal(false);
   /** Producer capped the set — a property of the result set, so it cannot live on a result. */
   protected readonly truncated = signal(false);
-  /** CLA group ids whose linked-organization list the contributor has opened. */
-  private readonly expandedOrgs = signal<ReadonlySet<string>>(new Set());
 
   private readonly query = signal('');
 
@@ -82,11 +58,7 @@ export class ClaGroupSelectComponent {
    * one from `options().length === 0` — which cannot tell "you have not typed yet" from "keep
    * going" from "that term matched nothing".
    */
-  protected readonly queryBand = computed<'empty' | 'short' | 'searchable'>(() => {
-    const length = this.query().trim().length;
-    if (length === 0) return 'empty';
-    return length < CLA_GROUP_SEARCH_MIN_CHARS ? 'short' : 'searchable';
-  });
+  protected readonly queryBand: Signal<'empty' | 'short' | 'searchable'> = this.initQueryBand();
 
   private readonly search$ = new Subject<string>();
 
@@ -125,67 +97,28 @@ export class ClaGroupSelectComponent {
       .subscribe((response) => {
         this.loading.set(false);
         if (!response) return;
-        this.options.set(response.results);
+        this.options.set(response.results.map((option) => toClaGroupOptionView(option)));
         this.truncated.set(response.truncated);
         // The highlight is a position in the previous list; carrying it over would let Enter
         // confirm whichever project happens to land at that offset in the new one.
         this.highlightedIndex.set(-1);
       });
 
-    this.searchForm
-      .get('query')!
-      .valueChanges.pipe(takeUntilDestroyed())
-      .subscribe((value) => {
-        if (this.suppressNextEmit) {
-          this.suppressNextEmit = false;
-          return;
-        }
+    this.searchForm.controls.query.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      if (this.suppressNextEmit) {
+        this.suppressNextEmit = false;
+        return;
+      }
 
-        // A typed character invalidates the confirmed choice: the summary and CTA must never
-        // describe a project the text no longer matches. The highlight is a position in the
-        // previous list, so it has to drop here rather than after the debounce — Enter during
-        // the request window would otherwise confirm a CLA group the text no longer describes.
-        this.selected.set(null);
-        this.highlightedIndex.set(-1);
-        this.resultsOpen.set(true);
-        this.pushSearch(value ?? '');
-      });
-  }
-
-  /**
-   * Primary line for a result. The producer omits `projectName` when a CLA Group maps to several
-   * projects with no foundation marker, and `claGroupName` when the group record could not be
-   * resolved — the two are omitted independently, and a result can arrive with neither.
-   *
-   * The CLA group name is used when there is no project name, rather than going straight to the
-   * literal: a search for `cncf` returns several groups named CNCF with no project resolved, and
-   * naming them all "Unnamed CLA group" would make a real, distinguishable choice unreadable. The
-   * literal is for the both-absent case only (FR-008), and stands in for a truncated UUID, which
-   * reads as a broken row rather than a nameless one.
-   */
-  protected primaryName(option: ClaGroupOption): string {
-    return option.projectName || option.claGroupName || UNNAMED_CLA_GROUP;
-  }
-
-  /** Secondary line — only when it says something the primary line does not. */
-  protected secondaryName(option: ClaGroupOption): string | null {
-    return option.claGroupName && option.claGroupName !== this.primaryName(option) ? option.claGroupName : null;
-  }
-
-  protected matchTypeLabel(matchType: ClaGroupMatchType): string {
-    return MATCH_TYPE_LABELS[matchType];
-  }
-
-  protected orgSourceLabel(source: ClaGroupOrgSource): string {
-    return ORG_SOURCE_LABELS[source];
-  }
-
-  protected orgSourceIcon(source: ClaGroupOrgSource): string {
-    return ORG_SOURCE_ICONS[source];
-  }
-
-  protected orgsExpanded(option: ClaGroupOption): boolean {
-    return this.expandedOrgs().has(option.claGroupId);
+      // A typed character invalidates the confirmed choice: the summary and CTA must never
+      // describe a project the text no longer matches. The highlight is a position in the
+      // previous list, so it has to drop here rather than after the debounce — Enter during
+      // the request window would otherwise confirm a CLA group the text no longer describes.
+      this.selected.set(null);
+      this.highlightedIndex.set(-1);
+      this.resultsOpen.set(true);
+      this.pushSearch(value ?? '');
+    });
   }
 
   /**
@@ -193,13 +126,9 @@ export class ClaGroupSelectComponent {
    * list is reference material a contributor reads to tell two similarly named groups apart, and
    * a hover panel cannot be read on touch or held open while comparing.
    */
-  protected toggleOrgs(event: Event, option: ClaGroupOption): void {
+  protected toggleOrgs(event: Event, option: ClaGroupOptionView): void {
     event.stopPropagation();
-    this.expandedOrgs.update((expanded) => {
-      const next = new Set(expanded);
-      if (!next.delete(option.claGroupId)) next.add(option.claGroupId);
-      return next;
-    });
+    this.options.update((options) => options.map((row) => (row.claGroupId === option.claGroupId ? { ...row, expanded: !row.expanded } : row)));
   }
 
   /**
@@ -244,18 +173,25 @@ export class ClaGroupSelectComponent {
 
   protected onFocus(): void {
     this.resultsOpen.set(true);
-    if (!this.selected()) this.pushSearch(this.searchForm.get('query')?.value ?? '');
+    if (this.selected()) return;
+
+    const value = this.searchForm.controls.query.value ?? '';
+    // Refocusing the field (tab back, retry, result click) must not re-issue the same
+    // five-table producer search. Retry still calls `pushSearch` directly so an unchanged
+    // term after an error is not swallowed.
+    if (value.trim() === this.query().trim() && this.options().length > 0) return;
+    this.pushSearch(value);
   }
 
   protected retry(): void {
-    this.pushSearch(this.searchForm.get('query')?.value ?? '');
+    this.pushSearch(this.searchForm.controls.query.value ?? '');
   }
 
-  protected onSelect(option: ClaGroupOption): void {
+  protected onSelect(option: ClaGroupOptionView): void {
     this.selected.set(option);
     this.suppressNextEmit = true;
-    const secondary = this.secondaryName(option);
-    this.searchForm.get('query')?.setValue(secondary ? `${this.primaryName(option)} — ${secondary}` : this.primaryName(option));
+    const display = option.secondaryName ? `${option.primaryName} — ${option.secondaryName}` : option.primaryName;
+    this.searchForm.controls.query.setValue(display);
     this.resultsOpen.set(false);
   }
 
@@ -280,5 +216,13 @@ export class ClaGroupSelectComponent {
     this.options.set([]);
     this.truncated.set(false);
     this.highlightedIndex.set(-1);
+  }
+
+  private initQueryBand(): Signal<'empty' | 'short' | 'searchable'> {
+    return computed(() => {
+      const length = this.query().trim().length;
+      if (length === 0) return 'empty';
+      return length < CLA_GROUP_SEARCH_MIN_CHARS ? 'short' : 'searchable';
+    });
   }
 }
