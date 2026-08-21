@@ -77,6 +77,9 @@ export class ProfileIdentitiesComponent implements OnInit {
   public readonly unverifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'unverified'));
   public readonly verifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'verified'));
   public readonly hasUnverified: Signal<boolean> = computed(() => this.unverifiedIdentities().length > 0);
+  // Preferred meeting-invitation email (meeting-service). Its identity cannot be removed here — doing so
+  // would orphan the meeting-service preference. Null address = no override (uses primary).
+  public readonly meetingInviteEmail: Signal<string | null> = this.initMeetingInviteEmail();
   public readonly menuItemsMap: Signal<Map<string, MenuItem[]>> = this.initMenuItemsMap();
 
   private readonly identitiesState: Signal<IdentitiesState> = this.initIdentitiesState();
@@ -129,6 +132,12 @@ export class ProfileIdentitiesComponent implements OnInit {
   }
 
   public onRemove(identity: ConnectedIdentityFull): void {
+    // Defensive guard: never remove the email selected as the meeting-invitation preference.
+    // The menu already disables this action; this covers any programmatic call path.
+    if (this.isMeetingInviteIdentity(identity)) {
+      return;
+    }
+
     // For identities linked in Auth0, ensure management token is valid before proceeding
     if (identity.auth0UserId) {
       this.userService
@@ -216,10 +225,48 @@ export class ProfileIdentitiesComponent implements OnInit {
     return computed(() => {
       const map = new Map<string, MenuItem[]>();
       for (const identity of this.identities()) {
-        map.set(identity.id, [{ label: 'Remove', icon: 'fa-light fa-trash', styleClass: 'text-red-500', command: () => this.onRemove(identity) }]);
+        if (this.isMeetingInviteIdentity(identity)) {
+          // Blocked: removing the meeting-invitation email would orphan the meeting-service preference.
+          map.set(identity.id, [
+            {
+              label: 'Remove',
+              icon: 'fa-light fa-trash',
+              styleClass: 'text-red-500',
+              disabled: true,
+              title: 'This email is set for meeting invitations. Choose a different meeting-invitation email in Account Settings before removing it.',
+            },
+          ]);
+        } else {
+          map.set(identity.id, [{ label: 'Remove', icon: 'fa-light fa-trash', styleClass: 'text-red-500', command: () => this.onRemove(identity) }]);
+        }
       }
       return map;
     });
+  }
+
+  private isMeetingInviteIdentity(identity: ConnectedIdentityFull): boolean {
+    const inviteEmail = this.meetingInviteEmail();
+    return identity.provider === 'email' && !!inviteEmail && identity.identifier === inviteEmail;
+  }
+
+  private initMeetingInviteEmail(): Signal<string | null> {
+    // Skip the fetch during SSR (see initIdentitiesState for the session-cookie rationale).
+    if (!isPlatformBrowser(this.platformId)) {
+      return signal<string | null>(null);
+    }
+    // Reloads in lockstep with the identity list so the guard reflects the latest selection.
+    return toSignal(
+      this.userService.identitiesRefresh$.pipe(
+        startWith(undefined),
+        switchMap(() =>
+          this.userService.getMeetingInviteEmail().pipe(
+            map((data) => data.email),
+            catchError(() => of(null))
+          )
+        )
+      ),
+      { initialValue: null }
+    );
   }
 
   private initIdentitiesState(): Signal<IdentitiesState> {

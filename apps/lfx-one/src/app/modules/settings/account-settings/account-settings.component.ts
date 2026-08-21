@@ -8,14 +8,18 @@ import { AbstractControl, FormBuilder, FormControl, FormGroup, ReactiveFormsModu
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MenuComponent } from '@components/menu/menu.component';
+import { MessageComponent } from '@components/message/message.component';
 import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ActivatedRoute } from '@angular/router';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { clearPendingProfileSave } from '@shared/utils/pending-profile-save.util';
-import { ChangePasswordRequest, EmailManagementData, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { ChangePasswordRequest, EmailManagementData, MeetingInviteEmail, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
@@ -32,6 +36,9 @@ import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs
     BadgeComponent,
     ButtonComponent,
     InputTextComponent,
+    MenuComponent,
+    MessageComponent,
+    OpenIntercomDirective,
     ConfirmDialogModule,
     ToastModule,
     TooltipModule,
@@ -92,6 +99,14 @@ export class AccountSettingsComponent {
   // Data signals
   public emailData: Signal<EmailManagementData | null> = this.initEmailData();
 
+  // Preferred meeting-invitation email (meeting-service). Null address = no override (uses primary).
+  public meetingInviteData: Signal<MeetingInviteEmail | null> = this.initMeetingInviteData();
+  public meetingInviteEmail = computed((): string | null => this.meetingInviteData()?.email ?? null);
+
+  // Inline banner for a meeting-invite validation failure (the address isn't an active, verified
+  // record upstream). Held in a signal rather than a toast so it can host a "contact support" link.
+  public meetingInviteError = signal<string | null>(null);
+
   public allEmails = computed((): UserEmail[] => {
     const data = this.emailData();
     if (!data) return [];
@@ -100,14 +115,20 @@ export class AccountSettingsComponent {
     return [primary, ...alternates];
   });
 
-  public emailsWithMetadata = computed(() =>
-    this.allEmails().map((email) => ({
+  public emailsWithMetadata = computed(() => {
+    const inviteEmail = this.meetingInviteEmail();
+    return this.allEmails().map((email) => ({
       ...email,
       isPrimary: email.email === this.emailData()?.primary_email,
+      isMeetingInvite: !!inviteEmail && email.email === inviteEmail,
       canDelete: this.allEmails().length > 1 && email.email !== this.emailData()?.primary_email && !!email.user_id,
       canSetPrimary: email.email !== this.emailData()?.primary_email && email.verified,
-    }))
-  );
+      canSetMeetingInvite: email.verified && email.email !== inviteEmail,
+    }));
+  });
+
+  // Per-row action menu (kebab). Keyed by email address so each row resolves its own items.
+  public menuItemsMap: Signal<Map<string, MenuItem[]>> = this.initMenuItemsMap();
 
   // ══════════════════════════════════════════
   // DEVELOPER SETTINGS
@@ -281,8 +302,46 @@ export class AccountSettingsComponent {
     });
   }
 
+  public setMeetingInvite(email: UserEmail): void {
+    if (!email.verified || email.email === this.meetingInviteEmail()) {
+      return;
+    }
+
+    this.meetingInviteError.set(null);
+
+    this.userService.setMeetingInviteEmail(email.email).subscribe({
+      next: () => {
+        this.emailRefresh.next();
+        this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Meeting invitation email updated successfully' });
+      },
+      error: (err: HttpErrorResponse) => {
+        // A 400 means the address exists but isn't an active, verified record upstream — retrying
+        // won't help, so surface a persistent banner with a support link instead of a transient toast.
+        if (err.status === 400) {
+          // The server puts the copy under `error` (and `errors[].message`), not `message` —
+          // extractErrorMessage reads both, so the crafted validation text reaches the banner.
+          this.meetingInviteError.set(extractErrorMessage(err, 'This email is not an active, verified address on your account yet.'));
+          return;
+        }
+        // Retryable errors (503 sync_pending/unavailable, etc.) also carry copy under `error`, not
+        // `message` — use extractErrorMessage so the crafted retry guidance reaches the toast.
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(err, 'Failed to update meeting invitation email') });
+      },
+    });
+  }
+
+  public dismissMeetingInviteError(): void {
+    this.meetingInviteError.set(null);
+  }
+
   public deleteEmail(email: UserEmail): void {
     if (!email.user_id) {
+      return;
+    }
+
+    // Defensive guard: never delete the email selected as the meeting-invitation preference.
+    // The menu already disables this action; this covers any programmatic call path.
+    if (email.email === this.meetingInviteEmail()) {
       return;
     }
 
@@ -470,6 +529,42 @@ export class AccountSettingsComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  private initMeetingInviteData(): Signal<MeetingInviteEmail | null> {
+    // Reloads in lockstep with the email list so the badge reflects the latest selection.
+    return toSignal(this.emailRefresh.pipe(switchMap(() => this.userService.getMeetingInviteEmail().pipe(catchError(() => of(null))))), { initialValue: null });
+  }
+
+  private initMenuItemsMap(): Signal<Map<string, MenuItem[]>> {
+    return computed(() => {
+      const map = new Map<string, MenuItem[]>();
+      for (const email of this.emailsWithMetadata()) {
+        const items: MenuItem[] = [];
+        if (email.canSetPrimary) {
+          items.push({ label: 'Make Primary', icon: 'fa-light fa-star', command: () => this.setPrimary(email) });
+        }
+        if (email.canSetMeetingInvite) {
+          items.push({ label: 'Meeting Invitations', icon: 'fa-light fa-envelope', command: () => this.setMeetingInvite(email) });
+        }
+        if (email.canDelete) {
+          if (email.isMeetingInvite) {
+            // Blocked: deleting the meeting-invitation email would orphan the meeting-service preference.
+            items.push({
+              label: 'Delete',
+              icon: 'fa-light fa-trash',
+              styleClass: 'text-red-500',
+              disabled: true,
+              title: 'This email is set for meeting invitations. Choose a different meeting-invitation email before deleting it.',
+            });
+          } else {
+            items.push({ label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', command: () => this.deleteEmail(email) });
+          }
+        }
+        map.set(email.email, items);
+      }
+      return map;
+    });
   }
 
   private loadDeveloperToken(): void {

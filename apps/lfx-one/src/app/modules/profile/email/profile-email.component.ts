@@ -17,7 +17,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
-import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, finalize, map, of, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-profile-email',
@@ -66,6 +66,10 @@ export class ProfileEmailComponent {
   // Data signals
   public emailData: Signal<EmailManagementData | null> = this.initializeEmailData();
 
+  // Preferred meeting-invitation email (meeting-service). Its address cannot be deleted here —
+  // doing so would orphan the meeting-service preference. Null = no override (uses primary).
+  public meetingInviteEmail: Signal<string | null> = this.initMeetingInviteEmail();
+
   public allEmails = computed((): UserEmail[] => {
     const data = this.emailData();
     if (!data) return [];
@@ -74,14 +78,16 @@ export class ProfileEmailComponent {
     return [primary, ...alternates];
   });
 
-  public emailsWithMetadata = computed(() =>
-    this.allEmails().map((email) => ({
+  public emailsWithMetadata = computed(() => {
+    const inviteEmail = this.meetingInviteEmail();
+    return this.allEmails().map((email) => ({
       ...email,
       isPrimary: email.email === this.emailData()?.primary_email,
-      canDelete: this.allEmails().length > 1 && email.email !== this.emailData()?.primary_email && !!email.user_id,
+      isMeetingInvite: !!inviteEmail && email.email === inviteEmail,
+      canDelete: this.allEmails().length > 1 && email.email !== this.emailData()?.primary_email && !!email.user_id && email.email !== inviteEmail,
       canSetPrimary: email.email !== this.emailData()?.primary_email && email.verified,
-    }))
-  );
+    }));
+  });
 
   // Public methods
 
@@ -193,6 +199,12 @@ export class ProfileEmailComponent {
       return;
     }
 
+    // Defensive guard: never delete the email selected as the meeting-invitation preference.
+    // The button is already hidden for it; this covers any programmatic call path.
+    if (email.email === this.meetingInviteEmail()) {
+      return;
+    }
+
     const userId = email.user_id;
 
     this.userService
@@ -245,6 +257,21 @@ export class ProfileEmailComponent {
             finalize(() => this.loading.set(false))
           );
         })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initMeetingInviteEmail(): Signal<string | null> {
+    // Reloads in lockstep with the email list so the delete guard reflects the latest selection.
+    return toSignal(
+      this.refresh.pipe(
+        switchMap(() =>
+          this.userService.getMeetingInviteEmail().pipe(
+            map((data) => data.email),
+            catchError(() => of(null))
+          )
+        )
       ),
       { initialValue: null }
     );

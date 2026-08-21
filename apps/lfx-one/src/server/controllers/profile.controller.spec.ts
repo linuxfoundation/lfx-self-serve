@@ -81,6 +81,11 @@ vi.mock('../services/forwards.service', () => ({
     return {};
   }),
 }));
+vi.mock('../services/meeting-preference.service', () => ({
+  MeetingPreferenceService: vi.fn(function () {
+    return {};
+  }),
+}));
 vi.mock('../services/social-verification.service', () => ({
   SocialVerificationService: vi.fn(function () {
     return {};

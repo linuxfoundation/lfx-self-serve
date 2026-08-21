@@ -77,6 +77,18 @@
           </div>
         } @else {
           <div class="flex flex-col gap-6">
+            <!-- Meeting-invite validation error (address not an active, verified record upstream) -->
+            @if (meetingInviteError()) {
+              <lfx-message severity="error" [closable]="true" (onClose)="dismissMeetingInviteError()" data-testid="meeting-invite-error-banner">
+                <ng-template #content>
+                  <p class="text-sm">
+                    {{ meetingInviteError() }} If you believe this is an error,
+                    <button type="button" lfxOpenIntercom class="font-medium underline">contact support</button>.
+                  </p>
+                </ng-template>
+              </lfx-message>
+            }
+
             <!-- Email Addresses Card -->
             <div class="bg-white rounded-lg shadow-sm p-6" data-testid="email-list-card">
               <h3 class="text-sm font-semibold text-slate-900 mb-4">Email Addresses</h3>
@@ -94,6 +106,9 @@
                           @if (emailItem.isPrimary) {
                             <lfx-badge severity="success" value="Primary" size="small" data-testid="primary-badge"></lfx-badge>
                           }
+                          @if (emailItem.isMeetingInvite) {
+                            <lfx-badge severity="success" value="Meeting Invites" size="small" data-testid="meeting-invites-badge"></lfx-badge>
+                          }
                           @if (emailItem.verified) {
                             <span
                               class="px-2 py-0.5 bg-green-500 text-white rounded text-[11px] font-medium flex items-center gap-1"
@@ -109,29 +124,20 @@
                       </div>
                     </div>
                     <div class="flex items-center gap-2 ml-3 shrink-0">
-                      @if (emailItem.canSetPrimary) {
-                        <lfx-button
-                          size="small"
-                          label="Make Primary"
-                          severity="secondary"
-                          variant="outlined"
-                          [disabled]="impersonating()"
-                          [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
-                          (onClick)="setPrimary(emailItem)"
-                          [attr.data-testid]="'set-primary-' + emailItem.email">
-                        </lfx-button>
-                      }
-                      @if (emailItem.canDelete) {
-                        <lfx-button
-                          size="small"
-                          icon="fa-light fa-trash"
-                          severity="danger"
-                          variant="outlined"
-                          [disabled]="impersonating()"
-                          [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
-                          (onClick)="deleteEmail(emailItem)"
-                          [attr.data-testid]="'delete-email-' + emailItem.email">
-                        </lfx-button>
+                      @if ((menuItemsMap().get(emailItem.email) ?? []).length > 0) {
+                        <div class="relative inline-block">
+                          <lfx-button
+                            icon="fa-solid fa-ellipsis-vertical"
+                            [text]="true"
+                            [rounded]="true"
+                            size="small"
+                            [disabled]="impersonating()"
+                            [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : 'Email actions'"
+                            styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
+                            (onClick)="emailMenu.toggle($event)"
+                            [attr.data-testid]="'email-menu-' + emailItem.email" />
+                          <lfx-menu #emailMenu [model]="menuItemsMap().get(emailItem.email) ?? []" [popup]="true" appendTo="body" />
+                        </div>
                       }
                     </div>
                   </div>
