@@ -2,12 +2,21 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Shared person-detail drawer (LFXV2-2195) -->
+<!--
+  autoZIndex is disabled and a fixed, high z-index is set explicitly: this drawer is opened from
+  person-name clicks inside already-open edit/reassign dialogs (GH-1655). PrimeNG's Dialog and Drawer
+  both register under the same ZIndexUtils 'modal' layer key, so relying on autoZIndex makes stacking
+  order a timing race between the two overlays. A static, comfortably-higher value guarantees the
+  drawer always renders above any open dialog, independent of open-call ordering.
+-->
 <p-drawer
   [visible]="drawer.isOpen()"
   (visibleChange)="onVisibleChange($event)"
   position="right"
   [modal]="true"
   [showCloseIcon]="true"
+  [autoZIndex]="false"
+  [style]="{ 'z-index': '9999' }"
   styleClass="person-detail-drawer xl:w-[36%] lg:w-[46%] md:w-[60%] sm:w-[80%] w-full"
   data-testid="person-detail-drawer">
   @if (drawer.activeContext(); as context) {
