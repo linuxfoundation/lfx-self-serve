@@ -40,15 +40,23 @@
             [attr.aria-pressed]="editorMode() === 'blocks'"
             [disabled]="isMobile()"
             [attr.title]="isMobile() ? 'The Blocks editor is available on desktop only' : null"
+            [attr.aria-describedby]="isMobile() ? 'newsletter-content-editor-desktop-hint' : null"
             data-testid="newsletter-content-editor-blocks"
             (click)="setMode('blocks')">
             <i class="fa-light fa-cube" aria-hidden="true"></i>
             Blocks
           </button>
         </div>
-        @if (isMobile()) {
-          <p class="text-xs text-gray-400 sm:text-right" data-testid="newsletter-content-editor-desktop-hint">Blocks editor is available on desktop only.</p>
-        }
+        <!-- Rendered unconditionally and toggled by class (not @if) so the id is a
+             stable aria-describedby target for the disabled Blocks button; hidden
+             with display:none off mobile so it reserves no layout space. -->
+        <p
+          id="newsletter-content-editor-desktop-hint"
+          class="text-xs text-gray-400 sm:text-right"
+          [class.hidden]="!isMobile()"
+          data-testid="newsletter-content-editor-desktop-hint">
+          Blocks editor is available on desktop only.
+        </p>
       </div>
     }
   </div>
