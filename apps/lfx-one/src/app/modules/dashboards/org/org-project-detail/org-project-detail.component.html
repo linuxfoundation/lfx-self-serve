@@ -716,7 +716,7 @@
                             <button
                               type="button"
                               class="flex items-center gap-2 text-left"
-                              data-testid="influence-card-detail-person"
+                              [attr.data-testid]="'influence-card-detail-person-' + person.name"
                               (click)="onRosterPersonClick(person)">
                               @if (person.avatarUrl) {
                                 <img [src]="person.avatarUrl" alt="" class="h-7 w-7 shrink-0 rounded-full object-cover" aria-hidden="true" />

@@ -70,7 +70,7 @@ export class OrgLensAccessComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
-  protected readonly drawer = inject(PersonDetailDrawerService);
+  private readonly drawer = inject(PersonDetailDrawerService);
 
   protected readonly initialLimit = ORG_ACCESS_INITIAL_LIMIT;
   protected readonly typeFilterOptions: OrgAccessTypeFilterOption[] = [...ORG_ACCESS_TYPE_FILTER_OPTIONS];

@@ -175,6 +175,7 @@ export class EditKeyContactModalComponent {
       name: person.fullName,
       title: person.jobTitle,
       initials: person.initials,
+      avatarUrl: person.avatarUrl,
       avatarColorClass: 'bg-purple-500',
       email: person.email,
     });
@@ -283,6 +284,7 @@ export class EditKeyContactModalComponent {
       name: person.fullName,
       title: person.jobTitle,
       initials: person.initials,
+      avatarUrl: person.avatarUrl,
       avatarColorClass: 'bg-purple-500',
       email: person.email,
     });

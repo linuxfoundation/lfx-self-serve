@@ -472,15 +472,14 @@ export class OrgProjectDetailComponent {
   }
 
   // Roster rows (all 13 card types) carry only name/avatar/initials — no personKey/email (see
-  // OrgLensCardDetailCell). This is a UI-only ticket (GH-1655), so we synthesize a plausible email
-  // client-side from the org domain and let the drawer's existing email-based fetch derive
-  // company-affiliated variants server-side, same as the Board/Committee "no personKey" tabs.
+  // OrgLensCardDetailCell). Unlike Board/Committee rows, there's no real email to derive company
+  // variants from here, so the drawer opens without one and its email section stays empty rather
+  // than showing addresses fabricated from the display name.
   protected onRosterPersonClick(person: { name: string; avatarUrl?: string; initials: string }): void {
     this.drawer.open({
       name: person.name,
       avatarUrl: person.avatarUrl ?? null,
       initials: person.initials,
-      email: this.buildRosterPersonEmail(person.name),
     });
   }
 
@@ -1074,17 +1073,6 @@ export class OrgProjectDetailComponent {
     });
 
     return { labels, datasets };
-  }
-
-  private buildRosterPersonEmail(name: string): string {
-    const orgSlug = (this.accountContext.selectedAccount()?.accountSlug || this.orgName()).toLowerCase().replace(/[^a-z0-9]+/g, '') || 'company';
-    const localPart =
-      name
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, '')
-        .replace(/\s+/g, '.') || 'member';
-    return `${localPart}@${orgSlug}.com`;
   }
 
   /** Left-pads a monthly series with zeros so every org series aligns to the same length. */

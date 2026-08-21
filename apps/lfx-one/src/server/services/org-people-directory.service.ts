@@ -84,9 +84,21 @@ export function resolveMergeKey(record: { lfUsername?: string | null; email?: st
   return email ? `email:${email}` : null;
 }
 
+let warnedMissingPersonKeySigningSecret = false;
+
 /** Signing key for live-only `personKey` HMACs — the app session secret, same default as `mktg-session-token.util.ts` and the auth config. */
 function personKeySigningSecret(): string {
-  return process.env['PCC_AUTH0_SECRET'] || 'sufficiently-long-string';
+  const secret = process.env['PCC_AUTH0_SECRET'];
+  if (secret) return secret;
+  if (!warnedMissingPersonKeySigningSecret) {
+    warnedMissingPersonKeySigningSecret = true;
+    logger.warning(
+      undefined,
+      'person_key_signing_secret',
+      'PCC_AUTH0_SECRET is unset — personKey HMAC is falling back to a public, in-repo default key, which defeats its purpose of resisting dictionary attacks on the logged token'
+    );
+  }
+  return 'sufficiently-long-string';
 }
 
 /** The badge a principal renders as: their role once accepted, `invited` while the invite is outstanding. */
