@@ -187,16 +187,27 @@ export class NewsletterManageComponent {
   public readonly logoUrl: Signal<string | undefined> = computed(() => this.activeContext()?.logoUrl || this.fetchedLogoUrl());
   // The block composer + its template library are gated to the pilot projects
   // (see NEWSLETTER_BLOCKS_PROJECT_SLUGS) for NEW authoring; every other project
-  // uses the basic editor only. A draft that ALREADY carries a body_layout is
-  // always editable in the composer regardless of the gate — otherwise, if the
-  // gate resolved false for it (e.g. opened while a non-pilot project is the
-  // active context), the basic editor would edit body_html while the still-present
-  // layout stays authoritative upstream, silently discarding those edits. Layouts
-  // are only ever created in the pilot, so this never exposes blocks authoring to
-  // a non-pilot project.
-  public readonly blocksEnabled: Signal<boolean> = computed(
-    () => this.bodyLayoutValue() !== null || NEWSLETTER_BLOCKS_PROJECT_SLUGS.includes(this.activeContext()?.slug ?? '')
-  );
+  // uses the basic editor only.
+  //
+  // A draft that ALREADY carries a body_layout is always editable in the composer
+  // regardless of the gate — otherwise the basic editor would edit body_html
+  // while the still-present layout stays authoritative upstream, silently
+  // discarding those edits. Layouts are only ever created in the pilot, so this
+  // never exposes blocks authoring to a non-pilot project.
+  //
+  // For a NEW draft the pilot slug comes from the AMBIENT context, so only trust
+  // it when the ambient context IS the newsletter's owning project. The edit
+  // route may carry a `:projectUid` that differs from the active lens (that's why
+  // projectUid() prefers routeProjectUid); if they differ we can't confirm the
+  // owner is a pilot, so we withhold blocks rather than offer them for a
+  // potentially non-pilot newsletter.
+  public readonly blocksEnabled: Signal<boolean> = computed(() => {
+    if (this.bodyLayoutValue() !== null) return true;
+    const route = this.routeProjectUid();
+    const ctx = this.activeContext();
+    const contextIsOwner = !route || route === ctx?.uid;
+    return contextIsOwner && NEWSLETTER_BLOCKS_PROJECT_SLUGS.includes(ctx?.slug ?? '');
+  });
   public readonly hasContext: Signal<boolean> = computed(() => this.projectUid().length > 0);
 
   // === Auth-derived ===
