@@ -60,9 +60,15 @@ SPDX-License-Identifier: MIT
           <tr class="border-b border-slate-100 bg-slate-50">
             <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Project</th>
             <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Type</th>
-            <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
+            @if (myClasM2Enabled()) {
+              <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
+            }
             <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Signed</th>
-            <th class="w-14 px-5 py-3"><span class="sr-only">Actions</span></th>
+            @if (myClasM2Enabled()) {
+              <th class="w-14 px-5 py-3"><span class="sr-only">Actions</span></th>
+            } @else {
+              <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Document</th>
+            }
           </tr>
         </ng-template>
 
@@ -109,23 +115,25 @@ SPDX-License-Identifier: MIT
               }
             </td>
 
-            <td class="px-5 py-3.5">
-              <div class="flex flex-col items-start gap-1">
-                @if (row.status.plainText) {
-                  <span class="text-sm text-slate-600" [attr.data-testid]="'agreement-status-' + row.id">{{ row.status.label }}</span>
-                } @else {
-                  <lfx-tag
-                    [value]="row.status.label"
-                    [severity]="row.status.severity"
-                    [icon]="row.status.icon"
-                    [rounded]="true"
-                    [attr.data-testid]="'agreement-status-' + row.id" />
-                }
-                @if (row.status.note) {
-                  <p class="text-xs text-slate-500" [attr.data-testid]="'agreement-status-note-' + row.id">{{ row.status.note }}</p>
-                }
-              </div>
-            </td>
+            @if (myClasM2Enabled()) {
+              <td class="px-5 py-3.5">
+                <div class="flex flex-col items-start gap-1">
+                  @if (row.status.plainText) {
+                    <span class="text-sm text-slate-600" [attr.data-testid]="'agreement-status-' + row.id">{{ row.status.label }}</span>
+                  } @else {
+                    <lfx-tag
+                      [value]="row.status.label"
+                      [severity]="row.status.severity"
+                      [icon]="row.status.icon"
+                      [rounded]="true"
+                      [attr.data-testid]="'agreement-status-' + row.id" />
+                  }
+                  @if (row.status.note) {
+                    <p class="text-xs text-slate-500" [attr.data-testid]="'agreement-status-note-' + row.id">{{ row.status.note }}</p>
+                  }
+                </div>
+              </td>
+            }
 
             <td class="px-5 py-3.5">
               <div class="flex flex-col">
@@ -136,21 +144,39 @@ SPDX-License-Identifier: MIT
               </div>
             </td>
 
-            <td class="relative px-5 py-3.5 text-right">
-              @if (row.hasActions) {
-                <lfx-button
-                  [icon]="downloadingId() === row.id ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'"
-                  [text]="true"
-                  [rounded]="true"
-                  size="small"
-                  severity="secondary"
-                  [disabled]="downloadingId() === row.id"
-                  [ariaLabel]="'Actions for ' + (row.agreement.projectName || row.agreement.claGroupName)"
-                  (onClick)="toggleRowMenu($event, rowMenu)"
-                  [attr.data-testid]="'agreement-row-actions-' + row.id" />
-                <lfx-menu #rowMenu [model]="row.menuItems" [popup]="true" appendTo="body"></lfx-menu>
-              }
-            </td>
+            @if (myClasM2Enabled()) {
+              <td class="relative px-5 py-3.5 text-right">
+                @if (row.hasActions) {
+                  <lfx-button
+                    [icon]="downloadingId() === row.id ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'"
+                    [text]="true"
+                    [rounded]="true"
+                    size="small"
+                    severity="secondary"
+                    [disabled]="downloadingId() === row.id"
+                    [ariaLabel]="'Actions for ' + (row.agreement.projectName || row.agreement.claGroupName)"
+                    (onClick)="toggleRowMenu($event, rowMenu)"
+                    [attr.data-testid]="'agreement-row-actions-' + row.id" />
+                  <lfx-menu #rowMenu [model]="row.menuItems" [popup]="true" appendTo="body"></lfx-menu>
+                }
+              </td>
+            } @else {
+              <td class="px-5 py-3.5" [attr.data-testid]="'agreement-document-' + row.id">
+                @if (row.agreement.pdfAvailable) {
+                  <lfx-button
+                    label="Download PDF"
+                    icon="fa-light fa-download"
+                    size="small"
+                    [text]="true"
+                    [loading]="downloadingId() === row.id"
+                    (onClick)="onDownload(row.agreement)" />
+                } @else if (row.agreement.kind === 'ECLA') {
+                  <span class="text-xs text-slate-400">Covered by Corporate CLA (CCLA)</span>
+                } @else {
+                  <span class="text-xs text-slate-400">PDF unavailable</span>
+                }
+              </td>
+            }
           </tr>
         </ng-template>
       </lfx-table>

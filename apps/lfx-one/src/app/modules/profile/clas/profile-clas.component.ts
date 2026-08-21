@@ -5,6 +5,7 @@ import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
+import { MY_CLAS_M2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import type { ClaGroupOption, ClaStatus, GithubAccountOption, MyClaAgreement, MyClasState, PrepareSignResponse, TagSeverity } from '@lfx-one/shared/interfaces';
 import { claStatusLabel, claStatusSeverity, downloadFromUrl, isMyClasEmpty, signedAsLine } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
@@ -19,6 +20,7 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MyClasService } from '@services/my-clas.service';
 import { UserService } from '@services/user.service';
 
@@ -59,10 +61,10 @@ const ECLA_COVERED_DOWNLOAD_LABEL = 'Download PDF<br><span class="mt-0.5 block t
 
 /**
  * "CLAs" Profile tab (Me lens). Lists every signed agreement (ICLA + ECLA)
- * from `/v4/my-clas` with a status column (Valid / Needs attention / Revoked /
- * unknown as plain-text —) and a per-row actions menu. Status and reason are
- * copied from the producer; this component does not derive standing from
- * `approved`/`valid`.
+ * from `/v4/my-clas`. The M2 overlay (status column, per-row kebab, Signed as,
+ * Sign CLA) is dark-launched behind `my-clas-m2-enabled`; off, this is the M1
+ * list (project / type / signed date / document). Status and reason are copied from the
+ * producer; this component does not derive standing from `approved`/`valid`.
  *
  * Also the entry point for signing a new CLA (#1251), which leaves the page for the EasyCLA
  * Contributor Console. That action is page-level rather than per-row: signing a *new* CLA has no
@@ -95,6 +97,10 @@ export class ProfileClasComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly dialogService = inject(DialogService);
   private readonly router = inject(Router);
+  private readonly featureFlagService = inject(FeatureFlagService);
+
+  /** Dark-launch for the M2 overlay. Default off — LaunchDarkly targeting is the rollout switch. */
+  protected readonly myClasM2Enabled = this.featureFlagService.getBooleanFlag(MY_CLAS_M2_ENABLED_FLAG, false);
 
   // signatureID currently resolving a PDF URL (drives the row's spinner + guards double-clicks).
   protected readonly downloadingId = signal<string | null>(null);
@@ -131,9 +137,10 @@ export class ProfileClasComponent {
    * otherwise, which is also what keeps each row's `MenuItem[]` referentially stable —
    * a fresh model per change-detection pass makes the PrimeNG popup miss the first click.
    */
-  protected readonly rows = computed<ClaRow[]>(() =>
-    this.agreements().map((agreement) => {
-      const menuItems = this.buildRowMenuItems(agreement);
+  protected readonly rows = computed<ClaRow[]>(() => {
+    const m2 = this.myClasM2Enabled();
+    return this.agreements().map((agreement) => {
+      const menuItems = m2 ? this.buildRowMenuItems(agreement) : [];
       return {
         id: agreement.id,
         agreement,
@@ -144,22 +151,23 @@ export class ProfileClasComponent {
           icon: this.statusIcon(agreement.status),
           note: this.statusNote(agreement),
         },
-        signedAsLine: signedAsLine(agreement.signedVia, agreement.signedAs),
+        signedAsLine: m2 ? signedAsLine(agreement.signedVia, agreement.signedAs) : undefined,
         menuItems,
         hasActions: menuItems.length > 0,
       };
-    })
-  );
+    });
+  });
 
   // --- Sign CLA hand-off (#1251) -------------------------------------------
 
   /**
-   * Withheld while impersonating. The server refuses the hand-off outright — impersonation is
+   * Offered only when M2 is on and the session is not impersonating. Impersonation is
    * read-only by platform rule, and a signature is a binding act that would be recorded against
-   * the target rather than the administrator who performed it. Hiding it here just avoids
-   * offering an action that cannot succeed; the server, not this flag, is the guard.
+   * the target rather than the administrator who performed it. Hiding it here avoids offering
+   * an action that cannot succeed; the server, not this flag, is the impersonation guard.
+   * `my-clas-m2-enabled` is the product gate — off, this page is the M1 list.
    */
-  protected readonly canSign = computed(() => !this.userService.impersonating());
+  protected readonly canSign = computed(() => this.myClasM2Enabled() && !this.userService.impersonating());
 
   /** True while the chosen group's hand-off URL is being resolved; also guards a double hand-off. */
   protected readonly starting = signal(false);
@@ -183,7 +191,7 @@ export class ProfileClasComponent {
     // Guarded from the moment the picker opens, not from when a group is chosen. `starting` is
     // only set once the hand-off begins, which leaves the button live for as long as the picker
     // is open — long enough to open a second one and bind twice.
-    if (this.starting()) return;
+    if (!this.myClasM2Enabled() || this.starting()) return;
     this.starting.set(true);
 
     const dialogRef = this.dialogService.open(ClaGroupSelectComponent, {
