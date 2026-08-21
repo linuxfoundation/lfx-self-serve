@@ -8,6 +8,7 @@ export * from './docs.utils';
 export * from './entity-route.utils';
 export * from './file.utils';
 export * from './form.utils';
+export * from './github-url.utils';
 export * from './html-utils';
 export * from './iso-timestamp.utils';
 export * from './meeting-calendar.utils';

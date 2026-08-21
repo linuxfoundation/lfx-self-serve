@@ -21,6 +21,49 @@ export type MktgIntakeFieldKind = 'text' | 'textarea';
  */
 export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'project-description';
 
+/**
+ * Non-blocking format check applied to a field's value as the user types.
+ * Guidance NEVER invalidates the form: the agents' intake contracts keep these
+ * answers free text and tolerate an unusable value, so the honest response to
+ * a suspect one is to say so before submission, not to refuse it.
+ */
+export type MktgIntakeFieldGuidance = 'github-repo-url';
+
+/** Where a README the BFF fetched for an agent came from. */
+export type MktgReadmeSource = 'repository' | 'org-profile';
+
+/**
+ * Why the BFF's best-effort README fetch produced nothing. Carried to the UI
+ * so a thin document is never a silent mystery: the run says which of these
+ * happened instead of leaving the user to guess why the agent had no code
+ * context.
+ */
+export type MktgReadmeSkipReason = 'not-a-repo-url' | 'no-readme' | 'fetch-failed';
+
+/**
+ * Outcome of the server-side README fetch for one generation (agents with no
+ * web access — the Message Foundation's `readme_markdown` input). Reported on
+ * the generate response and stored with the version it produced, because the
+ * fetch happens per submission: a regeneration with a corrected URL must not
+ * inherit the previous attempt's verdict.
+ */
+export interface MktgReadmeOutcome {
+  /** True when a README was fetched and handed to the agent. */
+  fetched: boolean;
+  /** Where the README came from, when one was fetched. */
+  source?: MktgReadmeSource;
+  /** Why nothing was fetched, when none was. */
+  skipReason?: MktgReadmeSkipReason;
+}
+
+/** What one server-side README fetch attempt produced: the content plus its honest outcome. */
+export interface MktgReadmeFetchResult {
+  /** The README markdown (size-capped), or null when none was obtained. */
+  readme: string | null;
+  /** Where it came from / why nothing came — reported on the generate response. */
+  outcome: MktgReadmeOutcome;
+}
+
 /** One intake question rendered as a form field on the agent run page. */
 export interface MktgIntakeField {
   /** Stable answer key — matches the agent's batch form schema key (e.g. `project_name`). */
@@ -42,6 +85,11 @@ export interface MktgIntakeField {
   missingPrefillHint?: string;
   /** Always-visible helper text under the control (e.g. the README auto-fetch note). */
   hint?: string;
+  /**
+   * Non-blocking format check on the typed value. When it does not pass, the
+   * field shows inline guidance and submission stays enabled.
+   */
+  guidance?: MktgIntakeFieldGuidance;
   /**
    * Optional answer: no required validator, no asterisk, and the key is
    * omitted from the submitted answers when the trimmed value is empty.
@@ -150,6 +198,13 @@ export interface MktgRunSessionResponse {
   sessionId: string;
   /** Opaque creator-binding token; required to fetch the result. */
   ownerToken: string;
+  /**
+   * Outcome of the server-side README fetch, for agents whose BFF fetches one
+   * (the Message Foundation). Reported HERE rather than on the result because
+   * the fetch is part of composing the submission — by the time the document
+   * is polled it is long settled. Absent for agents that fetch no README.
+   */
+  readme?: MktgReadmeOutcome;
 }
 
 /**
@@ -275,9 +330,35 @@ export interface MktgRunVersion {
   feedback?: string;
   /** Word-count-locked derivatives from the validated envelope, when the agent's contract defines them. */
   derivatives?: Record<string, string>;
+  /**
+   * Outcome of the server-side README fetch that fed THIS version, for agents
+   * whose BFF fetches one. Stored per version because every regeneration
+   * re-fetches: a version generated without a README says so on the result,
+   * and a later version generated with one does not inherit the note.
+   */
+  readme?: MktgReadmeOutcome;
   /** ISO-8601 creation timestamp. */
   createdAt: string;
 }
+
+/**
+ * One intake answer remembered for a (user, project) pair so a LATER agent's
+ * form never re-asks what the user already typed into an earlier one. Keyed by
+ * intake field key, which is shared vocabulary across agents (`github_url`,
+ * `project_name`, …) — the reason a Brand Kit answer can prefill the Message
+ * Foundation form at all.
+ */
+export interface MktgRememberedAnswer {
+  /** The submitted answer, trimmed. */
+  value: string;
+  /** Catalog agent id of the run the answer was submitted with — the provenance the chip states. */
+  agentId: string;
+  /** ISO-8601 timestamp of the submission that recorded it (the TTL clock). */
+  savedAt: string;
+}
+
+/** A (user, project) answer memory: intake field key → the last answer given for it. */
+export type MktgAnswerMemory = Record<string, MktgRememberedAnswer>;
 
 /**
  * Browser-persisted record of an agent run for one project — the Guild session
@@ -315,6 +396,13 @@ export interface MktgRunAttempt {
   session: MktgSessionInfo;
   /** Version the polled envelope must exceed; 0 on a fresh session. */
   priorVersion: number;
+  /**
+   * Outcome of the server-side README fetch this submission triggered, when
+   * the agent's BFF fetches one. Carried from the generate response to the
+   * version the poll produces so the result can state, honestly, that the
+   * document was written without a README.
+   */
+  readme?: MktgReadmeOutcome;
 }
 
 /** Run-page phase: intake form → staged running → document result. */

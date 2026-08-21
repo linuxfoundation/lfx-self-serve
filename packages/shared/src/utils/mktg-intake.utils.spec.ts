@@ -3,8 +3,9 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { BRAND_KIT_INTAKE } from '../constants/mktg-run.constants';
-import { renderMktgIntakeMessage } from './mktg-intake.utils';
+import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE, MKTG_INTAKE_GUIDANCE_NOTES } from '../constants/mktg-run.constants';
+import { MktgIntakeField } from '../interfaces';
+import { mktgIntakeFieldGuidance, renderMktgIntakeMessage } from './mktg-intake.utils';
 
 const ANSWERS: Record<string, string> = {
   project_name: 'AgentX',
@@ -62,5 +63,42 @@ describe('renderMktgIntakeMessage', () => {
     const message = renderMktgIntakeMessage(BRAND_KIT_INTAKE, partial);
     expect(message).toContain('A1. \n');
     expect(message).not.toContain('undefined');
+  });
+});
+
+/**
+ * Guidance is ADVISORY by contract: the agents keep these answers free text
+ * and tolerate an unusable one, so this returns copy the form shows — never a
+ * validation error that would block a submission the agent would have
+ * accepted. What it must never do is stay quiet about a value that will cost
+ * the run its README.
+ */
+describe('mktgIntakeFieldGuidance', () => {
+  const githubField = FOUNDATION_MESSAGE_INTAKE.fields.find((field) => field.key === 'github_url') as MktgIntakeField;
+  const plainField = FOUNDATION_MESSAGE_INTAKE.fields.find((field) => field.key === 'project_name') as MktgIntakeField;
+
+  it('says nothing for a real repository URL', () => {
+    expect(mktgIntakeFieldGuidance(githubField, 'https://github.com/example-org/example-repo')).toBe('');
+    expect(mktgIntakeFieldGuidance(githubField, 'github.com/example-org/example-repo/blob/main/README.md')).toBe('');
+  });
+
+  it('names the organization case specifically and points at the fix', () => {
+    const note = mktgIntakeFieldGuidance(githubField, 'https://github.com/aaif');
+    expect(note).toBe(MKTG_INTAKE_GUIDANCE_NOTES['github-repo-url'].organization);
+    expect(note).toContain('organization URL');
+    expect(note).toContain('https://github.com/org/repo');
+  });
+
+  it('flags a URL that is not a GitHub repository at all', () => {
+    expect(mktgIntakeFieldGuidance(githubField, 'https://gitlab.com/example-org/example-repo')).toBe(
+      MKTG_INTAKE_GUIDANCE_NOTES['github-repo-url'].unrecognized
+    );
+    expect(mktgIntakeFieldGuidance(githubField, 'nonsense')).toBe(MKTG_INTAKE_GUIDANCE_NOTES['github-repo-url'].unrecognized);
+  });
+
+  it('stays silent on an empty control and on fields with no guidance configured', () => {
+    expect(mktgIntakeFieldGuidance(githubField, '')).toBe('');
+    expect(mktgIntakeFieldGuidance(githubField, '   ')).toBe('');
+    expect(mktgIntakeFieldGuidance(plainField, 'anything at all')).toBe('');
   });
 });

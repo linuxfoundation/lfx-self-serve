@@ -7,7 +7,7 @@
 // agents/foundation-message-ts (src/envelope.ts, src/form.ts) — the agent's
 // zod schemas are normative; this must stay in sync (reviewed at PR).
 
-import { MktgRunGenerateBody, MktgRunResultBody, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
+import { MktgReadmeOutcome, MktgRunGenerateBody, MktgRunResultBody, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
 
 /** One verbatim intake Q/A pair from the variable-length interview log. */
 export interface FoundationMessageIntakeAnswer {
@@ -145,8 +145,27 @@ export interface FoundationMessageFormPayload {
  */
 export type FoundationMessageGenerateRequest = MktgRunGenerateBody;
 
-/** Response of `POST /api/mktg-agents/foundation-message/generate` — the session to poll (generic run-flow shape). */
+/**
+ * Response of `POST /api/mktg-agents/foundation-message/generate` — the
+ * session to poll (generic run-flow shape). The generic shape carries the
+ * optional `readme` outcome, which this agent always populates: its README is
+ * fetched server-side while composing the submission, so the run can tell the
+ * user when the document was written WITHOUT one.
+ */
 export type FoundationMessageGenerateResponse = MktgRunSessionResponse;
+
+/**
+ * What starting a Message Foundation generation produced inside the BFF: the
+ * Guild session to poll plus the README fetch outcome. The controller turns
+ * this into the wire response by minting the creator-binding owner token for
+ * the session.
+ */
+export interface FoundationMessageGenerationStart {
+  /** Guild session id running the one-shot form-mode generation. */
+  sessionId: string;
+  /** Outcome of the server-side README fetch that fed this submission. */
+  readme: MktgReadmeOutcome;
+}
 
 /** Request body for `POST /api/mktg-agents/foundation-message/result` — the owner token travels in the body, never the query string. */
 export type FoundationMessageResultRequest = MktgRunResultBody;

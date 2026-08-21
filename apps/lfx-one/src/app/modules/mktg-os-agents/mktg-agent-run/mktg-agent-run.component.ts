@@ -11,7 +11,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_RUN_STAGES } from '@lfx-one/shared/constants';
+import { MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_README_SKIP_NOTES, MKTG_RUN_STAGES } from '@lfx-one/shared/constants';
 import {
   MktgAgent,
   MktgAgentAccent,
@@ -24,11 +24,13 @@ import {
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
+import { mktgIntakeFieldGuidance } from '@lfx-one/shared/utils';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -56,6 +58,7 @@ import { UserService } from '@services/user.service';
 })
 export class MktgAgentRunComponent {
   // === Injections ===
+  private readonly answerMemory = inject(MktgAnswerMemoryService);
   private readonly dependencyService = inject(MktgDependencyService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly messageService = inject(MessageService);
@@ -110,6 +113,14 @@ export class MktgAgentRunComponent {
    */
   protected readonly lfxMissing = signal<Record<string, boolean>>({});
   /**
+   * Field keys filled from an answer the user gave ANOTHER agent on this
+   * project, mapped to the chip label naming that agent's document ("From your
+   * Brand Kit run"). Separate from {@link fromLfx} on purpose: a reused answer
+   * is not something LFX knows, and labelling it "From LFX" would misstate
+   * where the value came from.
+   */
+  protected readonly fromPriorRun = signal<Record<string, string>>({});
+  /**
    * Resolved stored output per dependency agent id for the active project
    * (dec-agent-dependency-gating): server-persisted preferred, browser-stored
    * run fallback. `null` means resolution is still in flight (or hasn't
@@ -123,6 +134,7 @@ export class MktgAgentRunComponent {
   // === Computed ===
   private readonly intakeValid = toSignal(this.intakeForm.statusChanges.pipe(map((status) => status === 'VALID')), { initialValue: this.intakeForm.valid });
   private readonly feedbackValue = toSignal(this.feedbackForm.controls.feedback.valueChanges, { initialValue: '' });
+  private readonly intakeValue = toSignal(this.intakeForm.valueChanges, { initialValue: this.intakeForm.getRawValue() });
 
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name || 'Your Project');
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
@@ -151,6 +163,40 @@ export class MktgAgentRunComponent {
       return '';
     }
     return `This agent builds on the project’s ${names.join(' and ')} — generate ${names.length > 1 ? 'them' : 'it'} from the marketplace first.`;
+  });
+  /**
+   * Inline, NON-BLOCKING guidance per field key for the value currently typed
+   * — e.g. a `github_url` that names an organization rather than a repository.
+   * Submission stays enabled (the agents keep these answers free text and
+   * tolerate an unusable one); what changes is that the user sees the problem
+   * BEFORE spending a generation on it, instead of discovering it as an
+   * unexplained thin document.
+   */
+  protected readonly fieldGuidance: Signal<Record<string, string>> = this.initFieldGuidance();
+  /**
+   * Field keys that should show the "not set on your LFX project" hint: the
+   * LFX source came back empty AND nothing else filled the control. A field
+   * prefilled from a prior run already states its provenance on the chip, so
+   * repeating the LFX-is-empty hint next to it is noise.
+   */
+  protected readonly missingPrefillHintKeys: Signal<Record<string, boolean>> = computed(() => {
+    const missing = this.lfxMissing();
+    const reused = this.fromPriorRun();
+    return Object.fromEntries(Object.entries(missing).map(([key, isMissing]) => [key, isMissing && !reused[key]]));
+  });
+  /**
+   * Honest note on the result when the document was generated WITHOUT a
+   * README (the agent has no web access; the BFF fetches it). A README-less
+   * run produces a materially thinner document, and without this the user has
+   * no way to connect that to the repo URL they gave. Empty when a README was
+   * used, and for agents whose runs involve no README at all.
+   */
+  protected readonly readmeNote = computed(() => {
+    const readme = this.currentVersion()?.readme;
+    if (!readme || readme.fetched || !readme.skipReason) {
+      return '';
+    }
+    return MKTG_README_SKIP_NOTES[readme.skipReason];
   });
   /** Copyable derivative chips for the current version (empty when the agent has none). */
   protected readonly derivativeChips: Signal<{ key: string; label: string; value: string; copied: boolean }[]> = this.initDerivativeChips();
@@ -239,17 +285,21 @@ export class MktgAgentRunComponent {
             return combineLatest([
               this.projectService.getProject(context.slug, false),
               this.dependencyService.resolveDependencies(context.uid, this.dependencyIds),
-            ]);
+            ]).pipe(map(([project, dependencies]) => ({ context, project, dependencies })));
           }),
           takeUntilDestroyed(this.destroyRef)
         )
-        .subscribe(([project, dependencies]) => {
+        .subscribe(({ context, project, dependencies }) => {
           this.dependencyDocs.set(dependencies);
-          if (!project) {
-            return;
+          if (project) {
+            this.applyPrefill('repository-url', project.repository_url);
+            this.applyPrefill('project-description', project.description);
           }
-          this.applyPrefill('repository-url', project.repository_url);
-          this.applyPrefill('project-description', project.description);
+          // STRICTLY after the LFX prefill: prior answers fill only what LFX
+          // had nothing for (and a failed project lookup is "nothing" too).
+          // Order is the precedence — LFX project data > an answer given to
+          // another agent > empty.
+          this.applyRememberedAnswers(context.uid);
         });
     }
   }
@@ -395,6 +445,20 @@ export class MktgAgentRunComponent {
     });
   }
 
+  private initFieldGuidance(): Signal<Record<string, string>> {
+    return computed(() => {
+      const values = this.intakeValue();
+      const guidance: Record<string, string> = {};
+      for (const field of this.intake?.fields ?? []) {
+        const note = mktgIntakeFieldGuidance(field, values[field.key] ?? '');
+        if (note) {
+          guidance[field.key] = note;
+        }
+      }
+      return guidance;
+    });
+  }
+
   private initDerivativeChips(): Signal<{ key: string; label: string; value: string; copied: boolean }[]> {
     return computed(() => {
       const chips = this.intake?.derivativeChips ?? [];
@@ -456,11 +520,15 @@ export class MktgAgentRunComponent {
     if (!docs) {
       return [];
     }
-    return this.dependencyIds.filter((agentId) => !docs[agentId]).map((agentId) => this.dependencyDocumentName(agentId));
+    return this.dependencyIds.filter((agentId) => !docs[agentId]).map((agentId) => this.agentDocumentName(agentId));
   }
 
-  /** Display name of a dependency agent's document: its intake's document name, else the catalog agent name, else the id. */
-  private dependencyDocumentName(agentId: string): string {
+  /**
+   * Display name of an agent's document — its intake's document name, else the
+   * catalog agent name, else the id. Used both for the missing-dependency note
+   * and for naming the run a reused answer came from.
+   */
+  private agentDocumentName(agentId: string): string {
     return MKTG_AGENT_INTAKES[agentId]?.documentName ?? MKTG_AGENTS.find((candidate) => candidate.id === agentId)?.name ?? agentId;
   }
 
@@ -503,6 +571,7 @@ export class MktgAgentRunComponent {
     this.docExpanded.set(false);
     this.fromLfx.set({});
     this.lfxMissing.set({});
+    this.fromPriorRun.set({});
     this.copiedDerivative.set('');
     this.intakeForm.reset();
     this.feedbackForm.reset();
@@ -557,6 +626,38 @@ export class MktgAgentRunComponent {
     }
   }
 
+  /**
+   * Fills the still-empty controls from answers the user already gave ANOTHER
+   * agent on this project, and labels each with where it came from.
+   *
+   * This is the "stop re-asking me" half of the prefill contract: LFX only
+   * knows what LFX stores, so a project with no `repository_url` on record
+   * left this form asking for a repo URL the user had typed into the Brand Kit
+   * intake minutes earlier. Precedence is enforced by ORDER and by the
+   * empty-control check — LFX wins, a restored answer wins, and this fills
+   * only what is left. The current agent's own answers are skipped: its
+   * stored run already restores them, and "From your Message Foundation run"
+   * on the Message Foundation form would be nonsense.
+   */
+  private applyRememberedAnswers(projectUid: string): void {
+    if (!this.intake) {
+      return;
+    }
+    const remembered = this.answerMemory.load(projectUid);
+    for (const field of this.intake.fields) {
+      const entry = remembered[field.key];
+      if (!entry || entry.agentId === this.agent?.id) {
+        continue;
+      }
+      const control = this.intakeForm.controls[field.key];
+      if (!control || control.value.trim()) {
+        continue;
+      }
+      control.setValue(entry.value);
+      this.fromPriorRun.update((labels) => ({ ...labels, [field.key]: `From your ${this.agentDocumentName(entry.agentId)} run` }));
+    }
+  }
+
   private startGeneration(feedback?: string): void {
     const projectUid = this.projectContext.activeContextUid();
     const agent = this.agent;
@@ -570,6 +671,11 @@ export class MktgAgentRunComponent {
     }
 
     const answers = this.buildAnswers();
+    // Remember what the user typed, keyed by intake field key, so the NEXT
+    // agent's form on this project can offer it back instead of asking again.
+    // Only the intake's own answers — the auto-attached dependency documents
+    // added below are document-sized and resolved from their own source.
+    this.answerMemory.remember(projectUid, agent.id, answers);
 
     this.errorText.set('');
     this.docExpanded.set(false);
@@ -620,6 +726,11 @@ export class MktgAgentRunComponent {
     this.run.set(run);
     this.viewVersion.set(run.versions.at(-1)?.version ?? null);
     this.feedbackForm.reset();
+    // This run just produced stored output for the project — the marketplace's
+    // dependency gating is now out of date. Announcing it here means finishing
+    // a Brand Kit unlocks its dependents on the grid without a page reload
+    // (dec-agent-dependency-gating).
+    this.dependencyService.notifyDocumentsChanged(run.projectUid);
     // Let the "Validating required sections" stage register before the result
     // lands — but only if a project switch hasn't reset the page meanwhile.
     if (this.phaseTimer !== null) {

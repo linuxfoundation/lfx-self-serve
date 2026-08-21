@@ -11,10 +11,12 @@ import { CardComponent } from '@components/card/card.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { BRAND_KIT_INTAKE_QUESTIONS, MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE, BRAND_KIT_INTAKE_QUESTIONS, MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS } from '@lfx-one/shared/constants';
 import { BrandKitResultResponse } from '@lfx-one/shared/interfaces';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { BrandKitService } from '@services/brand-kit.service';
+import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 
 /** Client-side poll cadence and cap for the generation session (~5 min). */
@@ -39,7 +41,9 @@ const RESULT_POLL_MAX_CONSECUTIVE_ERRORS = 3;
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class BrandKitFormComponent implements OnDestroy {
+  private readonly answerMemory = inject(MktgAnswerMemoryService);
   private readonly brandKitService = inject(BrandKitService);
+  private readonly dependencyService = inject(MktgDependencyService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
@@ -98,6 +102,10 @@ export class BrandKitFormComponent implements OnDestroy {
     this.errorMessage.set('');
     this.result.set(null);
     this.runProjectUid = this.projectContext.activeContextUid();
+    // Remember the answers for this project so the NEXT agent's intake can
+    // offer back what the user typed here (e.g. the repository URL) instead of
+    // re-asking for it. Same memory the form-first run shell writes.
+    this.answerMemory.remember(this.runProjectUid, BRAND_KIT_INTAKE.agentId, answers);
     const epoch = ++this.pollEpoch;
 
     this.brandKitService
@@ -172,7 +180,17 @@ export class BrandKitFormComponent implements OnDestroy {
             // best-effort and never blocks the user.
             this.generating.set(false);
             this.result.set(response);
-            if (response.persistence || persistRetries >= MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS) {
+            if (response.persistence) {
+              // The project now has a SERVER-persisted Brand Kit — the copy
+              // dependency gating reads. Announce it so the marketplace stops
+              // showing dependents as locked over a document that exists
+              // (dec-agent-dependency-gating). Gated on the receipt because
+              // this surface stores no browser-side run: without the server
+              // copy there is nothing for a re-resolve to find.
+              this.dependencyService.notifyDocumentsChanged(this.runProjectUid);
+              return;
+            }
+            if (persistRetries >= MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS) {
               return;
             }
             // Missing receipt: each extra poll re-triggers the server-side

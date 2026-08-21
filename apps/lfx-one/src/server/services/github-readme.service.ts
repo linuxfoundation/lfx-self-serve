@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { FOUNDATION_MESSAGE_README_MAX_CHARS, FOUNDATION_MESSAGE_README_TRUNCATION_MARKER } from '@lfx-one/shared/constants';
+import { GithubUrlTarget, MktgReadmeFetchResult, MktgReadmeSkipReason } from '@lfx-one/shared/interfaces';
+import { parseGithubUrlTarget } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -12,11 +14,11 @@ const GITHUB_README_TIMEOUT_MS = 10_000;
 /** GitHub REST API base — the ONLY host this service ever fetches. */
 const GITHUB_API_BASE = 'https://api.github.com';
 
-/** Hosts a user-supplied repo URL may use. Anything else is skipped (SSRF guard). */
-const GITHUB_HOSTS = new Set(['github.com', 'www.github.com']);
+/** Repository GitHub serves an organization's profile README from. */
+const GITHUB_ORG_PROFILE_REPO = '.github';
 
-/** Owner/repo path segments: GitHub's own allowed character set. */
-const GITHUB_SEGMENT_RE = /^[A-Za-z0-9_.-]+$/;
+/** Path of the organization profile README inside {@link GITHUB_ORG_PROFILE_REPO}. */
+const GITHUB_ORG_PROFILE_README_PATH = 'profile/README.md';
 
 /**
  * How long a successfully fetched README stays reusable in-process. A Message
@@ -35,15 +37,27 @@ const GITHUB_README_CACHE_MAX_ENTRIES = 100;
  * Best-effort server-side README fetch for agents with no web access (the
  * Message Foundation's `readme_markdown` input). Strictly best-effort by
  * contract: EVERY failure — unparsable URL, non-GitHub host, missing README,
- * rate limit, timeout — returns null so the generation proceeds without a
- * README and the agent marks README-dependent gaps TBD per its grounding
- * rule. Never throws.
+ * rate limit, timeout — returns a null README so the generation proceeds and
+ * the agent marks README-dependent gaps TBD per its grounding rule. Never
+ * throws.
  *
- * SSRF guard: the user-supplied URL is never fetched. It is only PARSED for
- * an owner/repo pair (github.com hosts only, path segments validated against
- * GitHub's character set), and the actual request goes to the GitHub REST
- * API's readme endpoint on `api.github.com` — which also resolves
- * non-standard README filenames and the default branch for us.
+ * Best-effort is not the same as silent. Every attempt returns a
+ * {@link MktgReadmeOutcome} alongside the README, and a skip is logged at
+ * INFO/WARNING with its reason — a document generated without a README is a
+ * materially thinner document, and the user is told so on the result instead
+ * of being left to wonder why the agent underperformed.
+ *
+ * Organization URLs are resolved rather than rejected: `github.com/<org>` has
+ * no repository README, but GitHub serves an organization profile README from
+ * `<org>/.github` at `profile/README.md`, which is often exactly the overview
+ * the agent wants. It is attempted before giving up, and a miss gives up
+ * cleanly.
+ *
+ * SSRF guard: the user-supplied URL is never fetched. It is only PARSED (by
+ * the shared `parseGithubUrlTarget`, github.com hosts only, path segments
+ * validated against GitHub's character set) and the actual request goes to the
+ * GitHub REST API on `api.github.com` — which also resolves non-standard
+ * README filenames and the default branch for us.
  *
  * Confused-deputy guard: `github_url` is user-controlled, so the BFF's
  * `GITHUB_API_TOKEN` must never be usable as a read oracle for repositories
@@ -51,7 +65,8 @@ const GITHUB_README_CACHE_MAX_ENTRIES = 100;
  * visibility is verified via the repo metadata endpoint FIRST, and the
  * authenticated README request is only made for `public` repositories —
  * private and org-internal repos return null exactly like a missing README,
- * regardless of what the token itself could read. Tokenless requests need no
+ * regardless of what the token itself could read. The organization fallback
+ * runs through the same gate on the `.github` repo. Tokenless requests need no
  * check: unauthenticated GitHub hides private repos already.
  *
  * Successful fetches are memoised per repo for
@@ -66,8 +81,9 @@ const GITHUB_README_CACHE_MAX_ENTRIES = 100;
 export class GithubReadmeService {
   /**
    * Per-repo memo of successful fetches, keyed `owner/repo` (lowercased —
-   * GitHub treats both case-insensitively). Process-local and bounded; the
-   * routes hold one controller instance, so one cache per pod.
+   * GitHub treats both case-insensitively), with the organization profile
+   * README under its own `<org>/.github/profile` key. Process-local and
+   * bounded; the routes hold one controller instance, so one cache per pod.
    */
   private readonly readmeCache = new Map<string, { readme: string; expiresAt: number }>();
 
@@ -82,13 +98,31 @@ export class GithubReadmeService {
     return process.env['GITHUB_API_TOKEN'] || '';
   }
 
-  /** Fetch the repo's README as raw markdown, size-capped; null on any failure. */
-  public async fetchReadme(req: Request, githubUrl: string): Promise<string | null> {
-    const repo = this.parseRepo(githubUrl);
-    if (!repo) {
-      logger.debug(req, 'github_readme_fetch', 'URL is not a recognizable github.com repo — skipping README fetch', {});
-      return null;
+  /**
+   * Fetch a README for the user's URL as raw markdown, size-capped, with the
+   * outcome that explains it. Never throws and never fails the run.
+   */
+  public async fetchReadme(req: Request, githubUrl: string): Promise<MktgReadmeFetchResult> {
+    const target = parseGithubUrlTarget(githubUrl);
+    if (!target) {
+      // Raised from debug: this is the failure the user experiences as a
+      // mysteriously thin document, and it must be greppable in the logs.
+      logger.info(req, 'github_readme_fetch', 'URL is not a recognizable github.com repository or organization — generating without a README', {
+        reason: 'not-a-repo-url',
+      });
+      return { readme: null, outcome: { fetched: false, skipReason: 'not-a-repo-url' } };
     }
+
+    if (target.kind === 'organization') {
+      return this.fetchOrgProfileReadme(req, target.owner);
+    }
+
+    return this.fetchRepositoryReadme(req, target);
+  }
+
+  /** The repository's own README (the ordinary path). */
+  private async fetchRepositoryReadme(req: Request, target: Extract<GithubUrlTarget, { kind: 'repository' }>): Promise<MktgReadmeFetchResult> {
+    const repo = { owner: target.owner, repo: target.repo };
 
     // Regeneration resubmits the same `github_url`; serve it from memory
     // rather than re-paying the round-trip and the rate-limit budget.
@@ -99,16 +133,74 @@ export class GithubReadmeService {
         owner: repo.owner,
         repo: repo.repo,
       });
-      return cached;
+      return { readme: cached, outcome: { fetched: true, source: 'repository' } };
     }
 
     const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/readme`;
+    const attempt = await this.requestReadme(req, url, repo, cacheKey);
+    if (attempt.readme === null) {
+      return { readme: null, outcome: { fetched: false, skipReason: attempt.skipReason } };
+    }
+    return { readme: attempt.readme, outcome: { fetched: true, source: 'repository' } };
+  }
 
+  /**
+   * An organization URL names no repository, so there is no repository README
+   * — but GitHub renders an organization's profile from `<org>/.github` at
+   * `profile/README.md`. Attempting it turns a dead end into an overview the
+   * agent can actually ground on; when the organization has none, we give up
+   * cleanly and say so.
+   */
+  private async fetchOrgProfileReadme(req: Request, owner: string): Promise<MktgReadmeFetchResult> {
+    const repo = { owner, repo: GITHUB_ORG_PROFILE_REPO };
+    const cacheKey = `${owner.toLowerCase()}/${GITHUB_ORG_PROFILE_REPO}/profile`;
+    const cached = this.readCache(cacheKey);
+    if (cached !== null) {
+      logger.debug(req, 'github_readme_fetch', 'Serving the organization profile README from the in-process cache — no GitHub round-trip', { owner });
+      return { readme: cached, outcome: { fetched: true, source: 'org-profile' } };
+    }
+
+    logger.info(req, 'github_readme_fetch', 'URL resolves to an organization, not a repository — trying the organization profile README', {
+      owner,
+      profile_repo: GITHUB_ORG_PROFILE_REPO,
+    });
+
+    // The contents endpoint (not /readme) — the profile README lives at a
+    // fixed path INSIDE the .github repo, and that repo's own root README is
+    // a different document.
+    const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(GITHUB_ORG_PROFILE_REPO)}/contents/${GITHUB_ORG_PROFILE_README_PATH}`;
+    const attempt = await this.requestReadme(req, url, repo, cacheKey);
+    if (attempt.readme === null) {
+      // Whatever went wrong on the .github repo, from the USER's point of view
+      // the URL they gave has no README behind it — that is what the result says.
+      logger.info(req, 'github_readme_fetch', 'No organization profile README — generating without a README', {
+        owner,
+        reason: 'not-a-repo-url',
+      });
+      return { readme: null, outcome: { fetched: false, skipReason: 'not-a-repo-url' } };
+    }
+    return { readme: attempt.readme, outcome: { fetched: true, source: 'org-profile' } };
+  }
+
+  /**
+   * One authenticated-or-anonymous README request against `api.github.com`,
+   * with the visibility gate, the size cap, and the memo write. Returns a null
+   * README plus the reason on every failure — the reason travels in the return
+   * value rather than on the instance, because one service instance serves
+   * concurrent requests and an instance field would be clobbered across the
+   * `await` boundaries.
+   */
+  private async requestReadme(
+    req: Request,
+    url: string,
+    repo: { owner: string; repo: string },
+    cacheKey: string
+  ): Promise<{ readme: string } | { readme: null; skipReason: MktgReadmeSkipReason }> {
     try {
       // Confused-deputy guard: an authenticated request may only target repos
       // the anonymous public also sees — never repos only the token can read.
       if (this.apiToken && !(await this.isPublicRepo(req, repo))) {
-        return null;
+        return { readme: null, skipReason: 'no-readme' };
       }
 
       const response = await fetch(url, {
@@ -120,26 +212,28 @@ export class GithubReadmeService {
 
       if (!response.ok) {
         this.logFailedResponse(req, 'GitHub README fetch', response, repo);
-        return null;
+        // A 404 is an absent README; anything else is GitHub failing us.
+        return { readme: null, skipReason: response.status === 404 ? 'no-readme' : 'fetch-failed' };
       }
 
       const text = await response.text();
       if (!text.trim()) {
-        return null;
+        logger.info(req, 'github_readme_fetch', 'README is empty — generating without a README', { owner: repo.owner, repo: repo.repo });
+        return { readme: null, skipReason: 'no-readme' };
       }
       const readme =
         text.length > FOUNDATION_MESSAGE_README_MAX_CHARS
           ? text.slice(0, FOUNDATION_MESSAGE_README_MAX_CHARS) + FOUNDATION_MESSAGE_README_TRUNCATION_MARKER
           : text;
       this.writeCache(cacheKey, readme);
-      return readme;
+      return { readme };
     } catch (error) {
       logger.warning(req, 'github_readme_fetch', 'GitHub README fetch errored — generation proceeds without a README', {
         error: error instanceof Error ? error.message : String(error),
         owner: repo.owner,
         repo: repo.repo,
       });
-      return null;
+      return { readme: null, skipReason: 'fetch-failed' };
     }
   }
 
@@ -244,33 +338,5 @@ export class GithubReadmeService {
       owner: repo.owner,
       repo: repo.repo,
     });
-  }
-
-  /**
-   * Extract an owner/repo pair from a user-supplied GitHub URL (repo root,
-   * README blob URL, or anything else whose first two path segments are the
-   * repo). Returns null for non-GitHub hosts or malformed paths.
-   */
-  private parseRepo(githubUrl: string): { owner: string; repo: string } | null {
-    let parsed: URL;
-    try {
-      // Tolerate a missing scheme ("github.com/org/repo") — prefix https.
-      parsed = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(githubUrl.trim()) ? githubUrl.trim() : `https://${githubUrl.trim()}`);
-    } catch {
-      return null;
-    }
-    if (!GITHUB_HOSTS.has(parsed.hostname.toLowerCase())) {
-      return null;
-    }
-    const segments = parsed.pathname.split('/').filter(Boolean);
-    if (segments.length < 2) {
-      return null;
-    }
-    const owner = segments[0];
-    const repo = segments[1].replace(/\.git$/, '');
-    if (!GITHUB_SEGMENT_RE.test(owner) || !GITHUB_SEGMENT_RE.test(repo)) {
-      return null;
-    }
-    return { owner, repo };
   }
 }

@@ -7,6 +7,8 @@ import { provideRouter } from '@angular/router';
 import { BRAND_KIT_INTAKE_QUESTIONS } from '@lfx-one/shared/constants';
 import { BrandKitResultResponse } from '@lfx-one/shared/interfaces';
 import { BrandKitService } from '@services/brand-kit.service';
+import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,6 +30,8 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
   let fixture: ComponentFixture<BrandKitFormComponent>;
   let generate: ReturnType<typeof vi.fn>;
   let getResult: ReturnType<typeof vi.fn>;
+  let remember: ReturnType<typeof vi.fn>;
+  let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
 
   const PENDING: BrandKitResultResponse = { status: 'pending' };
 
@@ -53,6 +57,8 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
     vi.useFakeTimers();
     generate = vi.fn(() => of({ sessionId: 'session-1', ownerToken: 'owner-1' }));
     getResult = vi.fn();
+    remember = vi.fn();
+    notifyDocumentsChanged = vi.fn();
 
     await TestBed.configureTestingModule({
       imports: [BrandKitFormComponent],
@@ -62,6 +68,10 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
         { provide: BrandKitService, useValue: { generate, getResult } },
         // The run's project scope: the uid the BFF persists the ready document under.
         { provide: ProjectContextService, useValue: { activeContextUid: () => 'proj-uid-1' } },
+        // Cross-agent answer memory + the marketplace's staleness signal:
+        // both are written by a submission, neither is exercised here.
+        { provide: MktgAnswerMemoryService, useValue: { remember, load: () => ({}) } },
+        { provide: MktgDependencyService, useValue: { notifyDocumentsChanged } },
       ],
     }).compileComponents();
 
@@ -114,6 +124,31 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
 
     expect(getResult).toHaveBeenNthCalledWith(1, 'session-1', 'owner-1', 'proj-uid-1');
     expect(getResult).toHaveBeenNthCalledWith(2, 'session-1', 'owner-1', 'proj-uid-1');
+  });
+
+  /**
+   * The Brand Kit is the first agent most users run, so its answers are the
+   * ones every later intake would otherwise re-ask for — and its stored
+   * document is what unlocks the agents that depend on it.
+   */
+  it('remembers the submitted answers for the project so a later agent’s intake can reuse them', () => {
+    getResult.mockReturnValue(of(PENDING));
+
+    submitGenerationForm();
+
+    expect(remember).toHaveBeenCalledWith('proj-uid-1', 'brand-kit', expect.objectContaining({ github_url: 'An answer', project_name: 'An answer' }));
+  });
+
+  it('announces the stored document once it is PERSISTED, so the marketplace stops showing dependents as locked', () => {
+    getResult.mockReturnValueOnce(of(PENDING)).mockReturnValueOnce(of(READY));
+
+    submitGenerationForm();
+    // Still pending — nothing is stored yet, so nothing to announce.
+    expect(notifyDocumentsChanged).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(POLL_INTERVAL_MS);
+
+    expect(notifyDocumentsChanged).toHaveBeenCalledExactlyOnceWith('proj-uid-1');
   });
 
   it('fails with a timeout message at the 30-attempt budget and never polls past it', () => {
@@ -213,6 +248,8 @@ describe('BrandKitFormComponent — persistence retry polling', () => {
   let fixture: ComponentFixture<BrandKitFormComponent>;
   let generate: ReturnType<typeof vi.fn>;
   let getResult: ReturnType<typeof vi.fn>;
+  let remember: ReturnType<typeof vi.fn>;
+  let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
 
   const READY_WITHOUT_RECEIPT: BrandKitResultResponse = {
     status: 'ready',
@@ -238,6 +275,8 @@ describe('BrandKitFormComponent — persistence retry polling', () => {
     vi.useFakeTimers();
     generate = vi.fn(() => of({ sessionId: 'session-1', ownerToken: 'owner-1' }));
     getResult = vi.fn();
+    remember = vi.fn();
+    notifyDocumentsChanged = vi.fn();
 
     await TestBed.configureTestingModule({
       imports: [BrandKitFormComponent],
@@ -247,6 +286,10 @@ describe('BrandKitFormComponent — persistence retry polling', () => {
         { provide: BrandKitService, useValue: { generate, getResult } },
         // The run's project scope: the uid the BFF persists the ready document under.
         { provide: ProjectContextService, useValue: { activeContextUid: () => 'proj-uid-1' } },
+        // Cross-agent answer memory + the marketplace's staleness signal:
+        // both are written by a submission, neither is exercised here.
+        { provide: MktgAnswerMemoryService, useValue: { remember, load: () => ({}) } },
+        { provide: MktgDependencyService, useValue: { notifyDocumentsChanged } },
       ],
     }).compileComponents();
 

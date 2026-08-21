@@ -147,6 +147,39 @@ describe('MktgAgentRunService', () => {
     expect(Date.parse(stored.savedAt)).not.toBeNaN();
   });
 
+  /**
+   * The BFF fetches the README while composing the submission, so its outcome
+   * is known at generate time and settled long before the document is polled.
+   * Storing it WITH the version it produced is what lets the result say the
+   * document was written without a README instead of leaving a thin document
+   * unexplained — and keeps a later version, generated with one, from
+   * inheriting the note.
+   */
+  it('carries the generate response’s README outcome onto the version it produced', async () => {
+    httpPost.mockImplementation((url: string) => {
+      if (url === BRAND_KIT_INTAKE.endpoints.generate) {
+        return of({ sessionId: 'sess-1', ownerToken: 'token-1', readme: { fetched: false, skipReason: 'not-a-repo-url' } });
+      }
+      return of<MktgRunResultResponse>({ status: 'ready', documentMarkdown: '# Brand Kit', version: 1 });
+    });
+
+    service.generate(generateRequest()).subscribe();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+
+    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
+    expect(stored.versions[0].readme).toEqual({ fetched: false, skipReason: 'not-a-repo-url' });
+  });
+
+  it('leaves the version’s README outcome unset for agents whose BFF fetches no README', async () => {
+    resultResponses = [{ status: 'ready', documentMarkdown: '# Brand Kit', version: 1 }];
+
+    service.generate(generateRequest()).subscribe();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+
+    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
+    expect(stored.versions[0].readme).toBeUndefined();
+  });
+
   it('prunes an expired stored run on load — the persisted ownerToken never outlives the storage TTL', () => {
     window.localStorage.setItem(
       STORAGE_KEY,
