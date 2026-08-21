@@ -75,6 +75,20 @@ export class MentionBookmarkService {
 
     this.store.commit({
       next,
+      // Re-derive at dequeue time: if an earlier queued commit failed and rolled back, the eager snapshot would resurrect it.
+      rebase: (current) => {
+        const ids = new Set(current);
+        if (adding) ids.add(mentionId);
+        else ids.delete(mentionId);
+        return ids;
+      },
+      // Targeted rollback: invert this toggle against current state so bookmarks queued after this one survive.
+      rollback: () => {
+        const ids = new Set(this.store.state().data);
+        if (adding) ids.delete(mentionId);
+        else ids.add(mentionId);
+        this.store.replace(ids);
+      },
       onSuccess: () =>
         this.messageService.add(
           adding

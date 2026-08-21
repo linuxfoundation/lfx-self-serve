@@ -94,7 +94,7 @@ export class MentionReadStateService {
   }
 
   public markAllAsRead(latestMentionTs: string | null): void {
-    const { loading, error } = this.store.state();
+    const { data: previous, loading, error } = this.store.state();
     if (loading || error) {
       if (error) this.notifyUnavailable();
       return;
@@ -108,12 +108,13 @@ export class MentionReadStateService {
     this.store.commit({
       // The newest loaded timestamp becomes the cutoff, so mentions published after it stay unread.
       next: { readBeforeTs: latestMentionTs, readIds: [], unreadIds: [] },
+      rollback: this.mergeRollback(previous),
       onError: () => this.notifyFailure(),
     });
   }
 
   public markAllAsUnread(): void {
-    const { loading, error } = this.store.state();
+    const { data: previous, loading, error } = this.store.state();
     if (loading || error) {
       if (error) this.notifyUnavailable();
       return;
@@ -122,8 +123,21 @@ export class MentionReadStateService {
 
     this.store.commit({
       next: emptyReadState(),
+      rollback: this.mergeRollback(previous),
       onError: () => this.notifyFailure(),
     });
+  }
+
+  // Bulk-write rollback: restore the prior cutoff and merge id lists so optimistic toggles queued after the bulk commit survive.
+  private mergeRollback(previous: ReadStateData): () => void {
+    return () => {
+      const current = this.store.state().data;
+      this.store.replace({
+        readBeforeTs: previous.readBeforeTs,
+        readIds: [...new Set([...previous.readIds, ...current.readIds])],
+        unreadIds: [...new Set([...previous.unreadIds, ...current.unreadIds])],
+      });
+    };
   }
 
   private notifyUnavailable(): void {
