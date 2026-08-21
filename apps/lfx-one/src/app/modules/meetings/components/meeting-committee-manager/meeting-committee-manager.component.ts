@@ -5,9 +5,10 @@ import { Component, computed, DestroyRef, inject, input, InputSignal, output, Ou
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
+import { SelectComponent } from '@components/select/select.component';
 import { Committee, CommitteeMember, MeetingCommittee } from '@lfx-one/shared';
-import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
-import { COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared/constants';
+import { CommitteeMemberVotingStatus, MeetingVisibility } from '@lfx-one/shared/enums';
+import { CANCEL_ON_COMMITTEE_REMOVAL_OPTIONS, COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared/constants';
 import { sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -21,7 +22,7 @@ interface CommitteeMemberDisplay extends CommitteeMember {
 
 @Component({
   selector: 'lfx-meeting-committee-manager',
-  imports: [ReactiveFormsModule, MultiSelectComponent, TooltipModule],
+  imports: [ReactiveFormsModule, MultiSelectComponent, SelectComponent, TooltipModule],
   templateUrl: './meeting-committee-manager.component.html',
 })
 export class MeetingCommitteeManagerComponent {
@@ -55,6 +56,8 @@ export class MeetingCommitteeManagerComponent {
   // Voting status options for dropdown
   public readonly votingStatusOptions = MEETING_VOTING_STATUSES;
   public readonly committeeLabel = COMMITTEE_LABEL;
+  public readonly cancelOnCommitteeRemovalOptions = CANCEL_ON_COMMITTEE_REMOVAL_OPTIONS;
+  public readonly meetingVisibility = MeetingVisibility;
 
   // Computed signals
   public hasVotingEnabledCommittee = computed(() => {
