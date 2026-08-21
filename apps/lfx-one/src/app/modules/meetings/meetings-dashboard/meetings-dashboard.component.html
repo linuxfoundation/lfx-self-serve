@@ -24,6 +24,11 @@
                 label="Create Meeting"
                 size="small"
                 (onClick)="createMenu.toggle($event)">
+                <!-- The calendar sits here rather than in `icon` because `lfx-button` takes a single
+                     icon and the chevron needs it. PrimeNG renders projected content before its own
+                     icon and label, and `p-button-icon-right` reorders the chevron last, so this
+                     lands left of the label and inherits the button's own gap. -->
+                <i class="fa-light fa-calendar" aria-hidden="true"></i>
               </lfx-button>
               <lfx-menu #createMenu [model]="createMenuItems()" [popup]="true" appendTo="body" styleClass="w-[22rem] py-2">
                 <ng-template #submenuheader let-item>
