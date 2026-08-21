@@ -38,6 +38,7 @@
         [edEmail]="edEmail()"
         [canSend]="canSend()"
         [canSendTest]="canSendTest()"
+        [canPreview]="canPreview()"
         [sending]="submitting()"
         [testSending]="testSending()"
         [deleting]="deletingDraft()"
@@ -145,6 +146,7 @@
                   [outlined]="true"
                   [text]="true"
                   size="small"
+                  [disabled]="!canPreview()"
                   (onClick)="openPreviewDrawer()"
                   data-testid="newsletter-manage-preview-btn">
                 </lfx-button>
@@ -153,7 +155,6 @@
                   label="Save as Draft"
                   severity="secondary"
                   [outlined]="true"
-                  [disabled]="!canSaveDraft()"
                   [loading]="manualSaving()"
                   (onClick)="onSaveAsDraft()"
                   data-testid="newsletter-manage-draft-btn">
@@ -198,6 +199,7 @@
                     [contextName]="displayName()"
                     [hasContext]="hasContext()"
                     [savedLabel]="savedLabel()"
+                    [blocksEnabled]="blocksEnabled()"
                     (generated)="onGenerated($event)">
                   </lfx-newsletter-content-step>
                 </ng-template>
@@ -248,7 +250,8 @@
   [subject]="form.controls.subject.value"
   [bodyHtml]="form.controls.bodyHtml.value"
   [logoUrl]="logoUrl()"
-  [displayName]="displayName()">
+  [displayName]="displayName()"
+  [fullDocument]="previewIsFullDocument()">
 </lfx-newsletter-preview-drawer>
 
 <p-confirmDialog key="newsletter-manage"></p-confirmDialog>

@@ -168,6 +168,7 @@
   [(visible)]="previewVisible"
   [subject]="selected()?.subject ?? ''"
   [bodyHtml]="previewBody()"
+  [fullDocument]="previewFullDocument()"
   [displayName]="selected()?.project_name || 'Newsletter'"
   [headerTitle]="selected()?.project_name || 'Newsletter'"
   [headerSubtitle]="drawerSubtitle()"
