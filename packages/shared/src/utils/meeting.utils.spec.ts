@@ -47,7 +47,6 @@ import {
   convertRecurrenceToPattern,
   extractRegistrantEmails,
   filterUnlistedEmails,
-  getMeetingEditCommands,
   getMeetingOrganizerDisplayName,
   isCalendarDeadlinePast,
   isMeetingOccurrenceCancelled,
@@ -1116,20 +1115,6 @@ describe('buildMeetingOccurrenceRoute', () => {
       path: ['/meetings', '99152950841-1630560600000'],
       queryParams: undefined,
     });
-  });
-});
-
-describe('getMeetingEditCommands', () => {
-  it('prefixes foundation-owned meetings with /foundation', () => {
-    expect(getMeetingEditCommands({ id: 'abc-123', is_foundation: true })).toEqual(['/', 'foundation', 'meetings', 'abc-123', 'edit']);
-  });
-
-  it('prefixes regular-project meetings with /project', () => {
-    expect(getMeetingEditCommands({ id: 'abc-123', is_foundation: false })).toEqual(['/', 'project', 'meetings', 'abc-123', 'edit']);
-  });
-
-  it('returns null when is_foundation is absent so callers fall back to the flat path', () => {
-    expect(getMeetingEditCommands({ id: 'abc-123' })).toBeNull();
   });
 });
 

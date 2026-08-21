@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 import { COMMITTEE_WRITE_FEATURES } from '@lfx-one/shared/constants';
+import { EntityWithProject } from '@lfx-one/shared/interfaces';
 import { HttpErrorResponse } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
@@ -11,7 +12,7 @@ import { MeetingService } from '../services/meeting.service';
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
 import { ProjectService } from '../services/project.service';
-import { hasMeetingWriteAccess, resolveMeetingWriteSlug } from '../utils/write-access.util';
+import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-access.util';
 
 /**
  * Protects create/edit/admin routes that require project write permission.
@@ -65,35 +66,25 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const routeLens = route.parent?.data?.['lens'] ?? route.data?.['lens'];
   const overviewPath = routeLens === 'foundation' ? '/foundation/overview' : '/project/overview';
 
-  // On a meeting EDIT route, a missing or stale `?project=` means the active
-  // context can belong to a different project than the meeting being edited (bare
-  // `/meetings/:id/edit` links redirect by active lens and carry no project param). Authorizing
-  // against that stale context intermittently denied legitimate organizers — or worse, could
-  // authorize against the wrong project. Resolve the slug from the meeting itself first; fall
-  // back to the active context only on a 404 (it may simply not exist — the manage component
-  // handles that error path), and fail closed on any other read failure.
+  // A missing/stale `?project=` can authorize against a different project than the entity being
+  // edited — resolve the slug from the entity itself; only a 404 falls back, else fail closed.
   const writeFeature: string | undefined = route.data?.['writeFeature'];
+  // Entity probes keyed by writeFeature — a follow-up ticket adds one registry line + inject() +
+  // route flag; probes must be tap-free and short-TTL-cached so the guard shares the manage fetch.
+  const entityProbes: Record<string, (id: string) => Observable<Pick<EntityWithProject, 'project_slug' | 'project_uid'> | null>> = {
+    meetings: (id) => meetingService.getMeetingDetail(id),
+  };
   const resolveSlug = (): Observable<string | null> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
-    if (writeFeature !== 'meetings') {
+    const probe = writeFeature ? entityProbes[writeFeature] : undefined;
+    const entityId = route.paramMap.get('id');
+    if (!probe || !entityId || route.data?.['entityScopedSlug'] !== true) {
       return of(fromContext);
     }
-    const meetingId = route.paramMap.get('id');
-    if (!meetingId || route.data?.['entityScopedSlug'] !== true) {
-      return of(fromContext);
-    }
-    // Resolve from the meeting payload itself, preferring the BFF-enriched slug but falling back
-    // to the uid — the BFF `GET /api/projects/:slug` route sniffs UUIDs, so the downstream
-    // getProject access check resolves either identifier. Never fall back to the active context
-    // while the meeting is readable: doing so would authorize against a stale, unrelated project.
-    // A failed project probe now denies against the meeting's own project instead of
-    // silently switching to that stale context. Only a 404 falls back — the meeting may simply not
-    // exist and the manage component owns that error path; every other failure resolves null and
-    // fails closed via the `if (!slug)` redirect, so no check runs against a stale project.
-    // Probe-friendly: getMeetingDetail is tap-free and short-TTL-cached, sharing the request with
-    // MeetingManageComponent's fetch on the same navigation.
-    return meetingService.getMeetingDetail(meetingId).pipe(
-      map((meeting) => resolveMeetingWriteSlug(meeting, fromContext)),
+    // Resolve from the entity payload, never the active context — a readable entity with a stale
+    // context would authorize against the wrong project; only a 404 falls back, else fail closed.
+    return probe(entityId).pipe(
+      map((entity) => resolveEntityWriteSlug(entity, fromContext)),
       catchError((error) => of(error instanceof HttpErrorResponse && error.status === 404 ? fromContext : null))
     );
   };
@@ -108,11 +99,8 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
       const deny = () => deniedUrl;
       const supportsCommitteeWriter = writeFeature != null && COMMITTEE_WRITE_FEATURES.includes(writeFeature);
 
-      // Committee writers can create meetings, surveys, and votes associated with
-      // their committee. Only applicable when committee_uid is in the route query params.
-      // CommitteeService.getCommittee has a tap() that sets the committee signal as a
-      // side-effect — acceptable here: on deny navigation is blocked before any committee
-      // view renders; on allow the committee page overwrites it.
+      // Committee writers can create entities for their committee via ?committee_uid=.
+      // getCommittee's tap() side effect is safe here: deny blocks navigation; allow overwrites.
       const checkCommittee = (): Observable<true | ReturnType<typeof deny>> =>
         committeeService.getCommittee(committeeUid!).pipe(
           map((committee) => (committee?.writer === true ? (true as const) : deny())),
@@ -121,11 +109,8 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
 
       return projectService.getProject(slug, false, { meetingCoordinator: writeFeature === 'meetings' }).pipe(
         switchMap((project) => {
-          // project === null means the BFF returned 403/404/5xx — could be a real access
-          // denial (committee member without a direct project-level OpenFGA viewer relation)
-          // or a transient server error. Still attempt the committee check when applicable so
-          // a committee writer is not incorrectly denied solely because the project fetch
-          // failed. If no committee check is applicable, deny with feedback.
+          // project === null means the BFF fetch failed (403/404/5xx) — real denial or transient;
+          // still try the committee check so a committee writer isn't denied on a fetch failure.
           if (project === null) {
             return committeeUid && supportsCommitteeWriter ? checkCommittee() : of(deny());
           }
