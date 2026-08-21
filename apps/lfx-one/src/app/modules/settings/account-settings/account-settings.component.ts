@@ -16,6 +16,7 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 import { ActivatedRoute } from '@angular/router';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { clearPendingProfileSave } from '@shared/utils/pending-profile-save.util';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { ChangePasswordRequest, EmailManagementData, MeetingInviteEmail, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
@@ -317,7 +318,9 @@ export class AccountSettingsComponent {
         // A 400 means the address exists but isn't an active, verified record upstream — retrying
         // won't help, so surface a persistent banner with a support link instead of a transient toast.
         if (err.status === 400) {
-          this.meetingInviteError.set(err.error?.message || 'This email is not an active, verified address on your account yet.');
+          // The server puts the copy under `error` (and `errors[].message`), not `message` —
+          // extractErrorMessage reads both, so the crafted validation text reaches the banner.
+          this.meetingInviteError.set(extractErrorMessage(err, 'This email is not an active, verified address on your account yet.'));
           return;
         }
         this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || 'Failed to update meeting invitation email' });

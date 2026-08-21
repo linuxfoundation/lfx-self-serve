@@ -692,13 +692,25 @@ export class ProfileController {
         // so its top-level `message` (what the frontend reads) keeps the text; `forField` would replace it.
         if (result.reason === 'validation') {
           const validationMessage = 'This email is not an active, verified address on your account yet. Choose a different email, or verify it and try again.';
-          return next(new ServiceValidationError([{ field: 'email', message: validationMessage, code: 'FIELD_VALIDATION_ERROR' }], validationMessage, errorOptions));
+          return next(
+            new ServiceValidationError([{ field: 'email', message: validationMessage, code: 'FIELD_VALIDATION_ERROR' }], validationMessage, errorOptions)
+          );
         }
 
-        // Upstream/SFDC sync not ready or the meeting service is unreachable — retryable.
-        if (result.reason === 'unavailable') {
+        // SFDC sync from auth0 hasn't landed yet — the address is valid but not usable right now.
+        if (result.reason === 'sync_pending') {
           return next(
             new MicroserviceError('This email was added recently and is not ready to use yet. Please try again in a few minutes.', 503, 'SERVICE_UNAVAILABLE', {
+              operation: 'set_meeting_invite_email',
+              service: 'profile_controller',
+            })
+          );
+        }
+
+        // The meeting service itself was unreachable (timeout/503) — transport failure, retryable.
+        if (result.reason === 'unavailable') {
+          return next(
+            new MicroserviceError('The meeting service is temporarily unavailable. Please try again in a few minutes.', 503, 'SERVICE_UNAVAILABLE', {
               operation: 'set_meeting_invite_email',
               service: 'profile_controller',
             })

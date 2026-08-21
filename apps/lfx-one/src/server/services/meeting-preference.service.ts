@@ -68,11 +68,7 @@ export class MeetingPreferenceService {
    * @param email - The verified email address to receive meeting invitations
    * @returns Result with the updated preference on success, or an error message on failure
    */
-  public async setMeetingInviteEmail(
-    req: Request,
-    v1Token: string,
-    email: string
-  ): Promise<SetMeetingInviteResult> {
+  public async setMeetingInviteEmail(req: Request, v1Token: string, email: string): Promise<SetMeetingInviteResult> {
     const codec = this.natsService.getCodec();
 
     logger.debug(req, 'set_meeting_invite_email', 'Setting preferred meeting-invite email via NATS', { email });
@@ -109,14 +105,14 @@ export class MeetingPreferenceService {
   }
 
   // Classify the upstream error string (the NATS reply carries only `{ error }`, no code) so the
-  // controller can map it to an HTTP status: validation → 4xx, unavailable → 503, anything else → 502.
-  private classifyPreferredEmailError(error: string): 'validation' | 'unavailable' | 'upstream' {
+  // controller can map it to an HTTP status: validation → 4xx, sync_pending → 503, anything else → 502.
+  private classifyPreferredEmailError(error: string): SetMeetingInviteResult['reason'] {
     const normalized = error.toLowerCase();
     if (normalized.includes('not an active, verified address')) {
       return 'validation';
     }
     if (normalized.includes('not yet available') || normalized.includes('retry')) {
-      return 'unavailable';
+      return 'sync_pending';
     }
     return 'upstream';
   }
