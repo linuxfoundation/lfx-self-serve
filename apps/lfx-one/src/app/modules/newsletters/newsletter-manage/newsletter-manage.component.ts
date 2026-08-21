@@ -186,9 +186,17 @@ export class NewsletterManageComponent {
   private readonly fetchedLogoUrl = signal<string | undefined>(undefined);
   public readonly logoUrl: Signal<string | undefined> = computed(() => this.activeContext()?.logoUrl || this.fetchedLogoUrl());
   // The block composer + its template library are gated to the pilot projects
-  // (see NEWSLETTER_BLOCKS_PROJECT_SLUGS); every other project uses the simple
-  // editor only and never sees the Blocks/Simple toggle.
-  public readonly blocksEnabled: Signal<boolean> = computed(() => NEWSLETTER_BLOCKS_PROJECT_SLUGS.includes(this.activeContext()?.slug ?? ''));
+  // (see NEWSLETTER_BLOCKS_PROJECT_SLUGS) for NEW authoring; every other project
+  // uses the basic editor only. A draft that ALREADY carries a body_layout is
+  // always editable in the composer regardless of the gate — otherwise, if the
+  // gate resolved false for it (e.g. opened while a non-pilot project is the
+  // active context), the basic editor would edit body_html while the still-present
+  // layout stays authoritative upstream, silently discarding those edits. Layouts
+  // are only ever created in the pilot, so this never exposes blocks authoring to
+  // a non-pilot project.
+  public readonly blocksEnabled: Signal<boolean> = computed(
+    () => this.bodyLayoutValue() !== null || NEWSLETTER_BLOCKS_PROJECT_SLUGS.includes(this.activeContext()?.slug ?? '')
+  );
   public readonly hasContext: Signal<boolean> = computed(() => this.projectUid().length > 0);
 
   // === Auth-derived ===
