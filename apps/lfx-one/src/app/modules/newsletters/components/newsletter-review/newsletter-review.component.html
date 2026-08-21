@@ -119,7 +119,11 @@
                 <div class="text-sm font-medium text-gray-900 mt-1" data-testid="newsletter-review-content-template">{{ tmpl }}</div>
               </div>
             }
-            @if (hasBody()) {
+            <!-- Text preview only for simple (html) drafts. A blocks draft's
+                 body_html is a full server-rendered email document, so stripping
+                 it to plain text shows head/style noise — use the Preview button
+                 (rendered iframe) for those instead. -->
+            @if (hasBody() && !bodyLayoutValue()) {
               <div>
                 <div class="text-xs uppercase tracking-wide text-gray-500">Preview</div>
                 <p class="text-sm text-gray-700 mt-1 line-clamp-3" data-testid="newsletter-review-content-preview">
