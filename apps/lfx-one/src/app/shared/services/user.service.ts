@@ -131,7 +131,10 @@ export class UserService {
           take(1),
           // Best-effort: on failure leave uploadedAvatarUrl null so effectiveAvatarUrl falls back
           // to the Auth0 picture claim, which is already showing.
-          catchError(() => EMPTY)
+          catchError((error) => {
+            console.error('Failed to seed avatar from profile; falling back to the Auth0 picture claim:', error);
+            return EMPTY;
+          })
         )
         .subscribe((profile) => {
           // Only seed from this fetch if nothing has set the signal since it was kicked off —

@@ -28,6 +28,7 @@ import { StepperModule } from 'primeng/stepper';
 import { catchError, concat, distinctUntilChanged, EMPTY, filter, finalize, from, map, merge, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
 import { applyEntityProjectContext, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
+import { resolveEntityWriteSlug } from '@shared/utils/write-access.util';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 
 import { CommitteeBasicInfoComponent } from '../components/committee-basic-info/committee-basic-info.component';
@@ -494,9 +495,11 @@ export class CommitteeManageComponent {
               // Pending — in edit mode the authorization target comes from the committee itself.
               return undefined;
             }
-            // Mirror writerGuard's resolution order; the active-context fallback covers a committee
-            // carrying neither slug nor uid (the manage component owns that error path).
-            return committee.project_slug ?? committee.project_uid ?? this.projectContextService.activeContext()?.slug ?? null;
+            // Mirror writerGuard's resolution order via the shared helper — when the guard and
+            // the reactive access signals each carried their own copy, drift evicted admitted
+            // users. The active-context fallback covers a committee carrying neither slug nor uid
+            // (the manage component owns that error path).
+            return resolveEntityWriteSlug(committee, this.projectContextService.activeContext()?.slug ?? null);
           })
         )
       : toObservable(this.projectContextService.activeContext).pipe(map((ctx) => ctx?.slug ?? null));
