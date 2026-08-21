@@ -314,6 +314,12 @@ export class AccountSettingsComponent {
       return;
     }
 
+    // Defensive guard: never delete the email selected as the meeting-invitation preference.
+    // The menu already disables this action; this covers any programmatic call path.
+    if (email.email === this.meetingInviteEmail()) {
+      return;
+    }
+
     const userId = email.user_id;
 
     this.userService
@@ -517,7 +523,18 @@ export class AccountSettingsComponent {
           items.push({ label: 'Meeting Invitations', icon: 'fa-light fa-envelope', command: () => this.setMeetingInvite(email) });
         }
         if (email.canDelete) {
-          items.push({ label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', command: () => this.deleteEmail(email) });
+          if (email.isMeetingInvite) {
+            // Blocked: deleting the meeting-invitation email would orphan the meeting-service preference.
+            items.push({
+              label: 'Delete',
+              icon: 'fa-light fa-trash',
+              styleClass: 'text-red-500',
+              disabled: true,
+              title: 'This email is set for meeting invitations. Choose a different meeting-invitation email before deleting it.',
+            });
+          } else {
+            items.push({ label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', command: () => this.deleteEmail(email) });
+          }
         }
         map.set(email.email, items);
       }
