@@ -29,10 +29,10 @@ GET still runs so “the CLA manager(s) below” is true.
 
 ## Decision 4 — Visibility gates
 
-| Item | Gate |
-|---|---|
-| Request approval | ECLA + `statusReason === "not_on_approval_list"` |
-| Request Removal | ECLA + `status !== "revoked"` |
+| Item                | Gate                                                                                |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| Request approval    | ECLA + `statusReason === "not_on_approval_list"`                                    |
+| Request Removal     | ECLA + `status !== "revoked"`                                                       |
 | Contact CLA Manager | ECLA + `status === "needs_attention"` (v17; Valid ECLA has Removal but not Contact) |
 
 Predicates live in `packages/shared` so they are unit-tested without TestBed. Factory maps them to `MenuItem[]`.

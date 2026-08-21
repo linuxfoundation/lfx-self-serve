@@ -31,7 +31,7 @@
 
 ## Notes
 
-Producer paths (`GET/POST /v4/my-clas/{signatureID}/cla-managers` / `cla-manager-requests`) appear in FRs because this feature *is* that consume — same judgement as 007 FR-001. File names in FR-011 (`profile-clas.component.ts`) are the delivery seam, not a stack choice.
+Producer paths (`GET/POST /v4/my-clas/{signatureID}/cla-managers` / `cla-manager-requests`) appear in FRs because this feature _is_ that consume — same judgement as 007 FR-001. File names in FR-011 (`profile-clas.component.ts`) are the delivery seam, not a stack choice.
 
 Success criteria are pass/fail walkthroughs, not p95 timings.
 

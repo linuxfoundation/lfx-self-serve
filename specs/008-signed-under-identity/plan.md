@@ -33,11 +33,11 @@ Details: [research.md](./research.md), [data-model.md](./data-model.md), [contra
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+_GATE: Must pass before Phase 0 research. Re-check after Phase 1 design._
 
 The project constitution (`.specify/memory/constitution.md`) is the **unpopulated template** — placeholder principles only, nothing ratified. There are no constitutional gates to evaluate.
 
-**Result: PASS (no ratified principles).** *Simplicity*: copy two fields, one helper, one cell. *Test-first*: pass-through and the three copy shapes fail on current code (fields unused; Signed cell is date-only).
+**Result: PASS (no ratified principles).** _Simplicity_: copy two fields, one helper, one cell. _Test-first_: pass-through and the three copy shapes fail on current code (fields unused; Signed cell is date-only).
 
 **Post-Phase-1 re-check: PASS.** Phase 1 added no persistence, no dependency, and no package.
 

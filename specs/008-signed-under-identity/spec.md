@@ -7,7 +7,7 @@
 
 Delivery git branch is **`feat/GH-1256`** ([lfx-self-serve#1440](https://github.com/linuxfoundation/lfx-self-serve/pull/1440)), not a new `feat/GH-1573-*`. The spec-kit directory name and the git branch are independent.
 
-## Background *(why this exists)*
+## Background _(why this exists)_
 
 A contributor's **My CLAs** page lists every agreement they have signed, with a Signed column that today shows only the date. After the 2026-08-14 legal/stakeholder review, contributors can no longer invalidate an agreement themselves. The legal substitute on that same flow (Mike Dolan) was to **show which account the agreement was signed under**. Heather filed this ticket as that substitute, then on 2026-08-17 added GitLab and the rule that the identity sits **inside the existing Signed cell**, not as a new column.
 
@@ -35,7 +35,7 @@ This feature ends when that line is on screen. It does not add actions, dates on
 
 - Q: Which branch? → A: **`feat/GH-1256` / [#1440](https://github.com/linuxfoundation/lfx-self-serve/pull/1440).** The Signed cell lives in the same table that branch already owns. No new branch.
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - Contributor sees who each agreement was signed as (Priority: P1)
 
@@ -80,7 +80,7 @@ A contributor whose signature record has no identity on it still sees the signed
 - **Invalidated kebab.** Whether an Invalidated row keeps download is still open on #1256 (legal has not reviewed that actions question). This feature does not change that cell.
 - **No dates on this line.** The signed date above is the date. Status-pill dates (`Revoked · <date>`) are [#1370](https://github.com/linuxfoundation/lfx-self-serve/issues/1370) and out of scope. The producer's `flaggedAt` is response time and must not be bound here.
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
@@ -100,7 +100,7 @@ A contributor whose signature record has no identity on it still sees the signed
 - **Signed-under identity**: the pair the producer already emits per agreement — a platform (`github`, `gitlab`, or `gerrit`) and an identity string (username or email). Either or both may be absent. `gerrit` is also the LF SSO / email-identified case.
 - **Signed cell**: the existing fourth column of My CLAs. Primary line is the signed date. This feature adds an optional second line naming the signed-under identity.
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 

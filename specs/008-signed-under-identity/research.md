@@ -14,11 +14,11 @@
 
 **Decision**:
 
-| Producer `signedVia` | Line |
-|---|---|
-| `github` | `Signed as {signedAs} (GitHub)` |
-| `gitlab` | `Signed as {signedAs} (GitLab)` |
-| `gerrit` | `Signed as {signedAs}` |
+| Producer `signedVia` | Line                            |
+| -------------------- | ------------------------------- |
+| `github`             | `Signed as {signedAs} (GitHub)` |
+| `gitlab`             | `Signed as {signedAs} (GitLab)` |
+| `gerrit`             | `Signed as {signedAs}`          |
 
 **Rationale**: Issue AC lists all three cases. v17 email rows have no platform suffix; GitHub rows do. The issue's "(Gerrit / LF SSO)" names the case, not copy. GitLab has no v17 example; the issue supplies `(GitLab)`.
 

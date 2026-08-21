@@ -27,11 +27,11 @@ Details: [research.md](./research.md), [data-model.md](./data-model.md), [contra
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+_GATE: Must pass before Phase 0 research. Re-check after Phase 1 design._
 
 The project constitution (`.specify/memory/constitution.md`) is the **unpopulated template** — placeholder principles only, nothing ratified. There are no constitutional gates to evaluate.
 
-**Result: PASS (no ratified principles).** *Simplicity*: reuse `gatewayFetch`, `claServiceBaseUrl()`, `identityQuery`, `blockDuringImpersonation`, `DialogService` pattern from GitHub-account select. No new env var. *Test-first*: assertions that fail before the routes exist. *Observability*: `logger.success` on get-managers / create-request with signature id and request type, not the message body.
+**Result: PASS (no ratified principles).** _Simplicity_: reuse `gatewayFetch`, `claServiceBaseUrl()`, `identityQuery`, `blockDuringImpersonation`, `DialogService` pattern from GitHub-account select. No new env var. _Test-first_: assertions that fail before the routes exist. _Observability_: `logger.success` on get-managers / create-request with signature id and request type, not the message body.
 
 **Post-Phase-1 re-check: PASS.** No persistence, no new package, no second flag name.
 
@@ -89,8 +89,8 @@ apps/lfx-one/src/app/
 
 ## Complexity Tracking
 
-| Constraint | Why it arises | How the requirement is met instead |
-|---|---|---|
-| Producer has no `contact` requestType; email always asks for an Approved-List change | #5151 templates | Contact Send is a no-op. FR-004 / FR-013 |
-| Cannot edit profile-clas (parallel Agent A) | Dirty GH-1256 tree | Exported factory; one-liner in the report |
-| 002 “real actions only” vs v17 Contact item | Stub vs product no-op | Spec exception; still no lying POST |
+| Constraint                                                                           | Why it arises         | How the requirement is met instead        |
+| ------------------------------------------------------------------------------------ | --------------------- | ----------------------------------------- |
+| Producer has no `contact` requestType; email always asks for an Approved-List change | #5151 templates       | Contact Send is a no-op. FR-004 / FR-013  |
+| Cannot edit profile-clas (parallel Agent A)                                          | Dirty GH-1256 tree    | Exported factory; one-liner in the report |
+| 002 “real actions only” vs v17 Contact item                                          | Stub vs product no-op | Spec exception; still no lying POST       |

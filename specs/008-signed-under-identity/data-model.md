@@ -8,10 +8,10 @@
 
 ## Additive fields on `MyClaAgreement`
 
-| Field | Type | Required | Source | Notes |
-|---|---|---|---|---|
-| `signedVia` | `'github' \| 'gitlab' \| 'gerrit'` | no | producer `signedVia` | Omitted when the producer omitted it, or when the token is not one of the three. |
-| `signedAs` | string | no | producer `signedAs` | Trimmed. Empty-after-trim becomes omitted. |
+| Field       | Type                               | Required | Source               | Notes                                                                            |
+| ----------- | ---------------------------------- | -------- | -------------------- | -------------------------------------------------------------------------------- |
+| `signedVia` | `'github' \| 'gitlab' \| 'gerrit'` | no       | producer `signedVia` | Omitted when the producer omitted it, or when the token is not one of the three. |
+| `signedAs`  | string                             | no       | producer `signedAs`  | Trimmed. Empty-after-trim becomes omitted.                                       |
 
 `ClaSignedVia` is the union above. Do not add `email` as a fourth token — the producer uses `gerrit` for that case.
 
@@ -21,13 +21,13 @@
 
 Not a stored field. Computed by `signedAsLine(signedVia, signedAs)`:
 
-| Inputs | Output |
-|---|---|
-| `signedAs` missing / blank | `undefined` (no line) |
-| `signedVia: github` + identity | `Signed as {identity} (GitHub)` |
-| `signedVia: gitlab` + identity | `Signed as {identity} (GitLab)` |
-| `signedVia: gerrit` + identity | `Signed as {identity}` |
-| identity, via missing or unrecognised | `Signed as {identity}` |
+| Inputs                                | Output                          |
+| ------------------------------------- | ------------------------------- |
+| `signedAs` missing / blank            | `undefined` (no line)           |
+| `signedVia: github` + identity        | `Signed as {identity} (GitHub)` |
+| `signedVia: gitlab` + identity        | `Signed as {identity} (GitLab)` |
+| `signedVia: gerrit` + identity        | `Signed as {identity}`          |
+| identity, via missing or unrecognised | `Signed as {identity}`          |
 
 Carried on `ClaRow.signedAsLine?: string`. The template does not recompute it.
 

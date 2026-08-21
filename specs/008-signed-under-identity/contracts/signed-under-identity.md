@@ -8,10 +8,10 @@ Informational display only. No new HTTP route. No write.
 
 `GET /v4/my-clas` row (`my-cla`) may include:
 
-| Field | Values | When omitted |
-|---|---|---|
+| Field       | Values                           | When omitted                        |
+| ----------- | -------------------------------- | ----------------------------------- |
 | `signedVia` | `github` \| `gitlab` \| `gerrit` | No identity on the signature record |
-| `signedAs` | username or email string | Same |
+| `signedAs`  | username or email string         | Same                                |
 
 `gerrit` is also LF SSO / email. Both omitted together is the empty-identity case.
 
@@ -19,12 +19,12 @@ Self Serve does not call a new endpoint. The existing list fetch already carries
 
 ## BFF mapping (`toMyClaAgreement`)
 
-| Producer | View model |
-|---|---|
-| `signedVia` in `{github, gitlab, gerrit}` | copy |
-| any other `signedVia` | omit `signedVia`; still copy `signedAs` if present |
-| `signedAs` non-empty after trim | copy trimmed |
-| `signedAs` empty / whitespace / missing | omit |
+| Producer                                  | View model                                         |
+| ----------------------------------------- | -------------------------------------------------- |
+| `signedVia` in `{github, gitlab, gerrit}` | copy                                               |
+| any other `signedVia`                     | omit `signedVia`; still copy `signedAs` if present |
+| `signedAs` non-empty after trim           | copy trimmed                                       |
+| `signedAs` empty / whitespace / missing   | omit                                               |
 
 Do not read session identity. Do not invent a default via.
 

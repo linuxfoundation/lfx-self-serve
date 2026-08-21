@@ -7,10 +7,7 @@
 New file: `apps/lfx-one/src/app/modules/profile/clas/contact-cla-manager-menu.ts`
 
 ```ts
-export function buildContactClaManagerMenuItems(
-  agreement: MyClaAgreement,
-  dialog: DialogService,
-): MenuItem[]
+export function buildContactClaManagerMenuItems(agreement: MyClaAgreement, dialog: DialogService): MenuItem[];
 ```
 
 Uses shared predicates (`canRequestClaApproval`, `canRequestClaRemoval`, `canContactClaManager`). Opens `ContactClaManagerComponent` via `dialog.open` with header + `data: { signatureId, projectName, mode }`.
@@ -31,11 +28,11 @@ Order (v17): Request approval (if gated) → Request Removal → Contact CLA Man
 
 New files: `contact-cla-manager.component.{ts,html,spec.ts}`
 
-| Mode | Title | Hint |
-|---|---|---|
-| approval | Request approval | Ask the CLA manager(s) below to re-approve your ECLA for {project}. |
-| removal | Request Removal | Ask the CLA manager(s) below to remove your ECLA for {project}. This starts the process to invalidate it on your behalf. |
-| contact | Contact CLA Manager | Send a message to the CLA manager(s) for {project}. |
+| Mode     | Title               | Hint                                                                                                                     |
+| -------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| approval | Request approval    | Ask the CLA manager(s) below to re-approve your ECLA for {project}.                                                      |
+| removal  | Request Removal     | Ask the CLA manager(s) below to remove your ECLA for {project}. This starts the process to invalidate it on your behalf. |
+| contact  | Contact CLA Manager | Send a message to the CLA manager(s) for {project}.                                                                      |
 
 On init: `MyClasService.getClaManagers(signatureId)`.
 

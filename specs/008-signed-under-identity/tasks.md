@@ -1,5 +1,5 @@
 ---
-description: "Task list for signed-under identity on My CLAs"
+description: 'Task list for signed-under identity on My CLAs'
 ---
 
 # Tasks: Show identity each CLA was signed under
