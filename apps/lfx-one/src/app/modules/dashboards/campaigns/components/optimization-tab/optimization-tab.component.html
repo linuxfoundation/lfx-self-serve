@@ -36,6 +36,152 @@
     </div>
   </div>
 
+  <!--
+    A FAILED read, stated. `campaignRows()` is null for this and for "not asked yet", so rendering
+    nothing for both made a Query Service outage look like a fresh page — no indication and no way
+    back, on campaigns that may still be spending. This arm is the one that distinguishes them, and
+    it offers the retry rather than requiring a tab round-trip. It still does NOT claim the brief
+    has no campaigns: that is a claim a failed read cannot support.
+  -->
+  @if (campaignsUnavailable()) {
+    <section class="flex flex-col gap-2 rounded-lg border border-red-200 bg-red-50 p-4" role="alert" data-testid="optimization-campaigns-unavailable">
+      <h3 class="text-sm font-semibold text-red-800">Campaigns could not be loaded</h3>
+      <p class="text-sm text-red-700">
+        This brief's campaigns are unavailable right now, so pause and resume cannot be offered. Any campaigns that are running are unaffected and may still be
+        spending.
+      </p>
+      <div>
+        <button
+          type="button"
+          (click)="retryCampaigns.emit()"
+          class="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+          data-testid="optimization-campaigns-retry">
+          Try again
+        </button>
+      </div>
+    </section>
+  }
+
+  <!--
+    A CONCURRENT EDIT, stated once for the whole list while ANY row remains conflicted. Reached
+    only after a toggle was refused with 412, which is proof this view was read before a write it
+    never saw — so the remedy is a re-read, not another click. It survives a refresh that advances
+    only some rows: `campaignsConflicted` is a computed over the conflicted-id set, so it lifts on
+    the delivery that clears the LAST one, not the first. It reuses the same `retryCampaigns` output as the failed-read banner above,
+    because "re-read this brief's campaigns" is exactly the action needed; inventing a second
+    refresh path would give the tab two ways to do one thing.
+
+    Rendered ALONGSIDE the rows rather than replacing them: the rows are stale, not wrong, and
+    blanking a list of possibly-spending campaigns to report a conflict would hide more than it
+    explains.
+  -->
+  @if (campaignsConflicted()) {
+    <section class="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4" role="alert" data-testid="optimization-campaigns-conflict">
+      <h3 class="text-sm font-semibold text-amber-900">This list is out of date</h3>
+      <p class="text-sm text-amber-800">
+        At least one campaign was changed by someone else while this page was open, so the statuses below may not match the ad platform. Refresh the list before
+        pausing or resuming anything.
+      </p>
+      <div>
+        <button
+          type="button"
+          (click)="retryCampaigns.emit()"
+          class="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+          data-testid="optimization-campaigns-refresh">
+          Refresh campaigns
+        </button>
+      </div>
+    </section>
+  }
+
+  <!--
+    Per-campaign pause/resume. `campaignRows()` is null until the list loads OR when the read
+    failed, and the section renders nothing at all for that — an empty state here would assert the
+    brief has no campaigns, which is a claim a failed read cannot support. The failed case is
+    reported by the block above rather than here.
+  -->
+  @if (campaignRows(); as rows) {
+    <section class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="optimization-campaign-controls">
+      <h3 class="text-sm font-semibold text-gray-900">Campaigns</h3>
+
+      @if (rows.length === 0) {
+        <!--
+          Only reachable when the read SUCCEEDED and returned nothing. The copy stays neutral about
+          whether campaigns exist, because indexing is asynchronous and a just-created campaign is
+          not visible here yet — see `campaignsPossiblyStale`.
+        -->
+        <p class="text-sm text-gray-500" data-testid="optimization-campaigns-empty">
+          @if (campaignsPossiblyStale()) {
+            No campaigns are listed yet. Ones created moments ago can take a little while to appear.
+          } @else {
+            No campaigns to show.
+          }
+        </p>
+      } @else {
+        <ul class="flex flex-col gap-2">
+          @for (row of rows; track row.campaign.id) {
+            <li class="flex items-center justify-between gap-3 rounded-md border border-gray-100 px-3 py-2">
+              <div class="flex min-w-0 flex-col gap-0.5">
+                <span class="truncate text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
+                <span class="text-xs text-gray-500">{{ row.campaign.platform }} · {{ row.status }}</span>
+                @if (toggleError()[row.campaign.id]; as message) {
+                  <span
+                    class="text-xs text-red-600"
+                    role="alert"
+                    [id]="'campaign-error-' + row.campaign.id"
+                    [attr.data-testid]="'optimization-campaign-error-' + row.campaign.id"
+                    >{{ message }}</span
+                  >
+                }
+                <!--
+                  Why the button is dead. A disabled control with no explanation reads as a broken
+                  page — the operator retries, then goes looking for a permissions problem. This
+                  names the actual state and, where it resolves itself, says so. Not `role="alert"`:
+                  it is a standing property of the row, not an event, and it is what
+                  `aria-describedby` points at so the button announces the reason with its name.
+                -->
+                @if (row.action === 'unavailable') {
+                  <span
+                    class="text-xs text-gray-500"
+                    [id]="'campaign-unavailable-' + row.campaign.id"
+                    [attr.data-testid]="'optimization-campaign-unavailable-' + row.campaign.id"
+                    >{{ row.unavailableReason }}</span
+                  >
+                }
+              </div>
+              <!--
+                The accessible name NAMES THE CAMPAIGN. The visible text is just "Pause", which is
+                unambiguous beside its row and useless out of context — a screen-reader user moving
+                by button hears "Pause" N times with no way to tell the rows apart. The label
+                CONTAINS the visible word rather than replacing it, so speech input ("click Pause")
+                still matches.
+
+                `aria-describedby` points at the row's error only when one exists; a dangling
+                reference to an element that renders conditionally is worse than none.
+              -->
+              <button
+                type="button"
+                (click)="toggleCampaign(row)"
+                [disabled]="togglePending()[row.campaign.id] || row.action === 'unavailable' || row.conflicted"
+                [attr.aria-label]="(togglePending()[row.campaign.id] ? 'Working' : row.toggleLabel) + ' ' + row.campaign.campaign_name"
+                [attr.aria-busy]="togglePending()[row.campaign.id] ? 'true' : null"
+                [attr.aria-describedby]="row.describedBy"
+                class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                [attr.data-testid]="'optimization-campaign-toggle-' + row.campaign.id">
+                @if (togglePending()[row.campaign.id]) {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                  Working
+                } @else {
+                  {{ row.toggleLabel }}
+                }
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+  }
+
   @if (loading() && !monitorData()) {
     <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-12" data-testid="optimization-loading">
       <div class="flex items-center gap-2 text-sm text-gray-500">

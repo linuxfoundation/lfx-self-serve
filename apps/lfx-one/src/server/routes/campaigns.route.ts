@@ -13,6 +13,7 @@ router.post('/brief/refine', (req, res, next) => campaignController.refineBrief(
 router.post('/brief/persist', (req, res, next) => campaignController.persistBrief(req, res, next));
 router.get('/brief', (req, res, next) => campaignController.loadBrief(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
+router.get('/list', (req, res, next) => campaignController.listBriefCampaigns(req, res, next));
 router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(req, res, next));
 // The email channel's template picker. Registered before `/hubspot/utm` only for reading order —
 // the paths do not overlap.
