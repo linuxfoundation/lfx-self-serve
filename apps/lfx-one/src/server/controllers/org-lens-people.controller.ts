@@ -85,7 +85,7 @@ export class OrgLensPeopleController {
       assertOrgUid(orgUid, 'get_org_lens_people_detail');
       this.assertPersonKey(personKey, 'get_org_lens_people_detail');
 
-      const response = await this.service.getEmployeeDetail(orgUid, personKey);
+      const response = await this.service.getEmployeeDetail(req, orgUid, personKey);
 
       logger.success(req, 'get_org_lens_people_detail', startTime, {
         org_uid: orgUid,
@@ -96,6 +96,27 @@ export class OrgLensPeopleController {
         event_rows: response.events.length,
         training_rows: response.training.length,
       });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** POST /api/orgs/:orgUid/lens/people/company-emails — company-affiliated emails for tabs (Board/Committee) whose rows have no personKey (GH-1655). Email travels in the body, not the query string, so it never lands in `originalUrl` request logs. */
+  public async getCompanyEmails(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const operation = 'get_org_lens_people_company_emails';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      const email = this.assertEmailBody(req.body, operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
+
+      const response = this.service.getCompanyEmailsByEmail(email);
+
+      logger.success(req, operation, startTime, { org_uid: orgUid, company_email_count: response.companyEmails.length });
 
       res.setHeader('Cache-Control', 'no-store');
       res.json(response);
@@ -336,6 +357,16 @@ export class OrgLensPeopleController {
     if (!PERSON_KEY_PATTERN.test(personKey)) {
       throw ServiceValidationError.forField('personKey', 'Invalid personKey format', { operation });
     }
+  }
+
+  /** Validate the `email` request-body field (required, valid email format) before it reaches the demo-derivation helper. */
+  private assertEmailBody(body: unknown, operation: string): string {
+    const email = (body as { email?: unknown } | undefined)?.email;
+    const trimmed = typeof email === 'string' ? email.trim() : '';
+    if (!trimmed || !EMAIL_REGEX.test(trimmed)) {
+      throw ServiceValidationError.forField('email', 'email body field is required and must be a valid email address', { operation });
+    }
+    return trimmed.toLowerCase();
   }
 
   /** Validate the seat id before it is interpolated into the upstream committee-service path (400, not an upstream 5xx). Mirrors OrgLensBoardCommitteeController.assertSeatId. */

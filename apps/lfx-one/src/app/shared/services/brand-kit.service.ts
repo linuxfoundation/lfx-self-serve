@@ -7,8 +7,11 @@ import { BrandKitGenerateRequest, BrandKitGenerateResponse, BrandKitResultReques
 import { Observable } from 'rxjs';
 
 /**
- * Client for the Brand Kit generation endpoints (agent invocation without
- * persistence — the document is displayed and downloadable only).
+ * Client for the Brand Kit generation endpoints used by the standalone
+ * one-page intake form. On `ready` the BFF persists the validated document
+ * to object storage (dec-brand-kit-storage-v2) and reports the receipt on
+ * the result response. The form-first run shell drives the same endpoints
+ * generically through `MktgAgentRunService` instead.
  */
 @Injectable({
   providedIn: 'root',

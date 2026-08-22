@@ -171,12 +171,13 @@ export class PublicMeetingController {
       }
 
       // The organizer is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
-      // created_by from the live v1_meeting index (the ITX detail payload omits it); for anonymous
-      // callers, skip that query and strip created_by so we neither expose nor waste a call on it.
+      // created_by/owner from the live v1_meeting index (the ITX detail payload omits created_by);
+      // for anonymous callers, skip that query and strip both so we neither expose nor waste a call.
       if (isAuthenticated) {
         [meeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.id);
       } else {
         delete (meeting as Partial<Meeting>).created_by;
+        delete (meeting as Partial<Meeting>).owner;
       }
 
       // Log the success
@@ -328,18 +329,20 @@ export class PublicMeetingController {
       stripHostKey(meeting);
 
       // The organizer is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
-      // created_by from the live v1_meeting index (webhook-created past meetings lack a human one);
-      // for anonymous callers, skip that query and strip created_by (present as zoom.webhooks).
+      // created_by/owner from the live v1_meeting index (webhook-created past meetings lack a human
+      // created_by, and v1_past_meeting never carries owner); for anonymous callers, skip that query
+      // and strip both (created_by is present as zoom.webhooks).
       let enrichedMeeting = meeting;
       if (isAuthenticated) {
         [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.meeting_id);
       } else {
         delete (meeting as Partial<Meeting>).created_by;
+        delete (meeting as Partial<Meeting>).owner;
       }
 
       // For non-full-access users, return only the fields needed for the basic UI.
-      // created_by is included (authenticated callers only, per the strip above) so the basic
-      // view can still show the organizer name.
+      // created_by/owner are included (authenticated callers only, per the strip above) so the
+      // basic view can still show the organizer name.
       const meetingResponse = fullAccess
         ? enrichedMeeting
         : {
@@ -361,6 +364,7 @@ export class PublicMeetingController {
             project_uid: enrichedMeeting.project_uid,
             meeting_id: enrichedMeeting.meeting_id,
             created_by: enrichedMeeting.created_by,
+            owner: enrichedMeeting.owner,
           };
 
       res.json({

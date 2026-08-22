@@ -13,10 +13,14 @@ import type {
   OrgAllEmployeeTrainingStatus,
   OrgAllEmployeeVotingStatus,
   OrgAllEmployeesResponse,
+  OrgLensCompanyEmailsResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, splitDisplayName } from '@lfx-one/shared/utils';
 
+import { Request } from 'express';
+
+import { OrgPeopleDirectoryService } from './org-people-directory.service';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
@@ -106,6 +110,9 @@ interface TrainingRow {
 /** Org Lens "People → All Employees" analytics — backed by the 6 PLATINUM_LFX_ONE.ORG_PEOPLE_* tables. Empty rows produce an empty envelope, never a 404. */
 export class OrgLensPeopleService {
   private snowflakeService: SnowflakeService;
+  // Lazily constructed: OrgPeopleDirectoryService's own constructor builds an OrgLensPeopleService,
+  // so eagerly instantiating it here would recurse infinitely between the two constructors.
+  private directoryService: OrgPeopleDirectoryService | undefined;
 
   public constructor() {
     this.snowflakeService = SnowflakeService.getInstance();
@@ -129,9 +136,26 @@ export class OrgLensPeopleService {
     };
   }
 
-  /** Chevron-expansion detail for one person within an account; four Snowflake queries in parallel, served through the shared per-org cache. */
-  public async getEmployeeDetail(accountId: string, personKey: string): Promise<OrgAllEmployeeDetail> {
-    const { committeeRows, codeRows, eventRows, trainingRows } = await this.fetchEmployeeDetailRaw(accountId, personKey);
+  /** Chevron-expansion detail for one person within an account; five Snowflake queries in parallel, served through the shared per-org cache. */
+  public async getEmployeeDetail(req: Request, accountId: string, personKey: string): Promise<OrgAllEmployeeDetail> {
+    // Live-only (synthetic) keys have no ORG_PEOPLE_ALL row at all — every one of the five detail
+    // queries is a guaranteed-empty round trip for them. Short-circuit straight to the live-merged
+    // roster (access/board/committee/keyContact sources) instead of burning five Snowflake
+    // connections just to resolve an email.
+    if (personKey.startsWith('live-')) {
+      const resolvedEmail = await this.resolveLiveOnlyEmail(req, accountId, personKey);
+      return {
+        personKey,
+        boardSeats: [],
+        committeeSeats: [],
+        code: [],
+        events: [],
+        training: [],
+        companyEmails: deriveDemoCompanyEmails(resolvedEmail),
+      };
+    }
+
+    const { committeeRows, codeRows, eventRows, trainingRows, email } = await this.fetchEmployeeDetailRaw(accountId, personKey);
 
     const memberships = committeeRows.map((row) => this.mapCommitteeRow(row));
     const boardSeats = memberships.filter((m) => m.isBoard);
@@ -164,7 +188,29 @@ export class OrgLensPeopleService {
       code: codeRows.map((row) => this.mapCodeRow(row)),
       events,
       training,
+      companyEmails: deriveDemoCompanyEmails(email),
     };
+  }
+
+  /** Company-affiliated emails for a raw email — used by tabs (Board/Committee) whose rows have no personKey to fetch the full detail payload on. */
+  public getCompanyEmailsByEmail(email: string): OrgLensCompanyEmailsResponse {
+    return { companyEmails: deriveDemoCompanyEmails(email) };
+  }
+
+  /** Looks up a live-only person's merged address from the live roster (access/board/committee/keyContact sources). */
+  private async resolveLiveOnlyEmail(req: Request, accountId: string, personKey: string): Promise<string | null> {
+    if (!personKey.startsWith('live-')) {
+      return null;
+    }
+    const { rows } = await this.getDirectoryService().getLive(req, accountId);
+    return rows.find((row) => row.personKey === personKey)?.email ?? null;
+  }
+
+  private getDirectoryService(): OrgPeopleDirectoryService {
+    if (!this.directoryService) {
+      this.directoryService = new OrgPeopleDirectoryService();
+    }
+    return this.directoryService;
   }
 
   /** Three parallel Snowflake reads returning raw rows; mapping happens after the cache read. */
@@ -280,11 +326,17 @@ export class OrgLensPeopleService {
     };
   }
 
-  /** Cached per-org detail bundle (four raw row arrays); a non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. */
+  /** Cached per-org detail bundle (four raw row arrays plus the roster email); a non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. */
   private async fetchEmployeeDetailRaw(
     accountId: string,
     personKey: string
-  ): Promise<{ committeeRows: CommitteeMembershipRow[]; codeRows: CodeContributionRow[]; eventRows: EventRow[]; trainingRows: TrainingRow[] }> {
+  ): Promise<{
+    committeeRows: CommitteeMembershipRow[];
+    codeRows: CodeContributionRow[];
+    eventRows: EventRow[];
+    trainingRows: TrainingRow[];
+    email: string | null;
+  }> {
     if (!isFilterSafeIdentifier(personKey)) {
       return this.runEmployeeDetailFetch(accountId, personKey);
     }
@@ -301,14 +353,32 @@ export class OrgLensPeopleService {
   private async runEmployeeDetailFetch(
     accountId: string,
     personKey: string
-  ): Promise<{ committeeRows: CommitteeMembershipRow[]; codeRows: CodeContributionRow[]; eventRows: EventRow[]; trainingRows: TrainingRow[] }> {
-    const [committeeRows, codeRows, eventRows, trainingRows] = await Promise.all([
+  ): Promise<{
+    committeeRows: CommitteeMembershipRow[];
+    codeRows: CodeContributionRow[];
+    eventRows: EventRow[];
+    trainingRows: TrainingRow[];
+    email: string | null;
+  }> {
+    const [committeeRows, codeRows, eventRows, trainingRows, email] = await Promise.all([
       this.fetchCommitteeMembershipRows(accountId, personKey),
       this.fetchCodeContributionRows(accountId, personKey),
       this.fetchEventRows(accountId, personKey),
       this.fetchTrainingRows(accountId, personKey),
+      this.fetchPersonEmail(accountId, personKey),
     ]);
-    return { committeeRows, codeRows, eventRows, trainingRows };
+    return { committeeRows, codeRows, eventRows, trainingRows, email };
+  }
+
+  private async fetchPersonEmail(accountId: string, personKey: string): Promise<string | null> {
+    const query = `
+      SELECT EMAIL
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL
+      WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
+      LIMIT 1
+    `;
+    const result = await this.snowflakeService.execute<{ EMAIL: string | null }>(query, [accountId, personKey]);
+    return result.rows[0]?.EMAIL ?? null;
   }
 
   private async fetchCommitteeMembershipRows(accountId: string, personKey: string): Promise<CommitteeMembershipRow[]> {
@@ -483,8 +553,70 @@ function isAllEmployeesRaw(value: unknown): boolean {
 }
 
 function isEmployeeDetailRaw(value: unknown): boolean {
-  const v = value as { committeeRows?: unknown; codeRows?: unknown; eventRows?: unknown; trainingRows?: unknown } | null;
-  return !!v && Array.isArray(v.committeeRows) && Array.isArray(v.codeRows) && Array.isArray(v.eventRows) && Array.isArray(v.trainingRows);
+  const v = value as { committeeRows?: unknown; codeRows?: unknown; eventRows?: unknown; trainingRows?: unknown; email?: unknown } | null;
+  return (
+    !!v &&
+    Array.isArray(v.committeeRows) &&
+    Array.isArray(v.codeRows) &&
+    Array.isArray(v.eventRows) &&
+    Array.isArray(v.trainingRows) &&
+    // Entries cached before `email` was selected are rejected as a miss rather than replayed with a
+    // permanently-empty companyEmails.
+    'email' in v &&
+    (v.email === null || typeof v.email === 'string')
+  );
+}
+
+/**
+ * Personal/free-mail domains that are never a company-affiliated domain — a roster email at one
+ * of these must not produce fabricated "sibling company domain" variants.
+ */
+const PERSONAL_EMAIL_DOMAINS: ReadonlySet<string> = new Set([
+  'gmail.com',
+  'googlemail.com',
+  'yahoo.com',
+  'ymail.com',
+  'outlook.com',
+  'hotmail.com',
+  'live.com',
+  'msn.com',
+  'icloud.com',
+  'me.com',
+  'aol.com',
+  'protonmail.com',
+  'proton.me',
+]);
+
+/**
+ * Matches academic-institution domains (`.edu`, `.edu.<cc>`, `.ac.<cc>`) — these are institutional,
+ * not company, domains and must not produce fabricated "sibling company domain" variants either.
+ */
+const ACADEMIC_EMAIL_DOMAIN_PATTERN = /(^|\.)(edu|ac)(\.[a-z]{2,3})?$/;
+
+/**
+ * TEMP-DEMO-ONLY (GH-1655): stands in for a future Salesforce Account multi-domain lookup joined
+ * with an LF SSO multi-email lookup. Fabricates plausible sibling-domain variants of the person's
+ * real local-part so the multi-email UI can be exercised before that pipeline exists. Returns []
+ * for personal/free-mail domains, since those never have a company-affiliated sibling domain to
+ * derive. Remove once the real data source is wired in.
+ */
+function deriveDemoCompanyEmails(email: string | null): string[] {
+  const trimmed = (email ?? '').trim().toLowerCase();
+  const atIndex = trimmed.lastIndexOf('@');
+  if (atIndex <= 0 || atIndex === trimmed.length - 1) {
+    return [];
+  }
+
+  const localPart = trimmed.slice(0, atIndex);
+  const domain = trimmed.slice(atIndex + 1);
+  if (PERSONAL_EMAIL_DOMAINS.has(domain) || ACADEMIC_EMAIL_DOMAIN_PATTERN.test(domain)) {
+    return [];
+  }
+
+  const company = domain.split('.')[0];
+  const siblingDomains = [domain, `${company}.co.uk`, `${company}.jp`];
+
+  return Array.from(new Set(siblingDomains)).map((d) => `${localPart}@${d}`);
 }
 
 /** Narrow upstream free-text voting status to the three badges; unknown values collapse to 'Non-voting'. */

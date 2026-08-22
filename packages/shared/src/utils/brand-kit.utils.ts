@@ -8,10 +8,12 @@
 
 import {
   BRAND_KIT_CONTRACT_ID,
+  BRAND_KIT_FORM_PREAMBLE_LINES,
   BRAND_KIT_INTAKE_QUESTIONS,
   BRAND_KIT_EXTRACTION_MAX_DEPTH,
   BRAND_KIT_INTAKE_ANSWER_COUNT,
   BRAND_KIT_ISO_TIMESTAMP_REGEX,
+  BRAND_KIT_KEY_PREFIX,
   BRAND_KIT_KIND,
   BRAND_KIT_MAX_DOCUMENT_BYTES,
   BRAND_KIT_MIN_DOCUMENT_LENGTH,
@@ -122,6 +124,14 @@ export function findMissingBrandKitHeadings(documentMarkdown: string): string[] 
   }
 
   return missing;
+}
+
+/** Derive the content-addressed object key from validated fields only (contract §3.5). */
+export function buildBrandKitObjectKey(project: string, contentSha256: string): string {
+  if (!BRAND_KIT_PROJECT_SLUG_REGEX.test(project) || !BRAND_KIT_SHA256_REGEX.test(contentSha256)) {
+    throw new Error('buildBrandKitObjectKey requires already-validated project and content_sha256 values');
+  }
+  return `${BRAND_KIT_KEY_PREFIX}/${project}/${contentSha256}.md`;
 }
 
 /**
@@ -297,13 +307,7 @@ function getUtf8ByteLength(value: string): number {
  * Callers must have validated that every intake key has a non-empty answer.
  */
 export function renderBrandKitFormMessage(answers: Record<string, string>): string {
-  const lines: string[] = [
-    'BATCH INTAKE SUBMISSION (form mode — see MODE RULES in your instructions).',
-    'All seven intake answers were collected on a single LFX form and are',
-    'provided below, in the same order as your Step 1 questions. Do NOT ask',
-    'the intake questions; proceed directly to Step 2.',
-    '',
-  ];
+  const lines: string[] = [...BRAND_KIT_FORM_PREAMBLE_LINES, ''];
   for (const q of BRAND_KIT_INTAKE_QUESTIONS) {
     lines.push(`Q${q.questionNumber}. ${q.question}`);
     lines.push(`A${q.questionNumber}. ${answers[q.key]}`);

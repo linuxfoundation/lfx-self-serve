@@ -98,8 +98,8 @@ You can only see your own transactions. Other users and project administrators c
 
 ## I was charged incorrectly. Who do I contact?
 
-Contact LFX support through the Help Center. Include the transaction date, amount, and item name so the support team can investigate.
+Contact LFX support via in-app messaging. Include the transaction date, amount, and item name so the support team can investigate.
 
 ## Who do I contact if a setting isn't working?
 
-Contact LFX support through the Help Center. Describe the setting you changed and the behavior you expected.
+Contact LFX support via in-app messaging. Describe the setting you changed and the behavior you expected.

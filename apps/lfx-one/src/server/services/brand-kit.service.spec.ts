@@ -14,6 +14,17 @@ const guildMocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   getRawEventPayloads: vi.fn(),
 }));
+const objectStoreMocks = vi.hoisted(() => ({
+  putObjectIfAbsent: vi.fn(),
+}));
+const loggerMocks = vi.hoisted(() => ({
+  startOperation: vi.fn(() => 0),
+  success: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+  debug: vi.fn(),
+  info: vi.fn(),
+}));
 
 vi.mock('@lfx-one/shared/utils', async () => {
   const utils = await vi.importActual('../../../../../packages/shared/src/utils/brand-kit.utils');
@@ -30,8 +41,13 @@ vi.mock('./guild.service', () => ({
     public getRawEventPayloads = guildMocks.getRawEventPayloads;
   },
 }));
+vi.mock('./object-store.service', () => ({
+  ObjectStoreService: class {
+    public putObjectIfAbsent = objectStoreMocks.putObjectIfAbsent;
+  },
+}));
 vi.mock('./logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
+  logger: loggerMocks,
 }));
 
 import type { Request } from 'express';
@@ -88,6 +104,7 @@ describe('BrandKitService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    objectStoreMocks.putObjectIfAbsent.mockResolvedValue(true);
     service = new BrandKitService();
   });
 
@@ -121,6 +138,7 @@ describe('BrandKitService', () => {
       guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'runtime_start' })]);
 
       await expect(service.getResult(req, 's')).resolves.toEqual({ status: 'pending' });
+      expect(objectStoreMocks.putObjectIfAbsent).not.toHaveBeenCalled();
     });
 
     it('returns ready with the validated document from a tool-result envelope', async () => {
@@ -135,6 +153,54 @@ describe('BrandKitService', () => {
       expect(result.projectName).toBe('TestOrbit');
       expect(result.version).toBe(1);
       expect(result.intakeMode).toBe('form');
+    });
+
+    it('persists the ready document under the content-addressed key and returns the receipt', async () => {
+      const envelope = buildEnvelope();
+      guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: { envelope_json: JSON.stringify(envelope) } })]);
+
+      const result = await service.getResult(req, 's');
+
+      const expectedKey = `brand-kit/testorbit/${envelope['content_sha256']}.md`;
+      expect(objectStoreMocks.putObjectIfAbsent).toHaveBeenCalledOnce();
+      const [, purpose, key, body, contentType, cacheControl] = objectStoreMocks.putObjectIfAbsent.mock.calls[0];
+      expect(purpose).toBe('marketing-os-artifacts');
+      expect(key).toBe(expectedKey);
+      expect(Buffer.isBuffer(body)).toBe(true);
+      expect(body.toString('utf8')).toBe(envelope['document_markdown']);
+      expect(contentType).toBe('text/markdown; charset=utf-8');
+      expect(cacheControl).toBe('private');
+
+      expect(result.persistence).toEqual({
+        s3_key: expectedKey,
+        content_sha256: envelope['content_sha256'],
+        project: 'testorbit',
+        version: 1,
+        intake_mode: 'form',
+      });
+    });
+
+    it('degrades gracefully when persistence fails: ready without a receipt, document intact', async () => {
+      objectStoreMocks.putObjectIfAbsent.mockRejectedValue(new Error('storage down'));
+      const envelope = buildEnvelope();
+      guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: envelope })]);
+
+      const result = await service.getResult(req, 's');
+
+      expect(result.status).toBe('ready');
+      expect(result.documentMarkdown).toBe(envelope['document_markdown']);
+      expect(result.persistence).toBeUndefined();
+    });
+
+    it('logs a persistence failure at WARN (graceful degradation), never ERROR', async () => {
+      objectStoreMocks.putObjectIfAbsent.mockRejectedValue(new Error('storage down'));
+      const envelope = buildEnvelope();
+      guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: envelope })]);
+
+      await service.getResult(req, 's');
+
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_persist', expect.stringContaining('Object-store write failed'), expect.any(Object));
+      expect(loggerMocks.error).not.toHaveBeenCalled();
     });
 
     it('suppresses an envelope whose content_sha256 does not match the document bytes', async () => {

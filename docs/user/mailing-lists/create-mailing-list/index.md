@@ -4,7 +4,6 @@ description: How to create a new mailing list for your project in LFX Self Serve
 audience: [maintainer, board-member, executive-director]
 product_area: Mailing Lists
 tags: [mailing-lists, create, setup]
-last_generated: 2026-05-22
 last_updated: 2026-05-22
 intercom_collection: Mailing Lists
 ---

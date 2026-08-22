@@ -29,7 +29,15 @@
         <div class="flex items-start justify-between gap-4">
           <div class="flex flex-col">
             <span class="font-medium text-sm text-gray-900">{{ ready.projectName || ready.project }} Brand Kit — draft v{{ ready.version }}</span>
-            <span class="text-xs text-gray-500">Review the document below. Download it to keep a copy — it is not stored anywhere else yet.</span>
+            @if (ready.persistence) {
+              <span class="text-xs text-gray-500" data-testid="brand-kit-form-retention-note"
+                >Review the document below. It is saved to this project's marketing artifacts — download a copy anytime.</span
+              >
+            } @else {
+              <span class="text-xs text-gray-500" data-testid="brand-kit-form-retention-note"
+                >Review the document below. Download it to keep a copy — it is not stored anywhere else.</span
+              >
+            }
           </div>
           <div class="flex items-center gap-2">
             <lfx-button

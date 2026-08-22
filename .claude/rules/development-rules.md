@@ -85,6 +85,7 @@ See the `/lfx` skill's `references/repo-map.md` for the upstream microservice re
 - **Run `yarn e2e` before major changes** to ensure all tests pass consistently
 - **Use `data-testid` naming convention** — `[section]-[component]-[element]` for hierarchical structure
 - **Test responsive behavior** — validate mobile, tablet, and desktop viewports appropriately
+- **Never use real customer or personal data in fixtures** — names, emails, and company domains in tests must be synthetic (e.g. `acme-motors.example`, `vendor-corp.example`). Copying a real payload from a bug report or support ticket into a test is the most common way this leaks — redact it first. `check-fixture-emails.sh` (wired into `.husky/pre-commit`) blocks staged `*.spec.ts`/`*.fixture.ts`/`*.ndjson` files containing a denylisted real customer/vendor domain; add a domain there when a new incident surfaces one (see GH-1674)
 - When running tests to validate UI tests, use `reporter=list`
 
 ## Documentation Maintenance
