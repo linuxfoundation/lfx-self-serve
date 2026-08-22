@@ -639,19 +639,6 @@ export const SHOW_MEETING_ATTENDEES_FEATURE = {
 // Meeting Duration Options
 // ============================================================================
 
-/**
- * Meeting duration options for dropdown
- * @description Standard duration options with custom option
- */
-export const MEETING_DURATION_OPTIONS = [
-  { label: '15 minutes', value: 15 },
-  { label: '30 minutes', value: 30 },
-  { label: '60 minutes', value: 60 },
-  { label: '90 minutes', value: 90 },
-  { label: '120 minutes', value: 120 },
-  { label: 'Custom...', value: 'custom' },
-];
-
 /** Character limit for the meeting agenda (`description`) */
 export const MEETING_AGENDA_MAX_LENGTH = 2000;
 
@@ -666,8 +653,8 @@ export const MAX_CUSTOM_DURATION = 480;
 
 /**
  * Duration chips for the meeting composer's Date & Schedule section
- * @description Same `duration` control as MEETING_DURATION_OPTIONS, with chip-length labels and a
- * 45-minute step the dropdown never offered. Values must stay assignable to that control.
+ * @description `custom` reveals the `customDuration` control; `MeetingComposerFormService` owns that
+ * control's `MIN_CUSTOM_DURATION` / `MAX_CUSTOM_DURATION` validators.
  */
 export const MEETING_DURATION_CHIP_OPTIONS = [
   { label: '15 min', value: 15 },

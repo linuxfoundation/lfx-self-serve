@@ -2,6 +2,16 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4">
+  @if (membersFetchError()) {
+    <div class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3" role="alert" data-testid="meeting-committee-members-error">
+      <i class="fa-light fa-triangle-exclamation mt-0.5 text-amber-600" aria-hidden="true"></i>
+      <p class="text-sm text-amber-800">
+        We couldn't load every {{ committeeLabel.singular.toLowerCase() }}'s members, so they haven't been added as guests. Re-select the
+        {{ committeeLabel.plural.toLowerCase() }} to try again.
+      </p>
+    </div>
+  }
+
   @if (committeesLoading()) {
     <div class="flex items-center gap-2 p-4 bg-gray-50 rounded-lg">
       <i class="fa-light fa-circle-notch fa-spin text-blue-600"></i>

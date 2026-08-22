@@ -11,10 +11,12 @@ import {
   DEFAULT_EMAIL_REMINDER_HOURS,
   DEFAULT_EMAIL_REMINDER_MINUTES,
   DEFAULT_MEETING_TOOL,
+  MAX_CUSTOM_DURATION,
   MAX_EARLY_JOIN_TIME,
   MAX_EMAIL_REMINDER_HOURS,
   MAX_EMAIL_REMINDER_TIME,
   MEETING_AGENDA_MAX_LENGTH,
+  MIN_CUSTOM_DURATION,
   MIN_EARLY_JOIN_TIME,
   MIN_EMAIL_REMINDER_HOURS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
@@ -99,7 +101,6 @@ export class MeetingComposerFormService {
   public readonly submitting = signal<boolean>(false);
 
   public readonly attachments = signal<MeetingAttachment[]>([]);
-  public readonly deletingAttachmentId = signal<string | null>(null);
   public readonly pendingAttachmentDeletions = signal<string[]>([]);
 
   public readonly registrantUpdates = signal<RegistrantPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [] });
@@ -175,7 +176,6 @@ export class MeetingComposerFormService {
     this.originalStartTime.set(null);
     this.attachments.set([]);
     this.pendingAttachmentDeletions.set([]);
-    this.deletingAttachmentId.set(null);
     this.registrantUpdates.set({ toAdd: [], toUpdate: [], toDelete: [] });
     this.guests.set([]);
     this.guestsLoading.set(false);
@@ -221,7 +221,7 @@ export class MeetingComposerFormService {
     this.setGuests(reducer(this.guests()));
   }
 
-  /** Records an unsaved guest's email so group reconciliation treats the removal as intentional. */
+  /** Records a removed guest's email so group reconciliation treats the removal as intentional. */
   public suppressGuestEmail(email: string | null | undefined): void {
     if (!email) {
       return;
@@ -484,6 +484,15 @@ export class MeetingComposerFormService {
       );
     }
 
+    // Owned here rather than by the Date & Schedule section: the host's `@switch` destroys that
+    // section, so a section-scoped subscription would leave `customDuration` unvalidated whenever a
+    // duration is written from elsewhere (a template or AI estimate applied in Agenda & Resources).
+    const durationControl = form.get('duration');
+    if (durationControl) {
+      this.syncCustomDurationValidators(form, durationControl.value);
+      this.formSubscriptions.add(durationControl.valueChanges.subscribe((value) => this.syncCustomDurationValidators(form, value)));
+    }
+
     // When Board meeting type is selected, default to private + restricted access.
     // When switching away from Board, reset to public + unrestricted defaults so the
     // user isn't left with Board-level settings silently applied to a non-Board meeting.
@@ -502,6 +511,21 @@ export class MeetingComposerFormService {
         })
       );
     }
+  }
+
+  private syncCustomDurationValidators(form: FormGroup, duration: unknown): void {
+    const customDuration = form.get('customDuration');
+    if (!customDuration) {
+      return;
+    }
+
+    if (duration === 'custom') {
+      customDuration.setValidators([Validators.required, Validators.min(MIN_CUSTOM_DURATION), Validators.max(MAX_CUSTOM_DURATION)]);
+    } else {
+      customDuration.clearValidators();
+    }
+
+    customDuration.updateValueAndValidity();
   }
 
   private loadMeeting(meetingUid: string): void {
@@ -553,8 +577,10 @@ export class MeetingComposerFormService {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((loaded) => {
-        // Guests added while the fetch was in flight keep their place ahead of the saved rows.
-        const pending = this.guests().filter((guest) => guest.state === 'new');
+        const loadedEmails = new Set(loaded.map((registrant) => registrant.email?.toLowerCase() ?? ''));
+        // Guests added while the fetch was in flight keep their place ahead of the saved rows, unless the
+        // fetch turns out to have already returned them — a group emission can add someone mid-flight.
+        const pending = this.guests().filter((guest) => guest.state === 'new' && !loadedEmails.has(guest.email?.toLowerCase() ?? ''));
         this.setGuests([...pending, ...loaded.map((registrant) => ({ ...registrant, state: 'existing' as const, originalData: { ...registrant } }))]);
       });
   }

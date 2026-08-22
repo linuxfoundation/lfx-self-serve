@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, type Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, type Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup } from '@angular/forms';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
@@ -30,6 +31,7 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
 })
 export class ComposerGuestsComponent {
   private readonly meetingService = inject(MeetingService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   protected readonly formService = inject(MeetingComposerFormService);
@@ -81,8 +83,10 @@ export class ComposerGuestsComponent {
   protected onRemoveGuest(guest: MeetingRegistrantWithState): void {
     const key = guest.uid || guest.tempId;
 
-    // A group re-emission would otherwise re-add an unsaved guest the organizer just removed.
-    if (guest.state === 'new') {
+    // A group re-emission would otherwise undo the removal — re-adding an unsaved group guest, or
+    // un-deleting a saved one who is still a member of a selected group. Only group guests are
+    // suppressed: a removed direct guest with the same email must stay addable through a group later.
+    if (guest.type === 'committee') {
       this.formService.suppressGuestEmail(guest.email);
     }
 
@@ -129,7 +133,11 @@ export class ComposerGuestsComponent {
         const email = guest.email?.toLowerCase() ?? '';
         if (memberByEmail.has(email)) {
           memberByEmail.delete(email);
-          kept.push(guest);
+          // Reconciliation has to be idempotent: a guest queued for deletion because they left every
+          // selected group is restored when they turn up in one again. A guest the organizer removed by
+          // hand is suppressed, so their deletion survives re-emission.
+          const restore = guest.state === 'deleted' && !suppressed.has(email);
+          kept.push(restore ? { ...guest, state: 'existing' } : guest);
           return kept;
         }
 
@@ -164,7 +172,7 @@ export class ComposerGuestsComponent {
       data: { prefill },
     }) as DynamicDialogRef;
 
-    dialogRef.onClose.pipe(take(1)).subscribe((result: ManualGuestDialogResult | undefined) => {
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ManualGuestDialogResult | undefined) => {
       if (result?.guest) {
         this.addDirectGuest(result.guest);
       }
