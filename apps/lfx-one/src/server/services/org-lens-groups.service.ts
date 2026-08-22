@@ -47,8 +47,9 @@ export class OrgLensGroupsService {
     const committeesByUid = await this.getCommitteesByUid(req, unresolvedCommitteeUids);
 
     // Only worth an INFO line when the committee-index gap-filler actually had gaps to fill —
-    // matches meeting.service.ts's enrich_committees precedent of gating enrichment INFO logs
-    // rather than firing one on every single request regardless of whether anything happened.
+    // per .claude/rules/logging-patterns.md's worked example, which gates its enrichment INFO log
+    // the same way, rather than firing one on every single request regardless of whether anything
+    // happened.
     if (unresolvedCommitteeUids.length > 0) {
       const resolvedFromCommitteeIndex = unresolvedCommitteeUids.filter((uid) => committeesByUid.get(uid)?.project_name).length;
       logger.info(req, 'org_lens_groups_enrich', 'Enriched groups with project/committee names', {

@@ -44,6 +44,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
 }));
 
+import { logger } from './logger.service';
 import { OrgLensGroupsService } from './org-lens-groups.service';
 
 const ORG_UID = 'org-1';
@@ -79,13 +80,15 @@ afterEach(() => {
 });
 
 describe('OrgLensGroupsService.getGroups', () => {
-  it('prefers the project-index (live) name over the committee-index (snapshot) name and the raw slug', async () => {
+  it('uses the live project-index name and never asks the committee index about that group', async () => {
     fetchAllOrgSeats.mockResolvedValue([seat()]);
     // Argument-respecting, not a blanket resolved-value: only returns data for uids it was
     // actually asked about, so this test can't pass by the mock supplying data the real
     // targeting logic (org-lens-groups.service.ts) would never have requested in the first
-    // place — which is exactly what happens here, since the project index below resolves the
-    // committee's only group, so getCommitteesByIds is called with [] and never touches this map.
+    // place. Precedence between the two sources isn't decided by the `||` in toGroupSummary —
+    // it's enforced structurally by unresolvedCommitteeUids: a uid the project index resolves is
+    // never passed to the committee index, so the two can never compete for the same group. That
+    // targeting is what this test (and the "skips the fan-out" test below) actually pin.
     getCommitteesByIds.mockImplementation((_req: unknown, uids: string[]) =>
       Promise.resolve(new Map(uids.map((uid) => [uid, { uid, project_name: 'Cloud Native Computing Foundation (stale)' }])))
     );
@@ -108,6 +111,8 @@ describe('OrgLensGroupsService.getGroups', () => {
     // the project index resolves everything, calling it with an empty array short-circuits to no
     // upstream request at all (CommitteeService.getCommitteesByIds returns early on []).
     expect(getCommitteesByIds).toHaveBeenCalledWith(req, []);
+    // No gaps to report — the enrichment INFO log is gated on there being something to log.
+    expect(logger.info).not.toHaveBeenCalled();
   });
 
   it('falls back to the committee-index name when the project index has no match (e.g. uepf-style gap)', async () => {
@@ -120,6 +125,13 @@ describe('OrgLensGroupsService.getGroups', () => {
     expect(result.groups[0].project_name).toBe('Ultra Ethernet Consortium Fund');
     // Only the unresolved committee is passed through — the gap-filler is targeted, not blanket.
     expect(getCommitteesByIds).toHaveBeenCalledWith(req, ['c-1']);
+    // The corrected metric: 1 gap, resolved by the committee index, 0 left unresolved.
+    expect(logger.info).toHaveBeenCalledWith(req, 'org_lens_groups_enrich', expect.any(String), {
+      total_committees: 1,
+      gaps_from_project_index: 1,
+      resolved_from_committee_index: 1,
+      unresolved_after_both_sources: 0,
+    });
   });
 
   it('omits project_name (but keeps project_slug) when both enrichment sources miss', async () => {
@@ -129,6 +141,13 @@ describe('OrgLensGroupsService.getGroups', () => {
 
     expect(result.groups[0].project_name).toBeUndefined();
     expect(result.groups[0].project_slug).toBe('cncf');
+    // The gap was real but neither source resolved it — logged as unresolved, not "resolved".
+    expect(logger.info).toHaveBeenCalledWith(req, 'org_lens_groups_enrich', expect.any(String), {
+      total_committees: 1,
+      gaps_from_project_index: 1,
+      resolved_from_committee_index: 0,
+      unresolved_after_both_sources: 1,
+    });
   });
 
   it('omits project_name when neither enrichment nor project_slug is available', async () => {
