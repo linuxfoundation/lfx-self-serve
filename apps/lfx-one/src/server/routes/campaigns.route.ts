@@ -4,31 +4,34 @@
 import { Router } from 'express';
 
 import { CampaignController } from '../controllers/campaign.controller';
+import { requireExecutiveDirector } from '../middleware/require-executive-director.middleware';
 
 const router = Router();
 const campaignController = new CampaignController();
 
-router.post('/brief/generate', (req, res, next) => campaignController.generateBrief(req, res, next));
-router.post('/brief/refine', (req, res, next) => campaignController.refineBrief(req, res, next));
-router.post('/brief/persist', (req, res, next) => campaignController.persistBrief(req, res, next));
-router.get('/brief', (req, res, next) => campaignController.loadBrief(req, res, next));
-router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
-router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(req, res, next));
+// Campaigns are ED-only client-side (sidebar nav, executiveDirectorGuard); every endpoint here is
+// gated server-side too, since the UI guard is not real authorization on its own.
+router.post('/brief/generate', requireExecutiveDirector, (req, res, next) => campaignController.generateBrief(req, res, next));
+router.post('/brief/refine', requireExecutiveDirector, (req, res, next) => campaignController.refineBrief(req, res, next));
+router.post('/brief/persist', requireExecutiveDirector, (req, res, next) => campaignController.persistBrief(req, res, next));
+router.get('/brief', requireExecutiveDirector, (req, res, next) => campaignController.loadBrief(req, res, next));
+router.post('/create', requireExecutiveDirector, (req, res, next) => campaignController.createCampaign(req, res, next));
+router.get('/jobs/:jobId', requireExecutiveDirector, (req, res, next) => campaignController.getJobStatus(req, res, next));
 // The email channel's template picker. Registered before `/hubspot/utm` only for reading order —
 // the paths do not overlap.
-router.get('/hubspot/emails', (req, res, next) => campaignController.searchHubSpotEmails(req, res, next));
-router.get('/hubspot/utm', (req, res, next) => campaignController.lookupHubSpotUtm(req, res, next));
-router.post('/hubspot/utm/create', (req, res, next) => campaignController.createHubSpotUtm(req, res, next));
-router.get('/monitor', (req, res, next) => campaignController.getMonitorData(req, res, next));
-router.get('/linkedin/accounts', (req, res) => campaignController.getLinkedInAccounts(req, res));
-router.get('/linkedin/monitor', (req, res, next) => campaignController.getLinkedInMonitor(req, res, next));
-router.get('/reddit/accounts', (req, res) => campaignController.getRedditAccounts(req, res));
-router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMonitor(req, res, next));
-router.get('/meta/accounts', (req, res) => campaignController.getMetaAccounts(req, res));
-router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonitor(req, res, next));
-router.get('/keywords', (req, res, next) => campaignController.getKeywords(req, res, next));
-router.get('/audience', (req, res, next) => campaignController.getAudience(req, res, next));
-router.post('/keywords/actions', (req, res, next) => campaignController.executeKeywordActions(req, res, next));
-router.patch('/:campaignId/status', (req, res, next) => campaignController.updateCampaignStatus(req, res, next));
+router.get('/hubspot/emails', requireExecutiveDirector, (req, res, next) => campaignController.searchHubSpotEmails(req, res, next));
+router.get('/hubspot/utm', requireExecutiveDirector, (req, res, next) => campaignController.lookupHubSpotUtm(req, res, next));
+router.post('/hubspot/utm/create', requireExecutiveDirector, (req, res, next) => campaignController.createHubSpotUtm(req, res, next));
+router.get('/monitor', requireExecutiveDirector, (req, res, next) => campaignController.getMonitorData(req, res, next));
+router.get('/linkedin/accounts', requireExecutiveDirector, (req, res) => campaignController.getLinkedInAccounts(req, res));
+router.get('/linkedin/monitor', requireExecutiveDirector, (req, res, next) => campaignController.getLinkedInMonitor(req, res, next));
+router.get('/reddit/accounts', requireExecutiveDirector, (req, res) => campaignController.getRedditAccounts(req, res));
+router.get('/reddit/monitor', requireExecutiveDirector, (req, res, next) => campaignController.getRedditMonitor(req, res, next));
+router.get('/meta/accounts', requireExecutiveDirector, (req, res) => campaignController.getMetaAccounts(req, res));
+router.get('/meta/monitor', requireExecutiveDirector, (req, res, next) => campaignController.getMetaMonitor(req, res, next));
+router.get('/keywords', requireExecutiveDirector, (req, res, next) => campaignController.getKeywords(req, res, next));
+router.get('/audience', requireExecutiveDirector, (req, res, next) => campaignController.getAudience(req, res, next));
+router.post('/keywords/actions', requireExecutiveDirector, (req, res, next) => campaignController.executeKeywordActions(req, res, next));
+router.patch('/:campaignId/status', requireExecutiveDirector, (req, res, next) => campaignController.updateCampaignStatus(req, res, next));
 
 export default router;

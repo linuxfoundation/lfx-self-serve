@@ -42,7 +42,31 @@ export async function requireExecutiveDirector(req: Request, res: Response, next
       return;
     }
 
-    const requestedSlug = typeof req.query['foundationSlug'] === 'string' ? req.query['foundationSlug'] : '';
+    // Campaigns routes scope by `project`, analytics routes scope by `foundationSlug` — check both,
+    // but reject requests supplying both with different values: the middleware can only authorize
+    // one scope while the handler may read the other.
+    const foundationSlug = typeof req.query['foundationSlug'] === 'string' ? req.query['foundationSlug'] : '';
+    const project = typeof req.query['project'] === 'string' ? req.query['project'] : '';
+
+    if (foundationSlug && project && foundationSlug !== project) {
+      logger.warning(req, 'require_executive_director', 'Conflicting scope parameters in request', {
+        path: req.path,
+        foundationSlug,
+        project,
+      });
+
+      next(
+        new AuthorizationError('Executive Director access required for this resource', {
+          operation: 'require_executive_director',
+          service: 'authorization',
+          path: req.path,
+          code: 'EXECUTIVE_DIRECTOR_REQUIRED',
+        })
+      );
+      return;
+    }
+
+    const requestedSlug = foundationSlug || project;
 
     // No slug on the request means there is nothing to scope against — the handler is responsible
     // for rejecting a missing required parameter, and unscoped ED endpoints stay allowed.

@@ -4,7 +4,7 @@
 import { SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
 import { assertHealthMetricsRange, getStringQueryParam, getValidatedClassification, getValidatedPeriod, parseEntityType } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
@@ -12,6 +12,7 @@ import { OrganizationService } from '../services/organization.service';
 import { ProjectService } from '../services/project.service';
 import { UserService } from '../services/user.service';
 import { getEffectiveEmail } from '../utils/auth-helper';
+import { personaDetectionService } from '../utils/persona-helper';
 
 /** Allowed pattern for foundationSlug: lowercase alphanumeric and hyphens only */
 const SLUG_PATTERN = /^[a-z0-9-]+$/;
@@ -3043,7 +3044,8 @@ export class AnalyticsController {
     const startTime = logger.startOperation(req, 'get_multi_foundation_summary');
 
     try {
-      const slugs = this.parseAndValidateSlugs(req);
+      const requestedSlugs = this.parseAndValidateSlugs(req);
+      const slugs = await this.filterSlugsToPersonaScope(req, requestedSlugs);
 
       const response = await this.projectService.getMultiFoundationSummary(req, slugs);
 
@@ -3083,6 +3085,41 @@ export class AnalyticsController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * Filter caller-supplied foundation slugs down to the ones the caller is authorized for.
+   * Root writers and LF Staff bypass scoping; other users get only slugs from their
+   * persona-held projects (aggregated across all personas: ED, board member, maintainer, contributor, etc.).
+   */
+  private async filterSlugsToPersonaScope(req: Request, slugs: string[]): Promise<string[]> {
+    const persona = await personaDetectionService.getPersonas(req);
+
+    if (persona.isRootWriter || persona.isLFStaff) {
+      return slugs;
+    }
+
+    // Aggregate all persona project slugs (all personas, not just ED)
+    const allPersonaSlugs = new Set<string>();
+    if (persona.personaProjects) {
+      for (const personaProjects of Object.values(persona.personaProjects)) {
+        for (const project of personaProjects) {
+          allPersonaSlugs.add(project.projectSlug);
+        }
+      }
+    }
+
+    // Check that all requested slugs are within the caller's scope; reject partially-scoped
+    // requests to prevent incomplete aggregates from being misrepresented as complete
+    const unauthorizedSlugs = slugs.filter((slug) => !allPersonaSlugs.has(slug));
+
+    if (unauthorizedSlugs.length > 0) {
+      throw new AuthorizationError(`Not authorized to access foundation(s): ${unauthorizedSlugs.join(', ')}`, {
+        operation: 'get_multi_foundation_summary',
+      });
+    }
+
+    return slugs;
   }
 
   /**
