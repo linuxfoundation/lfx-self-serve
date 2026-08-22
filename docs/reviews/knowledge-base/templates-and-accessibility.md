@@ -62,20 +62,6 @@ Patterns CodeRabbit + Copilot flag in Angular templates — ARIA roles, focus ma
 
 ---
 
-## `templates-and-accessibility/class-binding-clobbers-static-class` — Important
-
-**Pattern:** an element has both `[class]="boundExpression"` and `class="static classes"` attributes. Angular replaces (clobbers) the static class string with the bound expression's result — the static classes silently disappear at runtime.
-
-**Detect:** in `.component.html`, find any element with both `[class]=` AND `class=` attributes. Multi-line check; both attributes can be on different lines.
-
-**Empirical citation:** PR #690 `apps/lfx-one/src/app/.../committee-table.component.html:129` — "`[class]` binding on the badge `<span>` overrides the static `class=\"inline-flex …\"` attribute, so the base layout/typography classes will be removed at runtime. Use `ngClass` (or include the base classes in the bound string)." Confirmed at a second site: `committee-dashboard.component.html:68`.
-
-**Failure message:** `[class]` binding clobbers static `class=` on the same element.
-
-**Fix:** use `[ngClass]="..."` which is additive (merges with static class), OR include the static classes in the bound string. Don't have both `[class]` and `class` on the same element.
-
----
-
 ## `templates-and-accessibility/for-track-not-stable-identity` — Important
 
 **Pattern:** `@for (item of items(); track item.id)` is fine if items have a stable `id`. But `track $index` (or `track item.name`) for an array that can reorder breaks Angular's diff and produces wrong DOM updates (animations skip, focus jumps, etc.).

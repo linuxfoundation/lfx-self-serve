@@ -28,6 +28,14 @@ Used by the `lfx-skills:lfx-self-serve-learnings-reviewer` subagent (Step 4), an
 
 **Why false:** zoneless change detection became **stable in Angular 20**. Not experimental. Not preview.
 
+### `[class]` binding "clobbers" a static `class` attribute
+
+**Pattern matched:** any finding stating that an element with both `class="static classes"` and `[class]="boundExpression"` loses the static classes at runtime — i.e. that the binding "clobbers" or "overrides" the static attribute.
+
+**Why false:** under Angular Ivy, a static `class` attribute and a `[class]` property binding on the same element are **merged**, not clobbered. Verified empirically (GH-1784, 2026-08-22): rendering `<div class="static-a static-b" [class]="dyn">` in this repo's own TestBed on Angular 20.3.15 produced `class="static-a static-b dynamic-c"` — both static and bound classes present. The repo already relies on this merge behavior in multiple places (e.g. `stat-card-grid.component.html`, `public-foundation-groups.component.html`, `public-project-groups.component.html`), so `[class]` (Angular's own recommended binding for a single dynamic class expression) is the established convention here, not a bug to "fix" by switching to `[ngClass]`.
+
+**Note:** this superseded a same-named "Important" entry that used to live in `templates-and-accessibility.md` (citing PR #690), asserting the opposite. That entry was itself the false positive and has been removed — do not re-add it without first re-verifying against the current Angular version, since Ivy's merge behavior is what actually governs this, not framework lore from pre-Ivy Angular.
+
 ---
 
 ## Already-covered-by-tooling
