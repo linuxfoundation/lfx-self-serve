@@ -1040,6 +1040,83 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     });
 
     /**
+     * A toggle that ANSWERS after the context it was dispatched in is gone.
+     *
+     * `takeUntilDestroyed` does not fire on a foundation or brief switch — the component stays
+     * mounted under `@case ('optimization')` — so an in-flight request outlives the context that
+     * started it. Its response arms write `toggleError` and the conflicted-id set keyed by campaign
+     * id alone, so a 412 landing after the switch re-arms the banner for a brief that was never
+     * conflicted. Worse, that id is not in the new list, so no delivery can ever clear it: the
+     * per-row clear only removes ids a delivered row advanced. A permanently latched banner — the
+     * exact defect this PR exists to remove, reintroduced through the back door.
+     *
+     * Driven with a `Subject` so the response is delivered under test control, AFTER the switch.
+     */
+    it('ignores a 412 that lands after the brief has already changed', () => {
+      const inFlight = new Subject<CampaignStatusUpdateResult>();
+      updateCampaignStatus.mockReturnValue(inFlight.asObservable());
+      render([doc({ status: 'created', etag: '"3"' })]);
+      fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+      fixture.detectChanges();
+
+      // The operator switches brief while the toggle is still out.
+      fixture.componentRef.setInput('briefCampaigns', null);
+      fixture.componentRef.setInput('briefId', 'b-2');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('briefCampaigns', [doc({ status: 'created', etag: '"5"' })]);
+      fixture.detectChanges();
+
+      // Only now does the abandoned request fail with a conflict.
+      inFlight.error(new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed' }));
+      fixture.detectChanges();
+
+      // The new brief was never conflicted, and its row must stay usable.
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').disabled).toBe(false);
+    });
+
+    /**
+     * The success arm needs the same guard, asserted on the CONFIRMED overlay rather than the
+     * banner: a late success writes `toggledStatus` and `toggledEtag` for an id that now addresses
+     * a different brief's row, so the new row would render a status it never reported.
+     */
+    it('ignores a late toggle success from an abandoned brief', () => {
+      const inFlight = new Subject<CampaignStatusUpdateResult>();
+      updateCampaignStatus.mockReturnValue(inFlight.asObservable());
+      render([doc({ status: 'created', etag: '"3"' })]);
+      fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+      fixture.detectChanges();
+
+      fixture.componentRef.setInput('briefCampaigns', null);
+      fixture.componentRef.setInput('briefId', 'b-2');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('briefCampaigns', [doc({ status: 'created', etag: '"5"' })]);
+      fixture.detectChanges();
+
+      inFlight.next({
+        platform: 'google-ads',
+        campaignId: 'c-1',
+        newStatus: 'PAUSED',
+        success: true,
+        serviceStatus: 'paused',
+        etag: '"9"',
+      } as CampaignStatusUpdateResult);
+      inFlight.complete();
+      fixture.detectChanges();
+
+      // The new brief's row is `created`, so it must still offer Pause — not the Resume that the
+      // abandoned brief's confirmed pause would have overlaid onto it.
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').textContent).toContain('Pause');
+
+      // And the next toggle must send the NEW brief's validator, not the leaked '"9"'.
+      updateCampaignStatus.mockReturnValue(of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused' }));
+      fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+      fixture.detectChanges();
+      expect(updateCampaignStatus.mock.calls[1][0].etag).toBe('"5"');
+    });
+
+    /**
      * The handler's own guard, which the template disable hides from every click-driven test.
      *
      * Copilot asked for the handler to stay fail-closed "as well if it can be invoked outside the

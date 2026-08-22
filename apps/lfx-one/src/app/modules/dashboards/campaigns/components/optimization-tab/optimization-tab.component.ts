@@ -194,6 +194,22 @@ export class OptimizationTabComponent implements OnInit {
   /** True between the parent's `null` push and the delivery that answers it. */
   private listReadInFlight = false;
 
+  /**
+   * Bumped on every (project, brief) change; a toggle captures it at dispatch.
+   *
+   * The discriminator for a response that outlives its context. `toggleCampaign`'s response arms
+   * write `toggledEtag`, `toggledStatus`, `toggleError` and the conflicted-id set by campaign id,
+   * and `takeUntilDestroyed` does not fire on a context change — the component stays mounted under
+   * `@case ('optimization')`. So a toggle dispatched against brief A that answers after a switch
+   * to brief B would write A's id into B's state, and a 412 would re-arm the banner for a brief
+   * that was never conflicted. Worse, that id is not in B's list, so no delivery can ever clear
+   * it: the per-row clear only removes ids a delivered row advanced.
+   *
+   * Same shape as `briefCampaignsGeneration` on the parent, and for the same reason — a late
+   * response has to be identified as late rather than prevented.
+   */
+  private contextGeneration = 0;
+
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
   private linkedInSub: Subscription | null = null;
@@ -450,6 +466,10 @@ export class OptimizationTabComponent implements OnInit {
       return next;
     });
 
+    // Captured at DISPATCH, compared on the response arms. A switch away from this brief while the
+    // request is out makes both arms writes about a context that is gone.
+    const dispatchedIn = this.contextGeneration;
+
     this.campaignService
       .updateCampaignStatus({
         projectSlug: this.projectSlug(),
@@ -462,6 +482,12 @@ export class OptimizationTabComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
+          // A response that outlived its context writes nothing. Its campaign id belongs to the
+          // abandoned brief, and the maps it would write are keyed by id alone — so the overlay
+          // would render against whichever row of the NEW list happens to share that id.
+          if (dispatchedIn !== this.contextGeneration) {
+            return;
+          }
           this.togglePending.update((p) => ({ ...p, [campaign.id]: false }));
           // `serviceStatus` is what the SERVICE reports, which is not always what was requested:
           // pausing a `created_degraded` campaign pauses it upstream while deliberately leaving
@@ -486,6 +512,14 @@ export class OptimizationTabComponent implements OnInit {
         // telling a 412 from a 500 or a dropped connection, so every failure got the same "try
         // again" — including the one failure for which retrying provably cannot work.
         error: (err: unknown) => {
+          // Same guard as the success arm, and it matters more here: a 412 landing after a switch
+          // would re-arm the conflict banner for a brief that was never conflicted, and add an id
+          // that is not in the new list — so no delivery could ever clear it, because the per-row
+          // clear only removes ids a delivered row advanced. That is a permanently latched banner,
+          // the exact defect this PR set out to remove.
+          if (dispatchedIn !== this.contextGeneration) {
+            return;
+          }
           this.togglePending.update((p) => ({ ...p, [campaign.id]: false }));
           // Deliberately NOT optimistic: nothing about the row's status is changed on failure, so
           // the button still offers the action that did not happen. Claiming the pause landed
@@ -804,6 +838,12 @@ export class OptimizationTabComponent implements OnInit {
     toObservable(computed(() => `${this.projectSlug()} ${this.briefId()}`))
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => {
+        // Anything still in flight belongs to the context being abandoned.
+        this.contextGeneration++;
+        // Cleared HERE rather than left to the late response arms, which now return early: a row
+        // stranded at `pending` renders "Working" on a disabled button forever, because the
+        // response that would have cleared it belongs to a context that no longer exists.
+        this.togglePending.set({});
         this.conflictedCampaignIds.set(new Set<string>());
         this.toggleError.set({});
         this.toggledEtag.set({});
