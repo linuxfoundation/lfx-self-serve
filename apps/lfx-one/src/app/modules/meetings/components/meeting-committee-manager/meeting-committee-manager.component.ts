@@ -44,6 +44,13 @@ export class MeetingCommitteeManagerComponent {
   public committeeForm: FormGroup;
   public readonly committeesLoading = signal<boolean>(true);
 
+  /**
+   * Whether a member fetch has resolved at least once.
+   * @description Gates `committeeMembersChange`, so consumers never reconcile against the synthetic
+   * empty list that `toSignal` emits before the first fetch returns.
+   */
+  private readonly membersResolved = signal<boolean>(false);
+
   // Committee options loaded from API
   public readonly committeeOptions: Signal<Committee[]> = this.initCommitteeOptions();
 
@@ -110,7 +117,10 @@ export class MeetingCommitteeManagerComponent {
 
     // Emit committee members whenever they change
     toObservable(this.filteredCommitteeMembers)
-      .pipe(takeUntilDestroyed())
+      .pipe(
+        filter(() => this.membersResolved()),
+        takeUntilDestroyed()
+      )
       .subscribe((members) => this.committeeMembersChange.emit(members));
   }
 
@@ -189,7 +199,7 @@ export class MeetingCommitteeManagerComponent {
       toObservable(this.selectedCommitteeIds).pipe(
         switchMap((committeeIds) => {
           if (!committeeIds || committeeIds.length === 0) {
-            return of([]);
+            return of([]).pipe(tap(() => this.membersResolved.set(true)));
           }
 
           // Load members for all selected committees
@@ -237,7 +247,8 @@ export class MeetingCommitteeManagerComponent {
               });
 
               return Array.from(memberMap.values());
-            })
+            }),
+            tap(() => this.membersResolved.set(true))
           );
         })
       ),

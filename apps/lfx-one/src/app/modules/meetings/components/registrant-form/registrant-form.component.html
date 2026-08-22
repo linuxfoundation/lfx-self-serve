@@ -42,7 +42,7 @@
     @if (showIndividualFields()) {
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" data-testid="registrant-form-fields-grid">
         <!-- Back to Search Button -->
-        @if (!registrant()) {
+        @if (!registrant() && !manualOnly()) {
           <div class="md:col-span-2">
             <button type="button" class="text-sm text-primary hover:underline" (click)="backToSearch()">← Back to search</button>
           </div>
@@ -137,18 +137,21 @@
           </lfx-organization-search>
         </div>
 
-        <!-- LinkedIn Profile -->
-        <div data-testid="registrant-form-linkedin-profile-field" class="flex flex-col gap-1">
-          <label for="linkedin_profile" class="block text-neutral-950 mb-2">LinkedIn Profile</label>
-          <lfx-input-text
-            size="small"
-            [form]="form()"
-            control="linkedin_profile"
-            label="LinkedIn Profile"
-            placeholder="Enter LinkedIn profile URL"
-            data-testid="registrant-form-linkedin-profile-input">
-          </lfx-input-text>
-        </div>
+        <!-- LinkedIn Profile — hidden for manual-only callers: the create-registrant payload has no
+             linkedin_profile field, so collecting it there would silently discard the input -->
+        @if (!manualOnly()) {
+          <div data-testid="registrant-form-linkedin-profile-field" class="flex flex-col gap-1">
+            <label for="linkedin_profile" class="block text-neutral-950 mb-2">LinkedIn Profile</label>
+            <lfx-input-text
+              size="small"
+              [form]="form()"
+              control="linkedin_profile"
+              label="LinkedIn Profile"
+              placeholder="Enter LinkedIn profile URL"
+              data-testid="registrant-form-linkedin-profile-input">
+            </lfx-input-text>
+          </div>
+        }
 
         <!-- Host Toggle -->
         <div class="md:col-span-2 flex flex-col gap-1" data-testid="registrant-form-host-field">
