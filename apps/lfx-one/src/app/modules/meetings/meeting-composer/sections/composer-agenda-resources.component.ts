@@ -14,6 +14,8 @@ import {
   MAX_FILE_SIZE_BYTES,
   MAX_FILE_SIZE_MB,
   MEETING_AGENDA_MAX_LENGTH,
+  MEETING_AGENDA_PROMPT_MAX_LENGTH,
+  MEETING_AGENDA_PROMPT_WARNING_LENGTH,
   MEETING_AGENDA_WARNING_LENGTH,
   MIN_CUSTOM_DURATION,
 } from '@lfx-one/shared/constants';
@@ -53,6 +55,11 @@ export class ComposerAgendaResourcesComponent {
   public readonly form = input.required<FormGroup>();
 
   protected readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
+  /** Hard cap on the AI goal. Enforced as a native `maxlength` attribute on the textarea and again by
+   * the server, which truncates an over-budget descriptor rather than dropping it — never as a
+   * validator: see the control's declaration in `MeetingComposerFormService` for why a validator on
+   * this scratch field would silently block the meeting save. */
+  protected readonly promptMaxLength = MEETING_AGENDA_PROMPT_MAX_LENGTH;
   protected readonly maxFileSizeBytes = MAX_FILE_SIZE_BYTES;
   protected readonly acceptString = generateAcceptString();
   protected readonly acceptedTypesDisplay = getAcceptedFileTypesDisplay();
@@ -69,15 +76,20 @@ export class ComposerAgendaResourcesComponent {
     this.formService.revision();
     return (this.form().get('description')?.value as string | null)?.length ?? 0;
   });
-  protected readonly agendaCounterClass: Signal<string> = computed(() => {
-    const length = this.agendaLength();
-
-    if (length >= MEETING_AGENDA_MAX_LENGTH) {
-      return 'text-red-600';
-    }
-
-    return length >= MEETING_AGENDA_WARNING_LENGTH ? 'text-amber-600' : 'text-gray-500';
+  // The prompt cap is a native attribute with no validator behind it, so without a counter the field
+  // just stops accepting characters with nothing to explain why.
+  protected readonly aiPromptLength: Signal<number> = computed(() => {
+    this.formService.revision();
+    return (this.form().get('aiPrompt')?.value as string | null)?.length ?? 0;
   });
+  protected readonly agendaCounterClass: Signal<string> = computed(() =>
+    this.counterClass(this.agendaLength(), MEETING_AGENDA_WARNING_LENGTH, MEETING_AGENDA_MAX_LENGTH)
+  );
+  // Same escalation as the agenda's counter two fields up. Without it the prompt counter reads a flat
+  // gray at the exact moment it matters — when the field has saturated and is dropping keystrokes.
+  protected readonly aiPromptCounterClass: Signal<string> = computed(() =>
+    this.counterClass(this.aiPromptLength(), MEETING_AGENDA_PROMPT_WARNING_LENGTH, MEETING_AGENDA_PROMPT_MAX_LENGTH)
+  );
   protected readonly pendingAttachments: Signal<PendingAttachment[]> = computed(() => {
     this.formService.revision();
     return (this.form().get('attachments')?.value as PendingAttachment[] | null) ?? [];
@@ -128,21 +140,33 @@ export class ComposerAgendaResourcesComponent {
 
   protected onGenerateAgenda(): void {
     const form = this.form();
-    const context = form.get('aiPrompt')?.value as string | null;
-    const title = form.get('title')?.value as string | null;
+    const context = (form.get('aiPrompt')?.value as string | null)?.trim() || null;
+    const title = (form.get('title')?.value as string | null)?.trim() || null;
     const meetingType = this.meetingType();
     const project = this.projectContextService.activeContext();
 
-    if (!project || !title || !meetingType || !context) {
+    // A title or a goal — whichever the organizer has — is enough. Edit mode drops the rail's
+    // section locking entirely, so the organizer can be standing here having just cleared the title;
+    // the project also resolves asynchronously and may not be there yet. The backend omits absent
+    // descriptors from the prompt and truncates over-budget ones rather than rejecting the request, so
+    // this presence-only guard mirrors the server's `!title && !context` contract exactly — nothing
+    // that passes here can fail there for length.
+    if (!context && !title) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Missing information',
-        detail: 'Add the meeting title and type, and describe the goal, before generating an agenda.',
+        detail: 'Add a meeting title, or describe what the meeting is for, before generating an agenda.',
       });
       return;
     }
 
-    const request: GenerateAgendaRequest = { meetingType, title, projectName: project.name, context, maxCharacters: MEETING_AGENDA_MAX_LENGTH };
+    const request: GenerateAgendaRequest = {
+      ...(meetingType ? { meetingType } : {}),
+      ...(title ? { title } : {}),
+      ...(project ? { projectName: project.name } : {}),
+      ...(context ? { context } : {}),
+      maxCharacters: MEETING_AGENDA_MAX_LENGTH,
+    };
 
     this.isGeneratingAgenda.set(true);
     this.meetingService
@@ -301,5 +325,14 @@ export class ComposerAgendaResourcesComponent {
     }
 
     return null;
+  }
+
+  /** Shared escalation for both character counters in this section: gray, amber near the cap, red at it. */
+  private counterClass(length: number, warnAt: number, max: number): string {
+    if (length >= max) {
+      return 'text-red-600';
+    }
+
+    return length >= warnAt ? 'text-amber-600' : 'text-gray-500';
   }
 }

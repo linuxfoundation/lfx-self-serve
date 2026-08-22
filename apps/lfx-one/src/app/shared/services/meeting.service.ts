@@ -361,9 +361,10 @@ export class MeetingService {
 
   /**
    * `includeCommittee` opts into committee enrichment (`committee_name`, `committee_role`,
-   * `committee_category`, `committee_voting_status`, `committee_appointed_by`). It costs a
-   * per-committee fan-out upstream, so it stays opt-in for the callers that actually render group
-   * attribution — the composer's Guests list.
+   * `committee_category`, `committee_voting_status`, `committee_appointed_by`), and normalizes
+   * `committee_uid` from the upstream v1 SFID to the v2 UID. It costs the BFF a per-committee fan-out
+   * to the committee service, so it stays opt-in for the callers that actually need group attribution:
+   * the composer's Guests list, and the registrants display's group filter.
    */
   public getMeetingRegistrants(
     meetingUid: string,
@@ -529,6 +530,13 @@ export class MeetingService {
    * is persisted as `type: 'committee'` upstream instead of collapsing to `direct`. The BFF resolves
    * it to the v1 SFID upstream expects; the other `committee_*` fields are response-only enrichment
    * and are deliberately dropped.
+   *
+   * Every optional string is omitted when empty rather than sent as `null`: upstream declares
+   * `committee_uid`, `job_title` and `org` alike as non-nullable optional `string`s
+   * (`CreateItxRegistrantRequestBody`). The BFF drops a stray `null` anyway, but relying on that
+   * would mean shipping an off-contract body and trusting the proxy to launder it. The create body
+   * has nothing to clear, so omission loses no meaning — unlike {@link getChangedFields}, where
+   * `null` is how an update erases a stored value.
    */
   public stripMetadata(meetingUid: string, registrant: MeetingRegistrantWithState): CreateMeetingRegistrantRequest {
     return {
@@ -537,9 +545,9 @@ export class MeetingService {
       first_name: registrant.first_name,
       last_name: registrant.last_name,
       host: registrant.host || false,
-      job_title: registrant.job_title || null,
-      org_name: registrant.org_name || null,
-      committee_uid: registrant.committee_uid || null,
+      ...(registrant.job_title ? { job_title: registrant.job_title } : {}),
+      ...(registrant.org_name ? { org_name: registrant.org_name } : {}),
+      ...(registrant.committee_uid ? { committee_uid: registrant.committee_uid } : {}),
     };
   }
 

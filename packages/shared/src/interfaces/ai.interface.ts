@@ -7,15 +7,19 @@ import { MeetingType } from '../enums';
  * Request interface for AI agenda generation
  */
 export interface GenerateAgendaRequest {
-  /** Type of meeting for agenda generation */
-  meetingType: MeetingType;
-  /** Meeting title */
-  title: string;
-  /** Name of the project for contextualized agenda */
-  projectName: string;
-  /** Additional context or specific requirements */
+  /**
+   * Type of meeting for agenda generation.
+   * Optional: the composer can reach the helper before a type is chosen, in which case the prompt
+   * describes a project team meeting.
+   */
+  meetingType?: MeetingType;
+  /** Meeting title. Optional — omitted from the prompt when the user hasn't set one yet. */
+  title?: string;
+  /** Name of the project for contextualized agenda. Optional, same reason as `title`. */
+  projectName?: string;
+  /** Additional context or specific requirements. Required when `title` is absent. */
   context?: string;
-  /** Maximum characters allowed for the generated agenda */
+  /** Maximum characters allowed for the generated agenda. Clamped server-side to `1..MEETING_AGENDA_MAX_LENGTH`. */
   maxCharacters?: number;
 }
 

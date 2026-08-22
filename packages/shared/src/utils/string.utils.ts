@@ -148,6 +148,32 @@ export function capCodePointEdit(previous: string, next: string, max: number): s
   return [...head, ...inserted, ...tail].join('');
 }
 
+/**
+ * Truncate to at most `max` UTF-16 code units without leaving a lone surrogate behind.
+ * @param value - The string to truncate
+ * @param max - The maximum number of UTF-16 code units
+ * @returns `value` unchanged when within the cap, otherwise clipped to `max` units (or `max - 1` when
+ * the cut would land inside a surrogate pair)
+ *
+ * Deliberately measured in UTF-16 units rather than code points, unlike {@link codePointLength} and
+ * {@link capCodePointEdit}: these caps guard values that are handed to `Validators.maxLength` or a
+ * native `maxlength` attribute, both of which count UTF-16 units. Truncating by code point would let a
+ * string full of emoji pass a code-point cap and still fail the validator on the other side — which,
+ * for the meeting composer's agenda, means an invalid form and a Save button that does nothing.
+ */
+export function truncateToUtf16Units(value: string, max: number): string {
+  if (value.length <= max || max <= 0) {
+    return value.length <= max ? value : '';
+  }
+
+  // A high surrogate at the last kept position means the cut splits a pair; drop it rather than emit
+  // an unpaired code unit.
+  const lastKept = value.charCodeAt(max - 1);
+  const splitsPair = lastKept >= 0xd800 && lastKept <= 0xdbff;
+
+  return value.slice(0, splitsPair ? max - 1 : max);
+}
+
 /** Best-effort split of a display name into [firstName, lastName]; `null` parts when nothing usable (e.g. an email used as the name). */
 export function splitDisplayName(name: string | null): [string | null, string | null] {
   const trimmed = (name ?? '').trim();

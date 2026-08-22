@@ -52,7 +52,11 @@
           placeholder="e.g. Review Q3 roadmap progress and agree on the release date"
           styleClass="w-full"
           [rows]="3"
+          [maxlength]="promptMaxLength"
           data-testid="composer-agenda-ai-prompt" />
+        <p class="self-end text-xs" [ngClass]="aiPromptCounterClass()" data-testid="composer-agenda-ai-prompt-counter">
+          {{ aiPromptLength() }}/{{ promptMaxLength }}
+        </p>
 
         <div class="flex justify-end gap-2">
           <lfx-button

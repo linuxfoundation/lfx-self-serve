@@ -249,6 +249,14 @@ describe('MeetingComposerFormService — load retry', () => {
     expect(getMeeting).toHaveBeenCalledTimes(2);
   });
 
+  // GH-1463: the "via [Group]" chip needs `committee_*` metadata, which the registrant listing only
+  // returns behind `include_committee`. Dropping that flag would silently restore the missing chip.
+  it('asks for committee enrichment when loading the guest list', () => {
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    expect(getMeetingRegistrants).toHaveBeenCalledWith('meeting-1', false, undefined, true);
+  });
+
   it('leaves a guest list that loaded fine alone on retry', () => {
     service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
     expect(getMeetingRegistrants).toHaveBeenCalledTimes(1);
@@ -298,6 +306,19 @@ describe('MeetingComposerFormService — load retry', () => {
     service.retryLoadMeeting();
 
     expect(getMeeting).not.toHaveBeenCalled();
+  });
+
+  // GH-1464: `aiPrompt` is a scratch field the save payload never carries, but it lives in the group
+  // `validateForSubmit()` reads. A validator on it would block the meeting from saving over a value
+  // the meeting doesn't even have, with no error UI anywhere to explain the dead button.
+  it('does not let an over-long AI goal block the meeting save', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.form().patchValue({ title: 'Composer meeting', meeting_type: 'Technical' });
+    expect(service.validateForSubmit()).toBe(true);
+
+    service.form().get('aiPrompt')?.setValue('x'.repeat(5000));
+
+    expect(service.validateForSubmit()).toBe(true);
   });
 
   it('does not re-fetch in create mode, where meetingId comes from the save', () => {

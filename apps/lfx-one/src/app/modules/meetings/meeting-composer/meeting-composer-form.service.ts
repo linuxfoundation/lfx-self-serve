@@ -615,6 +615,13 @@ export class MeetingComposerFormService {
 
         title: new FormControl('', [Validators.required]),
         description: new FormControl('', [Validators.maxLength(MEETING_AGENDA_MAX_LENGTH)]),
+        // Deliberately carries no validator, and must stay that way. `aiPrompt` is a scratch field
+        // that never reaches the save payload, but it lives in the group `validateForSubmit()` reads,
+        // so a validator here would block the meeting from saving over a value the meeting doesn't
+        // even carry — with the Save button still enabled and no error UI to explain it. The cap is
+        // enforced where it can't do that damage: a native `maxlength` attribute on the textarea
+        // (see `TextareaComponent.maxlength`, bound as `[attr.maxlength]` precisely so it does not
+        // become a validator), and a server-side truncation in `MeetingController.readPromptField`.
         aiPrompt: new FormControl(''),
         startDate: new FormControl(defaultDateTime.date, [Validators.required]),
         startTime: new FormControl(defaultDateTime.time, [Validators.required]),
