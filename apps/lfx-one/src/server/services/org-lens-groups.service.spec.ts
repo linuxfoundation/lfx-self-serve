@@ -93,6 +93,18 @@ describe('OrgLensGroupsService.getGroups', () => {
     expect(result.groups[0].project_slug).toBe('cncf');
   });
 
+  it('skips the committee-index fan-out entirely when the project index already resolved every group', async () => {
+    fetchAllOrgSeats.mockResolvedValue([seat()]);
+    enrichFoundationNames.mockResolvedValue(new Map([['p-cncf', 'Cloud Native Computing Foundation']]));
+
+    await run();
+
+    // The committee index is a gap-filler, not a second full fan-out — on the common path where
+    // the project index resolves everything, calling it with an empty array short-circuits to no
+    // upstream request at all (CommitteeService.getCommitteesByIds returns early on []).
+    expect(getCommitteesByIds).toHaveBeenCalledWith(req, []);
+  });
+
   it('falls back to the committee-index name when the project index has no match (e.g. uepf-style gap)', async () => {
     fetchAllOrgSeats.mockResolvedValue([seat()]);
     getCommitteesByIds.mockResolvedValue(new Map([['c-1', { uid: 'c-1', project_name: 'Ultra Ethernet Consortium Fund' }]]));
@@ -101,6 +113,8 @@ describe('OrgLensGroupsService.getGroups', () => {
     const result = await run();
 
     expect(result.groups[0].project_name).toBe('Ultra Ethernet Consortium Fund');
+    // Only the unresolved committee is passed through — the gap-filler is targeted, not blanket.
+    expect(getCommitteesByIds).toHaveBeenCalledWith(req, ['c-1']);
   });
 
   it('omits project_name (but keeps project_slug) when both enrichment sources miss', async () => {

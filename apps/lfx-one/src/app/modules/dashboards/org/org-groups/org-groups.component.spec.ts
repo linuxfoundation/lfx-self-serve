@@ -139,4 +139,15 @@ describe('OrgGroupsComponent — project label', () => {
     expect(navigateSpy).toHaveBeenCalledTimes(1);
     expect(navigateSpy.mock.calls[0][0].toString()).toBe('/org/projects/uepf');
   });
+
+  it('links the row itself to the group detail route', async () => {
+    await render({
+      groups: [group({ uid: 'g1', project_slug: 'cncf' })],
+      total_groups: 1,
+      total_seats: 3,
+    });
+
+    const rowLink = fixture.nativeElement.querySelector('[data-testid="org-groups-row-link-g1"]');
+    expect(rowLink?.getAttribute('href')).toBe('/groups/g1');
+  });
 });

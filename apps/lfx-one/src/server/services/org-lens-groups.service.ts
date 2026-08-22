@@ -31,16 +31,26 @@ export class OrgLensGroupsService {
 
     const committeeMap = this.aggregateByCommittee(nonBoardSeats);
 
-    // Two independent enrichment sources, resolved in parallel: the project-service index (live,
-    // keyed by project_uid) is primary — the committee-service index only fills the gaps it
-    // misses (e.g. a project entirely absent from the project index). committee_service.ProjectName
-    // is a write-time snapshot resolved once at committee create/update with no rename subscriber,
-    // so it goes stale on a project rename — it must stay secondary, not primary. Both sources
-    // fail soft to an empty map.
-    const [foundationNames, committeesByUid] = await Promise.all([
-      enrichFoundationNames(req, nonBoardSeats, this.projectService),
-      this.getCommitteesByUid(req, committeeMap.keys()),
-    ]);
+    // Two independent enrichment sources: the project-service index (live, keyed by project_uid)
+    // is primary — the committee-service index only fills the gaps it misses (e.g. a project
+    // entirely absent from the project index). committee_service.ProjectName is a write-time
+    // snapshot resolved once at committee create/update with no rename subscriber, so it goes
+    // stale on a project rename — it must stay secondary, not primary. Both sources fail soft to
+    // an empty map. Resolved sequentially (not in parallel): the committee-index fan-out only
+    // targets committees the project index actually missed, so on the common path where the
+    // project index resolves everything, the second upstream call is skipped entirely rather than
+    // firing — and discarding its result — on every single request.
+    const foundationNames = await enrichFoundationNames(req, nonBoardSeats, this.projectService);
+    const unresolvedCommitteeUids = Array.from(committeeMap.entries())
+      .filter(([, groupSeats]) => !foundationNames.get(groupSeats[0]?.project_uid ?? ''))
+      .map(([uid]) => uid);
+    const committeesByUid = await this.getCommitteesByUid(req, unresolvedCommitteeUids);
+
+    logger.info(req, 'org_lens_groups_enrich', 'Enriched groups with project/committee names', {
+      total_committees: committeeMap.size,
+      resolved_from_committee_index: committeesByUid.size,
+      unresolved_after_both_sources: unresolvedCommitteeUids.filter((uid) => !committeesByUid.get(uid)?.project_name).length,
+    });
 
     const groups: OrgLensGroupSummary[] = Array.from(committeeMap.entries()).map(([uid, groupSeats]) =>
       this.toGroupSummary(uid, groupSeats, foundationNames, committeesByUid)
