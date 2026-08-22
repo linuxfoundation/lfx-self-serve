@@ -49,7 +49,7 @@
             <lfx-composer-date-schedule [form]="formService.form()" />
           }
           @case ('platform-features') {
-            <lfx-meeting-platform-features [form]="formService.form()" (goToTitleSection)="onGoToTitleSection()" />
+            <lfx-composer-platform-features [form]="formService.form()" (goToTitleSection)="onGoToTitleSection()" />
           }
           @case ('guests') {
             @if (formService.meetingId(); as meetingUid) {
