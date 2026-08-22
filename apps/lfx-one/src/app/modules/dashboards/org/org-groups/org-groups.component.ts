@@ -92,7 +92,8 @@ export class OrgGroupsComponent {
         const cls = getGroupBehavioralClass(g.category);
         const projectLabel = g.project_name || g.project_slug || '';
         const ariaLabel = `${g.name}, ${BEHAVIORAL_CLASS_CONFIG[cls].label}, ${g.org_seat_count} seats` + (projectLabel ? `, ${projectLabel}` : '');
-        return { ...g, cls, projectLabel, ariaLabel };
+        const projectAriaLabel = projectLabel ? `${projectLabel}, organization overview` : '';
+        return { ...g, cls, projectLabel, ariaLabel, projectAriaLabel };
       })
     );
   }

@@ -3,14 +3,14 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensGroupsService } from '@services/org-lens-groups.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { of } from 'rxjs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { Account, OrgLensGroupsResponse, OrgLensGroupSummary } from '@lfx-one/shared/interfaces';
 
@@ -49,12 +49,19 @@ describe('OrgGroupsComponent — project label', () => {
     await fixture.whenStable();
   }
 
+  function projectLineElement(): HTMLElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="org-groups-item-project"]');
+  }
+
   function projectLine(): string | null {
-    return fixture.nativeElement.querySelector('[data-testid="org-groups-item-project"]')?.textContent?.trim() ?? null;
+    return projectLineElement()?.textContent?.trim() ?? null;
   }
 
   function rowAriaLabel(): string | null {
-    return fixture.nativeElement.querySelector('[data-testid^="org-groups-item-"]')?.getAttribute('aria-label') ?? null;
+    // The row's accessible name lives on the stretched whole-row link (a direct child of the
+    // row container), not on the container itself — the foundation link is nested deeper and
+    // must not be matched here.
+    return fixture.nativeElement.querySelector('[data-testid^="org-groups-item-"] > a')?.getAttribute('aria-label') ?? null;
   }
 
   it('prefers project_name over project_slug in the project line and aria-label', async () => {
@@ -88,5 +95,49 @@ describe('OrgGroupsComponent — project label', () => {
 
     expect(projectLine()).toBeNull();
     expect(rowAriaLabel()).toBe('WG Identity & Trust, Working Groups, 3 seats');
+  });
+
+  it('renders the foundation name as a link to /org/projects/<slug> when project_slug is present', async () => {
+    await render({
+      groups: [group({ project_name: 'Ultra Ethernet Consortium Fund', project_slug: 'uepf' })],
+      total_groups: 1,
+      total_seats: 3,
+    });
+
+    const link = projectLineElement();
+    expect(link?.tagName).toBe('A');
+    expect(link?.getAttribute('href')).toBe('/org/projects/uepf');
+    expect(link?.getAttribute('aria-label')).toBe('Ultra Ethernet Consortium Fund, organization overview');
+  });
+
+  it('renders the foundation name as plain text (no link) when project_slug is absent', async () => {
+    await render({
+      // project_name can be set from the committee index even when project_slug is missing —
+      // the link must still be gated on project_slug alone, per the destination route's contract.
+      groups: [group({ project_name: 'Ultra Ethernet Consortium Fund', project_slug: undefined })],
+      total_groups: 1,
+      total_seats: 3,
+    });
+
+    const el = projectLineElement();
+    expect(el?.tagName).toBe('P');
+    expect(el?.textContent?.trim()).toBe('Ultra Ethernet Consortium Fund');
+  });
+
+  it('clicking the foundation link navigates to the project route, not the group route', async () => {
+    await render({
+      groups: [group({ project_name: 'Ultra Ethernet Consortium Fund', project_slug: 'uepf' })],
+      total_groups: 1,
+      total_seats: 3,
+    });
+
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+
+    projectLineElement()?.click();
+    await fixture.whenStable();
+
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+    expect(navigateSpy.mock.calls[0][0].toString()).toBe('/org/projects/uepf');
   });
 });

@@ -34,4 +34,8 @@ export interface OrgLensGroupVm extends OrgLensGroupSummary {
   projectLabel: string;
   /** Pre-computed row `aria-label`: name, behavioral class, seat count, and projectLabel when set. */
   ariaLabel: string;
+  /** Pre-computed accessible name for the foundation link (only rendered when project_slug is
+   *  set) — distinguishes it from the row's own aria-label so screen-reader users can tell the
+   *  two link targets apart. Empty string when projectLabel is empty. */
+  projectAriaLabel: string;
 }
