@@ -96,7 +96,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
     expect(rowAriaLabel()).toBe('WG Identity & Trust, Working Groups, 3 seats');
   });
 
-  it('renders the foundation name as a link to /org/projects/<slug> when project_slug is present', async () => {
+  it('renders the foundation name as a link to /org/memberships/<slug> when project_slug is present', async () => {
     await render({
       groups: [group({ project_name: 'Ultra Ethernet Consortium Fund', project_slug: 'uepf' })],
       total_groups: 1,
@@ -105,8 +105,11 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
 
     const link = projectLineElement();
     expect(link?.tagName).toBe('A');
-    expect(link?.getAttribute('href')).toBe('/org/projects/uepf');
-    expect(link?.getAttribute('aria-label')).toBe('View Ultra Ethernet Consortium Fund project detail');
+    // Not /org/projects/:slug — that route is Snowflake/CDP-scoped to sub-project activity rows
+    // and 404s for a foundation-level slug (verified live against uepf and cncf).
+    // /org/memberships/:slug is the same convention org-memberships.component.html itself uses.
+    expect(link?.getAttribute('href')).toBe('/org/memberships/uepf');
+    expect(link?.getAttribute('aria-label')).toBe('View Ultra Ethernet Consortium Fund membership details');
   });
 
   it('renders the foundation name as plain text (no link) when project_slug is absent', async () => {
@@ -123,7 +126,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
     expect(el?.textContent?.trim()).toBe('Ultra Ethernet Consortium Fund');
   });
 
-  it('clicking the foundation link navigates to the project route, not the group route', async () => {
+  it('clicking the foundation link navigates to the membership route, not the group route', async () => {
     await render({
       groups: [group({ project_name: 'Ultra Ethernet Consortium Fund', project_slug: 'uepf' })],
       total_groups: 1,
@@ -137,7 +140,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
     await fixture.whenStable();
 
     expect(navigateSpy).toHaveBeenCalledTimes(1);
-    expect(navigateSpy.mock.calls[0][0].toString()).toBe('/org/projects/uepf');
+    expect(navigateSpy.mock.calls[0][0].toString()).toBe('/org/memberships/uepf');
   });
 
   // jsdom does no layout or hit-testing, so this asserts the row anchor's own target — not that

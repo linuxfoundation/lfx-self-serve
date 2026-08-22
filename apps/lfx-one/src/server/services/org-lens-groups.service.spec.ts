@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
+import type { CommitteeServiceOrgSeat, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors org-people-directory.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into
@@ -44,13 +44,15 @@ vi.mock('@lfx-one/shared/constants', () => ({
   isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
 }));
 
+import type { Request } from 'express';
+
 import { logger } from './logger.service';
 import { OrgLensGroupsService } from './org-lens-groups.service';
 
 const ORG_UID = 'org-1';
-const req = {} as never;
+const req = {} as unknown as Request;
 
-function seat(over: Record<string, unknown> = {}): never {
+function seat(over: Partial<CommitteeServiceOrgSeat> = {}): CommitteeServiceOrgSeat {
   return {
     uid: 'seat-1',
     committee_uid: 'c-1',
@@ -60,7 +62,7 @@ function seat(over: Record<string, unknown> = {}): never {
     project_uid: 'p-cncf',
     project_slug: 'cncf',
     ...over,
-  } as never;
+  } as CommitteeServiceOrgSeat;
 }
 
 async function run(): Promise<OrgLensGroupsResponse> {

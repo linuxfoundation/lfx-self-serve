@@ -147,7 +147,7 @@
                   </p>
                   @if (group.project_slug) {
                     <a
-                      [routerLink]="['/org/projects', group.project_slug]"
+                      [routerLink]="['/org/memberships', group.project_slug]"
                       class="pointer-events-auto relative z-10 block w-fit truncate text-xs text-gray-400 transition-colors hover:text-blue-600 hover:underline"
                       data-testid="org-groups-item-project"
                       [attr.aria-label]="group.projectAriaLabel">

@@ -125,9 +125,9 @@ test.describe('Org Groups — row vs. foundation link (GH-1784)', () => {
     expect(page.url()).toContain(`/groups/${GROUP_UID}`);
   });
 
-  test('clicking the foundation label opens the project detail page instead', async ({ page }) => {
+  test('clicking the foundation label opens the membership detail page instead', async ({ page }) => {
     await page.getByTestId('org-groups-item-project').click();
-    await page.waitForURL((url) => url.pathname.startsWith(`/org/projects/${PROJECT_SLUG}`));
-    expect(page.url()).toContain(`/org/projects/${PROJECT_SLUG}`);
+    await page.waitForURL((url) => url.pathname.startsWith(`/org/memberships/${PROJECT_SLUG}`));
+    expect(page.url()).toContain(`/org/memberships/${PROJECT_SLUG}`);
   });
 });

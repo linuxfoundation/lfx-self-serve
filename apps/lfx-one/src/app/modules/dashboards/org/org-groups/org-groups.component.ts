@@ -92,9 +92,11 @@ export class OrgGroupsComponent {
         const cls = getGroupBehavioralClass(g.category);
         const projectLabel = g.project_name || g.project_slug || '';
         const ariaLabel = `${g.name}, ${BEHAVIORAL_CLASS_CONFIG[cls].label}, ${g.org_seat_count} seats` + (projectLabel ? `, ${projectLabel}` : '');
-        // Matches the established wording for this same route elsewhere in the app (e.g.
-        // org-meetings-influence.component.html's 'View <project> project detail').
-        const projectAriaLabel = projectLabel ? `View ${projectLabel} project detail` : '';
+        // Routes to /org/memberships/:slug, not /org/projects/:slug — the org-projects page is
+        // Snowflake/CDP-scoped to sub-project activity rows and doesn't resolve foundation-level
+        // slugs (verified live: /org/projects/uepf 404s, /org/memberships/uepf works). Wording
+        // matches org-memberships.component.html's own membership rows.
+        const projectAriaLabel = projectLabel ? `View ${projectLabel} membership details` : '';
         return { ...g, cls, projectLabel, ariaLabel, projectAriaLabel };
       })
     );
