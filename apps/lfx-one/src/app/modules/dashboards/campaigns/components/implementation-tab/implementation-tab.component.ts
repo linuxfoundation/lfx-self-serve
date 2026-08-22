@@ -682,15 +682,21 @@ export class ImplementationTabComponent implements OnInit {
       // reverts (the defect this line exists to close).
       //
       // UNTRACKED, for the same reason the `applyDraft` call above is, and it became load-bearing
-      // the moment `emitDraft` started reading the platform signals. `emitDraft` reads every one
-      // of them, so a tracked call here makes each an effect DEPENDENCY: setting
-      // `linkedInVariants` after mount re-runs the whole effect, which re-seeds from the brief and
-      // replays the draft over whatever the user has since changed. That is a silent revert of
-      // exactly the kind this ticket exists to stop — a user picking an ad variant would lose
-      // their geo edits — and it reverts fields this method never touches.
+      // the moment `emitDraft` started reading the platform signals. A tracked call here makes
+      // every signal `emitDraft` reads an effect DEPENDENCY, and today that is the Meta block
+      // (objective, placements, pixel id, geo targets, budget and its mode) plus the LinkedIn
+      // budget pair and the Reddit budget.
       //
-      // Found by measurement rather than review: adding `linkedInVariants` to the emit turned
-      // three unrelated LinkedIn tests red, all of them mutating a signal after mount.
+      // The failure that buys: any of those set after mount re-runs the whole effect, which
+      // re-seeds from the brief and replays the draft over whatever the user has since changed.
+      // A user editing the Meta budget would lose their pixel id — a silent revert of exactly the
+      // kind this ticket exists to stop, in fields the triggering edit never touched.
+      //
+      // Found by measurement rather than review, on the wider emit an earlier revision of this
+      // ticket carried: adding an ad-variant array to the emit turned three unrelated LinkedIn
+      // tests red, all of them mutating a signal after mount. Those arrays are no longer emitted
+      // (they have no editor), but the hazard is a property of the TRACKING, not of which fields
+      // happen to be listed — so this stays regardless of what `emitDraft` reads next.
       untracked(() => this.emitDraft());
     });
 

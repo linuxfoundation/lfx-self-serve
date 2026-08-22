@@ -339,28 +339,24 @@ export interface CampaignBriefPersistenceState {
  * in a handler, read in `submit`, seeded in `populateFromBrief` and mirrored here — four places to
  * keep in step. A form-backed one is stored once and derived everywhere else.
  *
- * The per-platform BUDGETS are NOT carried here yet. They remain component-local signals, so a tab
- * switch still reverts them — the same defect this interface exists to prevent, still open for
- * that half. LFXV2-3315 addresses it on a separate branch by adding budget members here and
- * emitting from each budget handler, which is a DIFFERENT mechanism from the form controls above.
- * Whichever lands second inherits a file with two ways of doing one thing, so unifying them is
- * worth doing rather than deferring: the form is the better target, since it needs no per-handler
- * emission and so cannot be forgotten when a control is added.
+ * The per-platform BUDGETS and the Meta controls ARE carried, by a different mechanism from the
+ * form controls above: they remain component signals, so `valueChanges` cannot see them and each
+ * mutation handler calls `emitDraft` itself. Two mechanisms therefore coexist in this file. The
+ * form is the better target — it needs no per-handler emission and so cannot be forgotten when a
+ * control is added — so unifying on it is worth doing rather than deferring again.
  *
- * That drift is not hypothetical, though none of it is visible HERE: this branch adds only the
- * three LinkedIn picks, and no budget or Meta member appears on this interface yet. LFXV2-3315
- * (budgets) and LFXV2-3227/3228 (four Meta controls — objective, placements, pixel id, geo
- * targets) both carry their fields by the per-handler signal mechanism, and both are still open.
- * When they land, two mechanisms will coexist in this file, which is the argument for unifying on
- * the form rather than deferring it a third time.
+ * Any per-platform value not named on this interface is NOT carried across a tab switch, and the
+ * test for whether that is a bug is whether a USER CAN CHANGE IT:
  *
- * Any per-platform value not named on this interface is NOT carried across a tab switch. Those
- * fall into two groups with opposite verdicts, and the distinction matters more than the
- * membership: values the user cannot edit (creative variants, the Reddit targeting rendered
- * read-only for review) are correctly discarded, since they re-derive from the brief identically;
- * values the user CAN edit and that are not carried are simply still broken. Deliberately not
- * enumerated — the second group shrinks as tickets land, and a list of members is exactly the kind
- * of claim a later change falsifies with nothing to catch it.
+ *   - Values with no editor — the creative variants and the Reddit targeting lists, all rendered
+ *     read-only for review — are correctly absent. `populateFromBrief` re-seeds them from the
+ *     brief on every mount, so they re-derive identically and carrying them would only let a
+ *     stale copy overwrite a fresh seed.
+ *   - Values a user CAN edit and that are not carried are simply still broken.
+ *
+ * Membership is deliberately not enumerated here — it changes as tickets land and as controls gain
+ * editors, and a list of members is exactly the kind of claim a later change falsifies with
+ * nothing to catch it. The per-field docblocks below carry the current answer.
  *
  * `null` means "nothing to restore", which is the state on first mount and after a reset. It is
  * NOT the same as an empty draft: an empty draft would mean the user deliberately cleared every

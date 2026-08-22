@@ -2341,8 +2341,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(config['lifetimeBudget']).toBe(true);
   });
 
-  // === Meta: the one member of its block that was not carried ===
-
   // === Handler emission, which naming the field in `emitDraft` does not give you ===
 
   /**
@@ -2350,9 +2348,15 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * own `emitDraft()` call the parent never learns the edit — and the field is lost despite being
    * named in the emit.
    *
-   * Asserted on the draft the component emits DURING the edit, with no manual `emitDraft()`: that
-   * is the only assertion a missing handler emit can fail. The round-trip tests above call
-   * `emitDraft()` by hand where no handler exists, which would mask exactly this defect.
+   * The regression protection is that these drive the REAL bindings and nothing else: each
+   * dispatches a genuine `input`/`change` event at the template's own control and then reads the
+   * draft the component emitted of its own accord. `Internals` deliberately exposes no
+   * `emitDraft`, so no test here can supply the emission the handler is supposed to make.
+   *
+   * That property is the whole point, because its absence is what let the defect hide: the
+   * earlier versions of these tests drove `set*` helpers the template never called, and stayed
+   * green with `emitDraft()` deleted from either live LinkedIn handler. Driving the binding is
+   * what makes that mutation fail, so a `set*`-style shortcut must not come back.
    */
   it('emits the draft when the reddit budget handler runs', async () => {
     const first = await mount(null);
