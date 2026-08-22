@@ -104,24 +104,28 @@ async function gotoGroups(page: Page): Promise<void> {
 test.setTimeout(120_000);
 
 test.describe('Org Groups — row vs. foundation link (GH-1784)', () => {
-  test('clicking the row body opens the group detail page', async ({ page }) => {
+  test.beforeEach(async ({ page }) => {
     await stubAccountContext(page);
     await stubGroups(page);
     await gotoGroups(page);
+  });
 
+  test('clicking the row body opens the group detail page', async ({ page }) => {
     // Click the group name text, not the anchor overlay directly — this is the part jsdom
     // can't verify: that the stretched link actually receives the click through the
-    // pointer-events-none content wrapper.
-    await page.getByTestId('org-groups-item-name').click();
+    // pointer-events-none content wrapper. force: true is required here for a real reason, not
+    // to paper over a broken test: Playwright's actionability guard sees the name text sits
+    // inside pointer-events-none and refuses to click it (it thinks nothing there is clickable),
+    // even though the browser itself would correctly hit-test the click through to the overlay
+    // anchor beneath. force skips only that precondition — Playwright still dispatches a real
+    // click at these coordinates, so the overlay/pointer-events mechanics are still what's under
+    // test. Same pattern as org-meetings-dashboard.spec.ts and weekly-brief-card.spec.ts.
+    await page.getByTestId('org-groups-item-name').click({ force: true });
     await page.waitForURL((url) => url.pathname.startsWith(`/groups/${GROUP_UID}`));
     expect(page.url()).toContain(`/groups/${GROUP_UID}`);
   });
 
   test('clicking the foundation label opens the project detail page instead', async ({ page }) => {
-    await stubAccountContext(page);
-    await stubGroups(page);
-    await gotoGroups(page);
-
     await page.getByTestId('org-groups-item-project').click();
     await page.waitForURL((url) => url.pathname.startsWith(`/org/projects/${PROJECT_SLUG}`));
     expect(page.url()).toContain(`/org/projects/${PROJECT_SLUG}`);
