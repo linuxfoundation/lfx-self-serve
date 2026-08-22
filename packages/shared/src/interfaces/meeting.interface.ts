@@ -1455,6 +1455,18 @@ export interface MeetingComposerContext {
 /** Composer surface: the full sectioned drawer, or the condensed quick create dialog. */
 export type MeetingComposerVariant = 'drawer' | 'quick';
 
+/**
+ * What the post-create toast needs to render its actions.
+ * @description Carried on the PrimeNG message's `data`, since creating no longer navigates anywhere —
+ * the toast is the only route back to the meeting that was just created.
+ */
+export interface MeetingComposerToastData {
+  meetingUid: string;
+  meetingTitle: string;
+  /** Router link to the meeting's details page. */
+  meetingUrl: string;
+}
+
 /** Dialog data for the composer's manual guest entry dialog. */
 export interface ManualGuestDialogData {
   /** Values carried over from the search field, when the directory result was incomplete. */

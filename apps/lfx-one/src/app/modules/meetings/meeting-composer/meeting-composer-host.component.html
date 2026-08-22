@@ -5,6 +5,37 @@
   <lfx-quick-create-dialog (create)="onSubmit()" />
 }
 
+<!-- Post-create toast (LFXV2-3242): creating no longer navigates, so this is the way back to the meeting -->
+<p-toast [key]="toastKey" position="top-right">
+  <ng-template let-message pTemplate="message">
+    <div class="flex w-full items-start gap-3" data-testid="meeting-composer-toast">
+      <i class="fa-light fa-circle-check mt-0.5 shrink-0 text-xl text-emerald-500" aria-hidden="true"></i>
+      <div class="flex min-w-0 flex-1 flex-col gap-1">
+        <span class="text-sm font-semibold text-gray-900">{{ message.summary }}</span>
+        <span class="break-words text-xs text-gray-600">{{ message.detail }}</span>
+        <div class="mt-1 flex items-center gap-3">
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+            data-testid="meeting-composer-toast-edit"
+            (click)="onEditCreatedMeeting(message.data)">
+            <i class="fa-light fa-pen text-[10px]" aria-hidden="true"></i>
+            <span>Edit meeting</span>
+          </button>
+          <a
+            [routerLink]="message.data.meetingUrl"
+            class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+            data-testid="meeting-composer-toast-details"
+            (click)="onDismissToast()">
+            <i class="fa-light fa-arrow-up-right-from-square text-[10px]" aria-hidden="true"></i>
+            <span>Meeting details</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </ng-template>
+</p-toast>
+
 <!-- Meeting composer drawer (LFXV2-3234) -->
 <p-drawer
   [visible]="composer.isOpen() && !composer.isQuickCreate()"
