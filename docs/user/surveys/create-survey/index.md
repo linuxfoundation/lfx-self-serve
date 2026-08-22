@@ -4,7 +4,6 @@ description: How to create a new survey for your project in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, create, nps, feedback]
-last_generated: 2026-05-22
 last_updated: 2026-05-22
 intercom_collection: Surveys
 ---

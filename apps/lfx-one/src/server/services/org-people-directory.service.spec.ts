@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { createHmac } from 'crypto';
+
 import type { OrgAccessUser, OrgAllEmployeeRow, OrgAllEmployeesResponse, KeyContactEmployee } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so runtime collaborators are mocked. The four source services are constructed in
@@ -617,6 +619,45 @@ describe('OrgPeopleDirectoryService.merge — no regression for single-source pe
     const { rows } = await run();
 
     expect(rows).toHaveLength(1);
+  });
+});
+
+describe('OrgPeopleDirectoryService.merge — live-only personKey is a keyed HMAC', () => {
+  const previousSecret = process.env['PCC_AUTH0_SECRET'];
+
+  beforeEach(() => {
+    process.env['PCC_AUTH0_SECRET'] = 'test-signing-secret';
+  });
+
+  afterEach(() => {
+    if (previousSecret === undefined) {
+      delete process.env['PCC_AUTH0_SECRET'];
+    } else {
+      process.env['PCC_AUTH0_SECRET'] = previousSecret;
+    }
+  });
+
+  it('matches a keyed HMAC-SHA256 of the merge key, not an unkeyed hash or reversible encoding', async () => {
+    fetchAllOrgSeats.mockResolvedValue([seat({ username: 'liveonly', email: 'liveonly@example.com' })]);
+
+    const { rows } = await run();
+
+    const mergeKey = resolveMergeKey({ lfUsername: 'liveonly', email: 'liveonly@example.com' }) as string;
+    const expectedDigest = createHmac('sha256', 'test-signing-secret').update(mergeKey).digest('base64url').slice(0, 32);
+
+    expect(rows[0].personKey).toBe(`live-${expectedDigest}`);
+    // The old (pre-fix) scheme reversibly base64-encoded the merge key directly — assert this isn't that.
+    expect(rows[0].personKey).not.toBe(`live-${Buffer.from(mergeKey).toString('base64url')}`);
+  });
+
+  it('changes when the signing secret changes, proving the key is actually used', async () => {
+    fetchAllOrgSeats.mockResolvedValue([seat({ username: 'liveonly', email: 'liveonly@example.com' })]);
+    const { rows: rowsWithSecretA } = await run();
+
+    process.env['PCC_AUTH0_SECRET'] = 'a-different-signing-secret';
+    const { rows: rowsWithSecretB } = await run();
+
+    expect(rowsWithSecretA[0].personKey).not.toBe(rowsWithSecretB[0].personKey);
   });
 });
 

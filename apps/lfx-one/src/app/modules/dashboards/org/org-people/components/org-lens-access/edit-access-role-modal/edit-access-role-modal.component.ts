@@ -3,8 +3,9 @@
 
 // Generated with [Cursor](https://cursor.com)
 
-import { Component, computed, effect, input, linkedSignal, model, output, type Signal } from '@angular/core';
+import { Component, computed, effect, inject, input, linkedSignal, model, output, type Signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { ORG_ACCESS_ROLE_BADGE_LABEL } from '@lfx-one/shared/constants';
 import type { OrgAccessRole, OrgAccessRoleOption, OrgAccessUser } from '@lfx-one/shared/interfaces';
 import { DialogModule } from 'primeng/dialog';
@@ -19,6 +20,8 @@ import { TooltipModule } from 'primeng/tooltip';
   templateUrl: './edit-access-role-modal.component.html',
 })
 export class EditAccessRoleModalComponent {
+  private readonly drawer = inject(PersonDetailDrawerService);
+
   /** The principal being edited (drives the current-access label + seed role). */
   public readonly user = input<OrgAccessUser | null>(null);
   /** Two-way dialog visibility. */
@@ -73,5 +76,16 @@ export class EditAccessRoleModalComponent {
   protected onCancel(): void {
     if (this.saving()) return;
     this.visible.set(false);
+  }
+
+  protected onPersonClick(): void {
+    const person = this.user();
+    if (!person) return;
+    this.drawer.open({
+      name: person.name,
+      initials: person.initials,
+      avatarColorClass: 'bg-blue-600',
+      email: person.email,
+    });
   }
 }

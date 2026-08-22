@@ -173,4 +173,29 @@ export interface OrgAllEmployeeDetail {
   code: OrgAllEmployeeCodeContribution[];
   events: OrgAllEmployeeEvent[];
   training: OrgAllEmployeeTraining[];
+  /**
+   * Email address(es) on this person's LF account affiliated with the company at the domain
+   * level (per Salesforce Account domain(s)), excluding personal/academic addresses. Demo-derived
+   * pending a real Salesforce Account multi-domain + LF SSO multi-email pipeline — see
+   * `deriveDemoCompanyEmails` in org-lens-people.service.ts.
+   */
+  companyEmails: string[];
+}
+
+/**
+ * Response for the email-based company-emails lookup — used by Org Lens tabs (Board/Committee)
+ * whose rows have no `personKey` to fetch the full `OrgAllEmployeeDetail` payload on.
+ */
+export interface OrgLensCompanyEmailsResponse {
+  companyEmails: string[];
+}
+
+/**
+ * Internal fetch-result shape for `PersonDetailDrawerService`. `detail` stays `null` for
+ * email-only lookups (Board/Committee openers with no `personKey`) so the drawer's "Detailed
+ * activity isn't available" state stays truthful instead of implying verified-empty activity.
+ */
+export interface OrgDrawerFetchResult {
+  detail: OrgAllEmployeeDetail | null;
+  companyEmails: string[];
 }

@@ -4,8 +4,7 @@ description: Frequently asked questions about LFX events.
 audience: [all]
 product_area: Events
 tags: [events, faq, attendance]
-last_generated: 2026-05-22
-last_updated: 2026-05-22
+last_updated: 2026-08-17
 intercom_collection: Events
 ---
 
@@ -47,4 +46,4 @@ Open the **Past** tab on the My Events page, find the event, and select **Downlo
 
 ## Who do I contact about a specific event?
 
-Contact the event organizer listed on the event detail page, or reach out to LFX support through the Help Center.
+Contact the event organizer listed on the event detail page, or reach out to LFX support via in-app messaging.

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, OnInit, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -16,7 +16,7 @@ import { TimePickerComponent } from '@components/time-picker/time-picker.compone
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { GenerateAgendaRequest, MeetingTemplate } from '@lfx-one/shared';
 import { MEETING_DURATION_OPTIONS, RECURRING_MEETING_FEATURE, TIMEZONES, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
-import { UserSearchResult } from '@lfx-one/shared/interfaces';
+import { MeetingUserInfo, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { getTimezoneUtcOffsetString, getWeekOfMonth } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -54,6 +54,9 @@ export class MeetingDetailsComponent implements OnInit {
 
   // Form group input from parent
   public readonly form = input.required<FormGroup>();
+  // The owner baseline hydrated from the loaded meeting (edit mode only) — drives the revert
+  // target for the organizer picker's clear affordance and the "Saved organizer" row.
+  public readonly savedOwner = input<MeetingUserInfo | null>(null);
 
   // Dependency injection
   private readonly destroyRef = inject(DestroyRef);
@@ -75,10 +78,6 @@ export class MeetingDetailsComponent implements OnInit {
   // Owner (organizer) picker signals
   public readonly ownerManualEntry = signal<boolean>(false);
 
-  // The single organizer picker instance — needed to reset its internal input text on Clear
-  // (the box seeds itself from ownerEmail on init, and nulling the bound controls doesn't empty it).
-  private readonly ownerSearch = viewChild(UserSearchComponent);
-
   public readonly youtubeTitleLimit = YOUTUBE_MAX_MEETING_TITLE_LENGTH;
   public readonly youtubeAmberThreshold = Math.floor(YOUTUBE_MAX_MEETING_TITLE_LENGTH * 0.9);
   public readonly titleLength = toSignal(
@@ -95,8 +94,9 @@ export class MeetingDetailsComponent implements OnInit {
     { initialValue: 0 }
   );
 
-  // Current organizer (owner) selection shown under the search box — lfx-user-search clears its
-  // own input after a pick, so this label is the only visible confirmation of the selection.
+  // The committed organizer, formatted as "Name (email)" — bound into lfx-user-search's
+  // [displayValue] so the input box always renders whatever is actually committed, whether that
+  // came from hydration or a fresh pick.
   public readonly selectedOwnerLabel = toSignal(
     toObservable(this.form).pipe(
       switchMap((f) => {
@@ -118,6 +118,49 @@ export class MeetingDetailsComponent implements OnInit {
     ),
     { initialValue: '' }
   );
+
+  // The committed organizer's username, tracked alongside selectedOwnerLabel so
+  // showSavedOwnerRevert can distinguish two different people who happen to share a display label
+  // (matches prepareOwnerData()'s own username+name+email comparison in meeting-manage.component.ts).
+  public readonly selectedOwnerUsername = toSignal(
+    toObservable(this.form).pipe(
+      switchMap((f) => {
+        const usernameCtrl = f.get('ownerUsername');
+        if (!usernameCtrl) return of(null);
+        return usernameCtrl.valueChanges.pipe(
+          startWith(usernameCtrl.value),
+          map((value) => (value as string | null) || null)
+        );
+      })
+    ),
+    { initialValue: null }
+  );
+
+  // Same "Name (email)" formatting, applied to the saved-owner baseline rather than the live form
+  // — used for the "Saved organizer: …" row so it reads identically to the picker's own display.
+  public readonly savedOwnerLabel = computed(() => {
+    const saved = this.savedOwner();
+    if (!saved) return '';
+    const name = (saved.name || '').trim();
+    const email = (saved.email || '').trim();
+    if (name && email) {
+      return `${name} (${email})`;
+    }
+    return name || email;
+  });
+
+  // The saved-organizer row only makes sense once there's a saved owner to revert to, and only
+  // while the picker currently shows something else — once reverted, the picker's own label and
+  // username already match and the row would be redundant. Username is compared alongside the
+  // label (not just name+email) so two people who happen to share a display label still trip the
+  // saved-owner row, matching prepareOwnerData()'s own identity comparison.
+  public readonly showSavedOwnerRevert = computed(() => {
+    const savedLabel = this.savedOwnerLabel();
+    if (!savedLabel) return false;
+    const labelDiffers = savedLabel !== this.selectedOwnerLabel();
+    const usernameDiffers = (this.savedOwner()?.username || null) !== this.selectedOwnerUsername();
+    return labelDiffers || usernameDiffers;
+  });
 
   // Duration options from shared constants
   public readonly durationOptions = MEETING_DURATION_OPTIONS;
@@ -231,10 +274,10 @@ export class MeetingDetailsComponent implements OnInit {
       ?.setValue(fullName || null);
   }
 
-  // The search pool is the indexed meeting-registrant directory, so a user who has never been
-  // registered to a meeting the caller can see is unfindable there — manual entry covers them.
-  // Any lingering username is dropped on the first manual edit (see the subscription in ngOnInit),
-  // not here, so switching modes without editing stays side-effect free.
+  // The search pool is the same committee-member directory Invite Guests uses; manual entry still
+  // covers anyone who isn't a committee member of a project the caller can see (e.g. an external
+  // organizer). Any lingering username is dropped on the first manual edit (see the subscription
+  // in ngOnInit), not here, so switching modes without editing stays side-effect free.
   public switchToOwnerManualEntry(): void {
     this.ownerManualEntry.set(true);
   }
@@ -243,7 +286,7 @@ export class MeetingDetailsComponent implements OnInit {
     // An invalid manual email would keep gating the step invisibly after the switch — its error
     // message only renders in manual mode, and the remounted search box is a separate control that
     // can't edit ownerEmail. Drop it; a typed name stays (name-only owners are valid upstream) and
-    // remains visible/clearable via the "Current organizer" row.
+    // remains visible/clearable via the picker's own displayValue.
     const ownerEmailCtrl = this.form().get('ownerEmail');
     if (ownerEmailCtrl?.invalid) {
       ownerEmailCtrl.setValue(null);
@@ -252,25 +295,16 @@ export class MeetingDetailsComponent implements OnInit {
   }
 
   // lfx-user-search binds ownerEmail/ownerUsername but not ownerName (composed in
-  // handleOwnerSelection), so its clear can't reach the name — sync it on the explicit clear event
-  // instead of inferring "cleared" from empty bound controls, which could misread an edit
-  // hydration that patches the name before an empty email emits.
+  // handleOwnerSelection); its own onClear only nulls the controls it binds, so this fills in the
+  // revert-or-clear semantics for all three owner controls together.
   public handleOwnerSearchCleared(): void {
-    this.form().get('ownerName')?.setValue(null);
+    this.revertOwnerToSaved();
   }
 
-  // Reverting a selection: lfx-user-search empties its own input right after a pick, so PrimeNG's
-  // in-field clear icon never shows for a committed selection — this button is the clear
-  // affordance instead. Emptying every owner control makes the save omit the `owner` key (create:
-  // upstream defaults to the creator; edit: the stored owner is preserved, as the helper text says).
+  // The "Revert" button next to the saved-organizer row — same revert-or-clear semantics as the
+  // in-field ⊗ (handleOwnerSearchCleared), plus it's the only clear affordance in manual-entry mode.
   public clearOwnerSelection(): void {
-    const form = this.form();
-    form.get('ownerUsername')?.setValue(null);
-    form.get('ownerName')?.setValue(null);
-    form.get('ownerEmail')?.setValue(null);
-    // The search box seeds its own input text from ownerEmail on init; nulling the controls
-    // doesn't empty it, so reset the picker itself too (absent in manual mode, where no box shows).
-    this.ownerSearch()?.onSearchClear();
+    this.revertOwnerToSaved();
   }
 
   // AI Helper public methods
@@ -527,6 +561,25 @@ export class MeetingDetailsComponent implements OnInit {
         // For custom, the recurrence pattern component will handle the values
         break;
     }
+  }
+
+  // Reverting a selection: on an edit with a saved organizer, "clearing" restores it rather than
+  // emptying the field — upstream has no owner-removal path, so once an owner is saved there's no
+  // true empty state to revert to. Without a saved owner (create flow, or an edit whose owner was
+  // never set) this empties every control instead, and the save still omits the `owner` key
+  // either way (create: upstream defaults to the creator; edit: the stored owner is preserved).
+  private revertOwnerToSaved(): void {
+    const form = this.form();
+    const saved = this.savedOwner();
+    // The Revert button is also the manual-entry mode's clear affordance (no autocomplete there,
+    // so no in-field ⊗) — flip modes *before* patching the controls below. The manual-edit guard
+    // in ngOnInit only drops ownerUsername while ownerManualEntry() is true; patching name/email
+    // first would make it mistake this programmatic revert for a hand edit and wipe the
+    // just-restored username.
+    this.ownerManualEntry.set(false);
+    form.get('ownerUsername')?.setValue(saved?.username || null);
+    form.get('ownerName')?.setValue(saved?.name || null);
+    form.get('ownerEmail')?.setValue(saved?.email || null);
   }
 
   private buildTimezoneOptions(date: Date): { label: string; value: string }[] {
