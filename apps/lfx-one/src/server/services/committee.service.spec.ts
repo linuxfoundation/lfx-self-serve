@@ -812,3 +812,48 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
     });
   });
 });
+
+describe('CommitteeService.getCommitteesByIds', () => {
+  let service: CommitteeService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    vi.mocked(fetchAllQueryResources).mockReset();
+    service = new CommitteeService();
+  });
+
+  it('returns an empty map without calling upstream when given no uids', async () => {
+    const result = await service.getCommitteesByIds(req, []);
+
+    expect(result.size).toBe(0);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('chunks more than 100 uids into separate batched requests, keyed by uid', async () => {
+    const firstBatch = Array.from({ length: 100 }, (_, i) => `uid-${i}`);
+    const secondBatch = ['uid-100', 'uid-101'];
+    const uids = [...firstBatch, ...secondBatch];
+
+    proxyRequest
+      .mockResolvedValueOnce(pageOf(firstBatch.map((uid) => ({ uid, project_name: `Project ${uid}` }))))
+      .mockResolvedValueOnce(pageOf(secondBatch.map((uid) => ({ uid, project_name: `Project ${uid}` }))));
+
+    const result = await service.getCommitteesByIds(req, uids);
+
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'committee', filters_or: firstBatch.map((uid) => `uid:${uid}`) });
+    expect(proxyRequest.mock.calls[1][4]).toMatchObject({ type: 'committee', filters_or: secondBatch.map((uid) => `uid:${uid}`) });
+    expect(result.size).toBe(102);
+    expect(result.get('uid-101')?.project_name).toBe('Project uid-101');
+  });
+
+  it('propagates a batch failure to the caller rather than failing soft (per failOnPartial callers)', async () => {
+    const firstBatch = Array.from({ length: 100 }, (_, i) => `uid-${i}`);
+    const secondBatch = ['uid-100'];
+
+    proxyRequest.mockResolvedValueOnce(pageOf(firstBatch.map((uid) => ({ uid, project_name: `Project ${uid}` })))).mockRejectedValueOnce(new Error('boom'));
+
+    await expect(service.getCommitteesByIds(req, [...firstBatch, ...secondBatch])).rejects.toThrow('boom');
+    expect(logger.warning).toHaveBeenCalledWith(req, 'get_committees_by_ids', expect.any(String), expect.objectContaining({ batch_size: secondBatch.length }));
+  });
+});

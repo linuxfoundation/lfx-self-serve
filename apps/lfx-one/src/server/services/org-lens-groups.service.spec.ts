@@ -5,13 +5,15 @@ import type { OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors org-people-directory.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into
-// this app's vitest config, so runtime collaborators are mocked. `OrgLensBoardCommitteeService`
-// and `ProjectService` are constructed in `OrgLensGroupsService`'s constructor, so they must be
-// mocked at module level; `enrichFoundationNames` is mocked directly so tests can control the
-// foundation-name map without exercising `ProjectService.getProjectsByIds`.
-const { fetchAllOrgSeats, enrichFoundationNames } = vi.hoisted(() => ({
+// this app's vitest config, so runtime collaborators are mocked. `OrgLensBoardCommitteeService`,
+// `ProjectService`, and `CommitteeService` are constructed in `OrgLensGroupsService`'s
+// constructor, so they must be mocked at module level; `enrichFoundationNames` and
+// `getCommitteesByIds` are mocked directly so tests can control each enrichment source
+// independently without exercising the real query-service calls underneath.
+const { fetchAllOrgSeats, enrichFoundationNames, getCommitteesByIds } = vi.hoisted(() => ({
   fetchAllOrgSeats: vi.fn(),
   enrichFoundationNames: vi.fn(),
+  getCommitteesByIds: vi.fn(),
 }));
 
 vi.mock('./org-lens-board-committee.service', () => ({
@@ -21,6 +23,11 @@ vi.mock('./org-lens-board-committee.service', () => ({
 }));
 vi.mock('./project.service', () => ({
   ProjectService: class {},
+}));
+vi.mock('./committee.service', () => ({
+  CommitteeService: class {
+    public getCommitteesByIds = getCommitteesByIds;
+  },
 }));
 vi.mock('./committee-seat-assignment.mapper', () => ({
   enrichFoundationNames,
@@ -61,6 +68,10 @@ async function run(): Promise<OrgLensGroupsResponse> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default both enrichment sources to "no match" so each test only sets up the source it's
+  // actually exercising.
+  enrichFoundationNames.mockResolvedValue(new Map());
+  getCommitteesByIds.mockResolvedValue(new Map());
 });
 
 afterEach(() => {
@@ -68,20 +79,30 @@ afterEach(() => {
 });
 
 describe('OrgLensGroupsService.getGroups', () => {
-  it('prefers the enriched foundation name over the raw project slug', async () => {
+  it('prefers the committee-index name over the project-index name and the raw slug', async () => {
     fetchAllOrgSeats.mockResolvedValue([seat()]);
+    getCommitteesByIds.mockResolvedValue(new Map([['c-1', { uid: 'c-1', project_name: 'Cloud Native Computing Foundation (CNCF)' }]]));
     enrichFoundationNames.mockResolvedValue(new Map([['p-cncf', 'Cloud Native Computing Foundation']]));
 
     const result = await run();
 
     expect(result.groups).toHaveLength(1);
-    expect(result.groups[0].project_name).toBe('Cloud Native Computing Foundation');
+    expect(result.groups[0].project_name).toBe('Cloud Native Computing Foundation (CNCF)');
     expect(result.groups[0].project_slug).toBe('cncf');
   });
 
-  it('omits project_name (but keeps project_slug) when enrichment returns no match', async () => {
+  it('falls back to the project-index name when the committee index has no match', async () => {
     fetchAllOrgSeats.mockResolvedValue([seat()]);
-    enrichFoundationNames.mockResolvedValue(new Map());
+    getCommitteesByIds.mockResolvedValue(new Map());
+    enrichFoundationNames.mockResolvedValue(new Map([['p-cncf', 'Cloud Native Computing Foundation']]));
+
+    const result = await run();
+
+    expect(result.groups[0].project_name).toBe('Cloud Native Computing Foundation');
+  });
+
+  it('omits project_name (but keeps project_slug) when both enrichment sources miss', async () => {
+    fetchAllOrgSeats.mockResolvedValue([seat()]);
 
     const result = await run();
 
@@ -91,16 +112,26 @@ describe('OrgLensGroupsService.getGroups', () => {
 
   it('omits project_name when neither enrichment nor project_slug is available', async () => {
     fetchAllOrgSeats.mockResolvedValue([seat({ project_uid: undefined, project_slug: undefined })]);
-    enrichFoundationNames.mockResolvedValue(new Map());
 
     const result = await run();
 
     expect(result.groups[0].project_name).toBeUndefined();
   });
 
+  it('still returns groups (falling back to the slug) when the committee-index lookup throws', async () => {
+    fetchAllOrgSeats.mockResolvedValue([seat()]);
+    getCommitteesByIds.mockRejectedValue(new Error('query-service unavailable'));
+    enrichFoundationNames.mockResolvedValue(new Map());
+
+    const result = await run();
+
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0].project_name).toBeUndefined();
+    expect(result.groups[0].project_slug).toBe('cncf');
+  });
+
   it('excludes board committees from the roster', async () => {
     fetchAllOrgSeats.mockResolvedValue([seat({ committee_category: 'Board' })]);
-    enrichFoundationNames.mockResolvedValue(new Map());
 
     const result = await run();
 
