@@ -9,6 +9,7 @@ import { OrganizationSearchComponent } from '@components/organization-search/org
 import { MeetingRegistrant, User } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
@@ -72,8 +73,13 @@ export class PublicRegistrationModalComponent {
           email: formValue.email,
           first_name: formValue.first_name,
           last_name: formValue.last_name,
-          job_title: formValue.job_title || null,
-          org_name: formValue.org_name || null,
+          // Omitted when blank rather than sent as `null` — see the note on
+          // `CreateMeetingRegistrantRequest`. Upstream declares both fields non-nullable. The BFF now
+          // drops a blank or nullish one on this path too (`toSelfRegistration`, then
+          // `toUpstreamRegistrantBody`), so this is defense in depth rather than the only guard — keep
+          // it, because neither of those exists to serve this form and both could be re-scoped.
+          ...(formValue.job_title ? { job_title: formValue.job_title } : {}),
+          ...(formValue.org_name ? { org_name: formValue.org_name } : {}),
         })
         .subscribe({
           next: (registrant: MeetingRegistrant) => {
@@ -85,9 +91,13 @@ export class PublicRegistrationModalComponent {
             });
             this.ref.close({ registered: true, registrant });
           },
-          error: (error: any) => {
+          error: (error: unknown) => {
             this.submitting.set(false);
-            const errorMessage = error?.error?.message || 'Failed to register for this meeting';
+            // `error?.error?.message` never matched: the server's error body is `{ error, code }` with
+            // no `message` key (`BaseApiError.toResponse`), so every failure showed the fallback and a
+            // registrant was never told which field was wrong. `extractErrorMessage` reads the body's
+            // `error` key too, so a validation message reaches the toast.
+            const errorMessage = extractErrorMessage(error, 'Failed to register for this meeting');
             this.messageService.add({
               severity: 'error',
               summary: 'Registration Failed',

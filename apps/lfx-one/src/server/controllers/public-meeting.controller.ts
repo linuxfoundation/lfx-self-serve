@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Meeting } from '@lfx-one/shared';
-import { MEETING_PASSWORD_HEADER } from '@lfx-one/shared/constants';
+import { MEETING_PASSWORD_HEADER, PUBLIC_REGISTRATION_FIELD_LABELS, PUBLIC_REGISTRATION_FIELD_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import { CreateMeetingRegistrantRequest, MeetingOccurrenceSummary, MeetingRegistrant, PublicMeetingOccurrencesResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
@@ -20,7 +20,7 @@ import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
-import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername, stripAuthPrefix } from '../utils/auth-helper';
 import { ProjectService } from '../services/project.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { validatePassword } from '../utils/security.util';
@@ -503,34 +503,67 @@ export class PublicMeetingController {
    * Registers a user to a public, non-restricted meeting
    */
   public async registerForPublicMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const registrantData: CreateMeetingRegistrantRequest = req.body;
+    const registrantData = this.toSelfRegistration(req, req.body);
     const meetingId = registrantData.meeting_id;
+
+    // Reject an over-length identifier rather than truncating it. `toSelfRegistration` caps the
+    // free-text fields, but truncating one of these three would turn an unusable value into a
+    // different, valid-looking one: a lookup against the wrong meeting, an invite sent to an address
+    // nobody asked for, or a registration scoped to the wrong occurrence. Rejected by name so the
+    // caller isn't told a field it did send was missing.
+    //
+    // Ahead of `startOperation`, because these are the only fields that reach it untruncated and it
+    // logs `meeting_id` verbatim — checking after would put an unbounded value in the logs, which is
+    // exactly what the cap exists to prevent. `apiErrorHandler` logs the rejection centrally.
+    //
+    // Length is measured on the stored form rather than the submitted one — `email` is already
+    // lowercased here, and lowercasing can lengthen a value for a handful of Unicode code points. The
+    // stored form is what has to fit, so that's what's checked.
+    const identifiers = {
+      meeting_id: meetingId,
+      email: registrantData.email,
+      occurrence_id: registrantData.occurrence_id ?? '',
+    };
+    const overLength = (Object.keys(identifiers) as (keyof typeof identifiers)[]).filter(
+      (field) => identifiers[field].length > PUBLIC_REGISTRATION_FIELD_MAX_LENGTH
+    );
+
+    if (overLength.length > 0) {
+      return next(
+        ServiceValidationError.fromFieldErrors(
+          Object.fromEntries(overLength.map((field) => [field, `Must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer`])),
+          // The cause goes in the top-level message, not only in `errors[]`: the one consumer of this
+          // endpoint shows the top-level message — serialized as the body's `error` key, since
+          // `BaseApiError.toResponse` emits no `message` — and discards the field array. A generic
+          // "validation failed" here would leave the registrant with no idea which field to shorten.
+          //
+          // Labels rather than wire keys, because this string is read by someone looking at a form.
+          `${overLength.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]).join(' and ')} must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer.`,
+          {
+            operation: 'register_for_public_meeting',
+            service: 'public_meeting_controller',
+            path: req.path,
+          }
+        )
+      );
+    }
 
     const startTime = logger.startOperation(req, 'register_for_public_meeting', {
       meeting_id: meetingId,
     });
 
     try {
-      // Validate the meeting ID is provided
-      if (!meetingId) {
-        const validationError = ServiceValidationError.forField('meeting_id', 'Meeting ID is required', {
-          operation: 'register_for_public_meeting',
-          service: 'public_meeting_controller',
-          path: req.path,
-        });
+      // Validate the required fields, `meeting_id` among them. Named individually in the top-level
+      // message for the same reason as the length rejection above: that message is the only part of
+      // this error the registration modal shows, so a generic "validation failed" here is what turns
+      // a fixable empty field into an unexplained failure.
+      const missing = (['meeting_id', 'email', 'first_name', 'last_name'] as const).filter((field) => !registrantData[field]);
 
-        return next(validationError);
-      }
-
-      // Validate required fields
-      if (!registrantData.email || !registrantData.first_name || !registrantData.last_name) {
+      if (missing.length > 0) {
+        const labels = missing.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]);
         const validationError = ServiceValidationError.fromFieldErrors(
-          {
-            email: !registrantData.email ? 'Email is required' : [],
-            first_name: !registrantData.first_name ? 'First name is required' : [],
-            last_name: !registrantData.last_name ? 'Last name is required' : [],
-          },
-          'Registration data validation failed',
+          Object.fromEntries(missing.map((field, index) => [field, `${labels[index]} is required`])),
+          `${labels.join(' and ')} ${missing.length > 1 ? 'are' : 'is'} required.`,
           {
             operation: 'register_for_public_meeting',
             service: 'public_meeting_controller',
@@ -590,6 +623,70 @@ export class PublicMeetingController {
       // Error handler will log
       next(error);
     }
+  }
+
+  /**
+   * Narrows a self-registration request body to the fields a person may state about themselves.
+   *
+   * `/public/api` is `auth: 'optional'`, so this runs both with and without a session — but it always
+   * forwards upstream under an M2M token, so whatever survives this function is written with
+   * application-level credentials. The body used to be assigned wholesale, which let a caller set
+   * `host: true` — upstream documents that as "access to host key for the meeting" — or claim
+   * membership of a committee by passing `committee_uid`. Neither is the caller's to decide, so both
+   * are dropped here rather than left to upstream's discretion.
+   *
+   * An allowlist rather than a denylist: a field added to `CreateMeetingRegistrantRequest` later
+   * should have to be opted in to the public path deliberately, not inherit it.
+   *
+   * Values are narrowed, not just keys. The route mounts the handler bare — no express-validator — so
+   * the parameter is `unknown` rather than the request interface, which would be an assertion about a
+   * shape nothing produced. Anything that isn't a string is dropped, which is what stops an object or
+   * array from clearing the caller's `if (!registrantData.email …)` gate and reaching upstream.
+   *
+   * `username` is taken from the session when there is one and never from the body — a signed-in
+   * registrant keeps their LFID attribution on a record written with application credentials, and a
+   * forged one still can't get in. It's stripped of any provider prefix because a registrant record
+   * stores the plain LFID: every read path strips before matching (`getMeetingRegistrantsByUsername`),
+   * so an `auth0|`-prefixed row would be invisible to the join-URL lookup that the username is stamped
+   * for in the first place. `email` is lowercased for the same reason, since query-service matching is
+   * case-sensitive and every read path lowercases.
+   *
+   * The three identifiers — `meeting_id`, `email` and `occurrence_id` — are trimmed but not truncated,
+   * unlike the free-text fields, because truncating one would turn an unusable value into a different,
+   * valid-looking one. The caller rejects an over-length one by name instead, so the response says
+   * what was actually wrong.
+   *
+   * What this doesn't close: `email` is the one field here that can't be self-asserted, so anyone can
+   * register a third party's address for a public meeting and trigger an invite to it — and when the
+   * caller is signed in, the resulting row also carries their LFID against an address they don't own,
+   * which `getMeetingRegistrantsForUser`'s email-OR-username query matches for both parties.
+   * `publicApiRateLimiter` caps the volume, not the primitive.
+   */
+  private toSelfRegistration(req: Request, body: unknown): CreateMeetingRegistrantRequest {
+    const raw = (body ?? {}) as Record<string, unknown>;
+    const text = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string).trim().slice(0, PUBLIC_REGISTRATION_FIELD_MAX_LENGTH) : '');
+    // Identifiers are narrowed and trimmed but never truncated — see the length branch in
+    // `registerForPublicMeeting`, which rejects them by name instead.
+    const identity = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string).trim() : '');
+    const sessionUsername = getEffectiveUsername(req);
+    const username = sessionUsername ? stripAuthPrefix(sessionUsername) : '';
+    const jobTitle = text('job_title');
+    const orgName = text('org_name');
+    const occurrenceId = identity('occurrence_id');
+
+    return {
+      meeting_id: identity('meeting_id'),
+      email: identity('email').toLowerCase(),
+      first_name: text('first_name'),
+      last_name: text('last_name'),
+      host: false,
+      ...(jobTitle ? { job_title: jobTitle } : {}),
+      ...(orgName ? { org_name: orgName } : {}),
+      // Which occurrences the registration covers is part of what a registrant states about their own
+      // attendance, so it stays allowlisted even though no in-app caller sends it yet.
+      ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
+      ...(username ? { username } : {}),
+    };
   }
 
   /**

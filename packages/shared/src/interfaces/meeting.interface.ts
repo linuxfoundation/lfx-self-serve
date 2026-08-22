@@ -554,6 +554,23 @@ export interface MeetingRegistrant {
  * @description Data required to add a new registrant to a meeting
  */
 export interface CreateMeetingRegistrantRequest {
+  /*
+   * Every optional field is typed without `| null`: upstream declares them all as non-nullable
+   * optional `string`s in `CreateItxRegistrantRequestBody`. Keeping `null` out of the type is what
+   * makes omission enforceable at compile time rather than a convention each caller has to remember. A
+   * create has nothing to clear, so omission loses no meaning — unlike
+   * `UpdateMeetingRegistrantRequest`, where `null` is how an update erases a stored value.
+   *
+   * `MeetingService.toUpstreamRegistrantBody` does drop a nullish `org_name`, `avatar_url` or
+   * `occurrence_id` on the way out — but it exists to serve the rename, not to launder this type, and
+   * it doesn't cover `job_title`, `username` or `committee_uid`. (The public self-registration path
+   * narrows harder still, but only because it's a trust boundary; nothing else shares that treatment.)
+   * Treat the type as the guard.
+   *
+   * Note that three of these names differ from the wire: the BFF renames `org_name` → `org`,
+   * `avatar_url` → `profile_picture` and `occurrence_id` → `occurrence` before proxying, so this
+   * interface follows the app's read model (the v1 query-service index) rather than the ITX body.
+   */
   /** UUID of the meeting */
   meeting_id: string;
   /** User's email address */
@@ -565,22 +582,20 @@ export interface CreateMeetingRegistrantRequest {
   /** Whether user should have host access */
   host?: boolean;
   /** User's job title */
-  job_title?: string | null;
+  job_title?: string;
   /** User's organization */
-  org_name?: string | null;
+  org_name?: string;
   /** Specific occurrence ID to invite to (blank = all occurrences) */
-  occurrence_id?: string | null;
+  occurrence_id?: string;
   /** User's avatar URL */
-  avatar_url?: string | null;
+  avatar_url?: string;
   /** User's LFID */
-  username?: string | null;
+  username?: string;
   /**
    * Committee this registrant was added from, as a **v2** committee UID.
    * Upstream stores a v1 committee SFID and derives `type: 'committee'` from it, so the BFF
-   * resolves v2 → v1 before proxying. Omit for a directly-added guest: upstream declares the field a
-   * non-nullable optional `string`, so `null` is off-contract and the BFF drops the key rather than
-   * forwarding it. Typed without `| null` so that's enforceable at compile time for internal callers —
-   * the BFF's runtime drop stays as a guard for bodies it doesn't build itself.
+   * resolves v2 → v1 before proxying. Omit for a directly-added guest, as for every other optional
+   * field on this body.
    */
   committee_uid?: string;
 }
@@ -590,6 +605,20 @@ export interface CreateMeetingRegistrantRequest {
  * @description Data required for PUT request to update an existing registrant
  */
 export interface UpdateMeetingRegistrantRequest {
+  /*
+   * The PUT reuses `CreateItxRegistrantRequestBody`, so the BFF renames `org_name`, `avatar_url` and
+   * `occurrence_id` on the way out (see `MeetingService.toUpstreamRegistrantBody`).
+   *
+   * Two known gaps, both pre-dating that rename:
+   *
+   * - `null` does not erase. Every target is declared non-nullable, and `MeetingService.getChangedFields`
+   *   nulls each of these whenever it's blank, so the BFF omits a `null` rather than sending one.
+   *   Clearing a stored organization therefore doesn't take effect. Fixing it needs upstream to say how
+   *   these fields are erased — don't guess between `null` and `''`; `occurrence` already gives blank
+   *   its own meaning ("blank = all occurrences").
+   * - `linkedin_profile` is not declared upstream at all, under this or any other name, so Goa discards
+   *   it. The registrant form still validates it and still reports success. Tracked separately.
+   */
   /** UUID of the meeting (required) */
   meeting_id: string;
   /** User's email address (required) */

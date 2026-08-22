@@ -152,18 +152,28 @@ export function capCodePointEdit(previous: string, next: string, max: number): s
  * Truncate to at most `max` UTF-16 code units without leaving a lone surrogate behind.
  * @param value - The string to truncate
  * @param max - The maximum number of UTF-16 code units
- * @returns `value` unchanged when within the cap, otherwise clipped to `max` units (or `max - 1` when
- * the cut would land inside a surrogate pair)
+ * @returns `value` unchanged when within the cap, `''` when `max` is not a positive number, otherwise
+ * clipped to `max` units (or `max - 1` when the cut would land inside a surrogate pair)
  *
  * Deliberately measured in UTF-16 units rather than code points, unlike {@link codePointLength} and
- * {@link capCodePointEdit}: these caps guard values that are handed to `Validators.maxLength` or a
- * native `maxlength` attribute, both of which count UTF-16 units. Truncating by code point would let a
- * string full of emoji pass a code-point cap and still fail the validator on the other side — which,
- * for the meeting composer's agenda, means an invalid form and a Save button that does nothing.
+ * {@link capCodePointEdit}. That matters where the truncated value is handed to `Validators.maxLength`
+ * or a native `maxlength` attribute, both of which count UTF-16 units: truncating by code point would
+ * let a string full of emoji pass a code-point cap and still fail the validator on the other side —
+ * which, for the meeting composer's agenda, means an invalid form and a Save button that does nothing.
+ * Callers whose value never reaches a form control (the AI prompt descriptors) get only the
+ * lone-surrogate guarantee above, which is reason enough on its own.
+ *
+ * Surrogate pairs are the only unit kept whole — a cut can still split a ZWJ sequence or orphan a
+ * combining mark. Honouring grapheme clusters would break parity with the UTF-16 counts these caps
+ * exist to satisfy.
  */
 export function truncateToUtf16Units(value: string, max: number): string {
-  if (value.length <= max || max <= 0) {
-    return value.length <= max ? value : '';
+  if (!(max > 0)) {
+    return '';
+  }
+
+  if (value.length <= max) {
+    return value;
   }
 
   // A high surrogate at the last kept position means the cut splits a pair; drop it rather than emit

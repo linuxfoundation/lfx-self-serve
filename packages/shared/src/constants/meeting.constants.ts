@@ -681,6 +681,44 @@ export const MEETING_AGENDA_PROMPT_MAX_LENGTH = 1000;
 /** Prompt length at which the character counter turns amber — same 90% of cap as the agenda's */
 export const MEETING_AGENDA_PROMPT_WARNING_LENGTH = 900;
 
+/**
+ * Character ceiling for each free-text field a caller may set on itself when registering for a public
+ * meeting (`POST /public/api/meetings/register`).
+ *
+ * That route has no express-validator and is optional-auth — so it runs with or without a session —
+ * and it always forwards upstream under an M2M token. Without a ceiling here the only bound on a name
+ * or organization is `express.json`'s body limit —
+ * megabytes, applied to the whole body rather than per field. 255 is generous for every field it
+ * bounds and small enough that nothing unbounded reaches upstream or the logs.
+ *
+ * Two rules, both keyed off this one number. The free-text fields — first/last name, job title,
+ * organization — are truncated at the cap. The identifiers, `meeting_id`, `email` and `occurrence_id`,
+ * are rejected with a validation error instead, since truncating one would turn an unusable value into
+ * a different, valid-looking one: a lookup against the wrong meeting, an invite sent to the wrong
+ * address, or a registration scoped to the wrong occurrence.
+ */
+export const PUBLIC_REGISTRATION_FIELD_MAX_LENGTH = 255;
+
+/**
+ * Human labels for the public-registration fields the route rejects by name.
+ *
+ * The rejection's top-level message is the one string the registration modal shows, so it is read by
+ * someone filling in a form, not by someone reading a request body — `email` there says "Email
+ * address", not the wire key. `errors[]` stays keyed by the wire name for anything reading the
+ * fields programmatically.
+ *
+ * `meeting_id` and `occurrence_id` are in the map even though no form field corresponds to them:
+ * they can only be wrong if a caller built the request itself, and that caller is still better served
+ * by a name it can recognize than by silence.
+ */
+export const PUBLIC_REGISTRATION_FIELD_LABELS = {
+  meeting_id: 'Meeting ID',
+  occurrence_id: 'Occurrence ID',
+  email: 'Email address',
+  first_name: 'First name',
+  last_name: 'Last name',
+} as const;
+
 /** Lower bound for the custom meeting duration, in minutes */
 export const MIN_CUSTOM_DURATION = 5;
 

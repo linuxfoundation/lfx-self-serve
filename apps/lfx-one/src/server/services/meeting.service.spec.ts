@@ -278,3 +278,133 @@ describe('MeetingService.getPastOccurrencesForMeeting', () => {
     expect(result).toEqual([]);
   });
 });
+
+/**
+ * The ITX registrant contract (`CreateItxRegistrantRequestBody`, reused verbatim for the PUT) declares
+ * `org`, `profile_picture` and `occurrence`; the app's read model — sourced from the v1 query-service
+ * index — spells them `org_name`, `avatar_url` and `occurrence_id`. Goa ignores undeclared body keys,
+ * so without the rename these three were dropped upstream behind a 200.
+ */
+describe('MeetingService registrant write payloads', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    proxyRequest.mockResolvedValue({});
+    service = new MeetingService();
+  });
+
+  const bodyOf = (): Record<string, unknown> => proxyRequest.mock.calls[0][5] as Record<string, unknown>;
+
+  it('renames org_name, avatar_url and occurrence_id on create', async () => {
+    await service.addMeetingRegistrant(req, {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      org_name: 'Acme',
+      avatar_url: 'https://example.com/a.png',
+      occurrence_id: '1666848600',
+    });
+
+    expect(bodyOf()).toMatchObject({ org: 'Acme', profile_picture: 'https://example.com/a.png', occurrence: '1666848600' });
+    expect(bodyOf()).not.toHaveProperty('org_name');
+    expect(bodyOf()).not.toHaveProperty('avatar_url');
+    expect(bodyOf()).not.toHaveProperty('occurrence_id');
+  });
+
+  it('drops meeting_id from the create body, since it is the path parameter', async () => {
+    await service.addMeetingRegistrant(req, { meeting_id: 'meeting-1', email: 'a@example.com', first_name: 'A', last_name: 'B' });
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/meeting-1/registrants');
+    expect(bodyOf()).not.toHaveProperty('meeting_id');
+  });
+
+  it('omits the renamed keys entirely when the caller omitted them', async () => {
+    await service.addMeetingRegistrant(req, { meeting_id: 'meeting-1', email: 'a@example.com', first_name: 'A', last_name: 'B', host: true });
+
+    expect(bodyOf()).toEqual({ email: 'a@example.com', first_name: 'A', last_name: 'B', host: true });
+  });
+
+  it('renames on update too, since the PUT reuses the same body schema', async () => {
+    await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      org_name: 'Acme',
+      avatar_url: 'https://example.com/a.png',
+      occurrence_id: '1666848600',
+    });
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/meeting-1/registrants/reg-1');
+    expect(bodyOf()).toMatchObject({ org: 'Acme', profile_picture: 'https://example.com/a.png', occurrence: '1666848600' });
+  });
+
+  // `getChangedFields` nulls all three whenever they're blank — always, for the two with no form
+  // control. All three targets are declared non-nullable, and before the rename Goa dropped the
+  // undeclared key outright; omitting keeps that outcome instead of planting a null on a declared
+  // field on every ordinary registrant edit.
+  it('omits an explicit null rather than renaming it onto a non-nullable field', async () => {
+    await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      org_name: null,
+      avatar_url: null,
+      occurrence_id: null,
+    });
+
+    for (const key of ['org', 'profile_picture', 'occurrence', 'org_name', 'avatar_url', 'occurrence_id']) {
+      expect(bodyOf()).not.toHaveProperty(key);
+    }
+  });
+
+  // The public self-registration path writes the same upstream endpoint with an M2M token, and it's
+  // the one path where a registrant types their own organization — so it has to rename too.
+  it('renames on the public M2M create path', async () => {
+    await service.addMeetingRegistrantWithM2M(
+      req,
+      { meeting_id: 'meeting-1', email: 'a@example.com', first_name: 'A', last_name: 'B', org_name: 'Acme' },
+      'm2m-token'
+    );
+
+    expect(bodyOf()).toMatchObject({ org: 'Acme' });
+    expect(bodyOf()).not.toHaveProperty('org_name');
+    expect(bodyOf()).not.toHaveProperty('meeting_id');
+  });
+
+  // ITX answers a write with `ITXZoomMeetingRegistrant`, which uses the upstream spelling. Without
+  // the inverse rename the returned object satisfies `MeetingRegistrant` only nominally, and the
+  // modal renders a just-saved registrant with no organization.
+  it.each([
+    ['create', (s: MeetingService) => s.addMeetingRegistrant(req, { meeting_id: 'm', email: 'a@example.com', first_name: 'A', last_name: 'B' })],
+    ['update', (s: MeetingService) => s.updateMeetingRegistrant(req, 'm', 'r', { meeting_id: 'm', email: 'a@example.com', first_name: 'A', last_name: 'B' })],
+    [
+      'public M2M create',
+      (s: MeetingService) => s.addMeetingRegistrantWithM2M(req, { meeting_id: 'm', email: 'a@example.com', first_name: 'A', last_name: 'B' }, 'm2m-token'),
+    ],
+  ])('maps the %s response back to the app spelling', async (_label, call) => {
+    proxyRequest.mockResolvedValue({
+      uid: 'reg-1',
+      org: 'Acme',
+      profile_picture: 'https://example.com/a.png',
+      occurrence: '1666848600',
+      modified_at: '2026-08-17T00:00:00Z',
+    });
+
+    const result = await call(service);
+
+    expect(result).toMatchObject({
+      uid: 'reg-1',
+      org_name: 'Acme',
+      avatar_url: 'https://example.com/a.png',
+      occurrence_id: '1666848600',
+      updated_at: '2026-08-17T00:00:00Z',
+    });
+    for (const upstreamKey of ['org', 'profile_picture', 'occurrence', 'modified_at']) {
+      expect(result).not.toHaveProperty(upstreamKey);
+    }
+  });
+});

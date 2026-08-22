@@ -734,16 +734,16 @@ export class MeetingService {
     const sanitizedPayload = logger.sanitize({ registrantData });
     logger.debug(req, 'add_meeting_registrant', 'Creating meeting registrant', sanitizedPayload);
 
-    const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
+    const newRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown>>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${registrantData.meeting_id}/registrants`,
       'POST',
       undefined,
-      registrantData
+      this.toUpstreamRegistrantBody(registrantData)
     );
 
-    return newRegistrant;
+    return this.fromUpstreamRegistrant(newRegistrant);
   }
 
   /**
@@ -758,16 +758,16 @@ export class MeetingService {
     const sanitizedPayload = logger.sanitize({ updateData });
     logger.debug(req, 'update_meeting_registrant', 'Updating meeting registrant payload', sanitizedPayload);
 
-    const updatedRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
+    const updatedRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown>>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${meetingUid}/registrants/${registrantUid}`,
       'PUT',
       undefined,
-      updateData
+      this.toUpstreamRegistrantBody(updateData)
     );
 
-    return updatedRegistrant;
+    return this.fromUpstreamRegistrant(updatedRegistrant);
   }
 
   /**
@@ -1654,15 +1654,16 @@ export class MeetingService {
     const sanitizedPayload = logger.sanitize({ registrantData });
     logger.debug(req, 'add_meeting_registrant_with_m2m', 'Creating meeting registrant with M2M token', sanitizedPayload);
 
-    const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
+    const upstreamRegistrant = await this.microserviceProxy.proxyRequest<Record<string, unknown>>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${registrantData.meeting_id}/registrants`,
       'POST',
       undefined,
-      registrantData,
+      this.toUpstreamRegistrantBody(registrantData),
       { Authorization: `Bearer ${m2mToken}`, ['X-Sync']: 'true' }
     );
+    const newRegistrant = this.fromUpstreamRegistrant(upstreamRegistrant);
 
     logger.success(req, 'add_meeting_registrant_with_m2m', startTime, {
       meeting_id: registrantData.meeting_id,
@@ -1766,5 +1767,94 @@ export class MeetingService {
       recurrence_type: recurrence.type,
     });
     return { ...recurrence, end_date_time: neverEndDate };
+  }
+
+  /**
+   * Renames the three registrant fields whose app-side names differ from the upstream ITX contract.
+   *
+   * `CreateItxRegistrantRequestBody` (reused verbatim for the PUT) declares `org`, `profile_picture`
+   * and `occurrence`; the app's read model — which comes from the v1 query-service index, not from
+   * ITX — spells them `org_name`, `avatar_url` and `occurrence_id`. Goa silently ignores body keys it
+   * doesn't declare, so without this rename the organization an organizer types, the avatar, and a
+   * single-occurrence invite were all dropped on the way upstream, behind a 201.
+   *
+   * `meeting_id` is dropped for the same reason it isn't declared: it's the path parameter, and the
+   * caller has already used it to build the URL.
+   *
+   * A `null` on one of the three renamed fields is omitted rather than renamed.
+   * `UpdateMeetingRegistrantRequest` uses `null` to erase a stored value, but all three targets are
+   * declared as non-nullable `type: string`, and `getChangedFields` sends `null` for every one of them
+   * whenever the value is blank — which is always, for the two that have no form control. Renaming
+   * those nulls would newly plant an off-contract value on a declared field on ordinary registrant
+   * edits, where before this rename Goa discarded the whole key as undeclared. Omitting keeps that
+   * outcome exactly.
+   *
+   * That omission is scoped to the renamed fields only. `getChangedFields` also nulls `job_title`,
+   * `username` and `linkedin_profile`; those keep whatever they had before, because their upstream
+   * handling is untouched by this rename (`job_title` and `username` are declared — non-nullable, so a
+   * `null` is off-contract there too, and unfixed — and `linkedin_profile` isn't declared at all).
+   *
+   * Cost: clearing an organization on an edit leaves the stored value in place. It did before this
+   * rename too, so nothing regresses — but it stays unfixed until upstream states how these fields are
+   * erased. Don't guess between `null` and `''` here; `occurrence` already gives blank its own meaning
+   * ("blank = all occurrences"), so a wrong guess silently rescopes an invite.
+   */
+  private toUpstreamRegistrantBody(body: CreateMeetingRegistrantRequest | UpdateMeetingRegistrantRequest): Record<string, unknown> {
+    const { org_name, avatar_url, occurrence_id } = body;
+    const upstream: Record<string, unknown> = { ...body };
+
+    // Intersection, not union: a union only rejects a key once it's gone from *both* interfaces, so a
+    // rename on one of them would still compile while the `delete` quietly stopped matching. All four
+    // keys exist on both, so the intersection compiles as-is and does fail the build on either rename.
+    const appOnlyKeys: (keyof CreateMeetingRegistrantRequest & keyof UpdateMeetingRegistrantRequest)[] = [
+      'meeting_id',
+      'org_name',
+      'avatar_url',
+      'occurrence_id',
+    ];
+
+    for (const appOnlyKey of appOnlyKeys) {
+      delete upstream[appOnlyKey];
+    }
+
+    return {
+      ...upstream,
+      ...(org_name == null ? {} : { org: org_name }),
+      ...(avatar_url == null ? {} : { profile_picture: avatar_url }),
+      ...(occurrence_id == null ? {} : { occurrence: occurrence_id }),
+    };
+  }
+
+  /**
+   * Inverse of {@link toUpstreamRegistrantBody}, for the body ITX returns from a registrant write.
+   *
+   * The POST and PUT both respond with `ITXZoomMeetingRegistrant`, which spells the three request
+   * fields the same way the request body does — `org`, `profile_picture`, `occurrence` — and spells the
+   * modification timestamp `modified_at` rather than `updated_at`. Both write methods used to declare
+   * the response as `MeetingRegistrant` and hand it straight back, so the object the registrant modal
+   * renders after a successful save had `org_name` and `avatar_url` undefined no matter what was
+   * stored. Renaming on the way out is what makes those four fields true.
+   *
+   * The declared type is still wider than the response: `ITXZoomMeetingRegistrant` carries no
+   * `meeting_id`, `org_is_member`, `org_is_project_member`, `invite_accepted` or `linkedin_profile`,
+   * all of which `MeetingRegistrant` declares as required. They're absent under any spelling, so
+   * there's nothing to rename — the `as` cast is what covers the gap, and a consumer that needs them
+   * has to read the registrant back rather than trust a write response. The read paths need no mapper
+   * at all, because they come from the v1 query-service index, which already uses the app's spelling.
+   *
+   * Absent stays absent rather than becoming `null` — the app's spelling is only introduced for a
+   * value upstream actually returned, so a missing field reads as "the write response didn't say"
+   * instead of "upstream stored nothing".
+   */
+  private fromUpstreamRegistrant(upstream: Record<string, unknown>): MeetingRegistrant {
+    const { org, profile_picture, occurrence, modified_at, ...rest } = upstream;
+
+    return {
+      ...rest,
+      ...(org === undefined ? {} : { org_name: org }),
+      ...(profile_picture === undefined ? {} : { avatar_url: profile_picture }),
+      ...(occurrence === undefined ? {} : { occurrence_id: occurrence }),
+      ...(modified_at === undefined ? {} : { updated_at: modified_at }),
+    } as MeetingRegistrant;
   }
 }

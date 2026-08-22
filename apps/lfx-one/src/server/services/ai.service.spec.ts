@@ -293,6 +293,23 @@ describe('AiService.generateMeetingAgenda', () => {
       expect(prompt).toContain('must not exceed 1200 characters');
       expect(body.response_format.json_schema.schema.properties.agenda.maxLength).toBe(1200);
     });
+
+    // The prompt used to read the raw request while the schema and the outbound clamp read the resolved
+    // cap, so the three could disagree — the model was told "-5 characters" while the schema advertised
+    // something else. Both non-positive and absent caps resolve to the default, matching the policy
+    // `resolveAgendaMaxCharacters` states at the HTTP boundary.
+    it.each([
+      ['no cap', undefined],
+      ['a zero cap', 0],
+      ['a negative cap', -5],
+    ])('resolves %s to the default in both the prompt and the schema', async (_label, maxCharacters) => {
+      const { MEETING_AGENDA_MAX_LENGTH } = await import('@lfx-one/shared/constants');
+      const prompt = await promptFor({ title: 'TAC Monthly', maxCharacters });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+
+      expect(prompt).toContain(`must not exceed ${MEETING_AGENDA_MAX_LENGTH} characters`);
+      expect(body.response_format.json_schema.schema.properties.agenda.maxLength).toBe(MEETING_AGENDA_MAX_LENGTH);
+    });
   });
 
   // The schema's `maxLength` and the prompt's cap are both hints the model can ignore. The composer
