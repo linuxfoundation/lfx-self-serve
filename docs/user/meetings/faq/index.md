@@ -4,7 +4,6 @@ description: Frequently asked questions about meetings in LFX Self Serve.
 audience: [all]
 product_area: Meetings
 tags: [meetings, faq, schedule, join]
-last_generated: 2026-05-22
 last_updated: 2026-08-10
 intercom_collection: Meetings
 ---

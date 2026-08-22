@@ -4,7 +4,6 @@ description: How to find and view LFX events in LFX Self Serve.
 audience: [all]
 product_area: Events
 tags: [events, browse, attendance]
-last_generated: 2026-05-22
 last_updated: 2026-05-22
 intercom_collection: Events
 ---

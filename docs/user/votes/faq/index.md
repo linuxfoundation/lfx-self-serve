@@ -4,7 +4,6 @@ description: Frequently asked questions about votes and polls in LFX Self Serve.
 audience: [all]
 product_area: Votes
 tags: [votes, faq, polls, governance, elections]
-last_generated: 2026-05-22
 last_updated: 2026-08-17
 intercom_collection: Votes
 ---
