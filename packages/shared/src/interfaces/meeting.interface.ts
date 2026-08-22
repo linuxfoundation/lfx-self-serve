@@ -564,6 +564,12 @@ export interface CreateMeetingRegistrantRequest {
   avatar_url?: string | null;
   /** User's LFID */
   username?: string | null;
+  /**
+   * Committee this registrant was added from, as a **v2** committee UID.
+   * Upstream stores a v1 committee SFID and derives `type: 'committee'` from it, so the BFF
+   * resolves v2 → v1 before proxying. Omit for a directly-added guest.
+   */
+  committee_uid?: string | null;
 }
 
 /**

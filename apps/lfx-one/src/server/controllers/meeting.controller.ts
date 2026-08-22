@@ -367,16 +367,24 @@ export class MeetingController {
 
   /**
    * GET /meetings/:uid/registrants
+   *
+   * `include_committee=true` opts into the same committee enrichment `getMyMeetingRegistrants`
+   * applies, so callers that render group attribution (the meeting composer's Guests list) get
+   * `committee_name` / `committee_role` / `committee_category` / `committee_voting_status` /
+   * `committee_appointed_by` populated. It stays opt-in because it costs a per-committee
+   * details + members fan-out that the plain registrant listing has no use for.
    */
   public async getMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp, occurrence_id } = req.query;
+    const { include_rsvp, occurrence_id, include_committee } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const includeCommittee = include_committee === 'true';
     const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
 
     const startTime = logger.startOperation(req, 'get_meeting_registrants', {
       meeting_id: uid,
       include_rsvp: includeRsvp,
+      include_committee: includeCommittee,
       occurrence_id: occurrenceId,
     });
 
@@ -394,14 +402,30 @@ export class MeetingController {
       // Get the meeting registrants
       const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId);
 
+      // Enrichment needs the meeting's committees as the source of truth for the v1↔v2 mapping.
+      // A failed meeting fetch degrades to unenriched rows rather than failing the whole listing.
+      let payload = registrants;
+      if (includeCommittee && registrants.length > 0) {
+        try {
+          const meeting = await this.meetingService.getMeetingById(req, uid);
+          payload = await this.enrichCommitteeRegistrants(req, meeting, registrants);
+        } catch (error) {
+          logger.warning(req, 'get_meeting_registrants', 'Committee enrichment failed, returning unenriched registrants', {
+            meeting_id: uid,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+      }
+
       logger.success(req, 'get_meeting_registrants', startTime, {
         meeting_id: uid,
-        registrant_count: registrants.length,
+        registrant_count: payload.length,
         include_rsvp: includeRsvp,
+        include_committee: includeCommittee,
       });
 
       // Send the registrants data to the client
-      res.json(registrants);
+      res.json(payload);
     } catch (error) {
       // Send the error to the next middleware
       next(error);
@@ -617,9 +641,13 @@ export class MeetingController {
         return;
       }
 
+      // Group-added guests arrive carrying the v2 committee UID the picker works in; upstream
+      // stores a v1 SFID and derives `type: 'committee'` from it.
+      const resolvedRegistrants = await this.resolveRegistrantCommitteeUids(req, registrantData);
+
       // Process registrants with fail-fast for 403 errors
       // This will stop the processing if a 403 error is encountered
-      const { results, shouldReturn } = await this.processRegistrantOperations(req, next, 'add_meeting_registrants', uid, registrantData, (registrant) =>
+      const { results, shouldReturn } = await this.processRegistrantOperations(req, next, 'add_meeting_registrants', uid, resolvedRegistrants, (registrant) =>
         this.meetingService.addMeetingRegistrant(req, registrant)
       );
 
@@ -1760,5 +1788,38 @@ export class MeetingController {
   private async resolveV2ToV1CommitteeMappings(req: Request, v2CommitteeUids: string[]): Promise<Map<string, string>> {
     const v2ToV1Map = await resolveCommitteeV2UidsToV1Ids(req, this.natsService, v2CommitteeUids);
     return new Map([...v2ToV1Map].map(([v2Uid, v1Sfid]) => [v1Sfid, v2Uid]));
+  }
+
+  /**
+   * Rewrites each registrant's `committee_uid` from the v2 UID the client works in to the v1 SFID
+   * upstream stores. Upstream derives `type: 'committee'` from that field, so dropping it (as the
+   * BFF used to) silently persists a group-added guest as `direct` and loses attribution.
+   *
+   * An unresolvable UID is stripped rather than forwarded — a v2 UID upstream would be stored as a
+   * bogus committee reference, which is worse than the guest landing as `direct`.
+   */
+  private async resolveRegistrantCommitteeUids(req: Request, registrants: CreateMeetingRegistrantRequest[]): Promise<CreateMeetingRegistrantRequest[]> {
+    const v2Uids = [...new Set(registrants.map((registrant) => registrant.committee_uid).filter((value): value is string => !!value))];
+
+    if (v2Uids.length === 0) {
+      return registrants;
+    }
+
+    const v2ToV1Map = await resolveCommitteeV2UidsToV1Ids(req, this.natsService, v2Uids);
+
+    if (v2ToV1Map.size < v2Uids.length) {
+      logger.warning(req, 'resolve_registrant_committee_uids', 'Some committee UIDs could not be resolved to v1 SFIDs', {
+        requested: v2Uids.length,
+        resolved: v2ToV1Map.size,
+      });
+    }
+
+    return registrants.map((registrant) => {
+      if (!registrant.committee_uid) {
+        return registrant;
+      }
+
+      return { ...registrant, committee_uid: v2ToV1Map.get(registrant.committee_uid) ?? null };
+    });
   }
 }
