@@ -56,7 +56,9 @@ export class OrgGroupsComponent {
   private readonly groupsData: Signal<OrgLensGroupsResponse | null | undefined> = this.initGroupsData();
 
   protected readonly groups: Signal<OrgLensGroupSummary[]> = computed(() => this.groupsData()?.groups ?? []);
-  protected readonly groupsWithClass: Signal<OrgLensGroupVm[]> = computed(() => this.groups().map((g) => ({ ...g, cls: getGroupBehavioralClass(g.category) })));
+  protected readonly groupsWithClass: Signal<OrgLensGroupVm[]> = computed(() =>
+    this.groups().map((g) => ({ ...g, cls: getGroupBehavioralClass(g.category), projectLabel: g.project_name || g.project_slug || '' }))
+  );
   protected readonly totalGroups: Signal<number> = computed(() => this.groupsData()?.total_groups ?? 0);
   protected readonly totalSeats: Signal<number> = computed(() => this.groupsData()?.total_seats ?? 0);
 

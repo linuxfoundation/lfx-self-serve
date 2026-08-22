@@ -28,4 +28,6 @@ export interface OrgLensGroupsResponse {
 /** View-model used by the org-groups list — extends the API summary with the pre-computed behavioral class. */
 export interface OrgLensGroupVm extends OrgLensGroupSummary {
   cls: GroupBehavioralClass;
+  /** Pre-computed `project_name || project_slug` display label — empty string when neither is set. */
+  projectLabel: string;
 }

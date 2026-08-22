@@ -88,6 +88,6 @@ describe('OrgGroupsComponent — project label', () => {
     });
 
     expect(projectLine()).toBeNull();
-    expect(rowAriaLabel()).not.toContain('undefined');
+    expect(rowAriaLabel()).toBe('WG Identity & Trust, Working Groups, 3 seats');
   });
 });
