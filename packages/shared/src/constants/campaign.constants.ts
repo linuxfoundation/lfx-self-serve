@@ -330,14 +330,28 @@ export const CAMPAIGN_TOGGLE_CONFLICT_MESSAGE =
  * Only correct for failures where nothing moved — a transport drop, a 5xx, a refusal upstream.
  * The 412 case gets `CAMPAIGN_TOGGLE_CONFLICT_MESSAGE` instead, because there the premise of both
  * sentences ("it is still …") is exactly what stopped being true.
+ *
+ * Keyed on `CampaignToggleAction` minus `'unavailable'`, not on a re-spelled literal union: this
+ * map is only ever read for a DIRECTION that was actually attempted, and `unavailable` never is —
+ * `toggleCampaign` returns before dispatching for it. Deriving the key set with `Exclude` keeps
+ * that relationship checked, so renaming a direction on the type breaks this map instead of
+ * silently leaving it keyed on a word nothing produces.
  */
-export const CAMPAIGN_TOGGLE_FAILURE_MESSAGES: Readonly<Record<'pause' | 'resume', string>> = {
+export const CAMPAIGN_TOGGLE_FAILURE_MESSAGES: Readonly<Record<Exclude<CampaignToggleAction, 'unavailable'>, string>> = {
   pause: 'Could not pause this campaign. It is still running — try again.',
   resume: 'Could not resume this campaign. It is still paused — try again.',
 };
 
-/** The button's visible word per action. `unavailable` still names an action — the button is disabled, not blank. */
-export const CAMPAIGN_TOGGLE_LABELS: Readonly<Record<'pause' | 'resume' | 'unavailable', string>> = {
+/**
+ * The button's visible word per action. `unavailable` still names an action — the button is
+ * disabled, not blank.
+ *
+ * Keyed on `CampaignToggleAction` rather than on a re-spelled literal union so this map cannot
+ * drift from the type `campaignToggleAction` returns. A member added to or renamed in the type
+ * fails to compile HERE; the hand-written copy would have kept compiling and produced `undefined`
+ * on the new action at runtime — a blank button on a campaign that is spending.
+ */
+export const CAMPAIGN_TOGGLE_LABELS: Readonly<Record<CampaignToggleAction, string>> = {
   pause: 'Pause',
   resume: 'Resume',
   unavailable: 'Unavailable',

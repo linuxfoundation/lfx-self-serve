@@ -4,9 +4,9 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { CampaignIndexDoc } from '@lfx-one/shared/interfaces';
+import { CampaignIndexDoc, CampaignStatusUpdateResult } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OptimizationTabComponent } from './optimization-tab.component';
@@ -553,5 +553,227 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-unavailable"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-empty"]')).not.toBeNull();
+  });
+
+  /**
+   * The 412 RECOVERY path (LFXV2-3224 review).
+   *
+   * The defect these cover is not that the banner appears — that is asserted above — but that
+   * nothing ever took it away, and that the etag cache outlived the list it was minted against.
+   * Both are only observable ACROSS a refresh, which is why every case here drives the refresh the
+   * way the parent actually performs it rather than calling a clear method.
+   *
+   * `loadBriefCampaigns` (campaigns.component.ts) sets `briefCampaigns` to `null` synchronously on
+   * entry and then to the fetched array on the response arm, so the input this tab sees goes
+   * `[rows] → null → [freshRows]`. `refreshFromParent` replays exactly that sequence. A test that
+   * pushed the fresh array in one step would still pass against a fix keyed on any input change,
+   * but would not prove the fix survives the interim `null` the real path goes through.
+   *
+   * The component is NOT re-created between the 412 and the refresh, deliberately: it lives under
+   * the parent's `@case ('optimization')` and the refresh keeps the user on that tab, so a fix
+   * that relied on destruction would be testing a lifecycle the operator never triggers.
+   */
+  function refreshFromParent(freshCampaigns: CampaignIndexDoc[]): void {
+    // Exactly what `loadBriefCampaigns` does on entry, before its request is dispatched.
+    fixture.componentRef.setInput('briefCampaigns', null);
+    fixture.detectChanges();
+    // ...and what its `next` arm does when the re-read lands.
+    fixture.componentRef.setInput('briefCampaigns', freshCampaigns);
+    fixture.detectChanges();
+  }
+
+  function conflict(): void {
+    updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed' })));
+  }
+
+  it('clears the conflict banner when the refresh it asked for delivers a new list', () => {
+    conflict();
+    render([doc({ status: 'created', etag: '"3"' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    // The precondition. Without this the assertion below could pass on a banner that never showed.
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+
+    refreshFromParent([doc({ status: 'created', etag: '"7"' })]);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+  });
+
+  /**
+   * The sharper half, and the one a banner-only fix would leave behind.
+   *
+   * `toggledEtag` is preferred over the row's own etag, so a SUCCESSFUL toggle followed by a
+   * refresh must not keep sending the etag from that toggle: the fresh doc carries the current
+   * validator and the cached one is dead upstream. The assertion is on the etag the service was
+   * ASKED for, not merely on the absence of an error — a component that swallowed the difference
+   * would still render fine while sending the wrong `If-Match`.
+   *
+   * The two etags are deliberately DIFFERENT values ('"9"' vs '"12"'), and neither equals the
+   * row's original '"3"'. If the fixture reused one string the assertion would hold for both the
+   * fixed and the broken component, which is exactly the vacuous shape this file has been bitten
+   * by before.
+   */
+  it('sends the re-read etag, not the stale session etag, on the toggle after a refresh', () => {
+    updateCampaignStatus.mockReturnValue(
+      of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"9"' })
+    );
+    render([doc({ status: 'created', etag: '"3"' })]);
+
+    // First toggle succeeds and caches the fresh etag '"9"'.
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"3"');
+
+    // The list is then re-read and comes back at version 12 — someone else moved it too.
+    refreshFromParent([doc({ status: 'paused', etag: '"12"' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    // The whole finding: '"9"' is the dead session validator, '"12"' is what the refresh fetched.
+    expect(updateCampaignStatus.mock.calls[1][0].etag).toBe('"12"');
+    expect(updateCampaignStatus.mock.calls[1][0].etag).not.toBe('"9"');
+  });
+
+  /**
+   * The end-to-end loop dealako and cursor each described from one end: 412 → follow the banner →
+   * toggle again. Before the fix the second toggle replayed the same dead etag and earned another
+   * 412, so the UI's own named remedy changed nothing.
+   */
+  it('lets a toggle refused with 412 succeed after the operator refreshes', () => {
+    conflict();
+    render([doc({ status: 'created', etag: '"3"' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]')).not.toBeNull();
+
+    // The refresh the banner told them to perform, returning the version the other editor wrote.
+    updateCampaignStatus.mockReturnValue(
+      of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"15"' })
+    );
+    refreshFromParent([doc({ status: 'created', etag: '"14"' })]);
+
+    // The stale row error must be gone too — it described an attempt against a list that no
+    // longer exists, and leaving it renders a failure beside rows that were just re-read.
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]')).toBeNull();
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    expect(updateCampaignStatus.mock.calls[1][0].etag).toBe('"14"');
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+  });
+
+  /**
+   * The clear is scoped to DELIVERED data. A refresh that fails leaves the parent at `null` plus
+   * `campaignsUnavailable`, and nothing was re-read — so the etags in hand are still the stale
+   * ones and the conflict warning is still true. Clearing there would drop the warning while the
+   * condition it describes persists, which is strictly worse than the original bug: the operator
+   * would toggle against a list nobody refreshed, with no banner to say so.
+   */
+  it('keeps the conflict banner when the refresh itself fails', () => {
+    conflict();
+    render([doc({ status: 'created', etag: '"3"' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+
+    // What `loadBriefCampaigns`'s error arm produces: null list, unavailable flag, no rows.
+    fixture.componentRef.setInput('briefCampaigns', null);
+    fixture.componentRef.setInput('campaignsUnavailable', true);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+  });
+
+  /**
+   * A refresh must not erase the outcome of a write that has not answered yet.
+   *
+   * A toggle dispatched before the refresh landed still owns its id: its response arms write
+   * `toggledEtag`, `toggledStatus` and `toggleError` for that campaign AFTERWARDS. So the refresh
+   * has to leave that row's keys alone — it has no information about a write that has not answered.
+   *
+   * Asserted on the ETAG the NEXT toggle sends, not on the error message. The message is written
+   * by the response arm after the refresh, so it renders whether or not the refresh cleared it —
+   * an assertion on it would pass against a component with no in-flight gate at all, which is
+   * precisely the vacuous shape this file has to avoid. The etag is different: the in-flight
+   * toggle's own success writes '"31"', the refresh delivered '"20"', and only a component that
+   * preserved the in-flight row's entry sends '"31"' on the following click.
+   */
+  it('keeps the etag returned by a toggle that was still in flight when a refresh landed', () => {
+    const inFlight = new Subject<CampaignStatusUpdateResult>();
+    updateCampaignStatus.mockReturnValue(inFlight.asObservable());
+    render([doc({ status: 'created', etag: '"3"' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    // The refresh lands while that toggle is still out. Its row is pending, so its keys stay.
+    refreshFromParent([doc({ status: 'created', etag: '"20"' })]);
+
+    // Only now does the in-flight write answer, with the validator it minted upstream.
+    inFlight.next({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"31"' });
+    inFlight.complete();
+    fixture.detectChanges();
+
+    updateCampaignStatus.mockReturnValue(
+      of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'ACTIVE', success: true, serviceStatus: 'active', etag: '"32"' })
+    );
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    // '"31"' is the live validator this campaign actually holds; '"20"' predates the write that
+    // was in flight, so sending it would 412 a campaign nobody else touched.
+    expect(updateCampaignStatus.mock.calls[1][0].etag).toBe('"31"');
+    expect(updateCampaignStatus.mock.calls[1][0].etag).not.toBe('"20"');
+  });
+
+  /**
+   * The other half of the in-flight gate: a FAILURE that answers after the refresh must still be
+   * shown. The operator has not seen it yet, so the refresh must not be what swallows it.
+   */
+  it('still reports a failure that answers after the refresh landed', () => {
+    const inFlight = new Subject<CampaignStatusUpdateResult>();
+    updateCampaignStatus.mockReturnValue(inFlight.asObservable());
+    render([doc({ status: 'created', etag: '"3"' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    refreshFromParent([doc({ status: 'created', etag: '"20"' })]);
+
+    inFlight.error(new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed' }));
+    fixture.detectChanges();
+
+    const error = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]');
+    expect(error).not.toBeNull();
+    expect(error.textContent).toContain('Someone else changed this campaign');
+  });
+
+  /**
+   * `toggledStatus` is NOT part of the stale set, and this pins that.
+   *
+   * It records what the service CONFIRMED for a row, and it exists because the index lags a
+   * toggle. A refresh moments after a pause legitimately returns the OLD status, so clearing the
+   * overlay would render a campaign the operator just paused as running — the exact failure the
+   * overlay was written to prevent. The row below is re-read as `created` and must still show
+   * paused.
+   */
+  it('keeps a confirmed status overlay across a refresh that has not caught up yet', () => {
+    updateCampaignStatus.mockReturnValue(
+      of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"9"' })
+    );
+    render([doc({ status: 'created', etag: '"3"' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').textContent).toContain('Resume');
+
+    // The index has not caught up: the re-read still reports the pre-pause status.
+    refreshFromParent([doc({ status: 'created', etag: '"12"' })]);
+
+    // Still Resume — the overlay survived. Had it been cleared this would read Pause, telling
+    // someone the campaign they just stopped is running.
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').textContent).toContain('Resume');
   });
 });
