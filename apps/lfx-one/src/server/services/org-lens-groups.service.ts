@@ -31,10 +31,12 @@ export class OrgLensGroupsService {
 
     const committeeMap = this.aggregateByCommittee(nonBoardSeats);
 
-    // Two independent enrichment sources, resolved in parallel: the committee-service index
-    // (per-committee, always populated for every committee the org holds a seat on) is tried
-    // first, falling back to the project-service index (keyed by project_uid, but has gaps —
-    // e.g. some projects are absent from that index entirely). Both fail soft to an empty map.
+    // Two independent enrichment sources, resolved in parallel: the project-service index (live,
+    // keyed by project_uid) is primary — the committee-service index only fills the gaps it
+    // misses (e.g. a project entirely absent from the project index). committee_service.ProjectName
+    // is a write-time snapshot resolved once at committee create/update with no rename subscriber,
+    // so it goes stale on a project rename — it must stay secondary, not primary. Both sources
+    // fail soft to an empty map.
     const [foundationNames, committeesByUid] = await Promise.all([
       enrichFoundationNames(req, nonBoardSeats, this.projectService),
       this.getCommitteesByUid(req, committeeMap.keys()),
@@ -103,10 +105,10 @@ export class OrgLensGroupsService {
 
     // Only set project_name when enrichment actually resolved one — the slug fallback belongs to
     // the view model (OrgLensGroupVm.projectLabel), not this field, or project_name would silently
-    // hold a slug and no longer mean what its name says. Precedence: the committee-service index
-    // (per-committee, no gaps observed) beats the project-service index (keyed by project_uid,
-    // has known gaps — e.g. projects absent from that index entirely).
-    const projectName = committeesByUid.get(uid)?.project_name || foundationNames.get(first.project_uid ?? '');
+    // hold a slug and no longer mean what its name says. Precedence: the project-service index
+    // (live) beats the committee-service index (a write-time snapshot that goes stale on rename —
+    // see the comment in getGroups) — the committee index only fills gaps the project index misses.
+    const projectName = foundationNames.get(first.project_uid ?? '') || committeesByUid.get(uid)?.project_name;
 
     return {
       uid,

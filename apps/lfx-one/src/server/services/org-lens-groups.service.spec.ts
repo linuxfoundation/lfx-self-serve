@@ -79,26 +79,28 @@ afterEach(() => {
 });
 
 describe('OrgLensGroupsService.getGroups', () => {
-  it('prefers the committee-index name over the project-index name and the raw slug', async () => {
+  it('prefers the project-index (live) name over the committee-index (snapshot) name and the raw slug', async () => {
     fetchAllOrgSeats.mockResolvedValue([seat()]);
-    getCommitteesByIds.mockResolvedValue(new Map([['c-1', { uid: 'c-1', project_name: 'Cloud Native Computing Foundation (CNCF)' }]]));
+    // The committee index is a write-time snapshot that goes stale on project rename, so it must
+    // lose to the live project index when both resolve.
+    getCommitteesByIds.mockResolvedValue(new Map([['c-1', { uid: 'c-1', project_name: 'Cloud Native Computing Foundation (stale)' }]]));
     enrichFoundationNames.mockResolvedValue(new Map([['p-cncf', 'Cloud Native Computing Foundation']]));
 
     const result = await run();
 
     expect(result.groups).toHaveLength(1);
-    expect(result.groups[0].project_name).toBe('Cloud Native Computing Foundation (CNCF)');
+    expect(result.groups[0].project_name).toBe('Cloud Native Computing Foundation');
     expect(result.groups[0].project_slug).toBe('cncf');
   });
 
-  it('falls back to the project-index name when the committee index has no match', async () => {
+  it('falls back to the committee-index name when the project index has no match (e.g. uepf-style gap)', async () => {
     fetchAllOrgSeats.mockResolvedValue([seat()]);
-    getCommitteesByIds.mockResolvedValue(new Map());
-    enrichFoundationNames.mockResolvedValue(new Map([['p-cncf', 'Cloud Native Computing Foundation']]));
+    getCommitteesByIds.mockResolvedValue(new Map([['c-1', { uid: 'c-1', project_name: 'Ultra Ethernet Consortium Fund' }]]));
+    enrichFoundationNames.mockResolvedValue(new Map());
 
     const result = await run();
 
-    expect(result.groups[0].project_name).toBe('Cloud Native Computing Foundation');
+    expect(result.groups[0].project_name).toBe('Ultra Ethernet Consortium Fund');
   });
 
   it('omits project_name (but keeps project_slug) when both enrichment sources miss', async () => {

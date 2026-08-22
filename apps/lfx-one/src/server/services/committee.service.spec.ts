@@ -764,6 +764,17 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       expect('chat_webhook_url' in result[0]).toBe(false);
     });
 
+    it('getCommitteesByIds never returns chat_webhook_url even if the query-service index carries it', async () => {
+      proxyRequest.mockResolvedValueOnce(
+        pageOf([{ uid: COMMITTEE_UID, chat_webhook_url: VALID_WEBHOOK_URL } as Partial<Committee> & { chat_webhook_url: string }])
+      );
+
+      const result = await service.getCommitteesByIds(req, [COMMITTEE_UID]);
+
+      expect(result.size).toBe(1);
+      expect('chat_webhook_url' in result.get(COMMITTEE_UID)!).toBe(false);
+    });
+
     it('createCommittee never returns chat_webhook_url even if upstream happens to echo it back', async () => {
       proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', chat_webhook_url: VALID_WEBHOOK_URL });
 
