@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { CampaignIndexDoc, CampaignStatusUpdateResult } from '@lfx-one/shared/interfaces';
+import { CampaignIndexDoc, CampaignRow, CampaignStatusUpdateResult } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -919,5 +919,250 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     // Still Resume — the overlay survived. Had it been cleared this would read Pause, telling
     // someone the campaign they just stopped is running.
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').textContent).toContain('Resume');
+  });
+
+  /**
+   * PER-ROW conflict state (second review round).
+   *
+   * Everything above proved the conflict CLEARS. These prove it clears for the right ROWS, which
+   * a single list-wide boolean structurally cannot do: resolution is proved per row by the index
+   * advancing, so one flag has to answer "is anything still conflicted?" from evidence about one
+   * row, and gets it wrong in both directions.
+   */
+  describe('per-row conflict state', () => {
+    const twoRows = (c1Etag: string, c2Etag: string): CampaignIndexDoc[] => [
+      doc({ id: 'c-1', status: 'created', etag: c1Etag }),
+      doc({ id: 'c-2', campaign_name: 'KubeCon NA', status: 'created', etag: c2Etag }),
+    ];
+
+    /**
+     * The finding cursor and copilot each reported independently, which is the strong signal.
+     *
+     * With `c-1` conflicted, a refresh that still returns `c-1`'s rejected version but a NEWER one
+     * for `c-2` proves nothing whatsoever about `c-1`. The old code called `clearConflictStateFor`
+     * with `['c-2']` and set the list-wide flag false, hiding the banner and its Refresh control
+     * while `c-1` still held the dead validator and per-row copy telling the operator to refresh.
+     *
+     * Asserted on the BANNER and on `c-1`'s cached validator, not on one of them: a fix that kept
+     * the banner but still dropped `c-1`'s etag would leave the 412 loop armed behind a correct-
+     * looking UI.
+     */
+    it('keeps the banner when an unrelated row advances but the conflicted one does not', () => {
+      conflict();
+      render(twoRows('"3"', '"5"'));
+      fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+
+      // c-2 advanced (5 → 6); c-1 is still at the version that was just rejected.
+      refreshFromParent(twoRows('"3"', '"6"'));
+
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]')).not.toBeNull();
+    });
+
+    /**
+     * The complement, so the fix cannot degenerate into "never clear when more than one row
+     * exists": once the CONFLICTED row itself advances, the banner must go even though `c-2`
+     * never moved at all.
+     */
+    it('clears the banner once the conflicted row itself advances', () => {
+      conflict();
+      render(twoRows('"3"', '"5"'));
+      fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+
+      // Only c-1 moves this time.
+      refreshFromParent(twoRows('"4"', '"5"'));
+
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]')).toBeNull();
+    });
+
+    /**
+     * Two rows conflicted, one resolved: the banner is not a claim about a row, it is a claim that
+     * SOMETHING is unresolved. It must survive a partial resolution and disappear only on the
+     * last one — the property a boolean cannot express and a set gets for free.
+     */
+    it('holds the banner until every conflicted row has advanced', () => {
+      conflict();
+      render(twoRows('"3"', '"5"'));
+      fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+      fixture.detectChanges();
+      fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-2"]').click();
+      fixture.detectChanges();
+
+      // c-1 resolves, c-2 does not.
+      refreshFromParent(twoRows('"4"', '"5"'));
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+
+      // Now c-2 resolves too.
+      refreshFromParent(twoRows('"4"', '"6"'));
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+    });
+
+    /**
+     * Copilot on the template: after a 412 every row stayed enabled, so clicking the same row
+     * resent the exact ETag just rejected and produced another 412 deterministically — while the
+     * banner beside it said to refresh first.
+     *
+     * Asserted on the CONFLICTED row being disabled AND the untouched row staying enabled. The
+     * second half is what stops the fix from over-reaching: the other rows' validators are
+     * untested, not disproved, and withdrawing controls from campaigns that are spending on no
+     * evidence would be its own defect.
+     */
+    it('disables only the conflicted row, leaving the others clickable', () => {
+      conflict();
+      render(twoRows('"3"', '"5"'));
+      fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').disabled).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-2"]').disabled).toBe(false);
+    });
+
+    /**
+     * The button must come BACK once the refresh proves the row advanced — a disable that never
+     * lifts is a worse bug than the one it fixes, because the operator's only remedy is a page
+     * reload. Asserted through the real refresh path.
+     */
+    it('re-enables the row once the refresh proves it advanced', () => {
+      conflict();
+      render([doc({ status: 'created', etag: '"3"' })]);
+      fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').disabled).toBe(true);
+
+      refreshFromParent([doc({ status: 'created', etag: '"8"' })]);
+
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').disabled).toBe(false);
+    });
+
+    /**
+     * The handler's own guard, which the template disable hides from every click-driven test.
+     *
+     * Copilot asked for the handler to stay fail-closed "as well if it can be invoked outside the
+     * template", and it can: `toggleCampaign` takes a `CampaignRow`, so any future caller — a
+     * keyboard shortcut, a bulk action, a row re-rendered from a stale computed — reaches it
+     * without passing through the disabled button. Driven by CALLING the handler, because a click
+     * on a disabled button is a no-op and would pass against a component with no guard at all.
+     *
+     * Asserted on no request being dispatched, which is the whole point: the etag it would send is
+     * already known dead, so the round trip is a guaranteed 412.
+     */
+    it('refuses a conflicted row when the handler is invoked outside the template', () => {
+      conflict();
+      render([doc({ status: 'created', etag: '"3"' })]);
+      fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+      fixture.detectChanges();
+      expect(updateCampaignStatus).toHaveBeenCalledTimes(1);
+
+      // Reach past the disabled button, the way a non-template caller would.
+      const component = fixture.componentInstance as unknown as {
+        campaignRows: () => CampaignRow[];
+        toggleCampaign: (row: CampaignRow) => void;
+      };
+      const row = component.campaignRows()[0];
+      expect(row.conflicted).toBe(true);
+      component.toggleCampaign(row);
+      fixture.detectChanges();
+
+      // Still one call: the guard refused before dispatch rather than replaying the dead etag.
+      expect(updateCampaignStatus).toHaveBeenCalledTimes(1);
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent).toContain('Refresh the campaign list');
+    });
+
+    /**
+     * Cursor's context-switch finding, driven the way the parent actually performs it.
+     *
+     * A foundation switch sets `briefCampaigns` to `null`, and when the new foundation has no
+     * brief `loadBriefCampaigns` early-returns without dispatching a read — so NO list is ever
+     * delivered. The delivery-based clear cannot reach that case, and the component stays mounted
+     * under `@case ('optimization')` showing the previous foundation's banner over a context that
+     * was never conflicted.
+     *
+     * The `null` push happens BEFORE the slug change here, matching the parent's real order:
+     * the switch effect clears the list, then `loadBriefCampaigns` re-reads the new context.
+     */
+    it('drops the conflict banner when the foundation changes with no brief to read', () => {
+      conflict();
+      render([doc({ status: 'created', etag: '"3"' })]);
+      fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+
+      // The parent's foundation-switch path: list cleared, then the new context bound. No list
+      // ever arrives, because the new foundation has no brief.
+      fixture.componentRef.setInput('briefCampaigns', null);
+      fixture.componentRef.setInput('projectSlug', 'cncf');
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+    });
+
+    /**
+     * The same abandonment must drop the cached VALIDATORS, not merely the banner. An etag minted
+     * against brief A is meaningless against brief B, and if the ids ever collide sending it would
+     * be a write against the wrong campaign's version.
+     *
+     * Asserted on the etag the next toggle sends: '"5"' is brief B's own freshly-read validator;
+     * '"9"' would be brief A's session leftover.
+     *
+     * The two briefs deliver the row at the SAME version ('"5"'), and that is what isolates this
+     * to the context change. A differing version would advance the row on delivery, so the
+     * per-row delivery clear would drop the validator on its own and the assertion would hold
+     * against a component with no context handling at all — the vacuous shape this file has been
+     * bitten by before. With the versions equal, delivery proves nothing and only abandoning on
+     * the brief change can produce '"5"'.
+     */
+    it('abandons cached validators when the brief changes', () => {
+      updateCampaignStatus.mockReturnValue(
+        of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"9"' })
+      );
+      render([doc({ status: 'created', etag: '"5"' })]);
+      fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+      fixture.detectChanges();
+
+      // A different brief in the same foundation, delivering a row that happens to share the id
+      // AND the version — so nothing about the delivery itself proves the cached etag is stale.
+      fixture.componentRef.setInput('briefCampaigns', null);
+      fixture.componentRef.setInput('briefId', 'b-2');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('briefCampaigns', [doc({ status: 'created', etag: '"5"' })]);
+      fixture.detectChanges();
+
+      fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+      fixture.detectChanges();
+
+      expect(updateCampaignStatus.mock.calls[1][0].etag).toBe('"5"');
+      expect(updateCampaignStatus.mock.calls[1][0].etag).not.toBe('"9"');
+    });
+  });
+
+  /**
+   * Copilot's fail-open finding on row construction.
+   *
+   * `listBriefCampaigns` spreads index docs through unvalidated, so a doc missing `platform`
+   * reaches the row builder as `undefined`. `campaignToggleAction` treats an absent platform as
+   * "not asked" and answers on status alone — correct for a status-only caller, fail-OPEN here:
+   * the row earned a live Pause button whose every click 400s, because the request omits
+   * `body.platform` and the controller refuses it before dispatch.
+   *
+   * Asserted on the button being DISABLED and on no request being made, rather than on the label:
+   * a fix that merely relabelled the button would still let the click through.
+   */
+  it('refuses a row whose platform the payload omitted, rather than offering a doomed button', () => {
+    const noPlatform = { ...doc({ status: 'created' }) } as Partial<CampaignIndexDoc>;
+    delete noPlatform.platform;
+    render([noPlatform as CampaignIndexDoc]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain('Unavailable');
+
+    button.click();
+    fixture.detectChanges();
+    expect(updateCampaignStatus).not.toHaveBeenCalled();
   });
 });

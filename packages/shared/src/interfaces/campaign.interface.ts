@@ -1445,6 +1445,16 @@ export interface CampaignRow {
    */
   unavailableReason: string;
   /**
+   * Whether a 412 refused this row's validator and no re-read has yet proved it advanced.
+   *
+   * Distinct from `unavailable`, which is about what the row IS — its status, platform, or the
+   * deployment's capability. This is about what this session KNOWS: the exact `If-Match` the next
+   * click would send has already been rejected, so the click is a round trip to a certain 412
+   * while the conflict banner is telling the operator to refresh first. It clears when a delivered
+   * list shows this row's indexed etag has moved, per row rather than for the list.
+   */
+  conflicted: boolean;
+  /**
    * The button's visible word, and the verb inside its accessible name.
    *
    * One field for both so speech input ("click Pause") keeps matching the visible text — the

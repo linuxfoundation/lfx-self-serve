@@ -63,9 +63,11 @@
   }
 
   <!--
-    A CONCURRENT EDIT, stated once for the whole list. Reached only after a toggle was refused with
-    412, which is proof this view was read before a write it never saw — so the remedy is a re-read,
-    not another click. It reuses the same `retryCampaigns` output as the failed-read banner above,
+    A CONCURRENT EDIT, stated once for the whole list while ANY row remains conflicted. Reached
+    only after a toggle was refused with 412, which is proof this view was read before a write it
+    never saw — so the remedy is a re-read, not another click. It survives a refresh that advances
+    only some rows: `campaignsConflicted` is a computed over the conflicted-id set, so it lifts on
+    the delivery that clears the LAST one, not the first. It reuses the same `retryCampaigns` output as the failed-read banner above,
     because "re-read this brief's campaigns" is exactly the action needed; inventing a second
     refresh path would give the tab two ways to do one thing.
 
@@ -160,7 +162,7 @@
               <button
                 type="button"
                 (click)="toggleCampaign(row)"
-                [disabled]="togglePending()[row.campaign.id] || row.action === 'unavailable'"
+                [disabled]="togglePending()[row.campaign.id] || row.action === 'unavailable' || row.conflicted"
                 [attr.aria-label]="(togglePending()[row.campaign.id] ? 'Working' : row.toggleLabel) + ' ' + row.campaign.campaign_name"
                 [attr.aria-busy]="togglePending()[row.campaign.id] ? 'true' : null"
                 [attr.aria-describedby]="row.describedBy"

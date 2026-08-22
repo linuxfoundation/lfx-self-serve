@@ -41,7 +41,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
-import type { Subscription } from 'rxjs';
+import { skip, type Subscription } from 'rxjs';
 
 @Component({
   selector: 'lfx-optimization-tab',
@@ -112,17 +112,33 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly toggleError = signal<Record<string, string>>({});
 
   /**
-   * True once any toggle has been refused with 412 — someone else moved a campaign under this view.
+   * The campaigns whose validator a 412 has refused and which no re-read has since advanced.
    *
-   * NOT keyed per campaign, unlike the two above, and that is the point: a 412 is evidence about
-   * the LIST, not about one row. It proves this view was read before a write it did not see, so
-   * every row's etag is suspect, not only the one that was clicked.
+   * Keyed per campaign, like the two above, and that is a correction rather than a preference.
+   * The 412 itself is evidence about the LIST — it proves this view was read before a write it
+   * did not see — but RESOLUTION is only ever proved per row: a refresh advances the rows the
+   * index has caught up on and leaves the rest behind, because indexing is asynchronous. A single
+   * boolean had to answer "is anything still conflicted?" from evidence about one row, and got it
+   * wrong in both directions: any advancing row cleared the banner while other rows still held
+   * dead validators, and there was no way to keep the warning up for the rows that had not moved.
+   * Membership answers it exactly.
    *
-   * Drives the refresh affordance rather than an automatic re-read. The remedy the 412 copy names
-   * has to be reachable, but reloading silently would replace the rows under whoever is mid-click
-   * — the same class of surprise the stale-render fix on the parent exists to prevent.
+   * Drives two things that must not disagree — the list-wide refresh affordance (via
+   * `campaignsConflicted`) and the per-row disable — which is why both read this one set.
+   * Deliberately an OFFER rather than an automatic re-read: reloading silently would replace the
+   * rows under whoever is mid-click, the same class of surprise the stale-render fix on the parent
+   * exists to prevent.
    */
-  protected readonly campaignsConflicted = signal(false);
+  private readonly conflictedCampaignIds = signal<ReadonlySet<string>>(new Set<string>());
+
+  /**
+   * Whether ANY row is still known to be conflicted.
+   *
+   * Derived rather than stored so the banner cannot disagree with the set that drives the row
+   * controls — the disagreement being exactly the defect: a cleared flag hid the banner while
+   * `toggledEtag` still held rejected validators for rows the refresh never advanced.
+   */
+  protected readonly campaignsConflicted = computed(() => this.conflictedCampaignIds().size > 0);
 
   /**
    * The status each campaign holds after any toggle this session, keyed by campaign id.
@@ -238,6 +254,7 @@ export class OptimizationTabComponent implements OnInit {
     // Read here so the row's `describedBy` recomputes when an error appears or clears. Reading it
     // inside a template method instead was the frontend-checklist §4 violation this replaces.
     const toggleErrors = this.toggleError();
+    const conflictedIds = this.conflictedCampaignIds();
     const deploymentDisabled = !this.statusToggleEnabled();
     return rows.map((campaign) => {
       // Normalized HERE, once, rather than inside each consumer. `status` feeds three of them —
@@ -252,15 +269,33 @@ export class OptimizationTabComponent implements OnInit {
       // Deployment capability first, then platform, then status — in refusal strength order. A
       // flag-off deployment cannot toggle ANY row, so no status or platform makes a button work.
       // Platform then status for the same reason: each is sufficient on its own to refuse.
-      const action = deploymentDisabled ? 'unavailable' : campaignToggleAction(status, campaign.platform);
+      // The platform support check is made HERE and fed into the action, rather than letting
+      // `campaignToggleAction` decide from `campaign.platform` alone. That function treats an
+      // ABSENT platform as "not asked" and answers on status only — correct for a status-only
+      // caller, fail-OPEN for this one. `listBriefCampaigns` spreads index docs through
+      // unvalidated, so a doc missing `platform` reaches here as `undefined`, earns a Pause or
+      // Resume button, and every click 400s: the request omits `body.platform` and the controller
+      // refuses it before dispatch. An unsupported platform is refused for the same reason one
+      // click later. Deciding it from the row's own support check makes both cases fail closed,
+      // exactly as a malformed status already does.
+      const platformSupported = typeof campaign.platform === 'string' && TOGGLEABLE_CAMPAIGN_PLATFORMS.has(campaign.platform);
+      const action = deploymentDisabled || !platformSupported ? 'unavailable' : campaignToggleAction(status, campaign.platform);
       // The platform reason wins when it applies, because it is the one the operator cannot act
       // on. A Microsoft row in `pending` is BOTH not-yet-created and not-supported-here; telling
       // them it "resolves itself once it finishes" would promise a button that never arrives.
-      const platformUnsupported = !TOGGLEABLE_CAMPAIGN_PLATFORMS.has(campaign.platform);
+      const platformUnsupported = !platformSupported;
+      // This row's validator is known dead. A 412 refused the exact etag the next click would
+      // send, and nothing since has proved the row advanced, so re-clicking reproduces the same
+      // 412 deterministically — while the banner beside it tells the operator to refresh FIRST.
+      // Scoped to the row that conflicted rather than the whole list: the other rows' validators
+      // are untested, not disproved, and disabling them would withdraw controls from campaigns
+      // that are spending on no evidence at all.
+      const conflicted = conflictedIds.has(campaign.id);
       return {
         campaign,
         status,
         action,
+        conflicted,
         unavailableReason: action === 'unavailable' ? this.unavailableReasonFor(status, deploymentDisabled, platformUnsupported) : '',
         toggleLabel: CAMPAIGN_TOGGLE_LABELS[action],
         describedBy: this.describedByFor(campaign.id, action, toggleErrors),
@@ -383,6 +418,14 @@ export class OptimizationTabComponent implements OnInit {
       this.toggleError.update((e) => ({ ...e, [campaign.id]: row.unavailableReason }));
       return;
     }
+    // Same fail-closed reasoning for a row whose validator a 412 already rejected. The template
+    // disables it, so this arm is only reachable if the DOM and the computed disagree — but the
+    // request it would send is KNOWN to fail, and the existing conflict message already names the
+    // remedy, so it is restated rather than replaced by a second wording for one condition.
+    if (row.conflicted) {
+      this.toggleError.update((e) => ({ ...e, [campaign.id]: CAMPAIGN_TOGGLE_CONFLICT_MESSAGE }));
+      return;
+    }
     // The FRESH etag first: the row is an immutable input holding the etag as read, which this
     // session's own earlier toggle already invalidated. Replaying it earns a 412 that reads as
     // someone else's concurrent edit.
@@ -463,7 +506,11 @@ export class OptimizationTabComponent implements OnInit {
           // a remedy the tab does not offer. Deliberately an OFFER rather than an automatic
           // re-fetch: a silent reload would swap the rows out from under whoever is mid-click.
           if (conflict) {
-            this.campaignsConflicted.set(true);
+            this.conflictedCampaignIds.update((ids) => {
+              const next = new Set(ids);
+              next.add(campaign.id);
+              return next;
+            });
           }
         },
       });
@@ -740,6 +787,36 @@ export class OptimizationTabComponent implements OnInit {
    * describes still holds.
    */
   private initConflictClearOnRefresh(): void {
+    // A context change abandons the conflict, rather than carrying it into a list it was never
+    // about. `campaignsConflicted` is evidence that THIS brief's rows were read before a write
+    // this view did not see; switching foundation or brief makes it evidence about a context no
+    // longer on screen. The delivery-based clear below cannot reach that case: the parent's
+    // foundation-switch path sets `briefCampaigns` to `null` and, when the new foundation has no
+    // brief, `loadBriefCampaigns` early-returns without ever dispatching a read — so no list is
+    // ever delivered, and the component stays mounted under `@case ('optimization')` showing the
+    // previous foundation's banner over a context that was never conflicted.
+    //
+    // Keyed on (project, brief) because either alone is insufficient: a foundation switch changes
+    // the project while the brief id may be blank on both sides, and a restore can change the
+    // brief within one project. The etag bookkeeping is reset with it — those validators and the
+    // baseline they are compared against belong to the abandoned list, and judging the next
+    // context's first delivery against them would compare ids across two different briefs.
+    toObservable(computed(() => `${this.projectSlug()} ${this.briefId()}`))
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => {
+        this.conflictedCampaignIds.set(new Set<string>());
+        this.toggleError.set({});
+        this.toggledEtag.set({});
+        // `toggledStatus` goes too, unlike on a refresh. There it is what the service CONFIRMED
+        // for rows still on screen; here those rows are gone, and keeping it would overlay one
+        // brief's confirmed statuses onto another brief's ids if they ever collide.
+        this.toggledStatus.set({});
+        this.lastDeliveredEtags = {};
+        this.hasDeliveredList = false;
+        this.etagsWrittenDuringRead.clear();
+        this.listReadInFlight = false;
+      });
+
     toObservable(this.briefCampaigns)
       .pipe(takeUntilDestroyed())
       .subscribe((rows) => {
@@ -822,7 +899,22 @@ export class OptimizationTabComponent implements OnInit {
       return;
     }
 
-    this.campaignsConflicted.set(false);
+    // Only the rows that actually advanced leave the conflicted set. Setting a single flag false
+    // here was the defect two reviewers found independently: with `c-1` conflicted, a refresh that
+    // still returns `c-1`'s rejected version but a newer one for `c-2` proves nothing about `c-1`,
+    // yet cleared the banner and its Refresh control while `c-1` still held a dead validator and
+    // per-row copy telling the operator to refresh. Membership is per-row evidence, so the banner
+    // now survives exactly as long as some row remains unproven.
+    this.conflictedCampaignIds.update((ids) => {
+      if (!clearable.some((id) => ids.has(id))) {
+        return ids;
+      }
+      const next = new Set(ids);
+      for (const id of clearable) {
+        next.delete(id);
+      }
+      return next;
+    });
     this.toggleError.update((errors) => this.omitKeys(errors, clearable));
     this.toggledEtag.update((etags) => this.omitKeys(etags, clearable));
   }
