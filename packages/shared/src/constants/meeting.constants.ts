@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ArtifactVisibility, MeetingType, MeetingVisibility } from '../enums';
-import type { AttachmentCategory, CardSelectorOption, MeetingTypeConfig } from '../interfaces';
+import type { AttachmentCategory, CardSelectorOption, MeetingComposerPreviewFeature, MeetingTypeConfig } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
 /**
@@ -318,6 +318,21 @@ export const MEETING_COMPOSER_SECTIONS = [
   { id: 'guests', label: 'Guests', icon: 'fa-light fa-users', required: false },
   { id: 'agenda-resources', label: 'Agenda & Resources', icon: 'fa-light fa-list-check', required: false },
 ] as const;
+
+/**
+ * Feature rows the composer preview lists, in display order.
+ * @description Only the labels are the preview's own — shorter wording than the section's toggle
+ * titles. Controls and icons come from {@link MEETING_FEATURE_BY_KEY}, so renaming a feature key
+ * breaks the build here rather than silently dropping the row.
+ */
+export const MEETING_COMPOSER_PREVIEW_FEATURES: MeetingComposerPreviewFeature[] = (
+  [
+    { control: 'recording_enabled', label: 'Recording' },
+    { control: 'zoom_ai_enabled', label: 'AI meeting summary' },
+    { control: 'transcript_enabled', label: 'Transcript' },
+    { control: 'youtube_upload_enabled', label: 'Auto-upload to YouTube' },
+  ] as const
+).map(({ control, label }) => ({ control, label, icon: MEETING_FEATURE_BY_KEY[control].icon }));
 
 /**
  * Default meeting duration in minutes

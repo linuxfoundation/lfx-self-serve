@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MEETING_COMPOSER_SECTIONS, PAST_MEETING_SORT } from '../constants/meeting.constants';
+import type { MEETING_COMPOSER_SECTIONS, MEETING_FEATURE_BY_KEY, PAST_MEETING_SORT } from '../constants/meeting.constants';
 import { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
 import { TagSeverity } from './components.interface';
 import type { MeetingAttachment, PresignAttachmentResponse } from './meeting-attachment.interface';
@@ -1384,6 +1384,48 @@ export interface MeetingComposerSection {
   label: string;
   icon: string;
   required: boolean;
+}
+
+/**
+ * A rail row's derived display state for one composer section.
+ * @description `complete` is validity for required sections and "has been visited" for optional ones —
+ * an optional section can never be invalid, so visiting it is the only signal that it was considered.
+ * It excludes the active row, which renders its own state; `lineBelowComplete` does not, so the
+ * connector below a completed-but-active row still reads as done.
+ */
+export interface MeetingComposerRailRow {
+  section: MeetingComposerSection;
+  active: boolean;
+  complete: boolean;
+  /** Blocked by an earlier invalid required section — never set on the active row. */
+  locked: boolean;
+  /** Visited required section that isn't valid yet — drives the row's attention dot. */
+  needsAttention: boolean;
+  /** Whether the connector drawn below this row should read as completed. */
+  lineBelowComplete: boolean;
+  isLast: boolean;
+}
+
+/** Form control keys of {@link MEETING_FEATURE_BY_KEY}. */
+export type MeetingFeatureKey = keyof typeof MEETING_FEATURE_BY_KEY;
+
+/** One feature the composer preview can list, keyed by the form control that turns it on. */
+export interface MeetingComposerPreviewFeature {
+  control: MeetingFeatureKey;
+  label: string;
+  icon: string;
+}
+
+/** Day/month pair for the composer preview's date chip — placeholder glyphs until a date is picked. */
+export interface MeetingComposerPreviewDateChip {
+  day: string;
+  month: string;
+}
+
+/** A label + icon pair rendered as one row in the composer preview. */
+export interface MeetingComposerPreviewRow {
+  label: string;
+  icon: string;
 }
 
 /**

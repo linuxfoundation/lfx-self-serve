@@ -20,27 +20,20 @@
     </div>
   </ng-template>
 
-  <div class="flex h-full flex-col gap-4">
-    <!-- Temporary flat section switcher — replaced by the rail in LFXV2-3240 -->
-    <nav class="flex flex-wrap gap-2 border-b border-gray-200 pb-3" aria-label="Composer sections" data-testid="meeting-composer-sections">
-      @for (section of sections; track section.id) {
-        <button
-          type="button"
-          class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium"
-          [ngClass]="section.id === composer.activeSection() ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'"
-          [attr.aria-current]="section.id === composer.activeSection() ? 'true' : null"
-          [attr.data-testid]="'meeting-composer-section-' + section.id"
-          (click)="onSectionChange(section.id)">
-          <i [class]="section.icon" aria-hidden="true"></i>
-          {{ section.label }}
-        </button>
+  <div class="flex h-full min-h-0 gap-6">
+    <!-- Narrow viewports navigate with the footer buttons only; LFXV2-3243 refines the collapsed layout. -->
+    <div class="hidden w-[262px] shrink-0 flex-col gap-4 overflow-y-auto lg:flex">
+      <lfx-meeting-composer-rail />
+
+      @if (!composer.isEditMode()) {
+        <lfx-meeting-composer-preview />
       }
-    </nav>
+    </div>
 
     @if (formService.loading()) {
       <p class="text-sm text-gray-500" data-testid="meeting-composer-loading">Loading meeting…</p>
     } @else {
-      <div class="flex flex-1 flex-col gap-6 overflow-y-auto">
+      <div class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-auto">
         @switch (composer.activeSection()) {
           @case ('details-access') {
             <lfx-composer-details-access [form]="formService.form()" />
