@@ -46,7 +46,7 @@
             <lfx-composer-details-access [form]="formService.form()" />
           }
           @case ('date-schedule') {
-            <lfx-meeting-details [form]="formService.form()" />
+            <lfx-composer-date-schedule [form]="formService.form()" />
           }
           @case ('platform-features') {
             <lfx-meeting-platform-features [form]="formService.form()" (goToTitleSection)="onGoToTitleSection()" />
@@ -65,6 +65,21 @@
             }
           }
           @case ('agenda-resources') {
+            <!-- Temporary agenda field — the composer's own Agenda & Resources section lands in LFXV2-3239 -->
+            <div class="flex flex-col gap-2">
+              <label for="composer-agenda" class="text-sm font-medium text-gray-900">Agenda</label>
+              <lfx-textarea
+                [form]="formService.form()"
+                control="description"
+                id="composer-agenda"
+                placeholder="Enter meeting agenda and key discussion points"
+                styleClass="w-full min-h-48"
+                [rows]="8"
+                [maxlength]="agendaMaxLength"
+                data-testid="composer-agenda-textarea" />
+              <p class="self-end text-xs" [ngClass]="agendaCounterClass()">{{ agendaLength() }}/{{ agendaMaxLength }}</p>
+            </div>
+
             <lfx-meeting-resources-summary
               [form]="formService.form()"
               [meetingId]="formService.meetingId()"

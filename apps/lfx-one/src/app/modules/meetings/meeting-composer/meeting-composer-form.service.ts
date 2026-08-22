@@ -14,6 +14,7 @@ import {
   MAX_EARLY_JOIN_TIME,
   MAX_EMAIL_REMINDER_HOURS,
   MAX_EMAIL_REMINDER_TIME,
+  MEETING_AGENDA_MAX_LENGTH,
   MIN_EARLY_JOIN_TIME,
   MIN_EMAIL_REMINDER_HOURS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
@@ -69,6 +70,7 @@ import {
   switchMap,
   take,
   takeUntil,
+  tap,
   toArray,
 } from 'rxjs';
 
@@ -197,6 +199,8 @@ export class MeetingComposerFormService {
           form.get('timezone')?.value &&
           form.get('startDate')?.valid &&
           form.get('startTime')?.valid &&
+          form.get('duration')?.valid &&
+          form.get('customDuration')?.valid &&
           !form.errors?.['futureDateTime']
         );
 
@@ -354,7 +358,7 @@ export class MeetingComposerFormService {
         restricted: new FormControl(false),
 
         title: new FormControl('', [Validators.required]),
-        description: new FormControl('', [Validators.maxLength(2000)]),
+        description: new FormControl('', [Validators.maxLength(MEETING_AGENDA_MAX_LENGTH)]),
         aiPrompt: new FormControl(''),
         startDate: new FormControl(defaultDateTime.date, [Validators.required]),
         startTime: new FormControl(defaultDateTime.time, [Validators.required]),
@@ -628,9 +632,9 @@ export class MeetingComposerFormService {
       title: meeting.title,
       description: meeting.description,
       // Blank the legacy `None` sentinel so the required validator fires and the field shows its own
-      // error instead of silently blocking save. Any other stored value is kept verbatim — upstream
-      // types this field as a free-form string, so blanking on "not in our option list" would let the
-      // composer silently re-classify a meeting whose category it merely doesn't recognize.
+      // error instead of silently blocking save. Any other stored value is kept verbatim and the
+      // details section synthesizes an option for it, so an unrecognized category stays visible and
+      // replaceable rather than being re-classified behind the organizer's back.
       meeting_type: meeting.meeting_type === MeetingType.NONE ? '' : meeting.meeting_type,
       startDate: startDate,
       startTime: startTime,
@@ -825,6 +829,7 @@ export class MeetingComposerFormService {
 
     // Deletions before uploads before links, so a removed link isn't re-created in the same pass.
     return this.deletePendingAttachments(meetingId, attachmentIdsToDelete).pipe(
+      tap((deletions) => this.dropDeletedFromQueue(attachmentIdsToDelete, deletions.failures)),
       switchMap((deletions) =>
         this.savePendingAttachments(meetingId, attachmentsToUpload).pipe(
           switchMap((uploads) => this.saveLinkAttachments(meetingId, linksToSave).pipe(map((links) => ({ deletions, uploads, links }))))
@@ -882,6 +887,21 @@ export class MeetingComposerFormService {
     );
   }
 
+  /**
+   * Drops the ids this pass deleted from the queue, keeping the ones it failed on.
+   * @description Anything queued while the save was in flight is left alone — clearing the whole queue
+   * would discard it silently.
+   */
+  private dropDeletedFromQueue(attemptedIds: string[], failedIds: string[]): void {
+    const deleted = new Set(attemptedIds.filter((id) => !failedIds.includes(id)));
+
+    if (deleted.size === 0) {
+      return;
+    }
+
+    this.pendingAttachmentDeletions.update((ids) => ids.filter((id) => !deleted.has(id)));
+  }
+
   /** Files picked in this open that haven't been uploaded yet. */
   private unsavedAttachments(): PendingAttachment[] {
     return this.pendingAttachments.filter((attachment) => !attachment.uploading && !attachment.uploadError && !attachment.uploaded && attachment.file);
@@ -924,7 +944,7 @@ export class MeetingComposerFormService {
     const registrants = this.registrantUpdates();
 
     return (
-      this.pendingAttachments.some((attachment) => !attachment.uploading && !attachment.uploadError && !attachment.uploaded && attachment.file) ||
+      this.unsavedAttachments().length > 0 ||
       this.pendingAttachmentDeletions().length > 0 ||
       this.hasUnsavedLinks() ||
       registrants.toAdd.length > 0 ||
@@ -948,10 +968,6 @@ export class MeetingComposerFormService {
       attachments.uploads.failures.forEach((failure) => console.error(`Failed to upload attachment ${failure.fileName}:`, failure.error));
       attachments.links.failures.forEach((failure) => console.error(`Failed to add link ${failure.linkName}:`, failure.error));
       attachments.deletions.failures.forEach((attachmentId) => console.error(`Failed to delete attachment ${attachmentId}`));
-
-      if (attachments.deletions.failures.length === 0 && this.pendingAttachmentDeletions().length > 0) {
-        this.pendingAttachmentDeletions.set([]);
-      }
     }
 
     if (registrantFailures === 0 && attachmentFailures === 0) {
