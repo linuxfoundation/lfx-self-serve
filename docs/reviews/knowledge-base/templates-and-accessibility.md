@@ -1,6 +1,6 @@
 # Templates and accessibility
 
-Patterns CodeRabbit + Copilot flag in Angular templates — ARIA roles, focus management, keyboard parity, semantic HTML, class-binding clobbering, wrong `@for` track keys, missing `lens=` query params, inline-style misuse, PrimeNG primitives used directly instead of LFX wrappers, dynamic labels forced to single-line at narrow viewports, and tooltips attached to non-focusable hosts. Heavily concentrated in `.component.html` files for table rows, custom toggle buttons, and icon-only buttons.
+Patterns CodeRabbit + Copilot flag in Angular templates — ARIA roles, focus management, keyboard parity, semantic HTML, wrong `@for` track keys, missing `lens=` query params, inline-style misuse, PrimeNG primitives used directly instead of LFX wrappers, dynamic labels forced to single-line at narrow viewports, and tooltips attached to non-focusable hosts. Heavily concentrated in `.component.html` files for table rows, custom toggle buttons, and icon-only buttons. (Static-`class` + `[class]` "clobbering" used to be listed here — see `known-false-positives.md`, it's a false positive under Ivy.)
 
 **Read when:** any `.component.html` file changed. Cross-checked in Steps 3-4 of the learnings-review playbook (KB-match gate in Step 3, false-positive filter in Step 4); findings without a quotable pattern below are dropped.
 
