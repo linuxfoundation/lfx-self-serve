@@ -40,6 +40,8 @@ export class ComposerDetailsAccessComponent {
   private readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
+  /** Quick create labels its own columns and has no room for the section heading. */
+  public readonly showHeading = input(true);
 
   protected readonly visibilityOptions = MEETING_VISIBILITY_OPTIONS;
   protected readonly joinRestrictionOptions = MEETING_JOIN_RESTRICTION_OPTIONS;

@@ -15,7 +15,6 @@ import {
   MAX_FILE_SIZE_MB,
   MEETING_AGENDA_MAX_LENGTH,
   MEETING_AGENDA_WARNING_LENGTH,
-  MEETING_DURATION_CHIP_OPTIONS,
   MIN_CUSTOM_DURATION,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
@@ -257,8 +256,7 @@ export class ComposerAgendaResourcesComponent {
    * the allowed range is dropped with a warning (writing it would trip the form service's min/max
    * validators and deaden submit from a section the organizer can't see); an estimate that already
    * matches the current duration is a silent no-op; any other estimate is written and announced, since
-   * the duration they picked has just been overwritten. Estimates outside the chip values go to
-   * `customDuration` rather than being clamped.
+   * the duration they picked has just been overwritten.
    */
   private applyEstimatedDuration(estimate: number): void {
     const estimatedDuration = Math.round(estimate);
@@ -272,43 +270,17 @@ export class ComposerAgendaResourcesComponent {
       return;
     }
 
-    if (this.effectiveDuration() === estimatedDuration) {
+    if (this.formService.effectiveDuration() === estimatedDuration) {
       return;
     }
 
-    const isChipValue = MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === estimatedDuration);
-    const customDuration = this.form().get('customDuration');
-    const durationControl = this.form().get('duration');
-
-    durationControl?.setValue(isChipValue ? estimatedDuration : 'custom');
-    customDuration?.setValue(isChipValue ? null : estimatedDuration);
-
-    if (!isChipValue) {
-      customDuration?.markAsTouched();
-    }
+    this.formService.setDuration(estimatedDuration);
 
     this.messageService.add({
       severity: 'info',
       summary: 'Duration updated',
       detail: `Meeting duration set to ${estimatedDuration} minutes. Change it in Date & Schedule if that's not right.`,
     });
-  }
-
-  /**
-   * Minutes the form currently resolves to, whichever of the two duration controls holds it.
-   * @description `customDuration` starts out as an empty string and holds whatever the numeric input
-   * produces, so it is coerced rather than cast.
-   */
-  private effectiveDuration(): number | null {
-    const duration = this.form().get('duration')?.value as number | 'custom' | null;
-
-    if (duration !== 'custom') {
-      return duration ?? null;
-    }
-
-    const customDuration = Number(this.form().get('customDuration')?.value);
-
-    return Number.isFinite(customDuration) && customDuration > 0 ? customDuration : null;
   }
 
   private validateFile(file: File, queued: PendingAttachment[]): string | null {

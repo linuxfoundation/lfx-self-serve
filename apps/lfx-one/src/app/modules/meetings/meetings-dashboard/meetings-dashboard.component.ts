@@ -12,9 +12,11 @@ import { FullCalendarComponent } from '@app/shared/components/fullcalendar/fullc
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { MenuComponent } from '@components/menu/menu.component';
 import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
+import { MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_CONFIGS, MEETING_TYPE_OPTIONS } from '@lfx-one/shared/constants';
+import { MeetingType } from '@lfx-one/shared/enums';
 import { Lens, MeLensMeetingFilters, Meeting, MeetingCalendarClickProps, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
 import {
   getCurrentOrNextOccurrence,
@@ -34,6 +36,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
+import { MenuItem } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import {
@@ -72,6 +75,7 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
     EmptyStateComponent,
     FullCalendarComponent,
     SkeletonModule,
+    MenuComponent,
   ],
   providers: [DialogService],
   templateUrl: './meetings-dashboard.component.html',
@@ -89,6 +93,27 @@ export class MeetingsDashboardComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly dialogService = inject(DialogService);
   private readonly composer = inject(MeetingComposerService);
+
+  /**
+   * Create Meeting dropdown: a quick start per meeting type, then the full drawer.
+   * @description A type row opens the quick dialog pre-selected, so its template prefill runs immediately.
+   */
+  public readonly createMenuItems: MenuItem[] = [
+    {
+      label: 'Quick start',
+      items: MEETING_TYPE_OPTIONS.map((option) => ({
+        label: option.label,
+        icon: option.info.icon,
+        command: () => this.onQuickCreateMeeting(option.value),
+      })),
+    },
+    { separator: true },
+    {
+      label: 'Advanced',
+      icon: 'fa-light fa-sliders',
+      command: () => this.onAdvancedCreateMeeting(),
+    },
+  ];
 
   public readonly activeLens: Signal<Lens> = this.lensService.activeLens;
   protected readonly personaLoaded = this.personaService.personaLoaded;
@@ -256,7 +281,16 @@ export class MeetingsDashboardComponent {
     );
   }
 
+  /** Main button: the quick create dialog. The dropdown covers per-type quick starts and the drawer. */
   public onCreateMeeting(): void {
+    this.composer.open({ mode: 'create', variant: 'quick' });
+  }
+
+  public onQuickCreateMeeting(meetingType: MeetingType): void {
+    this.composer.open({ mode: 'create', variant: 'quick', meetingType });
+  }
+
+  public onAdvancedCreateMeeting(): void {
     this.composer.open({ mode: 'create' });
   }
 

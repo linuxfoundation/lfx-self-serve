@@ -1,0 +1,68 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Quick create dialog (LFXV2-3241) -->
+<p-dialog
+  [visible]="composer.isOpen()"
+  (visibleChange)="onVisibleChange($event)"
+  [modal]="true"
+  [draggable]="false"
+  [dismissableMask]="true"
+  header="Create meeting"
+  styleClass="w-[min(1024px,94vw)]">
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-2" data-testid="quick-create-body">
+    <div class="flex min-w-0 flex-col gap-6">
+      <lfx-composer-details-access [form]="formService.form()" [showHeading]="false" />
+
+      @if (prefilledType()) {
+        <p class="text-xs text-gray-500" data-testid="quick-create-prefill-hint">Pre-filled for this meeting type — edit freely.</p>
+      }
+
+      <div class="flex flex-col gap-2">
+        <label for="quick-create-agenda" class="text-sm font-medium text-gray-900">Agenda</label>
+        <lfx-textarea
+          [form]="formService.form()"
+          control="description"
+          id="quick-create-agenda"
+          placeholder="Enter meeting agenda and key discussion points"
+          styleClass="w-full"
+          [rows]="6"
+          [maxlength]="agendaMaxLength"
+          data-testid="quick-create-agenda-textarea" />
+        <div class="flex items-center justify-between gap-2">
+          @if (prefilledType()) {
+            <p class="text-xs text-gray-500" data-testid="quick-create-agenda-hint">Suggested agenda template — adjust as needed.</p>
+          }
+          <p class="ml-auto text-xs" [ngClass]="agendaCounterClass()">{{ agendaLength() }}/{{ agendaMaxLength }}</p>
+        </div>
+      </div>
+
+      <lfx-meeting-committee-manager
+        [selectedCommittees]="formService.form().get('committees')?.value || []"
+        [form]="formService.form()"
+        [committeeContext]="formService.committeeContext()"
+        (committeeMembersChange)="onCommitteeMembersChange($event)" />
+    </div>
+
+    <div class="flex min-w-0 flex-col gap-6">
+      <lfx-composer-date-schedule [form]="formService.form()" [showHeading]="false" [showEarlyJoin]="false" />
+    </div>
+  </div>
+
+  <ng-template #footer>
+    <div class="flex w-full items-center justify-between gap-2" data-testid="quick-create-footer">
+      <p class="text-xs text-gray-500">You can configure advanced settings later.</p>
+
+      <div class="flex items-center gap-2">
+        <lfx-button label="Cancel" severity="secondary" [text]="true" size="small" data-testid="quick-create-cancel" (onClick)="composer.close()" />
+        <lfx-button
+          label="Create meeting"
+          size="small"
+          [loading]="formService.submitting()"
+          [disabled]="!canSubmit()"
+          data-testid="quick-create-submit"
+          (onClick)="onCreate()" />
+      </div>
+    </div>
+  </ng-template>
+</p-dialog>
