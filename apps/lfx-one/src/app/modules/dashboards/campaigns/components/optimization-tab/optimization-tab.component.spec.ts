@@ -752,6 +752,150 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
   });
 
   /**
+   * FINDING 1: an eventually-consistent re-read is not proof the conflict resolved.
+   *
+   * `listBriefCampaigns` reads the QUERY SERVICE index and derives each etag from the indexed
+   * `version`, while a toggle writes through campaign-service, which bumps that version at once.
+   * Indexing is asynchronous, so a refresh issued immediately after a 412 can hand back a NEW
+   * ARRAY carrying the SAME version that was just rejected.
+   *
+   * The fixture is built to make that the ONLY difference: same id, same status, same etag as the
+   * pre-refresh row, delivered as a distinct array object. A component keyed on array identity
+   * clears here and re-arms the loop; one keyed on the etag changing correctly concludes nothing
+   * moved. Asserting the etag SENT is what keeps this honest — a "stale" fixture carrying a
+   * different etag would pass for the wrong reason.
+   */
+  it('keeps the conflict banner when the re-read returns the same version it just rejected', () => {
+    conflict();
+    render([doc({ status: 'created', etag: '"3"' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+
+    // A brand-new array object, but the index has not caught up: identical version.
+    refreshFromParent([doc({ status: 'created', etag: '"3"' })]);
+
+    // Nothing advanced, so nothing is proven — the warning has to stand.
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+  });
+
+  /**
+   * The same skew, asserted on the wire rather than the banner: the cached validator must survive
+   * a re-read that did not advance, because it remains the best etag available for that row.
+   */
+  it('keeps the cached validator when a re-read does not advance the version', () => {
+    updateCampaignStatus.mockReturnValue(
+      of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"9"' })
+    );
+    render([doc({ status: 'created', etag: '"3"' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    // The index still reports version 3 — it has not seen the write that produced '"9"'.
+    refreshFromParent([doc({ status: 'created', etag: '"3"' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    // '"9"' came from campaign-service and is AHEAD of the index; '"3"' is the version already
+    // known to be behind. Sending '"3"' here is the re-armed 412 loop.
+    expect(updateCampaignStatus.mock.calls[1][0].etag).toBe('"9"');
+    expect(updateCampaignStatus.mock.calls[1][0].etag).not.toBe('"3"');
+  });
+
+  /**
+   * The complement, and the reason finding 1's fix is not simply "never clear": a row whose
+   * indexed etag DID advance has demonstrably moved, so its stale state must still be dropped.
+   * Without this, the fix for finding 1 could degenerate into clearing nothing at all.
+   */
+  it('still clears once the re-read actually advances the version', () => {
+    conflict();
+    render([doc({ status: 'created', etag: '"3"' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+
+    refreshFromParent([doc({ status: 'created', etag: '"8"' })]);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]')).toBeNull();
+  });
+
+  /**
+   * FINDING 2: a toggle that ANSWERS inside the parent's `null` window.
+   *
+   * `loadBriefCampaigns` sets the input to `null` on entry and to the fetched array on the
+   * response arm. A toggle dispatched beforehand can complete between those two pushes — and its
+   * `next` arm clears `togglePending` BEFORE writing `toggledEtag`, so by the time the fresh array
+   * lands the row is no longer pending yet holds a validator minted by campaign-service, which is
+   * ahead of anything the index can report.
+   *
+   * This is distinct from the previously tested case of a toggle still OUTSTANDING at clear time.
+   * That one had no entry to protect; this one does, which is why an in-flight-only guard does not
+   * cover it.
+   *
+   * The delivered etag is deliberately DIFFERENT ('"5"') from the pre-refresh one, so the row does
+   * qualify as advanced — proving the protection comes from the write itself, not from the row
+   * happening to look unchanged.
+   */
+  it('keeps an etag written by a toggle that answered inside the refresh window', () => {
+    const inFlight = new Subject<CampaignStatusUpdateResult>();
+    updateCampaignStatus.mockReturnValue(inFlight.asObservable());
+    render([doc({ status: 'created', etag: '"3"' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    // The parent begins its re-read: input goes null first.
+    fixture.componentRef.setInput('briefCampaigns', null);
+    fixture.detectChanges();
+
+    // The toggle answers HERE — inside the window, before the fresh array arrives.
+    inFlight.next({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"11"' });
+    inFlight.complete();
+    fixture.detectChanges();
+
+    // Now the re-read lands, at a version that IS newer than the pre-refresh one but still behind
+    // the write that just completed.
+    fixture.componentRef.setInput('briefCampaigns', [doc({ status: 'created', etag: '"5"' })]);
+    fixture.detectChanges();
+
+    updateCampaignStatus.mockReturnValue(
+      of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'ACTIVE', success: true, serviceStatus: 'active', etag: '"12"' })
+    );
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    expect(updateCampaignStatus.mock.calls[1][0].etag).toBe('"11"');
+    expect(updateCampaignStatus.mock.calls[1][0].etag).not.toBe('"5"');
+  });
+
+  /**
+   * Per-row scoping, stated directly: one row advancing must not drop another row's state. A
+   * wholesale clear passes every single-row test above while still discarding a second campaign's
+   * validator, which is a money-affecting write sent with the wrong `If-Match`.
+   */
+  it('clears only the rows whose version advanced, leaving the others intact', () => {
+    updateCampaignStatus.mockReturnValue(
+      of({ platform: 'google-ads', campaignId: 'c-2', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"77"' })
+    );
+    render([doc({ id: 'c-1', status: 'created', etag: '"3"' }), doc({ id: 'c-2', status: 'created', etag: '"4"' })]);
+
+    // c-2 is toggled and caches '"77"'.
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-2"]').click();
+    fixture.detectChanges();
+
+    // c-1 advances in the index; c-2 does not.
+    refreshFromParent([doc({ id: 'c-1', status: 'created', etag: '"6"' }), doc({ id: 'c-2', status: 'created', etag: '"4"' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-2"]').click();
+    fixture.detectChanges();
+
+    // c-2 never moved in the index, so its session validator is still the right one to send.
+    expect(updateCampaignStatus.mock.calls[1][0].etag).toBe('"77"');
+  });
+
+  /**
    * `toggledStatus` is NOT part of the stale set, and this pins that.
    *
    * It records what the service CONFIRMED for a row, and it exists because the index lags a

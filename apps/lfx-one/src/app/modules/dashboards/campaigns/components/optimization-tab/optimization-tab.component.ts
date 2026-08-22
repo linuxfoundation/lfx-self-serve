@@ -3,8 +3,8 @@
 
 import { DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, OnInit, output, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import type {
   CampaignIndexDoc,
   CampaignMonitorResponse,
@@ -148,72 +148,35 @@ export class OptimizationTabComponent implements OnInit {
    */
   protected readonly toggledEtag = signal<Record<string, string>>({});
 
-  /** The exact array last delivered, so a re-render is distinguishable from a re-read. */
-  private lastDeliveredRows: CampaignIndexDoc[] | null = null;
+  /**
+   * The etag each row carried the last time a list was DELIVERED, keyed by campaign id.
+   *
+   * The reference point for "did this row actually move?". Compared against the next delivered
+   * list rather than against `toggledEtag`, because the question a refresh has to answer is
+   * whether the INDEX advanced — see `initConflictClearOnRefresh`.
+   */
+  private lastDeliveredEtags: Record<string, string | undefined> = {};
 
-  /** Whether the input has passed through `null` since the last delivered list. */
-  private sawPendingList = false;
+  /** Whether any list has been delivered yet; the first one is a baseline, not a re-read. */
+  private hasDeliveredList = false;
 
   /**
-   * Clears the conflict state when a re-read actually delivers new campaign data.
+   * Ids whose cached etag was minted while a list read was already in flight.
    *
-   * Without this the 412 recovery path does not recover. `campaignsConflicted` latched `true` on
-   * the error arm of `toggleCampaign` and nothing ever set it back, so the banner telling the
-   * operator to refresh survived the refresh it asked for. The component is not destroyed by that
-   * refresh either — it lives under the parent's `@case ('optimization')`, and
-   * `retryCampaigns` → `retryBriefCampaigns()` → `loadBriefCampaigns()` stays on the Optimize tab
-   * and only re-pushes the `briefCampaigns` input. So a lifecycle hook was never going to fire.
+   * The discriminator that makes a refresh safe. `loadBriefCampaigns` sets `briefCampaigns` to
+   * `null` the moment it begins a read, so a toggle answering after that `null` produced its etag
+   * CONCURRENTLY with the read now landing. That etag came from campaign-service, which bumps the
+   * version synchronously on the write, so it is necessarily ahead of what this Query Service read
+   * could have carried — and the row must keep it even though the index reports the row advanced.
    *
-   * `toggledEtag` is the sharper half. It caches the etag each row returned from its last toggle
-   * and is preferred over the row's own, which is correct while the list is the one that etag came
-   * from — and wrong the moment the list is re-read, because the fresh doc carries the current
-   * validator and the cached one is dead. Leaving it behind means the NEXT toggle replays the dead
-   * validator and earns another 412 immediately after the operator did exactly what the banner
-   * told them to. That is the loop this closes: the UI named a remedy that made no difference.
-   *
-   * `toggledStatus` is deliberately NOT cleared here — see `clearConflictState`.
-   *
-   * An `effect` rather than a lifecycle hook or a setter: `briefCampaigns` is a signal `input()`,
-   * which has no `ngOnChanges` participation worth relying on here and cannot carry a setter. The
-   * effect reads the input, so it re-runs on every push the parent makes — which is precisely the
-   * refresh path, since `loadBriefCampaigns` sets the signal to `null` on entry and then to the
-   * fetched array on the response arm.
+   * This is the case a `togglePending` guard cannot catch: the success arm sets `togglePending` to
+   * `false` BEFORE writing `toggledEtag`, so by the time the fresh rows arrive the row is no
+   * longer pending yet holds the fresher validator.
    */
-  private readonly clearConflictOnRefresh = effect(() => {
-    const rows = this.briefCampaigns();
-    // `null` is the parent's in-flight/failed state, not delivered data. Clearing on it would wipe
-    // the banner during the round trip and, on a FAILED re-read, leave the operator with neither
-    // the conflict warning nor fresh rows — the stale state cleared by a refresh that fetched
-    // nothing. Only a delivered list proves the etags in hand were re-read.
-    if (rows === null) {
-      // Still recorded, because the transition that matters is null → list. `loadBriefCampaigns`
-      // always passes through `null` on its way to a fresh array, so remembering that we saw it is
-      // what lets the arrival below be recognised as a RE-READ rather than a re-render.
-      this.sawPendingList = true;
-      return;
-    }
-    // The guard that keeps this an input-change handler rather than a general recompute.
-    //
-    // An effect re-runs whenever ANY signal it read changes, and this one calls into state the
-    // toggle path also writes. Without an identity check the effect would re-enter on unrelated
-    // change-detection passes and erase an error a toggle had just written — which is how the
-    // first version of this fix broke six existing tests. The clear must happen once per DELIVERED
-    // list, not once per dependency change, and identity is the honest test of that: the parent
-    // hands over a NEW array on every read and never mutates one in place.
-    if (rows === this.lastDeliveredRows) {
-      return;
-    }
-    const isReRead = this.lastDeliveredRows !== null || this.sawPendingList;
-    this.lastDeliveredRows = rows;
-    this.sawPendingList = false;
-    // The FIRST list this tab ever receives is not a refresh — there is no stale state behind it,
-    // and treating it as one would be harmless today but would quietly make this effect the place
-    // that clears initial state, which is not what it is for.
-    if (!isReRead) {
-      return;
-    }
-    this.clearConflictState();
-  });
+  private etagsWrittenDuringRead = new Set<string>();
+
+  /** True between the parent's `null` push and the delivery that answers it. */
+  private listReadInFlight = false;
 
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
@@ -337,6 +300,13 @@ export class OptimizationTabComponent implements OnInit {
 
   protected readonly actionInProgress = signal<Record<string, boolean>>({});
   protected readonly actionResults = signal<Record<string, { success: boolean; message: string }>>({});
+
+  public constructor() {
+    // Runs in the component's injection context, which is what `toObservable` requires and what
+    // lets `takeUntilDestroyed()` bind this component's `DestroyRef` without retaining the
+    // subscription by hand. Deliberately not `ngOnInit` — `toObservable` would throw there.
+    this.initConflictClearOnRefresh();
+  }
 
   public ngOnInit(): void {
     this.fetchData();
@@ -462,6 +432,11 @@ export class OptimizationTabComponent implements OnInit {
           // indexed etag there rather than storing ''.
           if (result.etag) {
             this.toggledEtag.update((e) => ({ ...e, [campaign.id]: result.etag as string }));
+            // Recorded when a list read is already in flight: this validator was minted after
+            // that read began, so it outruns whatever the read is about to deliver.
+            if (this.listReadInFlight) {
+              this.etagsWrittenDuringRead.add(campaign.id);
+            }
           }
         },
         // The error is BOUND, not discarded. An argument-less handler is structurally incapable of
@@ -728,35 +703,140 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   /**
-   * Drops the state a completed re-read has just made obsolete.
+   * Clears conflict state for the rows a re-read proves have moved on.
    *
-   * Three things go, and the reason is the same for each: they are all assertions about a LIST
-   * that no longer exists. `campaignsConflicted` says "this view predates a write it did not
-   * see", `toggleError` says "this row's last attempt failed", and `toggledEtag` holds validators
-   * minted against the previous read. A fresh list answers all three.
+   * Without this the 412 recovery path does not recover. `campaignsConflicted` latched `true` on
+   * the error arm of `toggleCampaign` and nothing ever set it back, so the banner telling the
+   * operator to refresh survived the refresh it asked for. The component is not destroyed by that
+   * refresh either — it lives under the parent's `@case ('optimization')`, and
+   * `retryCampaigns` → `retryBriefCampaigns()` → `loadBriefCampaigns()` stays on the Optimize tab
+   * and only re-pushes the `briefCampaigns` input.
    *
-   * `toggledEtag` in particular MUST go rather than merely being ignored. It is preferred over
-   * `campaign.etag` in `toggleCampaign`, so surviving it means the next toggle sends the etag from
-   * the last toggle instead of the one the refresh just fetched — a 412 immediately after the
-   * operator followed the banner's own instruction, which is the loop this fix exists to break.
+   * A `toObservable` bridge rather than an `effect`, per frontend-checklist §5 ("No effect() — use
+   * `toObservable()` with RxJS pipes instead"). Not a style preference here: the knowledge-base
+   * pattern `frontend-state-and-timing/effect-resets-on-identity-equal-input` describes this exact
+   * hazard — an effect re-running on an input that is identity-different but semantically equal,
+   * and resetting state that was still valid. That is precisely what an eventually-consistent
+   * re-read hands this component, so the shape the rule prescribes is also the correct one.
    *
-   * `toggledStatus` deliberately SURVIVES. It is not a claim about the list's freshness; it
-   * records what the service CONFIRMED for a row this session, and it exists precisely because the
-   * index lags a toggle. Clearing it on refresh would re-expose the lag it was written to hide:
-   * a campaign paused seconds ago, re-read before the index caught up, would render as running.
+   * Keyed on the ETAG CHANGING, not on a new array arriving, and that is the whole correctness
+   * argument. `listBriefCampaigns` reads the QUERY SERVICE index (`/query/resources`, type
+   * `campaign`) and derives each etag from the indexed `version`, while a toggle writes through
+   * campaign-service, which bumps that version immediately. Indexing is asynchronous — the server
+   * file says so where it sets `possiblyStale` — so the two are skewed by design. A re-read
+   * moments after a 412 can therefore hand back a NEW ARRAY carrying the SAME version that was
+   * just rejected. Treating delivery as proof of freshness would clear the warning and the cached
+   * validator on that array, and the next click would replay the same dead etag: the original
+   * defect wearing a different hat.
    *
-   * Wholesale rather than gated on `togglePending`, and that needed checking rather than assuming.
-   * A row with a toggle in flight has NO entry in either map to protect: `toggleCampaign` deletes
-   * that row's `toggleError` before dispatch and writes `toggledEtag` only on the response arm. So
-   * an in-flight row's keys are structurally absent at this point, and its response — success or
-   * failure — writes them AFTER this runs, unaffected. A `togglePending` guard here was written
-   * first and then removed: no mutation could make it fail, because it guarded nothing.
-   * `optimization-tab.component.spec.ts` pins both halves of that claim.
+   * So each row is judged on its own evidence. A row whose delivered etag differs from the one it
+   * was last delivered with has demonstrably advanced in the index, and the session state held
+   * against it is obsolete. A row whose etag is unchanged has proved nothing, and its state — the
+   * cached validator included — is left exactly as it was.
+   *
+   * `null` is skipped rather than treated as a clear: it is the parent's in-flight/failed state,
+   * not delivered data. On a re-read that FAILS the parent stays at `null` with
+   * `campaignsUnavailable`, and clearing there would drop the warning while the condition it
+   * describes still holds.
    */
-  private clearConflictState(): void {
+  private initConflictClearOnRefresh(): void {
+    toObservable(this.briefCampaigns)
+      .pipe(takeUntilDestroyed())
+      .subscribe((rows) => {
+        if (rows === null) {
+          // The parent has begun a read. Everything written from here until rows land is
+          // concurrent with it.
+          this.listReadInFlight = true;
+          return;
+        }
+        const readWasInFlight = this.listReadInFlight;
+        this.listReadInFlight = false;
+
+        const delivered: Record<string, string | undefined> = {};
+        for (const row of rows) {
+          delivered[row.id] = row.etag;
+        }
+
+        // The first list is a baseline: there is no prior delivery to compare against, and no
+        // stale state behind it to clear.
+        if (!this.hasDeliveredList) {
+          this.hasDeliveredList = true;
+          this.lastDeliveredEtags = delivered;
+          this.etagsWrittenDuringRead.clear();
+          return;
+        }
+
+        // Only rows whose indexed etag actually changed. An unchanged etag means the index has not
+        // caught up with the write that caused the 412, so this row's cached validator is still
+        // the best one available and its conflict is still live.
+        const advanced = rows.filter((row) => row.etag !== undefined && row.etag !== this.lastDeliveredEtags[row.id]).map((row) => row.id);
+        this.lastDeliveredEtags = delivered;
+        // A row whose validator was minted while this very read was in flight keeps it: the write
+        // that produced it is newer than the read, so the indexed etag is the older of the two.
+        const concurrent = this.etagsWrittenDuringRead;
+        this.etagsWrittenDuringRead = new Set<string>();
+        const superseded = readWasInFlight ? advanced.filter((id) => !concurrent.has(id)) : advanced;
+
+        if (superseded.length > 0) {
+          this.clearConflictStateFor(superseded);
+        }
+      });
+  }
+
+  /**
+   * Drops the session state held against rows a re-read proved have moved.
+   *
+   * Scoped to the ids whose indexed etag actually changed, rather than wiping the maps. Two
+   * separate defects made that necessary, and both are about a row whose state is still valid at
+   * the moment a list arrives:
+   *
+   *   1. The index is eventually consistent, so an unchanged etag is not evidence the row moved —
+   *      see `clearConflictOnRefresh`. Those rows keep their cached validator.
+   *   2. A toggle can ANSWER inside the parent's `null` window. `loadBriefCampaigns` sets the
+   *      input to `null` on entry and to the fetched array on the response arm, so a request
+   *      dispatched before the refresh can land between the two and write a genuinely fresh
+   *      `toggledEtag` — minted by campaign-service, and therefore AHEAD of whatever the index
+   *      returns. A wholesale clear discarded it and sent the older indexed etag on the next
+   *      click. Per-row scoping alone does not fix that, because such a row's indexed etag may
+   *      well have changed too, so the in-flight guard below is what protects it.
+   *
+   * `toggledStatus` deliberately SURVIVES either way. It is not a claim about the list's
+   * freshness; it records what the service CONFIRMED for a row this session, and it exists
+   * precisely because the index lags a toggle. Clearing it would re-expose the lag it was written
+   * to hide: a campaign paused seconds ago, re-read before the index caught up, would render as
+   * running.
+   *
+   * NOT gated on `togglePending`, and that was re-checked rather than assumed after a reviewer
+   * raised the in-flight window. A toggle still OUTSTANDING has no entry in either map to protect:
+   * `toggleCampaign` deletes that row's `toggleError` before dispatch and writes `toggledEtag`
+   * only on a response arm. A toggle that ANSWERS inside the window is the real hazard, and a
+   * pending check cannot see it either — the success arm sets `togglePending` to `false` BEFORE
+   * writing `toggledEtag`, so the row is already not-pending when the rows land. That case is
+   * handled where the evidence actually is, by `etagsWrittenDuringRead`. A `togglePending` guard
+   * was written here twice and removed twice: no mutation could make it fail, because every
+   * interleaving it would catch is either empty or already covered.
+   */
+  private clearConflictStateFor(campaignIds: string[]): void {
+    const clearable = campaignIds;
+    if (clearable.length === 0) {
+      return;
+    }
+
     this.campaignsConflicted.set(false);
-    this.toggleError.set({});
-    this.toggledEtag.set({});
+    this.toggleError.update((errors) => this.omitKeys(errors, clearable));
+    this.toggledEtag.update((etags) => this.omitKeys(etags, clearable));
+  }
+
+  /** A copy of `source` without the given keys. Returns `source` itself when nothing is dropped. */
+  private omitKeys<T>(source: Record<string, T>, keys: string[]): Record<string, T> {
+    if (!keys.some((key) => key in source)) {
+      return source;
+    }
+    const next = { ...source };
+    for (const key of keys) {
+      delete next[key];
+    }
+    return next;
   }
 
   /**
