@@ -79,13 +79,14 @@ describe('OrgLensGroupsService.getGroups', () => {
     expect(result.groups[0].project_slug).toBe('cncf');
   });
 
-  it('falls back to the project slug when enrichment returns no match', async () => {
+  it('omits project_name (but keeps project_slug) when enrichment returns no match', async () => {
     fetchAllOrgSeats.mockResolvedValue([seat()]);
     enrichFoundationNames.mockResolvedValue(new Map());
 
     const result = await run();
 
-    expect(result.groups[0].project_name).toBe('cncf');
+    expect(result.groups[0].project_name).toBeUndefined();
+    expect(result.groups[0].project_slug).toBe('cncf');
   });
 
   it('omits project_name when neither enrichment nor project_slug is available', async () => {

@@ -56,14 +56,7 @@ export class OrgGroupsComponent {
   private readonly groupsData: Signal<OrgLensGroupsResponse | null | undefined> = this.initGroupsData();
 
   protected readonly groups: Signal<OrgLensGroupSummary[]> = computed(() => this.groupsData()?.groups ?? []);
-  protected readonly groupsWithClass: Signal<OrgLensGroupVm[]> = computed(() =>
-    this.groups().map((g) => {
-      const cls = getGroupBehavioralClass(g.category);
-      const projectLabel = g.project_name || g.project_slug || '';
-      const ariaLabel = `${g.name}, ${BEHAVIORAL_CLASS_CONFIG[cls].label}, ${g.org_seat_count} seats` + (projectLabel ? `, ${projectLabel}` : '');
-      return { ...g, cls, projectLabel, ariaLabel };
-    })
-  );
+  protected readonly groupsWithClass: Signal<OrgLensGroupVm[]> = this.initGroupsWithClass();
   protected readonly totalGroups: Signal<number> = computed(() => this.groupsData()?.total_groups ?? 0);
   protected readonly totalSeats: Signal<number> = computed(() => this.groupsData()?.total_seats ?? 0);
 
@@ -90,6 +83,17 @@ export class OrgGroupsComponent {
         ),
         takeUntilDestroyed()
       )
+    );
+  }
+
+  private initGroupsWithClass(): Signal<OrgLensGroupVm[]> {
+    return computed(() =>
+      this.groups().map((g) => {
+        const cls = getGroupBehavioralClass(g.category);
+        const projectLabel = g.project_name || g.project_slug || '';
+        const ariaLabel = `${g.name}, ${BEHAVIORAL_CLASS_CONFIG[cls].label}, ${g.org_seat_count} seats` + (projectLabel ? `, ${projectLabel}` : '');
+        return { ...g, cls, projectLabel, ariaLabel };
+      })
     );
   }
 

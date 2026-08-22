@@ -70,7 +70,10 @@ export class OrgLensGroupsService {
       seenEmails.add((s.email ?? '').trim().toLowerCase());
     }
 
-    const projectName = foundationNames.get(first.project_uid ?? '') || first.project_slug;
+    // Only set project_name when enrichment actually resolved one — the slug fallback belongs to
+    // the view model (OrgLensGroupVm.projectLabel), not this field, or project_name would silently
+    // hold a slug and no longer mean what its name says.
+    const projectName = foundationNames.get(first.project_uid ?? '');
 
     return {
       uid,

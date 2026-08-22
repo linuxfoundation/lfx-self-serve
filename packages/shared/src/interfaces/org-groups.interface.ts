@@ -11,7 +11,8 @@ export interface OrgLensGroupSummary {
   category: string;
   project_uid?: string;
   project_slug?: string;
-  /** Human-readable foundation/project name — BFF-enriched; falls back to project_slug. */
+  /** Human-readable foundation/project name from BFF enrichment — absent when enrichment has no
+   *  match for project_uid; consumers should fall back to project_slug (see OrgLensGroupVm.projectLabel). */
   project_name?: string;
   /** Distinct org employees holding seats in this committee (deduped by email). */
   org_seat_count: number;
