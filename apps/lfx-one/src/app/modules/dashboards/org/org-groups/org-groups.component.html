@@ -142,7 +142,7 @@
 
                 <!-- Name + meta -->
                 <div class="flex flex-col gap-0.5 flex-1 min-w-0">
-                  <p class="truncate text-sm font-medium" data-testid="org-groups-item-name">
+                  <p class="truncate text-sm font-medium" [attr.data-testid]="'org-groups-item-name-' + group.uid">
                     {{ group.name }}
                   </p>
                   <!-- /org/memberships/:slug, not /org/projects/:slug — the org-projects page is
@@ -160,12 +160,12 @@
                     <a
                       [routerLink]="['/org/memberships', group.project_slug]"
                       class="pointer-events-auto relative z-10 block w-fit truncate text-xs text-gray-400 transition-colors hover:text-blue-600 hover:underline"
-                      data-testid="org-groups-item-project"
+                      [attr.data-testid]="'org-groups-item-project-' + group.uid"
                       [attr.aria-label]="group.projectAriaLabel">
                       {{ group.projectLabel }}
                     </a>
                   } @else if (group.projectLabel) {
-                    <p class="truncate text-xs text-gray-400" data-testid="org-groups-item-project">{{ group.projectLabel }}</p>
+                    <p class="truncate text-xs text-gray-400" [attr.data-testid]="'org-groups-item-project-' + group.uid">{{ group.projectLabel }}</p>
                   }
                 </div>
 

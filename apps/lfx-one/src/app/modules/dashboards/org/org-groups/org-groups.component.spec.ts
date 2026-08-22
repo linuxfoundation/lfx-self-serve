@@ -50,7 +50,8 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
   }
 
   function projectLineElement(): HTMLElement | null {
-    return fixture.nativeElement.querySelector('[data-testid="org-groups-item-project"]');
+    // uid-keyed like the row link — matches the prefix-query convention used across this spec.
+    return fixture.nativeElement.querySelector('[data-testid^="org-groups-item-project-"]');
   }
 
   function projectLine(): string | null {
