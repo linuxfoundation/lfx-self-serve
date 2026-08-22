@@ -60,7 +60,7 @@ describe('OrgGroupsComponent — project label', () => {
   function rowAriaLabel(): string | null {
     // The row's accessible name lives on the stretched whole-row link, not the row container
     // itself — queried by its own data-testid rather than a DOM-structure selector.
-    return fixture.nativeElement.querySelector('[data-testid^="org-groups-item-link-"]')?.getAttribute('aria-label') ?? null;
+    return fixture.nativeElement.querySelector('[data-testid^="org-groups-row-link-"]')?.getAttribute('aria-label') ?? null;
   }
 
   it('prefers project_name over project_slug in the project line and aria-label', async () => {

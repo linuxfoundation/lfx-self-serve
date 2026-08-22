@@ -128,7 +128,7 @@
               <a
                 [routerLink]="['/groups', group.uid]"
                 class="peer absolute inset-0 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-                [attr.data-testid]="'org-groups-item-link-' + group.uid"
+                [attr.data-testid]="'org-groups-row-link-' + group.uid"
                 [attr.aria-label]="group.ariaLabel"></a>
 
               <!-- text-gray-900 + peer-hover:text-blue-600 here, with no color class on the name
@@ -136,7 +136,7 @@
                    (seat count, icons, tag) sets its own explicit color and is unaffected. -->
               <div class="pointer-events-none flex w-full items-center gap-4 text-gray-900 transition-colors peer-hover:text-blue-600">
                 <!-- Icon -->
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" [ngClass]="config.bgColor">
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" [class]="config.bgColor">
                   <i [class]="config.icon + ' ' + config.color + ' text-base'" aria-hidden="true"></i>
                 </div>
 

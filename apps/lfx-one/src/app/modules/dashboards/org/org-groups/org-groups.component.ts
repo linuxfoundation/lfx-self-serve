@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -21,7 +20,7 @@ import { PersonaService } from '@services/persona.service';
 
 @Component({
   selector: 'lfx-org-groups',
-  imports: [EmptyStateComponent, NgClass, RouterLink, SkeletonModule, TagComponent],
+  imports: [EmptyStateComponent, RouterLink, SkeletonModule, TagComponent],
   templateUrl: './org-groups.component.html',
 })
 export class OrgGroupsComponent {
