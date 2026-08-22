@@ -27,6 +27,7 @@ import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { Popover, PopoverModule } from 'primeng/popover';
 import { catchError, EMPTY, finalize, take, tap } from 'rxjs';
 
 import { AgendaTemplateSelectorComponent } from '../../components/agenda-template-selector/agenda-template-selector.component';
@@ -41,7 +42,7 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
  */
 @Component({
   selector: 'lfx-composer-agenda-resources',
-  imports: [NgClass, ButtonComponent, FileUploadComponent, TextareaComponent, FileSizePipe, AgendaTemplateSelectorComponent],
+  imports: [NgClass, PopoverModule, ButtonComponent, FileUploadComponent, TextareaComponent, FileSizePipe, AgendaTemplateSelectorComponent],
   templateUrl: './composer-agenda-resources.component.html',
 })
 export class ComposerAgendaResourcesComponent {
@@ -104,7 +105,8 @@ export class ComposerAgendaResourcesComponent {
     return [...this.linksArray().controls] as FormGroup[];
   });
 
-  protected onToggleTemplates(): void {
+  /** Templates are grouped by meeting type, so the popover has nothing to show until one is picked. */
+  protected onToggleTemplates(event: MouseEvent, popover: Popover): void {
     if (!this.meetingType()) {
       this.messageService.add({
         severity: 'warn',
@@ -114,31 +116,22 @@ export class ComposerAgendaResourcesComponent {
       return;
     }
 
-    this.showAiHelper.set(false);
-    this.showTemplates.update((visible) => !visible);
+    popover.toggle(event);
   }
 
-  protected onToggleAiHelper(): void {
-    this.showTemplates.set(false);
-    this.showAiHelper.update((visible) => !visible);
-  }
-
-  protected onCloseTemplates(): void {
-    this.showTemplates.set(false);
-  }
-
-  protected onCancelAiHelper(): void {
+  /** The prompt is scratch state: it resets whenever the popover closes, however it was closed. */
+  protected onAiHelperHide(): void {
     this.showAiHelper.set(false);
     this.form().get('aiPrompt')?.setValue('');
   }
 
-  protected onApplyTemplate(template: MeetingTemplate): void {
+  protected onApplyTemplate(template: MeetingTemplate, popover: Popover): void {
     this.form().get('description')?.setValue(template.content);
     this.applyEstimatedDuration(template.estimatedDuration);
-    this.showTemplates.set(false);
+    popover.hide();
   }
 
-  protected onGenerateAgenda(): void {
+  protected onGenerateAgenda(popover: Popover): void {
     const form = this.form();
     const context = (form.get('aiPrompt')?.value as string | null)?.trim() || null;
     const title = (form.get('title')?.value as string | null)?.trim() || null;
@@ -177,7 +170,7 @@ export class ComposerAgendaResourcesComponent {
           next: (response) => {
             this.form().get('description')?.setValue(response.agenda);
             this.applyEstimatedDuration(response.estimatedDuration);
-            this.onCancelAiHelper();
+            popover.hide();
             this.messageService.add({ severity: 'success', summary: 'Agenda generated', detail: 'Review the draft and edit it as needed.' });
           },
           // `MeetingService.generateAgenda` already logs the failure before re-throwing.

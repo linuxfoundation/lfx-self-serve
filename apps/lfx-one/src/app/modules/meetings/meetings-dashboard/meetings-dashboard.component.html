@@ -30,7 +30,16 @@
                      lands left of the label and inherits the button's own gap. -->
                 <i class="fa-light fa-calendar" aria-hidden="true"></i>
               </lfx-button>
-              <lfx-menu #createMenu [model]="createMenuItems()" [popup]="true" appendTo="body" styleClass="w-[22rem] py-2">
+              <!-- `mt-1.5` offsets the panel off the trigger: PrimeNG positions the popup with an inline
+                   `top`, and margin still shifts an absolutely positioned element. The submenu-label
+                   override trims the theme's own heading padding, which stacked with the panel's. -->
+              <lfx-menu
+                #createMenu
+                [model]="createMenuItems()"
+                [popup]="true"
+                appendTo="body"
+                (onShow)="onCreateMenuShow()"
+                styleClass="meeting-create-menu-overlay mt-1.5 w-[22rem] pt-1 pb-2 [&_.p-menu-submenu-label]:py-1.5">
                 <ng-template #submenuheader let-item>
                   <span class="text-[0.6875rem] font-semibold uppercase tracking-wide text-gray-500">{{ item.label }}</span>
                 </ng-template>
@@ -40,8 +49,8 @@
                       <i class="text-sm" [class]="item.icon"></i>
                     </span>
                     <span class="flex min-w-0 flex-col gap-0.5">
-                      <span class="text-sm font-semibold text-gray-900">{{ item.label }}</span>
-                      <span class="whitespace-normal text-xs leading-snug text-gray-500">{{ item.description }}</span>
+                      <span class="text-sm font-medium text-gray-900">{{ item.label }}</span>
+                      <span class="whitespace-normal text-xs leading-snug text-gray-400">{{ item.description }}</span>
                     </span>
                   </div>
                 </ng-template>

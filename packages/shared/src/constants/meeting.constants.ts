@@ -313,10 +313,10 @@ export const DEFAULT_MEETING_TYPE_CONFIG: MeetingTypeConfig = {
  */
 export const MEETING_COMPOSER_SECTIONS = [
   { id: 'details-access', label: 'Details & Access', icon: 'fa-light fa-circle-info', required: true },
-  { id: 'date-schedule', label: 'Date & Schedule', icon: 'fa-light fa-calendar-days', required: true },
-  { id: 'platform-features', label: 'Platform & Features', icon: 'fa-light fa-video', required: false },
-  { id: 'guests', label: 'Guests', icon: 'fa-light fa-users', required: false },
-  { id: 'agenda-resources', label: 'Agenda & Resources', icon: 'fa-light fa-list-check', required: false },
+  { id: 'date-schedule', label: 'Date & schedule', icon: 'fa-light fa-calendar-days', required: true },
+  { id: 'platform-features', label: 'Platform & features', icon: 'fa-light fa-video', required: false },
+  { id: 'guests', label: 'Invite guests', icon: 'fa-light fa-users', required: false },
+  { id: 'agenda-resources', label: 'Agenda & resources', icon: 'fa-light fa-list-check', required: false },
 ] as const;
 
 /**

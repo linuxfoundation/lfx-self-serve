@@ -9,6 +9,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
+import { Popover } from 'primeng/popover';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,7 +33,9 @@ describe('ComposerAgendaResourcesComponent — AI helper guard', () => {
   let generateAgenda: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
 
-  const generate = (): void => component['onGenerateAgenda']();
+  // The popover is only asked to close itself on success, so a hide-only stub is enough here.
+  const popoverStub = { hide: vi.fn() } as unknown as Popover;
+  const generate = (): void => component['onGenerateAgenda'](popoverStub);
 
   beforeEach(async () => {
     generateAgenda = vi.fn(() => of({ agenda: 'Roll call', estimatedDuration: 30 }));

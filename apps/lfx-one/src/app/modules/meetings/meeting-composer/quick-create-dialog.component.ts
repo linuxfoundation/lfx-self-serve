@@ -8,7 +8,9 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_WARNING_LENGTH, MEETING_DURATION_CHIP_OPTIONS, MEETING_TEMPLATES } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
-import type { CommitteeMember, MeetingTemplate } from '@lfx-one/shared/interfaces';
+import type { CardSelectorOption, CommitteeMember, MeetingTemplate } from '@lfx-one/shared/interfaces';
+import { getSelectableMeetingTypeOptions } from '@lfx-one/shared/utils';
+import { PersonaService } from '@services/persona.service';
 import { DialogModule } from 'primeng/dialog';
 import { startWith, switchMap } from 'rxjs';
 
@@ -40,6 +42,7 @@ import { ComposerDetailsAccessComponent } from './sections/composer-details-acce
   templateUrl: './quick-create-dialog.component.html',
 })
 export class QuickCreateDialogComponent {
+  private readonly personaService = inject(PersonaService);
   protected readonly composer = inject(MeetingComposerService);
   protected readonly formService = inject(MeetingComposerFormService);
 
@@ -61,6 +64,17 @@ export class QuickCreateDialogComponent {
   protected readonly prefilledTitle: Signal<boolean> = this.initPrefilledTitle();
   protected readonly prefilledDuration: Signal<boolean> = this.initPrefilledDuration();
   protected readonly prefilledAgenda: Signal<boolean> = this.initPrefilledAgenda();
+
+  // Same persona filter the drawer's type select uses, so the two surfaces can't offer different types.
+  // Quick create is create-only, so there is no stored type to retain in the list.
+  protected readonly meetingTypeOptions: Signal<CardSelectorOption<MeetingType>[]> = computed(() =>
+    getSelectableMeetingTypeOptions(this.personaService.currentPersona())
+  );
+  protected readonly selectedMeetingType: Signal<MeetingType | null> = computed(() => {
+    // FormGroup values are not reactive; `revision` is what makes the chip selection repaint.
+    this.formService.revision();
+    return (this.formService.form().get('meeting_type')?.value as MeetingType | null) ?? null;
+  });
 
   protected readonly agendaLength: Signal<number> = computed(() => {
     this.formService.revision();
@@ -99,6 +113,22 @@ export class QuickCreateDialogComponent {
     if (!visible) {
       this.composer.close();
     }
+  }
+
+  /**
+   * Switches the meeting type from the chip row.
+   * @description Writes through the control rather than calling `applyTypeTemplate` directly, so the
+   * constructor's subscription stays the single place a type change reseeds the form.
+   */
+  protected onSelectMeetingType(meetingType: MeetingType): void {
+    const control = this.formService.form().get('meeting_type');
+
+    if (!control || control.value === meetingType) {
+      return;
+    }
+
+    control.setValue(meetingType);
+    control.markAsDirty();
   }
 
   protected onCommitteeMembersChange(members: CommitteeMember[]): void {

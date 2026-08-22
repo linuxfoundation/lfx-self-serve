@@ -25,10 +25,14 @@ export class MeetingComposerRouteComponent {
     const snapshot = this.route.snapshot;
     const meetingUid = snapshot.paramMap.get('id');
 
+    // Create lands on the quick dialog — the same surface the dashboard's "Create meeting" dropdown
+    // opens — with no `meetingType`, so nothing is pre-selected and no template prefill runs. Edit
+    // still opens the full drawer, which is the only surface that renders every section.
     this.composer.open({
       mode: meetingUid ? 'edit' : 'create',
       meetingUid: meetingUid ?? undefined,
       committeeUid: snapshot.queryParamMap.get('committee_uid') ?? undefined,
+      variant: meetingUid ? 'drawer' : 'quick',
     });
 
     // Redirect within the same lens prefix and keep the query params. A bare `/meetings` would drop

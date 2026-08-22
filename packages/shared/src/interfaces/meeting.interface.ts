@@ -1438,20 +1438,21 @@ export interface MeetingComposerSection {
  * A rail row's derived display state for one composer section.
  * @description `complete` is validity for required sections and "has been visited" for optional ones —
  * an optional section can never be invalid, so visiting it is the only signal that it was considered.
- * It excludes the active row, which renders its own state; `lineBelowComplete` does not, so the
- * connector below a completed-but-active row still reads as done.
+ * It excludes the active row, which renders its own state.
  */
 export interface MeetingComposerRailRow {
   section: MeetingComposerSection;
   active: boolean;
-  /** Done and reachable — never set on the active row, and never on a locked one. */
+  /** Done and reachable — never set on the active row. */
   complete: boolean;
-  /** Blocked by an earlier invalid required section — never set on the active row. */
-  locked: boolean;
   /** Visited required section that isn't valid yet — drives the row's attention dot. */
   needsAttention: boolean;
-  /** Whether the connector drawn below this row should read as completed. */
-  lineBelowComplete: boolean;
+  /**
+   * Whether the row can be jumped to.
+   * @description Create mode only walks forward one section at a time: a section the organizer hasn't
+   * reached yet is inert. Always `true` in edit mode, where the rail is free navigation.
+   */
+  reachable: boolean;
   isLast: boolean;
 }
 
@@ -1475,6 +1476,8 @@ export interface MeetingComposerPreviewDateChip {
 export interface MeetingComposerPreviewRow {
   label: string;
   icon: string;
+  /** Set only where the icon renders as a filled chip (visibility), matching its card in the form. */
+  color?: string;
 }
 
 /**

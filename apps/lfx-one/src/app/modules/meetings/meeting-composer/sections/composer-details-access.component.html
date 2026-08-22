@@ -1,16 +1,16 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6" data-testid="composer-details-access">
+<div class="flex flex-col gap-4" data-testid="composer-details-access">
   @if (showHeading()) {
     <div class="flex flex-col gap-1">
-      <h2>Details &amp; Access</h2>
+      <h2 class="text-base font-semibold text-gray-900">Details &amp; Access</h2>
       <p class="text-sm text-gray-500">Name the meeting and set who it's for.</p>
     </div>
   }
 
   <!-- Meeting title -->
-  <div class="flex flex-col gap-2">
+  <div class="flex flex-col gap-1.5">
     <label for="composer-meeting-title" class="text-sm font-medium text-gray-900"> Meeting title <span class="text-red-500">*</span> </label>
     <lfx-input-text
       [form]="form()"
@@ -58,51 +58,66 @@
   </div>
 
   <!-- Meeting type -->
-  <div class="flex flex-col gap-2">
-    <!-- p-select's inputId lands on a span[role=combobox], so this associates via aria-labelledby, not `for` -->
-    <label id="composer-meeting-type-label" class="text-sm font-medium text-gray-900"> Meeting type <span class="text-red-500">*</span> </label>
-    <lfx-select
-      [form]="form()"
-      control="meeting_type"
-      [options]="meetingTypeOptions()"
-      inputId="composer-meeting-type"
-      ariaLabelledBy="composer-meeting-type-label"
-      [required]="true"
-      placeholder="Select meeting type…"
-      styleClass="w-full"
-      [checkmark]="true"
-      dataTest="composer-meeting-type-select">
-      <ng-template #item let-option>
-        <div class="flex items-start gap-3 py-1">
-          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-50" [style.color]="option.info.color">
-            <i [class]="option.info.icon" aria-hidden="true"></i>
+  @if (showTypeSelect()) {
+    <div class="flex flex-col gap-1.5">
+      <!-- p-select's inputId lands on a span[role=combobox], so this associates via aria-labelledby, not `for` -->
+      <label id="composer-meeting-type-label" class="text-sm font-medium text-gray-900"> Meeting type <span class="text-red-500">*</span> </label>
+      <lfx-select
+        [form]="form()"
+        control="meeting_type"
+        [options]="meetingTypeOptions()"
+        inputId="composer-meeting-type"
+        ariaLabelledBy="composer-meeting-type-label"
+        [required]="true"
+        placeholder="Select meeting type…"
+        styleClass="w-full"
+        scrollHeight="330px"
+        dataTest="composer-meeting-type-select">
+        <!-- `checkmark` is off: PrimeNG puts its own tick on the left, and the design marks the
+             selected row on the right, past the description -->
+        <ng-template #item let-option>
+          <div class="flex w-full items-start gap-2.5">
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-50 text-xs" [style.color]="option.info.color">
+              <i [class]="option.info.icon" aria-hidden="true"></i>
+            </span>
+            <span class="flex min-w-0 flex-col">
+              <span class="text-sm font-semibold leading-tight text-gray-900">{{ option.label }}</span>
+              <span class="whitespace-normal text-xs leading-snug text-gray-500">{{ option.info.description }}</span>
+            </span>
+            @if (option.value === selectedMeetingType()) {
+              <i class="fa-light fa-check ml-auto mt-0.5 shrink-0 text-xs text-blue-600" aria-hidden="true"></i>
+            }
+          </div>
+        </ng-template>
+        <ng-template #selectedItem let-option>
+          <span class="flex items-center gap-2">
+            <i [class]="option.info.icon" [style.color]="option.info.color" aria-hidden="true"></i>
+            <span class="text-sm text-gray-900">{{ option.label }}</span>
           </span>
-          <span class="flex min-w-0 flex-col gap-0.5">
-            <span class="text-sm font-semibold text-gray-900">{{ option.label }}</span>
-            <span class="whitespace-normal text-xs leading-relaxed text-gray-500">{{ option.info.description }}</span>
-          </span>
-        </div>
-      </ng-template>
-      <ng-template #selectedItem let-option>
-        <span class="flex items-center gap-2">
-          <i [class]="option.info.icon" [style.color]="option.info.color" aria-hidden="true"></i>
-          <span class="text-sm text-gray-900">{{ option.label }}</span>
-        </span>
-      </ng-template>
-    </lfx-select>
+        </ng-template>
+      </lfx-select>
 
-    @if (form().get('meeting_type')?.errors?.['required'] && form().get('meeting_type')?.touched) {
-      <p class="text-sm text-red-600" data-testid="composer-meeting-type-required-error">Meeting type is required</p>
-    }
-  </div>
+      @if (form().get('meeting_type')?.errors?.['required'] && form().get('meeting_type')?.touched) {
+        <p class="text-sm text-red-600" data-testid="composer-meeting-type-required-error">Meeting type is required</p>
+      }
+    </div>
+  }
 
-  <!-- Visibility + join restriction: two independent API fields, one card -->
-  <div class="overflow-hidden rounded-xl border border-gray-200">
-    <fieldset class="flex flex-col border-b border-gray-200 px-4 py-3">
-      <legend class="text-sm font-medium text-gray-900">Visibility</legend>
-      @for (option of visibilityOptions; track option.value) {
-        <label [for]="'composer-visibility-' + option.value" class="flex cursor-pointer items-center gap-3 py-2">
-          <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-50" [style.color]="option.info.color">
+  <!-- Visibility + join restriction: two independent API fields, so two labelled cards rather than one
+       card with internal legends — the heading reads as the question and the card as its answers. -->
+  <fieldset>
+    <legend class="mb-1.5 text-sm font-medium text-gray-900">Visibility</legend>
+    <div class="overflow-hidden rounded-xl border border-gray-200">
+      @for (option of visibilityOptions; track option.value; let last = $last) {
+        <label
+          [for]="'composer-visibility-' + option.value"
+          class="flex cursor-pointer items-center gap-3 px-3 py-2.5"
+          [class.border-b]="!last"
+          [class.border-gray-200]="!last">
+          <span
+            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs"
+            [class]="option.value === selectedVisibility() ? iconChipSelectedClass : iconChipClass"
+            [style.background-color]="option.value === selectedVisibility() ? option.info.color : null">
             <i [class]="option.info.icon" aria-hidden="true"></i>
           </span>
           <span class="flex min-w-0 flex-1 flex-col">
@@ -118,13 +133,22 @@
             [attr.data-testid]="'composer-visibility-' + option.value + '-radio'" />
         </label>
       }
-    </fieldset>
+    </div>
+  </fieldset>
 
-    <fieldset class="flex flex-col px-4 py-3">
-      <legend class="text-sm font-medium text-gray-900">Join restriction</legend>
-      @for (option of joinRestrictionOptions; track option.value) {
-        <label [for]="'composer-restricted-' + option.value" class="flex cursor-pointer items-center gap-3 py-2">
-          <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-50" [style.color]="option.info.color">
+  <fieldset>
+    <legend class="mb-1.5 text-sm font-medium text-gray-900">Join Restriction</legend>
+    <div class="overflow-hidden rounded-xl border border-gray-200">
+      @for (option of joinRestrictionOptions; track option.value; let last = $last) {
+        <label
+          [for]="'composer-restricted-' + option.value"
+          class="flex cursor-pointer items-center gap-3 px-3 py-2.5"
+          [class.border-b]="!last"
+          [class.border-gray-200]="!last">
+          <span
+            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs"
+            [class]="option.value === selectedRestricted() ? iconChipSelectedClass : iconChipClass"
+            [style.background-color]="option.value === selectedRestricted() ? option.info.color : null">
             <i [class]="option.info.icon" aria-hidden="true"></i>
           </span>
           <span class="flex min-w-0 flex-1 flex-col">
@@ -140,6 +164,6 @@
             [attr.data-testid]="'composer-restricted-' + option.value + '-radio'" />
         </label>
       }
-    </fieldset>
-  </div>
+    </div>
+  </fieldset>
 </div>

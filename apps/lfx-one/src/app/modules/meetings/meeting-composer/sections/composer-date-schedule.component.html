@@ -1,18 +1,20 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6" data-testid="composer-date-schedule">
+<div class="flex flex-col gap-4" data-testid="composer-date-schedule">
   @if (showHeading()) {
     <div class="flex flex-col gap-1">
-      <h2>Date &amp; Schedule</h2>
+      <h2 class="text-base font-semibold text-gray-900">Date &amp; Schedule</h2>
       <p class="text-sm text-gray-500">When it happens and how often it repeats.</p>
     </div>
   }
 
   <!-- Start date + start time -->
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-    <div class="flex flex-col gap-2">
-      <label for="composer-start-date" class="text-sm font-medium text-gray-900"> Start date <span class="text-red-500">*</span> </label>
+  <div [class]="dateTimeGridClass()">
+    <div class="flex flex-col gap-1.5">
+      <label for="composer-start-date" class="text-sm font-medium text-gray-900">
+        {{ compact() ? 'Date' : 'Start date' }} <span class="text-red-500">*</span>
+      </label>
       <lfx-calendar
         [form]="form()"
         control="startDate"
@@ -28,8 +30,10 @@
       }
     </div>
 
-    <div class="flex flex-col gap-2">
-      <label for="composer-start-time" class="text-sm font-medium text-gray-900"> Start time <span class="text-red-500">*</span> </label>
+    <div class="flex flex-col gap-1.5">
+      <label for="composer-start-time" class="text-sm font-medium text-gray-900">
+        {{ compact() ? 'Time' : 'Start time' }} <span class="text-red-500">*</span>
+      </label>
       <lfx-time-picker
         [form]="form()"
         control="startTime"
@@ -48,14 +52,21 @@
   }
 
   <!-- Duration -->
-  <div class="flex flex-col gap-2">
+  <div class="flex flex-col gap-1.5">
     <span id="composer-duration-label" class="text-sm font-medium text-gray-900"> Duration <span class="text-red-500">*</span> </span>
     <div
       role="group"
       aria-labelledby="composer-duration-label"
       [attr.aria-describedby]="durationHint() ? 'composer-duration-hint' : null"
       data-testid="composer-duration-chips">
-      <lfx-select-button [form]="form()" control="duration" [options]="durationOptions" [unselectable]="false" [required]="true" />
+      <lfx-select-button
+        [form]="form()"
+        control="duration"
+        [options]="durationOptions"
+        [unselectable]="false"
+        [required]="true"
+        [class]="chipGroupClass"
+        [styleClass]="chipButtonClass" />
     </div>
 
     @if (durationHint(); as hint) {
@@ -66,7 +77,7 @@
     }
 
     @if (form().get('duration')?.value === 'custom') {
-      <div class="flex flex-col gap-2">
+      <div class="flex flex-col gap-1.5">
         <div class="flex items-center gap-2">
           <lfx-input-number
             [form]="form()"
@@ -92,7 +103,7 @@
   </div>
 
   <!-- Timezone -->
-  <div class="flex flex-col gap-2">
+  <div class="flex flex-col gap-1.5">
     <!-- p-select's inputId lands on a span[role=combobox], so this associates via aria-labelledby, not `for` -->
     <label id="composer-timezone-label" class="text-sm font-medium text-gray-900"> Timezone <span class="text-red-500">*</span> </label>
     <lfx-select
@@ -114,7 +125,7 @@
 
   <!-- Early join -->
   @if (showEarlyJoin()) {
-    <div class="flex flex-col gap-2">
+    <div class="flex flex-col gap-1.5">
       <span id="composer-early-join-label" class="flex items-center gap-2 text-sm font-medium text-gray-900">
         Early join
         <i
@@ -128,7 +139,13 @@
           tooltipStyleClass="text-xs max-w-xs"></i>
       </span>
       <div role="group" aria-labelledby="composer-early-join-label" data-testid="composer-early-join-chips">
-        <lfx-select-button [form]="form()" control="early_join_time_minutes" [options]="earlyJoinOptions" [unselectable]="false" />
+        <lfx-select-button
+          [form]="form()"
+          control="early_join_time_minutes"
+          [options]="earlyJoinOptions"
+          [unselectable]="false"
+          [class]="chipGroupClass"
+          [styleClass]="chipButtonClass" />
       </div>
       @if (form().get('early_join_time_minutes')?.errors?.['min'] && form().get('early_join_time_minutes')?.touched) {
         <p class="text-sm text-red-600" data-testid="composer-early-join-min-error">Early join time must be at least {{ minEarlyJoinTime }} minutes</p>
@@ -139,18 +156,27 @@
     </div>
   }
 
-  <hr class="border-gray-200" />
+  @if (!compact()) {
+    <hr class="border-gray-200" />
+  }
 
   <!-- Recurring -->
   <lfx-feature-toggle [feature]="recurringFeature" [form]="form()">
     @if (form().get('isRecurring')?.value) {
-      <div class="mt-4 flex flex-col gap-2 border-t border-gray-200 pt-4">
+      <div class="mt-3 flex flex-col gap-1.5 border-t border-gray-200 pt-3">
         <span id="composer-cadence-label" class="text-sm font-medium text-gray-900"> Cadence <span class="text-red-500">*</span> </span>
         @if (cadenceOptions().length === 0) {
           <p class="text-sm text-gray-500" data-testid="composer-cadence-needs-date">Pick a start date to choose how often this meeting repeats.</p>
         } @else {
           <div role="group" aria-labelledby="composer-cadence-label" data-testid="composer-cadence-chips">
-            <lfx-select-button [form]="form()" control="recurrenceType" [options]="cadenceOptions()" [unselectable]="false" [required]="true" />
+            <lfx-select-button
+              [form]="form()"
+              control="recurrenceType"
+              [options]="cadenceOptions()"
+              [unselectable]="false"
+              [required]="true"
+              [class]="chipGroupClass"
+              [styleClass]="chipButtonClass" />
           </div>
         }
 
