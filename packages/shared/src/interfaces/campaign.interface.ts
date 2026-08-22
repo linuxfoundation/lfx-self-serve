@@ -339,28 +339,24 @@ export interface CampaignBriefPersistenceState {
  * in a handler, read in `submit`, seeded in `populateFromBrief` and mirrored here — four places to
  * keep in step. A form-backed one is stored once and derived everywhere else.
  *
- * The per-platform BUDGETS are NOT carried here yet. They remain component-local signals, so a tab
- * switch still reverts them — the same defect this interface exists to prevent, still open for
- * that half. LFXV2-3315 addresses it on a separate branch by adding budget members here and
- * emitting from each budget handler, which is a DIFFERENT mechanism from the form controls above.
- * Whichever lands second inherits a file with two ways of doing one thing, so unifying them is
- * worth doing rather than deferring: the form is the better target, since it needs no per-handler
- * emission and so cannot be forgotten when a control is added.
+ * The per-platform BUDGETS and the Meta controls ARE carried, by a different mechanism from the
+ * form controls above: they remain component signals, so `valueChanges` cannot see them and each
+ * mutation handler calls `emitDraft` itself. Two mechanisms therefore coexist in this file. The
+ * form is the better target — it needs no per-handler emission and so cannot be forgotten when a
+ * control is added — so unifying on it is worth doing rather than deferring again.
  *
- * That drift is not hypothetical, though none of it is visible HERE: this branch adds only the
- * three LinkedIn picks, and no budget or Meta member appears on this interface yet. LFXV2-3315
- * (budgets) and LFXV2-3227/3228 (four Meta controls — objective, placements, pixel id, geo
- * targets) both carry their fields by the per-handler signal mechanism, and both are still open.
- * When they land, two mechanisms will coexist in this file, which is the argument for unifying on
- * the form rather than deferring it a third time.
+ * Any per-platform value not named on this interface is NOT carried across a tab switch, and the
+ * test for whether that is a bug is whether a USER CAN CHANGE IT:
  *
- * Any per-platform value not named on this interface is NOT carried across a tab switch. Those
- * fall into two groups with opposite verdicts, and the distinction matters more than the
- * membership: values the user cannot edit (creative variants, the Reddit targeting rendered
- * read-only for review) are correctly discarded, since they re-derive from the brief identically;
- * values the user CAN edit and that are not carried are simply still broken. Deliberately not
- * enumerated — the second group shrinks as tickets land, and a list of members is exactly the kind
- * of claim a later change falsifies with nothing to catch it.
+ *   - Values with no editor — the creative variants and the Reddit targeting lists, all rendered
+ *     read-only for review — are correctly absent. `populateFromBrief` re-seeds them from the
+ *     brief on every mount, so they re-derive identically and carrying them would only let a
+ *     stale copy overwrite a fresh seed.
+ *   - Values a user CAN edit and that are not carried are simply still broken.
+ *
+ * Membership is deliberately not enumerated here — it changes as tickets land and as controls gain
+ * editors, and a list of members is exactly the kind of claim a later change falsifies with
+ * nothing to catch it. The per-field docblocks below carry the current answer.
  *
  * `null` means "nothing to restore", which is the state on first mount and after a reset. It is
  * NOT the same as an empty draft: an empty draft would mean the user deliberately cleared every
@@ -414,7 +410,7 @@ export interface CampaignImplementationDraft {
   /**
    * Meta settings as edited, and the reason this snapshot is not "the form fields only".
    *
-   * These four live in component SIGNALS rather than in `campaignForm`, so the
+   * These live in component SIGNALS rather than in `campaignForm`, so the
    * `campaignForm.valueChanges` subscription that drives every other field here never sees them.
    * The parent destroys this component on a tab switch (`@switch`/`@case` in
    * `campaigns.component.html`), so without them a user who selects Conversions, enters a pixel,
@@ -443,6 +439,48 @@ export interface CampaignImplementationDraft {
    */
   metaBudgetUsd?: number;
   metaLifetimeBudget?: boolean;
+  /**
+   * The LinkedIn budget pair, signal-backed for the same reason as the Meta block above:
+   * `campaignForm.valueChanges` never sees them, so they reach the draft only because
+   * `emitDraft` names them.
+   *
+   * The template binds `(input)` to `onLinkedInBudgetInput` and `(change)` to
+   * `onLinkedInLifetimeBudgetChange`, so this pair is genuinely editable — an operator types a
+   * figure the brief never recommended. Its loss is the money-shaped half of LFXV2-3315.
+   */
+  linkedInBudgetUsd?: number;
+  linkedInLifetimeBudget?: boolean;
+  /**
+   * The Reddit budget (LFXV2-3315, which named exactly this field).
+   *
+   * Reddit is the platform with NO field on `campaignForm` at all, so every value it dispatches
+   * lives in a signal. `onRedditBudgetInput` is the one Reddit control the template binds, which
+   * makes this the one Reddit value a user can actually change — and before it was carried, a tab
+   * switch reset a Reddit campaign to $500.
+   *
+   * WHAT IS DELIBERATELY ABSENT, and why, because the obvious next edit is to add it back:
+   *
+   * The brief-derived arrays — Reddit's variants, subreddits, interests, keywords and geos, plus
+   * `linkedInVariants` and `metaVariants` — are NOT carried. They have no user mutation path: the
+   * complete set of event bindings in the implementation tab's template contains no handler that
+   * writes any of them, and their only writes are `populateFromBrief` and `applyDraft`. A draft
+   * that carried them round-tripped the brief's own recommendation back to itself.
+   *
+   * Carrying them was also actively worse than not, which is the part that has to be measured
+   * rather than argued, since the argument runs the wrong way twice:
+   *
+   *   - `applyDraft` restores on `!== undefined`, and an empty array IS defined. Carrying them
+   *     therefore let a stale copy overwrite the brief's fresh seed on every remount. With the
+   *     fields absent the restore does not look, and `populateFromBrief` re-seeds them from the
+   *     brief the parent still holds.
+   *   - "The seed is conditional, so a brief with no `redditCopy` re-seeds nothing and an
+   *     unrestored value is gone" does not survive being run: with no `redditCopy` the seed
+   *     leaves those arrays EMPTY, so the draft carried `[]` and there was no value to lose.
+   *
+   * If a real editor is added for any of them, it belongs back here — with a test that drives the
+   * new binding rather than one that writes the signal and calls `emitDraft` by hand.
+   */
+  redditBudgetUsd?: number;
 }
 
 /**
