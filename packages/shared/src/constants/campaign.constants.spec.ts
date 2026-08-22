@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { normalizeGeoTargets } from './campaign.constants';
+import { META_OBJECTIVE_LABELS, META_OBJECTIVE_PARAMS, META_SELECTABLE_OBJECTIVES, normalizeGeoTargets } from './campaign.constants';
 
 /**
  * `normalizeGeoTargets` is the single owner of Meta geo normalisation, shared by the campaign
@@ -90,5 +90,77 @@ describe('normalizeGeoTargets', () => {
     const input = ['us', 'US'];
     normalizeGeoTargets(input);
     expect(input).toEqual(['us', 'US']);
+  });
+});
+
+/**
+ * `leads` is hidden from the picker while LFXV2-2665 builds instant-form support, but it is NOT
+ * removed from the type, the params map or the labels map. The two halves are asserted separately
+ * because they can regress independently: restoring the option is one edit, and deleting the
+ * fallback that keeps old briefs dispatching is another.
+ */
+describe('META_SELECTABLE_OBJECTIVES', () => {
+  it('omits leads', () => {
+    expect(META_SELECTABLE_OBJECTIVES).not.toContain('leads');
+  });
+
+  /** Asserted as a literal list, not derived: a test built from the constant would agree with any value it took. */
+  it('offers exactly the four supported objectives, in render order', () => {
+    expect(META_SELECTABLE_OBJECTIVES).toEqual(['awareness', 'traffic', 'engagement', 'conversions']);
+  });
+
+  it('offers only objectives the params map can dispatch', () => {
+    for (const objective of META_SELECTABLE_OBJECTIVES) {
+      expect(META_OBJECTIVE_PARAMS[objective]).toBeDefined();
+    }
+  });
+
+  /**
+   * Partitions the objective union: every `MetaObjective` is either selectable or deliberately
+   * hidden, never silently neither. The compile-time guard beside the constant is what enforces
+   * this — a new objective that reaches neither list fails `tsc`, naming the omitted member —
+   * and this pins the runtime half so the partition cannot drift unnoticed.
+   */
+  it('together with the hidden objectives, covers every objective the params map defines', () => {
+    const hidden = ['leads'];
+    const covered = [...META_SELECTABLE_OBJECTIVES, ...hidden].sort();
+
+    expect(covered).toEqual(Object.keys(META_OBJECTIVE_PARAMS).sort());
+  });
+});
+
+/**
+ * The restore path. A brief or draft persisted before `leads` was hidden still carries it, and it
+ * must keep dispatching as the WEBSITE-TRAFFIC campaign it has always run — not error, and not
+ * silently become a real OUTCOME_LEADS campaign, which would fail at the ad set and orphan a
+ * billable campaign.
+ */
+describe('persisted leads objective', () => {
+  it('still resolves through the params map', () => {
+    expect(META_OBJECTIVE_PARAMS['leads']).toBeDefined();
+  });
+
+  /** Wire values asserted literally: reading the constant back could never fail. */
+  it('dispatches as a website-traffic campaign with no promoted object', () => {
+    expect(META_OBJECTIVE_PARAMS['leads']).toEqual({
+      campaignObjective: 'OUTCOME_TRAFFIC',
+      optimizationGoal: 'LINK_CLICKS',
+      promotedObjectType: 'none',
+    });
+  });
+
+  /**
+   * The campaign name and ad-set name in `meta-ads.service.ts` index the labels map with whatever
+   * objective the request carries. A hidden objective with no label would put the string
+   * `undefined` into the name of a campaign Meta bills against.
+   */
+  it('still resolves to a display label', () => {
+    expect(META_OBJECTIVE_LABELS['leads']).toBe('Leads');
+  });
+
+  it('has a label for every objective the params map can dispatch', () => {
+    for (const objective of Object.keys(META_OBJECTIVE_PARAMS) as (keyof typeof META_OBJECTIVE_PARAMS)[]) {
+      expect(META_OBJECTIVE_LABELS[objective]).toBeTruthy();
+    }
   });
 });

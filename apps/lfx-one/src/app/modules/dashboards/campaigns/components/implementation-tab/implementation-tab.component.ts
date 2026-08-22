@@ -17,6 +17,7 @@ import {
   META_MESSENGER_INBOX_RETIRED_REASON,
   META_NUMERIC_ID_PATTERN,
   META_OBJECTIVE_LABELS,
+  META_SELECTABLE_OBJECTIVES,
   META_PLACEMENT_LABELS,
   META_SELECTABLE_PLACEMENTS,
   META_INELIGIBLE_COUNTRIES,
@@ -185,7 +186,28 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInCharLimits = LINKEDIN_CHAR_LIMITS;
   protected readonly metaCharLimits = META_CHAR_LIMITS;
   protected readonly metaObjectiveLabels = META_OBJECTIVE_LABELS;
-  protected readonly metaObjectiveOptions = Object.keys(META_OBJECTIVE_LABELS) as MetaObjective[];
+  /**
+   * Read from `META_SELECTABLE_OBJECTIVES`, NOT from the labels map's keys: the labels map stays
+   * total over `MetaObjective` so restored objectives still render a name, and `leads` is hidden
+   * from the picker only. See that constant for why.
+   */
+  protected readonly metaObjectiveOptions = META_SELECTABLE_OBJECTIVES;
+  /**
+   * True when the restored objective is one the picker no longer offers — today only `leads`.
+   *
+   * Without this the select is BLANK: assigning `HTMLSelectElement.value` a string matching no
+   * `<option>` sets `selectedIndex` to -1 and deselects everything. The stored value survives in
+   * the signal and still reaches the wire, but the user sees an empty required-looking field and
+   * the first touch of the control overwrites `leads` for good — the option they had is gone.
+   * Rendering it as a disabled option keeps the field truthful and makes the state visible
+   * instead of silently rewritable.
+   *
+   * The widening cast is deliberate: `META_SELECTABLE_OBJECTIVES` is narrowed to
+   * `SelectableMetaObjective` so a hidden objective cannot be listed in it, which also makes
+   * `.includes()` reject the very value this asks about. Widening for the membership test is
+   * what keeps that narrowing — the guard against re-adding `leads` — intact.
+   */
+  protected readonly metaObjectiveIsUnavailable = computed(() => !(META_SELECTABLE_OBJECTIVES as readonly MetaObjective[]).includes(this.metaObjective()));
   protected readonly metaPlacementLabels = META_PLACEMENT_LABELS;
   protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
