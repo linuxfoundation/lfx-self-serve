@@ -8,6 +8,7 @@ import type { Subscription } from 'rxjs';
 import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName, PLATFORM_BRAND_COLORS } from '@lfx-one/shared/constants';
 import { formatPercent } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
+import { ProjectContextService } from '@services/project-context.service';
 
 import type {
   CampaignMetrics,
@@ -40,6 +41,7 @@ const KEYWORD_PAGE_SIZE = 10;
 })
 export class MonitoringTabComponent implements OnInit {
   private readonly campaignService = inject(CampaignService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private monitorSub: Subscription | null = null;
@@ -131,10 +133,12 @@ export class MonitoringTabComponent implements OnInit {
 
   protected readonly keywordPageNumbers = computed(() => Array.from({ length: this.keywordTotalPages() }, (_, i) => i + 1));
 
+  protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
+
   public ngOnInit(): void {
     this.fetchData();
     this.campaignService
-      .getLinkedInAccounts()
+      .getLinkedInAccounts(this.activeFoundationSlug())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (accounts) => {
@@ -152,7 +156,7 @@ export class MonitoringTabComponent implements OnInit {
         },
       });
     this.campaignService
-      .getRedditAccounts()
+      .getRedditAccounts(this.activeFoundationSlug())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (accounts) => {
@@ -170,7 +174,7 @@ export class MonitoringTabComponent implements OnInit {
         },
       });
     this.campaignService
-      .getMetaAccounts()
+      .getMetaAccounts(this.activeFoundationSlug())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (accounts) => {
@@ -225,7 +229,7 @@ export class MonitoringTabComponent implements OnInit {
     const days = this.selectedDays();
 
     this.monitorSub = this.campaignService
-      .getMonitorData(days)
+      .getMonitorData(this.activeFoundationSlug(), days)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -242,7 +246,7 @@ export class MonitoringTabComponent implements OnInit {
     this.keywordsError.set(null);
     this.keywordPage.set(1);
     this.keywordsSub = this.campaignService
-      .getKeywords(days)
+      .getKeywords(this.activeFoundationSlug(), days)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
@@ -304,7 +308,7 @@ export class MonitoringTabComponent implements OnInit {
     this.linkedInLoading.set(true);
     this.linkedInError.set(null);
     this.linkedInSub = this.campaignService
-      .getLinkedInMonitorData(accountKey, this.selectedDays())
+      .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -349,7 +353,7 @@ export class MonitoringTabComponent implements OnInit {
     this.redditLoading.set(true);
     this.redditError.set(null);
     this.redditSub = this.campaignService
-      .getRedditMonitorData(accountKey, this.selectedDays())
+      .getRedditMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -386,7 +390,7 @@ export class MonitoringTabComponent implements OnInit {
     this.metaLoading.set(true);
     this.metaError.set(null);
     this.metaSub = this.campaignService
-      .getMetaMonitorData(accountKey, this.selectedDays())
+      .getMetaMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {

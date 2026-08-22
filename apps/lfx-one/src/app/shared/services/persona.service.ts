@@ -47,6 +47,10 @@ export class PersonaService {
   public readonly isRootWriter: WritableSignal<boolean> = signal<boolean>(false);
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona */
   public readonly isLFStaff: WritableSignal<boolean> = signal<boolean>(false);
+  /** Root-scoped `marketing_auditor` FGA grant (LFXV2-2235/LFXV2-2236). Always false while `ServerFeatureFlag.MarketingOpsFga` is off. */
+  public readonly isMarketingAuditor: WritableSignal<boolean> = signal<boolean>(false);
+  /** Root-scoped `campaign_manager` FGA grant. Same flag caveat as {@link isMarketingAuditor}. */
+  public readonly isCampaignManager: WritableSignal<boolean> = signal<boolean>(false);
   /** True for EDs and LF Staff — the audience for Foundation Health, Marketing Overview, and Social Listening */
   public readonly canViewExecutiveDashboards: Signal<boolean>;
 
@@ -91,11 +95,14 @@ export class PersonaService {
    * No-ops after the first successful fetch unless `force=true` — callers can trigger this on every
    * consumer init without causing redundant network traffic.
    */
-  public refreshEnrichedPersonas(force: boolean = false): Observable<PersonaApiResponse | null> {
-    if (this.enrichedPersonasLoaded() && !force) {
+  public refreshEnrichedPersonas(force: boolean = false, projectSlug?: string): Observable<PersonaApiResponse | null> {
+    // A project-scoped grant call must not be skipped by the "already loaded" cache — a prior
+    // fetch (root-scoped or for a different project) doesn't tell us about `projectSlug`.
+    if (this.enrichedPersonasLoaded() && !force && !projectSlug) {
       return of(null);
     }
-    return this.http.get<PersonaApiResponse>('/api/user/personas?enriched=true').pipe(
+    const url = projectSlug ? `/api/user/personas?enriched=true&project=${encodeURIComponent(projectSlug)}` : '/api/user/personas?enriched=true';
+    return this.http.get<PersonaApiResponse>(url).pipe(
       take(1),
       catchError(() => of(null)),
       tap((response) => {
@@ -115,12 +122,15 @@ export class PersonaService {
         catchError(() => of(null))
       )
       .subscribe((response) => {
-        // If enriched resolved first, preserve its project metadata instead of clobbering with the sparse payload.
+        // If enriched resolved first, preserve its project metadata and FGA grants instead of
+        // clobbering them with the sparse bootstrap payload (which never carries these fields).
         if (this.enrichedPersonasLoaded() && response && !response.error) {
           this.applyPersonaResponse({
             ...response,
             projects: this.detectedProjects(),
             personaProjects: this.personaProjects(),
+            isMarketingAuditor: this.isMarketingAuditor(),
+            isCampaignManager: this.isCampaignManager(),
           });
           return;
         }
@@ -137,6 +147,8 @@ export class PersonaService {
       });
       this.isRootWriter.set(false);
       this.isLFStaff.set(false);
+      this.isMarketingAuditor.set(false);
+      this.isCampaignManager.set(false);
       this.personaLoaded.set(true);
       return;
     }
@@ -146,6 +158,8 @@ export class PersonaService {
     this.detectedProjects.set(response.projects);
     this.isRootWriter.set(response.isRootWriter ?? false);
     this.isLFStaff.set(response.isLFStaff ?? false);
+    this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
+    this.isCampaignManager.set(response.isCampaignManager ?? false);
 
     if (response.personas.length > 0) {
       const current = this.currentPersona();

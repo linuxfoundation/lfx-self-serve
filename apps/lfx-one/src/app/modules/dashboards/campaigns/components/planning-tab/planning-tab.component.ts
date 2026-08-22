@@ -482,7 +482,7 @@ export class PlanningTabComponent implements OnInit {
     this.hsCreating.set(true);
     this.hsStatus.set(null);
     this.campaignService
-      .createHubSpotUtm(this.lastLookedUpEvent)
+      .createHubSpotUtm(this.activeFoundationSlug(), this.lastLookedUpEvent)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
@@ -539,7 +539,7 @@ export class PlanningTabComponent implements OnInit {
     };
 
     this.briefSubscription = this.campaignService
-      .generateBrief(request)
+      .generateBrief(request, this.activeFoundationSlug())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (event: SSEEvent<CampaignSSEEventType>) => this.handleSSEEvent(event),
@@ -753,7 +753,7 @@ export class PlanningTabComponent implements OnInit {
 
     this.briefSubscription?.unsubscribe();
     this.briefSubscription = this.campaignService
-      .refineBrief(request)
+      .refineBrief(request, this.activeFoundationSlug())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (event: SSEEvent<CampaignSSEEventType>) => this.handleRefineSSEEvent(event, capturedFeedback),
@@ -932,7 +932,7 @@ export class PlanningTabComponent implements OnInit {
 
     const capturedEvent = eventName;
     this.campaignService
-      .lookupHubSpotUtm(eventName)
+      .lookupHubSpotUtm(this.activeFoundationSlug(), eventName)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result: HubSpotUtmLookupResult | null) => {

@@ -25,10 +25,12 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { ServerFeatureFlag, isServerFeatureEnabled } from '../helpers/server-feature-flag.helper';
 import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { NatsService } from './nats.service';
+import { ProjectService } from './project.service';
 
 /**
  * Detects user personas via NATS RPC. Returns raw detection data — consumers needing
@@ -37,17 +39,21 @@ import { NatsService } from './nats.service';
 export class PersonaDetectionService {
   private readonly natsService: NatsService;
   private readonly accessCheckService: AccessCheckService;
+  private readonly projectService: ProjectService;
 
   // Per-user caches store in-flight Promises so concurrent callers share one NATS round-trip.
   private readonly affiliatedUidsCache = new Map<string, AffiliatedProjectUidsCacheEntry>();
   private readonly personasCache = new Map<string, PersonaApiResponseCacheEntry>();
   private readonly rootWriterRequestCache = new WeakMap<Request, Promise<boolean>>();
   private readonly lfStaffRequestCache = new WeakMap<Request, Promise<boolean>>();
+  private readonly rootMarketingAuditorRequestCache = new WeakMap<Request, Promise<boolean>>();
+  private readonly rootCampaignManagerRequestCache = new WeakMap<Request, Promise<boolean>>();
   private rootProjectUidCache: { uid: string | null; expiresAt: number } | null = null;
 
   public constructor() {
     this.natsService = new NatsService();
     this.accessCheckService = new AccessCheckService();
+    this.projectService = new ProjectService();
 
     setInterval(() => {
       const now = Date.now();
@@ -92,16 +98,28 @@ export class PersonaDetectionService {
     return promise;
   }
 
-  public async getPersonas(req: Request): Promise<PersonaApiResponse> {
+  /**
+   * `projectSlug`, when passed (the route's `?project=`/`?foundationSlug=` context), also folds a
+   * project-scoped `marketing_auditor`/`campaign_manager` grant into the two booleans below —
+   * without it, only the ROOT-scoped grant is visible, which under-reports access for a caller
+   * with a per-project (not ROOT) grant. LFXV2-2236 follow-up on PR #1585 blocking review.
+   */
+  public async getPersonas(req: Request, projectSlug?: string): Promise<PersonaApiResponse> {
     const username = getEffectiveUsername(req) || '';
     const email = getEffectiveEmail(req) || '';
     const cacheKey = username || email;
 
-    // isRootWriter/isLFStaff are request-scoped (bearer-token dependent) — resolve per-request and merge.
-    const [detections, isRootWriter, isLFStaff] = await Promise.all([
+    // isRootWriter/isLFStaff/isMarketingAuditor/isCampaignManager are request-scoped
+    // (bearer-token dependent) — resolve per-request and merge. The marketing-ops checks are
+    // skipped entirely while their server flag is off, so this endpoint costs nothing extra
+    // for the default (flag-off) case.
+    const marketingOpsFgaEnabled = isServerFeatureEnabled(ServerFeatureFlag.MarketingOpsFga);
+    const [detections, isRootWriter, isLFStaff, isMarketingAuditor, isCampaignManager] = await Promise.all([
       this.getPersonaDetections(req, username, email, cacheKey),
       this.checkRootWriter(req),
       this.checkLFStaff(req),
+      marketingOpsFgaEnabled ? this.checkMarketingAuditorAccess(req, projectSlug) : Promise.resolve(false),
+      marketingOpsFgaEnabled ? this.checkCampaignManagerAccess(req, projectSlug) : Promise.resolve(false),
     ]);
 
     // Compute the per-request persona list without mutating the cached detections object.
@@ -117,7 +135,7 @@ export class PersonaDetectionService {
       personas = this.applyForcedPersona(personas, forcedPersona as PersonaType);
     }
 
-    return { ...detections, personas, isRootWriter, isLFStaff };
+    return { ...detections, personas, isRootWriter, isLFStaff, isMarketingAuditor, isCampaignManager };
   }
 
   public async checkRootWriter(req: Request): Promise<boolean> {
@@ -148,6 +166,77 @@ export class PersonaDetectionService {
       return false;
     });
     this.lfStaffRequestCache.set(req, promise);
+    return promise;
+  }
+
+  /**
+   * Checks whether the current user holds `marketing_auditor` on the tenant ROOT project. A ROOT
+   * grant cascades to every sub-project, so this signal lets a non-ED marketing user's request
+   * pass a foundation-scoped check without a per-project tuple. Mirrors {@link checkRootWriter}:
+   * request-cached, resolves the ROOT uid via NATS, and fails closed to `false` so transient
+   * errors never widen access.
+   */
+  public async checkRootMarketingAuditor(req: Request): Promise<boolean> {
+    return this.checkRootAccess(req, this.rootMarketingAuditorRequestCache, 'marketing_auditor', 'check_root_marketing_auditor');
+  }
+
+  /**
+   * Checks whether the current user holds `campaign_manager` on the tenant ROOT project. See
+   * {@link checkRootMarketingAuditor} — same cascade rationale, different relation.
+   */
+  public async checkRootCampaignManager(req: Request): Promise<boolean> {
+    return this.checkRootAccess(req, this.rootCampaignManagerRequestCache, 'campaign_manager', 'check_root_campaign_manager');
+  }
+
+  /** ROOT grant OR a grant scoped to `projectSlug` (when given). Mirrors `requireMarketingAccess`. */
+  private async checkMarketingAuditorAccess(req: Request, projectSlug?: string): Promise<boolean> {
+    if (await this.checkRootMarketingAuditor(req)) return true;
+    return this.checkProjectAccess(req, projectSlug, 'marketing_auditor', 'check_project_marketing_auditor');
+  }
+
+  /** ROOT grant OR a grant scoped to `projectSlug` (when given). Mirrors `requireMarketingAccess`. */
+  private async checkCampaignManagerAccess(req: Request, projectSlug?: string): Promise<boolean> {
+    if (await this.checkRootCampaignManager(req)) return true;
+    return this.checkProjectAccess(req, projectSlug, 'campaign_manager', 'check_project_campaign_manager');
+  }
+
+  private async checkProjectAccess(
+    req: Request,
+    projectSlug: string | undefined,
+    access: 'marketing_auditor' | 'campaign_manager',
+    operation: string
+  ): Promise<boolean> {
+    if (!projectSlug) return false;
+
+    try {
+      const { uid, exists } = await this.projectService.getProjectIdBySlug(req, projectSlug);
+      if (!exists) return false;
+      return await this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: uid, access });
+    } catch (error) {
+      logger.warning(req, operation, `Project ${access} check failed, assuming no access`, { err: error, projectSlug });
+      return false;
+    }
+  }
+
+  private async checkRootAccess(
+    req: Request,
+    cache: WeakMap<Request, Promise<boolean>>,
+    access: 'marketing_auditor' | 'campaign_manager',
+    operation: string
+  ): Promise<boolean> {
+    const cached = cache.get(req);
+    if (cached) return cached;
+
+    const promise = this.resolveRootUid(req)
+      .then((rootUid) => {
+        if (!rootUid) return false;
+        return this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: rootUid, access });
+      })
+      .catch((error) => {
+        logger.warning(req, operation, `Root ${access} check failed, assuming no access`, { err: error });
+        return false;
+      });
+    cache.set(req, promise);
     return promise;
   }
 

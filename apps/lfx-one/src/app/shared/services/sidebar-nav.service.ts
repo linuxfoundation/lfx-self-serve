@@ -9,6 +9,7 @@ import {
   COMMITTEE_LABEL,
   DOCUMENT_LABEL,
   MAILING_LIST_LABEL,
+  MARKETING_OPS_FGA_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
@@ -48,6 +49,8 @@ export class SidebarNavService {
   private readonly isMktgOsAgentsEnabled: Signal<boolean> = computed(() => true);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
+  /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
+  private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
 
   private readonly activeLens = this.lensService.activeLens;
 
@@ -236,6 +239,28 @@ export class SidebarNavService {
     { initialValue: false }
   );
 
+  // Keeps isMarketingAuditor/isCampaignManager in sync with the active foundation — the root-scoped
+  // fetch alone misses a per-project grant (LFXV2-2235 review finding). Read in canSeeMarketing below
+  // to register the dependency; the refreshed value lives on PersonaService's own signals.
+  private readonly marketingPersonaSlug: Signal<string> = toSignal(
+    toObservable(
+      computed(() => {
+        if (!this.isMarketingOpsFgaEnabled() || !this.userService.authenticated()) {
+          return '';
+        }
+        return this.projectContextService.selectedFoundation()?.slug ?? '';
+      })
+    ).pipe(
+      switchMap((slug) => {
+        if (!slug) {
+          return of('');
+        }
+        return this.personaService.refreshEnrichedPersonas(false, slug).pipe(map(() => slug));
+      })
+    ),
+    { initialValue: '' }
+  );
+
   // --- Foundation Lens Items ---
   private readonly foundationLensItems = computed((): SidebarMenuItem[] => {
     const items: SidebarMenuItem[] = [
@@ -351,26 +376,44 @@ export class SidebarNavService {
         expanded: true,
         items: metricsItems,
       });
+    }
 
-      const marketingItems: SidebarMenuItem[] = [
-        {
-          label: 'Campaign Impact',
-          icon: 'fa-light fa-bullhorn',
-          routerLink: '/foundation/marketing-impact',
-          testId: 'sidebar-marketing-impact',
-        },
-      ];
+    // Marketing section visibility is independent of Metrics: while marketing-ops-fga-enabled is
+    // on, a root/project-scoped marketing_auditor grant also unlocks Campaign Impact, and a
+    // campaign_manager grant unlocks Campaigns — neither implies the other, so each item is built
+    // independently and the section itself only appears once it has at least one item. LF Staff see
+    // Campaign Impact via canViewExecutiveDashboards() the same as Metrics, but are restricted to the
+    // Social Listening tab once inside — full Marketing Impact access is ED/marketing_auditor only
+    // (LFXV2-2236 gap-analysis G4). Never widen the Metrics section itself for marketing_auditor.
+    this.marketingPersonaSlug();
+    const marketingItems: SidebarMenuItem[] = [];
 
-      // Campaigns stays ED-only within the shared Metrics+Marketing section — LF Staff see Campaign Impact but not Campaigns.
-      if (this.personaService.currentPersona() === 'executive-director') {
-        marketingItems.push({
-          label: 'Campaigns',
-          icon: 'fa-light fa-megaphone',
-          routerLink: '/foundation/campaigns',
-          testId: 'sidebar-marketing-campaigns',
-        });
-      }
+    const canSeeMarketingImpact =
+      this.personaService.canViewExecutiveDashboards() || (this.isMarketingOpsFgaEnabled() && this.personaService.isMarketingAuditor());
+    if (canSeeMarketingImpact) {
+      marketingItems.push({
+        label: 'Campaign Impact',
+        icon: 'fa-light fa-bullhorn',
+        routerLink: '/foundation/marketing-impact',
+        testId: 'sidebar-marketing-impact',
+      });
+    }
 
+    // Campaigns needs ED, or — while marketing-ops-fga-enabled is on — a campaign_manager grant.
+    // A campaign_manager-only user (no ED, no marketing_auditor, not LF Staff) must still see this
+    // item, so it cannot be nested inside the Campaign Impact check above.
+    const canSeeCampaigns =
+      this.personaService.currentPersona() === 'executive-director' || (this.isMarketingOpsFgaEnabled() && this.personaService.isCampaignManager());
+    if (canSeeCampaigns) {
+      marketingItems.push({
+        label: 'Campaigns',
+        icon: 'fa-light fa-megaphone',
+        routerLink: '/foundation/campaigns',
+        testId: 'sidebar-marketing-campaigns',
+      });
+    }
+
+    if (marketingItems.length > 0) {
       items.push({
         label: 'Marketing',
         isSection: true,

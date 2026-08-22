@@ -700,8 +700,9 @@ export class ImplementationTabComponent implements OnInit {
 
   public ngOnInit(): void {
     this.linkedInAccountsLoading.set(true);
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
     this.campaignService
-      .getLinkedInAccounts()
+      .getLinkedInAccounts(projectSlug)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (accounts) => {

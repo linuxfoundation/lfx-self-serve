@@ -23,6 +23,7 @@ import type {
 import { PLATFORM_BRAND_COLORS } from '@lfx-one/shared/constants';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
+import { ProjectContextService } from '@services/project-context.service';
 import type { Subscription } from 'rxjs';
 
 @Component({
@@ -33,6 +34,7 @@ import type { Subscription } from 'rxjs';
 })
 export class OptimizationTabComponent implements OnInit {
   private readonly campaignService = inject(CampaignService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly destroyRef = inject(DestroyRef);
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
@@ -109,10 +111,12 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly actionInProgress = signal<Record<string, boolean>>({});
   protected readonly actionResults = signal<Record<string, { success: boolean; message: string }>>({});
 
+  protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
+
   public ngOnInit(): void {
     this.fetchData();
     this.campaignService
-      .getLinkedInAccounts()
+      .getLinkedInAccounts(this.activeFoundationSlug())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (accounts) => {
@@ -128,7 +132,7 @@ export class OptimizationTabComponent implements OnInit {
         },
       });
     this.campaignService
-      .getRedditAccounts()
+      .getRedditAccounts(this.activeFoundationSlug())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (accounts) => {
@@ -144,7 +148,7 @@ export class OptimizationTabComponent implements OnInit {
         },
       });
     this.campaignService
-      .getMetaAccounts()
+      .getMetaAccounts(this.activeFoundationSlug())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (accounts) => {
@@ -184,7 +188,7 @@ export class OptimizationTabComponent implements OnInit {
     const days = this.selectedDays();
 
     this.monitorSub = this.campaignService
-      .getMonitorData(days)
+      .getMonitorData(this.activeFoundationSlug(), days)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -201,7 +205,7 @@ export class OptimizationTabComponent implements OnInit {
     this.keywordsData.set(null);
     this.keywordsError.set(null);
     this.keywordsSub = this.campaignService
-      .getKeywords(days)
+      .getKeywords(this.activeFoundationSlug(), days)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -231,7 +235,7 @@ export class OptimizationTabComponent implements OnInit {
     this.linkedInLoading.set(true);
     this.linkedInError.set(null);
     this.linkedInSub = this.campaignService
-      .getLinkedInMonitorData(accountKey, this.selectedDays())
+      .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -268,7 +272,7 @@ export class OptimizationTabComponent implements OnInit {
     this.redditLoading.set(true);
     this.redditError.set(null);
     this.redditSub = this.campaignService
-      .getRedditMonitorData(accountKey, this.selectedDays())
+      .getRedditMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -305,7 +309,7 @@ export class OptimizationTabComponent implements OnInit {
     this.metaLoading.set(true);
     this.metaError.set(null);
     this.metaSub = this.campaignService
-      .getMetaMonitorData(accountKey, this.selectedDays())
+      .getMetaMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -325,7 +329,7 @@ export class OptimizationTabComponent implements OnInit {
     this.actionInProgress.update((map) => ({ ...map, [key]: true }));
 
     this.campaignService
-      .executeKeywordActions({
+      .executeKeywordActions(this.activeFoundationSlug(), {
         action,
         keywords: [{ campaignId: kw.campaignId, adGroupId: kw.adGroupId, criterionId: kw.criterionId, action }],
       })
@@ -360,7 +364,7 @@ export class OptimizationTabComponent implements OnInit {
     });
 
     this.campaignService
-      .executeKeywordActions({ action, keywords: items })
+      .executeKeywordActions(this.activeFoundationSlug(), { action, keywords: items })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (res) => {

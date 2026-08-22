@@ -375,7 +375,7 @@
       </div>
 
       <!-- Audience Demographics -->
-      <lfx-audience-demographics [days]="selectedDays()" data-testid="monitoring-audience" />
+      <lfx-audience-demographics [days]="selectedDays()" [projectSlug]="activeFoundationSlug()" data-testid="monitoring-audience" />
     }
   } @else if (selectedPlatform() === 'linkedin') {
     <!-- LinkedIn Ads Panel -->
