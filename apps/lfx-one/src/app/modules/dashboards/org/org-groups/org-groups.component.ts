@@ -94,8 +94,13 @@ export class OrgGroupsComponent {
         const ariaLabel = `${g.name}, ${BEHAVIORAL_CLASS_CONFIG[cls].label}, ${g.org_seat_count} seats` + (projectLabel ? `, ${projectLabel}` : '');
         // Routes to /org/memberships/:slug, not /org/projects/:slug — the org-projects page is
         // Snowflake/CDP-scoped to sub-project activity rows and doesn't resolve foundation-level
-        // slugs (verified live: /org/projects/uepf 404s, /org/memberships/uepf works). Wording
-        // matches org-memberships.component.html's own membership rows.
+        // slugs (verified live: /org/projects/uepf 404s, /org/memberships/uepf works). Known
+        // residual gap: the memberships route only resolves an *active* Snowflake membership row
+        // for the org (org-lens-memberships.service.ts's getMembershipDetail) — a foundation the
+        // org has a committee seat in but no active membership for (expired tier, or seat
+        // predates/exists independent of formal membership) still dead-ends, just on the
+        // memberships not-found state instead of the projects one. Narrower than before (the
+        // common active-membership case now works), not fully closed.
         const projectAriaLabel = projectLabel ? `View ${projectLabel} membership details` : '';
         return { ...g, cls, projectLabel, ariaLabel, projectAriaLabel };
       })
