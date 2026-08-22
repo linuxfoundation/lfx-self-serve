@@ -772,7 +772,7 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       const result = await service.getCommitteesByIds(req, [COMMITTEE_UID]);
 
       expect(result.size).toBe(1);
-      expect('chat_webhook_url' in result.get(COMMITTEE_UID)!).toBe(false);
+      expect('chat_webhook_url' in (result.get(COMMITTEE_UID) ?? {})).toBe(false);
     });
 
     it('createCommittee never returns chat_webhook_url even if upstream happens to echo it back', async () => {

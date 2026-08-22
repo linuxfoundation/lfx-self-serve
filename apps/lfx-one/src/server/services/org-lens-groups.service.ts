@@ -62,8 +62,8 @@ export class OrgLensGroupsService {
   }
 
   /** Fail-soft wrapper around `CommitteeService.getCommitteesByIds` — a lookup failure degrades to
-   *  an empty map (falls through to the project-index / slug fallback in `toGroupSummary`) rather
-   *  than failing the whole Groups page. */
+   *  an empty map, so the group keeps whatever the (primary) project index already resolved, or
+   *  falls back to the slug in `toGroupSummary`, rather than failing the whole Groups page. */
   private async getCommitteesByUid(req: Request, committeeUids: Iterable<string>): Promise<Map<string, Committee>> {
     try {
       return await this.committeeService.getCommitteesByIds(req, Array.from(committeeUids));
