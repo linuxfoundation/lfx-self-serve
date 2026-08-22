@@ -19,7 +19,12 @@
       id="composer-meeting-title"
       placeholder="Enter meeting title"
       styleClass="w-full"
+      [ariaDescribedBy]="titleDescribedBy()"
       data-testid="composer-title-input" />
+
+    @if (titleHint(); as hint) {
+      <p id="composer-title-hint" class="text-xs text-gray-500" data-testid="composer-title-hint">{{ hint }}</p>
+    }
 
     @if (form().get('youtube_upload_enabled')?.value) {
       <div class="flex items-center justify-between gap-2">
@@ -38,11 +43,15 @@
       </div>
     }
 
+    <!-- `aria-describedby` on the input reaches the two title errors below, so each is read the next time
+         the field takes focus rather than when it appears — no composer error message is in a live region
+         yet. Matters for both: `required` only shows after blur, and `maxlength` typically shows while the
+         field still has focus. -->
     @if (form().get('title')?.errors?.['required'] && form().get('title')?.touched) {
-      <p class="text-sm text-red-600" data-testid="composer-title-required-error">Meeting title is required</p>
+      <p id="composer-title-required-error" class="text-sm text-red-600" data-testid="composer-title-required-error">Meeting title is required</p>
     }
     @if (form().get('title')?.errors?.['maxlength'] && form().get('title')?.touched) {
-      <p class="text-sm text-red-600" data-testid="composer-title-maxlength-error">
+      <p id="composer-title-maxlength-error" class="text-sm text-red-600" data-testid="composer-title-maxlength-error">
         Meeting title cannot exceed {{ youtubeTitleLimit }} characters while YouTube uploads are enabled.
       </p>
     }

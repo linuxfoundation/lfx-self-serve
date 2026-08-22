@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Quick create dialog (LFXV2-3241) -->
+<!-- Quick create dialog (GH-1460) -->
 <p-dialog
   [visible]="composer.isOpen()"
   (visibleChange)="onVisibleChange($event)"
@@ -12,11 +12,12 @@
   styleClass="w-[min(1024px,94vw)]">
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-2" data-testid="quick-create-body">
     <div class="flex min-w-0 flex-col gap-6">
-      <lfx-composer-details-access [form]="formService.form()" [showHeading]="false" />
-
-      @if (prefilledType()) {
-        <p class="text-xs text-gray-500" data-testid="quick-create-prefill-hint">Pre-filled for this meeting type — edit freely.</p>
-      }
+      <!-- The hints are passed down rather than rendered here so each one sits under the field it
+           describes and can be wired to it with `aria-describedby` -->
+      <lfx-composer-details-access
+        [form]="formService.form()"
+        [showHeading]="false"
+        [titleHint]="prefilledTitle() ? 'Pre-filled for this meeting type — edit freely.' : null" />
 
       <div class="flex flex-col gap-2">
         <label for="quick-create-agenda" class="text-sm font-medium text-gray-900">Agenda</label>
@@ -30,7 +31,7 @@
           [maxlength]="agendaMaxLength"
           data-testid="quick-create-agenda-textarea" />
         <div class="flex items-center justify-between gap-2">
-          @if (prefilledType()) {
+          @if (prefilledAgenda()) {
             <p class="text-xs text-gray-500" data-testid="quick-create-agenda-hint">Suggested agenda template — adjust as needed.</p>
           }
           <p class="ml-auto text-xs" [ngClass]="agendaCounterClass()">{{ agendaLength() }}/{{ agendaMaxLength }}</p>
@@ -45,7 +46,13 @@
     </div>
 
     <div class="flex min-w-0 flex-col gap-6">
-      <lfx-composer-date-schedule [form]="formService.form()" [showHeading]="false" [showEarlyJoin]="false" />
+      <!-- Its own hint rather than sharing the title's: only a template whose estimate lands on the chip
+           scale seeds duration at all, so the two go quiet independently -->
+      <lfx-composer-date-schedule
+        [form]="formService.form()"
+        [showHeading]="false"
+        [showEarlyJoin]="false"
+        [durationHint]="prefilledDuration() ? 'Pre-filled for this meeting type — edit freely.' : null" />
     </div>
   </div>
 

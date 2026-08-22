@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, inject, type Signal } from '@angular/core';
+import { afterRenderEffect, Component, computed, ElementRef, inject, input, type Signal } from '@angular/core';
 import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
 import type { MeetingComposerRailRow, MeetingComposerSection, MeetingComposerSectionId } from '@lfx-one/shared/interfaces';
 
@@ -10,10 +10,12 @@ import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerService } from './meeting-composer.service';
 
 /**
- * Left-rail section navigation for the meeting composer (LFXV2-3240).
+ * Section navigation for the meeting composer (GH-1459).
  * @description Create mode is a progress stepper: later sections stay locked until every earlier
  * required section is valid, so the organizer can't skip past a section that would block submit.
- * Edit mode is a flat menu — the meeting already exists, so every section is reachable.
+ * Edit mode is a flat menu — the meeting already exists, so every section is reachable. `compact`
+ * renders either mode as a horizontal chip row, which is what the composer shows below `lg` where the
+ * rail column is hidden (GH-1462).
  */
 @Component({
   selector: 'lfx-meeting-composer-rail',
@@ -23,10 +25,48 @@ import { MeetingComposerService } from './meeting-composer.service';
 export class MeetingComposerRailComponent {
   protected readonly composer = inject(MeetingComposerService);
   private readonly formService = inject(MeetingComposerFormService);
+  private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  /**
+   * Renders as a horizontal chip row instead of a vertical stepper.
+   * @description What the composer shows below `lg`, where the rail column is hidden: the same rows and
+   * the same locking, laid out to fit above the section content.
+   */
+  public readonly compact = input(false);
 
   private readonly sections: readonly MeetingComposerSection[] = MEETING_COMPOSER_SECTIONS;
 
+  /**
+   * Single mode source for layout, locking and the active marker.
+   * @description Read from the form service because that is what `sectionNeedsAttention` reads — the other
+   * mode-dependent input to a row — and because `composer.context()` is written before `initialize()` runs,
+   * so a context-derived reader would lead this one by a flush. Taking mode from both would render the flat
+   * edit rows while locking them like create-mode rows, leaving rows that look interactive and do nothing.
+   */
+  protected readonly isEditMode: Signal<boolean> = this.formService.isEditMode;
+
   protected readonly rows: Signal<MeetingComposerRailRow[]> = this.initRows();
+  // Both layouts can be in the DOM at once, so their test ids have to differ.
+  protected readonly testIdPrefix: Signal<string> = computed(() => (this.compact() ? 'meeting-composer-rail-compact' : 'meeting-composer-rail'));
+  // Edit mode has no ordering and no Next/Back, so announcing a step would describe a wizard that
+  // isn't there — matching what the desktop edit rows already do.
+  protected readonly activeChipAriaCurrent: Signal<'step' | 'true'> = computed(() => (this.isEditMode() ? 'true' : 'step'));
+
+  public constructor() {
+    // The chip row is wider than a phone, so a section reached from the footer would otherwise
+    // highlight a chip scrolled off-screen. `afterRenderEffect` so the chip carrying the marker is the
+    // freshly active one, and because it never runs during SSR.
+    afterRenderEffect({
+      earlyRead: () => {
+        this.composer.activeSection();
+
+        return this.compact() ? this.elementRef.nativeElement.querySelector<HTMLElement>('[data-active-chip]') : null;
+      },
+      // `scrollIntoView` reads layout before it scrolls, so it is a mixed read/write rather than the pure
+      // write the `write` phase promises.
+      mixedReadWrite: (chip) => chip()?.scrollIntoView({ block: 'nearest', inline: 'center' }),
+    });
+  }
 
   protected onSelect(row: MeetingComposerRailRow): void {
     if (row.locked || row.active) {
@@ -44,24 +84,29 @@ export class MeetingComposerRailComponent {
       const sections = this.sections;
       const activeSection = this.composer.activeSection();
       const visited = this.composer.visitedSections();
-      const isEditMode = this.composer.isEditMode();
+      const isEditMode = this.isEditMode();
       const validById = new Map<MeetingComposerSectionId, boolean>(sections.map((section) => [section.id, this.formService.isSectionValid(section.id)]));
       const isComplete = (section: MeetingComposerSection): boolean => (section.required ? (validById.get(section.id) ?? false) : visited.has(section.id));
 
       return sections.map((section, index) => {
         const active = section.id === activeSection;
-        const valid = validById.get(section.id) ?? false;
         const blockedByEarlier = sections.slice(0, index).some((earlier) => earlier.required && !validById.get(earlier.id));
+        // The organizer can be standing on a section an out-of-section validator has just invalidated
+        // (enabling YouTube upload tightens the title's max length), so never lock the row they're on.
+        const locked = !isEditMode && blockedByEarlier && !active;
 
         return {
           section,
           active,
-          complete: isComplete(section) && !active,
-          // The organizer can be standing on a section an out-of-section validator has just invalidated
-          // (enabling YouTube upload tightens the title's max length), so never lock the row they're on.
-          locked: !isEditMode && blockedByEarlier && !active,
-          needsAttention: !isEditMode && section.required && visited.has(section.id) && !valid,
-          lineBelowComplete: isComplete(section),
+          // A locked row can't claim to be done even when its own controls validate — a check inside the
+          // greyed circle would contradict the "Complete earlier sections first" text right beside it.
+          complete: isComplete(section) && !active && !locked,
+          locked,
+          // Shared with the compact badge in the host, so the two can't disagree about what needs fixing.
+          needsAttention: this.formService.sectionNeedsAttention(section, visited),
+          // A locked row is behind an invalid earlier section, so its connector can't claim the chain is done
+          // even when this section itself validates.
+          lineBelowComplete: isComplete(section) && !locked,
           isLast: index === sections.length - 1,
         };
       });

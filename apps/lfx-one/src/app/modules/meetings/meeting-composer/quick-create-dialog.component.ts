@@ -6,7 +6,7 @@ import { Component, computed, inject, output, signal, type Signal } from '@angul
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { DEFAULT_DURATION, MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_WARNING_LENGTH, MEETING_TEMPLATES } from '@lfx-one/shared/constants';
+import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_WARNING_LENGTH, MEETING_DURATION_CHIP_OPTIONS, MEETING_TEMPLATES } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import type { CommitteeMember, MeetingTemplate } from '@lfx-one/shared/interfaces';
 import { DialogModule } from 'primeng/dialog';
@@ -19,7 +19,7 @@ import { ComposerDateScheduleComponent } from './sections/composer-date-schedule
 import { ComposerDetailsAccessComponent } from './sections/composer-details-access.component';
 
 /**
- * Quick create dialog (LFXV2-3241).
+ * Quick create dialog (GH-1460).
  * @description The condensed create surface: the same form and the same submit path as the drawer, laid
  * out as two columns with no rail and no per-section gating. It composes the drawer's Details & Access
  * and Date & Schedule sections rather than reimplementing their controls, so validators, hint copy and
@@ -48,8 +48,19 @@ export class QuickCreateDialogComponent {
 
   protected readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
 
-  /** Meeting type whose template was applied, so the prefill hints only claim what was actually filled. */
-  protected readonly prefilledType = signal<MeetingType | null>(null);
+  // What the type's template wrote, tracked per control: most templates estimate a duration off the chip
+  // scale, which `applyTypeTemplate` skips, so a single flag would keep the details hint alive on the
+  // untouched `duration` control long after the organizer rewrote the title.
+  private readonly seededTitle = signal(false);
+  private readonly seededDuration = signal(false);
+  private readonly seededAgenda = signal(false);
+
+  // Derived rather than snapshotted: a hint has to go quiet the moment the organizer rewrites the field,
+  // and that happens without any type change to recompute it on. One hint per control, since each sits
+  // next to the field it describes and the two columns are far apart on screen.
+  protected readonly prefilledTitle: Signal<boolean> = this.initPrefilledTitle();
+  protected readonly prefilledDuration: Signal<boolean> = this.initPrefilledDuration();
+  protected readonly prefilledAgenda: Signal<boolean> = this.initPrefilledAgenda();
 
   protected readonly agendaLength: Signal<number> = computed(() => {
     this.formService.revision();
@@ -98,36 +109,77 @@ export class QuickCreateDialogComponent {
     this.create.emit();
   }
 
+  // Private initializer functions
+  private initPrefilledTitle(): Signal<boolean> {
+    return computed(() => {
+      // `revision` is what makes control state reactive here — `validateForSubmit` bumps it for the marks
+      // that emit on neither `valueChanges` nor `statusChanges`.
+      this.formService.revision();
+
+      return this.seededTitle() && !!this.formService.form().get('title')?.pristine;
+    });
+  }
+
+  private initPrefilledDuration(): Signal<boolean> {
+    return computed(() => {
+      this.formService.revision();
+
+      return this.seededDuration() && !!this.formService.form().get('duration')?.pristine;
+    });
+  }
+
+  private initPrefilledAgenda(): Signal<boolean> {
+    return computed(() => {
+      this.formService.revision();
+
+      return this.seededAgenda() && !!this.formService.form().get('description')?.pristine;
+    });
+  }
+
+  // Other private helper methods
   /**
    * Seeds title, agenda and duration from the meeting type's first template.
-   * @description Only untouched fields are written — switching type after typing a title must not discard
-   * it — so duration is seeded only while it still holds the form default.
+   * @description Guarded on `pristine` rather than on emptiness: switching type after editing a field must
+   * keep the edit, and an emptiness check would treat a prefill from the previous type as free to
+   * overwrite — leaving a Board meeting carrying the Technical template's title. Durations off the chip
+   * scale are skipped, since seeding one would drop this surface into the custom-minutes input.
    */
   private applyTypeTemplate(meetingType: MeetingType | null): void {
     const template = meetingType ? this.firstTemplate(meetingType) : null;
 
     if (!template) {
-      this.prefilledType.set(null);
+      this.seededTitle.set(false);
+      this.seededDuration.set(false);
+      this.seededAgenda.set(false);
       return;
     }
 
     const form = this.formService.form();
     const title = form.get('title');
     const description = form.get('description');
+    const duration = form.get('duration');
+    let seededTitle = false;
+    let seededDuration = false;
+    let seededAgenda = false;
 
-    if (!(title?.value as string | null)?.trim()) {
-      title?.setValue(template.title);
+    if (title?.pristine) {
+      title.setValue(template.title);
+      seededTitle = true;
     }
 
-    if (!(description?.value as string | null)?.trim()) {
-      description?.setValue(template.content);
-    }
-
-    if (this.formService.effectiveDuration() === DEFAULT_DURATION) {
+    if (duration?.pristine && MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === template.estimatedDuration)) {
       this.formService.setDuration(template.estimatedDuration);
+      seededDuration = true;
     }
 
-    this.prefilledType.set(meetingType);
+    if (description?.pristine) {
+      description.setValue(template.content);
+      seededAgenda = true;
+    }
+
+    this.seededTitle.set(seededTitle);
+    this.seededDuration.set(seededDuration);
+    this.seededAgenda.set(seededAgenda);
   }
 
   private firstTemplate(meetingType: MeetingType): MeetingTemplate | null {

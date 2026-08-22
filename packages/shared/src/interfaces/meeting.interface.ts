@@ -1396,6 +1396,7 @@ export interface MeetingComposerSection {
 export interface MeetingComposerRailRow {
   section: MeetingComposerSection;
   active: boolean;
+  /** Done and reachable — never set on the active row, and never on a locked one. */
   complete: boolean;
   /** Blocked by an earlier invalid required section — never set on the active row. */
   locked: boolean;
@@ -1463,8 +1464,10 @@ export type MeetingComposerVariant = 'drawer' | 'quick';
 export interface MeetingComposerToastData {
   meetingUid: string;
   meetingTitle: string;
-  /** Router link to the meeting's details page. */
+  /** Router link to the meeting's public join page. */
   meetingUrl: string;
+  /** Query params that page needs — the access password, for a private or restricted meeting. */
+  meetingQueryParams: Record<string, string>;
 }
 
 /** Dialog data for the composer's manual guest entry dialog. */

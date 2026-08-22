@@ -1,10 +1,43 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Composer section rail (LFXV2-3240) -->
-<nav class="flex flex-col" aria-label="Composer sections" data-testid="meeting-composer-rail">
+<!-- Composer section rail (GH-1459), with the collapsed chip row for narrow viewports (GH-1462) -->
+<nav
+  [ngClass]="compact() ? 'flex items-center gap-1 overflow-x-auto pb-1' : 'flex flex-col'"
+  aria-label="Composer sections"
+  [attr.data-testid]="testIdPrefix()">
   @for (row of rows(); track row.section.id) {
-    @if (composer.isEditMode()) {
+    @if (compact()) {
+      <!-- Locked chips are greyed by surface rather than opacity: they stay keyboard-reachable, so the label has to stay legible -->
+      <button
+        type="button"
+        class="flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+        [ngClass]="{
+          'border-blue-700 bg-blue-700 text-white': row.active,
+          'border-blue-200 bg-white text-blue-700': row.complete,
+          'border-gray-200 bg-white text-gray-600': !row.active && !row.complete && !row.locked,
+          'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-600': row.locked,
+        }"
+        [attr.aria-disabled]="row.locked ? 'true' : null"
+        [attr.aria-current]="row.active ? activeChipAriaCurrent() : null"
+        [attr.data-active-chip]="row.active ? 'true' : null"
+        [attr.data-testid]="testIdPrefix() + '-' + row.section.id"
+        (click)="onSelect(row)">
+        @if (row.complete) {
+          <i class="fa-light fa-check" aria-hidden="true"></i>
+        } @else {
+          <i [ngClass]="row.section.icon" aria-hidden="true"></i>
+        }
+        <span class="whitespace-nowrap">{{ row.section.label }}</span>
+        @if (row.needsAttention) {
+          <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" [attr.data-testid]="testIdPrefix() + '-attention-' + row.section.id"></span>
+          <span class="sr-only">Required fields still missing</span>
+        }
+        @if (row.locked) {
+          <span class="sr-only">Complete earlier sections first</span>
+        }
+      </button>
+    } @else if (isEditMode()) {
       <button
         type="button"
         class="flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium transition-colors"
@@ -14,13 +47,19 @@
         (click)="onSelect(row)">
         <i class="w-4 text-center" [ngClass]="row.section.icon" aria-hidden="true"></i>
         <span class="truncate">{{ row.section.label }}</span>
+        @if (row.needsAttention) {
+          <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" [attr.data-testid]="'meeting-composer-rail-attention-' + row.section.id"></span>
+          <span class="sr-only">Required fields still missing</span>
+        }
       </button>
     } @else {
+      <!-- Locked rows are greyed by surface rather than opacity: they stay keyboard-reachable, so their text
+           has to stay legible, and the tint is what separates them from a row that just isn't done yet -->
       <button
         type="button"
         class="group relative flex items-start gap-3 rounded-md py-2 pl-1 pr-3 text-left"
-        [ngClass]="row.locked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'"
-        [disabled]="row.locked"
+        [ngClass]="row.locked ? 'cursor-not-allowed bg-gray-50' : 'cursor-pointer'"
+        [attr.aria-disabled]="row.locked ? 'true' : null"
         [attr.aria-current]="row.active ? 'step' : null"
         [attr.data-testid]="'meeting-composer-rail-' + row.section.id"
         (click)="onSelect(row)">
@@ -35,8 +74,9 @@
             class="relative z-10 flex h-8 w-8 items-center justify-center rounded-full border text-xs"
             [ngClass]="{
               'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-50': row.active,
-              'border-blue-600 bg-white text-blue-600': !row.active && row.complete,
-              'border-gray-200 bg-white text-gray-400': !row.active && !row.complete,
+              'border-blue-600 bg-white text-blue-600': row.complete,
+              'border-gray-200 bg-white text-gray-400': !row.active && !row.complete && !row.locked,
+              'border-gray-200 bg-gray-100 text-gray-600': row.locked,
             }">
             @if (row.complete) {
               <i class="fa-light fa-check" aria-hidden="true"></i>
@@ -55,7 +95,10 @@
             }
           </span>
           @if (row.locked) {
-            <span class="text-xs text-gray-400">Complete earlier sections first</span>
+            <!-- The only text saying why the row won't respond, and the row stays keyboard-reachable, so it
+                 carries no opacity and sits at `gray-600` on the row's `gray-50` surface (7.2:1) rather than
+                 the decorative `gray-400` it used to use -->
+            <span class="text-xs text-gray-600">Complete earlier sections first</span>
           }
         </span>
       </button>

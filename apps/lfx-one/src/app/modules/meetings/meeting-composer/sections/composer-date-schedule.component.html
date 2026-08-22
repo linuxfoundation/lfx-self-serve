@@ -50,9 +50,17 @@
   <!-- Duration -->
   <div class="flex flex-col gap-2">
     <span id="composer-duration-label" class="text-sm font-medium text-gray-900"> Duration <span class="text-red-500">*</span> </span>
-    <div role="group" aria-labelledby="composer-duration-label" data-testid="composer-duration-chips">
+    <div
+      role="group"
+      aria-labelledby="composer-duration-label"
+      [attr.aria-describedby]="durationHint() ? 'composer-duration-hint' : null"
+      data-testid="composer-duration-chips">
       <lfx-select-button [form]="form()" control="duration" [options]="durationOptions" [unselectable]="false" [required]="true" />
     </div>
+
+    @if (durationHint(); as hint) {
+      <p id="composer-duration-hint" class="text-xs text-gray-500" data-testid="composer-duration-hint">{{ hint }}</p>
+    }
     @if (form().get('duration')?.errors?.['required'] && form().get('duration')?.touched) {
       <p class="text-sm text-red-600" data-testid="composer-duration-required-error">Duration is required</p>
     }

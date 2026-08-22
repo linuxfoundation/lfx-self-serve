@@ -31,7 +31,7 @@
                 [attr.data-testid]="'meeting-create-options-button'"
                 (onClick)="createMenu.toggle($event)">
               </lfx-button>
-              <lfx-menu #createMenu [model]="createMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+              <lfx-menu #createMenu [model]="createMenuItems()" [popup]="true" appendTo="body"></lfx-menu>
             </div>
           }
         </div>

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgClass } from '@angular/common';
 import { Component, computed, inject, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
@@ -25,14 +26,17 @@ import { ComposerGuestsComponent } from './sections/composer-guests.component';
 import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-features.component';
 
 /**
- * Globally mounted host for the meeting composer drawer (LFXV2-3234).
+ * Globally mounted host for the meeting composer drawer (GH-1452).
  * @description Mounted on first open via `@defer` in `app.component.html` and retained thereafter, so
  * opening the composer never unmounts the page underneath. Sections are reachable from both the rail
- * and the footer navigation; the live preview is create-mode only.
+ * and the footer navigation; the live preview is create-mode only. Below `lg` the drawer goes full
+ * width, the rail column and the preview drop out, and the rail's compact chip row takes over section
+ * navigation — the preview has no narrow-viewport equivalent.
  */
 @Component({
   selector: 'lfx-meeting-composer-host',
   imports: [
+    NgClass,
     DrawerModule,
     MeetingComposerRailComponent,
     MeetingComposerPreviewComponent,
@@ -59,6 +63,20 @@ export class MeetingComposerHostComponent {
   protected readonly sections: readonly MeetingComposerSection[] = MEETING_COMPOSER_SECTIONS;
   protected readonly toastKey = MEETING_COMPOSER_TOAST_KEY;
 
+  /**
+   * Single mode source for the chrome, matching what the rail reads.
+   * @description Taken from the form service, which is also what the rail's row locking and
+   * `sectionNeedsAttention` read, so the header, footer and section rows cannot describe different modes.
+   * `composer.context()` is the other candidate and is written first — `initialize()` only runs from the
+   * subscription in this constructor — so a context-derived reader would lead this one by a flush on every
+   * open, and would hold a different value whenever the new mode differs from the retained one. The
+   * enforceable part is that nothing reads both.
+   * The form service is the lagging side, and because `initialize()` is the only writer of `mode` and only
+   * runs for a non-null context, it also keeps the previous mode across a close. Fixing that means
+   * deriving `mode` from the context rather than writing it in `initialize()`.
+   */
+  protected readonly isEditMode: Signal<boolean> = this.formService.isEditMode;
+
   protected readonly activeIndex: Signal<number> = computed(() => this.sections.findIndex((section) => section.id === this.composer.activeSection()));
   protected readonly isLastSection: Signal<boolean> = computed(() => this.activeIndex() === this.sections.length - 1);
   protected readonly canProceed: Signal<boolean> = computed(() => {
@@ -70,6 +88,21 @@ export class MeetingComposerHostComponent {
     this.formService.revision();
     return this.sections.filter((section) => section.required).every((section) => this.formService.isSectionValid(section.id));
   });
+  protected readonly activeSectionLabel: Signal<string> = computed(() => this.sections[this.activeIndex()]?.label ?? '');
+  /** Whether any required section is flagged as blocking save, on the same rule as the rail's dots. */
+  protected readonly hasAttention: Signal<boolean> = computed(() => {
+    this.formService.revision();
+
+    const visited = this.composer.visitedSections();
+
+    return this.sections.some((section) => this.formService.sectionNeedsAttention(section, visited));
+  });
+  /**
+   * Why the toast's Edit action can't act, or `null` when it can.
+   * @description Doubles as the enabled check. Reopening while another meeting is part-way through the
+   * composer would discard that draft, and reopening after write access was lost would only fail on save.
+   */
+  protected readonly editFromToastBlockedReason: Signal<string | null> = this.initEditFromToastBlockedReason();
 
   public constructor() {
     toObservable(this.composer.context)
@@ -133,12 +166,21 @@ export class MeetingComposerHostComponent {
         this.announceCreatedMeeting(meeting);
       }
 
+      this.composer.notifySaved();
       this.composer.close();
     });
   }
 
-  /** Reopens the composer on the meeting the toast was raised for. */
+  /**
+   * Reopens the composer on the meeting the toast was raised for.
+   * @description Guarded by `editFromToastBlockedReason`, which the template also reflects as
+   * `aria-disabled` plus a tooltip naming the reason.
+   */
   protected onEditCreatedMeeting(data: MeetingComposerToastData): void {
+    if (this.editFromToastBlockedReason()) {
+      return;
+    }
+
     this.messageService.clear(this.toastKey);
     this.composer.open({ mode: 'edit', meetingUid: data.meetingUid });
   }
@@ -147,8 +189,18 @@ export class MeetingComposerHostComponent {
     this.messageService.clear(this.toastKey);
   }
 
+  private initEditFromToastBlockedReason(): Signal<string | null> {
+    return computed(() => {
+      if (this.composer.isOpen()) {
+        return 'Close the open composer first';
+      }
+
+      return this.projectContextService.canWrite() ? null : 'You no longer have write access';
+    });
+  }
+
   /**
-   * Raises the post-create toast (LFXV2-3242).
+   * Raises the post-create toast (GH-1461).
    * @description Creating no longer navigates to the saved meeting, so this toast is the only route back
    * to it. A create that returned no meeting has nothing to link to, and falls back to a plain
    * confirmation rather than a toast whose actions would dead-end.
@@ -163,6 +215,9 @@ export class MeetingComposerHostComponent {
       meetingUid: meeting.id,
       meetingTitle: meeting.title ?? 'Untitled meeting',
       meetingUrl: `/meetings/${meeting.id}`,
+      // The join page rejects a private or restricted meeting without its password and redirects to
+      // `/meetings/not-found`, which every BOARD meeting would hit since those are forced private.
+      meetingQueryParams: meeting.password ? { password: meeting.password } : {},
     };
 
     this.messageService.add({

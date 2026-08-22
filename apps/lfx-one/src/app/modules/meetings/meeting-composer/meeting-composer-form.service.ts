@@ -34,6 +34,7 @@ import {
   MeetingAttachmentOperationResults,
   MeetingComposerContext,
   MeetingComposerMode,
+  MeetingComposerSection,
   MeetingComposerSectionId,
   MeetingRecurrence,
   MeetingRegistrant,
@@ -80,7 +81,7 @@ import {
 } from 'rxjs';
 
 /**
- * Form state and persistence for the meeting composer (LFXV2-3234).
+ * Form state and persistence for the meeting composer (GH-1452).
  * @description Owns the single meeting FormGroup, edit-mode hydration, the create/update request
  * payload, and the attachment + registrant operations that run alongside the meeting save.
  * Provided by `MeetingComposerHostComponent`, so `initialize()` fully resets state on every open.
@@ -101,6 +102,8 @@ export class MeetingComposerFormService {
 
   public readonly meeting = signal<Meeting | null>(null);
   public readonly loading = signal<boolean>(false);
+  /** Whether the edit-mode fetch failed, so the drawer can say so instead of showing an empty form. */
+  public readonly meetingLoadFailed = signal<boolean>(false);
   public readonly submitting = signal<boolean>(false);
 
   public readonly attachments = signal<MeetingAttachment[]>([]);
@@ -132,8 +135,12 @@ export class MeetingComposerFormService {
   private readonly contextProjectUid = signal<string | null>(null);
 
   /**
-   * Bumped on every form value/status change. FormGroup validity is not reactive, so template
-   * computeds that depend on section validity must read this signal to re-evaluate.
+   * Bumped on every form value/status change, and explicitly by `validateForSubmit()`.
+   * @description FormGroup state is not reactive, so template computeds that depend on section validity —
+   * or on a control's `pristine` flag — must read this signal to re-evaluate. `validateForSubmit()` needs
+   * the explicit bump because `markAsTouched`/`markAsDirty` emit on neither `valueChanges` nor
+   * `statusChanges`, and it writes no values of its own. The only other writer that marks —
+   * `setDuration()` — needs no bump: its own `setValue` calls provide one.
    */
   public readonly revision = signal<number>(0);
 
@@ -181,6 +188,7 @@ export class MeetingComposerFormService {
     this.pendingAttachmentDeletions.set([]);
     this.registrantUpdates.set({ toAdd: [], toUpdate: [], toDelete: [] });
     this.guests.set([]);
+    this.meetingLoadFailed.set(false);
     this.guestsLoading.set(false);
     this.guestsLoadFailed.set(false);
     this.suppressedGuestEmails.set(new Set());
@@ -274,6 +282,51 @@ export class MeetingComposerFormService {
     }
   }
 
+  /**
+   * Whether a section should be flagged as blocking save, for both the rail's dots and the compact badge.
+   * @description Single rule so the two surfaces can't drift. Create mode only counts sections already
+   * visited — flagging one the stepper hasn't reached yet would report the form as broken before it has
+   * been filled. Edit mode drops that gate: every section is reachable from the start and Save is gated
+   * on all of them, so an unvisited invalid one is exactly the case where the organizer has no other way
+   * to find out why Save is disabled. An edit whose meeting hasn't arrived is excluded — that form is
+   * empty because of the fetch, not because of anything the organizer did. Callers must read `revision`
+   * themselves: this is a plain method, so it carries no reactive dependency of its own.
+   */
+  public sectionNeedsAttention(section: MeetingComposerSection, visitedSections: ReadonlySet<MeetingComposerSectionId>): boolean {
+    if (!section.required) {
+      return false;
+    }
+
+    const isEditMode = this.isEditMode();
+
+    if (isEditMode && !this.meeting()) {
+      return false;
+    }
+
+    return (isEditMode || visitedSections.has(section.id)) && !this.isSectionValid(section.id);
+  }
+
+  /**
+   * Re-runs the edit-mode fetch after a failure, so retrying doesn't mean reopening the composer.
+   * @description Edit mode only: `meetingId` is also set by a successful create, and re-fetching there
+   * would hydrate a create form from the meeting it just saved. The two fetches are independent, so a
+   * guest list that arrived fine isn't thrown away here; a guests-only failure has no retry of its own,
+   * since the only caller is the meeting-level error state.
+   */
+  public retryLoadMeeting(): void {
+    const meetingUid = this.meetingId();
+
+    if (!this.isEditMode() || !meetingUid || this.loading()) {
+      return;
+    }
+
+    this.loadMeeting(meetingUid);
+
+    if (this.guestsLoadFailed()) {
+      this.loadGuests(meetingUid);
+    }
+  }
+
   /** Marks the whole form touched so validation messages surface; returns whether submit may proceed. */
   public validateForSubmit(): boolean {
     const form = this.form();
@@ -282,6 +335,10 @@ export class MeetingComposerFormService {
       control?.markAsTouched();
       control?.markAsDirty();
     });
+
+    // `markAsTouched`/`markAsDirty` emit on neither `valueChanges` nor `statusChanges`, so the bump has
+    // to be explicit for anything reading control state through `revision`.
+    this.revision.update((value) => value + 1);
 
     return form.valid;
   }
@@ -417,12 +474,15 @@ export class MeetingComposerFormService {
     const isChipValue = MEETING_DURATION_CHIP_OPTIONS.some((option) => option.value === minutes);
     const form = this.form();
 
-    form.get('duration')?.setValue(isChipValue ? minutes : 'custom');
-    form.get('customDuration')?.setValue(isChipValue ? null : minutes);
-
+    // The mark sits with the writes rather than after them purely for reading order: it needs no
+    // `revision` bump of its own, since the `setValue` calls below bump it in the same synchronous task
+    // and change detection reads `touched` only once that task has finished.
     if (!isChipValue) {
       form.get('customDuration')?.markAsTouched();
     }
+
+    form.get('duration')?.setValue(isChipValue ? minutes : 'custom');
+    form.get('customDuration')?.setValue(isChipValue ? null : minutes);
   }
 
   /**
@@ -681,6 +741,7 @@ export class MeetingComposerFormService {
 
   private loadMeeting(meetingUid: string): void {
     this.loading.set(true);
+    this.meetingLoadFailed.set(false);
 
     forkJoin({
       meeting: this.meetingService.getMeeting(meetingUid),
@@ -700,6 +761,9 @@ export class MeetingComposerFormService {
         },
         error: (error: unknown) => {
           console.error('Error getting meeting:', error);
+          // The toast is transient, so the drawer keeps its own flag — otherwise the organizer is left
+          // with an empty form and a disabled Save and nothing saying why.
+          this.meetingLoadFailed.set(true);
           this.messageService.add({
             severity: 'error',
             summary: 'Error',

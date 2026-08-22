@@ -29,7 +29,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { MeetingRecurrencePatternComponent } from '../../components/meeting-recurrence-pattern/meeting-recurrence-pattern.component';
 
 /**
- * Date & Schedule section of the meeting composer (LFXV2-3236).
+ * Date & Schedule section of the meeting composer (GH-1454).
  * @description Owns `startDate`, `startTime`, `duration`/`customDuration`, `timezone`,
  * `early_join_time_minutes`, and the recurring card. Owns the simple-cadence → `recurrence` mapping
  * (daily / weekly / weekdays / monthly); `custom` is owned by `lfx-meeting-recurrence-pattern`. The
@@ -54,10 +54,19 @@ export class ComposerDateScheduleComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly form = input.required<FormGroup>();
-  /** Quick create labels its own columns and has no room for the section heading. */
+  /** Quick create renders these fields under its own dialog header, where a section heading only repeats it. */
   public readonly showHeading = input(true);
   /** Early join is an advanced setting the quick create dialog leaves at its default. */
   public readonly showEarlyJoin = input(true);
+  /**
+   * Hint text for a duration that was written by something other than the organizer.
+   * @description Passed in rather than derived here because only quick create prefills from the meeting
+   * type. It renders directly under the chips and is wired through `aria-describedby` on their group, so
+   * the hint is reachable from the control it is about rather than from the far end of the column. The
+   * association sits on the surrounding `role="group"` rather than on the chips themselves because
+   * `lfx-select-button` exposes no `ariaDescribedBy` input to pass it through.
+   */
+  public readonly durationHint = input<string | null>(null);
 
   protected readonly durationOptions = MEETING_DURATION_CHIP_OPTIONS;
   protected readonly earlyJoinOptions = EARLY_JOIN_CHIP_OPTIONS;

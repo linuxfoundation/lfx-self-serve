@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { IcalSubscribeDialogComponent } from '@app/modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
 import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
@@ -15,7 +15,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { MenuComponent } from '@components/menu/menu.component';
 import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_CONFIGS, MEETING_TYPE_OPTIONS } from '@lfx-one/shared/constants';
+import { MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import { Lens, MeLensMeetingFilters, Meeting, MeetingCalendarClickProps, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
 import {
@@ -23,6 +23,7 @@ import {
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
+  getSelectableMeetingTypeOptions,
   hasMeetingEnded,
   isMeetingOrganizedByViewer,
   meetingToCalendarEvents,
@@ -55,6 +56,7 @@ import {
   Observable,
   of,
   scan,
+  skip,
   Subject,
   switchMap,
   take,
@@ -97,23 +99,10 @@ export class MeetingsDashboardComponent {
   /**
    * Create Meeting dropdown: a quick start per meeting type, then the full drawer.
    * @description A type row opens the quick dialog pre-selected, so its template prefill runs immediately.
+   * Types come from the same persona filter the composer's type select uses — otherwise a maintainer
+   * could seed a type here that the select then hides, leaving it set but uneditable.
    */
-  public readonly createMenuItems: MenuItem[] = [
-    {
-      label: 'Quick start',
-      items: MEETING_TYPE_OPTIONS.map((option) => ({
-        label: option.label,
-        icon: option.info.icon,
-        command: () => this.onQuickCreateMeeting(option.value),
-      })),
-    },
-    { separator: true },
-    {
-      label: 'Advanced',
-      icon: 'fa-light fa-sliders',
-      command: () => this.onAdvancedCreateMeeting(),
-    },
-  ];
+  public readonly createMenuItems: Signal<MenuItem[]> = this.initCreateMenuItems();
 
   public readonly activeLens: Signal<Lens> = this.lensService.activeLens;
   protected readonly personaLoaded = this.personaService.personaLoaded;
@@ -279,6 +268,16 @@ export class MeetingsDashboardComponent {
     this.calendarLoading = computed(() =>
       this.activeLens() === 'me' ? this.meetingsLoading() || this.pastMeetingsLoading() : this.fpUpcomingLoading() || this.fpPastLoading()
     );
+
+    // The composer saves in place instead of navigating, so this list is what the organizer looks at
+    // straight after creating a meeting — refetch rather than leave the new meeting missing from it.
+    // `skip(1)` drops the value `toObservable` replays on subscribe. The counter is monotonic and lives in
+    // a root service, so on any mount after the first save that replay is a non-zero count describing a
+    // save this instance already loaded — refetching on it would double every request the streams below
+    // just made.
+    toObservable(this.composer.saveCount)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => this.refreshMeetings());
   }
 
   /** Main button: the quick create dialog. The dropdown covers per-type quick starts and the drawer. */
@@ -387,6 +386,25 @@ export class MeetingsDashboardComponent {
     } else {
       this.loadMoreUpcoming$.next(pageToken);
     }
+  }
+
+  private initCreateMenuItems(): Signal<MenuItem[]> {
+    return computed(() => [
+      {
+        label: 'Quick start',
+        items: getSelectableMeetingTypeOptions(this.personaService.currentPersona()).map((option) => ({
+          label: option.label,
+          icon: option.info.icon,
+          command: () => this.onQuickCreateMeeting(option.value),
+        })),
+      },
+      { separator: true },
+      {
+        label: 'Advanced',
+        icon: 'fa-light fa-sliders',
+        command: () => this.onAdvancedCreateMeeting(),
+      },
+    ]);
   }
 
   private initCanWriteMeetings(): Signal<boolean> {

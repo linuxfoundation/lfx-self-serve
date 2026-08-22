@@ -23,5 +23,7 @@ export class InputTextComponent {
   public autocomplete = input<string>();
   public dataTest = input<string>();
   public icon = input<string>();
+  /** Ids of the elements describing this input, for hint or helper text that isn't the label. `null` when none. */
+  public ariaDescribedBy = input<string | null>(null);
   public styleClass = input<string>();
 }
