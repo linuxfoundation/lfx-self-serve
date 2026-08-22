@@ -25,9 +25,11 @@ export interface OrgLensGroupsResponse {
   total_seats: number;
 }
 
-/** View-model used by the org-groups list — extends the API summary with the pre-computed behavioral class. */
+/** View-model used by the org-groups list — extends the API summary with pre-computed display fields. */
 export interface OrgLensGroupVm extends OrgLensGroupSummary {
   cls: GroupBehavioralClass;
   /** Pre-computed `project_name || project_slug` display label — empty string when neither is set. */
   projectLabel: string;
+  /** Pre-computed row `aria-label`: name, behavioral class, seat count, and projectLabel when set. */
+  ariaLabel: string;
 }

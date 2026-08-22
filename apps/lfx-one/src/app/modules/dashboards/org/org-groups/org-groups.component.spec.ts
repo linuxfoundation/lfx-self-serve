@@ -47,7 +47,6 @@ describe('OrgGroupsComponent — project label', () => {
 
     fixture = TestBed.createComponent(OrgGroupsComponent);
     await fixture.whenStable();
-    fixture.detectChanges();
   }
 
   function projectLine(): string | null {

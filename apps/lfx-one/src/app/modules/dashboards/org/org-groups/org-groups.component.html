@@ -116,9 +116,7 @@
               role="listitem"
               class="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
               [attr.data-testid]="'org-groups-item-' + group.uid"
-              [attr.aria-label]="
-                group.name + ', ' + config.label + ', ' + group.org_seat_count + ' seats' + (group.projectLabel ? ', ' + group.projectLabel : '')
-              ">
+              [attr.aria-label]="group.ariaLabel">
               <!-- Icon -->
               <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" [class]="config.bgColor">
                 <i [class]="config.icon + ' ' + config.color + ' text-base'" aria-hidden="true"></i>
