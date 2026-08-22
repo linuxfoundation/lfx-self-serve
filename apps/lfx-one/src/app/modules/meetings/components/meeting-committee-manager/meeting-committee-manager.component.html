@@ -21,8 +21,8 @@
     <!-- Committee Selection -->
     @if (committeeContext(); as ctx) {
       <!-- Read-only locked group display (from group context) -->
-      <div class="flex flex-col gap-1">
-        <label class="block text-neutral-950 mb-2">{{ committeeLabel.singular }}</label>
+      <div class="flex flex-col gap-1.5">
+        <label class="text-sm font-medium text-gray-900">{{ committeeLabel.singular }}</label>
         <div class="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg" data-testid="meeting-committee-locked">
           <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
             <i class="fa-light fa-users text-sm text-blue-600" aria-hidden="true"></i>
@@ -35,8 +35,8 @@
         </div>
       </div>
     } @else {
-      <div class="flex flex-col gap-1">
-        <label class="block text-neutral-950 mb-2">Select {{ committeeLabel.plural }}</label>
+      <div class="flex flex-col gap-1.5">
+        <label class="text-sm font-medium text-gray-900">{{ committeeLabel.plural }}</label>
         <lfx-multi-select
           [form]="committeeForm"
           control="committees"
@@ -50,20 +50,21 @@
           class="w-full"
           appendTo="body"
           data-testid="meeting-committee-multi-select"></lfx-multi-select>
+        <!-- Inside the field stack so the hint sits on the field's own gap, not the section's -->
+        @if (selectedCommitteeIds().length === 0) {
+          <p class="text-xs text-gray-500">
+            Select {{ committeeLabel.plural.toLowerCase() }} to associate with this meeting. {{ committeeLabel.singular }} members will automatically be added
+            as guests.
+          </p>
+        }
       </div>
-      @if (selectedCommitteeIds().length === 0) {
-        <p class="text-sm text-gray-500">
-          Select {{ committeeLabel.plural.toLowerCase() }} to associate with this meeting. {{ committeeLabel.singular }} members will automatically be added as
-          guests.
-        </p>
-      }
     }
 
     <!-- Voting Status Selection -->
     @if (hasVotingEnabledCommittee()) {
-      <div class="flex flex-col gap-1">
-        <div class="flex items-center gap-1 mb-2">
-          <label class="block text-neutral-950">Voting Status Selection</label>
+      <div class="flex flex-col gap-1.5">
+        <div class="flex items-center gap-1">
+          <label class="text-sm font-medium text-gray-900">Voting Status Selection</label>
           <i
             class="fa-light fa-info-circle text-sm text-gray-500"
             pTooltip="Select which voting statuses committee members must have to participate in this meeting. Only members with the selected voting status(es) will be invited to the meeting."></i>
@@ -84,7 +85,7 @@
     }
 
     @if (selectedCommitteeIds().length > 0) {
-      <p class="text-sm text-gray-500">
+      <p class="text-xs text-gray-500">
         <strong>{{ selectedCommitteeIds().length }}</strong> {{ committeeLabel.plural.toLowerCase() }} selected.
         @if (filteredCommitteeMembers().length > 0) {
           <strong>{{ filteredCommitteeMembers().length }}</strong> unique member(s) will be added to the invitation list.

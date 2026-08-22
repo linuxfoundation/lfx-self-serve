@@ -118,6 +118,16 @@ export class MeetingsDashboardComponent {
    */
   public readonly createMenuItems: Signal<MenuItem[]> = this.initCreateMenuItems();
 
+  /**
+   * Marker class on the body-appended popup, so `onCreateMenuShow` can find it back.
+   * @description Not an id: `p-menu`'s `id` input lands on its inline root, not on the overlay it
+   * teleports to `body`.
+   */
+  private readonly createMenuOverlaySelector = '.meeting-create-menu-overlay';
+
+  /** Smallest gap left between the right-aligned popup and the viewport edge, in px. */
+  protected readonly createMenuViewportGutter = 8;
+
   public readonly activeLens: Signal<Lens> = this.lensService.activeLens;
   protected readonly personaLoaded = this.personaService.personaLoaded;
 
@@ -399,6 +409,33 @@ export class MeetingsDashboardComponent {
   }
 
   /**
+   * Right-aligns the create dropdown with its trigger.
+   * @description PrimeNG appends the popup to `body` and lines its *left* edge up with the trigger,
+   * which throws a 22rem panel out toward the page edge. `p-menu` has no alignment input, so nudge
+   * the inline `left` PrimeNG just wrote — on every show, since the trigger can move with the layout.
+   * Body-appended popups are positioned in page coordinates, hence the scroll offset.
+   */
+  protected onCreateMenuShow(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+
+    // Next frame, not this one: PrimeNG emits `onShow` from the same handler that aligns the overlay,
+    // so writing `left` here races its own write (and the panel is still mid-animation, so it hasn't
+    // settled at its final width yet).
+    requestAnimationFrame(() => {
+      const trigger = document.querySelector(`[data-testid="meeting-create-button"]`);
+      const panel = document.querySelector<HTMLElement>(this.createMenuOverlaySelector);
+      if (!trigger || !panel) {
+        return;
+      }
+
+      const aligned = trigger.getBoundingClientRect().right + window.scrollX - panel.offsetWidth;
+      panel.style.left = `${Math.max(aligned, window.scrollX + this.createMenuViewportGutter)}px`;
+    });
+  }
+
+  /**
    * Anonymous, shareable view of this project's PUBLIC meetings — the link a maintainer hands to their
    * community. Null until the active project context resolves.
    *
@@ -425,7 +462,7 @@ export class MeetingsDashboardComponent {
         // Reuses the type's composer description so the dropdown and the Details & Access select
         // never explain the same meeting type two different ways.
         description: option.info.description,
-        tileClass: 'bg-gray-100 text-gray-500',
+        tileClass: 'bg-gray-50 text-gray-700',
         testId: `meeting-create-quick-${option.value.toLowerCase()}`,
         command: () => this.onQuickCreateMeeting(option.value),
       }));
@@ -435,7 +472,7 @@ export class MeetingsDashboardComponent {
         description: 'Configure every aspect of your meeting',
         // Tinted rather than neutral: this row leaves the quick path for the full composer, so it
         // shouldn't read as a seventh meeting type.
-        tileClass: 'bg-blue-50 text-blue-600',
+        tileClass: 'bg-blue-100 text-blue-600',
         testId: 'meeting-create-advanced',
         command: () => this.onAdvancedCreateMeeting(),
       };

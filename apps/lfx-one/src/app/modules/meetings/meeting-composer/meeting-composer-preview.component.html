@@ -1,90 +1,89 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<section class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="meeting-composer-preview">
-  <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Preview</span>
+<section class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3.5" data-testid="meeting-composer-preview">
+  <span class="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Preview</span>
 
-  <div class="flex items-start gap-3">
-    <div class="flex w-10 flex-col overflow-hidden rounded-md border border-gray-200 text-center">
-      <span class="bg-blue-600 py-0.5 text-[10px] font-semibold uppercase leading-tight text-white">{{ dateChip().month }}</span>
-      <span class="py-0.5 text-base font-semibold leading-tight text-gray-900">{{ dateChip().day }}</span>
+  <div class="flex items-start gap-2.5">
+    <div class="flex w-[26px] shrink-0 flex-col overflow-hidden rounded border border-gray-200 text-center">
+      <span class="bg-blue-600 text-[8px] font-bold uppercase leading-[13px] text-white" aria-hidden="true">{{ dateChip().month }}</span>
+      <span class="text-[11px] font-bold leading-[15px] text-gray-900" aria-hidden="true">{{ dateChip().day }}</span>
     </div>
 
-    <div class="flex min-w-0 flex-col gap-1">
-      <span class="truncate text-sm font-semibold text-gray-900" [title]="title()" data-testid="meeting-composer-preview-title">{{ title() }}</span>
+    <div class="flex min-w-0 flex-1 flex-col gap-1">
+      <span class="truncate text-sm font-semibold text-gray-900" data-testid="meeting-composer-preview-title">{{ title() }}</span>
       @if (whenSummary(); as when) {
         <span class="text-xs text-gray-500" data-testid="meeting-composer-preview-when">{{ when }}</span>
       } @else {
-        <span class="w-28"><span class="sr-only">Date and time not set</span><p-skeleton height="0.75rem" /></span>
+        <span class="flex h-4 items-center">
+          <span class="sr-only">Date and time not set</span>
+          <span class="h-[7px] w-2/3 rounded-full bg-gray-100" aria-hidden="true"></span>
+        </span>
       }
     </div>
   </div>
 
   <div class="h-px bg-gray-100"></div>
 
-  <dl class="flex flex-col gap-2 text-xs">
-    <div class="flex items-center justify-between gap-2">
-      <dt class="text-gray-500">Type</dt>
-      @if (typeLabel()) {
-        <dd class="truncate font-medium text-gray-900" data-testid="meeting-composer-preview-type">{{ typeLabel() }}</dd>
+  <!-- Flat icon + value rows: the design carries no field labels here, so an unset row reads as a bar -->
+  <ul class="flex flex-col gap-2">
+    <li class="flex items-center gap-2">
+      <i class="w-3.5 shrink-0 text-center text-[11px] font-light text-gray-400 fa-light fa-hexagon" aria-hidden="true"></i>
+      @if (typeLabel(); as type) {
+        <span class="truncate text-[11px] text-gray-700" data-testid="meeting-composer-preview-type">{{ type }}</span>
       } @else {
-        <dd class="w-24"><span class="sr-only">Not set</span><p-skeleton height="0.75rem" /></dd>
+        <span class="sr-only">Meeting type not set</span>
+        <span class="h-[7px] w-[65%] rounded-full bg-gray-100" aria-hidden="true"></span>
       }
-    </div>
+    </li>
 
     @if (visibility(); as visibilityRow) {
-      <div class="flex items-center justify-between gap-2">
-        <dt class="text-gray-500">Visibility</dt>
-        <dd class="flex items-center gap-1.5 font-medium text-gray-900" data-testid="meeting-composer-preview-visibility">
-          <i [ngClass]="visibilityRow.icon" class="text-gray-400" aria-hidden="true"></i>
-          <span class="truncate">{{ visibilityRow.label }}</span>
-        </dd>
-      </div>
+      <li class="flex items-center gap-2">
+        <span
+          class="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-[7px] text-white"
+          [style.background-color]="visibilityRow.color"
+          aria-hidden="true">
+          <i [ngClass]="visibilityRow.icon"></i>
+        </span>
+        <span class="truncate text-[11px] text-gray-700" data-testid="meeting-composer-preview-visibility">{{ visibilityRow.label }}</span>
+      </li>
     }
 
-    @if (restricted()) {
-      <div class="flex items-center justify-between gap-2" data-testid="meeting-composer-preview-restricted">
-        <dt class="text-gray-500">Access</dt>
-        <dd class="font-medium text-gray-900">Restricted</dd>
-      </div>
-    }
-
-    @if (recurrenceSummary(); as recurrence) {
-      <div class="flex items-center justify-between gap-2" data-testid="meeting-composer-preview-recurrence">
-        <dt class="text-gray-500">Repeats</dt>
-        <dd class="truncate font-medium text-gray-900">{{ recurrence }}</dd>
-      </div>
-    }
-
-    <div class="flex items-center justify-between gap-2">
-      <dt class="text-gray-500">Platform</dt>
-      @if (platformLabel(); as platform) {
-        <dd class="truncate font-medium text-gray-900" data-testid="meeting-composer-preview-platform">{{ platform }}</dd>
+    <li class="flex items-center gap-2">
+      <i class="w-3.5 shrink-0 text-center text-[11px] font-light text-gray-400 fa-light fa-arrows-repeat" aria-hidden="true"></i>
+      @if (recurrenceLabel(); as recurrence) {
+        <span class="truncate text-[11px] text-gray-700" data-testid="meeting-composer-preview-recurrence">{{ recurrence }}</span>
       } @else {
-        <dd class="w-24"><span class="sr-only">Not set</span><p-skeleton height="0.75rem" /></dd>
+        <span class="sr-only">Schedule not set</span>
+        <span class="h-[7px] w-1/2 rounded-full bg-gray-100" aria-hidden="true"></span>
       }
-    </div>
+    </li>
+
+    <li class="flex items-center gap-2">
+      <i class="w-3.5 shrink-0 text-center text-[11px] font-light text-gray-400 fa-light fa-video" aria-hidden="true"></i>
+      @if (platformLabel(); as platform) {
+        <span class="truncate text-[11px] text-gray-700" data-testid="meeting-composer-preview-platform">{{ platform }}</span>
+      } @else {
+        <span class="sr-only">Platform not set</span>
+        <span class="h-[7px] w-[45%] rounded-full bg-gray-100" aria-hidden="true"></span>
+      }
+    </li>
 
     @for (feature of features(); track feature.label) {
-      <div class="flex items-center justify-between gap-2" data-testid="meeting-composer-preview-feature">
-        <dt class="flex items-center gap-1.5 text-gray-500">
-          <i [ngClass]="feature.icon" class="text-gray-400" aria-hidden="true"></i>
-          <span class="truncate">{{ feature.label }}</span>
-        </dt>
-        <dd class="font-medium text-emerald-600">On</dd>
-      </div>
+      <li class="flex items-center gap-2" data-testid="meeting-composer-preview-feature">
+        <i class="w-3.5 shrink-0 text-center text-[11px] font-light text-gray-400" [ngClass]="feature.icon" aria-hidden="true"></i>
+        <span class="truncate text-[11px] text-gray-700">{{ feature.label }}</span>
+      </li>
     }
 
-    <div class="flex items-center justify-between gap-2">
-      <dt class="text-gray-500">Guests</dt>
-      <dd class="font-medium text-gray-900" data-testid="meeting-composer-preview-guests">{{ guestCount() }} invited</dd>
-    </div>
-
-    @if (resourceCount() > 0) {
-      <div class="flex items-center justify-between gap-2">
-        <dt class="text-gray-500">Resources</dt>
-        <dd class="font-medium text-gray-900" data-testid="meeting-composer-preview-resources">{{ resourceCount() }}</dd>
-      </div>
-    }
-  </dl>
+    <li class="flex items-center gap-2">
+      <i class="w-3.5 shrink-0 text-center text-[11px] font-light text-gray-400 fa-light fa-user" aria-hidden="true"></i>
+      @if (guestLabel(); as guests) {
+        <span class="truncate text-[11px] text-gray-700" data-testid="meeting-composer-preview-guests">{{ guests }}</span>
+      } @else {
+        <span class="sr-only">No guests invited yet</span>
+        <span class="h-[7px] w-[55%] rounded-full bg-gray-100" aria-hidden="true"></span>
+      }
+    </li>
+  </ul>
 </section>

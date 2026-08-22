@@ -59,6 +59,14 @@ export class ComposerDateScheduleComponent implements OnInit {
   /** Early join is an advanced setting the quick create dialog leaves at its default. */
   public readonly showEarlyJoin = input(true);
   /**
+   * Narrow-column layout for the quick create dialog's right-hand rail.
+   * @description Not a media query: the section is the same width on a phone and in the dialog's 2/5
+   * column, so the breakpoint that would drive this doesn't describe the space it actually has. Stacks
+   * date over time, shortens their labels (the surrounding column is already "when it happens"), and
+   * drops the rule above the recurring card, which the column's own divider already stands in for.
+   */
+  public readonly compact = input(false);
+  /**
    * Hint text for a duration that was written by something other than the organizer.
    * @description Passed in rather than derived here because only quick create prefills from the meeting
    * type. It renders directly under the chips and is wired through `aria-describedby` on their group, so
@@ -67,6 +75,24 @@ export class ComposerDateScheduleComponent implements OnInit {
    * `lfx-select-button` exposes no `ariaDescribedBy` input to pass it through.
    */
   public readonly durationHint = input<string | null>(null);
+
+  /**
+   * Outlined-pill styling for every chip group in this section.
+   * @description The theme renders a select button as one joined segmented control that can't wrap, so
+   * in the quick dialog's 2/5 column the seven duration chips overflow and clip "Custom". Detaching the
+   * buttons into individually rounded pills lets the group wrap onto a second row, and matches how the
+   * chips read next to the meeting-type row above them. Split in two because the wrapper forwards
+   * `class` to the group and `styleClass` to each button; kept here so the three groups can't drift.
+   */
+  protected readonly chipGroupClass = 'flex flex-wrap gap-2 bg-transparent p-0';
+  protected readonly chipButtonClass = [
+    // `p-0` because the theme pads the button *and* its content; only the inner padding is wanted, or
+    // these sit taller than the meeting-type chips they're meant to match.
+    'rounded-full border border-gray-200 bg-white p-0 text-sm text-gray-700 transition-colors hover:bg-gray-50',
+    '[&_.p-togglebutton-content]:bg-transparent [&_.p-togglebutton-content]:px-2.5 [&_.p-togglebutton-content]:py-1 [&_.p-togglebutton-content]:shadow-none',
+    '[&.p-togglebutton-checked]:border-blue-500 [&.p-togglebutton-checked]:bg-blue-50 [&.p-togglebutton-checked]:hover:bg-blue-50',
+    '[&.p-togglebutton-checked_.p-togglebutton-label]:font-medium [&.p-togglebutton-checked_.p-togglebutton-label]:text-blue-700',
+  ].join(' ');
 
   protected readonly durationOptions = MEETING_DURATION_CHIP_OPTIONS;
   protected readonly earlyJoinOptions = EARLY_JOIN_CHIP_OPTIONS;
@@ -82,6 +108,9 @@ export class ComposerDateScheduleComponent implements OnInit {
   protected readonly cadenceOptions = signal<{ label: string; value: string }[]>([]);
   // Rebuilt whenever the meeting date changes so the listed DST offsets match that date.
   protected readonly timezoneOptions = signal<{ label: string; value: string }[]>(this.buildTimezoneOptions(new Date()));
+
+  // Both literals live here rather than in a class binding so Tailwind's `content` scan still sees them.
+  protected readonly dateTimeGridClass = computed(() => (this.compact() ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-1 gap-3 sm:grid-cols-2'));
 
   protected readonly minDate = computed(() => {
     const yesterday = new Date();

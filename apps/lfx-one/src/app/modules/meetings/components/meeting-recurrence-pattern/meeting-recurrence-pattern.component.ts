@@ -6,7 +6,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { InputNumberComponent } from '@components/input-number/input-number.component';
-import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
   RECURRENCE_DAYS_OF_WEEK,
@@ -19,7 +18,7 @@ import { getWeekOfMonth } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-meeting-recurrence-pattern',
-  imports: [ReactiveFormsModule, CalendarComponent, InputNumberComponent, RadioButtonComponent, SelectComponent],
+  imports: [ReactiveFormsModule, CalendarComponent, InputNumberComponent, SelectComponent],
   templateUrl: './meeting-recurrence-pattern.component.html',
 })
 export class MeetingRecurrencePatternComponent implements OnInit {
@@ -37,6 +36,17 @@ export class MeetingRecurrencePatternComponent implements OnInit {
   public readonly monthlyTypeOptions = RECURRENCE_MONTHLY_TYPE_OPTIONS;
   public readonly daysOfWeek = RECURRENCE_DAYS_OF_WEEK;
   public readonly weeklyOrdinals = RECURRENCE_WEEKLY_ORDINALS;
+
+  /**
+   * Outlined-pill styling for every choice in this panel.
+   * @description Same shape as the meeting-type, duration and cadence chips the panel sits under, so the
+   * whole schedule column reads as one control language. Whole class strings rather than a toggled
+   * fragment because Tailwind only emits what it can see literally.
+   */
+  protected readonly chipSelectedClass =
+    'cursor-pointer rounded-full border border-blue-500 bg-blue-50 px-2.5 py-1 text-sm font-medium text-blue-700 transition-colors';
+  protected readonly chipUnselectedClass =
+    'cursor-pointer rounded-full border border-gray-200 px-2.5 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-50';
 
   // Get the recurrence FormGroup from parent
   public readonly recurrenceForm = computed(() => this.form().get('recurrence') as FormGroup);
@@ -81,6 +91,20 @@ export class MeetingRecurrencePatternComponent implements OnInit {
 
   public isWeeklyDaySelected(dayIndex: number): boolean {
     return this.weeklyDaysArray().includes(dayIndex);
+  }
+
+  /**
+   * Selects a monthly pattern from the chip row.
+   * @description Writes through `monthlyTypeUI` rather than calling `onMonthlyTypeChange` directly, so the
+   * control's subscription stays the one place a change reseeds the monthly fields.
+   */
+  public selectMonthlyType(monthlyType: string): void {
+    this.recurrenceForm()?.get('monthlyTypeUI')?.setValue(monthlyType);
+  }
+
+  /** Selects an end condition from the chip row; `endTypeUI`'s subscription applies the side effects. */
+  public selectEndType(endType: string): void {
+    this.recurrenceForm()?.get('endTypeUI')?.setValue(endType);
   }
 
   // Monthly handlers

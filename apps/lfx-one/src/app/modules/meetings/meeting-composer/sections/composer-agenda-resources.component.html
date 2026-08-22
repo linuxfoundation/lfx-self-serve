@@ -1,13 +1,13 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6" data-testid="composer-agenda-resources">
+<div class="flex flex-col gap-4" data-testid="composer-agenda-resources">
   <div class="flex flex-col gap-1">
     <h2 class="text-base font-semibold text-gray-900">Agenda &amp; resources</h2>
     <p class="text-sm text-gray-500">Share agenda, documents, and reference materials so participants come prepared.</p>
   </div>
 
-  <div class="flex flex-col gap-2">
+  <div class="flex flex-col gap-1.5">
     <div class="flex items-center justify-between gap-3">
       <label for="composer-agenda" class="text-sm font-medium text-gray-900">Agenda</label>
       <div class="flex items-center gap-2">
@@ -17,7 +17,7 @@
           size="small"
           [text]="true"
           [ariaPressed]="showTemplates()"
-          (onClick)="onToggleTemplates()"
+          (onClick)="onToggleTemplates($event, templatesPopover)"
           data-testid="composer-agenda-templates-toggle" />
         <lfx-button
           label="Help me write"
@@ -25,24 +25,34 @@
           size="small"
           [text]="true"
           [ariaPressed]="showAiHelper()"
-          (onClick)="onToggleAiHelper()"
+          (onClick)="aiPopover.toggle($event)"
           data-testid="composer-agenda-ai-toggle" />
       </div>
     </div>
 
-    @if (meetingType()) {
-      <lfx-agenda-template-selector
-        [meetingType]="meetingType()!"
-        [visible]="showTemplates()"
-        (templateSelected)="onApplyTemplate($event)"
-        (closeSelector)="onCloseTemplates()" />
-    }
+    <!-- Both header actions open popovers anchored to their button, per the design. `p-popover` is used
+         raw because the design system has no wrapper for it yet. -->
+    <p-popover
+      #templatesPopover
+      appendTo="body"
+      styleClass="w-[26rem] max-w-[calc(100vw-2rem)]"
+      (onShow)="showTemplates.set(true)"
+      (onHide)="showTemplates.set(false)">
+      @if (meetingType(); as type) {
+        <lfx-agenda-template-selector [meetingType]="type" (templateSelected)="onApplyTemplate($event, templatesPopover)" />
+      }
+    </p-popover>
 
-    @if (showAiHelper()) {
-      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4" data-testid="composer-agenda-ai-panel">
-        <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-gray-900">AI agenda generator</h3>
-          <p class="text-xs text-gray-500">Tell me the goal and I'll draft a structured agenda.</p>
+    <p-popover #aiPopover appendTo="body" styleClass="w-[26rem] max-w-[calc(100vw-2rem)]" (onShow)="showAiHelper.set(true)" (onHide)="onAiHelperHide()">
+      <div class="flex flex-col gap-3" data-testid="composer-agenda-ai-panel">
+        <div class="flex items-start gap-2.5">
+          <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs text-white" aria-hidden="true">
+            <i class="fa-light fa-lightbulb"></i>
+          </span>
+          <div class="flex flex-col gap-0.5">
+            <h3 class="text-sm font-semibold text-gray-900">AI agenda generator</h3>
+            <p class="text-xs text-gray-500">Tell me the goal and I'll draft a structured agenda.</p>
+          </div>
         </div>
 
         <lfx-textarea
@@ -58,25 +68,19 @@
           {{ aiPromptLength() }}/{{ promptMaxLength }}
         </p>
 
-        <div class="flex justify-end gap-2">
-          <lfx-button
-            label="Cancel"
-            size="small"
-            severity="secondary"
-            [outlined]="true"
-            (onClick)="onCancelAiHelper()"
-            data-testid="composer-agenda-ai-cancel" />
+        <div class="flex items-center justify-end gap-2">
+          <lfx-button label="Cancel" size="small" severity="secondary" [text]="true" (onClick)="aiPopover.hide()" data-testid="composer-agenda-ai-cancel" />
           <lfx-button
             [label]="isGeneratingAgenda() ? 'Generating…' : 'Generate agenda'"
             size="small"
             severity="info"
             [loading]="isGeneratingAgenda()"
             [disabled]="isGeneratingAgenda()"
-            (onClick)="onGenerateAgenda()"
+            (onClick)="onGenerateAgenda(aiPopover)"
             data-testid="composer-agenda-ai-generate" />
         </div>
       </div>
-    }
+    </p-popover>
 
     <lfx-textarea
       [form]="form()"

@@ -8,33 +8,25 @@
   [attr.data-testid]="testIdPrefix()">
   @for (row of rows(); track row.section.id) {
     @if (compact()) {
-      <!-- Locked chips are greyed by surface rather than opacity: they stay keyboard-reachable, so the label has to stay legible -->
       <button
         type="button"
         class="flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
         [ngClass]="{
-          'border-blue-700 bg-blue-700 text-white': row.active,
-          'border-blue-200 bg-white text-blue-700': row.complete,
-          'border-gray-200 bg-white text-gray-600': !row.active && !row.complete && !row.locked,
-          'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-600': row.locked,
+          'border-blue-700 bg-blue-700 text-white cursor-pointer': row.active,
+          'border-blue-200 bg-white text-blue-700 cursor-pointer': row.complete,
+          'border-gray-200 bg-white text-gray-600 cursor-pointer': !row.active && !row.complete && row.reachable,
+          'border-gray-200 bg-white text-gray-400 cursor-default': !row.active && !row.complete && !row.reachable,
         }"
-        [attr.aria-disabled]="row.locked ? 'true' : null"
         [attr.aria-current]="row.active ? activeChipAriaCurrent() : null"
+        [attr.aria-disabled]="row.reachable ? null : 'true'"
         [attr.data-active-chip]="row.active ? 'true' : null"
         [attr.data-testid]="testIdPrefix() + '-' + row.section.id"
         (click)="onSelect(row)">
-        @if (row.complete) {
-          <i class="fa-light fa-check" aria-hidden="true"></i>
-        } @else {
-          <i [ngClass]="row.section.icon" aria-hidden="true"></i>
-        }
+        <i [ngClass]="row.section.icon" aria-hidden="true"></i>
         <span class="whitespace-nowrap">{{ row.section.label }}</span>
         @if (row.needsAttention) {
           <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" [attr.data-testid]="testIdPrefix() + '-attention-' + row.section.id"></span>
           <span class="sr-only">Required fields still missing</span>
-        }
-        @if (row.locked) {
-          <span class="sr-only">Complete earlier sections first</span>
         }
       </button>
     } @else if (isEditMode()) {
@@ -53,52 +45,43 @@
         }
       </button>
     } @else {
-      <!-- Locked rows are greyed by surface rather than opacity: they stay keyboard-reachable, so their text
-           has to stay legible, and the tint is what separates them from a row that just isn't done yet -->
+      <!-- Create-mode stepper: the section's own icon throughout — blue once done, filled while active,
+           gray while still ahead. Sections past the frontier are inert, matching the footer's ordering -->
       <button
         type="button"
-        class="group relative flex items-start gap-3 rounded-md py-2 pl-1 pr-3 text-left"
-        [ngClass]="row.locked ? 'cursor-not-allowed bg-gray-50' : 'cursor-pointer'"
-        [attr.aria-disabled]="row.locked ? 'true' : null"
+        class="group relative flex items-center gap-3 rounded-md py-2 pl-1 pr-2 text-left"
+        [ngClass]="row.reachable ? 'cursor-pointer' : 'cursor-default'"
         [attr.aria-current]="row.active ? 'step' : null"
+        [attr.aria-disabled]="row.reachable ? null : 'true'"
         [attr.data-testid]="'meeting-composer-rail-' + row.section.id"
         (click)="onSelect(row)">
         <span class="relative flex w-8 shrink-0 justify-center self-stretch">
           @if (!row.isLast) {
-            <span
-              class="absolute left-1/2 top-8 h-full w-0.5 -translate-x-1/2"
-              [ngClass]="row.lineBelowComplete ? 'bg-blue-600' : 'bg-gray-200'"
-              aria-hidden="true"></span>
+            <span class="absolute left-1/2 top-8 h-full w-px -translate-x-1/2 bg-gray-200" aria-hidden="true"></span>
           }
           <span
-            class="relative z-10 flex h-8 w-8 items-center justify-center rounded-full border text-xs"
+            class="relative z-10 flex h-7 w-7 items-center justify-center rounded-full border-[1.5px] text-xs"
             [ngClass]="{
               'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-50': row.active,
               'border-blue-600 bg-white text-blue-600': row.complete,
-              'border-gray-200 bg-white text-gray-400': !row.active && !row.complete && !row.locked,
-              'border-gray-200 bg-gray-100 text-gray-600': row.locked,
+              'border-gray-200 bg-white text-gray-400': !row.active && !row.complete,
             }">
-            @if (row.complete) {
-              <i class="fa-light fa-check" aria-hidden="true"></i>
-            } @else {
-              <i [ngClass]="row.section.icon" aria-hidden="true"></i>
-            }
+            <i [ngClass]="row.section.icon" aria-hidden="true"></i>
           </span>
         </span>
 
-        <span class="flex min-w-0 flex-col gap-0.5 pt-1.5">
-          <span class="flex items-center gap-1.5 text-sm font-medium" [ngClass]="row.active ? 'text-gray-900' : 'text-gray-600'">
-            <span class="truncate">{{ row.section.label }}</span>
-            @if (row.needsAttention) {
-              <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" [attr.data-testid]="'meeting-composer-rail-attention-' + row.section.id"></span>
-              <span class="sr-only">Required fields still missing</span>
-            }
-          </span>
-          @if (row.locked) {
-            <!-- The only text saying why the row won't respond, and the row stays keyboard-reachable, so it
-                 carries no opacity and sits at `gray-600` on the row's `gray-50` surface (7.2:1) rather than
-                 the decorative `gray-400` it used to use -->
-            <span class="text-xs text-gray-600">Complete earlier sections first</span>
+        <span
+          class="flex min-w-0 flex-1 items-center gap-1.5 text-sm font-medium"
+          [ngClass]="{
+            'text-blue-600': row.active,
+            'text-gray-900': !row.active && row.complete,
+            'text-gray-600': !row.active && !row.complete && row.reachable,
+            'text-gray-400': !row.active && !row.complete && !row.reachable,
+          }">
+          <span class="truncate">{{ row.section.label }}</span>
+          @if (row.needsAttention) {
+            <span class="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" [attr.data-testid]="'meeting-composer-rail-attention-' + row.section.id"></span>
+            <span class="sr-only">Required fields still missing</span>
           }
         </span>
       </button>

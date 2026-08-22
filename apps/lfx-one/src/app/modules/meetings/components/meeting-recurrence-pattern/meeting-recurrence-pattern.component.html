@@ -1,144 +1,116 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="border border-gray-200 rounded-lg p-4">
-  <!-- Header -->
-  <div class="mb-4">
-    <p class="text-neutral-950 mb-1">Custom Recurrence Pattern</p>
-    <p class="text-sm text-gray-600">Configure a custom recurring pattern for this meeting</p>
+<!-- No nested card or heading: this panel only ever renders under the "Custom" cadence chip, inside the
+     recurring card that already frames and titles it. A rule stands in for the border it used to draw. -->
+<div class="flex flex-col gap-4 border-t border-gray-200 pt-3" [formGroup]="recurrenceForm()">
+  <!-- Interval -->
+  <div class="flex flex-col gap-1.5">
+    <span class="text-sm font-medium text-gray-900">Repeat every <span class="text-red-500">*</span></span>
+
+    <div class="flex flex-wrap items-center gap-2">
+      <lfx-input-number [form]="recurrenceForm()" control="repeat_interval" placeholder="1" styleClass="w-20" data-testid="recurrence-interval-input" />
+      <lfx-select [form]="form()" control="patternTypeUI" [options]="patternTypeOptions" styleClass="min-w-24" data-testid="recurrence-pattern-type-select" />
+    </div>
   </div>
 
-  <!-- Form Content -->
-  <div class="flex flex-col gap-4" [formGroup]="recurrenceForm()">
-    <!-- Section 1: Pattern Selection -->
-    <div class="border-b border-gray-100 pb-4">
-      <label class="block text-neutral-950 mb-2">Repeat Pattern</label>
-
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-sm text-gray-600">Repeat every</span>
-
-        <lfx-input-number [form]="recurrenceForm()" control="repeat_interval" placeholder="1" styleClass="w-20" data-testid="recurrence-interval-input">
-        </lfx-input-number>
-
-        <lfx-select [form]="form()" control="patternTypeUI" [options]="patternTypeOptions" styleClass="min-w-24" data-testid="recurrence-pattern-type-select">
-        </lfx-select>
+  <!-- Weekly Pattern Details -->
+  @if (patternType() === 'weekly') {
+    <div class="flex flex-col gap-1.5">
+      <span id="recurrence-weekly-label" class="text-sm font-medium text-gray-900">Repeat on</span>
+      <!-- Wrapping pills rather than a 7-column grid: the same chip shape as the duration and cadence
+           rows above, and the days stay legible in the quick dialog's narrow schedule column. -->
+      <div role="group" aria-labelledby="recurrence-weekly-label" class="flex flex-wrap gap-2">
+        @for (day of daysOfWeek; track day.value; let i = $index) {
+          <label [class]="isWeeklyDaySelected(i) ? chipSelectedClass : chipUnselectedClass" [attr.data-testid]="'recurrence-day-' + day.label.toLowerCase()">
+            <input type="checkbox" [checked]="isWeeklyDaySelected(i)" (change)="onWeeklyDayChange(i, $event)" class="sr-only" />
+            <span>{{ day.label }}</span>
+          </label>
+        }
       </div>
     </div>
+  }
 
-    <!-- Section 2: Pattern Details -->
-    <div class="border-b border-gray-100 pb-4">
-      <label class="block text-neutral-950 mb-2">Pattern Details</label>
-
-      <!-- Weekly Pattern Details -->
-      @if (patternType() === 'weekly') {
-        <div class="flex flex-col gap-3">
-          <p class="text-sm text-gray-600 mb-2">Repeat on:</p>
-          <div class="grid grid-cols-7 gap-2">
-            @for (day of daysOfWeek; track day.value; let i = $index) {
-              <label
-                class="flex flex-col items-center p-2 border border-gray-200 rounded-md cursor-pointer transition-colors hover:bg-gray-50"
-                [class.bg-blue-50]="isWeeklyDaySelected(i)"
-                [class.border-blue-300]="isWeeklyDaySelected(i)"
-                [attr.data-testid]="'recurrence-day-' + day.label.toLowerCase()">
-                <input type="checkbox" [checked]="isWeeklyDaySelected(i)" (change)="onWeeklyDayChange(i, $event)" class="sr-only" />
-                <span class="text-xs font-medium text-gray-700">{{ day.label }}</span>
-              </label>
-            }
-          </div>
-        </div>
-      }
-
-      <!-- Monthly Pattern Details -->
-      @if (patternType() === 'monthly') {
-        <div class="flex flex-col gap-4">
-          <div class="flex flex-col gap-2">
-            @for (option of monthlyTypeOptions; track option.value) {
-              <label class="flex items-center gap-2 cursor-pointer" [attr.data-testid]="'recurrence-monthly-' + option.value">
-                <lfx-radio-button [form]="recurrenceForm()" control="monthlyTypeUI" [value]="option.value" name="monthlyTypeUI"> </lfx-radio-button>
-                <span class="text-sm text-gray-600">{{ option.label }}</span>
-              </label>
-            }
-          </div>
-
-          <!-- Day of Month Option -->
-          @if (monthlyType() === 'dayOfMonth') {
-            <div class="flex items-center gap-2 flex-wrap pl-6">
-              <span class="text-sm text-gray-600">On day</span>
-              <lfx-input-number [form]="recurrenceForm()" control="monthly_day" placeholder="1" styleClass="w-16" data-testid="recurrence-monthly-day">
-              </lfx-input-number>
-              <span class="text-sm text-gray-600">of the month</span>
-            </div>
-          }
-
-          <!-- Day of Week Option -->
-          @if (monthlyType() === 'dayOfWeek') {
-            <div class="flex items-center gap-2 flex-wrap pl-6">
-              <span class="text-sm text-gray-600">On the</span>
-              <lfx-select
-                [form]="recurrenceForm()"
-                control="monthly_week"
-                [options]="weeklyOrdinals"
-                styleClass="min-w-16"
-                data-testid="recurrence-monthly-week">
-              </lfx-select>
-              <lfx-select
-                [form]="recurrenceForm()"
-                control="monthly_week_day"
-                [options]="daysOfWeek"
-                [optionLabel]="'fullLabel'"
-                [optionValue]="'value'"
-                styleClass="min-w-24"
-                data-testid="recurrence-monthly-weekday">
-              </lfx-select>
-            </div>
-          }
-        </div>
-      }
-
-      <!-- Daily Pattern (no additional details needed) -->
-      @if (patternType() === 'daily') {
-        <div>
-          <p class="text-sm text-gray-600 italic">Meeting will repeat every {{ recurrenceForm().get('repeat_interval')?.value || 1 }} day(s)</p>
-        </div>
-      }
-    </div>
-
-    <!-- Section 3: End Condition -->
-    <div>
-      <label class="block text-neutral-950 mb-2">End Condition</label>
-
-      <div class="flex flex-col gap-2 mb-4">
-        @for (option of endTypeOptions; track option.value) {
-          <label class="flex items-center gap-2 cursor-pointer" [attr.data-testid]="'recurrence-end-' + option.value">
-            <lfx-radio-button [form]="recurrenceForm()" control="endTypeUI" [value]="option.value" name="endTypeUI"> </lfx-radio-button>
-            <span class="text-sm text-gray-600">{{ option.label }}</span>
+  <!-- Monthly Pattern Details -->
+  @if (patternType() === 'monthly') {
+    <div class="flex flex-col gap-1.5">
+      <span id="recurrence-monthly-label" class="text-sm font-medium text-gray-900">Repeat on</span>
+      <div role="radiogroup" aria-labelledby="recurrence-monthly-label" class="flex flex-wrap gap-2">
+        @for (option of monthlyTypeOptions; track option.value) {
+          <label [class]="monthlyType() === option.value ? chipSelectedClass : chipUnselectedClass" [attr.data-testid]="'recurrence-monthly-' + option.value">
+            <input
+              type="radio"
+              name="recurrence-monthly-type"
+              class="sr-only"
+              [checked]="monthlyType() === option.value"
+              (change)="selectMonthlyType(option.value)" />
+            <span>{{ option.label }}</span>
           </label>
         }
       </div>
 
-      <!-- End Date Option -->
-      @if (endType() === 'date') {
-        <div class="pl-6">
-          <lfx-calendar
-            [form]="recurrenceForm()"
-            control="end_date_time"
-            placeholder="Select end date"
-            [minDate]="minEndDate()"
-            styleClass="max-w-xs"
-            data-testid="recurrence-end-date">
-          </lfx-calendar>
+      <!-- Day of Month Option -->
+      @if (monthlyType() === 'dayOfMonth') {
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-sm text-gray-600">On day</span>
+          <lfx-input-number [form]="recurrenceForm()" control="monthly_day" placeholder="1" styleClass="w-16" data-testid="recurrence-monthly-day" />
+          <span class="text-sm text-gray-600">of the month</span>
         </div>
       }
 
-      <!-- End Occurrences Option -->
-      @if (endType() === 'occurrences') {
-        <div class="flex items-center gap-2 flex-wrap pl-6">
-          <span class="text-sm text-gray-600">After</span>
-          <lfx-input-number [form]="recurrenceForm()" control="end_times" placeholder="10" styleClass="w-20" data-testid="recurrence-end-occurrences">
-          </lfx-input-number>
-          <span class="text-sm text-gray-600">occurrence(s)</span>
+      <!-- Day of Week Option -->
+      @if (monthlyType() === 'dayOfWeek') {
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-sm text-gray-600">On the</span>
+          <lfx-select [form]="recurrenceForm()" control="monthly_week" [options]="weeklyOrdinals" styleClass="min-w-16" data-testid="recurrence-monthly-week" />
+          <lfx-select
+            [form]="recurrenceForm()"
+            control="monthly_week_day"
+            [options]="daysOfWeek"
+            [optionLabel]="'fullLabel'"
+            [optionValue]="'value'"
+            styleClass="min-w-24"
+            data-testid="recurrence-monthly-weekday" />
         </div>
       }
     </div>
+  }
+
+  <!-- Daily Pattern (no additional details needed) -->
+  @if (patternType() === 'daily') {
+    <p class="text-sm italic text-gray-600">Meeting will repeat every {{ recurrenceForm().get('repeat_interval')?.value || 1 }} day(s)</p>
+  }
+
+  <!-- End Condition -->
+  <div class="flex flex-col gap-1.5">
+    <span id="recurrence-end-label" class="text-sm font-medium text-gray-900">End condition</span>
+    <div role="radiogroup" aria-labelledby="recurrence-end-label" class="flex flex-wrap gap-2">
+      @for (option of endTypeOptions; track option.value) {
+        <label [class]="endType() === option.value ? chipSelectedClass : chipUnselectedClass" [attr.data-testid]="'recurrence-end-' + option.value">
+          <input type="radio" name="recurrence-end-type" class="sr-only" [checked]="endType() === option.value" (change)="selectEndType(option.value)" />
+          <span>{{ option.label }}</span>
+        </label>
+      }
+    </div>
+
+    <!-- End Date Option -->
+    @if (endType() === 'date') {
+      <lfx-calendar
+        [form]="recurrenceForm()"
+        control="end_date_time"
+        placeholder="Select end date"
+        [minDate]="minEndDate()"
+        styleClass="max-w-xs"
+        data-testid="recurrence-end-date" />
+    }
+
+    <!-- End Occurrences Option -->
+    @if (endType() === 'occurrences') {
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-sm text-gray-600">After</span>
+        <lfx-input-number [form]="recurrenceForm()" control="end_times" placeholder="10" styleClass="w-20" data-testid="recurrence-end-occurrences" />
+        <span class="text-sm text-gray-600">occurrence(s)</span>
+      </div>
+    }
   </div>
 </div>
