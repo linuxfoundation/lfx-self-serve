@@ -4,7 +4,6 @@ description: Browse LFX events and manage your attendance in LFX Self Serve.
 audience: [all]
 product_area: Events
 tags: [events, attendance, conferences, browse]
-last_generated: 2026-05-22
 last_updated: 2026-06-22
 intercom_collection: Events
 ---

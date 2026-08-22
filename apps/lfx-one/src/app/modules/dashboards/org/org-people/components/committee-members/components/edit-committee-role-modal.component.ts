@@ -12,6 +12,7 @@ import { take } from 'rxjs';
 
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 
 /** Spec 027 US4 — reassign a single Membership-Entitlement committee seat to a new holder. */
 @Component({
@@ -25,6 +26,7 @@ export class EditCommitteeRoleModalComponent {
   private readonly directory = inject(OrgPeopleDirectoryStateService);
   private readonly dialogConfig = inject<DynamicDialogConfig<EditCommitteeRoleDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
+  private readonly drawer = inject(PersonDetailDrawerService);
 
   protected readonly assignment: CommitteeMemberAssignment | null = this.dialogConfig.data?.assignment ?? null;
   private readonly orgUid: string = this.dialogConfig.data?.orgUid ?? '';
@@ -191,6 +193,19 @@ export class EditCommitteeRoleModalComponent {
   protected onCancel(): void {
     if (this.isSaving()) return;
     this.dialogRef.close(null);
+  }
+
+  protected onSeatPersonClick(): void {
+    if (!this.assignment) return;
+    const { person } = this.assignment;
+    this.drawer.open({
+      name: person.fullName,
+      title: person.jobTitle,
+      initials: person.initials,
+      avatarUrl: person.avatarUrl ?? null,
+      avatarColorClass: 'bg-purple-500',
+      email: person.email,
+    });
   }
 
   private initExcludedEmails(): Set<string> {

@@ -121,19 +121,23 @@
                             } @else {
                               <div class="flex flex-col gap-2">
                                 @for (person of contact.people; track person.personId) {
-                                  <div class="flex items-center gap-3" [attr.data-testid]="'membership-detail-key-contacts-person-' + person.personId">
+                                  <button
+                                    type="button"
+                                    class="flex min-w-0 items-center gap-3 bg-transparent p-0 text-left"
+                                    [attr.data-testid]="'membership-detail-key-contacts-person-' + person.personId"
+                                    (click)="onPersonClick(person)">
                                     <lfx-person-avatar
                                       [avatarUrl]="person.avatarUrl"
                                       [name]="person.fullName"
                                       [initials]="person.initials"
                                       [identity]="person.email" />
                                     <div class="flex flex-col">
-                                      <span class="text-sm font-medium text-gray-900">{{ person.fullName }}</span>
+                                      <span class="text-sm font-medium text-gray-900 hover:underline">{{ person.fullName }}</span>
                                       @if (person.jobTitle) {
                                         <span class="text-xs text-gray-500">{{ person.jobTitle }}</span>
                                       }
                                     </div>
-                                  </div>
+                                  </button>
                                 }
                               </div>
                             }
@@ -206,3 +210,5 @@
     }
   }
 </div>
+
+<lfx-person-detail-drawer />

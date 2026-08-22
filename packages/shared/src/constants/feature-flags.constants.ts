@@ -5,6 +5,17 @@ export const ORG_LENS_ENABLED_FLAG = 'org-lens-enabled';
 export const AKRITES_ENABLED_FLAG = 'akrites-enabled';
 export const MKTG_OS_AGENTS_ENABLED_FLAG = 'mktg-os-agents-enabled';
 export const MY_CLAS_ENABLED_FLAG = 'my-clas-enabled';
+/**
+ * Dark-launch gate for the M2 My CLAs overlay (#1738) — Sign CLA, Status column,
+ * kebab/actions, and Signed as. The M1 list (project / type / signed / document) stays
+ * when this is off. Default false: LaunchDarkly targeting (DEV on for everyone,
+ * PROD team-only until testing) is the rollout switch, not the code default.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not
+ * gate the BFF; hiding Sign CLA is how the write path stays unreachable from
+ * this page.
+ */
+export const MY_CLAS_M2_ENABLED_FLAG = 'my-clas-m2-enabled';
 export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
 /** Browser-only flag for the Org Lens ROI page — it gates no endpoint. */
 export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
