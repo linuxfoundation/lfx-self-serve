@@ -5,15 +5,19 @@ import type { CommitteeServiceOrgSeat, OrgLensGroupsResponse, OrgLensGroupSummar
 import { isBoardCategory } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
+import { enrichFoundationNames } from './committee-seat-assignment.mapper';
 import { logger } from './logger.service';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
+import { ProjectService } from './project.service';
 
 /** Aggregates org seats (non-board) by committee, producing the Groups page roster. */
 export class OrgLensGroupsService {
   private readonly boardCommitteeService: OrgLensBoardCommitteeService;
+  private readonly projectService: ProjectService;
 
   public constructor() {
     this.boardCommitteeService = new OrgLensBoardCommitteeService();
+    this.projectService = new ProjectService();
   }
 
   public async getGroups(req: Request, orgUid: string): Promise<OrgLensGroupsResponse> {
@@ -22,9 +26,11 @@ export class OrgLensGroupsService {
     // Only non-board committees belong on the Groups page (boards live on the Memberships page).
     const nonBoardSeats = seats.filter((s) => !isBoardCategory(s.committee_category));
 
+    const foundationNames = await enrichFoundationNames(req, nonBoardSeats, this.projectService);
+
     const committeeMap = this.aggregateByCommittee(nonBoardSeats);
 
-    const groups: OrgLensGroupSummary[] = Array.from(committeeMap.entries()).map(([uid, groupSeats]) => this.toGroupSummary(uid, groupSeats));
+    const groups: OrgLensGroupSummary[] = Array.from(committeeMap.entries()).map(([uid, groupSeats]) => this.toGroupSummary(uid, groupSeats, foundationNames));
 
     // Primary sort: most org members first; secondary: alphabetical by name.
     groups.sort((a, b) => b.org_seat_count - a.org_seat_count || a.name.localeCompare(b.name));
@@ -51,7 +57,7 @@ export class OrgLensGroupsService {
     return map;
   }
 
-  private toGroupSummary(uid: string, seats: CommitteeServiceOrgSeat[]): OrgLensGroupSummary {
+  private toGroupSummary(uid: string, seats: CommitteeServiceOrgSeat[], foundationNames: Map<string, string>): OrgLensGroupSummary {
     // aggregateByCommittee only adds to the map on push, so this is always true — guard is defensive.
     if (seats.length === 0) {
       return { uid, name: 'Unknown group', category: '', org_seat_count: 0 };
@@ -64,12 +70,15 @@ export class OrgLensGroupsService {
       seenEmails.add((s.email ?? '').trim().toLowerCase());
     }
 
+    const projectName = foundationNames.get(first.project_uid ?? '') || first.project_slug;
+
     return {
       uid,
       name: first.committee_name,
       category: first.committee_category,
       ...(first.project_uid ? { project_uid: first.project_uid } : {}),
       ...(first.project_slug ? { project_slug: first.project_slug } : {}),
+      ...(projectName ? { project_name: projectName } : {}),
       org_seat_count: seenEmails.size,
     };
   }
