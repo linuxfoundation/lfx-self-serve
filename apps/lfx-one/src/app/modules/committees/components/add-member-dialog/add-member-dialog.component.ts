@@ -447,15 +447,25 @@ export class AddMemberDialogComponent {
     if (err.status === 409) {
       return 'already a member';
     }
-    return extractErrorMessage(err, 'add failed');
+    return this.asSentenceFragment(extractErrorMessage(err, 'add failed'));
   }
 
   private inviteFailureReason(err: HttpErrorResponse): string {
     if (err.status === 409) {
       return 'already invited or a member';
     }
-    const upstream = typeof err.error?.message === 'string' ? err.error.message : null;
-    return upstream ?? 'invite failed';
+    return this.asSentenceFragment(extractErrorMessage(err, 'invite failed'));
+  }
+
+  /**
+   * Both reasons above are interpolated mid-sentence and the caller supplies the period
+   * (`Could not invite ${email}: ${reason}.`). The hard-coded reasons are written as fragments to suit
+   * that, but a server message is a whole sentence and usually ends in one — so without this a toast
+   * reads "Email address is required..". Only a trailing period is dropped; a "?" or "!" is left alone
+   * on the grounds that a server sentence ending in either is deliberate enough to keep.
+   */
+  private asSentenceFragment(reason: string): string {
+    return reason.endsWith('.') ? reason.slice(0, -1) : reason;
   }
 
   private organizationFormValue(): {

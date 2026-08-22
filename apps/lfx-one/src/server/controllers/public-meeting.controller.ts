@@ -5,6 +5,7 @@ import { Meeting } from '@lfx-one/shared';
 import { MEETING_PASSWORD_HEADER, PUBLIC_REGISTRATION_FIELD_LABELS, PUBLIC_REGISTRATION_FIELD_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import { CreateMeetingRegistrantRequest, MeetingOccurrenceSummary, MeetingRegistrant, PublicMeetingOccurrencesResponse } from '@lfx-one/shared/interfaces';
+import { joinAsSentenceList } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -534,11 +535,13 @@ export class PublicMeetingController {
           Object.fromEntries(overLength.map((field) => [field, `Must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer`])),
           // The cause goes in the top-level message, not only in `errors[]`: the one consumer of this
           // endpoint shows the top-level message — serialized as the body's `error` key, since
-          // `BaseApiError.toResponse` emits no `message` — and discards the field array. A generic
-          // "validation failed" here would leave the registrant with no idea which field to shorten.
+          // `BaseApiError.toResponse` emits no `message`. It prefers the field array only when that
+          // message is one `ServiceValidationError` built itself around a wire key, which this one is
+          // not. A generic "validation failed" here would leave the registrant with no idea which
+          // field to shorten.
           //
           // Labels rather than wire keys, because this string is read by someone looking at a form.
-          `${overLength.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]).join(' and ')} must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer.`,
+          `${joinAsSentenceList(overLength.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]))} must be ${PUBLIC_REGISTRATION_FIELD_MAX_LENGTH} characters or fewer.`,
           {
             operation: 'register_for_public_meeting',
             service: 'public_meeting_controller',
@@ -560,10 +563,9 @@ export class PublicMeetingController {
       const missing = (['meeting_id', 'email', 'first_name', 'last_name'] as const).filter((field) => !registrantData[field]);
 
       if (missing.length > 0) {
-        const labels = missing.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]);
         const validationError = ServiceValidationError.fromFieldErrors(
-          Object.fromEntries(missing.map((field, index) => [field, `${labels[index]} is required`])),
-          `${labels.join(' and ')} ${missing.length > 1 ? 'are' : 'is'} required.`,
+          Object.fromEntries(missing.map((field) => [field, `${PUBLIC_REGISTRATION_FIELD_LABELS[field]} is required`])),
+          `${joinAsSentenceList(missing.map((field) => PUBLIC_REGISTRATION_FIELD_LABELS[field]))} ${missing.length > 1 ? 'are' : 'is'} required.`,
           {
             operation: 'register_for_public_meeting',
             service: 'public_meeting_controller',

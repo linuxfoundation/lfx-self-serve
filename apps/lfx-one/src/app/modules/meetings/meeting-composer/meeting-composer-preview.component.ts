@@ -3,12 +3,10 @@
 
 import { NgClass } from '@angular/common';
 import { Component, computed, inject, type Signal } from '@angular/core';
-import type { FormArray } from '@angular/forms';
 import { MEETING_COMPOSER_PREVIEW_FEATURES, MEETING_PLATFORMS, MEETING_TYPE_OPTIONS, MEETING_VISIBILITY_OPTIONS } from '@lfx-one/shared/constants';
 import type { MeetingVisibility } from '@lfx-one/shared/enums';
-import type { ImportantLinkFormValue, MeetingComposerPreviewDateChip, MeetingComposerPreviewRow } from '@lfx-one/shared/interfaces';
+import type { MeetingComposerPreviewDateChip, MeetingComposerPreviewRow } from '@lfx-one/shared/interfaces';
 import { buildRecurrenceSummary, convertRecurrenceToPattern } from '@lfx-one/shared/utils';
-import { SkeletonModule } from 'primeng/skeleton';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerService } from './meeting-composer.service';
@@ -16,14 +14,15 @@ import { MeetingComposerService } from './meeting-composer.service';
 /**
  * Live preview of the meeting being created (GH-1459).
  * @description Create mode only — in edit mode the meeting already exists and the sections themselves
- * show its saved state. Several controls are pre-filled with defaults, so a row only resolves once its
- * owning section has been visited; until then it renders as a skeleton bar rather than presenting a
- * default as a choice the organizer made. Details & Access is where the composer opens, so its rows
- * resolve as soon as they have a value.
+ * show its saved state. Rows carry no field labels: an icon plus the chosen value, or a bar while the
+ * value is still unknown. Several controls are pre-filled with defaults, so a row only resolves once
+ * its owning section has been visited (or, for recurrence, is complete) — until then it shows the bar
+ * rather than presenting a default as a choice the organizer made. Details & Access is where the
+ * composer opens, so its rows resolve as soon as they have a value.
  */
 @Component({
   selector: 'lfx-meeting-composer-preview',
-  imports: [NgClass, SkeletonModule],
+  imports: [NgClass],
   templateUrl: './meeting-composer-preview.component.html',
 })
 export class MeetingComposerPreviewComponent {
@@ -35,12 +34,10 @@ export class MeetingComposerPreviewComponent {
   protected readonly whenSummary: Signal<string | null> = this.initWhenSummary();
   protected readonly typeLabel: Signal<string | null> = this.initTypeLabel();
   protected readonly visibility: Signal<MeetingComposerPreviewRow | null> = this.initVisibility();
-  protected readonly restricted: Signal<boolean> = this.initRestricted();
-  protected readonly recurrenceSummary: Signal<string | null> = this.initRecurrenceSummary();
+  protected readonly recurrenceLabel: Signal<string | null> = this.initRecurrenceLabel();
   protected readonly platformLabel: Signal<string | null> = this.initPlatformLabel();
   protected readonly features: Signal<MeetingComposerPreviewRow[]> = this.initFeatures();
-  protected readonly guestCount: Signal<number> = this.initGuestCount();
-  protected readonly resourceCount: Signal<number> = this.initResourceCount();
+  protected readonly guestLabel: Signal<string | null> = this.initGuestLabel();
 
   private initDateChip(): Signal<MeetingComposerPreviewDateChip> {
     return computed(() => {
@@ -65,13 +62,19 @@ export class MeetingComposerPreviewComponent {
     });
   }
 
+  /** Date alone once it is picked, then `date · time` — duration and timezone stay out of this line. */
   private initWhenSummary(): Signal<string | null> {
     return computed(() => {
       const startDate = this.startDate();
-      const startTime = startDate ? ((this.controlValue('startTime') as string | null) ?? '') : '';
-      const date = startDate ? startDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
 
-      return [date, startTime].filter(Boolean).join(' · ') || null;
+      if (!startDate) {
+        return null;
+      }
+
+      const date = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const startTime = (this.controlValue('startTime') as string | null) ?? '';
+
+      return [date, startTime].filter(Boolean).join(' · ');
     });
   }
 
@@ -93,18 +96,25 @@ export class MeetingComposerPreviewComponent {
         return null;
       }
 
-      return { label: option.label, icon: option.info.icon };
+      return { label: option.label, icon: option.info.icon, color: option.info.color };
     });
   }
 
-  private initRestricted(): Signal<boolean> {
-    return computed(() => this.controlValue('restricted') === true);
-  }
-
-  private initRecurrenceSummary(): Signal<string | null> {
+  /**
+   * Recurrence row, or `null` while Date & Schedule is still incomplete.
+   * @description "Does not repeat" is a real answer, but only once the organizer has actually settled
+   * the schedule — showing it against an empty section would be stating the default back at them.
+   */
+  private initRecurrenceLabel(): Signal<string | null> {
     return computed(() => {
-      if (this.controlValue('isRecurring') !== true) {
+      this.formService.revision();
+
+      if (!this.formService.isSectionValid('date-schedule')) {
         return null;
+      }
+
+      if (this.controlValue('isRecurring') !== true) {
+        return 'Does not repeat';
       }
 
       const recurrence = this.formService.recurrencePayload();
@@ -143,19 +153,16 @@ export class MeetingComposerPreviewComponent {
     );
   }
 
-  private initGuestCount(): Signal<number> {
-    return computed(() => this.formService.guests().filter((guest) => guest.state !== 'deleted').length);
-  }
-
-  /** Documents and links staged for upload. Saved attachments are ignored — nothing is saved yet in create mode. */
-  private initResourceCount(): Signal<number> {
+  /** `null` at zero guests — the design shows a bar there rather than "0 invited". */
+  private initGuestLabel(): Signal<string | null> {
     return computed(() => {
-      this.formService.revision();
+      const count = this.formService.guests().filter((guest) => guest.state !== 'deleted').length;
 
-      const pendingAttachments = (this.formService.form().get('attachments')?.value as unknown[] | null) ?? [];
-      const links = ((this.formService.form().get('important_links') as FormArray | null)?.value ?? []) as ImportantLinkFormValue[];
+      if (count === 0) {
+        return null;
+      }
 
-      return pendingAttachments.length + links.filter((link) => !!link.url?.trim()).length;
+      return `${count} ${count === 1 ? 'guest' : 'guests'} invited`;
     });
   }
 

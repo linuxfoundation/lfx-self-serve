@@ -41,6 +41,8 @@ export class ComposerDetailsAccessComponent {
   public readonly form = input.required<FormGroup>();
   /** Quick create renders these fields under its own dialog header, where a section heading only repeats it. */
   public readonly showHeading = input(true);
+  /** Quick create renders the type as its own chip row above these fields, so the select would duplicate it. */
+  public readonly showTypeSelect = input(true);
   /**
    * Hint text for a title that was written by something other than the organizer.
    * @description Passed in rather than derived here because only quick create prefills from the meeting
@@ -54,6 +56,21 @@ export class ComposerDetailsAccessComponent {
   protected readonly youtubeTitleLimit = YOUTUBE_MAX_MEETING_TITLE_LENGTH;
   protected readonly youtubeAmberThreshold = YOUTUBE_MEETING_TITLE_WARNING_LENGTH;
 
+  /**
+   * Icon chip styling for the visibility / join-restriction rows.
+   * @description Unselected reads as a muted affordance; the selected row fills the chip with the option's
+   * own colour (set inline, since the palette is per-option) and flips the glyph to white, so the answer is
+   * legible without reading the radio. Whole class strings — Tailwind only emits what it can see literally.
+   */
+  protected readonly iconChipClass = 'bg-gray-100 text-gray-400';
+  protected readonly iconChipSelectedClass = 'text-white';
+
+  // FormGroup state isn't reactive, so both read `revision()` before touching the control.
+  protected readonly selectedVisibility: Signal<string | null> = this.initSelectedVisibility();
+  protected readonly selectedRestricted: Signal<boolean | null> = this.initSelectedRestricted();
+  /** Drives the option rows' own check mark, which sits on the right rather than PrimeNG's left tick. */
+  protected readonly selectedMeetingType: Signal<MeetingType | null> = this.initSelectedMeetingType();
+
   protected readonly titleLength: Signal<number> = this.initTitleLength();
   /**
    * Ids the title input points at through `aria-describedby`.
@@ -64,6 +81,27 @@ export class ComposerDetailsAccessComponent {
   protected readonly titleDescribedBy: Signal<string | null> = this.initTitleDescribedBy();
   private readonly hydratedMeetingType: Signal<MeetingType | null> = this.initHydratedMeetingType();
   protected readonly meetingTypeOptions: Signal<CardSelectorOption<MeetingType>[]> = this.initMeetingTypeOptions();
+
+  private initSelectedVisibility(): Signal<string | null> {
+    return computed(() => {
+      this.formService.revision();
+      return (this.form().get('visibility')?.value as string | null) ?? null;
+    });
+  }
+
+  private initSelectedMeetingType(): Signal<MeetingType | null> {
+    return computed(() => {
+      this.formService.revision();
+      return (this.form().get('meeting_type')?.value as MeetingType | null) ?? null;
+    });
+  }
+
+  private initSelectedRestricted(): Signal<boolean | null> {
+    return computed(() => {
+      this.formService.revision();
+      return (this.form().get('restricted')?.value as boolean | null) ?? null;
+    });
+  }
 
   private initTitleLength(): Signal<number> {
     return toSignal(

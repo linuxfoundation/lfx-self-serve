@@ -1,14 +1,14 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6" data-testid="composer-guests">
+<div class="flex flex-col gap-4" data-testid="composer-guests">
   <div class="flex flex-col gap-1">
-    <h2>Invite guests</h2>
+    <h2 class="text-base font-semibold text-gray-900">Invite guests</h2>
     <p class="text-sm text-gray-500">Add key stakeholders and contributors who should participate in this discussion.</p>
   </div>
 
   <!-- Search and add -->
-  <div class="flex flex-col gap-2">
+  <div class="flex flex-col gap-1.5">
     <span class="text-sm font-medium text-gray-900">Search and add guests</span>
     <lfx-user-search
       [form]="quickAddForm"
@@ -64,7 +64,7 @@
         <p class="text-sm text-gray-500">Search for people or add a group to invite everyone at once.</p>
       </div>
     } @else {
-      <div class="flex flex-col gap-2">
+      <div class="flex flex-col gap-1.5">
         <div class="flex flex-wrap items-baseline justify-between gap-2">
           <span class="text-sm font-medium text-gray-900">Invited · {{ guestCount() }}</span>
           <span class="text-xs text-gray-500" data-testid="composer-guests-stats">

@@ -58,10 +58,10 @@
   position="right"
   [modal]="true"
   [showCloseIcon]="true"
-  styleClass="xl:w-[45%] lg:w-[55%] w-full">
+  styleClass="w-[1200px] max-w-full [&_.p-drawer-content]:py-0 [&_.p-drawer-header]:items-center [&_.p-drawer-header]:border-b [&_.p-drawer-header]:border-gray-200 [&_.p-drawer-footer]:border-t [&_.p-drawer-footer]:border-gray-200 [&_.p-drawer-footer]:pt-3">
   <ng-template #header>
-    <div class="flex min-w-0 flex-col" data-testid="meeting-composer-header">
-      <span class="truncate text-lg font-semibold text-gray-900">
+    <div class="flex min-w-0 flex-col justify-center" data-testid="meeting-composer-header">
+      <span class="truncate text-xl font-semibold text-gray-900">
         {{ isEditMode() ? 'Edit meeting' : 'Create meeting' }}
       </span>
       @if (isEditMode() && formService.meeting(); as meeting) {
@@ -70,25 +70,30 @@
     </div>
   </ng-template>
 
+  <!-- The drawer content pane is flush top and bottom (`p-drawer-content:py-0`) and each column carries its
+       own vertical padding instead, so the rule between them runs the full height rather than stopping short
+       of the header and footer. -->
   <div class="flex h-full min-h-0 gap-6">
     <!-- Rail and preview are `lg`-only; below that the compact chip row further down takes over section navigation (GH-1462).
          The column is hidden when the edit-mode fetch failed: there is no form behind the rail, so every row
          would report empty and clicking one would swap a section the organizer can't see. -->
     @if (!formService.meetingLoadFailed()) {
-      <div class="hidden w-[262px] shrink-0 flex-col gap-4 overflow-y-auto lg:flex">
+      <div class="hidden w-[286px] shrink-0 flex-col gap-4 overflow-y-auto py-5 lg:flex lg:border-r lg:border-gray-200 lg:pr-6">
         <lfx-meeting-composer-rail />
 
         @if (!isEditMode()) {
-          <lfx-meeting-composer-preview />
+          <!-- Pushed to the bottom of the column so the preview reads as a summary of the whole form,
+               not as a sixth rail row hanging off the last step -->
+          <lfx-meeting-composer-preview class="mt-auto" />
         }
       </div>
     }
 
     @if (formService.loading()) {
-      <p class="text-sm text-gray-500" data-testid="meeting-composer-loading">Loading meeting…</p>
+      <p class="py-5 text-sm text-gray-500" data-testid="meeting-composer-loading">Loading meeting…</p>
     } @else if (formService.meetingLoadFailed()) {
       <!-- Without this the failed fetch leaves an empty form and a disabled Save with nothing saying why -->
-      <div class="flex min-w-0 flex-1 flex-col items-start gap-3" data-testid="meeting-composer-load-error">
+      <div class="flex min-w-0 flex-1 flex-col items-start gap-3 py-5" data-testid="meeting-composer-load-error">
         <div class="flex flex-col gap-1">
           <span class="text-sm font-semibold text-gray-900">Couldn't load this meeting</span>
           <span class="text-sm text-gray-600">It may have been deleted, or you may not have permission to edit it.</span>
@@ -103,10 +108,14 @@
           (onClick)="formService.retryLoadMeeting()" />
       </div>
     } @else {
-      <div class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-auto">
+      <div class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-auto py-5">
         <!-- Stands in for the hidden rail: where you are, what's done, and what still needs fixing.
              Sticky because it is the only section navigation at this width. -->
-        <div class="sticky top-0 z-10 flex flex-col gap-2 border-b border-gray-200 bg-white pb-3 lg:hidden" data-testid="meeting-composer-compact-progress">
+        <!-- Negative top/margin cancel the column's own `py-5`: the bar covers that band whether it is
+             stuck or not, so content never scrolls through a gap above it. -->
+        <div
+          class="sticky -top-5 z-10 -mt-5 flex flex-col gap-2 border-b border-gray-200 bg-white pb-3 pt-5 lg:hidden"
+          data-testid="meeting-composer-compact-progress">
           <div class="flex items-center gap-2">
             @if (!isEditMode()) {
               <span class="text-xs font-medium text-gray-500">Step {{ activeIndex() + 1 }} of {{ sections.length }}</span>
@@ -146,18 +155,17 @@
   </div>
 
   <ng-template #footer>
-    <div class="flex items-center justify-between gap-2 border-t border-gray-200 pt-3" data-testid="meeting-composer-footer">
-      <lfx-button label="Cancel" severity="secondary" [text]="true" size="small" data-testid="meeting-composer-cancel" (onClick)="composer.close()" />
+    <div class="flex items-center justify-between gap-2" data-testid="meeting-composer-footer">
+      <lfx-button label="Cancel" severity="secondary" [text]="true" data-testid="meeting-composer-cancel" (onClick)="composer.close()" />
 
       <div class="flex items-center gap-2">
         @if (!isEditMode() && activeIndex() > 0) {
-          <lfx-button label="Back" severity="secondary" [outlined]="true" size="small" data-testid="meeting-composer-back" (onClick)="onBack()" />
+          <lfx-button label="Back" severity="secondary" [outlined]="true" data-testid="meeting-composer-back" (onClick)="onBack()" />
         }
 
         @if (isEditMode()) {
           <lfx-button
             label="Save changes"
-            size="small"
             [loading]="formService.submitting()"
             [disabled]="!canSubmit()"
             data-testid="meeting-composer-save"
@@ -165,13 +173,12 @@
         } @else if (isLastSection()) {
           <lfx-button
             label="Create meeting"
-            size="small"
             [loading]="formService.submitting()"
             [disabled]="!canSubmit()"
             data-testid="meeting-composer-create"
             (onClick)="onSubmit()" />
         } @else {
-          <lfx-button label="Next" size="small" [disabled]="!canProceed()" data-testid="meeting-composer-next" (onClick)="onNext()" />
+          <lfx-button label="Next" [disabled]="!canProceed()" data-testid="meeting-composer-next" (onClick)="onNext()" />
         }
       </div>
     </div>

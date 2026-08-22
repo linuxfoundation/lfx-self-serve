@@ -198,7 +198,7 @@ export class MeetingComposerFormService {
     this.loading.set(false);
     this.form.set(this.createMeetingFormGroup());
     this.revision.set(0);
-    this.wireFormSubscriptions();
+    this.wireFormSubscriptions(context.variant === 'quick');
 
     // Create only: the group context pre-fills and locks the committees field. In edit mode the saved
     // meeting owns that field, and locking it to a single committee would drop the others on save.
@@ -211,7 +211,7 @@ export class MeetingComposerFormService {
       this.loadGuests(context.meetingUid);
     }
 
-    // Set after the subscriptions are wired so the type's visibility/restriction defaults still apply.
+    // Set after the subscriptions are wired so quick create's visibility/restriction defaults still apply.
     if (context.mode === 'create' && context.meetingType) {
       this.form().get('meeting_type')?.setValue(context.meetingType);
     }
@@ -676,7 +676,7 @@ export class MeetingComposerFormService {
     );
   }
 
-  private wireFormSubscriptions(): void {
+  private wireFormSubscriptions(appliesTypeDefaults: boolean): void {
     const form = this.form();
 
     this.formSubscriptions.add(form.valueChanges.subscribe(() => this.revision.update((value) => value + 1)));
@@ -715,7 +715,10 @@ export class MeetingComposerFormService {
     // When switching away from Board, reset to public + unrestricted defaults so the
     // user isn't left with Board-level settings silently applied to a non-Board meeting.
     // The user can freely override visibility and restriction after the default is applied.
-    const meetingTypeControl = form.get('meeting_type');
+    //
+    // Quick create only: prefilling from the meeting type is that dialog's whole premise, whereas the
+    // drawer walks every field explicitly and must not move one the organizer hasn't reached yet.
+    const meetingTypeControl = appliesTypeDefaults ? form.get('meeting_type') : null;
     if (meetingTypeControl) {
       let previousType = meetingTypeControl.value as string;
       this.formSubscriptions.add(

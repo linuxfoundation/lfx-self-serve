@@ -19,14 +19,14 @@
       </div>
       <div class="flex-1">
         <div class="flex items-center gap-2 mb-1">
-          <p [ngClass]="{ 'text-neutral-950': !comingSoon(), 'text-gray-400': comingSoon() }">{{ feature().title }}</p>
+          <p class="text-sm font-semibold" [ngClass]="{ 'text-gray-900': !comingSoon(), 'text-gray-400': comingSoon() }">{{ feature().title }}</p>
           @if (comingSoon()) {
             <span class="px-2 py-0.5 bg-gray-200 text-gray-500 text-xs rounded">Coming Soon</span>
           } @else if (feature().recommended) {
             <span class="px-2 py-0.5 bg-blue-100 text-blue-500 text-xs rounded">Recommended</span>
           }
         </div>
-        <p class="text-sm" [ngClass]="{ 'text-gray-600': !comingSoon(), 'text-gray-400': comingSoon() }">{{ feature().description }}</p>
+        <p class="text-xs font-medium" [ngClass]="{ 'text-gray-500': !comingSoon(), 'text-gray-400': comingSoon() }">{{ feature().description }}</p>
       </div>
     </div>
     @if (!comingSoon()) {

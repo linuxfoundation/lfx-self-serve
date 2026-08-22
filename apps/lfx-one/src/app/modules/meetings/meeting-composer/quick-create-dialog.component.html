@@ -8,26 +8,60 @@
   [modal]="true"
   [draggable]="false"
   [dismissableMask]="true"
-  header="Create meeting"
-  styleClass="w-[min(1024px,94vw)]">
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-2" data-testid="quick-create-body">
-    <div class="flex min-w-0 flex-col gap-6">
+  styleClass="w-[min(1200px,94vw)] [&_.p-dialog-content]:pt-5 [&_.p-dialog-header]:py-3 [&_.p-dialog-header]:border-b [&_.p-dialog-header]:border-gray-200 [&_.p-dialog-footer]:pt-5 [&_.p-dialog-footer]:border-t [&_.p-dialog-footer]:border-gray-200">
+  <ng-template #header>
+    <div class="flex flex-col gap-0.5">
+      <span class="text-xl font-semibold text-gray-900">Create meeting</span>
+      <span class="text-xs font-medium text-gray-500">Instant meeting creation with minimal setup</span>
+    </div>
+  </ng-template>
+
+  <!-- 3/5 + 2/5 rather than an even split: the left column carries the long-form fields (title, agenda,
+       access) while the right one only holds the schedule controls. -->
+  <div class="grid grid-cols-1 gap-5 lg:grid-cols-5 lg:gap-x-8" data-testid="quick-create-body">
+    <div class="flex min-w-0 flex-col gap-4 lg:col-span-3">
+      <!-- Type leads the form here rather than sitting inside the section: picking it is what seeds the
+           rest of the dialog, so it reads as chips above the fields it fills in. -->
+      <div class="flex flex-col gap-1.5">
+        <span id="quick-create-type-label" class="text-sm font-medium text-gray-900">
+          Meeting type <span class="text-red-500" aria-hidden="true">*</span>
+        </span>
+        <div role="group" aria-labelledby="quick-create-type-label" class="flex flex-wrap gap-2" data-testid="quick-create-type-chips">
+          @for (option of meetingTypeOptions(); track option.value) {
+            <button
+              type="button"
+              class="flex items-center gap-2 rounded-full border px-2.5 py-1 text-sm transition-colors"
+              [ngClass]="{
+                'border-blue-500 bg-blue-50 font-medium text-blue-700': option.value === selectedMeetingType(),
+                'border-gray-200 text-gray-700 hover:bg-gray-50': option.value !== selectedMeetingType(),
+              }"
+              [attr.aria-pressed]="option.value === selectedMeetingType()"
+              [attr.data-testid]="'quick-create-type-' + option.value"
+              (click)="onSelectMeetingType(option.value)">
+              <i [class]="option.info.icon" aria-hidden="true"></i>
+              <span>{{ option.label }}</span>
+            </button>
+          }
+        </div>
+      </div>
+
       <!-- The hints are passed down rather than rendered here so each one sits under the field it
            describes and can be wired to it with `aria-describedby` -->
       <lfx-composer-details-access
         [form]="formService.form()"
         [showHeading]="false"
+        [showTypeSelect]="false"
         [titleHint]="prefilledTitle() ? 'Pre-filled for this meeting type — edit freely.' : null" />
 
-      <div class="flex flex-col gap-2">
+      <div class="flex flex-col gap-1.5">
         <label for="quick-create-agenda" class="text-sm font-medium text-gray-900">Agenda</label>
         <lfx-textarea
           [form]="formService.form()"
           control="description"
           id="quick-create-agenda"
           placeholder="Enter meeting agenda and key discussion points"
-          styleClass="w-full"
-          [rows]="6"
+          styleClass="w-full min-h-[80px] max-h-[200px]"
+          [rows]="4"
           [maxlength]="agendaMaxLength"
           data-testid="quick-create-agenda-textarea" />
         <div class="flex items-center justify-between gap-2">
@@ -45,20 +79,25 @@
         (committeeMembersChange)="onCommitteeMembersChange($event)" />
     </div>
 
-    <div class="flex min-w-0 flex-col gap-6">
+    <!-- The rule only exists once the two columns sit side by side; stacked, the row gap separates them. -->
+    <div class="flex min-w-0 flex-col gap-4 lg:col-span-2 lg:border-l lg:border-gray-200 lg:pl-8">
       <!-- Its own hint rather than sharing the title's: only a template whose estimate lands on the chip
            scale seeds duration at all, so the two go quiet independently -->
       <lfx-composer-date-schedule
         [form]="formService.form()"
         [showHeading]="false"
         [showEarlyJoin]="false"
+        [compact]="true"
         [durationHint]="prefilledDuration() ? 'Pre-filled for this meeting type — edit freely.' : null" />
     </div>
   </div>
 
   <ng-template #footer>
     <div class="flex w-full items-center justify-between gap-2" data-testid="quick-create-footer">
-      <p class="text-xs text-gray-500">You can configure advanced settings later.</p>
+      <p class="flex items-center gap-1.5 text-xs text-gray-500">
+        <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+        <span>You can configure advanced settings later.</span>
+      </p>
 
       <div class="flex items-center gap-2">
         <lfx-button label="Cancel" severity="secondary" [text]="true" size="small" data-testid="quick-create-cancel" (onClick)="composer.close()" />
