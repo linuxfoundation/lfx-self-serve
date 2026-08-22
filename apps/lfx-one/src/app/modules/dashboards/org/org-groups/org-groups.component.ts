@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgClass } from '@angular/common';
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -20,7 +21,7 @@ import { PersonaService } from '@services/persona.service';
 
 @Component({
   selector: 'lfx-org-groups',
-  imports: [EmptyStateComponent, RouterLink, SkeletonModule, TagComponent],
+  imports: [EmptyStateComponent, NgClass, RouterLink, SkeletonModule, TagComponent],
   templateUrl: './org-groups.component.html',
 })
 export class OrgGroupsComponent {
@@ -92,7 +93,9 @@ export class OrgGroupsComponent {
         const cls = getGroupBehavioralClass(g.category);
         const projectLabel = g.project_name || g.project_slug || '';
         const ariaLabel = `${g.name}, ${BEHAVIORAL_CLASS_CONFIG[cls].label}, ${g.org_seat_count} seats` + (projectLabel ? `, ${projectLabel}` : '');
-        const projectAriaLabel = projectLabel ? `${projectLabel}, organization overview` : '';
+        // Matches the established wording for this same route elsewhere in the app (e.g.
+        // org-meetings-influence.component.html's 'View <project> project detail').
+        const projectAriaLabel = projectLabel ? `View ${projectLabel} project detail` : '';
         return { ...g, cls, projectLabel, ariaLabel, projectAriaLabel };
       })
     );

@@ -58,10 +58,9 @@ describe('OrgGroupsComponent — project label', () => {
   }
 
   function rowAriaLabel(): string | null {
-    // The row's accessible name lives on the stretched whole-row link (a direct child of the
-    // row container), not on the container itself — the foundation link is nested deeper and
-    // must not be matched here.
-    return fixture.nativeElement.querySelector('[data-testid^="org-groups-item-"] > a')?.getAttribute('aria-label') ?? null;
+    // The row's accessible name lives on the stretched whole-row link, not the row container
+    // itself — queried by its own data-testid rather than a DOM-structure selector.
+    return fixture.nativeElement.querySelector('[data-testid^="org-groups-item-link-"]')?.getAttribute('aria-label') ?? null;
   }
 
   it('prefers project_name over project_slug in the project line and aria-label', async () => {
@@ -107,7 +106,7 @@ describe('OrgGroupsComponent — project label', () => {
     const link = projectLineElement();
     expect(link?.tagName).toBe('A');
     expect(link?.getAttribute('href')).toBe('/org/projects/uepf');
-    expect(link?.getAttribute('aria-label')).toBe('Ultra Ethernet Consortium Fund, organization overview');
+    expect(link?.getAttribute('aria-label')).toBe('View Ultra Ethernet Consortium Fund project detail');
   });
 
   it('renders the foundation name as plain text (no link) when project_slug is absent', async () => {
