@@ -699,10 +699,11 @@ export class ImplementationTabComponent implements OnInit {
     // targets, targeting profile). Moving those three onto the form is what makes their restore
     // work: this subscription emits on every pick with no per-handler plumbing.
     //
-    // Still OUTSIDE it: every platform value that remains a signal — the Meta block, the LinkedIn
-    // budget pair and variants, and all six Reddit fields. `emitDraft` names each of them, so the
-    // draft carries them; what this subscription cannot do is NOTICE them changing. That is why
-    // each mutation handler calls `emitDraft` itself, and why adding a signal-backed control means
+    // Still OUTSIDE it: the platform values that remain signals — the Meta block and the two
+    // budget groups. Described by shape rather than counted, since a count here is a claim the
+    // next control added to the template falsifies. `emitDraft` names each of them, so the draft
+    // carries them; what this subscription cannot do is NOTICE them changing. That is why each
+    // mutation handler calls `emitDraft` itself, and why adding a signal-backed control means
     // touching both places rather than one.
     //
     // Excluded on purpose: `linkedInAccounts` and `linkedInAccountsLoading`, which are re-derived
@@ -1207,37 +1208,20 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.metaLifetimeBudget !== undefined) {
       this.metaLifetimeBudget.set(draft.metaLifetimeBudget);
     }
-    if (draft.metaVariants !== undefined) {
-      this.metaVariants.set([...draft.metaVariants]);
-    }
 
     // Same present-only rule, for the same reason: an older draft omits these, and absence there
-    // means "keep what the brief seeded". An empty ARRAY is a different thing from an absent one
-    // and is restored as the empty list it is.
-    if (draft.linkedInVariants !== undefined) {
-      this.linkedInVariants.set([...draft.linkedInVariants]);
-    }
+    // means "keep what the brief seeded".
+    //
+    // Only the per-platform budgets are restored, matching what `emitDraft` now carries. The
+    // brief-derived arrays are gone from both sides deliberately — see the note there. The
+    // `!== undefined` test is what makes dropping them safe rather than merely tidy: a draft
+    // written by an OLDER build still carries them, and this loop simply no longer looks, so the
+    // brief's own seed stands instead of a stale copy being replayed over it.
     if (draft.linkedInBudgetUsd !== undefined) {
       this.linkedInBudgetUsd.set(draft.linkedInBudgetUsd);
     }
     if (draft.linkedInLifetimeBudget !== undefined) {
       this.linkedInLifetimeBudget.set(draft.linkedInLifetimeBudget);
-    }
-
-    if (draft.redditVariants !== undefined) {
-      this.redditVariants.set([...draft.redditVariants]);
-    }
-    if (draft.redditSubreddits !== undefined) {
-      this.redditSubreddits.set([...draft.redditSubreddits]);
-    }
-    if (draft.redditInterests !== undefined) {
-      this.redditInterests.set([...draft.redditInterests]);
-    }
-    if (draft.redditKeywords !== undefined) {
-      this.redditKeywords.set([...draft.redditKeywords]);
-    }
-    if (draft.redditGeoTargets !== undefined) {
-      this.redditGeoTargets.set([...draft.redditGeoTargets]);
     }
     if (draft.redditBudgetUsd !== undefined) {
       this.redditBudgetUsd.set(draft.redditBudgetUsd);
@@ -1310,20 +1294,37 @@ export class ImplementationTabComponent implements OnInit {
       // The remaining signal-backed values, on the same terms as the Meta block above: snapshotted
       // rather than referenced, and named explicitly rather than spread.
       //
-      // The arrays are COPIED (`[...]`) for the reason the Meta entries give — the parent holds
-      // this object across this component's teardown, so handing it a live view of a signal that
-      // is about to be destroyed hands it a value that can still change underneath it.
-      metaVariants: [...this.metaVariants()],
-      linkedInVariants: [...this.linkedInVariants()],
+      // Scoped to the per-platform BUDGETS, which is the whole of what this snapshot needs to
+      // carry, and the boundary is drawn by asking one question per field: can a user change it?
+      //
+      // These can. The template binds `(input)` and `(change)` on the LinkedIn budget pair,
+      // and `(input)` on the Reddit budget, so an operator types a number the brief did not
+      // recommend and that number exists nowhere but this component. Losing it is the money-shaped
+      // half of LFXV2-3315: the campaign silently reverts to the recommended spend, a decision the
+      // operator did not make and the form does not show them re-making.
+      //
+      // The brief-derived ARRAYS are deliberately NOT here — `metaVariants`, `linkedInVariants`,
+      // `redditVariants` and the four Reddit targeting lists. They have no editor: the full set of
+      // event bindings in this component's template contains no handler that writes any of them,
+      // and their only writes are `populateFromBrief` and `applyDraft`. Carrying them made the
+      // draft round-trip the brief's own recommendation back to itself.
+      //
+      // Removing them is not a loss, and that was MEASURED rather than reasoned about, because the
+      // reasoning goes the wrong way twice:
+      //
+      //   - `applyDraft` restores on `!== undefined`, and an empty array IS defined. So carrying
+      //     these made the restore overwrite the brief's fresh seed with a stale copy. Absent,
+      //     `populateFromBrief` re-seeds all seven from the brief the parent still holds.
+      //   - The "a brief with no redditCopy re-seeds nothing, so an unrestored value is gone"
+      //     argument does not survive being run: with no `redditCopy` the seed leaves the arrays
+      //     EMPTY, so the draft carried `[]` and there was never a value to lose.
+      //
+      // If a real editor is ever added for one of these, it belongs back here — and it needs a
+      // test that drives the new binding, not one that writes the signal and calls `emitDraft` by
+      // hand. That shape passes against a handler that never emits, which is how the LinkedIn
+      // budget pair stayed broken behind three green tests.
       linkedInBudgetUsd: this.linkedInBudgetUsd(),
       linkedInLifetimeBudget: this.linkedInLifetimeBudget(),
-      // Reddit in full. Nothing this platform dispatches lives on `campaignForm`, so every one of
-      // these six is lost without this block — the bulk of what LFXV2-3230 and LFXV2-3315 report.
-      redditVariants: [...this.redditVariants()],
-      redditSubreddits: [...this.redditSubreddits()],
-      redditInterests: [...this.redditInterests()],
-      redditKeywords: [...this.redditKeywords()],
-      redditGeoTargets: [...this.redditGeoTargets()],
       redditBudgetUsd: this.redditBudgetUsd(),
     });
   }

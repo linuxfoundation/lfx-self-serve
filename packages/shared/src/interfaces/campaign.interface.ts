@@ -444,54 +444,47 @@ export interface CampaignImplementationDraft {
   metaBudgetUsd?: number;
   metaLifetimeBudget?: boolean;
   /**
-   * The LinkedIn budget pair and the ad copy variants, all signal-backed for the same reason as
-   * the Meta block above: `campaignForm.valueChanges` never sees them, so they reach the draft
-   * only because `emitDraft` names them.
+   * The LinkedIn budget pair, signal-backed for the same reason as the Meta block above:
+   * `campaignForm.valueChanges` never sees them, so they reach the draft only because
+   * `emitDraft` names them.
    *
-   * `linkedInVariants` is not "just seeded copy that can be regenerated". `canSubmit` blocks a
-   * LinkedIn campaign with zero variants, so losing them on a tab switch takes a ready form back
-   * to un-submittable with nothing on screen explaining why.
+   * The template binds `(input)` to `onLinkedInBudgetInput` and `(change)` to
+   * `onLinkedInLifetimeBudgetChange`, so this pair is genuinely editable — an operator types a
+   * figure the brief never recommended. Its loss is the money-shaped half of LFXV2-3315.
    */
-  linkedInVariants?: LinkedInCreativeVariant[];
   linkedInBudgetUsd?: number;
   linkedInLifetimeBudget?: boolean;
   /**
-   * The whole Reddit configuration (LFXV2-3315, which named only `redditBudgetUsd` and is closed
-   * by this set).
+   * The Reddit budget (LFXV2-3315, which named exactly this field).
    *
-   * Reddit is the platform with NO field on `campaignForm` at all — every value it dispatches
-   * lives in a signal here. Before these were carried, a tab switch reset a Reddit campaign to
-   * $500 with no subreddits, no interests, no keywords, no geos and no ad variants, and
-   * `submit()` reads every one of them.
+   * Reddit is the platform with NO field on `campaignForm` at all, so every value it dispatches
+   * lives in a signal. `onRedditBudgetInput` is the one Reddit control the template binds, which
+   * makes this the one Reddit value a user can actually change — and before it was carried, a tab
+   * switch reset a Reddit campaign to $500.
    *
-   * Several of the targeting lists reach `submit()` through a FALLBACK rather than directly — a
-   * `redditEffective*` computed for geos and subreddits, an inline `briefKeywords` substitution
-   * for keywords. Described by shape rather than counted, because the set of fields with a
-   * fallback has already changed once and a number here would quietly go stale.
+   * WHAT IS DELIBERATELY ABSENT, and why, because the obvious next edit is to add it back:
    *
-   * The fallback is what makes the loss dangerous: a dropped list does not render as EMPTY, it
-   * renders as a DIFFERENT, plausible targeting set the operator never chose. That is why these
-   * are carried rather than left to be re-derived.
+   * The brief-derived arrays — Reddit's variants, subreddits, interests, keywords and geos, plus
+   * `linkedInVariants` and `metaVariants` — are NOT carried. They have no user mutation path: the
+   * complete set of event bindings in the implementation tab's template contains no handler that
+   * writes any of them, and their only writes are `populateFromBrief` and `applyDraft`. A draft
+   * that carried them round-tripped the brief's own recommendation back to itself.
    *
-   * Carried even though most of them currently have no editor in the template, and "the brief
-   * re-seeds them on every remount anyway" does NOT make that redundant: the seed is CONDITIONAL
-   * (`populateFromBrief` writes them only under `if (redditCopy)` / `if (brief.redditCopy)`), so a
-   * brief carrying neither re-seeds nothing and an unrestored value is simply gone. The restore
-   * also has to run AFTER the seed for an edit to win over it, which is the ordering the
-   * constructor effect implements.
+   * Carrying them was also actively worse than not, which is the part that has to be measured
+   * rather than argued, since the argument runs the wrong way twice:
+   *
+   *   - `applyDraft` restores on `!== undefined`, and an empty array IS defined. Carrying them
+   *     therefore let a stale copy overwrite the brief's fresh seed on every remount. With the
+   *     fields absent the restore does not look, and `populateFromBrief` re-seeds them from the
+   *     brief the parent still holds.
+   *   - "The seed is conditional, so a brief with no `redditCopy` re-seeds nothing and an
+   *     unrestored value is gone" does not survive being run: with no `redditCopy` the seed
+   *     leaves those arrays EMPTY, so the draft carried `[]` and there was no value to lose.
+   *
+   * If a real editor is added for any of them, it belongs back here — with a test that drives the
+   * new binding rather than one that writes the signal and calls `emitDraft` by hand.
    */
-  redditVariants?: RedditAdVariant[];
-  redditSubreddits?: string[];
-  redditInterests?: string[];
-  redditKeywords?: string[];
-  redditGeoTargets?: string[];
   redditBudgetUsd?: number;
-  /**
-   * Meta ad copy, the one member of the Meta block that shipped without the rest of it.
-   * `canSubmit` requires a variant with both a primary text and a headline, so this has the same
-   * blocks-submit consequence as `linkedInVariants`.
-   */
-  metaVariants?: MetaAdVariant[];
 }
 
 /**
