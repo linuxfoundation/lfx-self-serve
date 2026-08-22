@@ -4,7 +4,6 @@ description: Create surveys, collect responses, and view NPS analytics in LFX Se
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, nps, feedback, analytics, governance]
-last_generated: 2026-05-22
 last_updated: 2026-05-23
 intercom_collection: Surveys
 ---

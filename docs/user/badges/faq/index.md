@@ -4,8 +4,7 @@ description: Frequently asked questions about LFX badges.
 audience: [all]
 product_area: Badges
 tags: [badges, faq, credentials]
-last_generated: 2026-05-22
-last_updated: 2026-05-22
+last_updated: 2026-08-17
 intercom_collection: Badges
 ---
 
@@ -35,4 +34,4 @@ Some badges may have expiry dates. Check the badge detail view for expiry inform
 
 ## Who do I contact if a badge is incorrect?
 
-Contact LFX support through the Help Center. Include the badge name and the project it relates to so the support team can investigate.
+Contact LFX support via in-app messaging. Include the badge name and the project it relates to so the support team can investigate.

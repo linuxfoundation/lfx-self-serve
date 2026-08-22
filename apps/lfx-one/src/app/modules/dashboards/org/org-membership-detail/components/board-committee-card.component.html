@@ -109,19 +109,23 @@
                       @for (seat of filteredBoardSeats(); track seat.seatId) {
                         <tr [attr.data-testid]="'board-committee-board-row-' + seat.seatId">
                           <td class="px-4 py-3 align-top">
-                            <div class="flex items-center gap-3">
+                            <button
+                              type="button"
+                              class="flex min-w-0 items-center gap-3 bg-transparent p-0 text-left"
+                              [attr.data-testid]="'board-committee-board-person-' + seat.seatId"
+                              (click)="onPersonClick(seat.person)">
                               <lfx-person-avatar
                                 [avatarUrl]="seat.person.avatarUrl"
                                 [name]="seat.person.fullName"
                                 [initials]="seat.person.initials"
                                 [identity]="seat.person.email" />
                               <div class="flex flex-col">
-                                <span class="text-sm font-medium text-gray-900">{{ seat.person.fullName }}</span>
+                                <span class="text-sm font-medium text-gray-900 hover:underline">{{ seat.person.fullName }}</span>
                                 @if (seat.person.jobTitle) {
                                   <span class="text-xs text-gray-500">{{ seat.person.jobTitle }}</span>
                                 }
                               </div>
-                            </div>
+                            </button>
                           </td>
                           <td class="px-4 py-3 align-top text-sm text-gray-700">{{ seat.seatName }}</td>
                           <td class="px-4 py-3 align-top text-sm font-medium text-green-700">
@@ -215,19 +219,23 @@
                       @for (seat of filteredCommitteeSeats(); track seat.seatId) {
                         <tr [attr.data-testid]="'board-committee-committee-row-' + seat.seatId">
                           <td class="px-4 py-3 align-top">
-                            <div class="flex items-center gap-3">
+                            <button
+                              type="button"
+                              class="flex min-w-0 items-center gap-3 bg-transparent p-0 text-left"
+                              [attr.data-testid]="'board-committee-committee-person-' + seat.seatId"
+                              (click)="onPersonClick(seat.person)">
                               <lfx-person-avatar
                                 [avatarUrl]="seat.person.avatarUrl"
                                 [name]="seat.person.fullName"
                                 [initials]="seat.person.initials"
                                 [identity]="seat.person.email" />
                               <div class="flex flex-col">
-                                <span class="text-sm font-medium text-gray-900">{{ seat.person.fullName }}</span>
+                                <span class="text-sm font-medium text-gray-900 hover:underline">{{ seat.person.fullName }}</span>
                                 @if (seat.person.jobTitle) {
                                   <span class="text-xs text-gray-500">{{ seat.person.jobTitle }}</span>
                                 }
                               </div>
-                            </div>
+                            </button>
                           </td>
                           <td class="px-4 py-3 align-top text-sm text-gray-700">{{ seat.role }}</td>
                           <td class="px-4 py-3 align-top text-sm text-gray-700">{{ seat.committeeName }}</td>

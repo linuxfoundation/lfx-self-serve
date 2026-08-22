@@ -6,6 +6,13 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+# Check for real customer/vendor PII in staged test fixtures
+./check-fixture-emails.sh
+if [ $? -ne 0 ]; then
+  echo "❌ Fixture PII check failed. Replace real emails with synthetic test data."
+  exit 1
+fi
+
 # Run lint-staged for formatting and linting
 npx lint-staged
 yarn format:check

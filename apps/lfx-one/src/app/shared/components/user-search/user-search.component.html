@@ -10,12 +10,15 @@
   [inputStyleClass]="inputStyleClass()"
   [panelStyleClass]="panelStyleClass()"
   [dataTestId]="dataTestId()"
+  [inputId]="inputId()"
+  [showClear]="showClear()"
   optionLabel="displayName"
   size="small"
   appendTo="body"
   (completeMethod)="onSearchComplete($event)"
   (onSelect)="onUserSelected($event)"
-  (onClear)="onSearchClear()">
+  (onClear)="onSearchClear()"
+  (onBlur)="onSearchBlur()">
   <ng-template #item let-user>
     <div class="w-full flex justify-between items-center gap-2">
       <div class="flex flex-col">

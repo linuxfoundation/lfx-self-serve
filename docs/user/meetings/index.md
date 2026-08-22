@@ -4,7 +4,6 @@ description: Schedule, manage, and join project meetings with calendar integrati
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, calendar, join, zoom, virtual]
-last_generated: 2026-05-22
 last_updated: 2026-08-10
 intercom_collection: Meetings
 ---
