@@ -81,9 +81,14 @@ afterEach(() => {
 describe('OrgLensGroupsService.getGroups', () => {
   it('prefers the project-index (live) name over the committee-index (snapshot) name and the raw slug', async () => {
     fetchAllOrgSeats.mockResolvedValue([seat()]);
-    // The committee index is a write-time snapshot that goes stale on project rename, so it must
-    // lose to the live project index when both resolve.
-    getCommitteesByIds.mockResolvedValue(new Map([['c-1', { uid: 'c-1', project_name: 'Cloud Native Computing Foundation (stale)' }]]));
+    // Argument-respecting, not a blanket resolved-value: only returns data for uids it was
+    // actually asked about, so this test can't pass by the mock supplying data the real
+    // targeting logic (org-lens-groups.service.ts) would never have requested in the first
+    // place — which is exactly what happens here, since the project index below resolves the
+    // committee's only group, so getCommitteesByIds is called with [] and never touches this map.
+    getCommitteesByIds.mockImplementation((_req: unknown, uids: string[]) =>
+      Promise.resolve(new Map(uids.map((uid) => [uid, { uid, project_name: 'Cloud Native Computing Foundation (stale)' }])))
+    );
     enrichFoundationNames.mockResolvedValue(new Map([['p-cncf', 'Cloud Native Computing Foundation']]));
 
     const result = await run();

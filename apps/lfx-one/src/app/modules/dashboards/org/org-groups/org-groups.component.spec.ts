@@ -28,7 +28,7 @@ function group(over: Partial<OrgLensGroupSummary> = {}): OrgLensGroupSummary {
   };
 }
 
-describe('OrgGroupsComponent — project label', () => {
+describe('OrgGroupsComponent — project label and row/foundation routing', () => {
   let fixture: ComponentFixture<OrgGroupsComponent>;
 
   async function render(response: OrgLensGroupsResponse): Promise<void> {
@@ -140,6 +140,9 @@ describe('OrgGroupsComponent — project label', () => {
     expect(navigateSpy.mock.calls[0][0].toString()).toBe('/org/projects/uepf');
   });
 
+  // jsdom does no layout or hit-testing, so this asserts the row anchor's own target — not that
+  // the absolute-inset-0 / pointer-events overlay actually covers the row and routes clicks
+  // correctly at runtime. That overlay-mechanics risk needs an e2e/Playwright check to close.
   it('links the row itself to the group detail route', async () => {
     await render({
       groups: [group({ uid: 'g1', project_slug: 'cncf' })],

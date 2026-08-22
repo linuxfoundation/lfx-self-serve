@@ -46,11 +46,18 @@ export class OrgLensGroupsService {
       .map(([uid]) => uid);
     const committeesByUid = await this.getCommitteesByUid(req, unresolvedCommitteeUids);
 
-    logger.info(req, 'org_lens_groups_enrich', 'Enriched groups with project/committee names', {
-      total_committees: committeeMap.size,
-      resolved_from_committee_index: committeesByUid.size,
-      unresolved_after_both_sources: unresolvedCommitteeUids.filter((uid) => !committeesByUid.get(uid)?.project_name).length,
-    });
+    // Only worth an INFO line when the committee-index gap-filler actually had gaps to fill —
+    // matches meeting.service.ts's enrich_committees precedent of gating enrichment INFO logs
+    // rather than firing one on every single request regardless of whether anything happened.
+    if (unresolvedCommitteeUids.length > 0) {
+      const resolvedFromCommitteeIndex = unresolvedCommitteeUids.filter((uid) => committeesByUid.get(uid)?.project_name).length;
+      logger.info(req, 'org_lens_groups_enrich', 'Enriched groups with project/committee names', {
+        total_committees: committeeMap.size,
+        gaps_from_project_index: unresolvedCommitteeUids.length,
+        resolved_from_committee_index: resolvedFromCommitteeIndex,
+        unresolved_after_both_sources: unresolvedCommitteeUids.length - resolvedFromCommitteeIndex,
+      });
+    }
 
     const groups: OrgLensGroupSummary[] = Array.from(committeeMap.entries()).map(([uid, groupSeats]) =>
       this.toGroupSummary(uid, groupSeats, foundationNames, committeesByUid)
