@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ArtifactVisibility, MeetingVisibility } from '../enums';
+import { ArtifactVisibility, MeetingType, MeetingVisibility } from '../enums';
 import type { AttachmentCategory, CardSelectorOption, MeetingTypeConfig } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
@@ -223,6 +223,72 @@ export const MEETING_TYPE_CONFIGS: Record<string, MeetingTypeConfig> = {
 };
 
 /**
+ * Selectable meeting types, in composer order.
+ * @description Drives the Details & Access type dropdown. Label and icon come from
+ * `MEETING_TYPE_CONFIGS` so the dropdown never disagrees with the tag rendered on meeting cards;
+ * `MeetingType.NONE` is deliberately absent because it is not a user-selectable value.
+ */
+export const MEETING_TYPE_OPTIONS: CardSelectorOption<MeetingType>[] = [
+  {
+    label: MEETING_TYPE_CONFIGS[MeetingType.BOARD.toLowerCase()].label,
+    value: MeetingType.BOARD,
+    info: {
+      icon: MEETING_TYPE_CONFIGS[MeetingType.BOARD.toLowerCase()].icon,
+      description: 'Governance meetings for project direction, funding, and strategic decisions',
+      color: lfxColors.red[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS[MeetingType.MAINTAINERS.toLowerCase()].label,
+    value: MeetingType.MAINTAINERS,
+    info: {
+      icon: MEETING_TYPE_CONFIGS[MeetingType.MAINTAINERS.toLowerCase()].icon,
+      description: 'Regular sync meetings for core maintainers to discuss project health',
+      color: lfxColors.blue[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS[MeetingType.MARKETING.toLowerCase()].label,
+    value: MeetingType.MARKETING,
+    info: {
+      icon: MEETING_TYPE_CONFIGS[MeetingType.MARKETING.toLowerCase()].icon,
+      description: 'Community growth, outreach, and marketing strategy meetings',
+      color: lfxColors.emerald[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS[MeetingType.TECHNICAL.toLowerCase()].label,
+    value: MeetingType.TECHNICAL,
+    info: {
+      icon: MEETING_TYPE_CONFIGS[MeetingType.TECHNICAL.toLowerCase()].icon,
+      description: 'Technical discussions, architecture decisions, and development planning',
+      color: lfxColors.violet[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS[MeetingType.LEGAL.toLowerCase()].label,
+    value: MeetingType.LEGAL,
+    info: {
+      icon: MEETING_TYPE_CONFIGS[MeetingType.LEGAL.toLowerCase()].icon,
+      description: 'Legal compliance, licensing, and policy discussions',
+      color: lfxColors.amber[500],
+    },
+  },
+  {
+    label: MEETING_TYPE_CONFIGS[MeetingType.OTHER.toLowerCase()].label,
+    value: MeetingType.OTHER,
+    info: {
+      icon: MEETING_TYPE_CONFIGS[MeetingType.OTHER.toLowerCase()].icon,
+      description: "General project meetings that don't fit other categories",
+      color: lfxColors.gray[500],
+    },
+  },
+];
+
+/** Meeting types a maintainer may create. */
+export const MAINTAINER_MEETING_TYPES: readonly MeetingType[] = [MeetingType.MAINTAINERS, MeetingType.TECHNICAL, MeetingType.OTHER];
+
+/**
  * Default meeting type configuration
  * @description Fallback configuration for unrecognized meeting types
  */
@@ -289,6 +355,12 @@ export const YOUTUBE_TITLE_DATE_SUFFIX_LENGTH = 13;
  * A title exceeding this limit will cause an invalidTitle error on upload.
  */
 export const YOUTUBE_MAX_MEETING_TITLE_LENGTH = YOUTUBE_MAX_TITLE_LENGTH - YOUTUBE_TITLE_DATE_SUFFIX_LENGTH;
+
+/**
+ * Title length at which the composer's YouTube counter turns amber
+ * @description Warns while the title is still valid, so the user can trim it before hitting the limit.
+ */
+export const YOUTUBE_MEETING_TITLE_WARNING_LENGTH = Math.floor(YOUTUBE_MAX_MEETING_TITLE_LENGTH * 0.9);
 
 /**
  * Default early join time in minutes

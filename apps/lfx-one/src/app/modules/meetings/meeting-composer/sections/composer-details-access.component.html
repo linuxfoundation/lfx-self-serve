@@ -1,0 +1,134 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="composer-details-access">
+  <div class="flex flex-col gap-1">
+    <h2>Details &amp; Access</h2>
+    <p class="text-sm text-gray-500">Name the meeting and set who it's for.</p>
+  </div>
+
+  <!-- Meeting title -->
+  <div class="flex flex-col gap-2">
+    <label for="composer-meeting-title" class="text-sm font-medium text-gray-900"> Meeting title <span class="text-red-500">*</span> </label>
+    <lfx-input-text
+      [form]="form()"
+      size="small"
+      control="title"
+      id="composer-meeting-title"
+      placeholder="Enter meeting title"
+      styleClass="w-full"
+      data-testid="composer-title-input" />
+
+    @if (form().get('youtube_upload_enabled')?.value) {
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-xs text-gray-500">
+          The meeting date is appended to the YouTube video title on upload, so the title must be ≤ {{ youtubeTitleLimit }} characters.
+        </p>
+        <p
+          class="text-xs"
+          [ngClass]="{
+            'text-gray-500': titleLength() < youtubeAmberThreshold,
+            'text-amber-600': titleLength() >= youtubeAmberThreshold && titleLength() <= youtubeTitleLimit,
+            'text-red-600': titleLength() > youtubeTitleLimit,
+          }">
+          {{ titleLength() }}/{{ youtubeTitleLimit }}
+        </p>
+      </div>
+    }
+
+    @if (form().get('title')?.errors?.['required'] && form().get('title')?.touched) {
+      <p class="text-sm text-red-600" data-testid="composer-title-required-error">Meeting title is required</p>
+    }
+    @if (form().get('title')?.errors?.['maxlength'] && form().get('title')?.touched) {
+      <p class="text-sm text-red-600" data-testid="composer-title-maxlength-error">
+        Meeting title cannot exceed {{ youtubeTitleLimit }} characters while YouTube uploads are enabled.
+      </p>
+    }
+  </div>
+
+  <!-- Meeting type -->
+  <div class="flex flex-col gap-2">
+    <!-- p-select's inputId lands on a span[role=combobox], so this associates via aria-labelledby, not `for` -->
+    <label id="composer-meeting-type-label" class="text-sm font-medium text-gray-900"> Meeting type <span class="text-red-500">*</span> </label>
+    <lfx-select
+      [form]="form()"
+      control="meeting_type"
+      [options]="meetingTypeOptions()"
+      inputId="composer-meeting-type"
+      ariaLabelledBy="composer-meeting-type-label"
+      [required]="true"
+      placeholder="Select meeting type…"
+      styleClass="w-full"
+      [checkmark]="true"
+      dataTest="composer-meeting-type-select">
+      <ng-template #item let-option>
+        <div class="flex items-start gap-3 py-1">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-50" [style.color]="option.info.color">
+            <i [class]="option.info.icon" aria-hidden="true"></i>
+          </span>
+          <span class="flex min-w-0 flex-col gap-0.5">
+            <span class="text-sm font-semibold text-gray-900">{{ option.label }}</span>
+            <span class="whitespace-normal text-xs leading-relaxed text-gray-500">{{ option.info.description }}</span>
+          </span>
+        </div>
+      </ng-template>
+      <ng-template #selectedItem let-option>
+        <span class="flex items-center gap-2">
+          <i [class]="option.info.icon" [style.color]="option.info.color" aria-hidden="true"></i>
+          <span class="text-sm text-gray-900">{{ option.label }}</span>
+        </span>
+      </ng-template>
+    </lfx-select>
+
+    @if (form().get('meeting_type')?.errors?.['required'] && form().get('meeting_type')?.touched) {
+      <p class="text-sm text-red-600" data-testid="composer-meeting-type-required-error">Meeting type is required</p>
+    }
+  </div>
+
+  <!-- Visibility + join restriction: two independent API fields, one card -->
+  <div class="overflow-hidden rounded-xl border border-gray-200">
+    <fieldset class="flex flex-col border-b border-gray-200 px-4 py-3">
+      <legend class="text-sm font-medium text-gray-900">Visibility</legend>
+      @for (option of visibilityOptions; track option.value) {
+        <label [for]="'composer-visibility-' + option.value" class="flex cursor-pointer items-center gap-3 py-2">
+          <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-50" [style.color]="option.info.color">
+            <i [class]="option.info.icon" aria-hidden="true"></i>
+          </span>
+          <span class="flex min-w-0 flex-1 flex-col">
+            <span class="text-sm font-semibold text-gray-900">{{ option.label }}</span>
+            <span class="text-xs text-gray-500">{{ option.info.description }}</span>
+          </span>
+          <lfx-radio-button
+            [form]="form()"
+            control="visibility"
+            name="composer-visibility"
+            [value]="option.value"
+            [inputId]="'composer-visibility-' + option.value"
+            [attr.data-testid]="'composer-visibility-' + option.value + '-radio'" />
+        </label>
+      }
+    </fieldset>
+
+    <fieldset class="flex flex-col px-4 py-3">
+      <legend class="text-sm font-medium text-gray-900">Join restriction</legend>
+      @for (option of joinRestrictionOptions; track option.value) {
+        <label [for]="'composer-restricted-' + option.value" class="flex cursor-pointer items-center gap-3 py-2">
+          <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-50" [style.color]="option.info.color">
+            <i [class]="option.info.icon" aria-hidden="true"></i>
+          </span>
+          <span class="flex min-w-0 flex-1 flex-col">
+            <span class="text-sm font-semibold text-gray-900">{{ option.label }}</span>
+            <span class="text-xs text-gray-500">{{ option.info.description }}</span>
+          </span>
+          <lfx-radio-button
+            [form]="form()"
+            control="restricted"
+            name="composer-restricted"
+            [value]="option.value"
+            [inputId]="'composer-restricted-' + option.value"
+            [attr.data-testid]="'composer-restricted-' + option.value + '-radio'" />
+        </label>
+      }
+    </fieldset>
+  </div>
+</div>

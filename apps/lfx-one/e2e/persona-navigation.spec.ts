@@ -550,11 +550,10 @@ test.describe('S10: Route guard — writerGuard fast path for ED persona', () =>
     // writerGuard returns true synchronously for ED (no project API call needed). The create route
     // opens the composer drawer and replaces the URL with the meetings list, so the pass condition is
     // "landed on the list with the composer open" rather than "still on /create".
-    await expect(page, 'persona=executive-director should reach the meetings list, not be redirected away').toHaveURL(
-      /\/project\/meetings(\?|$)/,
-      { timeout: ELEMENT_TIMEOUT }
-    );
-    await expect(page.getByTestId('meeting-composer-drawer')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page, 'persona=executive-director should reach the meetings list, not be redirected away').toHaveURL(/\/project\/meetings(\?|$)/, {
+      timeout: ELEMENT_TIMEOUT,
+    });
+    await expect(page.getByTestId('meeting-composer-header')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 });
 

@@ -1395,7 +1395,7 @@ export interface MeetingComposerContext {
   mode: MeetingComposerMode;
   /** Required in edit mode — the meeting being edited. */
   meetingUid?: string;
-  /** Group/committee the meeting is scoped to; pre-fills and locks the committees field. */
+  /** Group/committee the meeting is scoped to; in create mode it pre-fills and locks the committees field. */
   committeeUid?: string;
   /**
    * Project the meeting belongs to, when the entry point knows it.

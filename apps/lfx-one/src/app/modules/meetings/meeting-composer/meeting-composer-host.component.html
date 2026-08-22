@@ -8,8 +8,7 @@
   position="right"
   [modal]="true"
   [showCloseIcon]="true"
-  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
-  data-testid="meeting-composer-drawer">
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full">
   <ng-template #header>
     <div class="flex min-w-0 flex-col" data-testid="meeting-composer-header">
       <span class="truncate text-lg font-semibold text-gray-900">
@@ -44,13 +43,13 @@
       <div class="flex flex-1 flex-col gap-6 overflow-y-auto">
         @switch (composer.activeSection()) {
           @case ('details-access') {
-            <lfx-meeting-type-selection [form]="formService.form()" />
+            <lfx-composer-details-access [form]="formService.form()" />
           }
           @case ('date-schedule') {
             <lfx-meeting-details [form]="formService.form()" />
           }
           @case ('platform-features') {
-            <lfx-meeting-platform-features [form]="formService.form()" (goToStep)="onGoToTitleSection()" />
+            <lfx-meeting-platform-features [form]="formService.form()" (goToTitleSection)="onGoToTitleSection()" />
           }
           @case ('guests') {
             @if (formService.meetingId(); as meetingUid) {

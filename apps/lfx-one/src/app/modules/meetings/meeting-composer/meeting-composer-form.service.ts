@@ -11,7 +11,6 @@ import {
   DEFAULT_EMAIL_REMINDER_HOURS,
   DEFAULT_EMAIL_REMINDER_MINUTES,
   DEFAULT_MEETING_TOOL,
-  DEFAULT_MEETING_TYPE,
   MAX_EARLY_JOIN_TIME,
   MAX_EMAIL_REMINDER_HOURS,
   MAX_EMAIL_REMINDER_TIME,
@@ -110,7 +109,8 @@ export class MeetingComposerFormService {
   /**
    * Project the composer was opened against, when the entry point knew it.
    * @description Preferred over `ProjectContextService.activeContextUid()`, which resolves
-   * asynchronously and can still be empty when the composer opens from a deep link.
+   * asynchronously. Deep links carry a project slug rather than a uid, so those opens still fall back
+   * to the ambient context.
    */
   private readonly contextProjectUid = signal<string | null>(null);
 
@@ -129,8 +129,8 @@ export class MeetingComposerFormService {
 
   /**
    * Emits on every `initialize()`, cancelling work started by the previous open.
-   * @description The host is mounted for the app's lifetime, so `takeUntilDestroyed` alone would let a
-   * slow load from a closed composer resolve into the next one's form.
+   * @description The host outlives each open, so `takeUntilDestroyed` alone would let a slow load from a
+   * closed composer resolve into the next one's form.
    */
   private readonly reset$ = new Subject<void>();
 
@@ -143,10 +143,6 @@ export class MeetingComposerFormService {
       this.reset$.next();
       this.reset$.complete();
     });
-  }
-
-  public get openGeneration(): number {
-    return this.generation;
   }
 
   private get pendingAttachments(): PendingAttachment[] {
@@ -192,14 +188,10 @@ export class MeetingComposerFormService {
 
     switch (section) {
       case 'details-access':
-        return !!form.get('meeting_type')?.value;
+        return !!(form.get('title')?.value && form.get('title')?.valid && form.get('meeting_type')?.value);
 
-      // `title` is checked here because that is where the field currently renders; LFXV2-3235 moves it
-      // into Details & Access. Gating a section on a control the user cannot see would deadlock Next.
       case 'date-schedule':
         return !!(
-          form.get('title')?.value &&
-          form.get('title')?.valid &&
           form.get('startDate')?.value &&
           form.get('startTime')?.value &&
           form.get('timezone')?.value &&
@@ -237,10 +229,14 @@ export class MeetingComposerFormService {
 
   /**
    * Saves the meeting plus its pending attachment and registrant operations.
-   * Emits the created meeting in create mode, `null` in edit mode, and completes without
-   * emitting when the request fails (the error toast is raised here).
+   * Emits the created meeting in create mode and `null` in edit mode. Completes without emitting when
+   * the request fails (the error toast is raised here) or when the save outlived its open — callers
+   * rely on that silence to skip their success toast and their close of a composer they no longer own.
    */
   public submit(): Observable<Meeting | null> {
+    const generation = this.generation;
+    const wasEditMode = this.isEditMode();
+    const hadDependentWork = this.hasPendingDependentWork();
     const meetingData = this.prepareMeetingData();
 
     if (!meetingData.project_uid) {
@@ -261,14 +257,33 @@ export class MeetingComposerFormService {
 
     return save$.pipe(
       switchMap((meeting) => {
+        // The save can only be cancelled upstream, so it keeps running after a close+reopen. Everything
+        // below reads and writes live composer state, which by now belongs to a different meeting.
+        if (generation !== this.generation) {
+          if (hadDependentWork) {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Partially saved',
+              detail: 'An earlier meeting was saved, but its guests and resources were not attached because the composer moved on.',
+            });
+          }
+
+          return EMPTY;
+        }
+
         const meetingId = meeting?.id ?? existingMeetingId;
         if (!meetingId) {
-          // Create succeeded but returned no id — attachments and registrants have nothing to attach to.
-          this.messageService.add({
-            severity: 'warn',
-            summary: 'Partially saved',
-            detail: 'The meeting was saved, but guests and resources could not be attached. Open the meeting to add them.',
-          });
+          // Create succeeded but returned no id, so pending attachments and registrants have nothing to
+          // attach to. Still emit: leaving the composer open with no id to save against invites a
+          // duplicate create.
+          if (hadDependentWork) {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Partially saved',
+              detail: 'The meeting was saved, but guests and resources could not be attached. Open the meeting from the list to add them.',
+            });
+          }
+
           return of(meeting);
         }
 
@@ -278,22 +293,38 @@ export class MeetingComposerFormService {
           attachments: this.processAttachmentOperations(meetingId),
           registrants: this.processRegistrantOperations(meetingId),
         }).pipe(
-          map((results) => {
-            this.reportDependentResults(results.attachments, results.registrants);
-            return meeting;
+          switchMap((results) => {
+            // The composer can move on while these requests are in flight. Reporting then would clear the
+            // new open's deletion queue, and emitting would close that open with a toast for the old meeting.
+            if (generation !== this.generation) {
+              return EMPTY;
+            }
+
+            this.reportDependentResults(results.attachments, results.registrants, wasEditMode);
+
+            return of(meeting);
           })
         );
       }),
       catchError((error: unknown) => {
         console.error('Error saving meeting:', error);
+        // A stale failure still gets reported, but worded so the user doesn't read it as their current
+        // draft failing and hit Save again — that would duplicate the meeting.
+        const isStale = generation !== this.generation;
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
-          detail: `Failed to ${this.isEditMode() ? 'update' : 'create'} meeting. Please try again.`,
+          detail: isStale
+            ? `An earlier meeting could not be ${wasEditMode ? 'updated' : 'created'}. Your current draft is unaffected.`
+            : `Failed to ${wasEditMode ? 'update' : 'create'} meeting. Please try again.`,
         });
         return EMPTY;
       }),
-      finalize(() => this.submitting.set(false)),
+      finalize(() => {
+        if (generation === this.generation) {
+          this.submitting.set(false);
+        }
+      }),
       take(1)
     );
   }
@@ -492,7 +523,7 @@ export class MeetingComposerFormService {
       start_time: startDateTime,
       duration: duration,
       timezone: formValue.timezone,
-      meeting_type: formValue.meeting_type || DEFAULT_MEETING_TYPE,
+      meeting_type: formValue.meeting_type,
       early_join_time_minutes: this.parseEarlyJoinTime(formValue.early_join_time_minutes),
       visibility: formValue.visibility || MeetingVisibility.PRIVATE,
       restricted: formValue.restricted || false,
@@ -546,10 +577,13 @@ export class MeetingComposerFormService {
   private stripRecurrenceUiKeys(recurrence: Record<string, any>): MeetingRecurrence {
     return Object.keys(recurrence)
       .filter((key) => recurrence[key] !== null && recurrence[key] !== undefined && !key.endsWith('UI'))
-      .reduce((payload, key) => {
-        payload[key] = recurrence[key];
-        return payload;
-      }, {} as Record<string, any>) as MeetingRecurrence;
+      .reduce(
+        (payload, key) => {
+          payload[key] = recurrence[key];
+          return payload;
+        },
+        {} as Record<string, any>
+      ) as MeetingRecurrence;
   }
 
   private populateFormWithMeetingData(meeting: Meeting): void {
@@ -593,7 +627,11 @@ export class MeetingComposerFormService {
     form.patchValue({
       title: meeting.title,
       description: meeting.description,
-      meeting_type: meeting.meeting_type || 'None',
+      // Blank the legacy `None` sentinel so the required validator fires and the field shows its own
+      // error instead of silently blocking save. Any other stored value is kept verbatim — upstream
+      // types this field as a free-form string, so blanking on "not in our option list" would let the
+      // composer silently re-classify a meeting whose category it merely doesn't recognize.
+      meeting_type: meeting.meeting_type === MeetingType.NONE ? '' : meeting.meeting_type,
       startDate: startDate,
       startTime: startTime,
       duration: meeting.duration || DEFAULT_DURATION,
@@ -774,29 +812,29 @@ export class MeetingComposerFormService {
   }
 
   private processAttachmentOperations(meetingId: string): Observable<MeetingAttachmentOperationResults | null> {
-    const hasPendingDeletions = this.pendingAttachmentDeletions().length > 0;
-    const hasPendingUploads = this.pendingAttachments.length > 0;
-    const importantLinksArray = this.form().get('important_links') as FormArray;
-    const hasPendingLinks = importantLinksArray.length > 0;
+    // Snapshot every collection up front. These steps run between HTTP round-trips, and `initialize()`
+    // swaps in a fresh FormGroup — re-reading per step would upload a later open's files and links
+    // against this meeting's id, and would silently drop this open's own queue.
+    const attachmentIdsToDelete = this.pendingAttachmentDeletions();
+    const attachmentsToUpload = this.unsavedAttachments();
+    const linksToSave = this.unsavedLinks();
 
-    if (!hasPendingDeletions && !hasPendingUploads && !hasPendingLinks) {
+    if (attachmentIdsToDelete.length === 0 && attachmentsToUpload.length === 0 && linksToSave.length === 0) {
       return of(null);
     }
 
     // Deletions before uploads before links, so a removed link isn't re-created in the same pass.
-    return this.deletePendingAttachments(meetingId).pipe(
+    return this.deletePendingAttachments(meetingId, attachmentIdsToDelete).pipe(
       switchMap((deletions) =>
-        this.savePendingAttachments(meetingId).pipe(
-          switchMap((uploads) => this.saveLinkAttachments(meetingId).pipe(map((links) => ({ deletions, uploads, links }))))
+        this.savePendingAttachments(meetingId, attachmentsToUpload).pipe(
+          switchMap((uploads) => this.saveLinkAttachments(meetingId, linksToSave).pipe(map((links) => ({ deletions, uploads, links }))))
         )
       ),
       take(1)
     );
   }
 
-  private deletePendingAttachments(meetingId: string): Observable<MeetingAttachmentOperationResults['deletions']> {
-    const attachmentIdsToDelete = this.pendingAttachmentDeletions();
-
+  private deletePendingAttachments(meetingId: string, attachmentIdsToDelete: string[]): Observable<MeetingAttachmentOperationResults['deletions']> {
     if (attachmentIdsToDelete.length === 0) {
       return of({ successes: 0, failures: [] });
     }
@@ -817,11 +855,7 @@ export class MeetingComposerFormService {
     );
   }
 
-  private savePendingAttachments(meetingId: string): Observable<MeetingAttachmentOperationResults['uploads']> {
-    const attachmentsToSave = this.pendingAttachments.filter(
-      (attachment) => !attachment.uploading && !attachment.uploadError && !attachment.uploaded && attachment.file
-    );
-
+  private savePendingAttachments(meetingId: string, attachmentsToSave: PendingAttachment[]): Observable<MeetingAttachmentOperationResults['uploads']> {
     if (attachmentsToSave.length === 0) {
       return of({ successes: [], failures: [] });
     }
@@ -848,11 +882,23 @@ export class MeetingComposerFormService {
     );
   }
 
-  private saveLinkAttachments(meetingId: string): Observable<MeetingAttachmentOperationResults['links']> {
-    const importantLinksArray = this.form().get('important_links') as FormArray;
-    // Links that already carry a uid exist upstream and must not be recreated.
-    const linksToSave = (importantLinksArray.value as ImportantLinkFormValue[]).filter((link) => link.title && link.url && !link.uid);
+  /** Files picked in this open that haven't been uploaded yet. */
+  private unsavedAttachments(): PendingAttachment[] {
+    return this.pendingAttachments.filter((attachment) => !attachment.uploading && !attachment.uploadError && !attachment.uploaded && attachment.file);
+  }
 
+  /** Links that still need creating upstream — a uid means the link already exists there. */
+  private unsavedLinks(): ImportantLinkFormValue[] {
+    const importantLinksArray = this.form().get('important_links') as FormArray;
+
+    return (importantLinksArray.value as ImportantLinkFormValue[]).filter((link) => link.title && link.url && !link.uid);
+  }
+
+  private hasUnsavedLinks(): boolean {
+    return this.unsavedLinks().length > 0;
+  }
+
+  private saveLinkAttachments(meetingId: string, linksToSave: ImportantLinkFormValue[]): Observable<MeetingAttachmentOperationResults['links']> {
     if (linksToSave.length === 0) {
       return of({ successes: [], failures: [] });
     }
@@ -873,8 +919,26 @@ export class MeetingComposerFormService {
     );
   }
 
+  /** Whether anything queued on the form still needs the saved meeting's id to be persisted. */
+  private hasPendingDependentWork(): boolean {
+    const registrants = this.registrantUpdates();
+
+    return (
+      this.pendingAttachments.some((attachment) => !attachment.uploading && !attachment.uploadError && !attachment.uploaded && attachment.file) ||
+      this.pendingAttachmentDeletions().length > 0 ||
+      this.hasUnsavedLinks() ||
+      registrants.toAdd.length > 0 ||
+      registrants.toUpdate.length > 0 ||
+      registrants.toDelete.length > 0
+    );
+  }
+
   /** Warns when attachment or registrant work partially failed; the caller owns the success toast. */
-  private reportDependentResults(attachments: MeetingAttachmentOperationResults | null, registrants: MeetingRegistrantOperationResult[]): void {
+  private reportDependentResults(
+    attachments: MeetingAttachmentOperationResults | null,
+    registrants: MeetingRegistrantOperationResult[],
+    wasEditMode: boolean
+  ): void {
     const registrantFailures = registrants.reduce((sum, result) => sum + result.failed, 0);
     let attachmentFailures = 0;
 
@@ -900,7 +964,7 @@ export class MeetingComposerFormService {
 
     this.messageService.add({
       severity: 'warn',
-      summary: this.isEditMode() ? 'Meeting Updated' : 'Meeting Created',
+      summary: wasEditMode ? 'Meeting Updated' : 'Meeting Created',
       detail: `${failureParts.join(' and ')} could not be saved. You can manage them later.`,
     });
   }

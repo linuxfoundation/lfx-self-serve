@@ -16,15 +16,15 @@ import { MeetingDetailsComponent } from '../components/meeting-details/meeting-d
 import { MeetingPlatformFeaturesComponent } from '../components/meeting-platform-features/meeting-platform-features.component';
 import { MeetingRegistrantsManagerComponent } from '../components/meeting-registrants-manager/meeting-registrants-manager.component';
 import { MeetingResourcesSummaryComponent } from '../components/meeting-resources-summary/meeting-resources-summary.component';
-import { MeetingTypeSelectionComponent } from '../components/meeting-type-selection/meeting-type-selection.component';
 import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerService } from './meeting-composer.service';
+import { ComposerDetailsAccessComponent } from './sections/composer-details-access.component';
 
 /**
  * Globally mounted host for the meeting composer drawer (LFXV2-3234).
- * @description Mounted once in `app.component.html`, so opening the composer never unmounts the
- * page underneath. The section rail and live preview land in LFXV2-3240; until then the sections
- * are driven by the footer navigation.
+ * @description Mounted on first open via `@defer` in `app.component.html` and retained thereafter, so
+ * opening the composer never unmounts the page underneath. The section rail and live preview land in
+ * LFXV2-3240; until then the sections are driven by the footer navigation.
  */
 @Component({
   selector: 'lfx-meeting-composer-host',
@@ -32,7 +32,7 @@ import { MeetingComposerService } from './meeting-composer.service';
     NgClass,
     DrawerModule,
     ButtonComponent,
-    MeetingTypeSelectionComponent,
+    ComposerDetailsAccessComponent,
     MeetingDetailsComponent,
     MeetingPlatformFeaturesComponent,
     MeetingRegistrantsManagerComponent,
@@ -111,9 +111,9 @@ export class MeetingComposerHostComponent {
     this.formService.registrantUpdates.set(updates);
   }
 
-  /** Jumps to whichever section currently owns the title field. */
+  /** Jumps to the section that owns the title field. */
   protected onGoToTitleSection(): void {
-    this.composer.setSection('date-schedule');
+    this.composer.setSection('details-access');
   }
 
   protected onSubmit(): void {
@@ -122,8 +122,9 @@ export class MeetingComposerHostComponent {
     }
 
     const wasEditMode = this.formService.isEditMode();
-    const generation = this.formService.openGeneration;
 
+    // `submit()` completes without emitting when the save outlived its open, so reaching here always
+    // means the current open is the one that was saved.
     this.formService.submit().subscribe(() => {
       this.messageService.add({
         severity: 'success',
@@ -131,11 +132,7 @@ export class MeetingComposerHostComponent {
         detail: wasEditMode ? 'Meeting updated successfully' : 'Meeting created successfully',
       });
 
-      // The composer may have been closed and reopened against a different meeting while the save was
-      // in flight; closing it then would discard whatever the user has since started.
-      if (this.formService.openGeneration === generation) {
-        this.composer.close();
-      }
+      this.composer.close();
     });
   }
 }
