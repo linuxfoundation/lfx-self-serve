@@ -21,6 +21,11 @@ const PROJECT_SLUG = 'uepf';
 
 function groupsResponse() {
   return {
+    // A second group with its own uid/slug is deliberate, not incidental fixture noise — it's
+    // what actually exercises the uid-scoped testids (org-groups-item-project-<uid>,
+    // org-groups-item-name-<uid>): with only one row, a Playwright strict-mode violation from a
+    // fixed (unscoped) testid would never surface, and this suite exists specifically to catch
+    // that regression class.
     groups: [
       {
         uid: GROUP_UID,
@@ -31,9 +36,18 @@ function groupsResponse() {
         project_name: 'Ultra Ethernet Consortium Fund',
         org_seat_count: 5,
       },
+      {
+        uid: 'c-storage',
+        name: 'Storage Working Group',
+        category: 'Working Group',
+        project_uid: 'cncf-root',
+        project_slug: 'cncf',
+        project_name: 'Cloud Native Computing Foundation',
+        org_seat_count: 3,
+      },
     ],
-    total_groups: 1,
-    total_seats: 5,
+    total_groups: 2,
+    total_seats: 8,
   };
 }
 
