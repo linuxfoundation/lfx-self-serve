@@ -132,7 +132,11 @@ describe('PublicFoundationGroupsComponent — contrast and responsive row layout
     // "drop redundant class" risk the other tests in this file guard against.
     await render({ groups: [group()], total: 1 });
 
-    const row = fixture.nativeElement.querySelector('[data-testid^="public-foundation-groups-item-"]');
+    // Exact testid, not a `^=` prefix match — that prefix is shared by six descendant testids in
+    // this row (meta-wrapper, meta-block, name, project, desc, class-chip), so a prefix query would
+    // silently retarget one of them instead of failing loudly if the row's own testid is ever
+    // dropped or renamed.
+    const row = fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-item-g1"]');
     expect(row).not.toBeNull();
     const rowClasses = (row?.className ?? '').split(/\s+/);
     expect(rowClasses).toContain('items-start');
