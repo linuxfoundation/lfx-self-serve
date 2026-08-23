@@ -106,10 +106,12 @@ describe('PublicProjectGroupsComponent — contrast and responsive row layout (G
     expect(chipClasses).toContain('shrink-0');
   });
 
-  it('meta wrapper folds to display:contents at sm+, while the inner meta block keeps the growing flex class', async () => {
-    // Regression lock: flex-1/min-w-0 must live on the inner meta block, not the sm:contents
-    // wrapper — display:contents gives the wrapper no box of its own at sm+, so flex classes
-    // placed there would silently stop applying and the block would collapse to content width.
+  it('meta wrapper folds to display:contents at sm+, while both wrapper and inner block keep their own growing flex classes', async () => {
+    // Regression lock: the wrapper's own flex-1/min-w-0 are load-bearing below `sm`, where it is
+    // still a real flex item of the row and min-w-0 is what lets the truncate'd name/description
+    // actually truncate. At sm+, `display: contents` gives the wrapper no box of its own, so those
+    // classes go inert there — which is why the inner meta block must carry its own copies too, or
+    // the block would collapse to content width once the wrapper stops applying them.
     await render({ groups: [group()], total: 1 });
 
     const wrapper = fixture.nativeElement.querySelector('[data-testid="public-project-groups-item-meta-wrapper"]');
@@ -119,6 +121,10 @@ describe('PublicProjectGroupsComponent — contrast and responsive row layout (G
     expect(block).not.toBeNull();
     expect(wrapper?.contains(block)).toBe(true);
     expect(wrapper?.className).toContain('sm:contents');
+
+    const wrapperClasses = (wrapper?.className ?? '').split(/\s+/);
+    expect(wrapperClasses).toContain('flex-1');
+    expect(wrapperClasses).toContain('min-w-0');
 
     const blockClasses = (block?.className ?? '').split(/\s+/);
     expect(blockClasses).toContain('flex-1');
