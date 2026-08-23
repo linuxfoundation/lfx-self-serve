@@ -420,7 +420,10 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
     await TestBed.configureTestingModule({
       imports: [OrgGroupsComponent],
       providers: [
-        { provide: AccountContextService, useValue: { selectedAccount: signal({ accountId: 'a1', accountName: 'Acme Corp', uid: 'org-1' }), hasOrgSelectorAccess: signal(true) } },
+        {
+          provide: AccountContextService,
+          useValue: { selectedAccount: signal({ accountId: 'a1', accountName: 'Acme Corp', uid: 'org-1' }), hasOrgSelectorAccess: signal(true) },
+        },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
