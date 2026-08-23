@@ -93,7 +93,7 @@ function groupsResponse(groups: OrgLensGroupSummary[]): OrgLensGroupsResponse {
 }
 
 function listSkeletonRows(fixture: ComponentFixture<OrgGroupsComponent>): NodeListOf<Element> {
-  return fixture.nativeElement.querySelectorAll('[data-testid="org-groups-list-skeleton"] > div');
+  return fixture.nativeElement.querySelectorAll('[data-testid="org-groups-list-skeleton-row"]');
 }
 
 function statSkeletonCards(fixture: ComponentFixture<OrgGroupsComponent>): NodeListOf<Element> {
