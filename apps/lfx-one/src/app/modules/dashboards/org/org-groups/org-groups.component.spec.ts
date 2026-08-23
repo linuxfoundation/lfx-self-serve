@@ -416,24 +416,10 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
   let fixture: ComponentFixture<OrgGroupsComponent>;
 
   async function render(response: OrgLensGroupsResponse): Promise<void> {
-    TestBed.resetTestingModule();
-    await TestBed.configureTestingModule({
-      imports: [OrgGroupsComponent],
-      providers: [
-        {
-          provide: AccountContextService,
-          useValue: { selectedAccount: signal({ accountId: 'a1', accountName: 'Acme Corp', uid: 'org-1' }), hasOrgSelectorAccess: signal(true) },
-        },
-        { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
-        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
-        { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
-        { provide: OrgLensGroupsService, useValue: { getGroups: () => of(response) } },
-        provideRouter([]),
-      ],
-    }).compileComponents();
-
-    fixture = TestBed.createComponent(OrgGroupsComponent);
-    await fixture.whenStable();
+    // Delegates to the shared setup below rather than duplicating the TestBed providers —
+    // two near-identical configurations meant a provider change here could silently drift
+    // from the other describe block's.
+    fixture = await renderGroupsPage({ accountName: 'Acme Corp', getGroups: () => of(response) });
   }
 
   function group(over: Partial<OrgLensGroupSummary> = {}): OrgLensGroupSummary {
@@ -563,5 +549,120 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
 
     const rowLink = fixture.nativeElement.querySelector('[data-testid="org-groups-row-link-g1"]');
     expect(rowLink?.getAttribute('href')).toBe('/groups/g1');
+  });
+});
+
+async function renderGroupsPage(options: RenderOptions = {}): Promise<ComponentFixture<OrgGroupsComponent>> {
+  const { accountName = 'Acme Motors, Inc.', orgNavigationLoaded = true, getGroups = () => of(emptyGroupsResponse()) } = options;
+
+  TestBed.resetTestingModule();
+  await TestBed.configureTestingModule({
+    imports: [OrgGroupsComponent],
+    providers: [
+      {
+        provide: AccountContextService,
+        useValue: {
+          selectedAccount: signal({ accountId: 'acc-1', accountName, accountSlug: 'acme', membershipTier: '', uid: 'org-uid-1' }),
+          hasOrgSelectorAccess: signal(true),
+        },
+      },
+      { provide: OrgNavigationService, useValue: { loaded: signal(orgNavigationLoaded) } },
+      { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
+      { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
+      { provide: OrgLensGroupsService, useValue: { getGroups } },
+      provideRouter([]),
+    ],
+  }).compileComponents();
+
+  const fixture = TestBed.createComponent(OrgGroupsComponent);
+  await fixture.whenStable();
+  fixture.detectChanges();
+  return fixture;
+}
+
+function populatedGroupsResponse(): OrgLensGroupsResponse {
+  const groups: OrgLensGroupSummary[] = [
+    { uid: 'group-1', name: 'Platform Working Group', category: 'Working Group', project_slug: 'acme-platform', org_seat_count: 3 },
+    { uid: 'group-2', name: 'Security SIG', category: 'Special Interest Group', project_slug: 'acme-platform', org_seat_count: 1 },
+  ];
+  return { groups, total_groups: groups.length, total_seats: 4 };
+}
+
+function has(fixture: ComponentFixture<OrgGroupsComponent>, testid: string): boolean {
+  return !!fixture.nativeElement.querySelector(`[data-testid="${testid}"]`);
+}
+
+function listSkeletonRowsIn(fixture: ComponentFixture<OrgGroupsComponent>): NodeListOf<Element> {
+  return fixture.nativeElement.querySelectorAll('[data-testid="org-groups-list-skeleton"] > div');
+}
+
+function statSkeletonCardsIn(fixture: ComponentFixture<OrgGroupsComponent>, wrapperTestid: string): NodeListOf<Element> {
+  return fixture.nativeElement.querySelectorAll(`[data-testid="${wrapperTestid}"] > div`);
+}
+
+describe('OrgGroupsComponent — loading state and copy', () => {
+  it('renders the same skeleton shape for the initial page load and the group-fetch loading state', async () => {
+    // !loaded() branch — org navigation hasn't resolved yet.
+    const initialLoad = await renderGroupsPage({ orgNavigationLoaded: false });
+    expect(has(initialLoad, 'org-groups-skeleton')).toBe(true);
+    expect(has(initialLoad, 'org-groups-stat-strip')).toBe(false);
+    expect(has(initialLoad, 'org-groups-list-loading')).toBe(true);
+    expect(has(initialLoad, 'org-groups-list')).toBe(false);
+    expect(statSkeletonCardsIn(initialLoad, 'org-groups-skeleton').length).toBe(4);
+    expect(listSkeletonRowsIn(initialLoad).length).toBe(5);
+
+    // groupsLoading() branch — page loaded, but the group fetch never resolves.
+    const groupsFetching = await renderGroupsPage({ getGroups: () => new Subject<OrgLensGroupsResponse>() });
+    expect(has(groupsFetching, 'org-groups-stat-strip')).toBe(true);
+    expect(has(groupsFetching, 'org-groups-skeleton')).toBe(false);
+    expect(has(groupsFetching, 'org-groups-list')).toBe(true);
+    expect(has(groupsFetching, 'org-groups-list-loading')).toBe(false);
+    expect(has(groupsFetching, 'org-groups-stat-total')).toBe(false);
+    expect(statSkeletonCardsIn(groupsFetching, 'org-groups-stat-strip').length).toBe(4);
+    expect(listSkeletonRowsIn(groupsFetching).length).toBe(5);
+  });
+
+  it('renders the populated stat strip and group list once data arrives', async () => {
+    const fixture = await renderGroupsPage({ getGroups: () => of(populatedGroupsResponse()) });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-groups-stat-total"]')?.textContent).toContain('2');
+    expect(fixture.nativeElement.querySelector('[data-testid="org-groups-stat-seats"]')?.textContent).toContain('4');
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="org-groups-list-items"] > div').length).toBe(2);
+    expect(fixture.nativeElement.querySelector('[data-testid="org-groups-skeleton"]')).toBeNull();
+  });
+
+  it('includes the selected account name in the H1, separated by a dash', async () => {
+    const fixture = await renderGroupsPage({ accountName: 'Acme Motors, Inc.' });
+
+    const title = fixture.nativeElement.querySelector('[data-testid="org-groups-title"]');
+
+    expect(title?.textContent?.trim()).toBe('Groups — Acme Motors, Inc.');
+  });
+
+  it('omits the dash from the H1 when no account name is selected', async () => {
+    const fixture = await renderGroupsPage({ accountName: '' });
+
+    const title = fixture.nativeElement.querySelector('[data-testid="org-groups-title"]');
+
+    expect(title?.textContent?.trim()).toBe('Groups');
+  });
+
+  it('renders the group-participation empty state copy', async () => {
+    const fixture = await renderGroupsPage({ getGroups: () => of(emptyGroupsResponse()) });
+
+    const emptyState = fixture.nativeElement.querySelector('[data-testid="org-groups-empty-state"]');
+
+    expect(emptyState?.textContent).toContain(`No ${COMMITTEE_LABEL.singular.toLowerCase()} participation found.`);
+    expect(emptyState?.textContent).toContain(`any ${COMMITTEE_LABEL.plural.toLowerCase()}.`);
+  });
+
+  it('renders the fetch-error subtitle on the empty state', async () => {
+    const fixture = await renderGroupsPage({ getGroups: () => throwError(() => new Error('boom')) });
+
+    const errorState = fixture.nativeElement.querySelector('[data-testid="org-groups-error-state"]');
+
+    expect(errorState?.textContent).toContain(
+      `Something went wrong while fetching ${COMMITTEE_LABEL.singular.toLowerCase()} data. Please try refreshing the page.`
+    );
   });
 });

@@ -26,21 +26,24 @@
       </p>
     </section>
   } @else if (!loaded()) {
-    <section class="grid grid-cols-2 gap-4 sm:grid-cols-4" aria-label="Group participation summary" data-testid="org-groups-skeleton">
+    <section class="grid grid-cols-2 gap-4 sm:grid-cols-4" aria-label="{{ committeeLabel.singular }} participation summary" data-testid="org-groups-skeleton">
       <ng-container [ngTemplateOutlet]="statCardsSkeleton" />
     </section>
-    <section aria-label="Group list" data-testid="org-groups-list-loading">
+    <section aria-label="{{ committeeLabel.singular }} list" data-testid="org-groups-list-loading">
       <div class="flex flex-col gap-3" data-testid="org-groups-list-skeleton">
         <ng-container [ngTemplateOutlet]="groupListSkeleton" />
       </div>
     </section>
   } @else if (!hasCompany()) {
-    <lfx-empty-state icon="fa-light fa-building" title="Select an organization to view group participation." data-testid="org-groups-no-company-state" />
+    <lfx-empty-state
+      icon="fa-light fa-building"
+      title="Select an organization to view {{ committeeLabel.singular.toLowerCase() }} participation."
+      data-testid="org-groups-no-company-state" />
   } @else if (fetchError()) {
     <lfx-empty-state
       icon="fa-light fa-circle-exclamation"
-      title="Unable to load group participation"
-      subtitle="Something went wrong while fetching group data. Please try refreshing the page."
+      title="Unable to load {{ committeeLabelSingularLower }} participation"
+      subtitle="Something went wrong while fetching {{ committeeLabelSingularLower }} data. Please try refreshing the page."
       data-testid="org-groups-error-state" />
   } @else {
     @if (showRoster()) {
@@ -80,7 +83,7 @@
     }
 
     <!-- Stat strip -->
-    <section class="grid grid-cols-2 gap-4 sm:grid-cols-4" aria-label="Group participation summary" data-testid="org-groups-stat-strip">
+    <section class="grid grid-cols-2 gap-4 sm:grid-cols-4" aria-label="{{ committeeLabel.singular }} participation summary" data-testid="org-groups-stat-strip">
       @if (groupsLoading()) {
         <ng-container [ngTemplateOutlet]="statCardsSkeleton" />
       } @else {
@@ -135,7 +138,7 @@
     }
 
     <!-- Group list -->
-    <section aria-label="Group list" data-testid="org-groups-list">
+    <section aria-label="{{ committeeLabel.singular }} list" data-testid="org-groups-list">
       @if (groupsLoading()) {
         <div class="flex flex-col gap-3" data-testid="org-groups-list-skeleton">
           <ng-container [ngTemplateOutlet]="groupListSkeleton" />
