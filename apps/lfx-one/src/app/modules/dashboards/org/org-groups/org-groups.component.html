@@ -37,7 +37,7 @@
   } @else if (!hasCompany()) {
     <lfx-empty-state
       icon="fa-light fa-building"
-      title="Select an organization to view {{ committeeLabel.singular.toLowerCase() }} participation."
+      title="Select an organization to view {{ committeeLabelSingularLower }} participation."
       data-testid="org-groups-no-company-state" />
   } @else if (fetchError()) {
     <lfx-empty-state
