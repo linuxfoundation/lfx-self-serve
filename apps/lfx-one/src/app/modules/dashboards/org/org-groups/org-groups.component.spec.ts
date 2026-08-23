@@ -148,7 +148,7 @@ describe('OrgGroupsComponent', () => {
     expect(has(initialLoad, 'org-groups-stat-strip')).toBe(false);
     expect(has(initialLoad, 'org-groups-list-loading')).toBe(true);
     expect(has(initialLoad, 'org-groups-list')).toBe(false);
-    expect(statSkeletonCards(initialLoad).length).toBe(6);
+    expect(statSkeletonCards(initialLoad).length).toBe(8);
     expect(listSkeletonRows(initialLoad).length).toBe(5);
 
     // groupsLoading() branch — page loaded, but the group fetch never resolves.
@@ -158,7 +158,7 @@ describe('OrgGroupsComponent', () => {
     expect(has(groupsFetching, 'org-groups-list')).toBe(true);
     expect(has(groupsFetching, 'org-groups-list-loading')).toBe(false);
     expect(has(groupsFetching, 'org-groups-stat-total')).toBe(false);
-    expect(statSkeletonCards(groupsFetching).length).toBe(6);
+    expect(statSkeletonCards(groupsFetching).length).toBe(8);
     expect(listSkeletonRows(groupsFetching).length).toBe(5);
   });
 

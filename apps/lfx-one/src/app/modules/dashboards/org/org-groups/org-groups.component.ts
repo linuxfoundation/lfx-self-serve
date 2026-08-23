@@ -63,23 +63,24 @@ export class OrgGroupsComponent {
   // doesn't cover. Keep in sync with the stat-strip markup.
   private readonly fixedStatTileCount = 2;
 
-  // Fixed placeholder count for the loading skeletons — the real tile count is only known once
-  // data resolves, so both skeleton branches render this many cards to avoid a second layout shift.
-  protected readonly statSkeletonTiles: readonly number[] = [1, 2, 3, 4, 5, 6];
+  // Fixed placeholder count for the loading skeletons, set to the true max rendered tile count
+  // (2 fixed + all 6 behavioral classes non-zero — see statGridLoadedClass) so the skeleton and
+  // loaded grid only ever diverge on the zero-classes edge case, per GH-1779's "skeleton tile
+  // count matches the rendered tile count" acceptance criterion.
+  protected readonly statSkeletonTiles: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8];
 
   // Mobile fixed at 2 columns, sm+ fixed at 3. At `lg:` and up, the loaded grid switches to one
   // equal-width column per tile via --cols (2-8, since a class only tiles when non-zero) — that's
   // the tightest case, not the roomiest: at 7-8 tiles columns get narrow enough for a longer
   // label to wrap. Accepted deliberately, since a static per-count cap would reintroduce the
   // ragged trailing row this grid exists to avoid. The skeleton and loaded grids share this same
-  // base so they don't diverge on classes, but the real tile count (2-8) is only known once data
-  // resolves and the skeleton's card count is fixed at 6 — some layout shift when data arrives is
-  // unavoidable at any breakpoint. The value is a plain --cols integer rather than a
-  // repeat(min(var(--cols),N)) clamp because CSS Grid requires an integer repeat count and
-  // silently drops the whole declaration otherwise (see events-summary-section.component.html
-  // for the same constraint).
+  // base and now share the same max card count (8, see statSkeletonTiles) — layout shift on data
+  // arrival only happens when fewer than 8 tiles end up rendering. The value is a plain --cols
+  // integer rather than a repeat(min(var(--cols),N)) clamp because CSS Grid requires an integer
+  // repeat count and silently drops the whole declaration otherwise (see
+  // events-summary-section.component.html for the same constraint).
   private readonly statGridBase = 'grid grid-cols-2 gap-4 sm:grid-cols-3';
-  protected readonly statGridSkeletonClass = `${this.statGridBase} lg:grid-cols-6`;
+  protected readonly statGridSkeletonClass = `${this.statGridBase} lg:grid-cols-8`;
   protected readonly statGridLoadedClass = `${this.statGridBase} lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]`;
 
   // ── Auth / access guards (mirrors org-meetings pattern) ───────────────────
