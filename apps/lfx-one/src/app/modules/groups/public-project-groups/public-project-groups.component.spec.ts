@@ -108,10 +108,11 @@ describe('PublicProjectGroupsComponent — contrast and responsive row layout (G
 
   it('meta wrapper folds to display:contents at sm+, while both wrapper and inner block keep their own growing flex classes', async () => {
     // Regression lock: the wrapper's own flex-1/min-w-0 are load-bearing below `sm`, where it is
-    // still a real flex item of the row and min-w-0 is what lets the truncate'd name/description
-    // actually truncate. At sm+, `display: contents` gives the wrapper no box of its own, so those
-    // classes go inert there — which is why the inner meta block must carry its own copies too, or
-    // the block would collapse to content width once the wrapper stops applying them.
+    // still a real flex item of the row and min-w-0 is what lets the truncated name line actually
+    // truncate (the description line is `hidden sm:block`, so it isn't rendered below `sm` at
+    // all). At sm+, `display: contents` gives the wrapper no box of its own, so those classes go
+    // inert there — which is why the inner meta block must carry its own copies too, or the block
+    // would collapse to content width once the wrapper stops applying them.
     await render({ groups: [group()], total: 1 });
 
     const wrapper = fixture.nativeElement.querySelector('[data-testid="public-project-groups-item-meta-wrapper"]');
