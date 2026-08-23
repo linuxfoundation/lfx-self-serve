@@ -3,10 +3,14 @@
 
 <main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-groups-page">
   <header class="flex flex-col gap-2" data-testid="org-groups-header">
-    <h1 class="font-display font-light text-2xl" data-testid="org-groups-title">{{ committeeLabel.plural }}</h1>
-    <p class="text-sm text-gray-500" data-testid="org-groups-subtitle">
-      {{ committeeLabel.plural }} your organization's employees participate in across Linux Foundation projects.
-    </p>
+    <h1 class="font-display font-light text-2xl" data-testid="org-groups-title">
+      @if (companyName()) {
+        {{ committeeLabel.plural }} &mdash; {{ companyName() }}
+      } @else {
+        {{ committeeLabel.plural }}
+      }
+    </h1>
+    <p class="text-sm text-gray-500" data-testid="org-groups-subtitle">Where your employees hold seats across Linux Foundation projects.</p>
   </header>
 
   @if (hasNoOrgAccess()) {
@@ -22,14 +26,13 @@
       </p>
     </section>
   } @else if (!loaded()) {
-    <section class="grid grid-cols-2 gap-4 sm:grid-cols-4" data-testid="org-groups-skeleton">
-      @for (i of [1, 2, 3, 4]; track i) {
-        <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
-          <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
-          <p-skeleton width="3rem" height="1.75rem" />
-          <p-skeleton width="80%" height="0.75rem" />
-        </div>
-      }
+    <section class="grid grid-cols-2 gap-4 sm:grid-cols-4" aria-label="Group participation summary" data-testid="org-groups-skeleton">
+      <ng-container [ngTemplateOutlet]="statCardsSkeleton" />
+    </section>
+    <section aria-label="Group list" data-testid="org-groups-list-loading">
+      <div class="flex flex-col gap-3" data-testid="org-groups-list-skeleton">
+        <ng-container [ngTemplateOutlet]="groupListSkeleton" />
+      </div>
     </section>
   } @else if (!hasCompany()) {
     <lfx-empty-state icon="fa-light fa-building" title="Select an organization to view group participation." data-testid="org-groups-no-company-state" />
@@ -37,19 +40,49 @@
     <lfx-empty-state
       icon="fa-light fa-circle-exclamation"
       title="Unable to load group participation"
-      description="Something went wrong while fetching group data. Please try refreshing the page."
+      subtitle="Something went wrong while fetching group data. Please try refreshing the page."
       data-testid="org-groups-error-state" />
   } @else {
+    @if (showRoster()) {
+      <!-- Filter bar -->
+      <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4" data-testid="org-groups-filter-bar">
+        <div class="flex-1">
+          <lfx-input-text
+            [form]="filterForm"
+            control="search"
+            placeholder="Search {{ committeeLabelPluralLower }}..."
+            icon="fa-light fa-magnifying-glass"
+            styleClass="w-full"
+            size="small"
+            dataTest="org-groups-search-input" />
+        </div>
+        <div class="w-full md:w-56">
+          <lfx-select
+            [form]="filterForm"
+            control="foundation"
+            size="small"
+            [options]="foundationOptions()"
+            styleClass="w-full"
+            ariaLabel="Filter by foundation"
+            dataTest="org-groups-foundation-filter" />
+        </div>
+        <div class="w-full md:w-56">
+          <lfx-select
+            [form]="filterForm"
+            control="type"
+            size="small"
+            [options]="typeOptions()"
+            styleClass="w-full"
+            ariaLabel="Filter by type"
+            dataTest="org-groups-type-filter" />
+        </div>
+      </div>
+    }
+
     <!-- Stat strip -->
     <section class="grid grid-cols-2 gap-4 sm:grid-cols-4" aria-label="Group participation summary" data-testid="org-groups-stat-strip">
       @if (groupsLoading()) {
-        @for (i of [1, 2, 3, 4]; track i) {
-          <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
-            <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
-            <p-skeleton width="3rem" height="1.75rem" />
-            <p-skeleton width="80%" height="0.75rem" />
-          </div>
-        }
+        <ng-container [ngTemplateOutlet]="statCardsSkeleton" />
       } @else {
         <!-- Total groups card -->
         <div class="flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-groups-stat-total">
@@ -86,30 +119,45 @@
       }
     </section>
 
+    @if (showRoster()) {
+      <div class="flex items-center justify-between text-sm text-gray-500" data-testid="org-groups-result-line">
+        <span data-testid="org-groups-result-count">Showing {{ filteredGroups().length }} of {{ groups().length }} {{ committeeLabelPluralLower }}</span>
+        @if (isFiltering()) {
+          <button
+            type="button"
+            class="text-xs font-medium text-gray-500 underline hover:text-slate-900"
+            data-testid="org-groups-clear-filters"
+            (click)="clearFilters()">
+            Clear filters
+          </button>
+        }
+      </div>
+    }
+
     <!-- Group list -->
     <section aria-label="Group list" data-testid="org-groups-list">
       @if (groupsLoading()) {
         <div class="flex flex-col gap-3" data-testid="org-groups-list-skeleton">
-          @for (i of [1, 2, 3, 4, 5]; track i) {
-            <div class="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4">
-              <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
-              <div class="flex flex-col gap-1 flex-1">
-                <p-skeleton width="40%" height="1rem" />
-                <p-skeleton width="25%" height="0.75rem" />
-              </div>
-              <p-skeleton width="3rem" height="1.25rem" />
-            </div>
-          }
+          <ng-container [ngTemplateOutlet]="groupListSkeleton" />
         </div>
       } @else if (groups().length === 0) {
         <lfx-empty-state
           icon="fa-light fa-users-rectangle"
-          title="No group participation found."
-          description="Your organization's employees are not listed as members of any working groups or committees."
+          title="No {{ committeeLabelSingularLower }} participation found."
+          subtitle="Your organization's employees are not listed as members of any {{ committeeLabelPluralLower }}."
           data-testid="org-groups-empty-state" />
+      } @else if (filteredGroups().length === 0) {
+        <lfx-empty-state
+          icon="fa-light fa-filter-slash"
+          title="No {{ committeeLabelPluralLower }} match the current filters"
+          subtitle="Try adjusting your search or filter selections."
+          ctaLabel="Clear filters"
+          ctaIcon="fa-light fa-filter-slash"
+          (ctaClick)="clearFilters()"
+          data-testid="org-groups-filtered-empty-state" />
       } @else {
         <div class="flex flex-col gap-2" role="list" data-testid="org-groups-list-items">
-          @for (group of groupsWithClass(); track group.uid) {
+          @for (group of filteredGroups(); track group.uid) {
             @let config = behavioralClassConfig[group.cls];
             <div
               role="listitem"
@@ -191,4 +239,27 @@
       }
     </section>
   }
+
+  <ng-template #statCardsSkeleton>
+    @for (i of [1, 2, 3, 4]; track i) {
+      <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
+        <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
+        <p-skeleton width="3rem" height="1.75rem" />
+        <p-skeleton width="80%" height="0.75rem" />
+      </div>
+    }
+  </ng-template>
+
+  <ng-template #groupListSkeleton>
+    @for (i of [1, 2, 3, 4, 5]; track i) {
+      <div class="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4">
+        <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
+        <div class="flex flex-col gap-1 flex-1">
+          <p-skeleton width="40%" height="1rem" />
+          <p-skeleton width="25%" height="0.75rem" />
+        </div>
+        <p-skeleton width="3rem" height="1.25rem" />
+      </div>
+    }
+  </ng-template>
 </main>
