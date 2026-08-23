@@ -91,7 +91,8 @@ export class OrgGroupsComponent {
       this.groups().map((g) => {
         const cls = getGroupBehavioralClass(g.category);
         const projectLabel = g.project_name || g.project_slug || '';
-        const ariaLabel = `${g.name}, ${BEHAVIORAL_CLASS_CONFIG[cls].label}, ${g.org_seat_count} seats` + (projectLabel ? `, ${projectLabel}` : '');
+        const seatWord = g.org_seat_count === 1 ? 'seat' : 'seats';
+        const ariaLabel = `${g.name}, ${BEHAVIORAL_CLASS_CONFIG[cls].label}, ${g.org_seat_count} ${seatWord}` + (projectLabel ? `, ${projectLabel}` : '');
         // See org-groups.component.html for why this links to /org/memberships, not /org/projects.
         const projectAriaLabel = projectLabel ? `View ${projectLabel} membership details` : '';
         return { ...g, cls, projectLabel, ariaLabel, projectAriaLabel };

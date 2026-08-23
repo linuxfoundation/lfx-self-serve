@@ -97,6 +97,16 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
     expect(rowAriaLabel()).toBe('WG Identity & Trust, Working Groups, 3 seats');
   });
 
+  it('uses the singular "seat" in the aria-label for a single-seat group', async () => {
+    await render({
+      groups: [group({ org_seat_count: 1 })],
+      total_groups: 1,
+      total_seats: 1,
+    });
+
+    expect(rowAriaLabel()).toBe('WG Identity & Trust, Working Groups, 1 seat');
+  });
+
   it('renders the foundation name as a link to /org/memberships/<slug> when project_slug is present', async () => {
     await render({
       groups: [group({ project_name: 'Ultra Ethernet Consortium Fund', project_slug: 'uepf' })],

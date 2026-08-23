@@ -148,14 +148,18 @@
                   <!-- /org/memberships/:slug, not /org/projects/:slug — the org-projects page is
                        Snowflake/CDP-scoped to sub-project activity rows and doesn't resolve
                        foundation-level slugs (verified live: /org/projects/uepf 404s,
-                       /org/memberships/uepf works). Known residual gap: the memberships route
-                       only resolves an *active* Snowflake membership row for the org (server's
-                       org-lens-memberships.service.ts getMembershipDetail) — a foundation the org
-                       has a committee seat in but no active membership for (expired tier, or a
-                       seat that predates/exists independent of formal membership) still
-                       dead-ends, just on the memberships not-found state instead of the projects
-                       one. Narrower than before this fix (the common active-membership case now
-                       works), not fully closed. -->
+                       /org/memberships/uepf works). Known residual gap, two causes: (1) the
+                       memberships route only resolves an *active* Snowflake membership row for
+                       the org (server's org-lens-memberships.service.ts getMembershipDetail) — a
+                       foundation the org has a committee seat in but no active membership for
+                       (expired tier, or a seat that predates/exists independent of formal
+                       membership) dead-ends on the memberships not-found state; (2) group.slug
+                       here is the project-service slug from the committee-service seat record,
+                       while the memberships route matches against Snowflake's foundationSlug —
+                       verified equal for the sampled cases (uepf, cncf) but not guaranteed equal
+                       in general, so a slug mismatch is a second, unverified way to dead-end.
+                       Narrower than before this fix (the common case now works), not fully
+                       closed. -->
                   @if (group.project_slug) {
                     <a
                       [routerLink]="['/org/memberships', group.project_slug]"

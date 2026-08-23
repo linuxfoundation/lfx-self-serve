@@ -8,118 +8,13 @@
  *
  * Companion to `org-groups-row-link-robust.spec.ts`, which owns the data-testid contract
  * (presence, uniqueness) for this same row. This file stays focused on click-routing behavior.
+ * Both share their fixture/setup via `helpers/org-groups.helper.ts` so the two specs can't drift
+ * apart on what they're each asserting against.
  */
 
-import { expect, Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
-const GROUPS_URL = '/org/groups';
-const DATA_LOAD_TIMEOUT = 30_000;
-
-const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
-const MOCK_ACCOUNT_NAME = 'Acme Motors';
-const MOCK_ACCOUNT_SLUG = 'acme-motors';
-
-const GROUP_UID = 'c-transport';
-const PROJECT_SLUG = 'uepf';
-
-const SECOND_GROUP_UID = 'c-storage';
-const SECOND_PROJECT_SLUG = 'cncf';
-
-function groupsResponse() {
-  return {
-    // A second group with its own uid/slug is deliberate, not incidental fixture noise — the
-    // tests below that assert against SECOND_GROUP_UID prove the stretched-link overlay /
-    // pointer-events routing works on a non-first row too, not just coincidentally on the only
-    // row present. The data-testid contract itself (presence, uniqueness across rows) is covered
-    // separately in org-groups-row-link-robust.spec.ts, which has its own copy of this fixture.
-    groups: [
-      {
-        uid: GROUP_UID,
-        name: 'Transport Working Group',
-        category: 'Working Group',
-        project_uid: 'uepf-root',
-        project_slug: PROJECT_SLUG,
-        project_name: 'Ultra Ethernet Consortium Fund',
-        org_seat_count: 5,
-      },
-      {
-        uid: SECOND_GROUP_UID,
-        name: 'Storage Working Group',
-        category: 'Working Group',
-        project_uid: 'cncf-root',
-        project_slug: SECOND_PROJECT_SLUG,
-        project_name: 'Cloud Native Computing Foundation',
-        org_seat_count: 3,
-      },
-    ],
-    total_groups: 2,
-    total_seats: 8,
-  };
-}
-
-function skipWhenAuthMissing(page: Page): void {
-  try {
-    const { hostname } = new URL(page.url());
-    if (hostname === 'auth0.com' || hostname.endsWith('.auth0.com')) {
-      test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
-    }
-  } catch {
-    // Malformed URL — let the test run and surface a useful failure.
-  }
-}
-
-async function stubAccountContext(page: Page): Promise<void> {
-  await page.route('**/api/user/personas*', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        personas: ['contributor'],
-        personaProjects: {},
-        projects: [],
-        organizations: [
-          { accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, accountSlug: MOCK_ACCOUNT_SLUG, membershipTier: '', uid: MOCK_ACCOUNT_ID },
-        ],
-        isRootWriter: false,
-      }),
-    })
-  );
-  await page.route('**/api/orgs/me/role-grants', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        writers: [MOCK_ACCOUNT_ID],
-        auditors: [],
-        cascadingWriters: [],
-        cascadingAuditors: [],
-        username: 'e2e-org-groups-row-link',
-        loaded_at: new Date().toISOString(),
-      }),
-    })
-  );
-}
-
-async function stubGroups(page: Page): Promise<void> {
-  await page.route(/\/api\/orgs\/[^/]+\/lens\/groups$/, (route) => {
-    if (route.request().method() !== 'GET') return route.fallback();
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(groupsResponse()) });
-  });
-}
-
-async function gotoGroups(page: Page): Promise<void> {
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-  await page.reload({ waitUntil: 'domcontentloaded' });
-
-  await page.goto(GROUPS_URL, { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-
-  if (!page.url().includes('/org/groups')) {
-    test.skip(true, 'org-lens-enabled flag appears off — /org/groups redirected away');
-  }
-  await expect(page.getByTestId(`org-groups-item-${GROUP_UID}`)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-}
+import { GROUP_UID, PROJECT_SLUG, SECOND_GROUP_UID, SECOND_PROJECT_SLUG, stubAccountContext, stubGroups, gotoGroups } from './helpers/org-groups.helper';
 
 test.setTimeout(120_000);
 
