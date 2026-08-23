@@ -123,7 +123,7 @@
 
     @if (showRoster()) {
       <div class="flex items-center justify-between text-sm text-gray-500" data-testid="org-groups-result-line">
-        <span data-testid="org-groups-result-count">Showing {{ filteredGroups().length }} of {{ groups().length }} {{ committeeLabelPluralLower }}</span>
+        <span data-testid="org-groups-result-count" aria-live="polite">Showing {{ filteredGroups().length }} of {{ groups().length }} {{ committeeLabelPluralLower }}</span>
         @if (isFiltering()) {
           <button
             type="button"
