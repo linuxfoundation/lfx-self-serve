@@ -206,7 +206,9 @@ export class OrgGroupsComponent {
 
   private initFoundationOptions(): Signal<OrgDropdownOption[]> {
     return computed(() => {
-      const options = [...this.foundationLabelsBySlug().entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([slug, label]) => ({ label, value: slug }));
+      const options = [...this.foundationLabelsBySlug().entries()]
+        .sort((a, b) => a[1].localeCompare(b[1], 'en-US'))
+        .map(([slug, label]) => ({ label, value: slug }));
       return [{ label: 'All foundations', value: '' }, ...options];
     });
   }
