@@ -19,13 +19,19 @@ const MOCK_ACCOUNT_SLUG = 'acme-motors';
 const GROUP_UID = 'c-transport';
 const PROJECT_SLUG = 'uepf';
 
+const SECOND_GROUP_UID = 'c-storage';
+const SECOND_PROJECT_SLUG = 'cncf';
+
 function groupsResponse() {
   return {
-    // A second group with its own uid/slug is deliberate, not incidental fixture noise — it's
-    // what actually exercises the uid-scoped testids (org-groups-item-project-<uid>,
-    // org-groups-item-name-<uid>): with only one row, a Playwright strict-mode violation from a
-    // fixed (unscoped) testid would never surface, and this suite exists specifically to catch
-    // that regression class.
+    // A second group with its own uid/slug is deliberate, not incidental fixture noise. All
+    // testids here are already uid-suffixed, so a locator scoped to a fixed (unscoped) testid
+    // would just time out with one row or ten — a second row doesn't change that failure mode.
+    // What it actually buys: (a) the tests below that assert against SECOND_GROUP_UID prove the
+    // stretched-link overlay/pointer-events routing works on a non-first row too, not just
+    // coincidentally on the only row present; (b) the count assertion below catches a regression
+    // to a testid scoped by something non-unique (e.g. group.category) that a single-row fixture
+    // couldn't distinguish from a correctly uid-scoped one.
     groups: [
       {
         uid: GROUP_UID,
@@ -37,11 +43,11 @@ function groupsResponse() {
         org_seat_count: 5,
       },
       {
-        uid: 'c-storage',
+        uid: SECOND_GROUP_UID,
         name: 'Storage Working Group',
         category: 'Working Group',
         project_uid: 'cncf-root',
-        project_slug: 'cncf',
+        project_slug: SECOND_PROJECT_SLUG,
         project_name: 'Cloud Native Computing Foundation',
         org_seat_count: 3,
       },
@@ -143,5 +149,27 @@ test.describe('Org Groups — row vs. foundation link (GH-1784)', () => {
     await page.getByTestId(`org-groups-item-project-${GROUP_UID}`).click();
     await page.waitForURL((url) => url.pathname.startsWith(`/org/memberships/${PROJECT_SLUG}`));
     expect(page.url()).toContain(`/org/memberships/${PROJECT_SLUG}`);
+  });
+
+  test('clicking the second row body opens that group detail page, not the first row', async ({ page }) => {
+    await page.getByTestId(`org-groups-item-name-${SECOND_GROUP_UID}`).click({ force: true });
+    await page.waitForURL((url) => url.pathname.startsWith(`/groups/${SECOND_GROUP_UID}`));
+    expect(page.url()).toContain(`/groups/${SECOND_GROUP_UID}`);
+  });
+
+  test('clicking the second row foundation label opens that membership page, not the first row', async ({ page }) => {
+    await page.getByTestId(`org-groups-item-project-${SECOND_GROUP_UID}`).click();
+    await page.waitForURL((url) => url.pathname.startsWith(`/org/memberships/${SECOND_PROJECT_SLUG}`));
+    expect(page.url()).toContain(`/org/memberships/${SECOND_PROJECT_SLUG}`);
+  });
+
+  test('every row gets its own uid-scoped testid, not a shared fixed one', async ({ page }) => {
+    // Guards the exact regression class the fixture comment above describes: a testid scoped by
+    // something non-unique (or reverted to a fixed string) collapses to a single match here.
+    await expect(page.locator('[data-testid^="org-groups-item-name-"]')).toHaveCount(2);
+    await expect(page.locator('[data-testid^="org-groups-item-project-"]')).toHaveCount(2);
+    await expect(page.locator('[data-testid^="org-groups-item-seats-"]')).toHaveCount(2);
+    await expect(page.getByTestId(`org-groups-item-seats-${GROUP_UID}`)).toBeVisible();
+    await expect(page.getByTestId(`org-groups-item-seats-${SECOND_GROUP_UID}`)).toBeVisible();
   });
 });
