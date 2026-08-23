@@ -77,8 +77,9 @@
 
             <!-- Name + meta + behavioral class chip: stacked below `sm`; `sm:contents` folds this
                  wrapper away at `sm+` so the name/meta block and chip become direct flex items of
-                 the row again, reproducing the pre-existing desktop layout (see
-                 org-groups.component.html / PR #1789). -->
+                 the row again, reproducing the pre-existing desktop layout. `display: contents`
+                 gives the wrapper no box of its own at `sm+`, which is why `flex-1`/`min-w-0` live
+                 on the inner meta block rather than here (GH-1791, porting the pattern from #1789). -->
             <div class="flex flex-1 min-w-0 flex-col gap-2 sm:contents" data-testid="public-project-groups-item-meta-wrapper">
               <div class="flex flex-1 min-w-0 flex-col gap-0.5" data-testid="public-project-groups-item-meta-block">
                 <p class="truncate text-sm font-medium text-gray-900" data-testid="public-project-groups-item-name">{{ group.name }}</p>

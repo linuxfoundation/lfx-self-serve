@@ -78,7 +78,17 @@ describe('PublicFoundationGroupsComponent — contrast and responsive row layout
 
   it('renders the row project-name line with passing gray-500 contrast, not gray-400', async () => {
     await render({
-      groups: [group({ context: { scope: 'foundation', foundation_uid: 'f1', foundation_name: 'UEPF', foundation_slug: 'uepf', project_name: 'Cloud Native Computing Foundation' } })],
+      groups: [
+        group({
+          context: {
+            scope: 'foundation',
+            foundation_uid: 'f1',
+            foundation_name: 'UEPF',
+            foundation_slug: 'uepf',
+            project_name: 'Cloud Native Computing Foundation',
+          },
+        }),
+      ],
       total: 1,
     });
 
@@ -89,7 +99,13 @@ describe('PublicFoundationGroupsComponent — contrast and responsive row layout
     expect(line?.className).not.toContain('text-gray-400');
   });
 
-  it('behavioral class chip has no hidden class at any breakpoint', async () => {
+  it('behavioral class chip has no hidden class at any breakpoint, and keeps its explicit flex + shrink-0', async () => {
+    // `flex` and `shrink-0` are asserted, not just the absence of `hidden`, because a "drop
+    // redundant class" pass could silently regress both without failing any other assertion here:
+    // without `flex` the host still renders (it blockifies to `block` as a flex item either way) —
+    // only the strut-height fix `flex` provides would quietly come back. Without `shrink-0` the
+    // chip would default to flex-shrink: 1 once `sm:contents` folds the wrapper away at `sm+`,
+    // letting it get squeezed instead of keeping its natural width.
     await render({ groups: [group()], total: 1 });
 
     const chip = fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-item-class-chip"]');
@@ -101,9 +117,9 @@ describe('PublicFoundationGroupsComponent — contrast and responsive row layout
   });
 
   it('meta wrapper folds to display:contents at sm+, while the inner meta block keeps the growing flex class', async () => {
-    // Regression lock, mirroring org-groups.component.spec.ts (PR #1789): flex-1/min-w-0 must live
-    // on the inner meta block, not the sm:contents wrapper — display:contents gives the wrapper no
-    // box of its own at sm+, so flex classes placed there would silently stop applying.
+    // Regression lock: flex-1/min-w-0 must live on the inner meta block, not the sm:contents
+    // wrapper — display:contents gives the wrapper no box of its own at sm+, so flex classes
+    // placed there would silently stop applying and the block would collapse to content width.
     await render({ groups: [group()], total: 1 });
 
     const wrapper = fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-item-meta-wrapper"]');
