@@ -1,6 +1,6 @@
 # Templates and accessibility
 
-Patterns CodeRabbit + Copilot flag in Angular templates — ARIA roles, focus management, keyboard parity, semantic HTML, class-binding clobbering, wrong `@for` track keys, missing `lens=` query params, inline-style misuse, PrimeNG primitives used directly instead of LFX wrappers, dynamic labels forced to single-line at narrow viewports, and tooltips attached to non-focusable hosts. Heavily concentrated in `.component.html` files for table rows, custom toggle buttons, and icon-only buttons.
+Patterns CodeRabbit + Copilot flag in Angular templates — ARIA roles, focus management, keyboard parity, semantic HTML, wrong `@for` track keys, missing `lens=` query params, inline-style misuse, PrimeNG primitives used directly instead of LFX wrappers, dynamic labels forced to single-line at narrow viewports, and tooltips attached to non-focusable hosts. Heavily concentrated in `.component.html` files for table rows, custom toggle buttons, and icon-only buttons. (Static-`class` + `[class]` "clobbering" used to be listed here — see `known-false-positives.md`, it's a false positive under Ivy.)
 
 **Read when:** any `.component.html` file changed. Cross-checked in Steps 3-4 of the learnings-review playbook (KB-match gate in Step 3, false-positive filter in Step 4); findings without a quotable pattern below are dropped.
 
@@ -59,20 +59,6 @@ Patterns CodeRabbit + Copilot flag in Angular templates — ARIA roles, focus ma
 **Failure message:** Click handler without keyboard equivalent; keyboard users can't trigger the action.
 
 **Fix:** either (a) use a `<button>` element instead, or (b) add `(keydown.enter)` and `(keydown.space)` handlers calling the same method, plus `tabindex="0"` and an appropriate `role`.
-
----
-
-## `templates-and-accessibility/class-binding-clobbers-static-class` — Important
-
-**Pattern:** an element has both `[class]="boundExpression"` and `class="static classes"` attributes. Angular replaces (clobbers) the static class string with the bound expression's result — the static classes silently disappear at runtime.
-
-**Detect:** in `.component.html`, find any element with both `[class]=` AND `class=` attributes. Multi-line check; both attributes can be on different lines.
-
-**Empirical citation:** PR #690 `apps/lfx-one/src/app/.../committee-table.component.html:129` — "`[class]` binding on the badge `<span>` overrides the static `class=\"inline-flex …\"` attribute, so the base layout/typography classes will be removed at runtime. Use `ngClass` (or include the base classes in the bound string)." Confirmed at a second site: `committee-dashboard.component.html:68`.
-
-**Failure message:** `[class]` binding clobbers static `class=` on the same element.
-
-**Fix:** use `[ngClass]="..."` which is additive (merges with static class), OR include the static classes in the bound string. Don't have both `[class]` and `class` on the same element.
 
 ---
 

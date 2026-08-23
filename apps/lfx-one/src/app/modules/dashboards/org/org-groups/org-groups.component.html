@@ -111,36 +111,81 @@
         <div class="flex flex-col gap-2" role="list" data-testid="org-groups-list-items">
           @for (group of groupsWithClass(); track group.uid) {
             @let config = behavioralClassConfig[group.cls];
-            <a
-              [routerLink]="['/groups', group.uid]"
+            <div
               role="listitem"
-              class="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-              [attr.data-testid]="'org-groups-item-' + group.uid"
-              [attr.aria-label]="group.name + ', ' + config.label + ', ' + group.org_seat_count + ' seats'">
-              <!-- Icon -->
-              <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" [class]="config.bgColor">
-                <i [class]="config.icon + ' ' + config.color + ' text-base'" aria-hidden="true"></i>
+              class="has-[.peer:hover]:border-blue-200 has-[.peer:hover]:bg-blue-50/30 relative flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors"
+              [attr.data-testid]="'org-groups-item-' + group.uid">
+              <!-- Whole-row click/focus target ("stretched link"): covers the row so the group
+                   itself is still reachable by clicking or tabbing to anywhere in the row, while
+                   the foundation link below remains an independent, individually-focusable sibling
+                   rather than an (invalid) nested anchor. `peer` lets the row (via has-[.peer:hover]
+                   above) and the sibling content wrapper (via peer-hover below) react to *this*
+                   link's own hover state specifically — since the foundation link inside re-enables
+                   its own pointer-events, hovering it does NOT count as hovering this anchor, so the
+                   two links highlight/color independently rather than together. Text selection over
+                   the row content is traded away for this (pointer-events-none below) — matches the
+                   existing stretched-link precedent in shared/components/sidebar/sidebar.component.html. -->
+              <a
+                [routerLink]="['/groups', group.uid]"
+                class="peer absolute inset-0 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                [attr.data-testid]="'org-groups-row-link-' + group.uid"
+                [attr.aria-label]="group.ariaLabel"></a>
+
+              <!-- text-gray-900 + peer-hover:text-blue-600 here, with no color class on the name
+                   `<p>` itself, so the name inherits this wrapper's color — every other child
+                   (seat count, icons, tag) sets its own explicit color and is unaffected. -->
+              <div class="pointer-events-none flex w-full items-center gap-4 text-gray-900 transition-colors peer-hover:text-blue-600">
+                <!-- Icon -->
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" [class]="config.bgColor">
+                  <i [class]="config.icon + ' ' + config.color + ' text-base'" aria-hidden="true"></i>
+                </div>
+
+                <!-- Name + meta -->
+                <div class="flex flex-col gap-0.5 flex-1 min-w-0">
+                  <p class="truncate text-sm font-medium" [attr.data-testid]="'org-groups-item-name-' + group.uid">
+                    {{ group.name }}
+                  </p>
+                  <!-- /org/memberships/:slug, not /org/projects/:slug — the org-projects page is
+                       Snowflake/CDP-scoped to sub-project activity rows and doesn't resolve
+                       foundation-level slugs (verified live: /org/projects/uepf 404s,
+                       /org/memberships/uepf works). Known residual gap, two causes: (1) the
+                       memberships route only resolves an *active* Snowflake membership row for
+                       the org (server's org-lens-memberships.service.ts getMembershipDetail) — a
+                       foundation the org has a committee seat in but no active membership for
+                       (expired tier, or a seat that predates/exists independent of formal
+                       membership) dead-ends on the memberships not-found state; (2)
+                       group.project_slug here is the project-service slug from the
+                       committee-service seat record,
+                       while the memberships route matches against Snowflake's foundationSlug —
+                       verified equal for the sampled cases (uepf, cncf) but not guaranteed equal
+                       in general, so a slug mismatch is a second, unverified way to dead-end.
+                       Narrower than before this fix (the common case now works), not fully
+                       closed. -->
+                  @if (group.project_slug) {
+                    <a
+                      [routerLink]="['/org/memberships', group.project_slug]"
+                      class="pointer-events-auto relative z-10 block w-fit truncate text-xs text-gray-400 transition-colors hover:text-blue-600 hover:underline"
+                      [attr.data-testid]="'org-groups-item-project-' + group.uid"
+                      [attr.aria-label]="group.projectAriaLabel">
+                      {{ group.projectLabel }}
+                    </a>
+                  } @else if (group.projectLabel) {
+                    <p class="truncate text-xs text-gray-400" [attr.data-testid]="'org-groups-item-project-' + group.uid">{{ group.projectLabel }}</p>
+                  }
+                </div>
+
+                <!-- Behavioral class chip -->
+                <lfx-tag [value]="config.label" [severity]="'secondary'" class="shrink-0 hidden sm:flex" />
+
+                <!-- Seat count -->
+                <div class="flex items-center gap-1 shrink-0 text-sm text-gray-600" [attr.data-testid]="'org-groups-item-seats-' + group.uid">
+                  <i class="fa-light fa-user-check text-gray-400 text-xs" aria-hidden="true"></i>
+                  <span>{{ group.org_seat_count }}</span>
+                </div>
+
+                <i class="fa-light fa-chevron-right text-gray-300 text-xs shrink-0" aria-hidden="true"></i>
               </div>
-
-              <!-- Name + meta -->
-              <div class="flex flex-col gap-0.5 flex-1 min-w-0">
-                <p class="truncate text-sm font-medium text-gray-900" data-testid="org-groups-item-name">{{ group.name }}</p>
-                @if (group.project_slug) {
-                  <p class="truncate text-xs text-gray-400" data-testid="org-groups-item-project">{{ group.project_slug }}</p>
-                }
-              </div>
-
-              <!-- Behavioral class chip -->
-              <lfx-tag [value]="config.label" [severity]="'secondary'" class="shrink-0 hidden sm:flex" />
-
-              <!-- Seat count -->
-              <div class="flex items-center gap-1 shrink-0 text-sm text-gray-600" data-testid="org-groups-item-seats">
-                <i class="fa-light fa-user-check text-gray-400 text-xs" aria-hidden="true"></i>
-                <span>{{ group.org_seat_count }}</span>
-              </div>
-
-              <i class="fa-light fa-chevron-right text-gray-300 text-xs shrink-0" aria-hidden="true"></i>
-            </a>
+            </div>
           }
         </div>
       }
