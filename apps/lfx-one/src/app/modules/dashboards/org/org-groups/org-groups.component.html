@@ -153,8 +153,9 @@
                        the org (server's org-lens-memberships.service.ts getMembershipDetail) — a
                        foundation the org has a committee seat in but no active membership for
                        (expired tier, or a seat that predates/exists independent of formal
-                       membership) dead-ends on the memberships not-found state; (2) group.slug
-                       here is the project-service slug from the committee-service seat record,
+                       membership) dead-ends on the memberships not-found state; (2)
+                       group.project_slug here is the project-service slug from the
+                       committee-service seat record,
                        while the memberships route matches against Snowflake's foundationSlug —
                        verified equal for the sampled cases (uepf, cncf) but not guaranteed equal
                        in general, so a slug mismatch is a second, unverified way to dead-end.
