@@ -4,8 +4,7 @@ description: Frequently asked questions about project documents in LFX Self Serv
 audience: [maintainer, board-member, executive-director]
 product_area: Documents
 tags: [documents, faq]
-last_generated: 2026-05-22
-last_updated: 2026-05-22
+last_updated: 2026-08-17
 intercom_collection: Documents
 ---
 
@@ -27,7 +26,7 @@ Document upload availability depends on your project role. Contact your project 
 
 ## Who do I contact if a document is missing or incorrect?
 
-Contact your project administrator or LFX support through the Help Center. Include the document name and the project it belongs to.
+Contact your project administrator or LFX support via in-app messaging. Include the document name and the project it belongs to.
 
 ## Are documents shared across projects?
 

@@ -19,6 +19,9 @@ import {
   CampaignJobStatus,
   CampaignMonitorResponse,
   CampaignSSEEventType,
+  CampaignStatusToggleParams,
+  CampaignStatusUpdateResult,
+  HubSpotEmailSearchResult,
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
@@ -118,16 +121,31 @@ export class CampaignService {
     });
   }
 
-  public createCampaign(request: CampaignCreateRequest): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
-    return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string }>('/api/campaigns/create', request);
+  /**
+   * `projectSlug` and `briefId` travel as query params because the campaign-service cutover reads
+   * them there, not from the body: creation posts to
+   * `/projects/{slug}/briefs/{id}/campaigns`, so both are path segments upstream and the server
+   * has no other source for them. They are not optional in practice — with the cutover flag on,
+   * a request missing either is refused outright and deliberately does NOT fall through to the
+   * legacy path, since falling through would create the campaigns on the ad platforms while the
+   * user is told creation failed.
+   */
+  public createCampaign(
+    request: CampaignCreateRequest,
+    projectSlug: string,
+    briefId: string
+  ): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
+    return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string }>('/api/campaigns/create', request, {
+      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+    });
   }
 
-  public getCreateResult(jobId: string): Observable<CampaignJobOutcome | null> {
+  public getCreateResult(jobId: string, projectSlug: string): Observable<CampaignJobOutcome | null> {
     if (!jobId) {
       return of(null);
     }
 
-    return this.pollJobStatus(jobId).pipe(
+    return this.pollJobStatus(jobId, projectSlug).pipe(
       last(),
       map((status) => {
         // A `done` job always yields an outcome, even when neither field is populated.
@@ -203,6 +221,50 @@ export class CampaignService {
     return this.http.get<AudienceDemographics>('/api/campaigns/audience', { params: { days } });
   }
 
+  /**
+   * Search the project's HubSpot marketing emails, for the Email channel's template picker.
+   *
+   * `projectSlug` travels as a query param for the reason `loadBrief` takes one: a HubSpot
+   * connection is per-project, and the server refuses the request rather than defaulting — so
+   * one foundation's templates can never be listed to another.
+   *
+   * `query` may be empty, which lists the most recently updated templates. That is the useful
+   * default before a user knows what they are looking for, and the service already orders by
+   * last-modified.
+   */
+  public searchHubSpotEmails(projectSlug: string, query: string): Observable<HubSpotEmailSearchResult> {
+    let params = new HttpParams().set('project', projectSlug);
+    if (query !== '') {
+      params = params.set('q', query);
+    }
+    return this.http.get<HubSpotEmailSearchResult>('/api/campaigns/hubspot/emails', { params });
+  }
+
+  /**
+   * Pause or resume a campaign on its ad platform.
+   *
+   * This is the only write in this service that changes money-affecting state on a third party:
+   * a successful response means the ad platform itself moved, not that a row was updated. Pause
+   * is the primary cost-control lever on a mis-targeted or overspending campaign, which is why
+   * it is worth reaching from the UI rather than sending someone to the platform's own console.
+   *
+   * `etag` is REQUIRED, not defensive. The server sends it upstream as `If-Match`, and a 412 back
+   * means another editor moved the campaign since this view read it — the toggle is refused
+   * rather than applied on the strength of a stale view. Callers must pass the etag they read
+   * with the campaign, not one cached from an earlier render.
+   *
+   * `projectSlug` travels as a query param for the reason `searchHubSpotEmails` takes one: the
+   * campaign is addressed per-project upstream and the server refuses rather than defaulting.
+   */
+  public updateCampaignStatus(request: CampaignStatusToggleParams): Observable<CampaignStatusUpdateResult> {
+    const { projectSlug, briefId, campaignId, platform, status, etag } = request;
+    return this.http.patch<CampaignStatusUpdateResult>(
+      `/api/campaigns/${encodeURIComponent(campaignId)}/status`,
+      { platform, status, briefId, etag },
+      { params: new HttpParams().set('project', projectSlug) }
+    );
+  }
+
   public lookupHubSpotUtm(eventName: string): Observable<HubSpotUtmLookupResult> {
     return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', { params: { event_name: eventName } });
   }
@@ -232,11 +294,17 @@ export class CampaignService {
    * outlives all three still propagates: `getCreateResult` reports it, which is correct, because at
    * that point the job status genuinely is unknown.
    */
-  private pollJobStatus(jobId: string): Observable<CampaignJobStatus> {
+  private pollJobStatus(jobId: string, projectSlug: string): Observable<CampaignJobStatus> {
     const maxPolls = Math.ceil(300_000 / CAMPAIGN_JOB_POLL_INTERVAL_MS);
     return timer(0, CAMPAIGN_JOB_POLL_INTERVAL_MS).pipe(
       take(maxPolls),
-      exhaustMap(() => this.http.get<CampaignJobStatus>(`/api/campaigns/jobs/${encodeURIComponent(jobId)}`).pipe(retryTransientHttpError(2))),
+      exhaustMap(() =>
+        this.http
+          .get<CampaignJobStatus>(`/api/campaigns/jobs/${encodeURIComponent(jobId)}`, {
+            params: new HttpParams().set('project', projectSlug),
+          })
+          .pipe(retryTransientHttpError(2))
+      ),
       takeWhile((status) => status.status === 'running', true)
     );
   }

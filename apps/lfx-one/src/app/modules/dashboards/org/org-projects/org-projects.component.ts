@@ -208,7 +208,20 @@ export class OrgProjectsComponent {
   /** Table rows: sorted projects enriched with precomputed bar geometry + tooltip HTML (keeps logic out of the template). */
   protected readonly rows = this.initRows();
   protected readonly totalRecords = computed(() => this.sortedProjects().length);
-  protected readonly canAddProjects = computed(() => this.hasCompany() && !!this.selectedWorkspace() && !this.loading() && !this.error());
+  /**
+   * May the caller change this org's workspaces?
+   *
+   * Direct writer only, matching Org Profile, the People tabs and Org Lens Access. Until LF staff
+   * existed, selecting an org implied holding a grant on it, so these controls were gated on
+   * selection alone; a staff caller can now select any org while being strictly read-only, which
+   * makes selection the wrong question. Read-only auditors also stop seeing controls they could
+   * never successfully use.
+   */
+  protected readonly canManageWorkspaces = computed(() => {
+    const uid = this.accountContext.selectedAccount()?.uid;
+    return !!uid && this.orgRoleGrants.writerSet().has(uid);
+  });
+  protected readonly canAddProjects = computed(() => this.canManageWorkspaces() && !!this.selectedWorkspace() && !this.loading() && !this.error());
   protected readonly addProjectDisabledReason = computed(() => this.initAddProjectDisabledReason());
   protected readonly selectedAddProjectCount = computed(() => this.addProjectsFormValue().projects?.length ?? 0);
   protected readonly addProjectSelectOptions = computed(() =>
@@ -873,6 +886,7 @@ export class OrgProjectsComponent {
 
   private initAddProjectDisabledReason(): string | undefined {
     if (!this.hasCompany()) return 'Select an organization first';
+    if (!this.canManageWorkspaces()) return 'You have view-only access to this organization';
     if (this.loading()) return 'Projects are still loading';
     if (this.error()) return 'Resolve the loading error first';
     if (!this.selectedWorkspace()) return 'No workspace is selected';
@@ -882,6 +896,16 @@ export class OrgProjectsComponent {
   private initTableEmptyState(): OrgProjectsEmptyState {
     const workspace = this.selectedWorkspace();
     if (workspace && !this.isCanonicalDefaultWorkspace(workspace) && workspace.projectSlugs.length === 0) {
+      // The CTA is the same mutation the toolbar button gates, so it has to answer to the same grant:
+      // for a read-only caller `openAddProjects()` returns silently, leaving a button that does
+      // nothing.
+      if (!this.canManageWorkspaces()) {
+        return {
+          icon: 'fa-light fa-folder-open',
+          title: 'No projects in this workspace yet',
+          subtitle: 'An administrator of this organization can add projects to this workspace.',
+        };
+      }
       return {
         icon: 'fa-light fa-folder-plus',
         title: 'No projects in this workspace yet',
@@ -1066,6 +1090,9 @@ export class OrgProjectsComponent {
   }
 
   private buildRowMenu(project: OrgLensProject): MenuItem[] {
+    // The row menu's only entry mutates the workspace, so a caller who cannot manage
+    // workspaces gets an empty menu rather than an action that would be refused upstream.
+    if (!this.canManageWorkspaces()) return [];
     return [{ label: 'Hide project from workspace', icon: 'fa-light fa-eye-slash', command: () => this.hideFromWorkspace(project.slug) }];
   }
 

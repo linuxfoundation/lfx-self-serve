@@ -8,6 +8,7 @@ import { MultiSelectComponent } from '@components/multi-select/multi-select.comp
 import { Committee, CommitteeMember, MeetingCommittee } from '@lfx-one/shared';
 import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import { COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared/constants';
+import { sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
@@ -72,20 +73,21 @@ export class MeetingCommitteeManagerComponent {
     this.committeeForm
       .get('committees')
       ?.valueChanges.pipe(takeUntilDestroyed())
-      .subscribe((committeeIds: string[]) => {
-        this.selectedCommitteeIds.set(committeeIds || []);
-        this.updateParentForm(committeeIds);
+      .subscribe((committeeIds: string[] | null) => {
+        const ids = this.normalizeCommitteeUids(committeeIds);
+        this.selectedCommitteeIds.set(ids);
+        this.updateParentForm(ids);
 
         // Clear voting statuses if no voting committees selected
         const committees = this.committeeOptions();
-        const hasVotingCommittees = committees.some((c) => (committeeIds || []).includes(c.uid) && c.enable_voting);
+        const hasVotingCommittees = committees.some((c) => ids.includes(c.uid) && c.enable_voting);
         if (!hasVotingCommittees) {
           this.committeeForm.patchValue({ votingStatuses: [] }, { emitEvent: false });
           this.selectedVotingStatuses.set([]);
         }
 
         // If any selected committee has show_meeting_attendees enabled, toggle it on for the meeting
-        const hasShowMeetingAttendees = committees.some((c) => (committeeIds || []).includes(c.uid) && c.show_meeting_attendees === true);
+        const hasShowMeetingAttendees = committees.some((c) => ids.includes(c.uid) && c.show_meeting_attendees === true);
         if (hasShowMeetingAttendees) {
           this.form().get('show_meeting_attendees')?.setValue(true);
         }
@@ -118,12 +120,13 @@ export class MeetingCommitteeManagerComponent {
    * Initialize the component state from the selected committees input
    */
   private initializeFromSelectedCommittees(committees: MeetingCommittee[]): void {
-    const committeeIds = committees.map((c) => c.uid);
+    const validCommittees = sanitizeMeetingCommittees(committees);
+    const committeeIds = validCommittees.map((c) => c.uid);
     this.selectedCommitteeIds.set(committeeIds);
 
     // Get voting statuses
     const existingVotingStatuses: string[] = [];
-    committees.forEach((committee) => {
+    validCommittees.forEach((committee) => {
       if (committee.allowed_voting_statuses) {
         existingVotingStatuses.push(...committee.allowed_voting_statuses);
       }
@@ -166,13 +169,26 @@ export class MeetingCommitteeManagerComponent {
     );
   }
 
+  /**
+   * Coerce a MultiSelect model to valid UIDs. Writes `[]` back when PrimeNG
+   * emits `null` / `[null]` so the trigger shows the placeholder, not "null".
+   */
+  private normalizeCommitteeUids(committeeIds: (string | null | undefined)[] | null | undefined): string[] {
+    const ids = sanitizeMeetingCommitteeUids(committeeIds);
+    if (!Array.isArray(committeeIds) || committeeIds.length !== ids.length) {
+      this.committeeForm.get('committees')?.setValue(ids, { emitEvent: false });
+    }
+    return ids;
+  }
+
   private updateParentForm(committeeIds: string[]): void {
     const selectedVotingStatuses = this.selectedVotingStatuses();
     const committees = this.committeeOptions();
-    const hasVotingCommittees = committees.some((c) => committeeIds.includes(c.uid) && c.enable_voting);
+    const ids = sanitizeMeetingCommitteeUids(committeeIds);
+    const hasVotingCommittees = committees.some((c) => ids.includes(c.uid) && c.enable_voting);
     const allowedVotingStatuses = hasVotingCommittees ? selectedVotingStatuses : [];
 
-    const committeeData: MeetingCommittee[] = committeeIds.map((uid) => ({
+    const committeeData: MeetingCommittee[] = ids.map((uid) => ({
       uid,
       allowed_voting_statuses: allowedVotingStatuses,
     }));

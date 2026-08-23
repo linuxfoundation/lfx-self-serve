@@ -10,20 +10,20 @@ const DATA_LOAD_TIMEOUT = 30_000;
 
 const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 const MOCK_UID = MOCK_ACCOUNT_ID;
-const MOCK_ACCOUNT_NAME = 'Toyota';
-const MOCK_ACCOUNT_SLUG = 'toyota';
+const MOCK_ACCOUNT_NAME = 'Acme Motors';
+const MOCK_ACCOUNT_SLUG = 'acme-motors';
 
 // SC-001 dev-mode budget multiplier — `ng serve` adds 3–10× per interaction vs the production build.
 const PERF_DEV_MULTIPLIER = 5;
 
-const KENSUKE_EMAIL = 'kensuke.hanaoka@toyota.com';
-const KENTA_EMAIL = 'kenta.tada@toyota.com';
-const MASAKI_EMAIL = 'masaki.isetani@toyota.com';
-const YASUSHI_EMAIL = 'yasushi.ando@toyota.com';
+const JORDAN_EMAIL = 'jordan.reyes@acme-motors.example';
+const SAM_EMAIL = 'sam.rivera@acme-motors.example';
+const ALEX_EMAIL = 'alex.chen@acme-motors.example';
+const TAYLOR_EMAIL = 'taylor.kim@acme-motors.example';
 
-// Models the Toyota board screenshot: 4 members, 2 voting + 3 non-voting seats, 3 foundations.
-// Kensuke + Yasushi are foundation-controlled (read-only → "Why can't I edit?"); Kenta + Masaki hold
-// Membership-Entitlement seats (editable). Masaki spans 2 foundations with mixed voting status.
+// Models the Acme Motors board screenshot: 4 members, 2 voting + 3 non-voting seats, 3 foundations.
+// Jordan + Taylor are foundation-controlled (read-only → "Why can't I edit?"); Sam + Alex hold
+// Membership-Entitlement seats (editable). Alex spans 2 foundations with mixed voting status.
 function boardMembersResponse() {
   const seat = (
     uid: string,
@@ -50,32 +50,32 @@ function boardMembersResponse() {
     reason: isOrgEditable ? null : "This seat is held by foundation election or appointment, not by your organization's membership entitlement.",
     person,
   });
-  const kensuke = { email: KENSUKE_EMAIL, firstName: 'Kensuke', lastName: 'Hanaoka', fullName: 'Kensuke Hanaoka', jobTitle: 'Engineer', initials: 'KH' };
-  const kenta = { email: KENTA_EMAIL, firstName: 'Kenta', lastName: 'Tada', fullName: 'Kenta Tada', jobTitle: 'Principal Software Engineer', initials: 'KT' };
-  const masaki = {
-    email: MASAKI_EMAIL,
-    firstName: 'Masaki',
-    lastName: 'Isetani',
-    fullName: 'Masaki Isetani',
+  const jordan = { email: JORDAN_EMAIL, firstName: 'Jordan', lastName: 'Reyes', fullName: 'Jordan Reyes', jobTitle: 'Engineer', initials: 'JR' };
+  const sam = { email: SAM_EMAIL, firstName: 'Sam', lastName: 'Rivera', fullName: 'Sam Rivera', jobTitle: 'Principal Software Engineer', initials: 'SR' };
+  const alex = {
+    email: ALEX_EMAIL,
+    firstName: 'Alex',
+    lastName: 'Chen',
+    fullName: 'Alex Chen',
     jobTitle: 'Senior Manager, Open Source Strategy',
-    initials: 'MI',
+    initials: 'AC',
   };
-  const yasushi = {
-    email: YASUSHI_EMAIL,
-    firstName: 'Yasushi',
-    lastName: 'Ando',
-    fullName: 'Yasushi Ando',
+  const taylor = {
+    email: TAYLOR_EMAIL,
+    firstName: 'Taylor',
+    lastName: 'Kim',
+    fullName: 'Taylor Kim',
     jobTitle: 'Distinguished Engineer',
-    initials: 'YA',
+    initials: 'TK',
   };
   return {
     orgUid: MOCK_UID,
     assignments: [
-      seat('m-kensuke', 'Steering Committee', 'agl-root', 'Automotive Grade Linux', 'automotive-grade-linux', 'Non-voting', false, kensuke),
-      seat('m-kenta', 'Governing Board', 'ebpf-root', 'eBPF Foundation', 'ebpf-foundation', 'Voting', true, kenta),
-      seat('m-masaki-agl', 'Steering Committee', 'agl-root', 'Automotive Grade Linux', 'automotive-grade-linux', 'Voting', true, masaki),
-      seat('m-masaki-hl', 'Governing Board', 'hl-root', 'Hyperledger Foundation', 'hyperledger-foundation', 'Non-voting', true, masaki),
-      seat('m-yasushi', 'Steering Committee', 'agl-root', 'Automotive Grade Linux', 'automotive-grade-linux', 'Non-voting', false, yasushi),
+      seat('m-jordan', 'Steering Committee', 'agl-root', 'Automotive Grade Linux', 'automotive-grade-linux', 'Non-voting', false, jordan),
+      seat('m-sam', 'Governing Board', 'ebpf-root', 'eBPF Foundation', 'ebpf-foundation', 'Voting', true, sam),
+      seat('m-alex-agl', 'Steering Committee', 'agl-root', 'Automotive Grade Linux', 'automotive-grade-linux', 'Voting', true, alex),
+      seat('m-alex-hl', 'Governing Board', 'hl-root', 'Hyperledger Foundation', 'hyperledger-foundation', 'Non-voting', true, alex),
+      seat('m-taylor', 'Steering Committee', 'agl-root', 'Automotive Grade Linux', 'automotive-grade-linux', 'Non-voting', false, taylor),
     ],
     stats: { totalBoardMembers: 4, votingCount: 2, nonVotingCount: 3, foundationsCovered: 3 },
   };
@@ -159,8 +159,8 @@ test.describe('Org People → Board tab', () => {
     expect(elapsed).toBeLessThan(3000 * PERF_DEV_MULTIPLIER);
 
     // One row per person (4 members).
-    await expect(page.getByTestId(`org-people-board-row-${KENSUKE_EMAIL}`)).toBeVisible();
-    await expect(page.getByTestId(`org-people-board-row-${MASAKI_EMAIL}`)).toBeVisible();
+    await expect(page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}`)).toBeVisible();
+    await expect(page.getByTestId(`org-people-board-row-${ALEX_EMAIL}`)).toBeVisible();
 
     // SC-004: total tile == distinct row count; voting + non-voting == total seat count.
     const total = await page.getByTestId('org-people-board-stat-total').innerText();
@@ -179,13 +179,13 @@ test.describe('Org People → Board tab', () => {
     await stubBoardMembers(page);
 
     await gotoBoardTab(page);
-    // Kensuke holds one board seat → a single "Non-voting" pill.
-    await expect(page.getByTestId(`org-people-board-row-${KENSUKE_EMAIL}`)).toContainText('Non-voting');
-    // Masaki holds 2 foundations with mixed voting → "1 Voting" + "1 Non-voting" count pills + a Foundations badge.
-    const masaki = page.getByTestId(`org-people-board-row-${MASAKI_EMAIL}`);
-    await expect(masaki).toContainText('1 Voting');
-    await expect(masaki).toContainText('1 Non-voting');
-    await expect(masaki).toContainText('2 Foundations');
+    // Jordan holds one board seat → a single "Non-voting" pill.
+    await expect(page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}`)).toContainText('Non-voting');
+    // Alex holds 2 foundations with mixed voting → "1 Voting" + "1 Non-voting" count pills + a Foundations badge.
+    const alex = page.getByTestId(`org-people-board-row-${ALEX_EMAIL}`);
+    await expect(alex).toContainText('1 Voting');
+    await expect(alex).toContainText('1 Non-voting');
+    await expect(alex).toContainText('2 Foundations');
   });
 
   test('renders the empty state for an org with no board seats', async ({ page }) => {
@@ -217,11 +217,11 @@ test.describe('Org People → Board tab', () => {
     await stubBoardMembers(page);
 
     await gotoBoardTab(page);
-    // Kensuke is foundation-controlled → no enabled pencil, the "Why can't I edit?" affordance instead.
-    await expect(page.getByTestId(`org-people-board-why-${KENSUKE_EMAIL}`)).toBeVisible();
-    await expect(page.getByTestId(`org-people-board-reassign-${KENSUKE_EMAIL}`)).toHaveCount(0);
-    // Kenta holds an entitlement seat → the live Reassign pencil.
-    await expect(page.getByTestId(`org-people-board-reassign-${KENTA_EMAIL}`)).toBeVisible();
+    // Jordan is foundation-controlled → no enabled pencil, the "Why can't I edit?" affordance instead.
+    await expect(page.getByTestId(`org-people-board-why-${JORDAN_EMAIL}`)).toBeVisible();
+    await expect(page.getByTestId(`org-people-board-reassign-${JORDAN_EMAIL}`)).toHaveCount(0);
+    // Sam holds an entitlement seat → the live Reassign pencil.
+    await expect(page.getByTestId(`org-people-board-reassign-${SAM_EMAIL}`)).toBeVisible();
   });
 
   test('clicking "Why can\'t I edit?" opens the explanatory modal and "Got it" closes it', async ({ page }) => {
@@ -229,7 +229,7 @@ test.describe('Org People → Board tab', () => {
     await stubBoardMembers(page);
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-why-${KENSUKE_EMAIL}`).click();
+    await page.getByTestId(`org-people-board-why-${JORDAN_EMAIL}`).click();
 
     const modal = page.getByTestId('org-people-board-modal-why');
     await expect(modal).toBeVisible();
@@ -245,18 +245,18 @@ test.describe('Org People → Board tab', () => {
     await stubBoardMembers(page);
 
     await gotoBoardTab(page);
-    await expect(page.getByTestId(`org-people-board-why-${KENTA_EMAIL}`)).toBeVisible();
+    await expect(page.getByTestId(`org-people-board-why-${SAM_EMAIL}`)).toBeVisible();
     await expect(page.locator('[data-testid^="org-people-board-reassign-"]')).toHaveCount(0);
   });
 
-  test('expands Masaki and shows 2 board sub-rows (US2)', async ({ page }) => {
+  test('expands Alex and shows 2 board sub-rows (US2)', async ({ page }) => {
     await stubAccountContext(page);
     await stubBoardMembers(page);
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-row-${MASAKI_EMAIL}`).click();
+    await page.getByTestId(`org-people-board-row-${ALEX_EMAIL}`).click();
 
-    const expanded = page.getByTestId(`org-people-board-expanded-${MASAKI_EMAIL}`);
+    const expanded = page.getByTestId(`org-people-board-expanded-${ALEX_EMAIL}`);
     await expect(expanded).toBeVisible();
     await expect(expanded.locator('[data-testid^="org-people-board-subrow-"]')).toHaveCount(2);
   });
@@ -266,10 +266,10 @@ test.describe('Org People → Board tab', () => {
     await stubBoardMembers(page);
 
     await gotoBoardTab(page);
-    await page.getByTestId('org-people-board-search-input').locator('input').fill('Hanaoka');
+    await page.getByTestId('org-people-board-search-input').locator('input').fill('Reyes');
 
-    await expect(page.getByTestId(`org-people-board-row-${KENSUKE_EMAIL}`)).toBeVisible();
-    await expect(page.getByTestId(`org-people-board-row-${KENTA_EMAIL}`)).toHaveCount(0);
+    await expect(page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}`)).toBeVisible();
+    await expect(page.getByTestId(`org-people-board-row-${SAM_EMAIL}`)).toHaveCount(0);
   });
 
   test('foundation filter narrows the rows (US2)', async ({ page }) => {
@@ -280,9 +280,9 @@ test.describe('Org People → Board tab', () => {
     await page.getByTestId('org-people-board-foundation-filter').click();
     await page.getByRole('option', { name: 'eBPF Foundation', exact: true }).click();
 
-    // Only people with an eBPF board seat (Kenta) remain.
-    await expect(page.getByTestId(`org-people-board-row-${KENTA_EMAIL}`)).toBeVisible();
-    await expect(page.getByTestId(`org-people-board-row-${KENSUKE_EMAIL}`)).toHaveCount(0);
+    // Only people with an eBPF board seat (Sam) remain.
+    await expect(page.getByTestId(`org-people-board-row-${SAM_EMAIL}`)).toBeVisible();
+    await expect(page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}`)).toHaveCount(0);
   });
 
   test('status filter "Voting" narrows to people with a voting board seat (US2)', async ({ page }) => {
@@ -293,10 +293,10 @@ test.describe('Org People → Board tab', () => {
     await page.getByTestId('org-people-board-status-filter').click();
     await page.getByRole('option', { name: 'Voting', exact: true }).click();
 
-    // Kenta (voting) + Masaki (one voting seat) remain; Kensuke + Yasushi (non-voting only) removed.
-    await expect(page.getByTestId(`org-people-board-row-${KENTA_EMAIL}`)).toBeVisible();
-    await expect(page.getByTestId(`org-people-board-row-${MASAKI_EMAIL}`)).toBeVisible();
-    await expect(page.getByTestId(`org-people-board-row-${YASUSHI_EMAIL}`)).toHaveCount(0);
+    // Sam (voting) + Alex (one voting seat) remain; Jordan + Taylor (non-voting only) removed.
+    await expect(page.getByTestId(`org-people-board-row-${SAM_EMAIL}`)).toBeVisible();
+    await expect(page.getByTestId(`org-people-board-row-${ALEX_EMAIL}`)).toBeVisible();
+    await expect(page.getByTestId(`org-people-board-row-${TAYLOR_EMAIL}`)).toHaveCount(0);
   });
 
   test('sort by Foundations desc puts the most-foundations person first (US2)', async ({ page }) => {
@@ -307,8 +307,8 @@ test.describe('Org People → Board tab', () => {
     await page.getByRole('button', { name: /Foundations/i }).click();
 
     const firstRow = page.locator('[data-testid^="org-people-board-row-"]').first();
-    // Masaki holds 2 foundations — the max — so descending sort floats them to the top.
-    await expect(firstRow).toHaveAttribute('data-testid', `org-people-board-row-${MASAKI_EMAIL}`);
+    // Alex holds 2 foundations — the max — so descending sort floats them to the top.
+    await expect(firstRow).toHaveAttribute('data-testid', `org-people-board-row-${ALEX_EMAIL}`);
   });
 
   // Board rows have no personKey — drawer opens on Governance from table seats only.
@@ -322,11 +322,11 @@ test.describe('Org People → Board tab', () => {
     });
 
     await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-row-${KENSUKE_EMAIL}-name`).click();
+    await page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}-name`).click();
 
     // Drawer opens with the row's header and lands on the Governance tab.
     await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('person-detail-drawer-header')).toContainText('Kensuke Hanaoka');
+    await expect(page.getByTestId('person-detail-drawer-header')).toContainText('Jordan Reyes');
     await expect(page.getByTestId('person-detail-drawer-tab-governance')).toHaveAttribute('aria-selected', 'true');
 
     // Governance renders the seat from the table (real data, not a demo pool): Board pill + foundation · committee.
@@ -339,7 +339,7 @@ test.describe('Org People → Board tab', () => {
     await expect(page.getByTestId('person-detail-drawer-detail-unavailable')).toBeVisible();
 
     // The name click stopped propagation, so the row did not also expand.
-    await expect(page.getByTestId(`org-people-board-expanded-${KENSUKE_EMAIL}`)).toHaveCount(0);
+    await expect(page.getByTestId(`org-people-board-expanded-${JORDAN_EMAIL}`)).toHaveCount(0);
     expect(personDetailCalls).toBe(0);
   });
 });

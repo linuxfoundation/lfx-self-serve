@@ -4,7 +4,7 @@ description: View your billing and purchase history in LFX Self Serve.
 audience: [all]
 product_area: Account
 tags: [account, transactions, billing, purchases, history, receipts]
-last_updated: 2026-08-11
+last_updated: 2026-08-19
 intercom_collection: Account
 ---
 
@@ -39,7 +39,7 @@ All authenticated users can view their own transactions. Each user sees only the
 
 ### Empty state
 
-If you have no transactions, the page shows a message indicating no purchase history is available. Transactions are recorded only when you make a purchase through the LFX platform.
+If you have no transactions, the page shows the message "No transactions found. Recent purchases may take up to 48 hours to appear." Transactions are recorded only when you make a purchase through the LFX platform.
 
 ## Your company's activity
 

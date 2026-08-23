@@ -383,19 +383,143 @@
             </div>
           </div>
 
-          <!-- Geo Targets -->
-          @if (metaGeoTargets().length > 0) {
-            <div class="mb-4">
-              <label class="mb-2 block text-xs font-medium text-gray-700">Geo Targets (AI-recommended)</label>
-              <div class="flex flex-wrap gap-2">
-                @for (geo of metaGeoTargets(); track geo) {
-                  <span class="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                    {{ geo }}
-                  </span>
+          <!-- Objective -->
+          <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="meta-objective">Objective</label>
+              <select
+                id="meta-objective"
+                [value]="metaObjective()"
+                (change)="onMetaObjectiveChange($event)"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-meta-objective">
+                @for (objective of metaObjectiveOptions; track objective) {
+                  <option [value]="objective">{{ metaObjectiveLabels[objective] }}</option>
+                }
+              </select>
+            </div>
+
+            <!--
+              Shown only under `conversions`, which is the only objective whose promoted object is
+              a pixel. Under the others campaign-service promotes a page id or nothing, so the
+              field would be collected and then ignored.
+            -->
+            @if (metaRequiresPixel()) {
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="meta-pixel-id">Meta Pixel ID</label>
+                <input
+                  id="meta-pixel-id"
+                  type="text"
+                  inputmode="numeric"
+                  [value]="metaPixelId()"
+                  (input)="onMetaPixelIdInput($event)"
+                  placeholder="e.g. 123456789012345"
+                  [attr.aria-invalid]="metaPixelValid() ? null : 'true'"
+                  [attr.aria-describedby]="metaPixelValid() ? null : 'meta-pixel-id-error'"
+                  class="rounded-md border px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1"
+                  [class.border-gray-300]="metaPixelValid()"
+                  [class.focus:border-blue-500]="metaPixelValid()"
+                  [class.focus:ring-blue-500]="metaPixelValid()"
+                  [class.border-red-400]="!metaPixelValid()"
+                  [class.focus:border-red-500]="!metaPixelValid()"
+                  [class.focus:ring-red-500]="!metaPixelValid()"
+                  data-testid="implementation-meta-pixel-id" />
+                @if (!metaPixelValid()) {
+                  <p id="meta-pixel-id-error" class="text-xs text-red-600" data-testid="implementation-meta-pixel-error">
+                    A numeric Meta Pixel ID is required for the Conversions objective.
+                  </p>
                 }
               </div>
+            }
+          </div>
+
+          <!-- Placements -->
+          <fieldset
+            class="mb-4"
+            [attr.aria-invalid]="metaHasPlacement() ? null : 'true'"
+            [attr.aria-describedby]="metaHasPlacement() ? null : 'meta-placement-error'">
+            <legend class="mb-2 block text-xs font-medium text-gray-700">Placements</legend>
+            <div class="flex flex-wrap gap-x-4 gap-y-2">
+              @for (placement of metaSelectablePlacements; track placement) {
+                <label class="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    [checked]="metaPlacements()[placement]"
+                    (change)="onMetaPlacementChange(placement, $event)"
+                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    [attr.data-testid]="'implementation-meta-placement-' + placement" />
+                  {{ metaPlacementLabels[placement] }}
+                </label>
+              }
+              <!--
+                Rendered disabled rather than omitted, so the absence of a placement someone
+                expects to find reads as a deliberate answer instead of a missing feature. It is
+                bound to nothing: `metaSelectablePlacements` excludes the key, and the change
+                handler refuses it, so no interaction can put `messengerInbox: true` on the wire.
+              -->
+              <label class="flex cursor-not-allowed items-center gap-2 text-sm text-gray-400" [title]="metaMessengerInboxReason">
+                <input type="checkbox" disabled class="rounded border-gray-200" data-testid="implementation-meta-placement-messengerInbox" />
+                {{ metaPlacementLabels.messengerInbox }}
+                <span class="text-xs italic">({{ metaMessengerInboxReason }})</span>
+              </label>
             </div>
-          }
+            @if (!metaHasPlacement()) {
+              <p id="meta-placement-error" role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-meta-placement-error">
+                At least one placement must be enabled.
+              </p>
+            }
+          </fieldset>
+
+          <!-- Geo Targets -->
+          <div class="mb-4">
+            <label class="mb-2 block text-xs font-medium text-gray-700" for="meta-geo-add">Geo Targets (AI-recommended)</label>
+            <div class="flex flex-wrap items-center gap-2">
+              @for (geo of metaGeoTargets(); track geo; let i = $index) {
+                <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                  {{ geo }}
+                  <button
+                    type="button"
+                    (click)="removeMetaGeoTarget(i)"
+                    class="ml-0.5 text-blue-400 hover:text-blue-600"
+                    [attr.aria-label]="'Remove ' + geo"
+                    [attr.data-testid]="'implementation-meta-geo-remove-' + geo">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </span>
+              }
+              <!--
+                A free-text box rather than LinkedIn's dropdown, because the two platforms take
+                different data. LinkedIn geos are URNs drawn from a fixed resolve map, so a select
+                can enumerate them; Meta takes ISO-2 country codes, and the eligible set is decided
+                by campaign-service (which also drops sanctioned and regulated markets). A select
+                here would need a local country list that could only drift from that.
+
+                No maxlength: normalizeGeoTargets trims BEFORE it validates, so a browser-side cap
+                of 2 would clip padded input (" jp " to " j") into something the ISO-2 pattern then
+                rejects. The pattern decides what is valid here, not the markup.
+              -->
+              <input
+                id="meta-geo-add"
+                type="text"
+                placeholder="+ ISO code"
+                (change)="onMetaGeoTargetAdd($event)"
+                (keydown.enter)="onMetaGeoTargetAdd($event); $event.preventDefault()"
+                class="w-24 rounded-md border border-dashed border-blue-300 bg-white px-2 py-1 text-xs uppercase text-blue-600 placeholder:normal-case placeholder:text-blue-400"
+                data-testid="implementation-meta-geo-add" />
+              <!--
+                Reads the SAME computed `submit()` sends, so the line cannot name one country while
+                the request buys another. The empty arm is a real state — nothing usable was
+                supplied — and `canSubmit` blocks there rather than letting the server default.
+              -->
+              @if (metaGeoTargets().length === 0) {
+                @if (metaEffectiveGeoTargets().length > 0) {
+                  <span class="text-xs text-gray-400">No geo targets selected — defaults to {{ metaEffectiveGeoTargets().join(', ') }}</span>
+                } @else {
+                  <span class="text-xs text-red-500" data-testid="implementation-meta-geo-none">Add at least one geo target — no usable country is set.</span>
+                }
+              }
+            </div>
+          </div>
 
           <!-- Variant Preview -->
           @if (metaVariants().length > 0) {
@@ -409,6 +533,113 @@
                     <p class="mt-1 text-xs font-medium text-gray-600">{{ variant.headline | slice: 0 : metaCharLimits.headline }}</p>
                     @if (variant.description) {
                       <p class="text-xs text-gray-500">{{ variant.description | slice: 0 : metaCharLimits.description }}</p>
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- Reddit Ads Section -->
+      @if (showRedditSection()) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="implementation-reddit-section">
+          <div class="mb-4 flex items-center gap-2">
+            <i class="fa-brands fa-reddit text-orange-600" aria-hidden="true"></i>
+            <h3 class="text-sm font-semibold text-gray-900">Reddit Ads</h3>
+          </div>
+
+          <!-- Reddit Budget. A LIFETIME cap: internal/dispatch/reddit.go passes lifetime=true with
+               the comment "LIFETIME spend cap, not a daily one". Its siblings above default to
+               DAILY and expose a checkbox to switch, so an operator carrying that model across
+               would read this number as per-day — a 30x misread of committed spend on a
+               month-long flight. Hence the label says so rather than relying on the default.
+
+               Both bounds mirror the client's contract (client.go): finite, and within (0, 1e9].
+               The 1 USD floor is STRICTER than upstream, which accepts anything above one
+               micro-dollar — a deliberate product floor, since a sub-dollar Reddit campaign
+               buys nothing and is far more likely a typo than an intent. The siblings enforce
+               neither bound; LFXV2-3315 covers bringing them into line. -->
+          <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label for="reddit-budget" class="text-xs font-medium text-gray-700">Reddit Budget (USD, lifetime)</label>
+              <input
+                id="reddit-budget"
+                type="number"
+                [value]="redditBudgetUsd()"
+                (input)="onRedditBudgetInput($event)"
+                min="1"
+                [max]="redditMaxBudget"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-reddit-budget" />
+              <p class="text-xs text-gray-500">
+                A lifetime cap for the whole flight, not a daily spend — unlike the Meta and LinkedIn budgets above, which default to daily. Reddit campaigns
+                are created paused.
+              </p>
+            </div>
+          </div>
+
+          <!-- Targeting, all AI-recommended from the brief. Rendered read-only so the operator can
+               REVIEW what will dispatch; editing them is a separate change. -->
+          @if (redditEffectiveGeoTargets().length > 0) {
+            <div class="mb-4">
+              <label class="mb-2 block text-xs font-medium text-gray-700">Geo Targets</label>
+              <div class="flex flex-wrap gap-2">
+                @for (geo of redditEffectiveGeoTargets(); track geo) {
+                  <span class="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">{{ geo }}</span>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Gate on the EFFECTIVE list, matching the count and chips below. Gating on the raw
+               list renders "Subreddits (0)" with no chips for a brief whose names all normalise
+               away — the geo and keyword blocks already gate on their effective lists. -->
+          @if (redditEffectiveSubreddits().length > 0) {
+            <div class="mb-4">
+              <label class="mb-2 block text-xs font-medium text-gray-700">Subreddits ({{ redditEffectiveSubreddits().length }})</label>
+              <div class="flex flex-wrap gap-2">
+                @for (sub of redditEffectiveSubreddits(); track sub) {
+                  <span class="inline-flex items-center rounded-full bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">r/{{ sub }}</span>
+                }
+              </div>
+            </div>
+          }
+
+          @if (redditInterests().length > 0) {
+            <div class="mb-4">
+              <label class="mb-2 block text-xs font-medium text-gray-700">Interests ({{ redditInterests().length }})</label>
+              <div class="flex flex-wrap gap-2">
+                @for (interest of redditInterests(); track interest) {
+                  <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">{{ interest }}</span>
+                }
+              </div>
+            </div>
+          }
+
+          @if (redditEffectiveKeywords().length > 0) {
+            <div class="mb-4">
+              <label class="mb-2 block text-xs font-medium text-gray-700">Keywords ({{ redditEffectiveKeywords().length }})</label>
+              <div class="flex flex-wrap gap-2">
+                @for (kw of redditEffectiveKeywords(); track kw) {
+                  <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">{{ kw }}</span>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Variant Preview -->
+          @if (redditVariants().length > 0) {
+            <div>
+              <label class="mb-2 block text-xs font-medium text-gray-700">Ad Variants ({{ redditVariants().length }})</label>
+              <div class="flex flex-col gap-2">
+                @for (variant of redditVariants(); track $index; let i = $index) {
+                  <div class="rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'implementation-reddit-variant-' + i">
+                    <p class="mb-1 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</p>
+                    <p class="text-sm text-gray-800">{{ variant.headline }}</p>
+                    @if (variant.body) {
+                      <p class="mt-1 text-xs text-gray-500">{{ variant.body }}</p>
                     }
                   </div>
                 }

@@ -4,10 +4,12 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { FormGroup } from '@angular/forms';
 import { provideRouter } from '@angular/router';
 import type { CampaignBriefLoadResult, CampaignBriefOutput, CampaignProgramTypeOption } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { MessageService } from 'primeng/api';
 import { Observable, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -96,7 +98,13 @@ describe('PlanningTabComponent brief read-back', () => {
       imports: [PlanningTabComponent],
       // Real CampaignService against HTTP testing backend, with only `loadBrief` spied.
       // Other methods stay pending, representing the "loading" state.
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), ProjectContextService],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
     }).compileComponents();
 
     campaignService = { loadBrief: vi.fn() };
@@ -586,7 +594,9 @@ describe('PlanningTabComponent brief read-back', () => {
     (fixture.componentInstance as unknown as { restoreSavedBrief(): void }).restoreSavedBrief();
     await fixture.whenStable();
 
-    expect(restored).toEqual([{ brief: exampleBrief, briefId: 'brief-123' }]);
+    // `approved` rides along with the id: campaign-service refuses a create from an unapproved
+    // brief, and the parent files a restored brief as create-ready without it.
+    expect(restored).toEqual([{ brief: exampleBrief, briefId: 'brief-123', approved: true }]);
     expect(generated).toEqual([]);
   });
 
@@ -612,5 +622,326 @@ describe('PlanningTabComponent brief read-back', () => {
 
     expect(restored).toHaveLength(1);
     expect(restored[0].briefId).toBe('brief-xyz');
+  });
+});
+
+/**
+ * LFXV2-3201: the planner serves both delivery types from one component, moded by `deliveryType`.
+ *
+ * These pin the three things that differ, because each can regress on its own and two of the
+ * three fail SILENTLY — a stray `platforms` on the request still returns a valid brief, and a
+ * re-shown Ad Channels card still lets the user proceed. Only the `canGenerate` regression is
+ * loud, and it is the one that blocked the channel before this ticket.
+ */
+describe('PlanningTabComponent delivery-type mode', () => {
+  let fixture: ComponentFixture<PlanningTabComponent>;
+  let generateBrief: ReturnType<typeof vi.fn>;
+
+  const programTypeConfig: CampaignProgramTypeOption = {
+    id: 'events',
+    label: 'Events',
+    breadcrumbLabel: 'Events',
+    urlLabel: 'Event URL',
+    urlPlaceholder: 'https://events.example.com/event-name',
+    urlHelp: 'Enter the event registration URL',
+    goalLabel: 'Event conversions',
+    audiencePlaceholder: 'Enter target audience',
+    valuePropPlaceholder: 'Enter value proposition',
+  };
+
+  function canGenerate(): boolean {
+    return (fixture.componentInstance as unknown as { canGenerate(): boolean }).canGenerate();
+  }
+
+  /** Fill only the fields the form marks required, so validity is the sole remaining variable. */
+  function fillRequiredFields(): void {
+    const form = (fixture.componentInstance as unknown as { briefForm: FormGroup }).briefForm;
+    form.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
+    fixture.detectChanges();
+  }
+
+  /**
+   * Deselect every ad platform, which the paid default pre-populates with google-ads.
+   *
+   * Writes the signal rather than clicking, because in email mode the Ad Channels card is not
+   * rendered and there IS no click path. That is the point: the email assertion below is that
+   * `canGenerate` does not consult the platform set at all, so it must hold for a set the UI
+   * cannot produce. The paid case is the one where a user reaches this state by clicking.
+   */
+  function clearPlatforms(): void {
+    (fixture.componentInstance as unknown as { selectedPlatforms: { set(v: Set<string>): void } }).selectedPlatforms.set(new Set());
+    fixture.detectChanges();
+  }
+
+  async function build(deliveryType?: 'paid-marketing' | 'email'): Promise<void> {
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    if (deliveryType) {
+      fixture.componentRef.setInput('deliveryType', deliveryType);
+    }
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [PlanningTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    // Never completes: generate() stays in flight, so the request argument is observable without
+    // the component advancing past 'generating' and clearing the state under test.
+    generateBrief = vi.fn().mockReturnValue(new Subject());
+    vi.spyOn(TestBed.inject(CampaignService), 'generateBrief').mockImplementation(generateBrief);
+
+    const projectContextService = TestBed.inject(ProjectContextService);
+    projectContextService.setRouteLensKind('foundation');
+    projectContextService.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+  });
+
+  it('hides the Ad Channels card in email mode', async () => {
+    await build('email');
+    // querySelector, not debugElement.query: the latter walks the LOGICAL tree and resolves nodes
+    // that are no longer rendered, which would make this assertion vacuous.
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-platforms-section"]')).toBeNull();
+  });
+
+  it('keeps the Ad Channels card in paid mode', async () => {
+    await build('paid-marketing');
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-platforms-section"]')).not.toBeNull();
+  });
+
+  it('defaults to paid mode when deliveryType is not bound', async () => {
+    // The input is additive: the paid container binds nothing, so an omitted binding must keep
+    // exactly the pre-3201 behaviour rather than silently switching a live tab to email.
+    await build();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-platforms-section"]')).not.toBeNull();
+  });
+
+  /**
+   * Brief persistence is keyed on `(foundation, event)` with no delivery type, so the row this
+   * would find is a PAID brief — restoring it under Email would put RSA headlines and a keyword
+   * list into an email plan. The email host also binds no `restoreSavedBriefRequested` handler,
+   * so the Restore button emitted into nothing and the click did nothing at all.
+   *
+   * Asserted on the REQUEST rather than the banner: suppressing the lookup means no call per
+   * debounce for a result that can never be used, and a banner-only guard would leave that.
+   */
+  it('does not look up a saved brief in email mode', async () => {
+    const loadBrief = vi.fn().mockReturnValue(new Subject());
+    vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+
+    await build('email');
+    const component = fixture.componentInstance as unknown as { briefForm: FormGroup; onUrlInput(): void };
+    component.briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
+    fixture.detectChanges();
+    component.onUrlInput();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await fixture.whenStable();
+
+    expect(loadBrief).not.toHaveBeenCalled();
+  });
+
+  it('still looks up a saved brief in paid mode', async () => {
+    const loadBrief = vi.fn().mockReturnValue(new Subject());
+    vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+
+    await build('paid-marketing');
+    const component = fixture.componentInstance as unknown as { briefForm: FormGroup; onUrlInput(): void };
+    component.briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
+    fixture.detectChanges();
+    component.onUrlInput();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await fixture.whenStable();
+
+    expect(loadBrief).toHaveBeenCalled();
+  });
+
+  /**
+   * The server refuses an email refine, so offering the button would walk the user into a
+   * guaranteed error. Asserted on the review step, which is the only place it renders.
+   */
+  it('does not offer Refine Brief in email mode', async () => {
+    await build('email');
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-refine-brief-btn"]')).toBeNull();
+  });
+
+  it('offers Refine Brief in paid mode', async () => {
+    await build('paid-marketing');
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-refine-brief-btn"]')).not.toBeNull();
+  });
+
+  /**
+   * Edit and Copy All are as wrong for email as Refine was, and guarding only Refine left the two
+   * worse ones behind: Edit opens an EMPTY editor whose Save Edits writes empty
+   * `google_search`/`google_display` objects onto an email brief, and Copy All silently copies an
+   * empty buffer. Both entry points to Edit are covered — the header one and the action row.
+   */
+  it('hides the ad-copy actions in email mode', async () => {
+    await build('email');
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.querySelector('[data-testid="planning-refine-brief-btn"]')).toBeNull();
+    expect(host.querySelector('[data-testid="planning-edit-brief-btn"]')).toBeNull();
+    expect(host.querySelector('[data-testid="planning-copy-all-btn"]')).toBeNull();
+    expect(host.querySelector('[data-testid="planning-edit-btn"]')).toBeNull();
+    // Delivery-agnostic, so it must SURVIVE — otherwise this test would pass on a template that
+    // rendered no review step at all.
+    expect(host.querySelector('[data-testid="planning-proceed-btn"]')).not.toBeNull();
+  });
+
+  it('keeps the ad-copy actions in paid mode', async () => {
+    await build('paid-marketing');
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.querySelector('[data-testid="planning-refine-brief-btn"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="planning-edit-brief-btn"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="planning-copy-all-btn"]')).not.toBeNull();
+  });
+
+  it('hides the Budget & Assets card in email mode', async () => {
+    await build('email');
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-budget-section"]')).toBeNull();
+  });
+
+  it('keeps the Budget & Assets card in paid mode', async () => {
+    await build('paid-marketing');
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-budget-section"]')).not.toBeNull();
+  });
+
+  /**
+   * The card being hidden is not on its own enough. The control still exists, so a value can
+   * reach it without the card rendering — restoring a paid brief repopulates the form. The server
+   * appends "Total Campaign Budget: $N" to the copy prompt, so a stray value would put a paid-ad
+   * number into an email brief rather than merely go unread.
+   */
+  it('drops a populated budget from the email generation request', async () => {
+    await build('email');
+    fillRequiredFields();
+    const form = (fixture.componentInstance as unknown as { briefForm: FormGroup }).briefForm;
+    form.controls['totalBudget'].setValue('5000');
+    fixture.detectChanges();
+
+    (fixture.componentInstance as unknown as { generate(): void }).generate();
+    await fixture.whenStable();
+
+    expect(generateBrief.mock.calls[0][0].totalBudget).toBeUndefined();
+  });
+
+  it('sends a populated budget in paid mode', async () => {
+    await build('paid-marketing');
+    fillRequiredFields();
+    const form = (fixture.componentInstance as unknown as { briefForm: FormGroup }).briefForm;
+    form.controls['totalBudget'].setValue('5000');
+    fixture.detectChanges();
+
+    (fixture.componentInstance as unknown as { generate(): void }).generate();
+    await fixture.whenStable();
+
+    expect(generateBrief.mock.calls[0][0].totalBudget).toBe(5000);
+  });
+
+  it('allows generation in email mode with no ad platform selected', async () => {
+    await build('email');
+    fillRequiredFields();
+    clearPlatforms();
+    expect(canGenerate()).toBe(true);
+  });
+
+  it('still requires an ad platform in paid mode', async () => {
+    await build('paid-marketing');
+    fillRequiredFields();
+    clearPlatforms();
+    expect(canGenerate()).toBe(false);
+  });
+
+  it('omits platforms from the generation request in email mode', async () => {
+    await build('email');
+    fillRequiredFields();
+    (fixture.componentInstance as unknown as { generate(): void }).generate();
+    await fixture.whenStable();
+
+    expect(generateBrief).toHaveBeenCalledTimes(1);
+    const request = generateBrief.mock.calls[0][0];
+    // Absent, not empty: `[]` would claim the user deselected every channel rather than that ad
+    // channels do not apply. `toBeUndefined` alone would pass on an explicit `platforms: undefined`,
+    // so assert the key is not present at all.
+    expect('platforms' in request).toBe(false);
+    // The discriminator is the half that actually works. Omitting `platforms` alone does NOT stop
+    // ad generation — the server reads an absent list as the paid default — so without this
+    // assertion, deleting `deliveryType` from the request would leave this test green while
+    // restoring the exact AI spend the test is named for.
+    expect(request.deliveryType).toBe('email');
+  });
+
+  it('sends platforms in the generation request in paid mode', async () => {
+    await build('paid-marketing');
+    fillRequiredFields();
+    (fixture.componentInstance as unknown as { generate(): void }).generate();
+    await fixture.whenStable();
+
+    expect(generateBrief).toHaveBeenCalledTimes(1);
+    expect(generateBrief.mock.calls[0][0].platforms).toEqual(['google-ads']);
+  });
+
+  /**
+   * The Refine button is hidden in email mode, but `submitRefine` must still refuse rather than
+   * rely on that. The `currentCopy` guard would otherwise SWALLOW the case — an email brief
+   * generates no copy, so `structuredCopy` is null and the method returned silently, leaving
+   * anyone who reached Refine (a restored paid brief, a future caller) pressing Regenerate and
+   * watching nothing happen. Asserted with copy present so the refusal, not the guard, is what
+   * this pins.
+   */
+  it('refuses an email refine with a message instead of silently doing nothing', async () => {
+    const refineBrief = vi.fn().mockReturnValue(new Subject());
+    vi.spyOn(TestBed.inject(CampaignService), 'refineBrief').mockImplementation(refineBrief);
+
+    await build('email');
+    const component = fixture.componentInstance as unknown as {
+      structuredCopy: { set(v: Record<string, unknown>): void };
+      refineFeedback: { set(v: string): void };
+      errorMessage(): string | null;
+      submitRefine(): void;
+    };
+    component.structuredCopy.set({ subject: 'Join us at KubeCon EU 2026' });
+    component.refineFeedback.set('Make the subject shorter');
+    component.submitRefine();
+    await fixture.whenStable();
+
+    expect(refineBrief).not.toHaveBeenCalled();
+    expect(component.errorMessage()).toBe('Refining email copy is not supported yet.');
+  });
+
+  it('sends platforms in the refine request in paid mode', async () => {
+    const refineBrief = vi.fn().mockReturnValue(new Subject());
+    vi.spyOn(TestBed.inject(CampaignService), 'refineBrief').mockImplementation(refineBrief);
+
+    await build('paid-marketing');
+    const component = fixture.componentInstance as unknown as {
+      structuredCopy: { set(v: Record<string, unknown>): void };
+      refineFeedback: { set(v: string): void };
+      submitRefine(): void;
+    };
+    component.structuredCopy.set({ searchHeadlines: ['Attend KubeCon EU 2026'] });
+    component.refineFeedback.set('Make the headlines punchier');
+    component.submitRefine();
+    await fixture.whenStable();
+
+    expect(refineBrief).toHaveBeenCalledTimes(1);
+    expect(refineBrief.mock.calls[0][0].platforms).toEqual(['google-ads']);
   });
 });

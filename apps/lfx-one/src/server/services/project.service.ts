@@ -2398,7 +2398,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return { totalSessions: 0, totalPageViews: 0, domainGroups: [], dailyData: [], dailyLabels: [] };
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -2476,6 +2480,8 @@ export class ProjectService {
       // email is published once per month — it is not one row per recipient delivery.
       // Filtered on PUBLISHED_DATE rather than PUBLISHED_MONTH_DATE so a mid-month range boundary
       // includes only the sends that actually fall inside it, instead of every send in that month.
+      // See EmailCtrResponse.breakdownUnavailable — set when the optional query below fails.
+      let breakdownUnavailable = false;
       const campaignPerfQuery = `
         SELECT
           MARKETING_EMAIL_NAME,
@@ -2518,6 +2524,13 @@ export class ProjectService {
             CTR: number;
           }>(campaignPerfQuery, [resolved.startDate, resolved.endDate, ...foundationParams])
           .catch((error) => {
+            // Non-fatal by design — the primary CTR read is independent, so rethrowing here would
+            // trade a partial outage for a total one and blank a measurement that did succeed.
+            // But the empty array below is NOT a measurement: the drawer's Sends/Opens/Open Rate/
+            // CTR tiles reduce() over it, so an unflagged failure renders as a confident 0. The
+            // flag is what keeps a failed read distinguishable from a genuinely campaign-less
+            // period — the same contract the rethrowing methods above enforce with an HTTP error.
+            breakdownUnavailable = true;
             logger.warning(undefined, 'get_email_ctr', 'Optional campaign breakdown query failed, degrading gracefully', {
               foundation_slug: foundationSlug,
               err: error,
@@ -2548,6 +2561,10 @@ export class ProjectService {
           campaignGroups: [],
           monthlySends: [],
           monthlyOpens: [],
+          // Carried on this path too: the breakdown query runs before this branch, so it can
+          // have failed even when the primary reads came back genuinely empty. Omitting it here
+          // would report "no campaigns" for a period whose breakdown was never actually read.
+          breakdownUnavailable,
         };
       }
 
@@ -2764,6 +2781,7 @@ export class ProjectService {
         campaignGroups,
         monthlySends,
         monthlyOpens,
+        breakdownUnavailable,
         emailTypeBreakdown,
         campaignInsightText,
       };
@@ -3895,14 +3913,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return {
-        renewalRate: 0,
-        netRevenueRetention: 0,
-        changePercentage: 0,
-        trend: 'up',
-        target: 85,
-        monthlyData: [],
-      };
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -3999,7 +4014,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return defaultResponse;
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -4131,21 +4150,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return {
-        totalMembers: 0,
-        changePercentage: 0,
-        trend: 'up',
-        breakdown: {
-          newsletterSubscribers: 0,
-          communityMembers: 0,
-          workingGroupMembers: 0,
-          certifiedIndividuals: 0,
-          webVisitors: 0,
-          codeContributors: 0,
-          trainingEnrollees: 0,
-        },
-        monthlyData: [],
-      };
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -4317,22 +4326,11 @@ export class ProjectService {
         foundation_slug: foundationSlug,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return {
-        conversionRate: 0,
-        changePercentage: 0,
-        trend: 'up',
-        funnel: {
-          eventAttendees: 0,
-          convertedToNewsletter: 0,
-          convertedToCommunity: 0,
-          convertedToWorkingGroup: 0,
-          convertedToTraining: 0,
-          convertedToCode: 0,
-          convertedToWeb: 0,
-        },
-        reengagement: emptyReengagement,
-        monthlyData: [],
-      };
+      // Rethrow rather than returning a zero-filled body: a 200 carrying zeros is
+      // indistinguishable from a genuine measurement, and the ED card's undefined guard
+      // only fires on an HTTP error. Matches getEventGrowth/getBrandReach/getBrandHealth.
+      // A genuine no-data result (rows.length === 0) still returns its zero shape above.
+      throw error;
     }
   }
 
@@ -5427,7 +5425,28 @@ export class ProjectService {
       registrationRevenue: { actual: null, goal: row.REGREV_GOAL ?? 0 },
       sponsorshipRevenue: { actual: sponsorshipActual, goal: row.SPON_GOAL ?? 0 },
       vsLastYear: row.VS_LY,
-      hasPriorYear: row.CREATED_LAST_YEAR === true,
+      // Derived from the measured prior-year total rather than EVENT_CREATED_LAST_YEAR, which
+      // contradicts the rest of its own row: Linux Security Summit Europe 2026 carries
+      // CREATED_LAST_YEAR = false beside PERCENT_COMPARISON_TO_PREV_YEAR = 1.09 and COMP_SCORE
+      // 'high', with five prior editions in the predictions table and a prior-year total of 46.
+      // Trusting the flag rendered "no prior year" next to an "Ahead of last year" badge reading
+      // COMP_SCORE — two cards contradicting each other from one row. The pacing read already
+      // computes this total, so the whole drawer now answers the question from one measured fact.
+      //
+      // Either source proving a prior edition is enough, because each is blind in a different way.
+      //
+      // The measured total is absent both for an event with no prior edition AND for one whose
+      // pacing read degraded, so trusting it alone let an unmaterialized table make every event
+      // look like a first-timer — a claim about an event's history sourced from a pipeline outage.
+      // It is also 0, never NULL, for a prior-year total (40,514 zero rows against 0 nulls when
+      // checked), so a prior edition still at zero this far into its curve cannot be told from no
+      // prior edition by this column at all.
+      //
+      // The row flag is wrong in the other direction, claiming false where editions demonstrably
+      // exist. Neither is reliable alone; requiring only one to be positive means a first-timer
+      // needs both to agree, and five consumers stop asserting a history the data does not deny:
+      // the card, the badge label, the badge colour, the Last year series and the chart caption.
+      hasPriorYear: (pacing.priorYear ?? 0) > 0 || row.CREATED_LAST_YEAR === true,
       compScore: normalizeScore(row.COMP_SCORE),
       cfpStatus: row.CFP_STATUS ?? '',
       sponsorshipTiers: tierResult.rows.map((t) => ({
@@ -6003,6 +6022,9 @@ export class ProjectService {
         this.snowflakeService.execute<{ ACTIVITY_DATE: string; DAILY_SESSIONS: number }>(dailyQuery, foundationParams),
       ]);
 
+      // Tracks whether the social half failed, so a partial success cannot be mistaken for a
+      // measured zero. See BrandReachResponse.socialUnavailable.
+      let socialUnavailable = false;
       let totalSocialFollowers = 0;
       let followerGrowthPct = 0;
       let socialPlatforms: BrandReachResponse['socialPlatforms'] = [];
@@ -6045,6 +6067,10 @@ export class ProjectService {
           followers: row.FOLLOWERS ?? 0,
         }));
       } catch (socialError) {
+        // Deliberately non-fatal: the web half is independent and was measured fine, so
+        // blanking it would trade a false zero for a false outage. Flag it instead, so the
+        // Social card can say "unavailable" while the Web card keeps its real figure.
+        socialUnavailable = true;
         logger.debug(undefined, 'get_brand_reach', 'Social media query failed, returning web-only data', {
           err: socialError instanceof Error ? socialError : new Error(String(socialError)),
         });
@@ -6076,6 +6102,7 @@ export class ProjectService {
       }
 
       return {
+        socialUnavailable,
         totalSocialFollowers,
         totalMonthlySessions,
         activePlatforms: socialPlatforms.length,
@@ -6763,7 +6790,7 @@ export class ProjectService {
   public async enrichWithProjectData<T extends { project_uid: string }>(
     req: Request,
     items: T[]
-  ): Promise<(T & { project_name: string; project_slug: string; is_foundation: boolean; parent_project_uid: string })[]> {
+  ): Promise<(T & { project_name: string; project_slug: string; is_foundation?: boolean; parent_project_uid: string })[]> {
     const projectUids = [...new Set(items.map((item) => item.project_uid).filter(Boolean))];
 
     logger.debug(req, 'enrich_with_project_data', 'Enriching items with project metadata', {
@@ -6793,7 +6820,11 @@ export class ProjectService {
         ...item,
         project_name: project?.name || (item as any).project_name || '',
         project_slug: project?.slug || (item as any).project_slug || '',
-        is_foundation: computeIsFoundation(project ?? null),
+        // Leave is_foundation absent (not false) when the lookup fails — consumers like
+        // getMeetingEditCommands treat undefined as "tier unknown" and fall back safely,
+        // whereas a coerced false would mislabel a foundation-owned entity as project-owned.
+        // Mirrors the meeting-detail enrichment's fail-soft contract.
+        is_foundation: project ? computeIsFoundation(project) : ((item as any).is_foundation ?? undefined),
         parent_project_uid: project?.parent_uid || (item as any).parent_project_uid || '',
       };
     });
@@ -7917,10 +7948,17 @@ export class ProjectService {
   }
 
   /**
-   * Get the per-event registration-pacing summary + daily curve from the prediction models
-   * (MARKETING_EVENT_REGISTRATION_PREDICTIONS + _DRILLDOWN). These are mirrored from PCC and may
-   * not exist yet; any failure (missing table, no rows) resolves to an unavailable pacing block
-   * so the drawer degrades to its placeholder + PCC link rather than erroring.
+   * Get the per-event registration-pacing summary + daily curve from
+   * MARKETING_EVENT_REGISTRATION_PREDICTIONS, which is day-grained and carries both. It is
+   * mirrored from PCC and may not exist yet, so an absent table or an empty result resolves to an
+   * unavailable pacing block and the drawer degrades to its placeholder. Timeouts and invalid
+   * columns propagate instead — those are outages, and swallowing them is what let a query against
+   * a non-existent table look like an event with no pacing data.
+   *
+   * A missing GRANT degrades rather than propagating, because Snowflake reports both cases with
+   * one message ("does not exist or not authorized") and the predicate cannot separate them. That
+   * is a real gap: an unauthorized role renders as an event without pacing data rather than as the
+   * configuration error it is. Distinguishing them needs a signal Snowflake does not give us here.
    */
   private async getEventPacing(eventId: string): Promise<EventPacing> {
     const unavailable: EventPacing = {
@@ -7951,13 +7989,16 @@ export class ProjectService {
       PRED_HIGH: number | null;
     }
 
-    // Two tables, deliberately. The headline reads MARKETING_EVENT_REGISTRATION_PREDICTIONS, which
-    // is event-grained and carries the FINAL_* totals; the daily curve reads
-    // MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN, which is the only place the per-day
-    // CURRENT_EVENT_*/CUMULATIVE_* columns exist. Pointing either query at the other's table raises
-    // an invalid identifier, which propagates and fails the whole drawer — a rebuild collapsed them
-    // onto one table once already, so the split is asserted by a test.
-    // Both are grained by EVENT_ID x EVENT_REGISTRATION_TYPE (x DAYS_TO_EVENT on the drilldown).
+    // One table, two queries. Both read MARKETING_EVENT_REGISTRATION_PREDICTIONS, which is
+    // day-grained (EVENT_ID x EVENT_REGISTRATION_TYPE x DAYS_TO_EVENT): the headline takes its
+    // event-level FINAL_* constants, the curve takes the per-day CUMULATIVE_* columns.
+    //
+    // This previously pointed the curve at a MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN
+    // table that does not exist in this schema — the name was inferred from PCC's
+    // `eventRegistrationPredictionDrilldown` component, which is a UI concept, not a second table.
+    // PCC reads the same single predictions table this does. Every curve request therefore failed
+    // with a compile error, was swallowed by the degrade path below, and the chart silently never
+    // rendered.
     // EVENT_REGISTRATION_TYPE (In Person / Virtual) means an event/day can have multiple rows, so we
     // SUM across types per DAYS_TO_EVENT to get one point on the curve (never sum types blindly elsewhere).
     // Headline. FINAL_* columns are event-level constants (identical on every DAYS_TO_EVENT row),
@@ -7989,29 +8030,60 @@ export class ProjectService {
     const pointsQuery = `
       SELECT
         DAYS_TO_EVENT,
-        -- The per-day curve lives on _DRILLDOWN, not on the base predictions table: the base table
-        -- is event-grained and carries only the FINAL_* totals headQuery reads. These
-        -- CURRENT_EVENT_*/CUMULATIVE_* columns exist solely on the drilldown, so pointing this
-        -- query at the base table asks for identifiers that are not there.
+        -- The "current year" series reads CUMULATIVE_AVG_PREDICTED_REGISTRATIONS, which holds the
+        -- measured count on days at or before today rather than a forecast: the upstream model
+        -- writes the actual cumulative registrations into all three CUMULATIVE_*_PREDICTED columns
+        -- for known days, and only forecasts future ones. Verified in the warehouse — all 72,622
+        -- known rows have LOW = AVG = HIGH, while 2,925 of 3,031 future rows have LOW <> HIGH, so
+        -- the band opens only where the prediction begins. The label is accurate, not a rename of
+        -- predicted data.
         --
-        -- CURRENT_EVENT_*, not FINAL_CURRENT_*: the FINAL_ columns are event-level constants
-        -- repeated on every DAYS_TO_EVENT row, so plotting one per day would draw the current-year
-        -- line flat at the final total instead of a rising curve.
-        SUM(CURRENT_EVENT_CUMULATIVE_REGISTRATIONS) AS CUR_REGS,
-        SUM(PRIOR_EVENT_CUMULATIVE_REGISTRATIONS) AS PRIOR,
-        SUM(CUMULATIVE_AVG_PREDICTED_REGISTRATIONS) AS PRED_AVG,
-        SUM(CUMULATIVE_LOW_PREDICTED_REGISTRATIONS) AS PRED_LOW,
-        SUM(CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS) AS PRED_HIGH
-      FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS_DRILLDOWN
-      WHERE EVENT_ID = ?
+        -- Nulled past today so the solid actuals line stops where the dashed prediction takes over.
+        -- FINAL_CURRENT_* is deliberately not used: it is an event-level constant repeated on
+        -- every row, so plotting it per day would draw a flat line at the final total.
+        --
+        -- The cutoff is DAYS_LEFT_FROM_YESTERDAY, not 0. DAYS_TO_EVENT counts up to 0 on the event
+        -- day, so "today" is DAYS_LEFT_FROM_YESTERDAY (negative while the event is upcoming, e.g.
+        -- -54 with the curve spanning -86..0) — not the end of the series. Splitting at 0 would
+        -- mark the entire curve, future days included, as current-year.
+        SUM(CUR_REGS) AS CUR_REGS,
+        SUM(PRIOR) AS PRIOR,
+        SUM(PRED_AVG) AS PRED_AVG,
+        SUM(PRED_LOW) AS PRED_LOW,
+        SUM(PRED_HIGH) AS PRED_HIGH
+      FROM (
+        -- Collapsed per registration type before summing across them. The table carries duplicate
+        -- (event, type, day) rows — 1,669 such groups, two rows with the same values and different
+        -- _KEYs — and summing them doubled that day's point: Open Source Summit EU 2026 spiked from
+        -- 1,244 to 2,488 on a single day, drawing a vertical needle through the curve.
+        --
+        -- ANY_VALUE, not MAX: the duplicates hold identical values, so this deduplicates rather
+        -- than picking a winner. Summing across EVENT_REGISTRATION_TYPE (In Person / Virtual) is
+        -- still correct and still happens — in the outer query, where each type contributes once.
+        SELECT
+          DAYS_TO_EVENT,
+          EVENT_REGISTRATION_TYPE,
+          ANY_VALUE(CASE WHEN DAYS_TO_EVENT <= DAYS_LEFT_FROM_YESTERDAY THEN CUMULATIVE_AVG_PREDICTED_REGISTRATIONS END) AS CUR_REGS,
+          ANY_VALUE(PRIOR_EVENT_CUMULATIVE_REGISTRATIONS) AS PRIOR,
+          ANY_VALUE(CUMULATIVE_AVG_PREDICTED_REGISTRATIONS) AS PRED_AVG,
+          ANY_VALUE(CUMULATIVE_LOW_PREDICTED_REGISTRATIONS) AS PRED_LOW,
+          ANY_VALUE(CUMULATIVE_HIGH_PREDICTED_REGISTRATIONS) AS PRED_HIGH
+        FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS
+        WHERE EVENT_ID = ?
+        GROUP BY DAYS_TO_EVENT, EVENT_REGISTRATION_TYPE
+      )
       GROUP BY DAYS_TO_EVENT
-      ORDER BY DAYS_TO_EVENT DESC
+      -- Ascending, matching PCC: DAYS_TO_EVENT runs from the earliest day (most negative) up to 0
+      -- on the event day, and the chart maps this array straight onto the x-axis. DESC would plot
+      -- the event day leftmost and draw every series in reverse.
+      ORDER BY DAYS_TO_EVENT
     `;
 
     try {
       // Decoupled deliberately: EventPacing permits an empty `points` array, so a headline is
-      // still useful when only the daily-curve model has yet to land. Fetching them as one unit
-      // meant an unmaterialized drilldown discarded a perfectly good summary.
+      // still useful when the curve read alone fails. Both now hit the same table, so they can no
+      // longer diverge on the table existing — but they remain two statements that can fail
+      // independently, and one failing should not discard the other's result.
       //
       // expectMissingObject marks the rollout miss as expected so SnowflakeService does not count
       // it toward the global circuit breaker — an anticipated absent table is not an outage.

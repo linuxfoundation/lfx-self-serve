@@ -1,31 +1,27 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
-<lfx-header [showMyMeetings]="false"></lfx-header>
 
-<div class="bg-gray-50 min-h-screen">
-  <div class="container mx-auto py-6 px-8">
-    <div class="max-w-4xl mx-auto">
-      <lfx-card data-testid="not-found-card">
-        <div class="text-center py-12">
-          <div class="flex justify-center mb-6">
-            <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center">
-              <i class="fa-light fa-face-thinking text-4xl text-gray-400" aria-hidden="true"></i>
-            </div>
-          </div>
-
-          <h1 class="mb-3" data-testid="not-found-title">Page not found</h1>
-
-          <p class="text-gray-600 mb-8 max-w-lg mx-auto" data-testid="not-found-description">
-            The link you followed doesn't exist in LFX. This can happen from a mistyped URL or a stale bookmark.
-          </p>
-
-          <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <lfx-button routerLink="/" icon="fa-light fa-house" label="Go to Dashboard" size="small" data-testid="not-found-dashboard-button"></lfx-button>
-            <lfx-button (click)="goBack()" label="Go Back" size="small" severity="secondary" icon="fa-light fa-arrow-left" data-testid="not-found-back-button">
-            </lfx-button>
-          </div>
+<!-- Rendered inside MainLayout's padded content area — no page-level background/padding here. -->
+<div class="max-w-4xl mx-auto">
+  <lfx-card data-testid="not-found-card">
+    <div class="text-center py-12">
+      <div class="flex justify-center mb-6">
+        <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center">
+          <i class="fa-light fa-face-thinking text-4xl text-gray-400" aria-hidden="true"></i>
         </div>
-      </lfx-card>
+      </div>
+
+      <h1 class="mb-3" data-testid="not-found-title">Page not found</h1>
+
+      <p class="text-gray-600 mb-8 max-w-lg mx-auto" data-testid="not-found-description">
+        The link you followed doesn't exist in LFX. This can happen from a mistyped URL or a stale bookmark.
+      </p>
+
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+        <lfx-button routerLink="/" icon="fa-light fa-house" label="Go to Dashboard" size="small" data-testid="not-found-dashboard-button"></lfx-button>
+        <lfx-button (click)="goBack()" label="Go Back" size="small" severity="secondary" icon="fa-light fa-arrow-left" data-testid="not-found-back-button">
+        </lfx-button>
+      </div>
     </div>
-  </div>
+  </lfx-card>
 </div>

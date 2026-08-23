@@ -52,7 +52,7 @@
     <lfx-empty-state
       icon="fa-light fa-building"
       title="No org selected"
-      subtitle="Select an organization via Impersonate to view projects."
+      subtitle="Select an organization to view projects."
       data-testid="org-projects-no-company-empty-state" />
   } @else {
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-projects-table-card">
@@ -396,15 +396,17 @@
                   }
                 </td>
                 <td class="text-right">
-                  <lfx-button
-                    icon="fa-light fa-ellipsis-vertical"
-                    severity="secondary"
-                    [text]="true"
-                    size="small"
-                    styleClass="!px-2"
-                    ariaLabel="Row actions"
-                    (onClick)="openRowMenu(rowActionMenu, project, $event)"
-                    [attr.data-testid]="'org-projects-row-menu-' + project.slug" />
+                  @if (canManageWorkspaces()) {
+                    <lfx-button
+                      icon="fa-light fa-ellipsis-vertical"
+                      severity="secondary"
+                      [text]="true"
+                      size="small"
+                      styleClass="!px-2"
+                      ariaLabel="Row actions"
+                      (onClick)="openRowMenu(rowActionMenu, project, $event)"
+                      [attr.data-testid]="'org-projects-row-menu-' + project.slug" />
+                  }
                 </td>
               </tr>
             </ng-template>
@@ -435,25 +437,29 @@
             <i class="fa-light fa-check text-blue-600" aria-hidden="true"></i>
           }
         </button>
-        <button
-          type="button"
-          class="flex-shrink-0 px-1 text-gray-300 hover:text-gray-600"
-          aria-label="Workspace settings"
-          (click)="openWorkspaceSettings(ws); workspacePopover.hide()"
-          [attr.data-testid]="'org-projects-workspace-settings-' + ws.id">
-          <i class="fa-light fa-gear" aria-hidden="true"></i>
-        </button>
+        @if (canManageWorkspaces()) {
+          <button
+            type="button"
+            class="flex-shrink-0 px-1 text-gray-300 hover:text-gray-600"
+            aria-label="Workspace settings"
+            (click)="openWorkspaceSettings(ws); workspacePopover.hide()"
+            [attr.data-testid]="'org-projects-workspace-settings-' + ws.id">
+            <i class="fa-light fa-gear" aria-hidden="true"></i>
+          </button>
+        }
       </div>
     }
-    <hr class="my-1 border-gray-100" />
-    <button
-      type="button"
-      class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-gray-50"
-      (click)="openAddWorkspace(); workspacePopover.hide()"
-      data-testid="org-projects-add-workspace">
-      <i class="fa-light fa-square-plus" aria-hidden="true"></i>
-      Add workspace
-    </button>
+    @if (canManageWorkspaces()) {
+      <hr class="my-1 border-gray-100" />
+      <button
+        type="button"
+        class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-gray-50"
+        (click)="openAddWorkspace(); workspacePopover.hide()"
+        data-testid="org-projects-add-workspace">
+        <i class="fa-light fa-square-plus" aria-hidden="true"></i>
+        Add workspace
+      </button>
+    }
   </div>
 </p-popover>
 

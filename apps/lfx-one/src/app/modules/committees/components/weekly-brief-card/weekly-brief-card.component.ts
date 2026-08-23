@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
@@ -11,16 +11,22 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
+import { WeeklyBriefArchiveDrawerComponent } from '../weekly-brief-archive-drawer/weekly-brief-archive-drawer.component';
+import { SourceChipContextDirective } from './source-chip-context.directive';
 import {
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_MAX_POLL_ATTEMPTS,
   WEEKLY_BRIEF_POLL_INTERVAL_MS,
+  WEEKLY_BRIEF_SHAREABLE_STATES,
+  WEEKLY_BRIEF_SOURCE_SECTIONS,
+  WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD,
   WEEKLY_BRIEF_TERMINAL_STATES,
   WEEKLY_BRIEF_TEXT_MAX_LENGTH,
   WG_WEEKLY_BRIEF_SLACK_FLAG,
 } from '@lfx-one/shared/constants';
 import {
   Committee,
+  PaginatedResponse,
   ShareWeeklyBriefResult,
   ValidationError,
   WeeklyBrief,
@@ -28,6 +34,7 @@ import {
   WeeklyBriefRating,
   WeeklyBriefSourceChip,
   WeeklyBriefSourceChipAction,
+  WeeklyBriefSourceChipSection,
   WeeklyBriefThrottle,
 } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel, mapWeeklyBriefSourceRefsToChips } from '@lfx-one/shared/utils';
@@ -61,7 +68,18 @@ import {
 
 @Component({
   selector: 'lfx-weekly-brief-card',
-  imports: [CardComponent, ButtonComponent, SkeletonModule, ReactiveFormsModule, TextareaComponent, ConfirmDialogModule, TagComponent],
+  imports: [
+    CardComponent,
+    ButtonComponent,
+    SkeletonModule,
+    ReactiveFormsModule,
+    TextareaComponent,
+    ConfirmDialogModule,
+    TagComponent,
+    WeeklyBriefArchiveDrawerComponent,
+    NgTemplateOutlet,
+    SourceChipContextDirective,
+  ],
   templateUrl: './weekly-brief-card.component.html',
   styleUrl: './weekly-brief-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -97,14 +115,17 @@ export class WeeklyBriefCardComponent {
   public readonly impersonating = this.userService.impersonating;
 
   // Same dark-launch gate as committee-settings-tab.component.ts's Slack webhook card — without
-  // it, once wg-weekly-brief is on, every user would see a permanently-disabled Share to Slack
-  // button (has_slack_webhook can never become true; see the settings-tab flag's doc comment)
-  // with a hint pointing at settings UI that's itself still flag-hidden.
+  // it, once wg-weekly-brief is on, every user would see a Share to Slack button pointing at
+  // settings UI (the webhook card) that's itself still flag-hidden, with no way to configure it.
   public readonly slackShareEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
 
   // Template-bound constant — mirrors upstream's brief_text bound so the editor can't
   // produce a save the BFF is guaranteed to reject.
   protected readonly briefTextMaxLength = WEEKLY_BRIEF_TEXT_MAX_LENGTH;
+
+  // Template-bound constant (LFXV2-3335) — templates can't reference a bare imported
+  // constant, so this is re-exposed as a class field for the collapse-threshold comparison.
+  protected readonly sourcesCollapseThreshold = WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD;
 
   // Reactive form for the editor textarea — `lfx-textarea` requires a FormGroup + control name.
   public readonly editForm = new FormGroup({
@@ -126,6 +147,19 @@ export class WeeklyBriefCardComponent {
   // True while a rate/clear-rating request is in flight — guards against a second tap
   // racing the first before the optimistic state has settled.
   public readonly ratingPending = signal(false);
+
+  // Archive drawer visibility and availability signals.
+  // `hasArchiveBriefs` starts false and is set by a limit=1 preflight that fires as soon
+  // as the committee is known — avoids showing a "Past Briefs" button that opens to an
+  // empty drawer (LFXV2-3046: hide the affordance when no past briefs exist).
+  public readonly archiveVisible = signal(false);
+  public readonly hasArchiveBriefs = signal(false);
+
+  // Sources row disclosure state (LFXV2-3335). Level 1: whether the whole row is expanded
+  // past the collapse threshold. Level 2: which individual group chips (keyed by chip id)
+  // have their collapsed instances expanded.
+  public readonly sourcesExpanded = signal(false);
+  public readonly expandedSourceGroups = signal<Set<string>>(new Set());
 
   // Written by both the initial-load pipeline and the post-generate poll (see
   // initBriefResponseSubscription / pollUntilTerminal) — a plain signal rather than
@@ -179,6 +213,17 @@ export class WeeklyBriefCardComponent {
   // entirely.
   public readonly sourceChips: Signal<WeeklyBriefSourceChip[]> = computed(() => mapWeeklyBriefSourceRefsToChips(this.renderableBrief()?.source_refs ?? []));
 
+  // Raw source_refs count, duplicates included — NOT the deduped sourceChips() length. Drives
+  // both the collapse threshold comparison and the "Sources (N)" disclosure header (LFXV2-3335).
+  // `?? []` before `.length`, not `?.source_refs.length ?? 0`, matches the sourceChips computed
+  // above's guard: a brief response missing source_refs must not throw through this computed.
+  public readonly sourceRefCount: Signal<number> = computed(() => (this.renderableBrief()?.source_refs ?? []).length);
+
+  // sourceChips() grouped into fixed-order kind-sections for the expanded disclosure view
+  // (LFXV2-3335) — precomputed here rather than re-derived in the template (frontend-checklist
+  // §4). See initSourceChipSections for the "Other" catch-all rationale.
+  public readonly sourceChipSections: Signal<WeeklyBriefSourceChipSection[]> = this.initSourceChipSections();
+
   // "no_sources" is the only error_reason meaningful to the UI today (LFXV2-3000) —
   // a committee with zero activity in the lookback window, not a genuine generation
   // failure. Retrying it can never succeed and would just spend a regeneration slot,
@@ -227,6 +272,10 @@ export class WeeklyBriefCardComponent {
   }
 
   // Public actions
+  public onOpenArchive(): void {
+    this.archiveVisible.set(true);
+  }
+
   public onGenerate(): void {
     if (this.generating()) return;
     const committeeUid = this.committee()?.uid;
@@ -510,7 +559,42 @@ export class WeeklyBriefCardComponent {
     }
   }
 
+  // Level-1 Sources row disclosure (LFXV2-3335).
+  public onToggleSources(): void {
+    this.sourcesExpanded.update((expanded) => !expanded);
+  }
+
+  // Level-2 per-group disclosure, keyed by the group chip's id (LFXV2-3335). Copies into a
+  // new Set rather than mutating in place so the signal's change detection fires.
+  public onToggleSourceGroup(chipId: string): void {
+    this.expandedSourceGroups.update((expanded) => {
+      const next = new Set(expanded);
+      if (next.has(chipId)) {
+        next.delete(chipId);
+      } else {
+        next.add(chipId);
+      }
+      return next;
+    });
+  }
+
   // Private initializer functions
+  // Groups sourceChips() into the fixed-order kind-sections defined by WEEKLY_BRIEF_SOURCE_SECTIONS
+  // (LFXV2-3335), appending a trailing "Other" section for any chip whose kind isn't one of the
+  // known ones — kind is an open string (see WeeklyBriefSourceRef's doc comment), so without this
+  // catch-all an unrecognized future kind would silently vanish from the expanded view while
+  // still counted in sourceRefCount(), contradicting mapWeeklyBriefSourceRefsToChips's "renders
+  // unlinked instead of breaking" contract. A section with no chips is omitted entirely.
+  private initSourceChipSections(): Signal<WeeklyBriefSourceChipSection[]> {
+    return computed(() => {
+      const chips = this.sourceChips();
+      const known = new Set(WEEKLY_BRIEF_SOURCE_SECTIONS.map((section) => section.kind));
+      const sections = WEEKLY_BRIEF_SOURCE_SECTIONS.map(({ kind, label }) => ({ kind, label, chips: chips.filter((chip) => chip.kind === kind) }));
+      sections.push({ kind: 'other', label: 'Other', chips: chips.filter((chip) => !known.has(chip.kind)) });
+      return sections.filter((section) => section.chips.length > 0);
+    });
+  }
+
   private initBriefResponseSubscription(): void {
     const committeeUid$ = this.committee$.pipe(
       filter((c): c is Committee => !!c?.uid),
@@ -537,7 +621,30 @@ export class WeeklyBriefCardComponent {
       this.editForm.reset({ briefText: '' });
       this.ratingPending.set(false);
       this.optimisticRating.set(null);
+      // Reset archive state when navigating between committees.
+      this.hasArchiveBriefs.set(false);
+      this.archiveVisible.set(false);
+      // Reset Sources disclosure state (LFXV2-3335) — a stale expanded row/group from the
+      // previous committee must not bleed onto the new one, same rationale as every other
+      // reset in this block.
+      this.sourcesExpanded.set(false);
+      this.expandedSourceGroups.set(new Set());
     });
+
+    // Archive preflight — fires once per committee as soon as the uid is known,
+    // independently of the current brief. A limit=1 fetch confirms at least one past
+    // shareable brief exists before the "Past Briefs" button is shown.
+    committeeUid$
+      .pipe(
+        switchMap((uid) =>
+          this.weeklyBriefService.listWeeklyBriefs(uid, { limit: 1 }).pipe(catchError(() => of(null as PaginatedResponse<WeeklyBrief> | null)))
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((response) => {
+        const shareable = (response?.data ?? []).filter((b) => WEEKLY_BRIEF_SHAREABLE_STATES.includes(b.state));
+        this.hasArchiveBriefs.set(shareable.length > 0);
+      });
     combineLatest([committeeUid$, this.refresh$])
       .pipe(
         switchMap(([uid]) => {
@@ -818,22 +925,13 @@ export class WeeklyBriefCardComponent {
           } else if (status === 400) {
             const fieldErrors = (err?.error as { errors?: ValidationError[] } | undefined)?.errors;
             detail = fieldErrors?.[0]?.message ?? 'Failed to share brief. Please try again.';
-          } else if (status === 502 && code === 'SLACK_SEND_FAILED') {
-            // Slack answered synchronously with a rejection — invalid_payload, channel_not_found,
-            // rate_limited, action_prohibited, etc. (see SLACK_ERROR_TOKEN_PATTERN) — not only a
-            // bad webhook URL, so a single hardcoded "check the webhook URL" message would send a
-            // rate-limited or policy-blocked caller down the wrong troubleshooting path and invite
-            // an immediate retry that just gets rejected again. The server's own message already
-            // embeds the specific reason when it's recognizable (weekly-brief.service.ts's
-            // clientSafeReason); fall back to the generic wording only when it isn't. Either way
-            // the POST was never accepted, so nothing was posted — safe to retry once resolved.
-            detail = err.error?.error ?? 'Slack rejected the message. Check the webhook URL in Group Settings and try again.';
           } else if (status === 0 || status === 408 || status >= 500) {
-            // Ambiguous, same rationale as performShare's identical status-range branch: this
-            // covers SLACK_UNREACHABLE (a network error or AbortSignal.timeout talking to Slack)
-            // alongside a dropped connection or gateway timeout talking to our own BFF — in
-            // either case there's no confirmation Slack didn't already receive the POST before
-            // the failure, unlike the SLACK_SEND_FAILED branch above.
+            // committee-service now owns composing and sending the Slack message itself
+            // (LFXV2-3094 / lfx-v2-committee-service PR #178) — this BFF no longer talks to Slack
+            // directly, so there's no BFF-side SLACK_UNREACHABLE/SLACK_SEND_FAILED distinction to
+            // make any more. A 5xx (or a dropped/timed-out connection to our own BFF) here is
+            // ambiguous either way: there's no confirmation the message wasn't already sent before
+            // the failure, same rationale as performShare's identical status-range branch.
             detail = 'The send may not have completed — check the Slack channel before trying again.';
           } else {
             detail = 'Failed to share brief. Please try again.';

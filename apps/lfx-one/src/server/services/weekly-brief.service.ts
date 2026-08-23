@@ -4,12 +4,6 @@
 import {
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
-  SLACK_ERROR_BODY_MAX_LENGTH,
-  SLACK_ERROR_TOKEN_PATTERN,
-  SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN,
-  SLACK_INCOMING_WEBHOOK_URL_PATTERN,
-  SLACK_MESSAGE_TEXT_MAX_LENGTH,
-  SLACK_WEBHOOK_POST_TIMEOUT_MS,
   VALKEY_CACHE,
   WEEKLY_BRIEF_ACTION_ITEMS_MAX,
   WEEKLY_BRIEF_DEFAULT_THROTTLE,
@@ -17,11 +11,14 @@ import {
   WEEKLY_BRIEF_SHAREABLE_STATES,
 } from '@lfx-one/shared/constants';
 import {
+  Committee,
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
   GetWeeklyBriefActionItemsResponse,
   Newsletter,
   NewsletterSendResult,
+  PaginatedResponse,
+  QueryServiceResponse,
   RateWeeklyBriefResponse,
   SaveWeeklyBriefRequest,
   ShareWeeklyBriefResult,
@@ -37,7 +34,7 @@ import { Request } from 'express';
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
 import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
-import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveSub, getEffectiveUsername, getRealEmail, resolveRealAccessToken } from '../utils/auth-helper';
 
 import { AccessCheckService } from './access-check.service';
 import { AiService } from './ai.service';
@@ -65,19 +62,6 @@ function briefTextToHtml(text: string): string {
     .split(/\n{2,}/)
     .map((paragraph) => `<p>${escape(paragraph).replace(/\n/g, '<br>')}</p>`)
     .join('');
-}
-
-/**
- * Escapes Slack mrkdwn control characters per Slack's own escaping rules
- * (https://api.slack.com/reference/surfaces/formatting#escaping) — `&`, `<`, `>` are the only
- * three that matter. Slack's incoming webhooks parse `text` as mrkdwn by default: an unescaped
- * `<!channel>`/`<!here>` anywhere in `brief_text` (AI-generated from meeting/document titles —
- * content a broader set of users than project writers can influence, then further editable by
- * writers) would page the entire channel, and `<https://evil.example|label>` would render as a
- * deceptive hyperlink.
- */
-function escapeSlackMrkdwn(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
@@ -159,14 +143,23 @@ export function __resetMockBriefStateForTesting(): void {
   mockBriefByCommittee.clear();
 }
 
-function buildMockBrief(committeeId: string, overrides: Partial<WeeklyBrief> = {}): WeeklyBrief {
+/**
+ * Builds a mock WeeklyBrief shifted by `windowOffsetWeeks` relative to the current window.
+ * Pass 0 for the current week, -1 for last week, -2 for two weeks ago, etc.
+ * Used by both `buildMockBrief` (current-week mock) and `listBriefs` (archive mocks).
+ */
+function buildMockWeeklyBrief(committeeId: string, windowOffsetWeeks: number, overrides: Partial<WeeklyBrief> = {}): WeeklyBrief {
   const nowIso = new Date().toISOString();
-  const { window_start, window_end } = briefWindow();
+  const base = briefWindow();
+  const offsetMs = windowOffsetWeeks * 7 * 24 * 60 * 60 * 1000;
+  const windowStart = new Date(new Date(base.window_start).getTime() + offsetMs).toISOString();
+  const windowEnd = new Date(new Date(base.window_end).getTime() + offsetMs).toISOString();
+  const indexSuffix = String(Math.abs(windowOffsetWeeks)).padStart(2, '0');
   return {
-    uid: 'wb_mock_00000000-0000-0000-0000-000000000001',
+    uid: `wb_mock_00000000-0000-0000-0000-0000000000${indexSuffix}`,
     committee_uid: committeeId,
-    window_start,
-    window_end,
+    window_start: windowStart,
+    window_end: windowEnd,
     state: 'generated',
     brief_text:
       'This week the working group made steady progress across collaboration and delivery streams. ' +
@@ -197,6 +190,10 @@ function buildMockBrief(committeeId: string, overrides: Partial<WeeklyBrief> = {
     revision: 1,
     ...overrides,
   };
+}
+
+function buildMockBrief(committeeId: string, overrides: Partial<WeeklyBrief> = {}): WeeklyBrief {
+  return buildMockWeeklyBrief(committeeId, 0, overrides);
 }
 
 /**
@@ -250,6 +247,53 @@ export class WeeklyBriefService {
       );
     }
     return this.withCallerRating(req, committeeId, response);
+  }
+
+  /**
+   * GET /committees/:committeeId/weekly-briefs (paginated archive list)
+   *
+   * Live mode: queries the query-service `group_weekly_brief` index filtered by
+   * `committee_uid` tag. Access is gated at the controller layer via `assertCommitteeRead`
+   * before this method is called — do not invoke without a prior access check.
+   *
+   * Mock mode: returns three canned past briefs (previous three weeks) so the archive
+   * drawer is fully exercisable locally without standing up the upstream index.
+   */
+  public async listBriefs(req: Request, committeeId: string, query: { limit?: string; page_token?: string } = {}): Promise<PaginatedResponse<WeeklyBrief>> {
+    if (!this.isLive(req)) {
+      logger.debug(req, 'list_weekly_briefs', 'Returning mock brief archive', { committee_id: committeeId });
+      const isSecondPage = !!query['page_token'];
+      return {
+        data: isSecondPage
+          ? [buildMockWeeklyBrief(committeeId, -4), buildMockWeeklyBrief(committeeId, -5), buildMockWeeklyBrief(committeeId, -6)]
+          : [buildMockWeeklyBrief(committeeId, -1), buildMockWeeklyBrief(committeeId, -2), buildMockWeeklyBrief(committeeId, -3)],
+        page_token: isSecondPage ? undefined : 'mock-cursor-page-2',
+      };
+    }
+
+    logger.debug(req, 'list_weekly_briefs', 'Querying group_weekly_brief index', { committee_id: committeeId });
+
+    const rawLimit = parseInt(query['limit'] ?? '', 10);
+    const limit = !isNaN(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 50) : 20;
+
+    const params: Record<string, string | undefined> = {
+      type: 'group_weekly_brief',
+      tags: `committee_uid:${committeeId}`,
+      page_size: String(limit),
+      ...(query['page_token'] && { page_token: query['page_token'] }),
+    };
+
+    const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<WeeklyBrief>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params
+    );
+
+    // Exclude the current week's brief (window hasn't closed yet) — the card already shows it.
+    const now = new Date();
+    return { data: resources.map((r) => r.data).filter((b) => new Date(b.window_end) < now), page_token };
   }
 
   /**
@@ -605,6 +649,19 @@ export class WeeklyBriefService {
    * Requires `WEEKLY_BRIEF_BACKEND=live` — throws a 409 `BACKEND_NOT_LIVE`
    * otherwise, after still enforcing the brief/writer/mailing-list
    * preconditions below (so mock-mode testing exercises the same guards).
+   *
+   * Unlike `/share-slack` and `/rating`, this is NOT blocked during impersonation
+   * (LFXV2-3093) — it stays usable so LF staff can trigger a share while
+   * impersonating a chair for support purposes. Instead, the write boundary (from
+   * the project-writer check through the newsletter create/send/cleanup below)
+   * runs under the REAL impersonating staff member's identity/token, resolved via
+   * `resolveRealAccessToken`/`getRealEmail`, not the impersonated target's — so
+   * authorization and attribution stay consistent (whoever is authorized to send
+   * is also who the send is attributed to) and the outgoing email is never sent
+   * under, or misattributed to, a user who never took the action. Preconditions
+   * above this point (brief existence/state, committee lookup, mailing-list
+   * check) stay on the effective/target identity, same as every other read in
+   * this service — impersonation still shows staff what the target sees.
    */
   public async shareBrief(req: Request, committeeId: string, expectedRevision: number): Promise<ShareWeeklyBriefResult> {
     const { brief } = await this.getCurrentBrief(req, committeeId);
@@ -627,6 +684,22 @@ export class WeeklyBriefService {
     }
 
     const committee = await this.committeeService.getCommitteeById(req, committeeId);
+
+    // Everything from here through the newsletter create/send/cleanup below is the write
+    // boundary (LFXV2-3093) — resolved and authorized against the REAL impersonating staff
+    // member's identity, not the impersonated target's. Resolved once, up front: if the real
+    // token can't be resolved (no session token, or an expired one that fails to refresh),
+    // fail closed here rather than let the writer check pass against the target and only then
+    // fail deeper into the newsletter pipeline. A no-op when not impersonating (returns
+    // req.bearerToken as-is).
+    const realToken = await resolveRealAccessToken(req);
+    if (!realToken) {
+      throw new AuthenticationError('Unable to resolve your account for this action', {
+        operation: 'share_weekly_brief',
+        service: 'weekly_brief_service',
+      });
+    }
+
     // committee.writer is a superset of what we need here — per committee.interface.ts's
     // own doc comment, it's true for both a direct committee-level grant AND an inherited
     // project writer, but the newsletter service (which this repurposes for delivery)
@@ -635,7 +708,8 @@ export class WeeklyBriefService {
     // delegated/on-behalf-of token mechanism in this codebase to bridge that gap without
     // misattributing the send (the newsletter service resolves the sender's display name
     // from the signed JWT principal; an M2M token has none). Check the actual boundary
-    // directly instead, with the caller's own bearer token.
+    // directly instead, with the REAL caller's own bearer token (LFXV2-3093) — not the
+    // impersonated target's, so authorization and attribution stay consistent.
     //
     // checkSingleAccessStrict, not checkSingleAccess — the non-strict variant degrades a
     // transient access-check outage to "no access", which would surface here as a
@@ -644,11 +718,18 @@ export class WeeklyBriefService {
     // fail-closed-to-false is an acceptable trade-off), so misattributing an outage as a
     // permission denial is worse here — same rationale as committee-access.internal.helper.ts's
     // existing use of the strict variant.
-    const isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, {
-      resource: 'project',
-      id: committee.project_uid,
-      access: 'writer',
-    });
+    const originalTokenForAuthCheck = req.bearerToken;
+    req.bearerToken = realToken;
+    let isProjectWriter: boolean;
+    try {
+      isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, {
+        resource: 'project',
+        id: committee.project_uid,
+        access: 'writer',
+      });
+    } finally {
+      req.bearerToken = originalTokenForAuthCheck;
+    }
     if (!isProjectWriter) {
       throw new AuthorizationError('Only project writers can share the weekly brief by email', {
         operation: 'share_weekly_brief',
@@ -660,6 +741,8 @@ export class WeeklyBriefService {
     // getCommitteeById's includeMailingListStatus would otherwise compute — a transient
     // query-service failure here must not be misreported as "no mailing list configured"
     // (409 NO_MAILING_LIST is a real, actionable precondition failure; an outage isn't).
+    // Read on the effective/target identity (req.bearerToken was restored above) — only the
+    // write below runs under the real identity.
     const hasMailingList = await this.committeeService.hasMailingListStrict(req, committeeId);
     if (!hasMailingList) {
       throw new ConflictError('Committee has no mailing list configured', 'NO_MAILING_LIST', {
@@ -684,7 +767,10 @@ export class WeeklyBriefService {
 
     const subject = `[Weekly Brief] ${committee.name} — ${formatUtcDateRangeLabel(brief.window_start, brief.window_end)}`;
     const bodyHtml = briefTextToHtml(brief.brief_text);
-    const edReplyEmail = getEffectiveEmail(req);
+    // getRealEmail, not getEffectiveEmail (LFXV2-3093) — the reply-to must be the real
+    // sender's address, never the impersonated target's, matching the real identity the
+    // newsletter is created and sent under below.
+    const edReplyEmail = getRealEmail(req);
     if (!edReplyEmail) {
       throw ServiceValidationError.forField('ed_reply_email', 'Unable to resolve your account email for the reply-to address', {
         operation: 'share_weekly_brief',
@@ -708,83 +794,100 @@ export class WeeklyBriefService {
       );
     }
 
-    // isProjectWriter (checked above) is the newsletter service's actual authorization
-    // boundary, so the caller's own bearer token is used as-is here — no token swap at
-    // this layer (see NewsletterServiceClient#sendNewsletter's doc comment). The sender's
-    // display name resolves from that token's JWT principal — which, under impersonation,
-    // is the TARGET's principal, since auth.middleware.ts has already swapped
-    // req.bearerToken to the impersonation token by the time this method runs (known
-    // pre-existing gap, tracked in LFXV2-3093; see weekly-brief.route.ts's /share comment).
-    const newsletter: Newsletter = await this.newsletterService.createNewsletter(req, committee.project_uid, {
-      subject,
-      body_html: bodyHtml,
-      ed_reply_email: edReplyEmail,
-      committee_uids: [committeeId],
-    });
-
-    let sendResult: NewsletterSendResult;
+    // The newsletter draft is created and sent under the REAL caller's own bearer token
+    // (LFXV2-3093), restored to the impersonated/effective token in the finally below
+    // regardless of outcome — the same save/mutate/restore shape this codebase already uses
+    // for M2M tokens (e.g. meeting.controller.ts's getMyMeetingRegistrants), but with
+    // try/finally rather than that precedent's linear post-call restore, so the token is
+    // restored even if one of the awaited calls below throws, not just on the happy path.
+    // isProjectWriter (checked above, also against the real identity) is the newsletter
+    // service's actual authorization boundary; the sender's display name resolves from
+    // this token's JWT principal too (see NewsletterServiceClient#sendNewsletter's doc
+    // comment), so both the authorization and the visible "from" identity are the real
+    // staff member's, not the impersonated target's.
+    const originalTokenForSend = req.bearerToken;
+    req.bearerToken = realToken;
     try {
-      sendResult = await this.newsletterService.sendNewsletter(req, committee.project_uid, newsletter.id, newsletter.version);
-    } catch (error) {
-      // Only clean up on a deterministic rejection (draft validation failed,
-      // not found, etc). The send is asynchronous — a timeout or 5xx *after*
-      // upstream accepted it is indistinguishable from a real rejection here,
-      // and deleting the draft in that case would desync us from a send that
-      // actually went out. Ambiguous failures are left in place and logged.
-      const isDeterministicRejection =
-        error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && ![408, 409, 429].includes(error.statusCode);
-      if (isDeterministicRejection) {
-        try {
-          await this.newsletterService.deleteNewsletter(req, committee.project_uid, newsletter.id);
-        } catch (cleanupError) {
-          logger.warning(req, 'share_weekly_brief_cleanup_failed', 'Failed to delete orphaned draft newsletter after a failed send', {
-            committee_id: committeeId,
-            newsletter_id: newsletter.id,
-            error: cleanupError instanceof Error ? cleanupError.message : 'Unknown error',
-          });
-        }
-      } else {
-        // The original error is rethrown below and logged centrally by
-        // apiErrorHandler — no need to duplicate its message here, just the
-        // newsletter_id so an operator can find the orphaned draft.
-        logger.warning(
-          req,
-          'share_weekly_brief_ambiguous_send_failure',
-          'Send failed ambiguously (may have been accepted upstream) — leaving draft newsletter in place for manual review',
-          {
-            committee_id: committeeId,
-            newsletter_id: newsletter.id,
+      const newsletter: Newsletter = await this.newsletterService.createNewsletter(req, committee.project_uid, {
+        subject,
+        body_html: bodyHtml,
+        ed_reply_email: edReplyEmail,
+        committee_uids: [committeeId],
+      });
+
+      let sendResult: NewsletterSendResult;
+      try {
+        sendResult = await this.newsletterService.sendNewsletter(req, committee.project_uid, newsletter.id, newsletter.version);
+      } catch (error) {
+        // Only clean up on a deterministic rejection (draft validation failed,
+        // not found, etc). The send is asynchronous — a timeout or 5xx *after*
+        // upstream accepted it is indistinguishable from a real rejection here,
+        // and deleting the draft in that case would desync us from a send that
+        // actually went out. Ambiguous failures are left in place and logged.
+        const isDeterministicRejection =
+          error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && ![408, 409, 429].includes(error.statusCode);
+        if (isDeterministicRejection) {
+          try {
+            await this.newsletterService.deleteNewsletter(req, committee.project_uid, newsletter.id);
+          } catch (cleanupError) {
+            logger.warning(req, 'share_weekly_brief_cleanup_failed', 'Failed to delete orphaned draft newsletter after a failed send', {
+              committee_id: committeeId,
+              newsletter_id: newsletter.id,
+              error: cleanupError instanceof Error ? cleanupError.message : 'Unknown error',
+            });
           }
-        );
+        } else {
+          // The original error is rethrown below and logged centrally by
+          // apiErrorHandler — no need to duplicate its message here, just the
+          // newsletter_id so an operator can find the orphaned draft.
+          logger.warning(
+            req,
+            'share_weekly_brief_ambiguous_send_failure',
+            'Send failed ambiguously (may have been accepted upstream) — leaving draft newsletter in place for manual review',
+            {
+              committee_id: committeeId,
+              newsletter_id: newsletter.id,
+            }
+          );
+        }
+        throw error;
       }
-      throw error;
+
+      // The newsletter API only accepts/queues the send here; upstream fan-out
+      // runs asynchronously in a detached job and can still fail completely
+      // afterward. Log as queued, not sent — an operator reading this event
+      // should not treat it as a delivery confirmation.
+      logger.info(req, 'share_weekly_brief_queued', 'Weekly brief queued for delivery via newsletter send pipeline', {
+        committee_id: committeeId,
+        newsletter_id: newsletter.id,
+        total_recipients: sendResult.total_recipients,
+      });
+
+      return {
+        committee_name: committee.name,
+        total_recipients: sendResult.total_recipients,
+      };
+    } finally {
+      req.bearerToken = originalTokenForSend;
     }
-
-    // The newsletter API only accepts/queues the send here; upstream fan-out
-    // runs asynchronously in a detached job and can still fail completely
-    // afterward. Log as queued, not sent — an operator reading this event
-    // should not treat it as a delivery confirmation.
-    logger.info(req, 'share_weekly_brief_queued', 'Weekly brief queued for delivery via newsletter send pipeline', {
-      committee_id: committeeId,
-      newsletter_id: newsletter.id,
-      total_recipients: sendResult.total_recipients,
-    });
-
-    return {
-      committee_name: committee.name,
-      total_recipients: sendResult.total_recipients,
-    };
   }
 
   /**
-   * Shares the current brief to the committee's configured Slack channel via an Incoming
-   * Webhook POST. Precondition chain mirrors {@link shareBrief} exactly (brief exists +
-   * shareable state, revision matches, caller is a project writer, `WEEKLY_BRIEF_BACKEND=live`)
-   * with one swap: "has a mailing list configured" becomes "has a Slack webhook configured".
+   * Shares the current brief to the committee's configured Slack channel. The committee-service
+   * itself owns composing and sending the message (lfx-v2-committee-service PR #178 /
+   * LFXV2-3094) — it reads the stored `chat_webhook_url` from its own storage and posts to
+   * Slack, so the raw credential never needs to reach this BFF. Precondition chain otherwise
+   * mirrors {@link shareBrief} (brief exists + shareable state, revision matches, caller is a
+   * project writer, `WEEKLY_BRIEF_BACKEND=live`) — those checks stay local so a disabled/mock
+   * environment and a stale revision fail the same way they always have, before any upstream
+   * call.
    *
-   * Unlike shareBrief's newsletter-service handoff (async accept-then-fan-out), a webhook POST
-   * is synchronous — Slack's own response is authoritative. A resolved promise means Slack
-   * accepted the message, not that it was merely queued.
+   * Known behavior change from the pre-LFXV2-3080-migration send: the posted message is
+   * `brief_text` alone — as of this writing, committee-service's `WebhookSender` does not add
+   * back the `*Weekly Brief — {committee}* ({date range})` heading this BFF used to prepend
+   * before composing moved server-side. Flag to product/upstream if that context is missed in a
+   * channel receiving briefs from more than one committee; not addressed in this BFF, since it no
+   * longer composes the message at all.
    */
   public async shareToSlack(req: Request, committeeId: string, expectedRevision: number): Promise<ShareWeeklyBriefToSlackResult> {
     // Same server-side kill switch as committee.service.ts's updateCommittee, and for the same
@@ -813,17 +916,29 @@ export class WeeklyBriefService {
       });
     }
 
-    // One fetch, not two: getCommitteeForSlackShare returns exactly what this method needs
-    // (name, project_uid, the raw webhook URL) from a single upstream call — going through
-    // getCommitteeById (settings/membership/access-check enrichment this method never reads)
-    // plus a second, separate getSlackWebhookUrlStrict call would cost an extra round trip and
-    // open a TOCTOU window on the webhook value between the two reads. See
-    // getSlackWebhookUrlStrict's doc comment for the full rationale.
-    const committee = await this.committeeService.getCommitteeForSlackShare(req, committeeId);
+    // Needs project_uid for the strict project-writer check below — a plain GET, not
+    // getCommitteeById, since this method reads nothing from its settings/membership/access-check
+    // enrichment.
+    const committee = await this.microserviceProxy.proxyRequest<Committee | null>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${encodeURIComponent(committeeId)}`,
+      'GET'
+    );
+    if (!committee) {
+      throw new ResourceNotFoundError('Committee', committeeId, {
+        operation: 'share_weekly_brief_slack',
+        service: 'weekly_brief_service',
+      });
+    }
 
     // Same strict project-writer boundary as shareBrief, for the same reason: sharing is a
-    // deliberate, low-frequency action where misattributing a transient access-check outage as
-    // a permission denial is worse than the extra strict-variant call.
+    // deliberate, low-frequency action where misattributing a transient access-check outage as a
+    // permission denial is worse than the extra strict-variant call. Stricter than the upstream
+    // endpoint's own committee-writer enforcement (via Heimdall) — direct committee grants exist
+    // independently of project writer (see `getDirectGrantCommittees`), so without this a
+    // committee writer who is not a project writer could trigger a send to a webhook they don't
+    // control the destination of.
     const isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, {
       resource: 'project',
       id: committee.project_uid,
@@ -837,36 +952,9 @@ export class WeeklyBriefService {
       });
     }
 
-    // Re-validated against SLACK_INCOMING_WEBHOOK_URL_PATTERN here, not just trusted from
-    // upstream storage — the BFF's own updateCommittee is not the only possible writer of
-    // chat_webhook_url on the committee record (any client with a token can PUT /committees/:uid
-    // directly), so the stored value is untrusted input at the point of use. Without this, an
-    // arbitrary URL written some other way would turn this into a server-initiated POST of brief
-    // content to an attacker-chosen destination — exactly what the allowlist exists to prevent.
-    // A malformed value is treated the same as "not configured" — from the caller's perspective
-    // both are equally unactionable.
-    const webhookUrl = committee.chat_webhook_url;
-    const isAllowedWebhook = !!webhookUrl && SLACK_INCOMING_WEBHOOK_URL_PATTERN.test(webhookUrl);
-    if (webhookUrl && !isAllowedWebhook) {
-      // Logged, not put in the thrown error's `metadata` — BaseApiError.toResponse() serializes
-      // `metadata` straight into the client-facing JSON body, which would let the response leak
-      // "something is stored" vs. "nothing is configured" per committee. The caller-facing
-      // message/code must stay byte-identical either way; this operator-only signal (never the
-      // URL itself) is the one place that distinction is allowed to exist.
-      logger.warning(req, 'share_weekly_brief_slack', 'Stored chat_webhook_url failed the Slack allowlist — treating as unconfigured', {
-        committee_id: committeeId,
-      });
-    }
-    if (!isAllowedWebhook) {
-      throw new ConflictError('Committee has no Slack webhook configured', 'NO_SLACK_WEBHOOK', {
-        operation: 'share_weekly_brief_slack',
-        service: 'weekly_brief_service',
-      });
-    }
-
     // Preconditions above are enforced regardless of backend mode; only the actual send is
     // gated on isLive() — same rationale as shareBrief: mock-mode content must never actually
-    // post to a real Slack channel.
+    // reach committee-service's real Slack-sending path.
     if (!this.isLive(req)) {
       throw new ConflictError('Sharing is not available in this environment (WEEKLY_BRIEF_BACKEND is not "live")', 'BACKEND_NOT_LIVE', {
         operation: 'share_weekly_brief_slack',
@@ -874,94 +962,83 @@ export class WeeklyBriefService {
       });
     }
 
-    const text = `*Weekly Brief — ${escapeSlackMrkdwn(committee.name)}* (${formatUtcDateRangeLabel(brief.window_start, brief.window_end)})\n\n${escapeSlackMrkdwn(brief.brief_text)}`;
-    // text.length (UTF-16 code units), deliberately not [...text].length (code points) — the
-    // latter is always <= the former for any string, so the two are never actually in tension;
-    // this is a one-sided choice, not a comparison. This guard's job is to pre-empt an opaque 502
-    // from Slack, and Slack's own "40,000 characters" doc doesn't specify an encoding, so the
-    // conservative (larger) count is used here — unlike the controller's brief_text *save*
-    // validation, which uses the code-point count for a different reason (matching upstream's own
-    // declared maxLength exactly, not being conservative). An emoji-heavy brief the editor accepts
-    // at the code-point-based save cap can therefore still be rejected by this UTF-16-based share
-    // guard — a real, if narrow, asymmetry between the two limits, not a bug in either.
-    if (text.length > SLACK_MESSAGE_TEXT_MAX_LENGTH) {
-      // Phrased in terms of shortening the brief, not the post-escaping/post-header character
-      // ceiling above — that number (40,000) would be confusing next to the brief editor's own
-      // much smaller cap (WEEKLY_BRIEF_TEXT_MAX_LENGTH, 20,000).
-      throw ServiceValidationError.forField('brief_text', 'Brief is too long to share to Slack. Shorten the brief text and try again.', {
-        operation: 'share_weekly_brief_slack',
-        service: 'weekly_brief_service',
+    // The committee-service composes the message, validates/re-reads the stored webhook, and
+    // posts to Slack itself — see this method's doc comment. Its response codes are mapped below
+    // onto the same client-facing messages/codes this method already used for the equivalent
+    // local checks, so the Angular error-handling contract doesn't change.
+    logger.debug(req, 'share_weekly_brief_slack', 'Proxying to committee-service', { committee_id: committeeId, revision: expectedRevision });
+    try {
+      await this.microserviceProxy.proxyRequest<void>(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/share-to-chat`,
+        'POST',
+        undefined,
+        { revision: expectedRevision }
+      );
+    } catch (error) {
+      if (!(error instanceof MicroserviceError)) {
+        throw error;
+      }
+      // Logged before remapping — the remapped client-facing error (esp. the 400 case below,
+      // which collapses both a stale local/upstream state race AND a genuine BFF↔upstream
+      // contract bug to the same "brief not found" 404) would otherwise leave no operator-visible
+      // trace of what upstream actually said.
+      logger.warning(req, 'share_weekly_brief_slack', 'committee-service rejected the share-to-chat request', {
+        committee_id: committeeId,
+        upstream_status: error.statusCode,
+        upstream_code: error.code,
       });
+      switch (error.statusCode) {
+        case 400:
+          // Race window between the local shareable-state check above and this call landing
+          // upstream — same shape as that local check's own 404, not a new error to the client.
+          throw new ResourceNotFoundError('Weekly brief', committeeId, {
+            operation: 'share_weekly_brief_slack',
+            service: 'weekly_brief_service',
+          });
+        case 403:
+          // Defense-in-depth — the strict project-writer check above normally rejects this
+          // first; this only fires if Heimdall's committee-writer boundary disagrees with it.
+          throw new AuthorizationError('Only project writers can share the weekly brief to Slack', {
+            operation: 'share_weekly_brief_slack',
+            service: 'weekly_brief_service',
+            code: 'NOT_PROJECT_WRITER',
+          });
+        case 404:
+          throw new ResourceNotFoundError('Weekly brief', committeeId, {
+            operation: 'share_weekly_brief_slack',
+            service: 'weekly_brief_service',
+          });
+        case 409:
+          throw new ConflictError(
+            'The brief has been updated since you last viewed it. Reload to review the latest version before sharing.',
+            'REVISION_MISMATCH',
+            { operation: 'share_weekly_brief_slack', service: 'weekly_brief_service' }
+          );
+        case 422:
+          throw new ConflictError('Committee has no Slack webhook configured', 'NO_SLACK_WEBHOOK', {
+            operation: 'share_weekly_brief_slack',
+            service: 'weekly_brief_service',
+          });
+        default:
+          throw error;
+      }
     }
 
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-      // A redirect response could relocate the POST body off hooks.slack.com entirely —
-      // 'error' rejects the fetch outright instead of silently following it.
-      redirect: 'error',
-      signal: AbortSignal.timeout(SLACK_WEBHOOK_POST_TIMEOUT_MS),
-    }).catch((error: unknown) => {
-      throw new MicroserviceError('Unable to reach Slack — the webhook request failed or timed out', 502, 'SLACK_UNREACHABLE', {
-        operation: 'share_weekly_brief_slack',
-        service: 'weekly_brief_service',
-        // Redacted, not passed through as-is: getLogContext() logs this message unsanitized
-        // (`sanitize()` only redacts top-level keys, and `original_error` isn't one of them).
-        // Today's undici fetch-failure/abort messages don't embed the request URL, so this is
-        // defense-in-depth against a future fetch/undici version that does.
-        originalError: error instanceof Error ? new Error(error.message.replace(SLACK_INCOMING_WEBHOOK_URL_IN_TEXT_PATTERN, '[redacted-url]')) : undefined,
-      });
-    });
-
-    if (!response.ok) {
-      // Slack's incoming-webhook error responses are a plain-text body (e.g. `invalid_payload`,
-      // `channel_not_found`, `action_prohibited`), not JSON. Read via a bounded stream reader
-      // rather than response.text() — text() buffers the entire body before any slicing can
-      // happen, so a single huge response (whether from a Slack bug or a misbehaving proxy)
-      // would still be fully materialized in memory even though only SLACK_ERROR_BODY_MAX_LENGTH
-      // characters of it are ever used.
-      const slackErrorText = await this.readBoundedText(response, SLACK_ERROR_BODY_MAX_LENGTH).catch(() => '');
-      // SLACK_ERROR_TOKEN_PATTERN gates what's safe to echo into the client-facing message —
-      // BaseApiError#toResponse puts `message` directly in the client response, and slackErrorText
-      // is otherwise arbitrary third-party content (a Slack-side HTML error page, an intermediary
-      // proxy's response). The untrimmed (but SLACK_ERROR_BODY_MAX_LENGTH-bounded) text still
-      // reaches operators either way, via errorBody.reason below (log-only, and only when the
-      // body was actually readable — see that line's own comment for the empty/unreadable case)
-      // — only this client-safety check trims, so a trailing newline Slack or a proxy might add
-      // doesn't disqualify an otherwise-legitimate token.
-      const trimmedErrorText = slackErrorText.trim();
-      const clientSafeReason = SLACK_ERROR_TOKEN_PATTERN.test(trimmedErrorText) ? trimmedErrorText : '';
-      throw new MicroserviceError(`Slack rejected the message${clientSafeReason ? `: ${clientSafeReason}` : ''}`, 502, 'SLACK_SEND_FAILED', {
-        operation: 'share_weekly_brief_slack',
-        service: 'weekly_brief_service',
-        // status/reason are log-only (MicroserviceError#toResponse never echoes errorBody to the
-        // client except via its details/errors sub-keys) — reason keeps the full truncated body
-        // for operators even when it didn't qualify for the client-facing message above, and
-        // status lets an operator tell a 429 rate-limit apart from a 403 revoked webhook even
-        // when the body itself is empty or unreadable.
-        errorBody: { status: response.status, reason: slackErrorText || 'unknown error' },
-      });
-    }
-
-    // Slack's success body is a tiny, unused 'ok' — drain it so undici releases the connection
-    // back to the pool immediately instead of holding it until the stream is GC'd. The !response.ok
-    // branch above already drains its body via readBoundedText; this is the fetch's only other exit.
-    await response.body?.cancel().catch(() => undefined);
-
-    // shared_by is the one place this action's actor is recorded at all: the webhook POST body
-    // itself carries no caller identity (it's why /share-slack blocks during impersonation in the
-    // first place — see impersonation-readonly.middleware.ts), and unlike shareBrief, a successful
-    // send leaves no other persisted record (e.g. a newsletter draft) an operator could trace back
-    // to a user later. Opaque OIDC sub, not the LFID username, same rationale as rating_recorded
-    // above: this log line is retained indefinitely, and a human-readable username is PII (PR #1361
-    // review — docs/reviews/knowledge-base/security.md's `security/pii-in-logs-and-identifiers`).
+    // shared_by is the one place this action's actor is recorded at all in this BFF — the
+    // committee-service call carries no caller identity beyond the bearer token itself (it's why
+    // /share-slack blocks during impersonation in the first place — see
+    // impersonation-readonly.middleware.ts). Opaque OIDC sub, not the LFID username, same
+    // rationale as rating_recorded above: this log line is retained indefinitely, and a
+    // human-readable username is PII (PR #1361 review —
+    // docs/reviews/knowledge-base/security.md's `security/pii-in-logs-and-identifiers`).
     logger.info(req, 'share_weekly_brief_slack_sent', 'Weekly brief sent to the committee Slack channel', {
       committee_id: committeeId,
       shared_by: getEffectiveSub(req),
     });
 
-    return { committee_name: committee.name };
+    return {};
   }
 
   /**
@@ -992,34 +1069,6 @@ export class WeeklyBriefService {
     }
     logger.warning(req, 'weekly_brief_mock_mode', 'Serving mock weekly-brief data — WEEKLY_BRIEF_BACKEND is not "live"', {});
     return false;
-  }
-
-  /**
-   * Reads `response`'s body in chunks and returns at most `maxChars` characters, cancelling the
-   * underlying stream once that many have been read instead of continuing to buffer — unlike
-   * `response.text()`, which always buffers the entire body first regardless of how much of it
-   * ends up used. The accumulator may briefly hold up to one extra transport chunk beyond
-   * `maxChars` between reads; only the final, returned string is guaranteed capped.
-   */
-  private async readBoundedText(response: Response, maxChars: number): Promise<string> {
-    const reader = response.body?.getReader();
-    if (!reader) {
-      return '';
-    }
-    const decoder = new TextDecoder();
-    let text = '';
-    try {
-      while (text.length < maxChars) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-        text += decoder.decode(value, { stream: true });
-      }
-    } finally {
-      await reader.cancel().catch(() => undefined);
-    }
-    return text.slice(0, maxChars);
   }
 
   /**

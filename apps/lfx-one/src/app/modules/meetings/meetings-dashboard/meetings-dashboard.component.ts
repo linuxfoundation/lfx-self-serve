@@ -33,6 +33,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
+import { hasMeetingWriteAccess } from '@shared/utils/write-access.util';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import {
@@ -355,7 +356,7 @@ export class MeetingsDashboardComponent {
         switchMap((ctx) => {
           if (!ctx?.slug) return of(false);
           return this.projectService.getProject(ctx.slug, false, { meetingCoordinator: true }).pipe(
-            map((project) => project?.writer === true || project?.meetingCoordinator === true),
+            map((project) => hasMeetingWriteAccess(project)),
             catchError(() => of(false))
           );
         })
@@ -685,11 +686,12 @@ export class MeetingsDashboardComponent {
     }
 
     if (organizerOnly) {
-      // Matches the card's "Organized by you" chip (created_by-derived), NOT meeting.organizer —
-      // that FGA flag includes inherited grants, so it would surface meetings the user never created.
+      // Matches the card's "Organized by you" chip (owner-first, created_by fallback), NOT
+      // meeting.organizer — that FGA flag includes inherited grants, so it would surface meetings
+      // the user never created.
       //
-      // Deliberately called without a `hosts` list, so this only ever matches on created_by — the
-      // same basis the chip uses before a card's registrants drawer has been opened. Once opened,
+      // Deliberately called without a `hosts` list, so this only ever matches on owner/created_by —
+      // the same basis the chip uses before a card's registrants drawer has been opened. Once opened,
       // collectMeetingOrganizers folds real Zoom co-hosts into the chip's organizer set too (see its
       // JSDoc), so a co-host who isn't the creator can see "Organized by you" on their own card yet
       // not match this filter. Accepted: host data only exists via the per-card registrants fetch

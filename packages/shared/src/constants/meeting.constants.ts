@@ -13,6 +13,14 @@ import { lfxColors } from './colors.constants';
 export const MEETING_ORGANIZER_SKIP_IDENTIFIERS = ['zoom.webhooks', 'zoom.events'];
 
 /**
+ * Upper bound on registrants a single "import from a meeting" (LFXV2-2607) can pull in. A sync
+ * BFF fetch-then-invite-fan-out for a large roster (100s-1000s of registrants) risks timeouts and
+ * confusing partial-failure states — the same failure mode that broke this feature in PCC. Above
+ * this, the import is refused rather than attempted; see meeting.controller.ts:getMeetingRegistrants.
+ */
+export const IMPORT_REGISTRANTS_MAX = 50;
+
+/**
  * Host-key visibility window — minutes before meeting start when the key becomes visible.
  * Mirrors PCC's showHostKey() logic. The Zoom host key is account-level and can change
  * leading up to a meeting, so exposing it too early risks showing a stale value.
@@ -639,6 +647,13 @@ export const MEETING_RECORDING_COUNT_FETCH_CONCURRENCY = 8;
 
 /** Session cache TTL for past-meeting recording fetches; balances dedupe vs post-processing staleness. */
 export const PAST_MEETING_RECORDING_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Short TTL for the meeting-detail cache — just long enough for the writerGuard
+ * project probe and MeetingManageComponent's immediate refetch to share one request, without
+ * serving stale data across edits (write paths evict explicitly).
+ */
+export const MEETING_DETAIL_CACHE_TTL_MS = 10 * 1000;
 
 // ============================================================================
 // Past Meeting Sort Values

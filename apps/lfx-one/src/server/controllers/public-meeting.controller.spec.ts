@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibility } from '@lfx-one/shared/enums';
-import type { Meeting } from '@lfx-one/shared/interfaces';
+import type { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const MEETING_ID = 'meeting-1111';
@@ -17,6 +17,7 @@ const {
   getEffectiveEmailMock,
   getEffectiveUsernameMock,
   validatePasswordMock,
+  validateUidParameterMock,
   meetingSvc,
   projectSvc,
   addInvitedStatusToMeetingMock,
@@ -27,6 +28,7 @@ const {
   getEffectiveEmailMock: vi.fn(),
   getEffectiveUsernameMock: vi.fn(),
   validatePasswordMock: vi.fn(),
+  validateUidParameterMock: vi.fn<(uid: unknown, req: unknown, next: (err: unknown) => void) => boolean>(() => true),
   meetingSvc: {
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
@@ -34,7 +36,9 @@ const {
     // Called by enrichMeetingsWithCreatedBy (#1155); empty map => enrich is a no-op.
     resolveCreatedByForMeetings: vi.fn().mockResolvedValue(new Map()),
     getMeetingHostKey: vi.fn(),
+    getPastMeetingById: vi.fn(),
     getPastOccurrencesForMeeting: vi.fn(),
+    addMeetingRegistrantSelf: vi.fn(),
   },
   projectSvc: { getProjectById: vi.fn() },
   addInvitedStatusToMeetingMock: vi.fn(),
@@ -44,13 +48,20 @@ const {
 // the controller/gate use. validation.helper is mocked wholesale (see below) so its heavy
 // shared/constants + shared/utils module graph never loads.
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
-// meeting.helper (kept real via importOriginal) imports resolveMeetingOrganizer from shared/utils;
-// stub it so the real barrel (and its MeetingType enum dependency) isn't pulled into the mock graph.
-vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => null) }));
+// meeting.helper (kept real via importOriginal) imports resolveMeetingOrganizer and
+// resolveMeetingOwner from shared/utils; stub them so the real barrel (and its MeetingType enum
+// dependency) isn't pulled into the mock graph. Both null => the enrichment gate always opens,
+// but the default empty resolveCreatedByForMeetings map keeps enrichment a pass-through.
+vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => null), resolveMeetingOwner: vi.fn(() => null) }));
 // meeting.helper imports HOST_KEY_* from shared/constants; stub the barrel so the full constants
 // module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
-vi.mock('@lfx-one/shared/constants', () => ({ HOST_KEY_EARLY_MINUTES: 70, HOST_KEY_LATE_MINUTES: 40, MEETING_PASSWORD_HEADER: 'x-meeting-password' }));
-vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
+vi.mock('@lfx-one/shared/constants', () => ({
+  HOST_KEY_EARLY_MINUTES: 70,
+  HOST_KEY_LATE_MINUTES: 40,
+  MEETING_PASSWORD_HEADER: 'x-meeting-password',
+  ROOT_PROJECT_SLUG: 'ROOT',
+}));
+vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: validateUidParameterMock }));
 
 vi.mock('../services/meeting.service', () => ({
   MeetingService: vi.fn(function () {
@@ -116,8 +127,31 @@ function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
   } as Meeting;
 }
 
-function buildProject() {
-  return { name: 'Proj', slug: 'proj', logo_url: 'logo', uid: PROJECT_UID, parent_uid: 'parent' };
+function buildPastMeeting(overrides: Partial<PastMeeting> = {}): PastMeeting {
+  return {
+    id: MEETING_ID,
+    project_uid: PROJECT_UID,
+    visibility: MeetingVisibility.PUBLIC,
+    restricted: false,
+    committees: [],
+    start_time: new Date(Date.now() - 60 * 60_000).toISOString(),
+    duration: 60,
+    scheduled_start_time: new Date(Date.now() - 60 * 60_000).toISOString(),
+    scheduled_end_time: new Date(Date.now() - 30 * 60_000).toISOString(),
+    meeting_id: 'meeting-orig-1111',
+    occurrence_id: 'occurrence-1',
+    platform_meeting_id: 'zoom-1111',
+    sessions: [],
+    ...overrides,
+  } as PastMeeting;
+}
+
+function buildProject(overrides: Record<string, unknown> = {}) {
+  return { name: 'Proj', slug: 'proj', logo_url: 'logo', uid: PROJECT_UID, parent_uid: 'parent', ...overrides };
+}
+
+function buildParentProject(overrides: Record<string, unknown> = {}) {
+  return { name: 'Foundation', slug: 'foundation', logo_url: 'flogo', uid: 'parent', parent_uid: '', ...overrides };
 }
 
 function buildReqRes(authenticated: boolean, hasUserToken = true) {
@@ -288,6 +322,226 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
   });
 });
 
+describe('PublicMeetingController.getMeetingById parent project resolution (LFXV2-3266)', () => {
+  let controller: PublicMeetingController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    getEffectiveUsernameMock.mockReturnValue('user');
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
+    meetingSvc.getMeetingHostKey.mockResolvedValue(null);
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
+    checkAccessMock.mockResolvedValue(accessMap([]));
+  });
+
+  it('resolves and returns the foundation project', async () => {
+    projectSvc.getProjectById.mockImplementation(async (_req: any, uid: string) => (uid === PROJECT_UID ? buildProject() : buildParentProject()));
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toEqual({ uid: 'parent', name: 'Foundation', slug: 'foundation' });
+  });
+
+  it('returns parent: null when the project has no parent_uid', async () => {
+    projectSvc.getProjectById.mockResolvedValue(buildProject({ parent_uid: '' }));
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toBeNull();
+    // Only the project's own lookup should have run — no parent lookup to skip.
+    expect(projectSvc.getProjectById).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns parent: null and still responds 200 when the parent lookup throws', async () => {
+    projectSvc.getProjectById.mockImplementation(async (_req: any, uid: string) => {
+      if (uid === PROJECT_UID) return buildProject();
+      throw new Error('upstream 500');
+    });
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toBeNull();
+  });
+
+  it('maps a root-slug parent to null', async () => {
+    projectSvc.getProjectById.mockImplementation(async (_req: any, uid: string) =>
+      uid === PROJECT_UID ? buildProject() : buildParentProject({ slug: 'ROOT' })
+    );
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toBeNull();
+  });
+});
+
+describe('PublicMeetingController.getPublicPastMeetingById parent project resolution (LFXV2-3266)', () => {
+  let controller: PublicMeetingController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    getEffectiveUsernameMock.mockReturnValue('user');
+    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting());
+    checkAccessMock.mockResolvedValue(accessMap([]));
+  });
+
+  it('resolves and returns the foundation project', async () => {
+    projectSvc.getProjectById.mockImplementation(async (_req: any, uid: string) => (uid === PROJECT_UID ? buildProject() : buildParentProject()));
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toEqual({ uid: 'parent', name: 'Foundation', slug: 'foundation' });
+  });
+
+  it('returns parent: null when the project has no parent_uid', async () => {
+    projectSvc.getProjectById.mockResolvedValue(buildProject({ parent_uid: '' }));
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toBeNull();
+    // Only the project's own lookup should have run — no parent lookup to skip.
+    expect(projectSvc.getProjectById).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns parent: null and still responds 200 when the parent lookup throws', async () => {
+    projectSvc.getProjectById.mockImplementation(async (_req: any, uid: string) => {
+      if (uid === PROJECT_UID) return buildProject();
+      throw new Error('upstream 500');
+    });
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toBeNull();
+  });
+
+  it('maps a root-slug parent to null', async () => {
+    projectSvc.getProjectById.mockImplementation(async (_req: any, uid: string) =>
+      uid === PROJECT_UID ? buildProject() : buildParentProject({ slug: 'ROOT' })
+    );
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toBeNull();
+  });
+});
+
+describe('PublicMeetingController.getMeetingById organizer privacy (LFXV2-2802)', () => {
+  let controller: PublicMeetingController;
+
+  const createdBy = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
+  const owner = { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    getEffectiveUsernameMock.mockReturnValue('user');
+    projectSvc.getProjectById.mockResolvedValue(buildProject({ parent_uid: '' }));
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ created_by: createdBy, owner } as Partial<Meeting>));
+    meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
+    meetingSvc.getMeetingHostKey.mockResolvedValue(null);
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
+    checkAccessMock.mockResolvedValue(accessMap([]));
+  });
+
+  it('strips created_by and owner for an anonymous caller without querying the index', async () => {
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.meeting.created_by).toBeUndefined();
+    expect(payload.meeting.owner).toBeUndefined();
+    expect(meetingSvc.resolveCreatedByForMeetings).not.toHaveBeenCalled();
+  });
+
+  it('keeps created_by and owner for an authenticated caller', async () => {
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.meeting.created_by).toEqual(createdBy);
+    expect(payload.meeting.owner).toEqual(owner);
+  });
+});
+
+describe('PublicMeetingController.getPublicPastMeetingById organizer privacy (LFXV2-2802)', () => {
+  let controller: PublicMeetingController;
+
+  const createdBy = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
+  const owner = { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    projectSvc.getProjectById.mockResolvedValue(buildProject({ parent_uid: '' }));
+    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ created_by: createdBy, owner } as Partial<PastMeeting>));
+    addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: false }));
+    checkAccessMock.mockResolvedValue(accessMap([]));
+  });
+
+  it('strips created_by and owner for an anonymous caller without querying the index', async () => {
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.meeting.created_by).toBeUndefined();
+    expect(payload.meeting.owner).toBeUndefined();
+    expect(meetingSvc.resolveCreatedByForMeetings).not.toHaveBeenCalled();
+  });
+
+  it('includes created_by and owner in the non-full-access projection for an authenticated caller', async () => {
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    // checkPastMeetingAccess is mocked to undefined => the reduced non-full-access projection.
+    expect(payload.full_access).toBeFalsy();
+    expect(payload.meeting.platform_meeting_id).toBeUndefined();
+    expect(payload.meeting.created_by).toEqual(createdBy);
+    expect(payload.meeting.owner).toEqual(owner);
+  });
+});
+
 describe('PublicMeetingController.getMeetingOccurrences', () => {
   let controller: PublicMeetingController;
 
@@ -422,5 +676,122 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
 
     expect(generateM2MTokenMock).toHaveBeenCalledTimes(1);
     expect(req.bearerToken).toBe('m2m-token');
+  });
+});
+
+describe('PublicMeetingController.registerForPublicMeeting', () => {
+  let controller: PublicMeetingController;
+
+  function buildRegisterReq(authenticated: boolean, body: Record<string, any> = {}, hasUserToken = true) {
+    const req = {
+      body: { meeting_id: MEETING_ID, first_name: 'Alice', last_name: 'Liddell', ...body },
+      headers: {},
+      bearerToken: hasUserToken ? 'user-token' : undefined,
+      oidc: { isAuthenticated: () => authenticated },
+      path: '/public/api/meetings/register',
+      log: {},
+    } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    meetingSvc.addMeetingRegistrantSelf.mockResolvedValue({ uid: 'reg-1' });
+  });
+
+  it('calls addMeetingRegistrantSelf with user token and returns 201', async () => {
+    const { req, res, next } = buildRegisterReq(true);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.addMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, req.body);
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith({ uid: 'reg-1' });
+  });
+
+  it('fetches meeting with M2M token then restores user token for self-register', async () => {
+    const { req, res, next } = buildRegisterReq(true);
+    let tokenAtMeetingFetch: string | undefined;
+    let tokenAtSelfRegister: string | undefined;
+    meetingSvc.getMeetingById.mockImplementation((r: any) => {
+      tokenAtMeetingFetch = r.bearerToken;
+      return Promise.resolve(buildMeeting());
+    });
+    meetingSvc.addMeetingRegistrantSelf.mockImplementation((r: any) => {
+      tokenAtSelfRegister = r.bearerToken;
+      return Promise.resolve({ uid: 'reg-1' });
+    });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(tokenAtMeetingFetch).toBe('m2m-token');
+    expect(tokenAtSelfRegister).toBe('user-token');
+  });
+
+  it('unauthenticated request returns 401 without calling the service', async () => {
+    const { req, res, next } = buildRegisterReq(false);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+  });
+
+  it('missing first_name returns validation error without calling the service', async () => {
+    const { req, res, next } = buildRegisterReq(true, { first_name: '' });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+  });
+
+  it('non-public meeting returns authorization error', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE }));
+    const { req, res, next } = buildRegisterReq(true);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+  });
+
+  it('restricted meeting returns authorization error', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true }));
+    const { req, res, next } = buildRegisterReq(true);
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+  });
+
+  it('missing meeting_id returns validation error', async () => {
+    const { req, res, next } = buildRegisterReq(true, { meeting_id: '' });
+    validateUidParameterMock.mockImplementationOnce((_uid, _req, nextFn) => {
+      nextFn(new Error('Meeting ID is required'));
+      return false;
+    });
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(meetingSvc.addMeetingRegistrantSelf).not.toHaveBeenCalled();
+  });
+
+  it('restores user token when getMeetingById throws', async () => {
+    const { req, res, next } = buildRegisterReq(true);
+    meetingSvc.getMeetingById.mockRejectedValue(new Error('upstream error'));
+
+    await controller.registerForPublicMeeting(req, res, next);
+
+    expect(req.bearerToken).toBe('user-token');
+    expect(next).toHaveBeenCalledTimes(1);
   });
 });

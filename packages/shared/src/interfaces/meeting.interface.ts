@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type { PAST_MEETING_SORT } from '../constants/meeting.constants';
-import { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
-import { TagSeverity } from './components.interface';
+import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
+import type { TagSeverity } from './components.interface';
 
 // ============================================================================
 // V1 Legacy Summary Interfaces (still used by transformV1SummaryToV2)
@@ -150,6 +150,34 @@ export interface MeetingUserInfo {
 }
 
 /**
+ * The meeting owner — the single user responsible for a meeting, settable on create/update
+ * (unlike `created_by`, which is stamped server-side from the JWT).
+ * @description Mirrors the User Reference shape on the indexed `v1_meeting` projection.
+ * ITX defaults it to the creator on creation; omitting it on update preserves the stored
+ * owner (there is no way to unset one). Meetings that predate the field carry a zero-valued
+ * owner (all fields empty strings), which consumers must treat as absent.
+ */
+export interface MeetingOwner {
+  /** Unique user ID (response/index only — not accepted on request payloads) */
+  user_id?: string;
+  /** LFID username of the user */
+  username?: string;
+  /** Email address of the user */
+  email?: string;
+  /** Display name of the user */
+  name?: string;
+  /** Profile picture URL */
+  profile_picture?: string;
+}
+
+/**
+ * The `owner` shape accepted by the ITX create/update meeting payloads (`ITXUser` — no
+ * `user_id`). Omit the field entirely to keep the default (creator on create, stored
+ * owner on update).
+ */
+export type MeetingOwnerInput = Pick<MeetingOwner, 'username' | 'name' | 'email' | 'profile_picture'>;
+
+/**
  * A single organizer entry for the "Organized by" chip — a display name plus an optional
  * `mailto:` link (absent when the organizer record has no email → rendered as plain text).
  */
@@ -220,6 +248,14 @@ export interface Meeting {
    * (e.g. `zoom.webhooks`) or the series meeting no longer exists.
    */
   created_by?: MeetingUserInfo;
+  /**
+   * The meeting owner (see {@link MeetingOwner}). Preferred over `created_by` for the
+   * organizer display; fall back to `created_by` when absent or zero-valued. Present on
+   * ITX detail responses and the indexed `v1_meeting` projection; `v1_past_meeting`
+   * records never carry it, so the BFF enriches past meetings by joining back to the
+   * live `v1_meeting` record.
+   */
+  owner?: MeetingOwner;
 
   // Required API fields
   /** UUID of the LF project */
@@ -323,10 +359,14 @@ export interface Meeting {
   /** Current user's RSVP for this meeting (null when the user hasn't responded).
    * Populated by /api/user/meetings only. Absent on other Meeting-returning endpoints. */
   my_rsvp?: MeetingRsvp | null;
-  /** Project name */
-  project_name: string;
-  /** Project slug */
-  project_slug: string;
+  /** Project name — populated on query-service list payloads; on the authenticated detail
+   * response (`GET /api/meetings/:uid`) it is populated via BFF enrichment and is
+   * absent when that enrichment fails (and from the raw ITX detail payload). */
+  project_name?: string;
+  /** Project slug — populated on query-service list payloads; on the authenticated detail
+   * response (`GET /api/meetings/:uid`) it is populated via BFF enrichment and is
+   * absent when that enrichment fails (and from the raw ITX detail payload). */
+  project_slug?: string;
   /** Whether the project is a foundation (top-level entity) */
   is_foundation?: boolean;
   /** Parent project UID (for subprojects under a foundation) */
@@ -403,6 +443,7 @@ export interface CreateMeetingRequest {
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
+  owner?: MeetingOwnerInput; // Meeting owner; omit to default to the creator
   ai_summary_enabled?: boolean; // Whether Zoom AI Companion summary is enabled
   require_ai_summary_approval?: boolean; // Whether AI summary requires approval before sharing
   auto_email_reminder_enabled?: boolean; // Whether an automatic reminder email is sent to participants
@@ -432,6 +473,7 @@ export interface UpdateMeetingRequest {
   artifact_visibility?: ArtifactVisibility | null; // Who can access meeting artifacts
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
+  owner?: MeetingOwnerInput; // Meeting owner; omit to preserve the stored owner (cannot be unset)
   ai_summary_enabled?: boolean | null; // Whether Zoom AI Companion summary is enabled
   require_ai_summary_approval?: boolean | null; // Whether AI summary requires approval before sharing
   auto_email_reminder_enabled?: boolean | null; // Whether an automatic reminder email is sent to participants
@@ -475,6 +517,32 @@ export interface MeetingTemplateGroup {
   meetingType: MeetingType;
   /** Array of templates for this meeting type */
   templates: MeetingTemplate[];
+}
+
+/**
+ * Dropdown option for the "import registrants from a meeting" picker (LFXV2-2607).
+ * `label` is the display string (title + date); `title` is kept separately so
+ * import summaries can name the meeting cleanly.
+ */
+export interface MeetingSelectOption {
+  /** Meeting id passed to the registrants fetch */
+  value: string;
+  /** Display label, e.g. "Q3 Roadmap — Jul 3, 2026" */
+  label: string;
+  /** Bare meeting title, for summary copy */
+  title: string;
+}
+
+/**
+ * Result of pulling invite-ready emails off a meeting's registrant list.
+ * `emails` is de-duplicated (case-insensitive, first-seen casing preserved);
+ * `skippedNoEmail` counts registrants that carried no usable email.
+ */
+export interface RegistrantEmailExtraction {
+  /** Unique, trimmed registrant emails ready to feed the invite flow */
+  emails: string[];
+  /** Count of registrants skipped because they had no email */
+  skippedNoEmail: number;
 }
 
 /**
@@ -1250,6 +1318,17 @@ export interface UrlMetadataResponse {
 }
 
 /**
+ * Slim parent (foundation) project context nested in {@link PublicMeetingProject} — resolved
+ * server-side (LFXV2-3266) so anonymous visitors on public meeting pages get foundation
+ * attribution without the client needing an authenticated `/api/projects/:uid` call.
+ */
+export type PublicMeetingParentProject = {
+  uid: string;
+  name: string;
+  slug: string;
+};
+
+/**
  * Slim project context returned alongside public meeting endpoints.
  * Only the fields needed for the join page — callers must not assume
  * any other project fields are present.
@@ -1260,6 +1339,8 @@ export type PublicMeetingProject = {
   logo_url: string;
   uid: string;
   parent_uid: string;
+  /** Resolved foundation project, or `null` when top-level or unresolvable (LFXV2-3266). */
+  parent: PublicMeetingParentProject | null;
 };
 
 /**

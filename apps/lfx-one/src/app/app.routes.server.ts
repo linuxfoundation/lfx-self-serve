@@ -6,20 +6,17 @@ import { RenderMode, ServerRoute } from '@angular/ssr';
 export const serverRoutes: ServerRoute[] = [
   // The docs portal not-found page must serve HTTP 404 so search engines
   // and Intercom ingest treat unresolved `/docs/<missing>` URLs correctly
-  // (FR-007, FR-014). The article resolver redirects miss-URLs to this
-  // path; Angular SSR matches this entry and emits the 404 status.
+  // (FR-007, FR-014). This entry keeps `/docs/not-found` reachable on a
+  // direct visit and emits the 404 status. Missing `/docs/<slug>` URLs no
+  // longer redirect here — they render the not-found view in place and get
+  // their 404 via the catch-all `**` route plus `renderContext.notFound`.
   {
     path: 'docs/not-found',
     renderMode: RenderMode.Server,
     status: 404,
   },
-  // Branded 404 page — responds with HTTP 404 so crawlers, caches, and monitoring tools
-  // treat unrecognized URLs correctly instead of indexing/caching a soft 404 (HTTP 200).
-  {
-    path: 'not-found',
-    renderMode: RenderMode.Server,
-    status: 404,
-  },
+  // Catch-all — the global 404 renders here in place (no /not-found redirect). The Express SSR
+  // handler rewrites this to HTTP 404 when NotFoundComponent sets the render-context flag.
   {
     path: '**',
     renderMode: RenderMode.Server,

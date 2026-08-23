@@ -4,15 +4,19 @@
 import { describe, expect, it } from 'vitest';
 
 import { PROFILE_TABS } from '../constants/profile.constants';
-import { MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
+import { ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
 import {
   buildProfileTabs,
+  claGroupPrimaryName,
+  claGroupSecondaryName,
   claKindSeverity,
   claStatusLabel,
   claStatusSeverity,
   isMyClasEmpty,
   shouldShowGithubCta,
+  signedAsLine,
   splitAgreementsByKind,
+  toClaGroupOptionView,
 } from './cla-view.utils';
 
 function agreement(overrides: Partial<MyClaAgreement> = {}): MyClaAgreement {
@@ -28,12 +32,12 @@ describe('buildProfileTabs', () => {
     expect(buildProfileTabs(false)).toBe(PROFILE_TABS);
   });
 
-  it('inserts the My CLAs tab immediately before Transactions when the flag is on', () => {
+  it('inserts the CLAs tab immediately before Transactions when the flag is on', () => {
     const tabs = buildProfileTabs(true);
     const ids = tabs.map((t) => t.id);
     expect(ids).toContain('clas');
     expect(ids.indexOf('clas')).toBe(ids.indexOf('transactions') - 1);
-    expect(tabs.find((t) => t.id === 'clas')).toEqual({ id: 'clas', label: 'My CLAs', route: 'clas' });
+    expect(tabs.find((t) => t.id === 'clas')).toEqual({ id: 'clas', label: 'CLAs', route: 'clas' });
   });
 
   it('does not mutate the shared PROFILE_TABS constant', () => {
@@ -103,15 +107,89 @@ describe('claKindSeverity', () => {
 describe('claStatusLabel', () => {
   it('maps each status to its label', () => {
     expect(claStatusLabel('valid')).toBe('Valid');
+    expect(claStatusLabel('needs_attention')).toBe('Needs attention');
+    expect(claStatusLabel('revoked')).toBe('Revoked');
+    expect(claStatusLabel('invalidated')).toBe('Invalidated');
+    expect(claStatusLabel('unknown')).toBe('—');
     expect(claStatusLabel('superseded')).toBe('Superseded');
-    expect(claStatusLabel('inactive')).toBe('No longer valid');
+  });
+
+  // "Revoked" is the reviewed copy for a sanctions screen. An approval-list removal, a PCC
+  // invalidation and a deleted CLA group all arrive as `invalidated`, so lending them this word
+  // tells those contributors they were screened. The two labels sharing one word is the specific
+  // regression worth pinning, because the token names invite it.
+  it('reserves "Revoked" for the sanctions state alone', () => {
+    const statuses: ClaStatus[] = ['valid', 'needs_attention', 'revoked', 'invalidated', 'unknown', 'superseded'];
+    const revokedLabels = statuses.filter((status) => /revoke/i.test(claStatusLabel(status)));
+
+    expect(revokedLabels).toEqual(['revoked']);
+  });
+
+  // Retired in review and, unlike "Invalidated", never reinstated.
+  it('never labels a status "Canceled"', () => {
+    const statuses: ClaStatus[] = ['valid', 'needs_attention', 'revoked', 'invalidated', 'unknown', 'superseded'];
+
+    expect(statuses.map(claStatusLabel).some((label) => /cancel/i.test(label))).toBe(false);
   });
 });
 
 describe('claStatusSeverity', () => {
-  it('maps each status to a badge severity', () => {
+  it('maps each status to a tag severity', () => {
     expect(claStatusSeverity('valid')).toBe('success');
+    expect(claStatusSeverity('needs_attention')).toBe('warn');
+    // Revoked is deliberately the quiet one: the design renders it neutral gray and Invalidated red.
+    expect(claStatusSeverity('revoked')).toBe('secondary');
+    expect(claStatusSeverity('invalidated')).toBe('danger');
+    expect(claStatusSeverity('unknown')).toBe('secondary');
     expect(claStatusSeverity('superseded')).toBe('warn');
-    expect(claStatusSeverity('inactive')).toBe('secondary');
+  });
+});
+
+describe('signedAsLine', () => {
+  it('adds a platform suffix for GitHub and GitLab, and none for Gerrit/email', () => {
+    expect(signedAsLine('github', 'jellis')).toBe('Signed as jellis (GitHub)');
+    expect(signedAsLine('gitlab', 'jellis')).toBe('Signed as jellis (GitLab)');
+    expect(signedAsLine('gerrit', 'jellis@acme-motors.example')).toBe('Signed as jellis@acme-motors.example');
+  });
+
+  it('omits the line when the identity is missing, empty, or whitespace', () => {
+    expect(signedAsLine('github', undefined)).toBeUndefined();
+    expect(signedAsLine('github', '')).toBeUndefined();
+    expect(signedAsLine('github', '   ')).toBeUndefined();
+    expect(signedAsLine(undefined, undefined)).toBeUndefined();
+  });
+
+  it('prints the identity with no suffix when the platform is missing', () => {
+    expect(signedAsLine(undefined, 'jellis')).toBe('Signed as jellis');
+  });
+});
+
+describe('claGroupPrimaryName / claGroupSecondaryName', () => {
+  it('names a result by its CLA group when the producer resolved no project', () => {
+    expect(claGroupPrimaryName({ claGroupName: 'CNCF' })).toBe('CNCF');
+    expect(claGroupSecondaryName({ claGroupName: 'CNCF' })).toBeNull();
+  });
+
+  it('falls back to the unnamed literal only when the producer resolved neither name', () => {
+    expect(claGroupPrimaryName({})).toBe('Unnamed CLA group');
+    expect(claGroupSecondaryName({})).toBeNull();
+  });
+});
+
+describe('toClaGroupOptionView', () => {
+  it('precomputes labels so the picker template does not have to', () => {
+    const view = toClaGroupOptionView({
+      claGroupId: 'cg-1',
+      projectName: 'Venus test',
+      claGroupName: 'Venus ICLA',
+      matchTypes: ['project'],
+      organizations: [{ name: 'cncf', source: 'github' }],
+    });
+
+    expect(view.primaryName).toBe('Venus test');
+    expect(view.secondaryName).toBe('Venus ICLA');
+    expect(view.matchTypeLabels).toEqual(['Project name']);
+    expect(view.orgViews[0]).toEqual({ name: 'cncf', source: 'github', sourceLabel: 'GitHub', sourceIcon: 'fa-brands fa-github' });
+    expect(view.expanded).toBe(false);
   });
 });

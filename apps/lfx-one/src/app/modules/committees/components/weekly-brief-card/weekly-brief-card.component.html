@@ -155,28 +155,81 @@
             </div>
           </div>
 
-          @if (sourceChips().length > 0) {
-            <div class="flex flex-wrap items-center gap-2" data-testid="weekly-brief-card-sources">
-              <span class="text-xs font-medium text-gray-500">Sources</span>
-              @for (chip of sourceChips(); track chip.id) {
-                @if (chip.action; as action) {
-                  <button
-                    type="button"
-                    class="inline-flex border-0 bg-transparent p-0 cursor-pointer hover:opacity-80 transition-opacity"
-                    (click)="onSourceChipAction(action)"
-                    [attr.data-testid]="'weekly-brief-card-source-chip-' + chip.id">
-                    <lfx-tag [value]="chip.label" [icon]="chip.icon" [rounded]="true" [outlined]="true" />
-                  </button>
-                } @else {
-                  <lfx-tag
-                    [value]="chip.label"
-                    [icon]="chip.icon"
-                    [rounded]="true"
-                    [outlined]="true"
-                    [attr.data-testid]="'weekly-brief-card-source-chip-' + chip.id" />
+          <!--
+            Shared per-chip fragment (LFXV2-3335) — reused by the flat (≤threshold) row and the
+            sectioned disclosure below, and recursively for a group chip's expanded instances, so
+            the ungrouped/grouped chip markup isn't tripled across those three call sites.
+          -->
+          <ng-template #sourceChipTpl lfxSourceChipContext let-chip="chip">
+            @if (chip.group; as group) {
+              @let groupExpanded = expandedSourceGroups().has(chip.id);
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 border-0 bg-transparent p-0 cursor-pointer hover:opacity-80 transition-opacity"
+                [attr.aria-expanded]="groupExpanded"
+                (click)="onToggleSourceGroup(chip.id)"
+                [attr.data-testid]="'weekly-brief-card-source-group-toggle-' + chip.id">
+                <lfx-tag [value]="group.badgeLabel" [icon]="chip.icon" [rounded]="true" [outlined]="true" />
+                <i class="fa-light fa-caret-down text-[10px] text-gray-500 transition-transform" [class.rotate-180]="groupExpanded"></i>
+              </button>
+              @if (groupExpanded) {
+                @for (instance of group.instances; track instance.id) {
+                  <ng-container [ngTemplateOutlet]="sourceChipTpl" [ngTemplateOutletContext]="{ chip: instance }" />
                 }
               }
-            </div>
+            } @else if (chip.action; as action) {
+              <button
+                type="button"
+                class="inline-flex border-0 bg-transparent p-0 cursor-pointer hover:opacity-80 transition-opacity"
+                (click)="onSourceChipAction(action)"
+                [attr.data-testid]="'weekly-brief-card-source-chip-' + chip.id">
+                <lfx-tag [value]="chip.label" [icon]="chip.icon" [rounded]="true" [outlined]="true" />
+              </button>
+            } @else {
+              <lfx-tag
+                [value]="chip.label"
+                [icon]="chip.icon"
+                [rounded]="true"
+                [outlined]="true"
+                [attr.data-testid]="'weekly-brief-card-source-chip-' + chip.id" />
+            }
+          </ng-template>
+
+          @if (sourceRefCount() > 0) {
+            @if (sourceRefCount() <= sourcesCollapseThreshold) {
+              <div class="flex flex-wrap items-center gap-2" data-testid="weekly-brief-card-sources">
+                <span class="text-xs font-medium text-gray-500">Sources</span>
+                @for (chip of sourceChips(); track chip.id) {
+                  <ng-container [ngTemplateOutlet]="sourceChipTpl" [ngTemplateOutletContext]="{ chip: chip }" />
+                }
+              </div>
+            } @else {
+              <div class="flex flex-col gap-2" data-testid="weekly-brief-card-sources">
+                <button
+                  type="button"
+                  class="flex items-center gap-1.5 self-start border-0 bg-transparent p-0 text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700 transition-colors"
+                  [attr.aria-expanded]="sourcesExpanded()"
+                  (click)="onToggleSources()"
+                  data-testid="weekly-brief-card-sources-toggle">
+                  <span>Sources ({{ sourceRefCount() }})</span>
+                  <i class="fa-light fa-chevron-down text-[10px] transition-transform" [class.rotate-180]="sourcesExpanded()"></i>
+                </button>
+                @if (sourcesExpanded()) {
+                  <div class="flex flex-col gap-2">
+                    @for (section of sourceChipSections(); track section.kind) {
+                      <div class="flex flex-col gap-1" [attr.data-testid]="'weekly-brief-card-source-section-' + section.kind">
+                        <span class="text-[11px] font-medium uppercase text-gray-400">{{ section.label }}</span>
+                        <div class="flex flex-wrap items-center gap-2">
+                          @for (chip of section.chips; track chip.id) {
+                            <ng-container [ngTemplateOutlet]="sourceChipTpl" [ngTemplateOutletContext]="{ chip: chip }" />
+                          }
+                        </div>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            }
           }
 
           <div class="flex flex-wrap gap-2">
@@ -209,6 +262,7 @@
                 data-testid="weekly-brief-card-share-slack-button" />
             }
           </div>
+
           <!-- Visible hints rather than tooltips on these disabled buttons: a
                disabled native <button> never receives focus/hover, so a
                tooltip-only explanation would be unreachable by keyboard and
@@ -261,5 +315,19 @@
     </lfx-card>
   }
 
+  @if (hasArchiveBriefs()) {
+    <div class="flex">
+      <button
+        type="button"
+        class="text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+        (click)="onOpenArchive()"
+        data-testid="weekly-brief-card-past-briefs-button">
+        View past briefs
+      </button>
+    </div>
+  }
+
   <p-confirmDialog />
 }
+
+<lfx-weekly-brief-archive-drawer [(visible)]="archiveVisible" [committeeId]="committee().uid" />

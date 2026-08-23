@@ -98,6 +98,9 @@ export * from './mailing-list.interface';
 // Runtime config interfaces
 export * from './runtime-config.interface';
 
+// Server request context (SSR REQUEST_CONTEXT shape)
+export * from './server-request-context.interface';
+
 // Poll interfaces
 export * from './poll.interface';
 
@@ -207,6 +210,7 @@ export * from './marketing-impact.interface';
 // Marketing OS Agents interfaces (LFXAI-95 workstream)
 export * from './mktg-agent.interface';
 export * from './mktg-chat.interface';
+export * from './mktg-run.interface';
 
 // Enrollment interfaces
 export * from './enrollment.interface';
@@ -268,7 +272,7 @@ export * from './linux-email.interface';
 // Crowdfunding interfaces
 export * from './crowdfunding.interface';
 
-// EasyCLA "My CLAs" interfaces (Me lens)
+// EasyCLA "CLAs" interfaces (Me lens)
 export * from './cla.interface';
 
 // Country, state, t-shirt size, tag, and timezone interfaces
@@ -315,3 +319,5 @@ export * from './profile-visibility.interface';
 // Org Lens ROI Metrics (LFXV2-2980) interfaces
 export * from './org-lens-roi.interface';
 export * from './org-lens-roi.internal.interface';
+// Brand Kit generation contract interfaces
+export * from './brand-kit.interface';

@@ -10,6 +10,11 @@ const router = Router();
 
 const weeklyBriefController = new WeeklyBriefController();
 
+// GET /committees/:committeeId/weekly-briefs - paginated archive list via query-service
+// Registered before /current so any future /:committeeId/weekly-briefs/:subpath routes
+// are not shadowed by a later-added wildcard route at this depth.
+router.get('/:committeeId/weekly-briefs', (req, res, next) => weeklyBriefController.listBriefs(req, res, next));
+
 // GET /committees/:committeeId/weekly-briefs/current - get the current WG weekly brief
 router.get('/:committeeId/weekly-briefs/current', (req, res, next) => weeklyBriefController.getCurrentBrief(req, res, next));
 
@@ -23,14 +28,13 @@ router.post('/:committeeId/weekly-briefs/generate', (req, res, next) => weeklyBr
 router.put('/:committeeId/weekly-briefs/current', (req, res, next) => weeklyBriefController.saveBrief(req, res, next));
 
 // POST /committees/:committeeId/weekly-briefs/share - share the current brief to the committee mailing list
-// NOT currently blocked during impersonation — this is a known, pre-existing gap (predates
-// LFXV2-3080), not a considered exception: shareBrief creates a persisted newsletter draft
-// (weekly-brief.service.ts's createNewsletter call) and sends it using the caller's own bearer
-// token, which auth.middleware.ts swaps to the impersonation target's token during
-// impersonation — so an impersonated send both persists an artifact and goes out attributed to
-// the target, the same "real, hard-to-retract, externally-visible action" criterion that gates
-// share-slack below. Left as-is here rather than silently expanding this ticket's scope to
-// change existing, already-shipped behavior — tracked as a follow-up in LFXV2-3093.
+// Deliberately NOT blocked during impersonation, unlike share-slack and rating below (LFXV2-3093):
+// staff still need to be able to trigger a mailing-list share while impersonating a chair for
+// support purposes. Instead, weekly-brief.service.ts's shareBrief resolves and authorizes the
+// write boundary (the project-writer check, and the newsletter create/send/cleanup) against the
+// REAL impersonating staff member's identity/token, not the impersonated target's — so the
+// outgoing email is never sent under, or misattributed to, a user who never took the action. See
+// shareBrief's own doc comment for the full rationale.
 router.post('/:committeeId/weekly-briefs/share', (req, res, next) => weeklyBriefController.shareBrief(req, res, next));
 
 // POST /committees/:committeeId/weekly-briefs/share-slack - share the current brief to the committee's Slack channel

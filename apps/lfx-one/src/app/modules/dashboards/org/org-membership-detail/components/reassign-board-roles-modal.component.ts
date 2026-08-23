@@ -5,6 +5,7 @@ import { Component, computed, DestroyRef, inject, signal, type Signal } from '@a
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { OrgLensBoardCommitteeService } from '@services/org-lens-board-committee.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { EMAIL_REGEX, SIMULATED_SAVE_DELAY_MS } from '@lfx-one/shared/constants';
 import type { BoardSeat, CommitteeSeat, KeyContactEmployee, ReassignBoardRolesDialogData, ReassignBoardRolesDialogResult } from '@lfx-one/shared/interfaces';
 import { CheckboxModule } from 'primeng/checkbox';
@@ -23,6 +24,7 @@ export class ReassignBoardRolesModalComponent {
   private readonly dialogConfig = inject<DynamicDialogConfig<ReassignBoardRolesDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly boardCommitteeService = inject(OrgLensBoardCommitteeService);
+  private readonly drawer = inject(PersonDetailDrawerService);
 
   // === Dialog-injected data ===
   protected readonly seat: BoardSeat | CommitteeSeat | null = this.dialogConfig.data?.seat ?? null;
@@ -239,6 +241,17 @@ export class ReassignBoardRolesModalComponent {
   protected onCancel(): void {
     if (this.isSaving()) return;
     this.dialogRef.close(null);
+  }
+
+  protected onCurrentMemberClick(): void {
+    const person = this.currentMember();
+    if (!person) return;
+    this.drawer.open({
+      name: person.fullName,
+      initials: person.initials,
+      avatarColorClass: 'bg-pink-500',
+      email: person.email,
+    });
   }
 
   // === Private helpers for computed signals ===

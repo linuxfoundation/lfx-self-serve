@@ -4,7 +4,6 @@ description: How to view initiative details, edit settings, and archive or activ
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, manage, edit, archive, activate]
-last_generated: 2026-06-16
 last_updated: 2026-07-21
 intercom_collection: Crowdfunding
 ---

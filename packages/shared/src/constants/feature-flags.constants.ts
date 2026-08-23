@@ -5,6 +5,17 @@ export const ORG_LENS_ENABLED_FLAG = 'org-lens-enabled';
 export const AKRITES_ENABLED_FLAG = 'akrites-enabled';
 export const MKTG_OS_AGENTS_ENABLED_FLAG = 'mktg-os-agents-enabled';
 export const MY_CLAS_ENABLED_FLAG = 'my-clas-enabled';
+/**
+ * Dark-launch gate for the M2 My CLAs overlay (#1738) — Sign CLA, Status column,
+ * kebab/actions, and Signed as. The M1 list (project / type / signed / document) stays
+ * when this is off. Default false: LaunchDarkly targeting (DEV on for everyone,
+ * PROD team-only until testing) is the rollout switch, not the code default.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not
+ * gate the BFF; hiding Sign CLA is how the write path stays unreachable from
+ * this page.
+ */
+export const MY_CLAS_M2_ENABLED_FLAG = 'my-clas-m2-enabled';
 export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
 /** Browser-only flag for the Org Lens ROI page — it gates no endpoint. */
 export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
@@ -14,9 +25,8 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
  * directly. Not a strict child of 'wg-weekly-brief': weekly-brief-card does render under that
  * parent flag (committee-overview.component.ts), but committee-settings-tab does not sit behind
  * it at all (rendered unconditionally from the Settings tab in committee-view.component.html) —
- * so flipping this flag alone is sufficient to expose the settings card. Default false: the
- * upstream committee-service has no chat_webhook_url field yet, so every save would 409 today —
- * see committee.service.ts's updateCommittee/getSlackWebhookUrlStrict comments.
+ * so flipping this flag alone is sufficient to expose the settings card. Default false: this is a
+ * dark launch, gating rollout independently of when the code itself ships.
  *
  * **UI-only** — this is an OpenFeature/GrowthBook flag evaluated through the OpenFeature Web SDK,
  * which never runs server-side, so it cannot gate an Express handler. The actual write

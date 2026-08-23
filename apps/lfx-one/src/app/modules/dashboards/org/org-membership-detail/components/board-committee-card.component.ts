@@ -7,6 +7,7 @@ import { FormsModule } from '@angular/forms';
 import type {
   BoardSeat,
   CommitteeSeat,
+  OrgMembershipKeyContactPerson,
   SectionLoadState,
   ReassignSubmitEvent,
   ReassignBoardRolesDialogData,
@@ -26,6 +27,7 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { OrgLensBoardCommitteeService } from '@services/org-lens-board-committee.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 
 import { ReassignBoardRolesModalComponent } from './reassign-board-roles-modal.component';
 import { WhyCantEditModalComponent } from './why-cant-edit-modal.component';
@@ -46,6 +48,7 @@ export class BoardCommitteeCardComponent {
 
   // === Injected services ===
   private readonly service = inject(OrgLensBoardCommitteeService);
+  private readonly drawer = inject(PersonDetailDrawerService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
@@ -126,6 +129,16 @@ export class BoardCommitteeCardComponent {
 
   protected toggleCommittee(): void {
     this.committeeExpanded.update((v) => !v);
+  }
+
+  protected onPersonClick(person: OrgMembershipKeyContactPerson): void {
+    this.drawer.open({
+      name: person.fullName,
+      title: person.jobTitle,
+      initials: person.initials,
+      avatarUrl: person.avatarUrl,
+      email: person.email,
+    });
   }
 
   // === Modal openers ===

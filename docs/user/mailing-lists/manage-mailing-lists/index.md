@@ -4,7 +4,6 @@ description: How to subscribe, unsubscribe, and manage mailing lists in LFX Self
 audience: [all]
 product_area: Mailing Lists
 tags: [mailing-lists, subscribe, manage]
-last_generated: 2026-05-22
 last_updated: 2026-05-22
 intercom_collection: Mailing Lists
 ---

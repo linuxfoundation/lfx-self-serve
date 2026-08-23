@@ -9,6 +9,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { OrgLensTrainingService } from '@app/shared/services/org-lens-training.service';
 import { computePersonInitials } from '@app/shared/utils/person-avatar.util';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { MAX_ORG_TRAINING_EMPLOYEES } from '@lfx-one/shared/constants';
 import type { OrgCertEmployeeVm, OrgTrainingEmployeesResponse, OrgTrainingEmployeeStatus } from '@lfx-one/shared/interfaces';
 import { avatarColorClass } from '@lfx-one/shared/utils';
@@ -23,6 +24,7 @@ import { catchError, finalize, of, switchMap } from 'rxjs';
 })
 export class TrainingEmployeesDrawerComponent {
   private readonly trainingService = inject(OrgLensTrainingService);
+  private readonly drawer = inject(PersonDetailDrawerService);
 
   public readonly visible = model<boolean>(false);
   public readonly orgUid = input<string>('');
@@ -51,6 +53,16 @@ export class TrainingEmployeesDrawerComponent {
 
   protected readonly rosterCap = MAX_ORG_TRAINING_EMPLOYEES;
   protected readonly isRosterCapped = computed<boolean>(() => this.count() > MAX_ORG_TRAINING_EMPLOYEES);
+
+  protected onPersonClick(employee: OrgCertEmployeeVm): void {
+    this.drawer.open({
+      personKey: employee.contactId,
+      name: employee.name,
+      title: employee.jobTitle,
+      initials: employee.initials,
+      avatarColorClass: employee.avatarColorClass,
+    });
+  }
 
   private initEmployeesData() {
     const trigger$ = toObservable(

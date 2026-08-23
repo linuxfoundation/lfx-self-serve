@@ -9,12 +9,13 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, Subject, Subscription, switchMap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, of, skip, Subject, Subscription, switchMap } from 'rxjs';
 
 import type {
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
+  CampaignDeliveryType,
   CampaignEventDetails,
   CampaignGoal,
   CampaignKeyword,
@@ -50,6 +51,34 @@ export class PlanningTabComponent implements OnInit {
   // === Inputs ===
   public readonly programTypeConfig = input.required<CampaignProgramTypeOption>();
 
+  /**
+   * Which delivery channel this planner is planning for (LFXV2-3201).
+   *
+   * One component rather than two, because the halves the two types genuinely share are the
+   * expensive ones: the event URL, the scrape, the goal/audience/value-prop inputs and the SSE
+   * generation stream — which is why this is one component rather than a ~800-line fork
+   * maintained twice.
+   *
+   * What DIFFERS grew past the "one card and one rule" this comment used to claim. Email mode:
+   *   - hides the Ad Channels and Budget cards
+   *   - drops the ad-platform requirement from `canGenerate`
+   *   - sends `deliveryType` so the server skips ad-copy and keyword generation
+   *   - hides Refine / Edit / Copy All, and refuses a refine outright
+   *   - skips the saved-brief lookup entirely
+   *
+   * That last one is worth stating plainly: brief save/restore is NOT shared. Persistence is keyed
+   * on `(foundation, event)` with no delivery type, so the row a lookup would find is a PAID
+   * brief. Email persistence and email refinement do not exist yet — they arrive with the
+   * `email-copy` endpoint under LFXV2-3198. Do not build on the assumption that they do.
+   *
+   * Defaults to `paid-marketing` so the paid container's binding is unchanged and this input is
+   * additive — an omitted binding keeps exactly today's behaviour.
+   */
+  public readonly deliveryType = input<CampaignDeliveryType>('paid-marketing');
+
+  /** Whether this planner is planning an email rather than paid ads. */
+  protected readonly isEmail = computed(() => this.deliveryType() === 'email');
+
   // === Outputs ===
   public readonly proceedToImplementation = output<CampaignBriefOutput>();
 
@@ -61,7 +90,7 @@ export class PlanningTabComponent implements OnInit {
    * restored one came out of storage and must NOT be written back. Emitting both through one
    * channel would leave the parent guessing which it received.
    */
-  public readonly restoreSavedBriefRequested = output<{ brief: CampaignBriefOutput; briefId: string }>();
+  public readonly restoreSavedBriefRequested = output<{ brief: CampaignBriefOutput; briefId: string; approved: boolean }>();
 
   // === Constants ===
   protected readonly platforms: CampaignPlatformOption[] = [...CAMPAIGN_PLATFORMS];
@@ -148,6 +177,16 @@ export class PlanningTabComponent implements OnInit {
   /** The id of the brief `savedBrief` holds. Kept in step with it; see `applySavedBrief`. */
   private savedBriefId: string | null = null;
 
+  /**
+   * Whether that stored brief is APPROVED, carried alongside its id.
+   *
+   * The restore emits it because campaign-service refuses a create from an unapproved brief
+   * (`internal/service/brief.go:439`). Without it the parent files a restored brief as
+   * create-ready and the Implementation tab enables Create for a request that cannot succeed —
+   * the same defect the save path already guards, one restore apart.
+   */
+  private savedBriefApproved = false;
+
   private readonly slugInput$ = new Subject<string>();
 
   /**
@@ -179,7 +218,15 @@ export class PlanningTabComponent implements OnInit {
 
   // === Computed Signals ===
   private readonly formValid = toSignal(this.briefForm.statusChanges, { initialValue: this.briefForm.status });
-  protected readonly canGenerate = computed(() => this.formValid() === 'VALID' && this.selectedPlatforms().size > 0);
+  /**
+   * Email has no ad-channel requirement, and that asymmetry is the point of LFXV2-3201.
+   *
+   * The paid rule stands: a brief with no platform selected produces copy for nothing, so the
+   * gate is real there. For email the same rule was a dead end — the user was shown "Ad Channels"
+   * under a tab labelled Email and had to pick Google Ads before the channel would let them
+   * proceed, which is not a requirement so much as a bug wearing one's clothes.
+   */
+  protected readonly canGenerate = computed(() => this.formValid() === 'VALID' && (this.isEmail() || this.selectedPlatforms().size > 0));
   protected readonly isGenerating = computed(() => this.step() === 'generating');
   protected readonly hasResults = computed(() => this.step() === 'review');
   protected readonly linkedInSponsoredCopy = computed<Record<string, unknown> | null>(() => {
@@ -249,6 +296,17 @@ export class PlanningTabComponent implements OnInit {
     // foundation the user has already left.
     combineLatest([this.slugInput$, this.activeFoundationSlug$])
       .pipe(
+        // Paid only, and gated at the SOURCE rather than by hiding the banner.
+        //
+        // Brief persistence is keyed on `(foundation, event)` with no delivery type, so the row
+        // this finds is a PAID brief — offering it under Email would restore RSA headlines and a
+        // keyword list into an email plan. The email host also binds no `restoreSavedBriefRequested`
+        // handler, so Restore emitted into nothing and the click did nothing at all.
+        //
+        // Not merely a hidden banner: suppressing the request too means no `loadBrief` call per
+        // keystroke-debounce for a result that can never be used. Delivery-aware persistence is
+        // LFXV2-3198's to introduce, together with the email brief shape it would store.
+        filter(() => !this.isEmail()),
         distinctUntilChanged(([slug, project], [nextSlug, nextProject]) => slug === nextSlug && project === nextProject),
         debounceTime(500),
         switchMap(([slug, project]) =>
@@ -276,6 +334,7 @@ export class PlanningTabComponent implements OnInit {
     this.activeFoundationSlug$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.savedBrief.set(null);
       this.savedBriefId = null;
+      this.savedBriefApproved = false;
       this.savedBriefWarning.set(null);
     });
   }
@@ -383,6 +442,7 @@ export class PlanningTabComponent implements OnInit {
         this.currentSlug = slug;
         this.savedBrief.set(null);
         this.savedBriefId = null;
+        this.savedBriefApproved = false;
         this.savedBriefWarning.set(null);
       }
       this.slugInput$.next(slug);
@@ -408,7 +468,7 @@ export class PlanningTabComponent implements OnInit {
     // Both, or neither. A restore without its id would reach the parent as an unowned save and
     // be refused — a worse outcome than not offering the button, so the guard covers the pair.
     if (brief !== null && this.savedBriefId !== null) {
-      this.restoreSavedBriefRequested.emit({ brief, briefId: this.savedBriefId });
+      this.restoreSavedBriefRequested.emit({ brief, briefId: this.savedBriefId, approved: this.savedBriefApproved });
     }
   }
 
@@ -458,11 +518,23 @@ export class PlanningTabComponent implements OnInit {
     const budgetStr = typeof budgetRaw === 'string' ? budgetRaw.trim() : String(budgetRaw ?? '');
     const request = {
       url: this.briefForm.controls.url.value.trim(),
-      platforms: [...this.selectedPlatforms()] as CampaignPlatform[],
+      // Sent explicitly. Omitting `platforms` is NOT enough on its own to mean "no ad channels":
+      // the generator reads an absent list as the paid DEFAULT (`['google-ads']`), so absence
+      // already means "use the default" for every paid caller and cannot also mean email. This
+      // field is what makes the server skip ad-copy and keyword generation entirely.
+      deliveryType: this.deliveryType(),
+      // Still omitted for email — `[]` would claim the user deselected every channel rather than
+      // that ad channels do not apply here. With `deliveryType` above, the server no longer has
+      // to infer anything from its absence.
+      ...(this.isEmail() ? {} : { platforms: [...this.selectedPlatforms()] as CampaignPlatform[] }),
       campaignGoal: (this.briefForm.controls.campaignGoal.value || undefined) as CampaignGoal | undefined,
       targetAudience: this.briefForm.controls.targetAudience.value.trim() || undefined,
       valueProp: this.briefForm.controls.valueProp.value.trim() || undefined,
-      totalBudget: budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : undefined,
+      // Belt and braces with hiding the Budget card: the control still EXISTS in email mode, and
+      // a value could reach it without the card being visible — a restored paid brief repopulates
+      // the form. The server appends "Total Campaign Budget: $N" to the copy prompt, so a stray
+      // value would put a paid-ad number into an email brief rather than merely go unread.
+      totalBudget: !this.isEmail() && budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : undefined,
       programType: this.programTypeConfig().id,
     };
 
@@ -645,6 +717,15 @@ export class PlanningTabComponent implements OnInit {
     const feedback = this.refineFeedback().trim();
     if (!feedback) return;
 
+    // Checked BEFORE the `currentCopy` guard below, which would otherwise swallow this case.
+    // An email brief generates no copy, so `structuredCopy` is null and that guard returns
+    // silently — leaving a user who reached Refine (via a restored paid brief, or any future
+    // caller) pressing Regenerate and watching nothing happen. Says why instead.
+    if (this.isEmail()) {
+      this.errorMessage.set('Refining email copy is not supported yet.');
+      return;
+    }
+
     const currentCopy = this.structuredCopy();
     if (!currentCopy) return;
 
@@ -659,6 +740,13 @@ export class PlanningTabComponent implements OnInit {
       currentKeywords: this.keywords(),
       feedback: capturedFeedback,
       eventDetails: this.eventDetails(),
+      // Same pair as the generate request: the delivery type is the signal the server acts on,
+      // PAID-ONLY by construction: `submitRefine` returns above for email, so this request can
+      // never carry `deliveryType: 'email'`. An earlier version branched on `isEmail()` here and
+      // documented a server refusal it could not reach — which made the client look as though it
+      // exercised that path when nothing did. The server guard stays for direct callers; this
+      // sends the paid shape unconditionally.
+      deliveryType: this.deliveryType(),
       platforms: [...this.selectedPlatforms()],
       programType: this.programTypeConfig().id,
     };
@@ -769,6 +857,7 @@ export class PlanningTabComponent implements OnInit {
     if (result === null) {
       this.savedBrief.set(null);
       this.savedBriefId = null;
+      this.savedBriefApproved = false;
       this.savedBriefWarning.set('Could not check whether this event already has a saved brief.');
       return;
     }
@@ -778,6 +867,7 @@ export class PlanningTabComponent implements OnInit {
     // there is no state where an offer exists without the id that authorises replacing its row.
     this.savedBrief.set(result.status === 'loaded' ? result.brief : null);
     this.savedBriefId = result.status === 'loaded' ? result.briefId : null;
+    this.savedBriefApproved = result.status === 'loaded' && result.approved;
 
     this.savedBriefWarning.set(this.warningFor(result));
   }

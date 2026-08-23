@@ -56,7 +56,7 @@ export class OrgGroupsComponent {
   private readonly groupsData: Signal<OrgLensGroupsResponse | null | undefined> = this.initGroupsData();
 
   protected readonly groups: Signal<OrgLensGroupSummary[]> = computed(() => this.groupsData()?.groups ?? []);
-  protected readonly groupsWithClass: Signal<OrgLensGroupVm[]> = computed(() => this.groups().map((g) => ({ ...g, cls: getGroupBehavioralClass(g.category) })));
+  protected readonly groupsWithClass: Signal<OrgLensGroupVm[]> = this.initGroupsWithClass();
   protected readonly totalGroups: Signal<number> = computed(() => this.groupsData()?.total_groups ?? 0);
   protected readonly totalSeats: Signal<number> = computed(() => this.groupsData()?.total_seats ?? 0);
 
@@ -83,6 +83,20 @@ export class OrgGroupsComponent {
         ),
         takeUntilDestroyed()
       )
+    );
+  }
+
+  private initGroupsWithClass(): Signal<OrgLensGroupVm[]> {
+    return computed(() =>
+      this.groups().map((g) => {
+        const cls = getGroupBehavioralClass(g.category);
+        const projectLabel = g.project_name || g.project_slug || '';
+        const seatWord = g.org_seat_count === 1 ? 'seat' : 'seats';
+        const ariaLabel = `${g.name}, ${BEHAVIORAL_CLASS_CONFIG[cls].label}, ${g.org_seat_count} ${seatWord}` + (projectLabel ? `, ${projectLabel}` : '');
+        // See org-groups.component.html for why this links to /org/memberships, not /org/projects.
+        const projectAriaLabel = projectLabel ? `View ${projectLabel} membership details` : '';
+        return { ...g, cls, projectLabel, ariaLabel, projectAriaLabel };
+      })
     );
   }
 

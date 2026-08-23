@@ -19,11 +19,13 @@ import {
   SURVEY_COLOR,
   VOTE_COLOR,
 } from '../constants';
-import {
+import type {
   CustomRecurrencePattern,
   Meeting,
+  MeetingCommittee,
   MeetingOccurrence,
   MeetingRecurrence,
+  MeetingRegistrant,
   PastMeeting,
   PastMeetingSummary,
   PastOccurrenceSummary,
@@ -37,11 +39,15 @@ import {
   getMeetingSeriesUid,
   buildMeetingOrganizerChip,
   buildMeetingOrganizerMailto,
+  buildImportSummary,
   buildRecurrenceNeverEndDate,
   buildRecurrenceSummary,
   collectMeetingOrganizers,
   compareMeetingPeopleByHostThenName,
   convertRecurrenceToPattern,
+  extractRegistrantEmails,
+  filterUnlistedEmails,
+  getMeetingEditCommands,
   getMeetingOrganizerDisplayName,
   isCalendarDeadlinePast,
   isMeetingOccurrenceCancelled,
@@ -52,11 +58,14 @@ import {
   isVoteCalendarEventPast,
   normalizeIndexedMeetingAiSummary,
   resolveMeetingOrganizer,
+  resolveMeetingOwner,
   resolveMeetingCalendarColors,
   resolveOccurrenceRecurrence,
   resolveRsvpOccurrenceId,
   resolveSurveyCalendarColors,
   resolveVoteCalendarColors,
+  sanitizeMeetingCommittees,
+  sanitizeMeetingCommitteeUids,
   selectCommitteeCadenceMeeting,
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
@@ -418,7 +427,75 @@ describe('normalizeIndexedMeetingAiSummary', () => {
   });
 });
 
+describe('resolveMeetingOwner', () => {
+  it('normalizes a valid owner to the display shape, keeping profile_picture', () => {
+    const meeting = {
+      owner: { user_id: 'u-1', name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com', profile_picture: 'https://x/a.jpg' },
+    } as Meeting;
+
+    expect(resolveMeetingOwner(meeting)).toEqual({
+      name: 'Ada Lovelace',
+      username: 'alovelace',
+      email: 'ada@example.com',
+      profile_picture: 'https://x/a.jpg',
+    });
+  });
+
+  it('omits profile_picture when the owner has none', () => {
+    const meeting = { owner: { name: 'Ada', username: 'ada', email: 'ada@example.com' } } as Meeting;
+
+    expect(resolveMeetingOwner(meeting)).toEqual({ name: 'Ada', username: 'ada', email: 'ada@example.com' });
+  });
+
+  it('returns null for a zero-valued owner (meeting predates the field)', () => {
+    const meeting = { owner: { user_id: '', name: '', username: '', email: '', profile_picture: '' } } as Meeting;
+
+    expect(resolveMeetingOwner(meeting)).toBeNull();
+  });
+
+  it('returns null for service-account owners — ITX defaults owner to the creator, so webhook meetings get zoom.webhooks', () => {
+    expect(resolveMeetingOwner({ owner: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: 'noreply@zoom.us' } } as Meeting)).toBeNull();
+    expect(resolveMeetingOwner({ owner: { name: '', username: '', email: 'zoom.events@zoom.us' } } as Meeting)).toBeNull();
+  });
+
+  it('returns null when the owner is missing entirely', () => {
+    expect(resolveMeetingOwner({} as Meeting)).toBeNull();
+    expect(resolveMeetingOwner(null)).toBeNull();
+    expect(resolveMeetingOwner(undefined)).toBeNull();
+  });
+});
+
 describe('resolveMeetingOrganizer', () => {
+  it('prefers the owner over a human created_by', () => {
+    const meeting = {
+      owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' },
+      created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
+    } as Meeting;
+
+    expect(resolveMeetingOrganizer(meeting)?.name).toBe('Grace Hopper');
+  });
+
+  it('prefers the owner over the host fallback', () => {
+    const meeting = { owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' } } as Meeting;
+    const hosts = [{ first_name: 'Alan', last_name: 'Turing', host: true }];
+
+    expect(resolveMeetingOrganizer(meeting, hosts)?.name).toBe('Grace Hopper');
+  });
+
+  it('falls back to created_by when the owner is zero-valued or a service account', () => {
+    const zeroValued = {
+      owner: { user_id: '', name: '', username: '', email: '' },
+      created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
+    } as Meeting;
+    const serviceOwner = {
+      owner: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' },
+      created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
+    } as Meeting;
+
+    expect(resolveMeetingOrganizer(zeroValued)?.name).toBe('Ada Lovelace');
+    expect(resolveMeetingOrganizer(serviceOwner)?.name).toBe('Ada Lovelace');
+  });
+
   it('returns created_by when it is a real human', () => {
     const meeting = { created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com', profile_picture: 'https://x/a.jpg' } } as Meeting;
 
@@ -538,6 +615,43 @@ describe('collectMeetingOrganizers', () => {
   it('returns an empty array when nothing resolves', () => {
     expect(collectMeetingOrganizers({} as Meeting)).toEqual([]);
     expect(collectMeetingOrganizers({} as Meeting, [{ first_name: 'A', last_name: 'B', host: false }])).toEqual([]);
+  });
+
+  it('shows the owner as the sole organizer instead of created_by — ownership transfer replaces the creator slot', () => {
+    const meeting = {
+      owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' },
+      created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
+    } as Meeting;
+
+    expect(collectMeetingOrganizers(meeting)).toEqual([{ name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' }]);
+  });
+
+  it('folds the owner in before hosts when it is not among them', () => {
+    const meeting = { owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' } } as Meeting;
+    const hosts = [{ first_name: 'Alan', last_name: 'Turing', username: 'aturing', email: 'alan@example.com', host: true }];
+
+    expect(collectMeetingOrganizers(meeting, hosts).map((o) => o.name)).toEqual(['Grace Hopper', 'Alan Turing']);
+  });
+
+  it('keeps the owner first without duplicating them when they are also a host', () => {
+    // Grace sorts after Alan alphabetically — the owner must still be index 0, because
+    // buildMeetingOrganizerChip renders element 0 as the primary organizer.
+    const meeting = { owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' } } as Meeting;
+    const hosts = [
+      { first_name: 'Grace', last_name: 'Hopper', username: 'ghopper', email: 'grace@example.com', host: true },
+      { first_name: 'Alan', last_name: 'Turing', username: 'aturing', email: 'alan@example.com', host: true },
+    ];
+
+    expect(collectMeetingOrganizers(meeting, hosts).map((o) => o.name)).toEqual(['Grace Hopper', 'Alan Turing']);
+  });
+
+  it('falls back to created_by as primary when the owner is zero-valued', () => {
+    const meeting = {
+      owner: { user_id: '', name: '', username: '', email: '' },
+      created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
+    } as Meeting;
+
+    expect(collectMeetingOrganizers(meeting)).toEqual([{ name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' }]);
   });
 });
 
@@ -664,6 +778,21 @@ describe('isMeetingOrganizedByViewer', () => {
     const hosts = [{ first_name: 'Grace', last_name: 'Hopper', username: 'ghopper', email: 'grace@example.com', host: true }];
     expect(isMeetingOrganizedByViewer(meetingBy(ada), 'ghopper', hosts)).toBe(true);
     expect(isMeetingOrganizedByViewer(meetingBy(ada), 'alovelace', hosts)).toBe(true);
+  });
+
+  it('matches the owner, and a transferred meeting no longer matches its original creator', () => {
+    const transferred = meetingBy(ada, { owner: grace });
+
+    expect(isMeetingOrganizedByViewer(transferred, 'ghopper')).toBe(true);
+    // Owner replaces the creator slot — after transfer the original creator drops out of the filter.
+    expect(isMeetingOrganizedByViewer(transferred, 'alovelace')).toBe(false);
+  });
+
+  it('does not match a service-account owner and falls back to created_by matching', () => {
+    const webhookOwned = meetingBy(ada, { owner: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' } });
+
+    expect(isMeetingOrganizedByViewer(webhookOwned, 'zoom.webhooks')).toBe(false);
+    expect(isMeetingOrganizedByViewer(webhookOwned, 'alovelace')).toBe(true);
   });
 
   it('agrees with the chip: the filter matches exactly when the chip renders an "Organized by you" entry', () => {
@@ -990,6 +1119,20 @@ describe('buildMeetingOccurrenceRoute', () => {
   });
 });
 
+describe('getMeetingEditCommands', () => {
+  it('prefixes foundation-owned meetings with /foundation', () => {
+    expect(getMeetingEditCommands({ id: 'abc-123', is_foundation: true })).toEqual(['/', 'foundation', 'meetings', 'abc-123', 'edit']);
+  });
+
+  it('prefixes regular-project meetings with /project', () => {
+    expect(getMeetingEditCommands({ id: 'abc-123', is_foundation: false })).toEqual(['/', 'project', 'meetings', 'abc-123', 'edit']);
+  });
+
+  it('returns null when is_foundation is absent so callers fall back to the flat path', () => {
+    expect(getMeetingEditCommands({ id: 'abc-123' })).toBeNull();
+  });
+});
+
 describe('getMeetingSeriesUid', () => {
   it('returns meeting_id for past-meeting payloads whose id is the composite occurrence id', () => {
     const past = { id: 'series-1-1789551000000', meeting_id: 'series-1' } as PastMeeting;
@@ -1094,5 +1237,112 @@ describe('buildOccurrenceNavTimeline', () => {
 
     expect(result[0].duration).toBe(30);
     expect(result[1].duration).toBe(45);
+  });
+});
+
+describe('sanitizeMeetingCommittees', () => {
+  it('returns [] for null, undefined, and empty input', () => {
+    expect(sanitizeMeetingCommittees(null)).toEqual([]);
+    expect(sanitizeMeetingCommittees(undefined)).toEqual([]);
+    expect(sanitizeMeetingCommittees([])).toEqual([]);
+  });
+
+  it('drops null entries, blank uids, and keeps valid committees', () => {
+    const valid: MeetingCommittee = { uid: 'group-1', name: 'TSC' };
+    const result = sanitizeMeetingCommittees([null, { uid: null as unknown as string }, { uid: '' }, { uid: '   ' }, valid, undefined]);
+
+    expect(result).toEqual([valid]);
+  });
+});
+
+describe('sanitizeMeetingCommitteeUids', () => {
+  it('returns [] for null, undefined, and empty input', () => {
+    expect(sanitizeMeetingCommitteeUids(null)).toEqual([]);
+    expect(sanitizeMeetingCommitteeUids(undefined)).toEqual([]);
+    expect(sanitizeMeetingCommitteeUids([])).toEqual([]);
+  });
+
+  it('drops null, undefined, and blank uids', () => {
+    expect(sanitizeMeetingCommitteeUids([null, undefined, '', '   ', 'group-1', 'group-2'])).toEqual(['group-1', 'group-2']);
+  });
+});
+
+/** Builds a minimal MeetingRegistrant fixture; extractRegistrantEmails only reads `email`. */
+function registrant(email: string): MeetingRegistrant {
+  return { email } as MeetingRegistrant;
+}
+
+describe('extractRegistrantEmails', () => {
+  it('returns trimmed emails and counts registrants with no email', () => {
+    const result = extractRegistrantEmails([registrant('a@example.com'), registrant('  b@example.com  '), registrant(''), registrant('   ')]);
+
+    expect(result.emails).toEqual(['a@example.com', 'b@example.com']);
+    expect(result.skippedNoEmail).toBe(2);
+  });
+
+  it('de-duplicates case-insensitively, preserving first-seen casing', () => {
+    const result = extractRegistrantEmails([registrant('Person@Example.com'), registrant('person@example.com'), registrant('PERSON@EXAMPLE.COM')]);
+
+    expect(result.emails).toEqual(['Person@Example.com']);
+    expect(result.skippedNoEmail).toBe(0);
+  });
+
+  it('handles an all-blank roster', () => {
+    const result = extractRegistrantEmails([registrant(''), registrant('  '), registrant(undefined as unknown as string)]);
+
+    expect(result.emails).toEqual([]);
+    expect(result.skippedNoEmail).toBe(3);
+  });
+
+  it('returns an empty result for empty or nullish input', () => {
+    expect(extractRegistrantEmails([])).toEqual({ emails: [], skippedNoEmail: 0 });
+    expect(extractRegistrantEmails(null)).toEqual({ emails: [], skippedNoEmail: 0 });
+    expect(extractRegistrantEmails(undefined)).toEqual({ emails: [], skippedNoEmail: 0 });
+  });
+});
+
+describe('filterUnlistedEmails', () => {
+  it('drops emails already present in alreadyListed, case-insensitively', () => {
+    const result = filterUnlistedEmails(['a@example.com', 'B@Example.com', 'c@example.com'], ['a@example.com', 'b@example.com']);
+
+    expect(result).toEqual(['c@example.com']);
+  });
+
+  it('returns all emails unchanged when alreadyListed is empty', () => {
+    expect(filterUnlistedEmails(['a@example.com'], [])).toEqual(['a@example.com']);
+  });
+
+  it('returns an empty array when emails is empty', () => {
+    expect(filterUnlistedEmails([], ['a@example.com'])).toEqual([]);
+  });
+});
+
+describe('buildImportSummary', () => {
+  it('reports a single added address in singular form', () => {
+    expect(buildImportSummary('Q3 Roadmap', 1, 0, 0)).toBe('Added 1 address from "Q3 Roadmap".');
+  });
+
+  it('reports multiple added addresses in plural form', () => {
+    expect(buildImportSummary('Q3 Roadmap', 3, 0, 0)).toBe('Added 3 addresses from "Q3 Roadmap".');
+  });
+
+  it('appends an already-listed count when present', () => {
+    expect(buildImportSummary('Q3 Roadmap', 2, 1, 0)).toBe('Added 2 addresses from "Q3 Roadmap" — 1 already listed.');
+  });
+
+  it('appends a singular skipped-no-email note', () => {
+    expect(buildImportSummary('Q3 Roadmap', 2, 0, 1)).toBe('Added 2 addresses from "Q3 Roadmap" — 1 registrant had no email and was skipped.');
+  });
+
+  it('appends a plural skipped-no-email note', () => {
+    expect(buildImportSummary('Q3 Roadmap', 2, 0, 3)).toBe('Added 2 addresses from "Q3 Roadmap" — 3 registrants had no email and were skipped.');
+  });
+
+  it('combines already-listed and skipped-no-email notes', () => {
+    expect(buildImportSummary('Q3 Roadmap', 1, 2, 1)).toBe('Added 1 address from "Q3 Roadmap" — 2 already listed — 1 registrant had no email and was skipped.');
+  });
+
+  it('reports zero added addresses in plural form', () => {
+    expect(buildImportSummary('Q3 Roadmap', 0, 4, 0)).toBe('Added 0 addresses from "Q3 Roadmap" — 4 already listed.');
   });
 });

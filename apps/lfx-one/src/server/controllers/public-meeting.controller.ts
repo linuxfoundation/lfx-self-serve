@@ -2,13 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { Meeting } from '@lfx-one/shared';
-import { MEETING_PASSWORD_HEADER } from '@lfx-one/shared/constants';
+import { MEETING_PASSWORD_HEADER, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
-import { CreateMeetingRegistrantRequest, MeetingOccurrenceSummary, MeetingRegistrant, PublicMeetingOccurrencesResponse } from '@lfx-one/shared/interfaces';
+import {
+  CreateMeetingRegistrantRequest,
+  MeetingOccurrenceSummary,
+  MeetingRegistrant,
+  Project,
+  PublicMeetingOccurrencesResponse,
+  PublicMeetingProject,
+} from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { AuthorizationError } from '../errors/authentication.error';
+import { AuthenticationError, AuthorizationError } from '../errors/authentication.error';
 import {
   addInvitedStatusToMeeting,
   applyHostKeyVisibility,
@@ -85,6 +92,12 @@ export class PublicMeetingController {
         });
       }
 
+      // Resolves the foundation project server-side (LFXV2-3266) so anonymous visitors get
+      // breadcrumb/attribution data without an authenticated /api/projects/:uid call from the
+      // client. m2mToken is still active here — the user-token swap below happens later and is
+      // restored before this response is sent.
+      const parent = await this.resolveParentProject(req, project);
+
       // Resolve host-key visibility (organizer OR project writer OR committee writer). This sets
       // meeting.organizer (used for the registrant counts below) and meeting.can_view_host_key,
       // and strips host_key when the user isn't authorized — the single source of truth for the
@@ -158,12 +171,13 @@ export class PublicMeetingController {
       }
 
       // The organizer is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
-      // created_by from the live v1_meeting index (the ITX detail payload omits it); for anonymous
-      // callers, skip that query and strip created_by so we neither expose nor waste a call on it.
+      // created_by/owner from the live v1_meeting index (the ITX detail payload omits created_by);
+      // for anonymous callers, skip that query and strip both so we neither expose nor waste a call.
       if (isAuthenticated) {
         [meeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.id);
       } else {
         delete (meeting as Partial<Meeting>).created_by;
+        delete (meeting as Partial<Meeting>).owner;
       }
 
       // Log the success
@@ -172,7 +186,7 @@ export class PublicMeetingController {
       if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
         res.json({
           meeting,
-          project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+          project: this.toPublicMeetingProject(project, parent),
         });
         return;
       }
@@ -186,7 +200,7 @@ export class PublicMeetingController {
       if (meeting.invited || meeting.organizer) {
         res.json({
           meeting,
-          project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+          project: this.toPublicMeetingProject(project, parent),
         });
         return;
       }
@@ -206,7 +220,7 @@ export class PublicMeetingController {
               meeting.invited = true;
               res.json({
                 meeting,
-                project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+                project: this.toPublicMeetingProject(project, parent),
               });
               return;
             }
@@ -226,7 +240,7 @@ export class PublicMeetingController {
       }
 
       // Send the meeting and project data to the client
-      res.json({ meeting, project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid } });
+      res.json({ meeting, project: this.toPublicMeetingProject(project, parent) });
     } catch (error) {
       // Error handler will log
       next(error);
@@ -270,6 +284,9 @@ export class PublicMeetingController {
         });
       }
 
+      // Resolves the foundation project server-side (LFXV2-3266) — see getMeetingById for why.
+      const parent = await this.resolveParentProject(req, project);
+
       // Check organizer status for authenticated users using user token
       let isOrganizer = false;
       if (isAuthenticated && originalToken !== undefined) {
@@ -312,18 +329,20 @@ export class PublicMeetingController {
       stripHostKey(meeting);
 
       // The organizer is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
-      // created_by from the live v1_meeting index (webhook-created past meetings lack a human one);
-      // for anonymous callers, skip that query and strip created_by (present as zoom.webhooks).
+      // created_by/owner from the live v1_meeting index (webhook-created past meetings lack a human
+      // created_by, and v1_past_meeting never carries owner); for anonymous callers, skip that query
+      // and strip both (created_by is present as zoom.webhooks).
       let enrichedMeeting = meeting;
       if (isAuthenticated) {
         [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.meeting_id);
       } else {
         delete (meeting as Partial<Meeting>).created_by;
+        delete (meeting as Partial<Meeting>).owner;
       }
 
       // For non-full-access users, return only the fields needed for the basic UI.
-      // created_by is included (authenticated callers only, per the strip above) so the basic
-      // view can still show the organizer name.
+      // created_by/owner are included (authenticated callers only, per the strip above) so the
+      // basic view can still show the organizer name.
       const meetingResponse = fullAccess
         ? enrichedMeeting
         : {
@@ -345,11 +364,12 @@ export class PublicMeetingController {
             project_uid: enrichedMeeting.project_uid,
             meeting_id: enrichedMeeting.meeting_id,
             created_by: enrichedMeeting.created_by,
+            owner: enrichedMeeting.owner,
           };
 
       res.json({
         meeting: meetingResponse,
-        project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+        project: this.toPublicMeetingProject(project, parent),
         full_access: fullAccess,
       });
     } catch (error) {
@@ -380,7 +400,7 @@ export class PublicMeetingController {
       const originalToken = req.bearerToken;
       const m2mToken = await this.setupM2MToken(req);
 
-      const liveMeeting = await this.meetingService.getMeetingById(req, id, 'v1_meeting', false).catch(() => null);
+      const liveMeeting = await this.meetingService.getMeetingById(req, id, 'v1_meeting', { access: false }).catch(() => null);
 
       // Fail closed: when the live series can't be loaded, its visibility can't be
       // verified, so the timeline is not exposed.
@@ -500,7 +520,13 @@ export class PublicMeetingController {
 
   /**
    * POST /public/api/meetings/register
-   * Registers a user to a public, non-restricted meeting
+   * Registers an authenticated user to a public, non-restricted meeting.
+   *
+   * Meeting validation (public + non-restricted check) uses M2M so the GET endpoint's viewer
+   * FGA check doesn't block users who aren't yet registered. The user's bearer token is then
+   * restored before calling POST /itx/meetings/{id}/registrants/self so the meeting service
+   * sources identity from the caller's JWT. Authentication is required; unauthenticated
+   * requests receive 401.
    */
   public async registerForPublicMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
     const registrantData: CreateMeetingRegistrantRequest = req.body;
@@ -511,41 +537,46 @@ export class PublicMeetingController {
     });
 
     try {
-      // Validate the meeting ID is provided
-      if (!meetingId) {
-        const validationError = ServiceValidationError.forField('meeting_id', 'Meeting ID is required', {
-          operation: 'register_for_public_meeting',
-          service: 'public_meeting_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
+      if (!this.validateMeetingId(meetingId, 'register_for_public_meeting', req, next)) {
+        return;
       }
 
-      // Validate required fields
-      if (!registrantData.email || !registrantData.first_name || !registrantData.last_name) {
-        const validationError = ServiceValidationError.fromFieldErrors(
-          {
-            email: !registrantData.email ? 'Email is required' : [],
-            first_name: !registrantData.first_name ? 'First name is required' : [],
-            last_name: !registrantData.last_name ? 'Last name is required' : [],
-          },
-          'Registration data validation failed',
-          {
+      if (!req.oidc?.isAuthenticated() || !req.bearerToken) {
+        return next(
+          new AuthenticationError('Authentication required to register for a meeting', {
             operation: 'register_for_public_meeting',
             service: 'public_meeting_controller',
             path: req.path,
-          }
+          })
         );
-
-        return next(validationError);
       }
 
-      // Generate M2M token
-      const m2mToken = await this.setupM2MToken(req);
+      const userToken = req.bearerToken;
 
-      // Fetch the meeting to validate it's public and non-restricted
-      const meeting = await this.meetingService.getMeetingById(req, meetingId, 'v1_meeting', false);
+      if (!registrantData.first_name || !registrantData.last_name) {
+        return next(
+          ServiceValidationError.fromFieldErrors(
+            {
+              first_name: !registrantData.first_name ? 'First name is required' : [],
+              last_name: !registrantData.last_name ? 'Last name is required' : [],
+            },
+            'Registration data validation failed',
+            {
+              operation: 'register_for_public_meeting',
+              service: 'public_meeting_controller',
+              path: req.path,
+            }
+          )
+        );
+      }
+
+      let meeting: Awaited<ReturnType<typeof this.meetingService.getMeetingById>>;
+      try {
+        await this.setupM2MToken(req);
+        meeting = await this.meetingService.getMeetingById(req, meetingId, 'v1_meeting', { access: false });
+      } finally {
+        req.bearerToken = userToken;
+      }
 
       if (!meeting) {
         throw new ResourceNotFoundError('Meeting', meetingId, {
@@ -555,30 +586,10 @@ export class PublicMeetingController {
         });
       }
 
-      // Validate the meeting is public
-      if (meeting.visibility !== MeetingVisibility.PUBLIC) {
-        const authError = new AuthorizationError('Registration is not allowed for non-public meetings', {
-          operation: 'register_for_public_meeting',
-          service: 'public_meeting_controller',
-          path: req.path,
-        });
+      const authError = this.checkMeetingIsPublicAndNotRestricted(req, meeting);
+      if (authError) return next(authError);
 
-        return next(authError);
-      }
-
-      // Validate the meeting is not restricted
-      if (meeting.restricted) {
-        const authError = new AuthorizationError('Registration is not allowed for restricted meetings', {
-          operation: 'register_for_public_meeting',
-          service: 'public_meeting_controller',
-          path: req.path,
-        });
-
-        return next(authError);
-      }
-
-      // Add the registrant using M2M token
-      const newRegistrant = await this.meetingService.addMeetingRegistrantWithM2M(req, registrantData, m2mToken);
+      const newRegistrant = await this.meetingService.addMeetingRegistrantSelf(req, meetingId, registrantData);
 
       logger.success(req, 'register_for_public_meeting', startTime, {
         meeting_id: meetingId,
@@ -590,6 +601,46 @@ export class PublicMeetingController {
       // Error handler will log
       next(error);
     }
+  }
+
+  /**
+   * Resolves a project's foundation (parent) for public meeting responses (LFXV2-3266), so the
+   * client never needs its own authenticated `/api/projects/:uid` call to show it. Root-level
+   * projects have no meaningful parent — `ROOT_PROJECT_SLUG` maps to `null`, mirroring the
+   * client-side rule this replaces. Never throws: a missing/unresolvable parent degrades to
+   * `null` rather than failing the whole meeting response.
+   */
+  private async resolveParentProject(req: Request, project: Pick<Project, 'parent_uid'>): Promise<Project | null> {
+    if (!project.parent_uid) {
+      return null;
+    }
+
+    try {
+      const parent = await this.projectService.getProjectById(req, project.parent_uid, false);
+      return parent?.slug === ROOT_PROJECT_SLUG ? null : parent;
+    } catch (error) {
+      logger.warning(req, 'resolve_parent_project', 'Failed to resolve parent project, continuing without it', {
+        parent_uid: project.parent_uid,
+        err: error,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Builds the slim `PublicMeetingProject` payload shared by every public meeting response
+   * branch — kept as one helper so `parent` (LFXV2-3266) can't be added to some call sites and
+   * missed on others.
+   */
+  private toPublicMeetingProject(project: Project, parent: Project | null): PublicMeetingProject {
+    return {
+      name: project.name,
+      slug: project.slug,
+      logo_url: project.logo_url,
+      uid: project.uid,
+      parent_uid: project.parent_uid,
+      parent: parent ? { uid: parent.uid, name: parent.name, slug: parent.slug } : null,
+    };
   }
 
   /**
@@ -616,6 +667,27 @@ export class PublicMeetingController {
       operation,
       service: 'public_meeting_controller',
     });
+  }
+
+  /**
+   * Returns an AuthorizationError if the meeting is non-public or restricted, or null if valid.
+   */
+  private checkMeetingIsPublicAndNotRestricted(req: Request, meeting: Pick<Meeting, 'visibility' | 'restricted'>): AuthorizationError | null {
+    if (meeting.visibility !== MeetingVisibility.PUBLIC) {
+      return new AuthorizationError('Registration is not allowed for non-public meetings', {
+        operation: 'register_for_public_meeting',
+        service: 'public_meeting_controller',
+        path: req.path,
+      });
+    }
+    if (meeting.restricted) {
+      return new AuthorizationError('Registration is not allowed for restricted meetings', {
+        operation: 'register_for_public_meeting',
+        service: 'public_meeting_controller',
+        path: req.path,
+      });
+    }
+    return null;
   }
 
   /**
@@ -713,7 +785,7 @@ export class PublicMeetingController {
     } else {
       await this.setupM2MToken(req);
     }
-    const meeting = await this.meetingService.getMeetingById(req, id, meetingType, false);
+    const meeting = await this.meetingService.getMeetingById(req, id, meetingType, { access: false });
 
     logger.success(req, 'fetch_meeting_with_m2m', startTime, {
       meeting_id: meeting.id,

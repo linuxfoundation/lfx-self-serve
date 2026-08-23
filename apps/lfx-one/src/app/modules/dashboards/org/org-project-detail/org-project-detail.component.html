@@ -3,10 +3,7 @@
 
 <div class="flex flex-col gap-6" data-testid="project-detail-page">
   @if (!hasCompany()) {
-    <lfx-empty-state
-      icon="fa-light fa-building"
-      title="Select a company via Impersonate to view project details."
-      data-testid="project-detail-no-company-empty-state" />
+    <lfx-empty-state icon="fa-light fa-building" title="Select an organization to view project details." data-testid="project-detail-no-company-empty-state" />
   } @else if (heroState().status === 'notFound') {
     <!-- B1 is the sole page-level gate: a 404 hero is the whole-page not-found. -->
     <lfx-empty-state
@@ -716,7 +713,11 @@
                       @for (cell of dataRow.cells; track $index) {
                         <td class="px-4 py-2.5">
                           @if (cell.person; as person) {
-                            <div class="flex items-center gap-2">
+                            <button
+                              type="button"
+                              class="flex items-center gap-2 text-left"
+                              [attr.data-testid]="'influence-card-detail-person-' + person.name"
+                              (click)="onRosterPersonClick(person)">
                               @if (person.avatarUrl) {
                                 <img [src]="person.avatarUrl" alt="" class="h-7 w-7 shrink-0 rounded-full object-cover" aria-hidden="true" />
                               } @else {
@@ -727,7 +728,7 @@
                                 </span>
                               }
                               <span class="font-medium text-blue-600">{{ person.name }}</span>
-                            </div>
+                            </button>
                           } @else {
                             <span class="text-gray-700">{{ cell.text }}</span>
                           }
@@ -756,3 +757,5 @@
   [isViewingOrg]="leaderboardDetailIsViewingOrg()"
   [projectName]="hero()?.projectName ?? ''"
   [(visible)]="leaderboardDetailOpen" />
+
+<lfx-person-detail-drawer />

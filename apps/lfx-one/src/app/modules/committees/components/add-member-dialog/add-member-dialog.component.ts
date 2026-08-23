@@ -22,16 +22,22 @@ import {
   CommitteeInviteResult,
   CommitteeMember,
   CommitteeOrganizationReference,
+  CreateCommitteeInviteRequest,
   CreateCommitteeMemberRequest,
   DecoratedCommitteeSearchResult,
   EmailListParseResult,
+  MeetingRegistrant,
+  MeetingSelectOption,
   OrganizationResolveResult,
   UserSearchResult,
 } from '@lfx-one/shared/interfaces';
 import {
   buildCommitteeOrganizationPayload,
+  buildImportSummary,
   committeeOrganizationFormComplete,
   committeeRequiresOrganization,
+  extractRegistrantEmails,
+  filterUnlistedEmails,
   hasLfAccount,
   normalizeToUrl,
   parseEmailList,
@@ -40,12 +46,29 @@ import {
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
 import { UserInitialsPipe } from '@pipes/user-initials.pipe';
 import { CommitteeService } from '@services/committee.service';
+import { MeetingService } from '@services/meeting.service';
 import { SearchService } from '@services/search.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, debounceTime, distinctUntilChanged, from, map, mergeMap, Observable, of, startWith, switchMap, take, tap, toArray } from 'rxjs';
+import {
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  EMPTY,
+  expand,
+  from,
+  map,
+  mergeMap,
+  Observable,
+  of,
+  startWith,
+  switchMap,
+  take,
+  tap,
+  toArray,
+} from 'rxjs';
 
 interface DirectAddResult {
   email: string;
@@ -84,6 +107,7 @@ interface DirectAddResult {
 })
 export class AddMemberDialogComponent {
   private readonly committeeService = inject(CommitteeService);
+  private readonly meetingService = inject(MeetingService);
   private readonly searchService = inject(SearchService);
   private readonly messageService = inject(MessageService);
   private readonly dialogRef = inject(DynamicDialogRef);
@@ -92,10 +116,18 @@ export class AddMemberDialogComponent {
 
   private readonly organizationSearch = viewChild(OrganizationSearchComponent);
   private resolvedOrganizationName = '';
+  /** Set by onCancel() — lets a still-pending async org resolution's collect-only close no-op. */
+  private cancelled = false;
 
   public readonly committee: Committee | null = this.config.data?.committee ?? null;
   public readonly mode: AddMemberDialogMode = this.config.data?.mode ?? 'direct-add';
   public readonly isDirectAdd = computed(() => this.mode === 'direct-add');
+  /**
+   * Collect-only mode: instead of sending invites immediately (POST /invites), validate + build
+   * the invite payloads and return them to the caller to stage. Used by the create-group wizard so
+   * invites are only sent when the wizard is completed — cancelling sends nothing (LFXV2-2606).
+   */
+  public readonly collectOnly: boolean = this.config.data?.collectOnly ?? false;
   /** True when the committee requires organization (voting or business email). */
   public readonly showOrganizationField = computed(() => (this.committee ? committeeRequiresOrganization(this.committee) : false));
   /** Direct-add must include a valid organization before members can be created upstream. */
@@ -122,15 +154,25 @@ export class AddMemberDialogComponent {
     organization: new FormControl(''),
     organization_url: new FormControl(''),
     organization_id: new FormControl<string | null>(null),
-    send_notification: new FormControl<boolean>(true, { nonNullable: true }),
+    send_notification: new FormControl<boolean>(false, { nonNullable: true }),
   });
   public readonly searchForm = new FormGroup({ query: new FormControl('') });
+  /** Picker for "import registrants from a meeting" (LFXV2-2607). */
+  public readonly importForm = new FormGroup({ meeting: new FormControl<string | null>(null) });
 
   public submitting = signal(false);
   public searchLoading = signal(false);
+  public importing = signal(false);
+  /** Human-readable outcome of the last import, shown under the picker. */
+  public importSummary = signal<string | null>(null);
   private readonly orgSubmitAttempted = signal(false);
 
   private readonly rawEmails = toSignal(this.form.get('emails')!.valueChanges.pipe(startWith(this.form.get('emails')!.value)), { initialValue: '' });
+  /** Bridges the meeting picker's plain FormControl value into a signal so the Import button's
+   * `[disabled]` binding reliably re-evaluates under zoneless change detection. */
+  public readonly selectedMeetingId = toSignal(this.importForm.get('meeting')!.valueChanges.pipe(startWith(this.importForm.get('meeting')!.value)), {
+    initialValue: null as string | null,
+  });
   private readonly orgFormValues = this.initOrgFormValues();
   private readonly orgUrlStatus = toSignal(this.form.get('organization_url')!.statusChanges.pipe(startWith(this.form.get('organization_url')!.status)), {
     initialValue: this.form.get('organization_url')!.status,
@@ -153,9 +195,13 @@ export class AddMemberDialogComponent {
   });
   /** Org-required direct-add uses one shared organization field — bulk add would mis-assign employers. */
   public readonly directAddRequiresSingleEmail = computed(() => this.organizationRequiredForDirectAdd() && this.categorized().toInvite.length > 1);
+  /** Blocks submit while an import is in flight — otherwise submitting closes the dialog,
+   * destroying the import's subscription and silently dropping the selected meeting's
+   * registrants before they're appended to the textarea. */
   public readonly canSubmit = computed(
     () =>
       !this.submitting() &&
+      !this.importing() &&
       this.categorized().toInvite.length > 0 &&
       !this.directAddRequiresSingleEmail() &&
       !(this.showOrganizationField() && this.orgInvalid())
@@ -165,6 +211,19 @@ export class AddMemberDialogComponent {
   public readonly orgErrorMessage: Signal<string | null> = this.initOrgErrorMessage();
   /** Comma-joined invalid tokens for the preview — precomputed so the template reads a signal, not a function call. */
   public readonly invalidSummary = computed(() => this.parsed().invalid.join(', '));
+  /** Submit button copy — three distinct destinations (stage / add directly / send invite), so not a single ternary. */
+  public readonly submitLabel = computed(() => {
+    if (this.collectOnly) {
+      return 'Add to invitations';
+    }
+    return this.isDirectAdd() ? 'Add Members' : 'Send Invites';
+  });
+  public readonly submitIcon = computed(() => {
+    if (this.collectOnly) {
+      return 'fa-light fa-list-check';
+    }
+    return this.isDirectAdd() ? 'fa-light fa-user-plus' : 'fa-light fa-paper-plane';
+  });
 
   public readonly queryValue = toSignal(
     this.searchForm.get('query')!.valueChanges.pipe(
@@ -174,6 +233,8 @@ export class AddMemberDialogComponent {
     { initialValue: '' }
   );
   public searchResults: Signal<DecoratedCommitteeSearchResult[]> = this.initSearchResults();
+  /** Meetings in the committee's project, for the import picker. Empty when none / no project. */
+  public readonly meetingOptions: Signal<MeetingSelectOption[]> = this.initMeetingOptions();
 
   public readonly roleOptions = MEMBER_ROLES;
 
@@ -237,13 +298,51 @@ export class AddMemberDialogComponent {
   }
 
   public onCancel(): void {
+    // Collect-only submit can still be mid-flight (awaiting async org resolution) when Cancel is
+    // clicked — dialogRef.close(false) here would otherwise be silently followed by a second,
+    // ignored close(staged) once resolution finishes, discarding the staged invites with no
+    // feedback. Guard that late close instead of re-disabling Cancel (see onSubmit's comment).
+    this.cancelled = true;
     this.dialogRef.close(false);
+  }
+
+  /**
+   * Pull the selected meeting's registrant emails into the email list (LFXV2-2607).
+   * The BFF returns the full roster in one call (it auto-pages), so the imported
+   * emails just flow through the existing parse/dedupe/preview and invite fan-out —
+   * no invite logic is duplicated here.
+   */
+  public onImportFromMeeting(): void {
+    const meetingId = this.importForm.get('meeting')!.value;
+    if (!meetingId || this.importing()) {
+      return;
+    }
+
+    this.importing.set(true);
+    this.meetingService
+      .getMeetingRegistrants(meetingId, false, undefined, true, this.committee?.uid)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (registrants) => this.applyImportedRegistrants(meetingId, registrants),
+        error: (error: unknown) => {
+          this.importing.set(false);
+          this.importSummary.set(null);
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Import Failed',
+            detail: extractErrorMessage(error, 'Could not load registrants for that meeting. Please try again.'),
+            life: 5000,
+          });
+        },
+      });
   }
 
   public onSubmit(): void {
     const committeeId = this.committee?.uid;
     const emails = this.categorized().toInvite;
-    if (!committeeId || emails.length === 0) {
+    // Immediate mode POSTs to a committee, so it needs one; collect mode only stages payloads.
+    // Also refuses while an import is in flight — see canSubmit.
+    if ((!this.collectOnly && !committeeId) || emails.length === 0 || this.importing()) {
       return;
     }
 
@@ -268,15 +367,33 @@ export class AddMemberDialogComponent {
       }
     }
 
+    // Disable the submit button up front — org resolution below is async, and leaving it enabled
+    // during that window allows a double-click that fires a second resolve → invite chain. Cancel
+    // stays enabled in collect-only mode (see the template) so the dialog is never unresponsive —
+    // but if the user cancels while org resolution below is still pending, the collect-only close
+    // in complete() below must no-op (see the `cancelled` guard) rather than staging after the
+    // dialog already closed. Cancel stays disabled while submitting in the immediate-send modes,
+    // since canceling mid-flight can abort in-progress member/invite POSTs after some have already
+    // succeeded, with no summary toast and no parent refresh.
     this.submitting.set(true);
     const role = this.form.get('role')!.value || null;
 
-    const fanOut = (organization: CommitteeOrganizationReference | null | undefined): void => {
-      if (this.isDirectAdd()) {
-        this.fanOutDirectAdd(committeeId, emails, role, organization);
+    const complete = (organization: CommitteeOrganizationReference | null | undefined): void => {
+      // Collect-only: return the built invites for the caller to stage; do not send them now.
+      if (this.collectOnly) {
+        if (this.cancelled) {
+          return;
+        }
+        const staged: CreateCommitteeInviteRequest[] = emails.map((email) => ({ invitee_email: email, role, organization: organization ?? null }));
+        this.dialogRef.close(staged);
         return;
       }
-      this.fanOutInvites(committeeId, emails, role, organization);
+
+      if (this.isDirectAdd()) {
+        this.fanOutDirectAdd(committeeId!, emails, role, organization);
+        return;
+      }
+      this.fanOutInvites(committeeId!, emails, role, organization);
     };
 
     if (this.showOrganizationField()) {
@@ -294,13 +411,13 @@ export class AddMemberDialogComponent {
             this.submitting.set(false);
             return;
           }
-          fanOut(buildCommitteeOrganizationPayload(formValue));
+          complete(buildCommitteeOrganizationPayload(formValue));
         },
       });
       return;
     }
 
-    fanOut(undefined);
+    complete(undefined);
   }
 
   private fanOutDirectAdd(committeeId: string, emails: string[], role: string | null, organization: CommitteeOrganizationReference | null | undefined): void {
@@ -545,6 +662,72 @@ export class AddMemberDialogComponent {
       organization_id: null,
       organization_url: normalizedUrl,
     });
+  }
+
+  /**
+   * Append imported emails not already listed to the emails textarea and report the outcome.
+   * Filters against `parsed().valid` (already lowercased) so re-imports don't re-add rows and
+   * the summary's "already listed" count is accurate.
+   */
+  private applyImportedRegistrants(meetingId: string, registrants: MeetingRegistrant[]): void {
+    const { emails, skippedNoEmail } = extractRegistrantEmails(registrants);
+    const meetingTitle = this.meetingOptions().find((option) => option.value === meetingId)?.title ?? 'the meeting';
+
+    const toAppend = filterUnlistedEmails(emails, this.parsed().valid);
+    if (toAppend.length > 0) {
+      const current = this.form.get('emails')!.value.trim();
+      const appended = toAppend.join('\n');
+      this.form.get('emails')!.setValue(current ? `${current}\n${appended}` : appended);
+    }
+
+    this.importSummary.set(buildImportSummary(meetingTitle, toAppend.length, emails.length - toAppend.length, skippedNoEmail));
+    this.importForm.get('meeting')!.setValue(null);
+    this.importing.set(false);
+  }
+
+  private initMeetingOptions(): Signal<MeetingSelectOption[]> {
+    const projectUid = this.committee?.project_uid;
+    if (!projectUid) {
+      return signal<MeetingSelectOption[]>([]);
+    }
+
+    const fetchPage = (pageToken?: string) => this.meetingService.getMeetingsByProjectPaginated(projectUid, undefined, pageToken);
+
+    return toSignal(
+      fetchPage().pipe(
+        expand((response) => (response.page_token ? fetchPage(response.page_token) : EMPTY)),
+        toArray(),
+        map((responses) =>
+          responses
+            .flatMap((response) => response.data)
+            .sort((a, b) => this.meetingStartMs(b.start_time) - this.meetingStartMs(a.start_time))
+            .map((meeting) => ({ value: meeting.id, label: this.buildMeetingLabel(meeting.title, meeting.start_time), title: meeting.title }))
+        ),
+        catchError(() => of([] as MeetingSelectOption[]))
+      ),
+      { initialValue: [] as MeetingSelectOption[] }
+    );
+  }
+
+  /** Epoch ms for a meeting start, or 0 when missing/unparseable so the sort stays stable. */
+  private meetingStartMs(startTime: string | null | undefined): number {
+    if (!startTime) {
+      return 0;
+    }
+    const ms = new Date(startTime).getTime();
+    return Number.isNaN(ms) ? 0 : ms;
+  }
+
+  /** "<title> — <Mon D, YYYY>", or just the title when start_time is missing/unparseable. */
+  private buildMeetingLabel(title: string, startTime: string | null | undefined): string {
+    if (!startTime) {
+      return title;
+    }
+    const date = new Date(startTime);
+    if (Number.isNaN(date.getTime())) {
+      return title;
+    }
+    return `${title} — ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   }
 
   private initSearchResults(): Signal<DecoratedCommitteeSearchResult[]> {

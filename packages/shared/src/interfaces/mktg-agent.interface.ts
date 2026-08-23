@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Marketing OS Agents catalog (LFXAI-95 workstream). The shared catalog drives
-// both the marketplace tile grid and the per-agent chat surface, so it lives in
+// both the marketplace tile grid and the per-agent run pages, so it lives in
 // @lfx-one/shared and is consumed by the Angular app and the Express proxy.
 
 /**

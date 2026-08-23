@@ -145,30 +145,40 @@
             <!-- Headline: current / last year / predicted, mirroring PCC -->
             <div class="flex flex-wrap gap-8">
               <div class="flex flex-col">
-                <span class="text-xl font-semibold text-blue-600">{{ d.pacing.current !== null ? (d.pacing.current | metricNumber) : '—' }}</span>
+                <span class="text-xl font-semibold text-blue-600">{{ d.pacing.current !== null ? (d.pacing.current | metricCount) : '—' }}</span>
                 <span class="text-xs text-gray-400">Current</span>
               </div>
               @if (d.hasPriorYear) {
                 <div class="flex flex-col">
-                  <span class="text-xl font-semibold text-gray-500">{{ d.pacing.priorYear !== null ? (d.pacing.priorYear | metricNumber) : '—' }}</span>
+                  <span class="text-xl font-semibold text-gray-500">{{ d.pacing.priorYear !== null ? (d.pacing.priorYear | metricCount) : '—' }}</span>
                   <span class="text-xs text-gray-400">Last year</span>
                 </div>
               }
               <div class="flex flex-col">
-                <span class="text-xl font-semibold text-violet-600">{{ d.pacing.predictedAvg !== null ? (d.pacing.predictedAvg | metricNumber) : '—' }}</span>
+                <span class="text-xl font-semibold text-violet-600">{{ d.pacing.predictedAvg !== null ? (d.pacing.predictedAvg | metricCount) : '—' }}</span>
                 <span class="text-xs text-gray-400">
                   Predicted
-                  @if (d.pacing.predictedLow !== null && d.pacing.predictedHigh !== null) {
-                    <span class="text-gray-400">({{ d.pacing.predictedLow | metricNumber }}–{{ d.pacing.predictedHigh | metricNumber }})</span>
+                  <!-- Null when the interval collapses once rounded: a "(473–473)" range is not a
+                       forecast, it is the current count repeated, and printing it as an interval
+                       implies a confidence the model did not express. The computed hands over the
+                       rounded pair so these are the same numbers the gate compared. -->
+                  @if (predictedRange(); as range) {
+                    <span class="text-gray-400">({{ range.low }}–{{ range.high }})</span>
                   }
                 </span>
               </div>
-              <!-- DAYS_LEFT_FROM_YESTERDAY keeps counting down past the event, so a past event
-                   yields a negative. "Days left" is meaningless then — drop the whole block. -->
-              @if (d.pacing.daysLeft !== null && d.pacing.daysLeft > 0) {
+              <!-- DAYS_LEFT_FROM_YESTERDAY is NEGATIVE while an event is upcoming and rises toward
+                   0 on the day: Linux Plumbers Conference 2026 reads -54 against a curve spanning
+                   -86..0. The old `> 0` guard therefore hid this block for every upcoming event —
+                   the only case it exists to serve — while a past event, which keeps counting up
+                   past 0, was the one thing it let through. `daysLeft()` returns the count as a
+                   reader means it, positive and counting down, and null once the event has passed. -->
+              @if (daysLeft(); as remaining) {
                 <div class="ml-auto flex flex-col text-right">
-                  <span class="text-xl font-semibold text-gray-900">{{ d.pacing.daysLeft | metricNumber }}</span>
-                  <span class="text-xs text-gray-400">Days left</span>
+                  <span class="text-xl font-semibold text-gray-900">{{ remaining | metricCount }}</span>
+                  <!-- Singular on the last day. Only reachable since the sign fix — the old guard
+                       hid this block for every upcoming event, so "1 Days left" never appeared. -->
+                  <span class="text-xs text-gray-400">{{ remaining === 1 ? 'Day left' : 'Days left' }}</span>
                 </div>
               }
             </div>
@@ -178,16 +188,28 @@
               <div class="h-[240px]" data-testid="event-detail-pacing-chart">
                 <lfx-chart type="line" [data]="pacingChartData()" [options]="pacingChartOptions" height="100%" />
               </div>
+              <!-- Said outright rather than left to the legend: with no prior edition the chart
+                   carries current and predicted but no Last year line, and a reader who cannot
+                   see why reasonably assumes the comparison is broken. -->
+              @if (!d.hasPriorYear) {
+                <p class="text-xs text-gray-400" data-testid="event-detail-pacing-no-prior">No prior event data — showing this year and the prediction only.</p>
+              }
+            } @else {
+              <!-- The curve read degrades to an empty array on failure, so without this the card
+                   renders its headline above blank space and says nothing about why. -->
+              <p class="text-sm text-gray-500" data-testid="event-detail-pacing-curve-unavailable">Day-by-day pacing is unavailable for this event.</p>
             }
           } @else {
             <p class="text-sm text-gray-500">Day-by-day pacing prediction is coming to this view.</p>
           }
         </div>
       }
+
       <!--
         Outside the focus gates: the event page is a general action, not part of either
         story. Inside the attendance block it disappeared when the drawer was opened from
-        the sponsorship bar.
+        the sponsorship bar — a regression `keeps the event page link in both focus views`
+        exists to catch, so this placement is load-bearing rather than incidental.
       -->
       @if (d.eventUrl) {
         <a

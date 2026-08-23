@@ -11,6 +11,7 @@ import { TableComponent } from '@components/table/table.component';
 import { COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared';
 import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import { Committee, CommitteeMember, Meeting } from '@lfx-one/shared/interfaces';
+import { sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -108,13 +109,14 @@ export class MeetingCommitteeModalComponent {
     });
 
     // Set initial selected committees
-    if (this.meeting.committees && this.meeting.committees.length > 0) {
-      const committeeIds = this.meeting.committees.map((c) => c.uid);
+    const validCommittees = sanitizeMeetingCommittees(this.meeting.committees);
+    if (validCommittees.length > 0) {
+      const committeeIds = validCommittees.map((c) => c.uid);
       this.selectedCommitteeIds.set(committeeIds);
 
       // Get initial voting statuses from meeting committees
       const existingVotingStatuses: string[] = [];
-      this.meeting.committees.forEach((committee) => {
+      validCommittees.forEach((committee) => {
         if (committee.allowed_voting_statuses) {
           existingVotingStatuses.push(...committee.allowed_voting_statuses);
         }
@@ -137,13 +139,17 @@ export class MeetingCommitteeModalComponent {
     this.form
       .get('committees')
       ?.valueChanges.pipe(takeUntilDestroyed())
-      .subscribe((committeeIds: string[]) => {
-        this.selectedCommitteeIds.set(committeeIds || []);
-        this.loadCommitteeMembers(committeeIds || []);
+      .subscribe((committeeIds: string[] | null) => {
+        const ids = sanitizeMeetingCommitteeUids(committeeIds);
+        if (!Array.isArray(committeeIds) || committeeIds.length !== ids.length) {
+          this.form.get('committees')?.setValue(ids, { emitEvent: false });
+        }
+        this.selectedCommitteeIds.set(ids);
+        this.loadCommitteeMembers(ids);
 
         // Clear voting statuses if no committees with voting are selected
         const committees = this.committees();
-        const hasVotingCommittees = committees.some((c) => (committeeIds || []).includes(c.uid) && c.enable_voting);
+        const hasVotingCommittees = committees.some((c) => ids.includes(c.uid) && c.enable_voting);
         if (!hasVotingCommittees) {
           this.form.patchValue({ votingStatuses: [] }, { emitEvent: false });
           this.selectedVotingStatuses.set([]);
@@ -164,12 +170,13 @@ export class MeetingCommitteeModalComponent {
   }
 
   public onSave(): void {
-    const selectedIds = this.form.value.committees as string[];
+    const selectedIds = sanitizeMeetingCommitteeUids(this.form.value.committees);
     const selectedVotingStatuses = (this.form.value.votingStatuses as string[]) || [];
 
     // If no changes, just close
-    const currentIds = this.meeting.committees?.map((c) => c.uid) || [];
-    const currentVotingStatuses = this.meeting.committees?.flatMap((c) => c.allowed_voting_statuses || []) || [];
+    const currentCommittees = sanitizeMeetingCommittees(this.meeting.committees);
+    const currentIds = currentCommittees.map((c) => c.uid);
+    const currentVotingStatuses = currentCommittees.flatMap((c) => c.allowed_voting_statuses || []);
     if (
       JSON.stringify(selectedIds.sort()) === JSON.stringify(currentIds.sort()) &&
       JSON.stringify(selectedVotingStatuses.sort()) === JSON.stringify(currentVotingStatuses.sort())

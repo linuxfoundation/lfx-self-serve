@@ -4,7 +4,6 @@ description: View and manage the crowdfunding initiatives you have created in LF
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, manage, funding]
-last_generated: 2026-06-16
 last_updated: 2026-06-16
 intercom_collection: Crowdfunding
 ---

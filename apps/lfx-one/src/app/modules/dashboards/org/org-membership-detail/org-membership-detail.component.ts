@@ -7,9 +7,11 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
+import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import type {
   AddKeyContactRequest,
   OrgMembershipDetailResponse,
@@ -42,6 +44,7 @@ import { EditKeyContactModalComponent } from './components/edit-key-contact-moda
     CardComponent,
     EmptyStateComponent,
     PersonAvatarComponent,
+    PersonDetailDrawerComponent,
     TooltipModule,
     ToastModule,
     BoardCommitteeCardComponent,
@@ -54,6 +57,7 @@ export class OrgMembershipDetailComponent {
   protected readonly accountContext = inject(AccountContextService);
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly roleGrants = inject(OrgRoleGrantsService);
+  private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
@@ -180,6 +184,16 @@ export class OrgMembershipDetailComponent {
 
   protected retry(): void {
     this.retryTrigger.update((v) => v + 1);
+  }
+
+  protected onPersonClick(person: OrgMembershipKeyContactPerson): void {
+    this.drawer.open({
+      name: person.fullName,
+      title: person.jobTitle,
+      initials: person.initials,
+      avatarUrl: person.avatarUrl,
+      email: person.email,
+    });
   }
 
   protected onPencilClick(contact: OrgMembershipKeyContact): void {

@@ -5,7 +5,8 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { Committee, WeeklyBriefCurrentResponse } from '@lfx-one/shared/interfaces';
+import { WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD } from '@lfx-one/shared/constants';
+import { Committee, WeeklyBriefCurrentResponse, WeeklyBriefSourceRef } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
@@ -17,10 +18,9 @@ import { WeeklyBriefCardComponent } from './weekly-brief-card.component';
 
 /**
  * Covers performShareToSlack's error classifier (weekly-brief-card.component.ts's largest new
- * surface on LFXV2-3080, previously untested) — the branches make materially different safety
- * claims to the user (SLACK_SEND_FAILED: "nothing was posted, safe to retry" vs. the >=500/0/408
- * branch: "may not have completed, check the channel first"), so getting them swapped is a silent
- * correctness bug with no compiler signal. ConfirmationService is the real class, not a fake —
+ * surface on LFXV2-3080, previously untested) — getting a branch's message wrong (e.g. an
+ * ambiguous 5xx claiming "safe to retry") is a silent correctness bug with no compiler signal.
+ * ConfirmationService is the real class, not a fake —
  * PrimeNG's own <p-confirmDialog> in the template subscribes to its internal Subjects directly in
  * its constructor (see committee-settings-tab.component.spec.ts for the same finding) — but its
  * `confirm()` method is spied so the accept callback can be invoked directly without going through
@@ -62,7 +62,7 @@ describe('WeeklyBriefCardComponent — Share to Slack (LFXV2-3080)', () => {
   };
 
   beforeEach(async () => {
-    shareWeeklyBriefToSlack = vi.fn(() => of({ committee_name: COMMITTEE.name }));
+    shareWeeklyBriefToSlack = vi.fn(() => of({}));
     messageAdd = vi.fn();
     impersonating = signal(false);
 
@@ -76,6 +76,7 @@ describe('WeeklyBriefCardComponent — Share to Slack (LFXV2-3080)', () => {
           useValue: {
             getWeeklyBrief: vi.fn(() => of(BRIEF_RESPONSE)),
             shareWeeklyBriefToSlack,
+            listWeeklyBriefs: vi.fn(() => of({ data: [] })),
           },
         },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
@@ -146,26 +147,7 @@ describe('WeeklyBriefCardComponent — Share to Slack (LFXV2-3080)', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('No Slack webhook') }));
   });
 
-  it('SLACK_SEND_FAILED (502) says the message was rejected and nothing was posted — distinct from the ambiguous 5xx branch below', () => {
-    shareWeeklyBriefToSlack.mockReturnValueOnce(throwError(() => ({ status: 502, error: { code: 'SLACK_SEND_FAILED' } })));
-
-    shareToSlack();
-
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('rejected') }));
-  });
-
-  it("SLACK_SEND_FAILED uses the server's specific rejection reason (e.g. rate_limited) instead of always blaming the webhook URL — a rate-limited or policy-blocked send is not a bad URL", () => {
-    shareWeeklyBriefToSlack.mockReturnValueOnce(
-      throwError(() => ({ status: 502, error: { code: 'SLACK_SEND_FAILED', error: 'Slack rejected the message: rate_limited' } }))
-    );
-
-    shareToSlack();
-
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Slack rejected the message: rate_limited' }));
-    expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('webhook URL') }));
-  });
-
-  it('an unclassified 5xx says the send may not have completed — must not be confused with SLACK_SEND_FAILED\'s "safe to retry" claim', () => {
+  it('an unclassified 5xx says the send may not have completed', () => {
     shareWeeklyBriefToSlack.mockReturnValueOnce(throwError(() => ({ status: 503, error: {} })));
 
     shareToSlack();
@@ -228,5 +210,234 @@ describe('WeeklyBriefCardComponent — Share to Slack (LFXV2-3080)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-button"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-disabled-hint"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-slack-impersonating-hint"]')).toBeNull();
+  });
+});
+
+/**
+ * Covers the Sources row collapse-behind-disclosure + dedupe (LFXV2-3335): flat render at/under
+ * the 5-source threshold, the disclosure appearing above it, level-1 (row) and level-2 (group)
+ * toggles, that an expanded group instance still fires onSourceChipAction with its own action,
+ * and that both expanded states reset on a committee navigation — mirrors the existing
+ * committeeUid$ reset-block coverage pattern (none of those other resets have dedicated tests in
+ * this file either; this is the first, following the same input-swap + whenStable() approach).
+ */
+describe('WeeklyBriefCardComponent — Sources disclosure (LFXV2-3335)', () => {
+  let fixture: ComponentFixture<WeeklyBriefCardComponent>;
+  let component: WeeklyBriefCardComponent;
+  let getWeeklyBrief: ReturnType<typeof vi.fn>;
+
+  const COMMITTEE_A: Committee = { uid: 'committee-a', name: 'Committee A', project_uid: 'project-1' } as Committee;
+  const COMMITTEE_B: Committee = { uid: 'committee-b', name: 'Committee B', project_uid: 'project-1' } as Committee;
+
+  function sourceRef(id: string, overrides: Partial<WeeklyBriefSourceRef> = {}): WeeklyBriefSourceRef {
+    return { id, kind: 'meeting', title: `Meeting ${id}`, ...overrides };
+  }
+
+  function briefResponse(sourceRefs: WeeklyBriefSourceRef[]): WeeklyBriefCurrentResponse {
+    return {
+      brief: {
+        uid: 'brief-1',
+        committee_uid: 'committee-a',
+        window_start: '2026-08-02T00:00:00Z',
+        window_end: '2026-08-08T23:59:59Z',
+        state: 'generated',
+        brief_text: 'Weekly summary.',
+        source_refs: sourceRefs,
+        prompt_version: 'v1',
+        model: 'test-model',
+        regeneration_count: 0,
+        private_source_present: false,
+        created_at: '2026-08-08T00:00:00Z',
+        updated_at: '2026-08-08T00:00:00Z',
+        revision: 1,
+      },
+      throttle: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3, window_resets_at: '2026-08-09T00:00:00Z' },
+      caller_rating: null,
+    };
+  }
+
+  async function setup(sourceRefs: WeeklyBriefSourceRef[]): Promise<void> {
+    getWeeklyBrief = vi.fn(() => of(briefResponse(sourceRefs)));
+
+    await TestBed.configureTestingModule({
+      imports: [WeeklyBriefCardComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: WeeklyBriefService, useValue: { getWeeklyBrief, listWeeklyBriefs: vi.fn(() => of({ data: [] })) } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        // Real service — see the Share to Slack describe block's docblock above for why.
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(WeeklyBriefCardComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE_A);
+    fixture.componentRef.setInput('canEdit', true);
+    await fixture.whenStable();
+  }
+
+  const OVER_THRESHOLD_COUNT = WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD + 1;
+
+  /** Clicks a data-testid element and flushes it, failing loudly if the element isn't there. */
+  async function clickTestId(testId: string): Promise<HTMLElement> {
+    const el = fixture.nativeElement.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null;
+    expect(el).not.toBeNull();
+    el!.click();
+    await fixture.whenStable();
+    return el!;
+  }
+
+  it(`renders flat with no disclosure toggle at the collapse threshold (${WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD} sources)`, async () => {
+    await setup(Array.from({ length: WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-sources-toggle"]')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="weekly-brief-card-source-chip-"]')).toHaveLength(WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD);
+  });
+
+  it(`collapses behind a disclosure toggle above the threshold (${OVER_THRESHOLD_COUNT} sources)`, async () => {
+    await setup(Array.from({ length: OVER_THRESHOLD_COUNT }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })));
+
+    const toggle = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-sources-toggle"]');
+    expect(toggle).not.toBeNull();
+    expect(toggle.textContent).toContain(`Sources (${OVER_THRESHOLD_COUNT})`);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(fixture.nativeElement.querySelector('[data-testid^="weekly-brief-card-source-chip-"]')).toBeNull();
+  });
+
+  it('renders a duplicate-label group chip with its own level-2 toggle even inside the flat (at-threshold) row — dedupe applies regardless of the disclosure', async () => {
+    await setup([
+      sourceRef('vote-1', { kind: 'vote', title: 'Q1 Budget' }),
+      sourceRef('vote-2', { kind: 'vote', title: 'Q1 Budget' }),
+      sourceRef('vote-3', { kind: 'vote', title: 'Q1 Budget' }),
+      sourceRef('doc-1', { kind: 'doc', title: 'Charter.pdf' }),
+      sourceRef('meeting-1', { kind: 'meeting', title: 'Weekly Sync' }),
+    ]);
+
+    // 5 raw refs, at the threshold — flat row, no level-1 disclosure toggle.
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-sources-toggle"]')).toBeNull();
+
+    const groupToggle = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-group-toggle-vote-1"]');
+    expect(groupToggle).not.toBeNull();
+    expect(groupToggle.textContent).toContain('Q1 Budget (3)');
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-chip-vote-2"]')).toBeNull();
+
+    await clickTestId('weekly-brief-card-source-group-toggle-vote-1');
+
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-chip-vote-2"]').textContent).toContain('Q1 Budget #2');
+  });
+
+  it('still renders a chip of an unrecognized kind in the expanded view, under an "Other" section', async () => {
+    await setup([
+      ...Array.from({ length: WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })),
+      sourceRef('future-1', { kind: 'some_future_kind', title: 'A Brand New Source Kind' }),
+    ]);
+
+    await clickTestId('weekly-brief-card-sources-toggle');
+
+    // sourceRefCount still counts it even though it isn't one of the five known kinds.
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-sources-toggle"]').textContent).toContain(`Sources (${OVER_THRESHOLD_COUNT})`);
+    const otherSection = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-section-other"]');
+    expect(otherSection).not.toBeNull();
+    expect(otherSection.textContent).toContain('Other');
+    const chip = otherSection.querySelector('[data-testid="weekly-brief-card-source-chip-future-1"]');
+    expect(chip).not.toBeNull();
+    expect(chip.textContent).toContain('A Brand New Source Kind');
+  });
+
+  it('renders sections in the fixed Meetings / Votes / Mailing List / Documents / Membership / Other order', async () => {
+    await setup([
+      sourceRef('members-1', { kind: 'members', title: 'Member roster changes' }),
+      sourceRef('doc-1', { kind: 'doc', title: 'Charter.pdf' }),
+      sourceRef('ml-1', { kind: 'mailing-list', title: 'Announce List' }),
+      sourceRef('vote-1', { kind: 'vote', title: 'Q1 Budget' }),
+      sourceRef('meeting-1', { kind: 'meeting', title: 'Weekly Sync' }),
+      sourceRef('future-1', { kind: 'some_future_kind', title: 'A Brand New Source Kind' }),
+    ]);
+
+    await clickTestId('weekly-brief-card-sources-toggle');
+
+    const sectionKinds = Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="weekly-brief-card-source-section-"]')).map((el) =>
+      (el as HTMLElement).getAttribute('data-testid')
+    );
+    expect(sectionKinds).toEqual([
+      'weekly-brief-card-source-section-meeting',
+      'weekly-brief-card-source-section-vote',
+      'weekly-brief-card-source-section-mailing-list',
+      'weekly-brief-card-source-section-doc',
+      'weekly-brief-card-source-section-members',
+      'weekly-brief-card-source-section-other',
+    ]);
+  });
+
+  it('level-1 toggle expands and re-collapses the sectioned view', async () => {
+    await setup(Array.from({ length: OVER_THRESHOLD_COUNT }, (_, i) => sourceRef(`ref-${i}`, { title: `Unique Meeting ${i}` })));
+
+    const toggle = await clickTestId('weekly-brief-card-sources-toggle');
+    expect(component.sourcesExpanded()).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="weekly-brief-card-source-chip-"]')).toHaveLength(OVER_THRESHOLD_COUNT);
+
+    await clickTestId('weekly-brief-card-sources-toggle');
+    expect(component.sourcesExpanded()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid^="weekly-brief-card-source-chip-"]')).toBeNull();
+  });
+
+  it('level-2 toggle expands a group chip into ordinally-labeled instances, each still firing onSourceChipAction with its own action', async () => {
+    await setup([
+      sourceRef('vote-1', { kind: 'vote', title: 'Q1 Budget' }),
+      sourceRef('vote-2', { kind: 'vote', title: 'Q1 Budget' }),
+      sourceRef('vote-3', { kind: 'vote', title: 'Q1 Budget' }),
+      sourceRef('doc-1', { kind: 'doc', title: 'Charter.pdf' }),
+      sourceRef('meeting-1', { kind: 'meeting', title: 'Weekly Sync' }),
+      sourceRef('members-1', { kind: 'members', title: 'Member roster changes' }),
+    ]);
+
+    await clickTestId('weekly-brief-card-sources-toggle');
+
+    const groupToggle = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-group-toggle-vote-1"]');
+    expect(groupToggle).not.toBeNull();
+    expect(groupToggle.textContent).toContain('Q1 Budget (3)');
+    expect(groupToggle.getAttribute('aria-expanded')).toBe('false');
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-chip-vote-2"]')).toBeNull();
+
+    const voteDrawerRequested = vi.fn();
+    component.voteDrawerRequested.subscribe(voteDrawerRequested);
+
+    await clickTestId('weekly-brief-card-source-group-toggle-vote-1');
+
+    expect(groupToggle.getAttribute('aria-expanded')).toBe('true');
+    const instanceButton = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-chip-vote-2"]');
+    expect(instanceButton).not.toBeNull();
+    expect(instanceButton.textContent).toContain('Q1 Budget #2');
+
+    instanceButton.click();
+    expect(voteDrawerRequested).toHaveBeenCalledWith('vote-2');
+  });
+
+  it('clears sourcesExpanded and expandedSourceGroups when navigating to a different committee', async () => {
+    await setup([
+      sourceRef('vote-1', { kind: 'vote', title: 'Q1 Budget' }),
+      sourceRef('vote-2', { kind: 'vote', title: 'Q1 Budget' }),
+      sourceRef('doc-1', { kind: 'doc', title: 'Charter.pdf' }),
+      sourceRef('meeting-1', { kind: 'meeting', title: 'Weekly Sync' }),
+      sourceRef('members-1', { kind: 'members', title: 'Member roster changes' }),
+      sourceRef('mailing-1', { kind: 'mailing-list', title: 'Announce List' }),
+    ]);
+
+    await clickTestId('weekly-brief-card-sources-toggle');
+    await clickTestId('weekly-brief-card-source-group-toggle-vote-1');
+    expect(component.sourcesExpanded()).toBe(true);
+    expect(component.expandedSourceGroups().has('vote-1')).toBe(true);
+
+    getWeeklyBrief.mockReturnValue(of(briefResponse([])));
+    fixture.componentRef.setInput('committee', COMMITTEE_B);
+    await fixture.whenStable();
+
+    expect(component.sourcesExpanded()).toBe(false);
+    expect(component.expandedSourceGroups().size).toBe(0);
   });
 });

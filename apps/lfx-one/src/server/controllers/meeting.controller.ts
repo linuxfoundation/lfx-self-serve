@@ -21,7 +21,7 @@ import {
 import { NextFunction, Request, Response } from 'express';
 
 import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
-import { ServiceValidationError } from '../errors';
+import { AuthorizationError, ServiceValidationError } from '../errors';
 import { addInvitedStatusToMeeting, applyHostKeyVisibility, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
@@ -133,7 +133,9 @@ export class MeetingController {
         return;
       }
 
-      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting');
+      // includeProject: enrich with project_slug/project_name/is_foundation so clients can
+      // reconcile project context from the meeting payload itself.
+      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: true, includeProject: true });
 
       // Log the success
       logger.success(req, 'get_meeting_by_id', startTime, {
@@ -370,14 +372,18 @@ export class MeetingController {
    */
   public async getMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp, occurrence_id } = req.query;
+    const { include_rsvp, occurrence_id, fail_on_partial, committee_uid } = req.query;
     const includeRsvp = include_rsvp === 'true';
     const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
+    const failOnPartial = fail_on_partial === 'true';
+    const committeeUid = typeof committee_uid === 'string' && committee_uid.length > 0 ? committee_uid : undefined;
 
     const startTime = logger.startOperation(req, 'get_meeting_registrants', {
       meeting_id: uid,
       include_rsvp: includeRsvp,
       occurrence_id: occurrenceId,
+      fail_on_partial: failOnPartial,
+      committee_id: committeeUid,
     });
 
     try {
@@ -391,8 +397,22 @@ export class MeetingController {
         return;
       }
 
-      // Get the meeting registrants
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId);
+      // Completeness (failOnPartial) is only ever requested by the committee "import registrants"
+      // flow — that's a privileged, business-logic-heavy path (authorization, size cap), so it's
+      // delegated to MeetingService.getAuthorizedRegistrantsForImport per the three-file pattern
+      // (docs/reviews/backend-checklist.md). The 3 partial-tolerant callers are unaffected.
+      let registrants: MeetingRegistrant[];
+      if (failOnPartial) {
+        if (!committeeUid) {
+          throw new AuthorizationError('committee_uid is required when requesting a complete registrant roster', {
+            operation: 'get_meeting_registrants',
+            service: 'meeting_controller',
+          });
+        }
+        registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
+      } else {
+        registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
+      }
 
       logger.success(req, 'get_meeting_registrants', startTime, {
         meeting_id: uid,
@@ -438,7 +458,7 @@ export class MeetingController {
 
       // Step 1: Get the meeting with access check to determine organizer status
       logger.debug(req, 'get_my_meeting_registrants', 'Fetching meeting details with access check', { meeting_id: uid });
-      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', true);
+      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: true });
       if (!meeting) {
         logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,
