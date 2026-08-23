@@ -19,7 +19,7 @@
           }
         </h1>
         @if (foundationName()) {
-          <p class="text-sm text-gray-400" data-testid="public-project-groups-foundation">{{ foundationName() }}</p>
+          <p class="text-sm text-gray-500" data-testid="public-project-groups-foundation">{{ foundationName() }}</p>
         }
         <p class="text-sm text-gray-500" data-testid="public-project-groups-subtitle">
           Discover official working groups, special interest groups, and committees for this project.
@@ -67,7 +67,7 @@
           <a
             [routerLink]="['/groups', group.uid]"
             role="listitem"
-            class="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+            class="flex items-start gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 sm:items-center"
             [attr.data-testid]="'public-project-groups-item-' + group.uid"
             [attr.aria-label]="group.name + ', ' + config.label">
             <!-- Icon -->
@@ -75,16 +75,21 @@
               <i [class]="config.icon + ' ' + config.color + ' text-base'" aria-hidden="true"></i>
             </div>
 
-            <!-- Name + meta -->
-            <div class="flex flex-col gap-0.5 flex-1 min-w-0">
-              <p class="truncate text-sm font-medium text-gray-900" data-testid="public-project-groups-item-name">{{ group.name }}</p>
-              @if (group.description) {
-                <p class="truncate text-xs text-gray-500 mt-0.5 hidden sm:block" data-testid="public-project-groups-item-desc">{{ group.description }}</p>
-              }
-            </div>
+            <!-- Name + meta + behavioral class chip: stacked below `sm`; `sm:contents` folds this
+                 wrapper away at `sm+` so the name/meta block and chip become direct flex items of
+                 the row again, reproducing the pre-existing desktop layout (see
+                 org-groups.component.html / PR #1789). -->
+            <div class="flex flex-1 min-w-0 flex-col gap-2 sm:contents" data-testid="public-project-groups-item-meta-wrapper">
+              <div class="flex flex-1 min-w-0 flex-col gap-0.5" data-testid="public-project-groups-item-meta-block">
+                <p class="truncate text-sm font-medium text-gray-900" data-testid="public-project-groups-item-name">{{ group.name }}</p>
+                @if (group.description) {
+                  <p class="truncate text-xs text-gray-500 mt-0.5 hidden sm:block" data-testid="public-project-groups-item-desc">{{ group.description }}</p>
+                }
+              </div>
 
-            <!-- Behavioral class chip -->
-            <lfx-tag [value]="config.label" [severity]="'secondary'" class="shrink-0 hidden sm:flex" />
+              <!-- Behavioral class chip -->
+              <lfx-tag [value]="config.label" [severity]="'secondary'" class="flex w-fit shrink-0" data-testid="public-project-groups-item-class-chip" />
+            </div>
 
             <!-- Join mode badge -->
             @if (group.joinLabel) {
