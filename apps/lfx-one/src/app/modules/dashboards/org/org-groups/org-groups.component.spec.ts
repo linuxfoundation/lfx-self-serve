@@ -3,15 +3,15 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
-import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
+import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import type { Account, OrgDropdownOption, OrgLensGroupSummary, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensGroupsService } from '@services/org-lens-groups.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
-import { of, Subject, throwError } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { signal, type WritableSignal } from '@angular/core';
 
 import { OrgGroupsComponent } from './org-groups.component';
@@ -148,7 +148,7 @@ describe('OrgGroupsComponent', () => {
     expect(has(initialLoad, 'org-groups-stat-strip')).toBe(false);
     expect(has(initialLoad, 'org-groups-list-loading')).toBe(true);
     expect(has(initialLoad, 'org-groups-list')).toBe(false);
-    expect(statSkeletonCards(initialLoad).length).toBe(4);
+    expect(statSkeletonCards(initialLoad).length).toBe(6);
     expect(listSkeletonRows(initialLoad).length).toBe(5);
 
     // groupsLoading() branch — page loaded, but the group fetch never resolves.
@@ -158,7 +158,7 @@ describe('OrgGroupsComponent', () => {
     expect(has(groupsFetching, 'org-groups-list')).toBe(true);
     expect(has(groupsFetching, 'org-groups-list-loading')).toBe(false);
     expect(has(groupsFetching, 'org-groups-stat-total')).toBe(false);
-    expect(statSkeletonCards(groupsFetching).length).toBe(4);
+    expect(statSkeletonCards(groupsFetching).length).toBe(6);
     expect(listSkeletonRows(groupsFetching).length).toBe(5);
   });
 
@@ -570,5 +570,186 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
 
     const rowLink = fixture.nativeElement.querySelector('[data-testid="org-groups-row-link-g1"]');
     expect(rowLink?.getAttribute('href')).toBe('/groups/g1');
+  });
+});
+
+/**
+ * GH-1779: the stat strip used to hardcode Working Groups + SIGs as if they were the only
+ * behavioral classes, silently dropping every other class from the total (19 unaccounted groups
+ * on a live org). This spec pins the fix — every non-zero class renders exactly one tile, a
+ * zero-count class (e.g. governing-board, typically 0 since the BFF drops the exact "Board"
+ * category) renders none, and the rendered tiles always sum back to total_groups — plus that the
+ * two loading skeletons agree on a placeholder count so resolving data doesn't jump the tile
+ * count twice.
+ */
+describe('OrgGroupsComponent stat strip', () => {
+  // 4 oversight-committee / 3 working-group / 2 special-interest-group / 1 ambassador-program /
+  // 1 other (Committee) — five of the six classes (governing-board stays 0 for the "renders no
+  // tile" case below), with distinct non-tied counts (other ties ambassador-program at 1 but is
+  // pinned last regardless) so a regression that hardcodes back to a subset of classes — the
+  // original GH-1779 shape — fails here instead of passing on an accidentally-narrow fixture.
+  const RESPONSE: OrgLensGroupsResponse = {
+    groups: [
+      { uid: 'g1', name: 'WG One', category: 'Working Group', org_seat_count: 5 },
+      { uid: 'g2', name: 'WG Two', category: 'Working Group', org_seat_count: 3 },
+      { uid: 'g3', name: 'WG Three', category: 'Working Group', org_seat_count: 1 },
+      { uid: 'g4', name: 'SIG One', category: 'Special Interest Group', org_seat_count: 4 },
+      { uid: 'g5', name: 'SIG Two', category: 'Special Interest Group', org_seat_count: 2 },
+      { uid: 'g6', name: 'Committee One', category: 'Committee', org_seat_count: 1 },
+      { uid: 'g7', name: 'TSC One', category: 'Technical Steering Committee', org_seat_count: 6 },
+      { uid: 'g8', name: 'TSC Two', category: 'Technical Steering Committee', org_seat_count: 5 },
+      { uid: 'g9', name: 'TSC Three', category: 'Technical Steering Committee', org_seat_count: 4 },
+      { uid: 'g10', name: 'TSC Four', category: 'Technical Steering Committee', org_seat_count: 1 },
+      { uid: 'g11', name: 'Ambassador One', category: 'Ambassador', org_seat_count: 2 },
+    ],
+    total_groups: 11,
+    total_seats: 34,
+  };
+
+  let fixture: ComponentFixture<OrgGroupsComponent>;
+
+  async function render(opts: { orgLoaded?: boolean; getGroups?: () => Observable<OrgLensGroupsResponse> } = {}): Promise<void> {
+    const { orgLoaded = true, getGroups = () => of(RESPONSE) } = opts;
+
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [OrgGroupsComponent],
+      providers: [
+        provideRouter([]),
+        {
+          provide: AccountContextService,
+          useValue: { selectedAccount: signal({ accountId: 'org-1', accountName: 'Org One', uid: 'org-1' } as Account), hasOrgSelectorAccess: signal(true) },
+        },
+        { provide: OrgNavigationService, useValue: { loaded: signal(orgLoaded) } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: signal(orgLoaded) } },
+        { provide: PersonaService, useValue: { personaLoaded: signal(orgLoaded) } },
+        { provide: OrgLensGroupsService, useValue: { getGroups: vi.fn(getGroups) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(OrgGroupsComponent);
+    await fixture.whenStable();
+  }
+
+  function rootElement(): HTMLElement {
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  function statTile(cls: string): HTMLElement | null {
+    return rootElement().querySelector(`[data-testid="org-groups-stat-${cls}"]`);
+  }
+
+  // Count testid is keyed by class, not position, and namespaced as org-groups-tile-count-*
+  // (not org-groups-stat-*) so it can't be picked up by the tile-prefix queries below.
+  function statCount(cls: string): number {
+    return Number(rootElement().querySelector(`[data-testid="org-groups-tile-count-${cls}"]`)?.textContent?.trim());
+  }
+
+  // `div[...]` excludes the enclosing `<section data-testid="org-groups-stat-strip">`, whose own
+  // testid also matches the `^=` prefix.
+  function classTiles(): HTMLElement[] {
+    const all = Array.from(rootElement().querySelectorAll<HTMLElement>('div[data-testid^="org-groups-stat-"]'));
+    return all.filter((el) => !['org-groups-stat-total', 'org-groups-stat-seats'].includes(el.getAttribute('data-testid') ?? ''));
+  }
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('renders no tile for a zero-count behavioral class', async () => {
+    await render();
+
+    expect(statTile('governing-board')).toBeNull();
+  });
+
+  it('renders one tile per non-zero behavioral class, labeled from BEHAVIORAL_CLASS_CONFIG', async () => {
+    await render();
+
+    expect(statTile('oversight-committee')?.textContent).toContain(BEHAVIORAL_CLASS_CONFIG['oversight-committee'].label);
+    expect(statTile('working-group')?.textContent).toContain(BEHAVIORAL_CLASS_CONFIG['working-group'].label);
+    expect(statTile('special-interest-group')?.textContent).toContain(BEHAVIORAL_CLASS_CONFIG['special-interest-group'].label);
+    expect(statTile('ambassador-program')?.textContent).toContain(BEHAVIORAL_CLASS_CONFIG['ambassador-program'].label);
+    expect(statTile('other')?.textContent).toContain(BEHAVIORAL_CLASS_CONFIG.other.label);
+    expect(classTiles()).toHaveLength(5);
+  });
+
+  it('renders the correct count on each class tile', async () => {
+    await render();
+
+    expect(statCount('oversight-committee')).toBe(4);
+    expect(statCount('working-group')).toBe(3);
+    expect(statCount('special-interest-group')).toBe(2);
+    expect(statCount('ambassador-program')).toBe(1);
+    expect(statCount('other')).toBe(1);
+  });
+
+  // Independent of the per-class assertions above, so a class silently missing its tile (the
+  // original GH-1779 bug) fails here regardless.
+  it('sums the rendered class tiles to total_groups', async () => {
+    await render();
+
+    const counts = classTiles().map((el) => ({
+      tile: el.getAttribute('data-testid'),
+      count: Number(el.querySelector('[data-testid^="org-groups-tile-count-"]')?.textContent?.trim()),
+    }));
+
+    // Checked before the sum so a tile missing its count element fails with its testid named,
+    // not a bare NaN.
+    expect(counts.filter(({ count }) => !Number.isFinite(count))).toEqual([]);
+    expect(counts.reduce((sum, { count }) => sum + count, 0)).toBe(RESPONSE.total_groups);
+  });
+
+  it('orders the class tiles largest-first, other last', async () => {
+    await render();
+
+    const order = classTiles().map((el) => el.getAttribute('data-testid'));
+    expect(order).toEqual([
+      'org-groups-stat-oversight-committee',
+      'org-groups-stat-working-group',
+      'org-groups-stat-special-interest-group',
+      'org-groups-stat-ambassador-program',
+      'org-groups-stat-other',
+    ]);
+  });
+
+  it('pins the other tile last even when it has the highest count', async () => {
+    await render({
+      getGroups: () =>
+        of({
+          groups: [
+            { uid: 'g1', name: 'WG One', category: 'Working Group', org_seat_count: 1 },
+            { uid: 'g2', name: 'Committee One', category: 'Committee', org_seat_count: 1 },
+            { uid: 'g3', name: 'Committee Two', category: 'Committee', org_seat_count: 1 },
+          ],
+          total_groups: 3,
+          total_seats: 3,
+        }),
+    });
+
+    const order = classTiles().map((el) => el.getAttribute('data-testid'));
+    expect(order).toEqual(['org-groups-stat-working-group', 'org-groups-stat-other']);
+  });
+
+  it('sizes the grid to the actual rendered tile count via --cols', async () => {
+    await render();
+
+    const section = rootElement().querySelector('[data-testid="org-groups-stat-strip"]') as HTMLElement;
+    // --cols must equal actual grid children (any tag, via :scope > *), not just testid-tagged
+    // ones — paired with the completeness check below so an untagged child fails loudly.
+    const gridChildren = section.querySelectorAll(':scope > *').length;
+
+    expect(section.querySelectorAll('[data-testid^="org-groups-stat-"]')).toHaveLength(gridChildren);
+    expect(section.style.getPropertyValue('--cols').trim()).toBe(String(gridChildren));
+  });
+
+  it('renders the same skeleton card count whether org access or group data is still loading', async () => {
+    await render({ orgLoaded: false });
+    const outerSkeleton = fixture.nativeElement.querySelectorAll('[data-testid="org-groups-skeleton"] [data-testid="org-groups-stat-skeleton-card"]');
+
+    await render({ getGroups: () => NEVER });
+    const innerSkeleton = fixture.nativeElement.querySelectorAll('[data-testid="org-groups-stat-strip"] [data-testid="org-groups-stat-skeleton-card"]');
+
+    expect(outerSkeleton.length).toBeGreaterThan(0);
+    expect(outerSkeleton.length).toBe(innerSkeleton.length);
   });
 });
