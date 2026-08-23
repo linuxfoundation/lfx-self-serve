@@ -16,20 +16,41 @@ describe('mapV1BandToV2', () => {
   it.each(['excellent', 'healthy', 'fair', 'concerning', 'critical', 'unavailable'] as const)('passes already-v2 band %s through unchanged', (band) => {
     expect(mapV1BandToV2(band)).toBe(band);
   });
+
+  it('passes null through unchanged for optional band input', () => {
+    expect(mapV1BandToV2(null)).toBe(null);
+  });
+
+  it('passes undefined through unchanged for optional band input', () => {
+    expect(mapV1BandToV2(undefined)).toBe(undefined);
+  });
 });
 
 describe('mapV1DistributionToV2', () => {
   it('maps v1 keys to v2 keys while preserving values', () => {
     expect(mapV1DistributionToV2({ excellent: 1, stable: 2, unsteady: 3, critical: 4 })).toEqual({
       excellent: 1,
+      healthy: 0,
       fair: 2,
       concerning: 3,
       critical: 4,
+      unscored: 0,
     });
   });
 
   it('passes an already-v2 distribution through unchanged', () => {
-    const distribution = { excellent: 1, healthy: 2, fair: 3, concerning: 4, critical: 5 };
+    const distribution = { excellent: 1, healthy: 2, fair: 3, concerning: 4, critical: 5, unscored: 0 };
     expect(mapV1DistributionToV2(distribution)).toEqual(distribution);
+  });
+
+  it('preserves unscored count when mapping distribution', () => {
+    expect(mapV1DistributionToV2({ excellent: 1, stable: 2, unsteady: 3, critical: 4, unscored: 5 })).toEqual({
+      excellent: 1,
+      healthy: 0,
+      fair: 2,
+      concerning: 3,
+      critical: 4,
+      unscored: 5,
+    });
   });
 });

@@ -1903,13 +1903,15 @@ export class ProjectService {
 
     // Fold any category outside the 5 scored values into `unscored` to mirror the detail
     // endpoint's normalizeHealthScoreCategory (→ null → Unscored), so chart and table agree.
+    // Accept both v1 and v2 band names; map v2 names (fair/concerning) to v1-keyed buckets.
     result.rows.forEach((row) => {
       const category = row.HEALTH_SCORE_CATEGORY.toLowerCase();
-      if (category === 'excellent') distribution.excellent = row.PROJECT_COUNT;
-      else if (category === 'healthy') distribution.healthy = row.PROJECT_COUNT;
-      else if (category === 'stable') distribution.stable = row.PROJECT_COUNT;
-      else if (category === 'unsteady') distribution.unsteady = row.PROJECT_COUNT;
-      else if (category === 'critical') distribution.critical = row.PROJECT_COUNT;
+      const normalizedCategory = mapV1BandToV2(category);
+      if (normalizedCategory === 'excellent') distribution.excellent = row.PROJECT_COUNT;
+      else if (normalizedCategory === 'healthy') distribution.healthy = row.PROJECT_COUNT;
+      else if (normalizedCategory === 'fair') distribution.stable = row.PROJECT_COUNT;
+      else if (normalizedCategory === 'concerning') distribution.unsteady = row.PROJECT_COUNT;
+      else if (normalizedCategory === 'critical') distribution.critical = row.PROJECT_COUNT;
       else distribution.unscored += row.PROJECT_COUNT;
     });
 
@@ -7745,11 +7747,12 @@ export class ProjectService {
         unscored: 0,
       };
       const category = row.HEALTH_SCORE_CATEGORY.toLowerCase();
-      if (category === 'excellent') existing.excellent = row.PROJECT_COUNT;
-      else if (category === 'healthy') existing.healthy = row.PROJECT_COUNT;
-      else if (category === 'stable') existing.stable = row.PROJECT_COUNT;
-      else if (category === 'unsteady') existing.unsteady = row.PROJECT_COUNT;
-      else if (category === 'critical') existing.critical = row.PROJECT_COUNT;
+      const normalizedCategory = mapV1BandToV2(category);
+      if (normalizedCategory === 'excellent') existing.excellent = row.PROJECT_COUNT;
+      else if (normalizedCategory === 'healthy') existing.healthy = row.PROJECT_COUNT;
+      else if (normalizedCategory === 'fair') existing.stable = row.PROJECT_COUNT;
+      else if (normalizedCategory === 'concerning') existing.unsteady = row.PROJECT_COUNT;
+      else if (normalizedCategory === 'critical') existing.critical = row.PROJECT_COUNT;
       // Fold 'unscored' and any unexpected category into `unscored` to match the
       // detail endpoint's normalizeHealthScoreCategory (→ null → Unscored in the drawer).
       else existing.unscored += row.PROJECT_COUNT;
