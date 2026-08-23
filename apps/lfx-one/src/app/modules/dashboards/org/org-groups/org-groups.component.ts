@@ -5,7 +5,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormGroup } from '@angular/forms';
 import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import type {
   BehavioralClassDisplayConfig,
@@ -31,7 +31,7 @@ import { PersonaService } from '@services/persona.service';
 
 @Component({
   selector: 'lfx-org-groups',
-  imports: [EmptyStateComponent, InputTextComponent, NgTemplateOutlet, ReactiveFormsModule, RouterLink, SelectComponent, SkeletonModule, TagComponent],
+  imports: [EmptyStateComponent, InputTextComponent, NgTemplateOutlet, RouterLink, SelectComponent, SkeletonModule, TagComponent],
   templateUrl: './org-groups.component.html',
 })
 export class OrgGroupsComponent {
@@ -94,7 +94,8 @@ export class OrgGroupsComponent {
   private readonly groupsData: Signal<OrgLensGroupsResponse | null | undefined> = this.initGroupsData();
 
   protected readonly groups: Signal<OrgLensGroupSummary[]> = computed(() => this.groupsData()?.groups ?? []);
-  protected readonly groupsWithClass: Signal<OrgLensGroupVm[]> = this.initGroupsWithClass();
+  // Not read from the template — filteredGroups() is what the @for actually iterates.
+  private readonly groupsWithClass: Signal<OrgLensGroupVm[]> = this.initGroupsWithClass();
   protected readonly totalGroups: Signal<number> = computed(() => this.groupsData()?.total_groups ?? 0);
   protected readonly totalSeats: Signal<number> = computed(() => this.groupsData()?.total_seats ?? 0);
 

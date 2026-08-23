@@ -97,7 +97,7 @@ function listSkeletonRows(fixture: ComponentFixture<OrgGroupsComponent>): NodeLi
 }
 
 function statSkeletonCards(fixture: ComponentFixture<OrgGroupsComponent>): NodeListOf<Element> {
-  return fixture.nativeElement.querySelectorAll('[data-testid="org-groups-skeleton"] > div, [data-testid="org-groups-stat-strip"] > div');
+  return fixture.nativeElement.querySelectorAll('[data-testid="org-groups-stat-skeleton-card"]');
 }
 
 /** The row-link testid ('org-groups-row-link-<uid>') is deliberately not a prefix-extension of the
