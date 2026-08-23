@@ -3,36 +3,18 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
-import { AppService } from '@services/app.service';
 import { GroupService } from '@services/group.service';
-import { LensService } from '@services/lens.service';
-import { ProjectService } from '@services/project.service';
-import { UserService } from '@services/user.service';
+import { headerTestProviders, installMatchMediaShim } from '@shared/testing/header-test-providers';
 import { of } from 'rxjs';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { PublicGroupDirectoryResponse, PublicGroupSummary } from '@lfx-one/shared/interfaces';
 
 import { PublicProjectGroupsComponent } from './public-project-groups.component';
 
-// jsdom doesn't implement matchMedia; PrimeNG's Menubar (rendered inside <lfx-header/>) calls it
-// on init to bind a responsive listener.
-beforeAll(() => {
-  window.matchMedia ??= ((query: string) =>
-    ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    }) as unknown as MediaQueryList) as typeof window.matchMedia;
-});
+beforeAll(installMatchMediaShim);
 
 function group(over: Partial<PublicGroupSummary> = {}): PublicGroupSummary {
   return {
@@ -63,12 +45,7 @@ describe('PublicProjectGroupsComponent — contrast and responsive row layout (G
       providers: [
         { provide: GroupService, useValue: { getPublicProjectGroups: () => of(response) } },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['projectSlug', slug]])) } },
-        // <lfx-header/> deps — mocked directly rather than resolving the real LensService ->
-        // PersonaService -> AccountContextService chain, which needs far more than HttpClient.
-        { provide: UserService, useValue: { authenticated: signal(false), getCurrentUserProfile: vi.fn(() => of(null)) } },
-        { provide: LensService, useValue: { setLens: vi.fn() } },
-        { provide: ProjectService, useValue: { searchProjects: vi.fn(() => of([])) } },
-        { provide: AppService, useValue: { toggleMobileSidebar: vi.fn() } },
+        ...headerTestProviders(),
         provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
@@ -89,7 +66,12 @@ describe('PublicProjectGroupsComponent — contrast and responsive row layout (G
     expect(line?.className).not.toContain('text-gray-400');
   });
 
-  it('behavioral class chip has no hidden class at any breakpoint, and keeps its explicit flex + shrink-0', async () => {
+  it('behavioral class chip renders its label text and has no hidden class at any breakpoint, keeping its explicit flex + shrink-0', async () => {
+    // The label text itself is asserted, not just the chip's presence — the WCAG 1.4.1 fix this
+    // ticket makes is specifically that the behavioral class gains a *textual* signal on mobile
+    // beside the row icon's color (aria-hidden), so an empty pill would still pass a presence-only
+    // check without fixing the actual defect.
+    //
     // `flex` and `shrink-0` are asserted, not just the absence of `hidden`, because a "drop
     // redundant class" pass could silently regress both without failing any other assertion here:
     // without `flex` the host still renders (it blockifies to `block` as a flex item either way) —
@@ -100,6 +82,7 @@ describe('PublicProjectGroupsComponent — contrast and responsive row layout (G
 
     const chip = fixture.nativeElement.querySelector('[data-testid="public-project-groups-item-class-chip"]');
     expect(chip).not.toBeNull();
+    expect(chip?.textContent?.trim()).toBe('Working Groups');
     const chipClasses = (chip?.getAttribute('class') ?? '').split(/\s+/);
     expect(chipClasses.some((c: string) => c === 'hidden' || c.endsWith(':hidden'))).toBe(false);
     expect(chipClasses).toContain('flex');
@@ -130,5 +113,18 @@ describe('PublicProjectGroupsComponent — contrast and responsive row layout (G
     const blockClasses = (block?.className ?? '').split(/\s+/);
     expect(blockClasses).toContain('flex-1');
     expect(blockClasses).toContain('min-w-0');
+  });
+
+  it('row keeps items-start/sm:items-center so the icon top-aligns against the stacked mobile column, not the desktop centering', async () => {
+    // Regression lock: without `items-start`, the icon and chevron would vertically center against
+    // the full two-line stacked column's height on mobile instead of aligning to its top — the same
+    // "drop redundant class" risk the other tests in this file guard against.
+    await render({ groups: [group()], total: 1 });
+
+    const row = fixture.nativeElement.querySelector('[data-testid^="public-project-groups-item-"]');
+    expect(row).not.toBeNull();
+    const rowClasses = (row?.className ?? '').split(/\s+/);
+    expect(rowClasses).toContain('items-start');
+    expect(rowClasses).toContain('sm:items-center');
   });
 });
