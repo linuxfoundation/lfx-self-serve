@@ -17,7 +17,7 @@ import {
   PROJECT_HEALTH_CHART_CATEGORY_LABEL,
   PRIMARY_FOUNDATION_HEALTH_METRICS,
 } from '@lfx-one/shared/constants';
-import { DashboardDrawerType, FilterPillOption, HealthStatusFilterValue, ZeroStubBarDataset } from '@lfx-one/shared/interfaces';
+import { DashboardDrawerType, FilterPillOption, ZeroStubBarDataset } from '@lfx-one/shared/interfaces';
 import { hexToRgba, computePeriodChange, computeHealthyOrBetterPct, computeScoredCount, mapV1DistributionToV2 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -557,7 +557,7 @@ export class FoundationHealthComponent {
   }
 
   private transformProjectHealthScores(metric: DashboardMetricCard): DashboardMetricCard {
-    const data = mapV1DistributionToV2(this.healthScoresData()) as unknown as Record<HealthStatusFilterValue, number>;
+    const data = mapV1DistributionToV2(this.healthScoresData());
     const scored = computeScoredCount(data);
 
     // "Healthy or better" is the card's health KPI; the distribution chart is the visualization,

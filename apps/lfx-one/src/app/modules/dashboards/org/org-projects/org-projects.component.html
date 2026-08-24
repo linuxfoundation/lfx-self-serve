@@ -177,7 +177,7 @@
                     type="button"
                     class="flex items-center gap-1 whitespace-nowrap font-semibold"
                     (click)="toggleSort('health')"
-                    pTooltip="LFX Insights project health classification: Excellent, Healthy, Stable, Unsteady, or Critical."
+                    pTooltip="LFX Insights project health classification: Excellent, Healthy, Fair, Concerning, or Critical."
                     tooltipPosition="top"
                     tooltipStyleClass="lfx-tooltip-wide">
                     Health
@@ -284,8 +284,7 @@
                 </td>
                 <td>
                   <span
-                    class="inline-flex cursor-help rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                    tabindex="0"
+                    class="inline-flex rounded"
                     role="img"
                     [attr.aria-label]="project.healthAriaLabel"
                     [attr.data-testid]="'org-projects-health-' + project.slug">

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FoundationHealthScore, FoundationHealthScoreDistributionResponse, HealthScore } from '../interfaces';
+import type { FoundationHealthScore, FoundationHealthScoreDistributionResponse, HealthScore, HealthStatusFilterValue } from '../interfaces';
 
 /**
  * Maps v1 health score band names to v2 equivalents.
@@ -32,8 +32,10 @@ export function mapV1BandToV2(band: string | FoundationHealthScore | HealthScore
  * Converts keys from v1 band names (stable/unsteady) to v2 (fair/concerning).
  * Returns an object with v2 band names as keys for display use.
  */
-export function mapV1DistributionToV2(distribution: FoundationHealthScoreDistributionResponse | Record<string, number>): Record<string, number> {
-  const mapped: Record<string, number> = {
+export function mapV1DistributionToV2(
+  distribution: FoundationHealthScoreDistributionResponse | Record<string, number>
+): Record<HealthStatusFilterValue, number> {
+  const mapped: Record<HealthStatusFilterValue, number> = {
     excellent: 0,
     healthy: 0,
     fair: 0,
@@ -43,9 +45,12 @@ export function mapV1DistributionToV2(distribution: FoundationHealthScoreDistrib
   };
 
   for (const [key, value] of Object.entries(distribution)) {
-    const mappedKey = mapV1BandToV2(key) as string;
-    if (mappedKey in mapped) {
-      mapped[mappedKey] = (mapped[mappedKey] || 0) + value;
+    const mappedKey = mapV1BandToV2(key);
+    // Type guard: only include keys that match HealthStatusFilterValue
+    // (excludes 'unavailable' which can be returned by mapV1BandToV2 but isn't in the result set)
+    const validKeys: readonly HealthStatusFilterValue[] = ['excellent', 'healthy', 'fair', 'concerning', 'critical', 'unscored'];
+    if (mappedKey && validKeys.includes(mappedKey as HealthStatusFilterValue)) {
+      mapped[mappedKey as HealthStatusFilterValue] = (mapped[mappedKey as HealthStatusFilterValue] || 0) + value;
     }
   }
 
