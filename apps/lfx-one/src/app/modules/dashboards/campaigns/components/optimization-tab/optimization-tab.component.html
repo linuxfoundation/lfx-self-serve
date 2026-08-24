@@ -128,6 +128,11 @@
           `aria-live` is on an element that is ALWAYS rendered, with only its text changing.
           Wrapping it in an `@if` would create the region and its content in the same tick, and a
           region that does not pre-exist its content is frequently not announced at all.
+
+          The text is COMPUTED from the per-row pending map, not assigned. It names every row
+          currently working, so one row finishing cannot silence a message still true of another,
+          and it carries no outcome text — outcomes belong to the toast, which is itself a live
+          region and would otherwise double-announce.
         -->
         <div class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="optimization-toggle-announcement">{{ toggleAnnouncement() }}</div>
         <ul class="flex flex-col gap-2">
@@ -136,10 +141,15 @@
               <div class="flex min-w-0 flex-col gap-0.5">
                 <span class="truncate text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
                 <span class="text-xs text-gray-500">{{ row.campaign.platform }} · {{ row.status }}</span>
+                <!--
+                  NOT `role="alert"`. The failure is already announced by the toast, which is
+                  itself a live region — a second live role here made one failure speak twice.
+                  This text stays as the button's `aria-describedby` target (see `describedByFor`),
+                  so it is read WITH the control on demand rather than fired at the user again.
+                -->
                 @if (toggleError()[row.campaign.id]; as message) {
                   <span
                     class="text-xs text-red-600"
-                    role="alert"
                     [id]="'campaign-error-' + row.campaign.id"
                     [attr.data-testid]="'optimization-campaign-error-' + row.campaign.id"
                     >{{ message }}</span
@@ -180,12 +190,18 @@
                 [attr.aria-describedby]="row.describedBy"
                 class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 [attr.data-testid]="'optimization-campaign-toggle-' + row.campaign.id">
+                <!--
+                  The visible label stays the ACTION word while pending, rather than becoming
+                  "Working". The accessible name is `row.toggleLabel + campaign`, so swapping the
+                  visible text broke label-in-name: a speech-input user says what they see
+                  ("click Pause") and it no longer matched the name. Progress is carried by the
+                  spinner for sighted users, `aria-busy` on the button, and the live region above
+                  for assistive tech — none of which change what the control is CALLED.
+                -->
                 @if (togglePending()[row.campaign.id]) {
                   <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
-                  Working
-                } @else {
-                  {{ row.toggleLabel }}
                 }
+                {{ row.toggleLabel }}
               </button>
             </li>
           }

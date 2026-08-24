@@ -116,26 +116,65 @@ export class OptimizationTabComponent implements OnInit {
    * boolean would disable every button while one request is out, and worse, an error on one row
    * would render against another.
    */
-  protected readonly togglePending = signal<Record<string, boolean>>({});
+  /**
+   * Holds the DIRECTION dispatched, not merely `true`.
+   *
+   * The template only asks "is this row busy?", but the live region has to say WHICH action is in
+   * flight, and re-deriving that from the row would be a guess: `row.action` is computed from the
+   * row's status, which is deliberately NOT updated optimistically, so it happens to still read
+   * the dispatched direction today purely because the status has not moved yet. Recording what
+   * was actually sent removes that dependency — the announcement states the direction the request
+   * carries rather than one inferred from state the request has not yet changed.
+   */
+  protected readonly togglePending = signal<Record<string, Exclude<CampaignToggleAction, 'unavailable'> | undefined>>({});
   protected readonly toggleError = signal<Record<string, string>>({});
 
   /**
-   * The text of the visually-hidden `aria-live="polite"` region that narrates a toggle.
+   * The text of the visually-hidden `aria-live="polite"` region: which rows are CURRENTLY working.
    *
-   * A separate surface from the button's own label, and that separation is the fix. The pending
-   * state used to be announced by swapping the button's `aria-label` to "Working" and setting
-   * `aria-busy`, on the SAME button that goes native-`disabled` in the same tick. A disabled
-   * button leaves the focus order, and screen readers do not reliably announce an attribute
-   * change on an unfocused, disabled element — so the announcement the change existed to make
-   * was only perceivable if the user manually navigated back to a control they could no longer
-   * focus.
+   * ONE ownership rule governs all four announcement sites, and stating it once is what stops the
+   * three separate defects that came from patching them individually:
    *
-   * A live region has no such dependency: it is announced wherever focus happens to be. Empty
-   * when there is nothing to say, so the region does not re-announce stale text — and written on
-   * DISPATCH, on CONFIRMATION and on FAILURE, so the narration covers the whole interaction
-   * rather than only its beginning.
+   *   PENDING is owned by this region. OUTCOME is owned by the toast.
+   *
+   * Pending needs the region because the control that would otherwise carry it goes native
+   * `disabled` in the same tick: a disabled button leaves the focus order, and screen readers do
+   * not reliably announce an `aria-label`/`aria-busy` change on an unfocused, disabled element.
+   * A live region is announced wherever focus happens to be, so it has no such dependency.
+   *
+   * Outcome belongs to the toast because `p-toast` is ITSELF a live region (`role="alert"`), and
+   * the row additionally renders its failure text. Announcing an outcome here too would speak one
+   * action twice — three times on the failure arm. The toast is also the only surface that
+   * survives this component's destruction, which is what a mutation outliving its tab requires.
+   *
+   * DERIVED, not written. Every earlier bug here came from this being an imperatively-assigned
+   * slot: a single string standing in for per-row state, so whichever response answered first
+   * wiped a message still true of another row, and a late response from an abandoned brief could
+   * wipe a live one. Computing it from `togglePending` — the same per-row map that drives the
+   * buttons — makes those states unrepresentable rather than merely guarded: the region is a
+   * function of which rows are working, so it can never disagree with them.
+   *
+   * Names every working campaign rather than "N campaigns working": with two rows in flight the
+   * operator needs to know WHICH, and the count alone is exactly the information they lack.
    */
-  protected readonly toggleAnnouncement = signal('');
+  protected readonly toggleAnnouncement = computed(() => {
+    const pending = this.togglePending();
+    const rows = this.campaignRows();
+    if (rows === null) {
+      return '';
+    }
+    // Read off the delivered rows rather than a captured name, so the region cannot narrate a
+    // campaign that is no longer in the list — the context-switch case, handled structurally
+    // instead of by remembering to clear a slot.
+    const working: string[] = [];
+    for (const row of rows) {
+      const direction = pending[row.campaign.id];
+      if (direction) {
+        working.push(`${CAMPAIGN_TOGGLE_PENDING_VERBS[direction]} ${row.campaign.campaign_name}`);
+      }
+    }
+    return working.join(', ');
+  });
 
   /**
    * The campaigns whose validator a 412 has refused and which no re-read has since advanced.
@@ -485,7 +524,7 @@ export class OptimizationTabComponent implements OnInit {
     // total instead of cast.
     const direction: Exclude<CampaignToggleAction, 'unavailable'> = row.action;
     const status: CampaignToggleStatus = direction === 'pause' ? 'PAUSED' : 'ACTIVE';
-    this.togglePending.update((p) => ({ ...p, [campaign.id]: true }));
+    this.togglePending.update((p) => ({ ...p, [campaign.id]: direction }));
     this.toggleError.update((e) => {
       const next = { ...e };
       delete next[campaign.id];
@@ -499,10 +538,6 @@ export class OptimizationTabComponent implements OnInit {
     // below runs after this component may be gone, so it cannot read `campaign.campaign_name`
     // off a signal or an input at that point without reaching into a destroyed view.
     const campaignName = campaign.campaign_name;
-    // Announced on DISPATCH, into the live region rather than onto the button that is about to be
-    // disabled. This is the announcement the pending state owes the operator, and it is made
-    // while the control still exists to be described.
-    this.toggleAnnouncement.set(`${CAMPAIGN_TOGGLE_PENDING_VERBS[direction]} ${campaignName}`);
 
     // Deliberately NOT `takeUntilDestroyed`. This is a state-changing mutation against live ad
     // spend, and `lfx-optimization-tab` renders inside `@case ('optimization')` on the parent —
@@ -547,7 +582,7 @@ export class OptimizationTabComponent implements OnInit {
           if (dispatchedIn !== this.contextGeneration) {
             return;
           }
-          this.togglePending.update((p) => ({ ...p, [campaign.id]: false }));
+          this.togglePending.update((p) => this.omitKeys(p, [campaign.id]));
           // `serviceStatus` is what the SERVICE reports, which is not always what was requested:
           // pausing a `created_degraded` campaign pauses it upstream while deliberately leaving
           // the row's status unchanged. Rendering the request back would claim a transition the
@@ -591,7 +626,7 @@ export class OptimizationTabComponent implements OnInit {
           if (dispatchedIn !== this.contextGeneration) {
             return;
           }
-          this.togglePending.update((p) => ({ ...p, [campaign.id]: false }));
+          this.togglePending.update((p) => this.omitKeys(p, [campaign.id]));
           // Deliberately NOT optimistic: nothing about the row's status is changed on failure, so
           // the button still offers the action that did not happen. Claiming the pause landed
           // would be the expensive lie here — someone would stop watching a campaign that is
@@ -910,11 +945,6 @@ export class OptimizationTabComponent implements OnInit {
         this.conflictedCampaignIds.set(new Set<string>());
         this.toggleError.set({});
         this.toggledEtag.set({});
-        // The live region goes with them. Its text names a campaign in the brief being abandoned,
-        // so leaving it would narrate the old context into the new one's region — and unlike the
-        // toast, which is deliberately context-free and belongs to the operator's ACTION, this
-        // region is part of THIS list's rendering.
-        this.toggleAnnouncement.set('');
         // `toggledStatus` goes too, unlike on a refresh. There it is what the service CONFIRMED
         // for rows still on screen; here those rows are gone, and keeping it would overlay one
         // brief's confirmed statuses onto another brief's ids if they ever collide.
@@ -1023,13 +1053,10 @@ export class OptimizationTabComponent implements OnInit {
    * cannot promise a transition the service declined to record.
    */
   private announceToggleOutcome(direction: Exclude<CampaignToggleAction, 'unavailable'>, campaignName: string, reportedStatus: string): void {
-    // The live region is CLEARED rather than given the outcome, and that is deliberate: the toast
-    // is itself an ARIA live region (`p-toast` renders `role="alert"`), so writing the completion
-    // to both would announce one action twice to the same user. The region owns the PENDING state
-    // — which the toast has no equivalent of — and the toast owns outcomes, which is also the only
-    // surface that works once this tab is destroyed. Clearing keeps "Pausing X" from sitting in
-    // the region as a permanent claim about an action that has already finished.
-    this.toggleAnnouncement.set('');
+    // The outcome goes to the toast ALONE. `p-toast` is itself a live region (`role="alert"`), so
+    // announcing the completion in the local region too would speak one action twice. The region
+    // retires this row's message on its own, because it is computed from `togglePending` and the
+    // response arm removes this row's entry — no clear to write, and none to forget.
     const summary = `${CAMPAIGN_TOGGLE_DONE_VERBS[direction]} ${campaignName}`;
     this.messageService.add({ severity: 'success', summary, detail: `Campaign status is now ${normalizeCampaignStatus(reportedStatus)}.`, life: 5000 });
   }
@@ -1042,10 +1069,9 @@ export class OptimizationTabComponent implements OnInit {
    * for that — the operator has to dismiss it, which is the acknowledgement the failure warrants.
    */
   private announceToggleFailure(campaignName: string, message: string): void {
-    // Same single-surface rule, and it matters more on this arm: the row also renders the failure
-    // in a `role="alert"` span (`optimization-tab.component.html:142`), so writing it here too
-    // would make one failure speak three times.
-    this.toggleAnnouncement.set('');
+    // Same single-surface rule. The row's inline failure text is now a plain `aria-describedby`
+    // target rather than a `role="alert"`, so this failure is announced exactly once — by the
+    // toast — and the inline copy remains readable on demand as the button's description.
     this.messageService.add({ severity: 'error', summary: campaignName, detail: message, sticky: true });
   }
 
@@ -1066,11 +1092,20 @@ export class OptimizationTabComponent implements OnInit {
    *      click. Per-row scoping alone does not fix that, because such a row's indexed etag may
    *      well have changed too, so the in-flight guard below is what protects it.
    *
-   * `toggledStatus` deliberately SURVIVES either way. It is not a claim about the list's
-   * freshness; it records what the service CONFIRMED for a row this session, and it exists
-   * precisely because the index lags a toggle. Clearing it would re-expose the lag it was written
-   * to hide: a campaign paused seconds ago, re-read before the index caught up, would render as
-   * running.
+   * `toggledStatus` is dropped for these ids too, and the reason is the same evidence that got
+   * them into this list. An earlier revision kept it unconditionally, reasoning that the overlay
+   * exists because the index LAGS a toggle, so clearing it would re-expose the lag: a campaign
+   * paused seconds ago, re-read before the index caught up, would render as running. That is
+   * correct — for a row whose etag did NOT advance, which is exactly the row this function never
+   * receives.
+   *
+   * An id reaches here only when its indexed etag CHANGED and was not excluded as a write
+   * concurrent with the read, which is positive proof the index has caught up past the version
+   * this session wrote. At that point the delivered row is the authority and the overlay is the
+   * stale one. Keeping it inverted the bug it was written to prevent: this session pauses at v4,
+   * another actor resumes at v5, the refresh adopts v5's etag and clears the conflict — and the
+   * row went on rendering `paused` and offering Resume, a confident falsehood about a campaign
+   * that is spending. The overlay must not outlive the evidence that justified it.
    *
    * NOT gated on `togglePending`, and that was re-checked rather than assumed after a reviewer
    * raised the in-flight window. A toggle still OUTSTANDING has no entry in either map to protect:
@@ -1106,6 +1141,10 @@ export class OptimizationTabComponent implements OnInit {
     });
     this.toggleError.update((errors) => this.omitKeys(errors, clearable));
     this.toggledEtag.update((etags) => this.omitKeys(etags, clearable));
+    // Dropped alongside the etag, never independently: the two are one claim about one version,
+    // and clearing the validator while keeping the status it was minted with is what let the row
+    // render a stale `paused` over a newer authoritative row.
+    this.toggledStatus.update((statuses) => this.omitKeys(statuses, clearable));
   }
 
   /** A copy of `source` without the given keys. Returns `source` itself when nothing is dropped. */

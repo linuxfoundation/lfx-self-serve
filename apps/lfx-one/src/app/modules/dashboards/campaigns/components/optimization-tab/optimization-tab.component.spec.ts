@@ -904,13 +904,20 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
   });
 
   /**
-   * `toggledStatus` is NOT part of the stale set, and this pins that.
+   * `toggledStatus` survives a refresh the index has NOT caught up on.
    *
    * It records what the service CONFIRMED for a row, and it exists because the index lags a
    * toggle. A refresh moments after a pause legitimately returns the OLD status, so clearing the
    * overlay would render a campaign the operator just paused as running — the exact failure the
-   * overlay was written to prevent. The row below is re-read as `created` and must still show
-   * paused.
+   * overlay was written to prevent.
+   *
+   * The lagging row is delivered at its ORIGINAL etag `"3"`, which is what "the index has not
+   * caught up" actually looks like on the wire. An earlier version of this test delivered `"12"`
+   * — an etag AHEAD of the toggle's own `"9"` — while calling it a lagging index. That fixture
+   * was self-contradictory, and it is why the inverse defect below shipped: an advanced etag is
+   * proof the index moved PAST this session's write, so the row it describes is not lagging at
+   * all. Both halves are now tested, and they are distinguished by the only evidence available:
+   * whether the delivered etag moved.
    */
   it('keeps a confirmed status overlay across a refresh that has not caught up yet', () => {
     updateCampaignStatus.mockReturnValue(
@@ -921,12 +928,46 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').textContent).toContain('Resume');
 
-    // The index has not caught up: the re-read still reports the pre-pause status.
-    refreshFromParent([doc({ status: 'created', etag: '"12"' })]);
+    // The index has not caught up: the re-read reports the pre-pause status AT THE OLD VERSION.
+    refreshFromParent([doc({ status: 'created', etag: '"3"' })]);
 
     // Still Resume — the overlay survived. Had it been cleared this would read Pause, telling
     // someone the campaign they just stopped is running.
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').textContent).toContain('Resume');
+  });
+
+  /**
+   * ...and it is DROPPED once the index proves it moved past this session's write.
+   *
+   * The inverse of the case above, and the one that was inverted. Clearing the cached etag while
+   * keeping the status it was minted with let the row render a confident falsehood: this session
+   * pauses at v4, another actor resumes at v5, the refresh adopts v5's etag — and the row went on
+   * showing `paused` and offering Resume for a campaign that is spending.
+   *
+   * The two are one claim about one version, so they are dropped together. The delivered status
+   * is deliberately the OPPOSITE of the overlay's, and the assertion is on the ACTION the button
+   * offers rather than on the label alone: a row that wrongly believes it is paused offers
+   * Resume, which is the click that would actually cost money here.
+   */
+  it('drops the status overlay once a delivered etag proves the index moved past it', () => {
+    updateCampaignStatus.mockReturnValue(
+      of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"4"' })
+    );
+    render([doc({ status: 'created', etag: '"3"' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    // The overlay is in force: the row shows the pause this session confirmed.
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').textContent).toContain('Resume');
+
+    // Another actor resumed it at v5. The etag ADVANCED past this session's v4, so the delivered
+    // row — not the overlay — is the authority.
+    refreshFromParent([doc({ status: 'created', etag: '"5"' })]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.textContent).toContain('Pause');
+    expect(button.textContent).not.toContain('Resume');
+    // And the row's rendered status follows the authoritative list rather than the dropped overlay.
+    expect(fixture.nativeElement.textContent).toContain('created');
   });
 
   /**
@@ -1447,10 +1488,11 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     inFlight.next({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"9"' });
     fixture.detectChanges();
 
-    // On completion the region is CLEARED rather than given the outcome. `p-toast` is itself a
+    // On completion the region empties rather than announcing the outcome. `p-toast` is itself a
     // live region (`role="alert"`), so announcing the completion here too would speak one action
     // twice to the same user. The region owns the pending state; the toast owns the outcome — and
-    // the toast is also the only surface that still works once this tab is destroyed.
+    // the toast is also the only surface that still works once this tab is destroyed. It empties
+    // because it is COMPUTED from the pending map, which no longer holds this row.
     expect((region().textContent ?? '').trim()).toBe('');
     expect(messageAdd).toHaveBeenCalledTimes(1);
     expect(messageAdd.mock.calls[0][0].summary).toBe('Paused KubeCon EU');
@@ -1502,5 +1544,136 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     fixture.detectChanges();
 
     expect(button.getAttribute('aria-label')).toBe('Pause KubeCon EU');
+  });
+
+  /**
+   * Group A, the announcement-ownership design (post-`058da8875` review).
+   *
+   * Three findings landed against the a11y fix, and they pull against each other if taken as
+   * three patches: drop the inline `role="alert"`, restore the visible label, and stop one row's
+   * completion silencing another's pending message. They resolve to ONE rule:
+   *
+   *   PENDING is owned by the live region. OUTCOME is owned by the toast.
+   *
+   * ...plus one structural change that makes the third unrepresentable rather than guarded: the
+   * region is COMPUTED from the per-row pending map instead of being an imperatively-written
+   * slot. These cases pin the rule at each site it governs.
+   */
+  it('keeps narrating a row still working when another row finishes', () => {
+    const first = new Subject<CampaignStatusUpdateResult>();
+    const second = new Subject<CampaignStatusUpdateResult>();
+    updateCampaignStatus.mockReturnValueOnce(first.asObservable()).mockReturnValueOnce(second.asObservable());
+    render([
+      doc({ id: 'c-1', status: 'created', etag: '"3"', campaign_name: 'KubeCon EU' }),
+      doc({ id: 'c-2', status: 'created', etag: '"4"', campaign_name: 'Open Source Summit' }),
+    ]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-2"]').click();
+    fixture.detectChanges();
+
+    const region = (): HTMLElement => fixture.nativeElement.querySelector('[data-testid="optimization-toggle-announcement"]');
+    // Both in flight: the region names BOTH, because "which campaign" is exactly what a count
+    // would fail to give the operator.
+    expect(region().textContent).toContain('KubeCon EU');
+    expect(region().textContent).toContain('Open Source Summit');
+
+    // The FIRST finishes. Under the old shared-slot implementation this wiped the region wholesale.
+    first.next({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"9"' });
+    fixture.detectChanges();
+
+    // c-2 is still working and must still be narrated; c-1 is done and must not be.
+    expect(region().textContent).toContain('Open Source Summit');
+    expect(region().textContent).not.toContain('KubeCon EU');
+    expect(second.observed).toBe(true);
+  });
+
+  /**
+   * The same shared-slot defect reached from the other end: a LATE response from an abandoned
+   * brief must not silence a live message.
+   *
+   * The old implementation cleared the region before the `dispatchedIn` context guard, so a
+   * response belonging to a brief the operator had already left wiped narration about the brief
+   * they were now looking at. Deriving the text from the current rows removes the pathway.
+   */
+  it('does not let a late response from an abandoned brief silence the current one', () => {
+    const abandoned = new Subject<CampaignStatusUpdateResult>();
+    const current = new Subject<CampaignStatusUpdateResult>();
+    updateCampaignStatus.mockReturnValueOnce(abandoned.asObservable()).mockReturnValueOnce(current.asObservable());
+    render([doc({ id: 'c-1', status: 'created', etag: '"3"', campaign_name: 'Old Brief Campaign' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    // Switch brief, then start a toggle in the NEW context.
+    fixture.componentRef.setInput('briefId', 'b-2');
+    render([doc({ id: 'c-9', status: 'created', etag: '"1"', campaign_name: 'New Brief Campaign' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-9"]').click();
+    fixture.detectChanges();
+
+    const region = (): HTMLElement => fixture.nativeElement.querySelector('[data-testid="optimization-toggle-announcement"]');
+    expect(region().textContent).toContain('New Brief Campaign');
+
+    // The abandoned brief's request finally answers.
+    abandoned.next({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"9"' });
+    fixture.detectChanges();
+
+    // The live narration about the CURRENT brief survives it.
+    expect(region().textContent).toContain('New Brief Campaign');
+  });
+
+  /**
+   * The inline failure text is a DESCRIPTION, not a second live region.
+   *
+   * The failure is already announced by the toast, which is itself a live region, so a
+   * `role="alert"` here made one failure speak twice. It stays as the button's
+   * `aria-describedby` target — read WITH the control on demand rather than fired at the user
+   * again — which is why the assertion covers both halves: the role is gone AND the wiring that
+   * makes the text still reachable is intact.
+   */
+  it('renders the inline failure as a description rather than a second live region', () => {
+    updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, statusText: 'Server Error' })));
+    render([doc({ status: 'created', etag: '"3"' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    const error = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]');
+    expect(error).not.toBeNull();
+    // Not a live region: the toast already announced this failure.
+    expect(error.getAttribute('role')).toBeNull();
+    // ...but still reachable, named by the button that failed.
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.getAttribute('aria-describedby')).toContain('campaign-error-c-1');
+    expect(error.id).toBe('campaign-error-c-1');
+  });
+
+  /**
+   * Label-in-name: the visible label must remain part of the accessible name while pending.
+   *
+   * The pending button used to render the word "Working" while its accessible name stayed
+   * "Pause <campaign>". A speech-input user says what they SEE, so "click Pause" no longer
+   * matched the control. The action word now stays visible throughout and progress is carried by
+   * the spinner, `aria-busy` and the live region — none of which change what the control is
+   * called.
+   */
+  it('keeps the visible label inside the accessible name while pending', () => {
+    const inFlight = new Subject<CampaignStatusUpdateResult>();
+    updateCampaignStatus.mockReturnValue(inFlight.asObservable());
+    render([doc({ status: 'created', etag: '"3"', campaign_name: 'KubeCon EU' })]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    button.click();
+    fixture.detectChanges();
+
+    // Genuinely mid-flight, so this is the pending branch and not the resting one.
+    expect(inFlight.observed).toBe(true);
+    expect(button.getAttribute('aria-busy')).toBe('true');
+
+    const visible = button.textContent.trim();
+    const accessibleName = button.getAttribute('aria-label');
+    expect(visible).toContain('Pause');
+    expect(visible).not.toContain('Working');
+    // The actual WCAG 2.5.3 condition, asserted as a relationship rather than two fixed strings.
+    expect(accessibleName).toContain(visible);
   });
 });
