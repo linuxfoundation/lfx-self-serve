@@ -539,7 +539,7 @@ export class PlanningTabComponent implements OnInit {
     };
 
     this.briefSubscription = this.campaignService
-      .generateBrief(request, this.activeFoundationSlug())
+      .generateBrief(this.activeFoundationSlug(), request)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (event: SSEEvent<CampaignSSEEventType>) => this.handleSSEEvent(event),
@@ -753,7 +753,7 @@ export class PlanningTabComponent implements OnInit {
 
     this.briefSubscription?.unsubscribe();
     this.briefSubscription = this.campaignService
-      .refineBrief(request, this.activeFoundationSlug())
+      .refineBrief(this.activeFoundationSlug(), request)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (event: SSEEvent<CampaignSSEEventType>) => this.handleRefineSSEEvent(event, capturedFeedback),

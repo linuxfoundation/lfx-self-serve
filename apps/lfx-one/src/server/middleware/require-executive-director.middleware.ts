@@ -22,7 +22,9 @@ const ED: PersonaType = 'executive-director';
 // they are already trusted across foundations elsewhere in the app.
 export async function requireExecutiveDirector(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const result = await personaDetectionService.getPersonas(req);
+    // 'none' — this middleware never reads isMarketingAuditor/isCampaignManager, so skip both
+    // ROOT-relation FGA checks getPersonas() would otherwise compute unconditionally.
+    const result = await personaDetectionService.getPersonas(req, undefined, 'none');
     const isED = result.personas.includes(ED);
 
     if (!isED) {

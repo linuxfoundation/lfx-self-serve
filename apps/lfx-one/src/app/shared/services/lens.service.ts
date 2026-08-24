@@ -9,6 +9,7 @@ import {
   DEFAULT_NAV_LENS,
   LENS_COOKIE_KEY,
   LENS_DEFAULT_ROUTES,
+  MARKETING_OPS_FGA_ENABLED_FLAG,
   NAV_LENS_COOKIE_KEY,
   ORG_LENS_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
@@ -35,6 +36,8 @@ export class LensService {
 
   /** Dark-launch gate; off by default until the LaunchDarkly flag is flipped. */
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
+  /** Client-side counterpart to `ServerFeatureFlag.MarketingOpsFga` (LFXV2-2235/LFXV2-2236). */
+  private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
 
   private readonly selectedLens: WritableSignal<Lens>;
   /**
@@ -205,6 +208,7 @@ export class LensService {
       hasWriterProject: this.writerGrantsService.hasWriterProject(),
       isOrgLensEnabled: this.isOrgLensEnabled(),
       isLFStaff: this.personaService.isLFStaff(),
+      hasMarketingGrant: this.isMarketingOpsFgaEnabled() && (this.personaService.isMarketingAuditor() || this.personaService.isCampaignManager()),
     }));
   }
 

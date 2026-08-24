@@ -103,8 +103,17 @@ export class PersonaDetectionService {
    * project-scoped `marketing_auditor`/`campaign_manager` grant into the two booleans below —
    * without it, only the ROOT-scoped grant is visible, which under-reports access for a caller
    * with a per-project (not ROOT) grant. LFXV2-2236 follow-up on PR #1585 blocking review.
+   *
+   * `marketingRelations` lets a caller that only needs one relation (or neither) skip computing
+   * the other — each relation's ROOT check is an independent FGA/NATS round trip, so a caller that
+   * never reads `isCampaignManager` (or `isMarketingAuditor`) shouldn't pay for it. Defaults to
+   * `'both'` for callers (e.g. `/api/user/personas`) that return the full response to the frontend.
    */
-  public async getPersonas(req: Request, projectSlug?: string): Promise<PersonaApiResponse> {
+  public async getPersonas(
+    req: Request,
+    projectSlug?: string,
+    marketingRelations: 'marketing_auditor' | 'campaign_manager' | 'both' | 'none' = 'both'
+  ): Promise<PersonaApiResponse> {
     const username = getEffectiveUsername(req) || '';
     const email = getEffectiveEmail(req) || '';
     const cacheKey = username || email;
@@ -114,12 +123,14 @@ export class PersonaDetectionService {
     // skipped entirely while their server flag is off, so this endpoint costs nothing extra
     // for the default (flag-off) case.
     const marketingOpsFgaEnabled = isServerFeatureEnabled(ServerFeatureFlag.MarketingOpsFga);
+    const needsMarketingAuditor = marketingOpsFgaEnabled && (marketingRelations === 'both' || marketingRelations === 'marketing_auditor');
+    const needsCampaignManager = marketingOpsFgaEnabled && (marketingRelations === 'both' || marketingRelations === 'campaign_manager');
     const [detections, isRootWriter, isLFStaff, isMarketingAuditor, isCampaignManager] = await Promise.all([
       this.getPersonaDetections(req, username, email, cacheKey),
       this.checkRootWriter(req),
       this.checkLFStaff(req),
-      marketingOpsFgaEnabled ? this.checkMarketingAuditorAccess(req, projectSlug) : Promise.resolve(false),
-      marketingOpsFgaEnabled ? this.checkCampaignManagerAccess(req, projectSlug) : Promise.resolve(false),
+      needsMarketingAuditor ? this.checkMarketingAuditorAccess(req, projectSlug) : Promise.resolve(false),
+      needsCampaignManager ? this.checkCampaignManagerAccess(req, projectSlug) : Promise.resolve(false),
     ]);
 
     // Compute the per-request persona list without mutating the cached detections object.

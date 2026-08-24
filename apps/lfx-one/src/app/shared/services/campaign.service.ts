@@ -43,7 +43,7 @@ export class CampaignService {
   private readonly http = inject(HttpClient);
   private readonly sse = inject(SseService);
 
-  public generateBrief(request: CampaignBriefRequest, projectSlug: string): Observable<SSEEvent<CampaignSSEEventType>> {
+  public generateBrief(projectSlug: string, request: CampaignBriefRequest): Observable<SSEEvent<CampaignSSEEventType>> {
     const url = `/api/campaigns/brief/generate?project=${encodeURIComponent(projectSlug)}`;
     return this.sse.connect<CampaignSSEEventType>(url, {
       method: 'POST',
@@ -51,7 +51,7 @@ export class CampaignService {
     });
   }
 
-  public refineBrief(request: CampaignBriefRefineRequest, projectSlug: string): Observable<SSEEvent<CampaignSSEEventType>> {
+  public refineBrief(projectSlug: string, request: CampaignBriefRefineRequest): Observable<SSEEvent<CampaignSSEEventType>> {
     const url = `/api/campaigns/brief/refine?project=${encodeURIComponent(projectSlug)}`;
     return this.sse.connect<CampaignSSEEventType>(url, {
       method: 'POST',

@@ -488,8 +488,11 @@ environment:
   #
   # OFF (the default) keeps the executive_director-only gate shipped by LFXV2-3294
   # byte-for-byte — every request from a non-ED marketing user is denied, same as today. ON
-  # additionally admits an ED/root-writer/LF-staff fast path plus a caller with an actual
-  # root- or project-scoped marketing_auditor / campaign_manager FGA grant.
+  # additionally admits a root-writer bypass plus a caller with an actual root- or
+  # project-scoped marketing_auditor / campaign_manager FGA grant. LF Staff are NOT part of
+  # what this flag adds: their bypass, where it exists at all, is wired per-endpoint
+  # (`allowLfStaff` on the specific analytics routes shared with the Marketing Overview
+  # widget — not on Campaigns) and fires regardless of this flag's state, on or off.
   #
   # Deliberately independent from the client-side OpenFeature flag (marketing-ops-fga-enabled):
   # the Web SDK never runs server-side, so without this a direct API caller with an FGA
@@ -506,9 +509,19 @@ environment:
   # injects this as a container environment variable, so flipping it edits the Deployment pod
   # template and reaches a process only through a rolling restart. With the default replica
   # count and a RollingUpdate, flag-on and flag-off pods overlap for the duration. That overlap
-  # is harmless here: the ED/root-writer/LF-staff fast path and the executive_director-only
-  # fallback both stay reachable regardless of which pod answers a request, so no caller sees a
-  # request succeed on one pod and fail on another for a reason that depends on this flag alone.
+  # is SAFE, not harmless: no caller can be locked out, but a caller who is ONLY an FGA
+  # marketing_auditor / campaign_manager (no ED or root-writer persona, and not covered by an
+  # `allowLfStaff` endpoint) will see a request succeed on a flag-on pod and 403 on a flag-off
+  # pod purely depending on which pod answers — a real, if temporary, inconsistency, not a
+  # no-op. ED/root-writer callers, and LF Staff on the endpoints that allow them, are
+  # unaffected either way, since those checks are reachable regardless of this flag.
+  #
+  # Rollout ordering across this flag and the client-side marketing-ops-fga-enabled OpenFeature
+  # flag (this order matters — the overlap above is safe but not consequence-free): set this flag
+  # true and confirm the rolling update has fully converged (no pod still on the old pod template)
+  # BEFORE enabling the client flag — otherwise the UI can advertise Campaigns/Analytics links
+  # that a not-yet-converged pod still 403s on. To roll back, reverse it: disable the client flag
+  # first, confirm it, then unset/disable this flag.
   LFX_MARKETING_OPS_FGA_ENABLED:
     value:
 

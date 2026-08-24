@@ -140,15 +140,13 @@ export class PersonaService {
 
   private applyPersonaResponse(response: PersonaApiResponse | null): void {
     if (!response || response.error) {
-      console.warn('[PersonaService] Persona API returned error or empty response, using fallback:', {
+      // Preserve last-known-good grants on a failed/errored refetch — a transient network or
+      // upstream failure must not silently revoke access that was already confirmed.
+      console.warn('[PersonaService] Persona API returned error or empty response, keeping last-known-good state:', {
         error: response?.error,
         currentPersona: this.currentPersona(),
         allPersonas: this.allPersonas(),
       });
-      this.isRootWriter.set(false);
-      this.isLFStaff.set(false);
-      this.isMarketingAuditor.set(false);
-      this.isCampaignManager.set(false);
       this.personaLoaded.set(true);
       return;
     }

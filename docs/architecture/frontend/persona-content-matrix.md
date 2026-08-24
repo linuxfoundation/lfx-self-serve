@@ -72,35 +72,39 @@ A user can carry both board and project roles simultaneously. In the sidebar len
 
 Available to `board-member`, `executive-director`, and root writers.
 
-| Sidebar item / section     | Route                          | Visible to                                                                                    |
-| -------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------- |
-| Dashboard                  | `/foundation/overview`         | All foundation users                                                                          |
-| Projects                   | `/foundation/projects`         | All — **only when** `foundationHasProjects()` is true                                         |
-| Meetings                   | `/foundation/meetings`         | All foundation users                                                                          |
-| Events                     | `/foundation/events`           | All foundation users                                                                          |
-| Mailing Lists              | `/foundation/mailing-lists`    | All foundation users                                                                          |
-| Committees                 | `/foundation/groups`           | All foundation users                                                                          |
-| Documents                  | `/foundation/documents`        | All foundation users                                                                          |
-| **Governance** section     |                                |                                                                                               |
-| → Votes                    | `/foundation/votes`            | All foundation users                                                                          |
-| → Surveys                  | `/foundation/surveys`          | All foundation users                                                                          |
-| → Permissions              | `/foundation/settings`         | All foundation users                                                                          |
-| **Communications** section |                                | `canSeeNewsletters()` — ED **or** `canWrite()`                                                |
-| → Newsletters              | `/foundation/newsletters`      | `canSeeNewsletters()`                                                                         |
-| **Metrics** section        |                                | `canViewExecutiveDashboards()` — ED or LF Staff                                               |
-| → Health Metrics           | `/foundation/health-metrics`   | `canViewExecutiveDashboards()`                                                                |
-| → Social Listening         | _(PCC external link)_          | `canViewExecutiveDashboards()` — **only when** `selectedFoundationSfid()` is set              |
-| **Marketing** section      |                                | `canViewExecutiveDashboards()` — ED or LF Staff                                               |
-| → Marketing Impact         | `/foundation/marketing-impact` | `canViewExecutiveDashboards()` — LF Staff see Social Listening only (no tabs/focus/Campaigns) |
-| → Campaigns                | `/foundation/campaigns`        | `executive-director` only                                                                     |
+| Sidebar item / section     | Route                          | Visible to                                                                                                                                                                                              |
+| -------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dashboard                  | `/foundation/overview`         | All foundation users                                                                                                                                                                                    |
+| Projects                   | `/foundation/projects`         | All — **only when** `foundationHasProjects()` is true                                                                                                                                                   |
+| Meetings                   | `/foundation/meetings`         | All foundation users                                                                                                                                                                                    |
+| Events                     | `/foundation/events`           | All foundation users                                                                                                                                                                                    |
+| Mailing Lists              | `/foundation/mailing-lists`    | All foundation users                                                                                                                                                                                    |
+| Committees                 | `/foundation/groups`           | All foundation users                                                                                                                                                                                    |
+| Documents                  | `/foundation/documents`        | All foundation users                                                                                                                                                                                    |
+| **Governance** section     |                                |                                                                                                                                                                                                         |
+| → Votes                    | `/foundation/votes`            | All foundation users                                                                                                                                                                                    |
+| → Surveys                  | `/foundation/surveys`          | All foundation users                                                                                                                                                                                    |
+| → Permissions              | `/foundation/settings`         | All foundation users                                                                                                                                                                                    |
+| **Communications** section |                                | `canSeeNewsletters()` — ED **or** `canWrite()`                                                                                                                                                          |
+| → Newsletters              | `/foundation/newsletters`      | `canSeeNewsletters()`                                                                                                                                                                                   |
+| **Metrics** section        |                                | `canViewExecutiveDashboards()` — ED or LF Staff                                                                                                                                                         |
+| → Health Metrics           | `/foundation/health-metrics`   | `canViewExecutiveDashboards()`                                                                                                                                                                          |
+| → Social Listening         | _(PCC external link)_          | `canViewExecutiveDashboards()` — **only when** `selectedFoundationSfid()` is set                                                                                                                        |
+| **Marketing** section      |                                | `canViewExecutiveDashboards()` — ED or LF Staff — **or**, when `marketing-ops-fga-enabled` is on, a `marketing_auditor` / `campaign_manager` FGA grant (`isMarketingAuditor()` / `isCampaignManager()`) |
+| → Marketing Impact         | `/foundation/marketing-impact` | `canViewExecutiveDashboards()` (LF Staff see Social Listening only, no tabs/focus/Campaigns) — **or**, flag on, `isMarketingAuditor()`                                                                  |
+| → Campaigns                | `/foundation/campaigns`        | `executive-director`, **or**, flag on, `isCampaignManager()` (LFXV2-2235/2236)                                                                                                                          |
 
 ### Foundation lens by persona summary
 
-| Persona              | Sees Governance | Sees Newsletters (Communications) | Sees Metrics | Sees Marketing                           |
-| -------------------- | --------------- | --------------------------------- | ------------ | ---------------------------------------- |
-| `board-member`       | Yes             | Only if `canWrite()`              | No           | No                                       |
-| `executive-director` | Yes             | Yes (always)                      | Yes          | Yes (all tabs + Campaigns)               |
-| LF Staff             | No              | Only if `canWrite()`              | Yes          | Marketing Impact only (Social Listening) |
+| Persona                          | Sees Governance | Sees Newsletters (Communications) | Sees Metrics | Sees Marketing                                                |
+| -------------------------------- | --------------- | --------------------------------- | ------------ | ------------------------------------------------------------- |
+| `board-member`                   | Yes             | Only if `canWrite()`              | No           | No                                                            |
+| `executive-director`             | Yes             | Yes (always)                      | Yes          | Yes (all tabs + Campaigns)                                    |
+| LF Staff                         | No              | Only if `canWrite()`              | Yes          | Marketing Impact only (Social Listening)                      |
+| FGA `marketing_auditor` (non-ED) | No              | Only if `canWrite()`              | No           | Marketing Impact only, when `marketing-ops-fga-enabled` is on |
+| FGA `campaign_manager` (non-ED)  | No              | Only if `canWrite()`              | No           | Campaigns only, when `marketing-ops-fga-enabled` is on        |
+
+> The FGA-grant rows depend on both the client-side `marketing-ops-fga-enabled` OpenFeature flag (gates the route guards / nav) and the server-side `LFX_MARKETING_OPS_FGA_ENABLED` flag (gates the BFF routes) — see `charts/lfx-self-serve/README.md` "Marketing Ops FGA Enforcement" for the two-flag rollout contract. `campaign_manager` is, by FGA model design, the same population as `marketing_ops` (plus `executive_director`) — there is no separate Campaign Manager relation to grant.
 
 ---
 

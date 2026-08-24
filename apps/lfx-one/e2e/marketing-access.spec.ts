@@ -17,7 +17,7 @@
  * env var (which only gates what the *real* endpoint computes) plays no role here — the stub controls
  * `isMarketingAuditor` / `isCampaignManager` on the response independent of that env var.
  *
- * Coverage:
+ * Coverage (all "Flag" references below are the CLIENT flag — see the note above):
  *   S1  Flag ON  — marketing_auditor (contributor) sees Marketing section + Marketing Impact, no Campaigns
  *   S2  Flag ON  — marketing_auditor gets full Marketing Impact tabs (not the Social-Listening-only view)
  *   S3  Flag ON  — campaign_manager (contributor) additionally sees Campaigns in the sidebar
@@ -26,6 +26,11 @@
  *   S6  Flag ON  — contributor without campaign_manager is redirected off /foundation/campaigns
  *   S7  Flag ON  — LF Staff stays Social-Listening-only on Marketing Impact even with marketing_auditor-equivalent access already granted via canViewExecutiveDashboards
  *   S8  Flag OFF (default) — grants present on the API response are ignored; behavior is byte-identical to pre-LFXV2-2236 ED/LF-staff-only gating
+ *
+ * This suite does NOT flip the server `LFX_MARKETING_OPS_FGA_ENABLED` env var or hit protected
+ * analytics/campaigns routes directly — see `require-marketing-access.middleware.spec.ts` for
+ * the server-side flag-on/flag-off matrix (ED fast path, scoped-ED, root/project FGA cascade,
+ * fail-closed) against the real middleware.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
