@@ -164,10 +164,12 @@ export class NewsletterListComponent {
   }
 
   // The composer sits at the flat `newsletters/create` path, so the publication
-  // being composed into has to travel with the navigation. The upstream service
-  // requires publication_id on create — an edition is always composed inside a
-  // publication and there is no project default to fall back to — so without
-  // this the composer would save into nothing and the create would 400.
+  // being composed into has to travel with the navigation. Without it the new
+  // edition is created unfiled: `publication_id` is optional upstream and there
+  // is no project default to fall back to, so the edition would silently not
+  // belong to the publication the user opened. Unfiled is a valid state (the
+  // weekly brief creates editions that way), which is exactly why this has to
+  // be passed explicitly rather than inferred.
   protected goToCreate(): void {
     const pubId = this.publicationId();
     this.router.navigate(['..', 'create'], {

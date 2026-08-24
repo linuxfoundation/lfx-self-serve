@@ -1498,10 +1498,13 @@ export class NewsletterManageComponent {
       );
     }
 
-    // publication_id is only sent on create. The upstream service requires it
-    // (an edition is always composed inside a publication, and there is no
-    // project default to resolve to), and it is immutable afterwards — the PUT
-    // omits the key entirely so the edition keeps its current publication.
+    // publication_id is only sent on create. It is optional upstream — an
+    // omitted value leaves the edition unfiled rather than resolving to a
+    // project default, since projects are not given one — so it is passed here
+    // to file the edition under the publication the user opened. The PUT omits
+    // the key entirely, which upstream reads as "keep the current publication"
+    // rather than "unfile"; that distinction is why the update field is a raw
+    // message and not a plain optional string.
     const create: CreateNewsletterRequest = { ...basePayload, publication_id: this.composePublicationId() };
     return this.newsletterService.createNewsletter(projectUid, create).pipe(
       take(1),
