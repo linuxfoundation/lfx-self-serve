@@ -3,10 +3,8 @@
 
 import { Signal, WritableSignal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { PreferenceContext, UserPreferenceQueuedCommit, UserPreferenceState, UserPreferenceStoreConfig } from '@lfx-one/shared/interfaces';
+import { PreferenceContext, UserPreferenceCommitArgs, UserPreferenceQueuedCommit, UserPreferenceState, UserPreferenceStoreConfig } from '@lfx-one/shared/interfaces';
 import { EMPTY, Observable, Subject, catchError, concatMap, distinctUntilChanged, finalize, from, switchMap, takeUntil, tap } from 'rxjs';
-
-import type { UserPreferenceCommitArgs } from '@lfx-one/shared/interfaces';
 
 /**
  * PCC `UserPreferenceStore` port (LFXV2-3002 Block 0): optimistic, queue-ordered, cancel-on-context-change
@@ -156,10 +154,7 @@ export class UserPreferenceStore<T> {
       return from(this.config.transport.delete(name)).pipe(
         takeUntil(this.cancelPersist$),
         tap(() => onSuccess()),
-        catchError(() => {
-          onError();
-          return EMPTY;
-        })
+        catchError(() => this.reconcileDelete$(name, onSuccess, onError))
       );
     }
 
@@ -171,6 +166,32 @@ export class UserPreferenceStore<T> {
       takeUntil(this.cancelPersist$),
       tap(() => onSuccess()),
       catchError(() => this.reconcileWrite$(name, serialized, onSuccess, onError))
+    );
+  }
+
+  // Same landed-but-timed-out hazard as reconcileWrite$: re-GET, treat an absent value as a
+  // successful delete, otherwise retry the delete once and roll back only after that fails.
+  private reconcileDelete$(name: string, onSuccess: () => void, onError: () => void): Observable<unknown> {
+    return from(this.config.transport.get(name)).pipe(
+      takeUntil(this.cancelPersist$),
+      switchMap((stored) => {
+        if (stored === null) {
+          onSuccess();
+          return EMPTY;
+        }
+        return from(this.config.transport.delete(name)).pipe(
+          takeUntil(this.cancelPersist$),
+          tap(() => onSuccess()),
+          catchError(() => {
+            onError();
+            return EMPTY;
+          })
+        );
+      }),
+      catchError(() => {
+        onError();
+        return EMPTY;
+      })
     );
   }
 

@@ -135,4 +135,9 @@ describe('stripMarkdown', () => {
   it('drops images but collapses links to their label', () => {
     expect(stripMarkdown('![alt](https://x.test/img.png) see [docs](https://x.test)')).toBe('see docs');
   });
+
+  it('strips headings only at line start, preserving mid-text # sequences', () => {
+    expect(stripMarkdown('# Title\nbody')).toBe('Title\nbody');
+    expect(stripMarkdown('C# developer')).toBe('C# developer');
+  });
 });

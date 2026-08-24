@@ -281,6 +281,59 @@ describe('UserPreferenceStore', () => {
     expect(transport.put).not.toHaveBeenCalled();
   });
 
+  it('reconciles a failed delete that landed anyway: re-GET null means success', async () => {
+    const { store, transport } = createStore({ shouldDeleteOnEmpty: (data) => data.ids.length === 0 });
+    const onSuccess = vi.fn();
+    const onError = vi.fn();
+
+    store.setContext(ctxA);
+    await flush();
+    (transport.delete as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('timeout'));
+
+    store.commit({ next: { ids: [] }, onSuccess, onError });
+    await flush();
+
+    expect(onSuccess).toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(transport.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a failed delete once when the re-GET still sees a value', async () => {
+    const { store, transport } = createStore({ shouldDeleteOnEmpty: (data) => data.ids.length === 0 });
+    const onSuccess = vi.fn();
+    const onError = vi.fn();
+
+    store.setContext(ctxA);
+    await flush();
+    (transport.get as ReturnType<typeof vi.fn>).mockResolvedValue('{"ids":["a"]}');
+    (transport.delete as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('timeout')).mockResolvedValue(undefined);
+
+    store.commit({ next: { ids: [] }, onSuccess, onError });
+    await flush();
+
+    expect(transport.delete).toHaveBeenCalledTimes(2);
+    expect(onSuccess).toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('rolls back only after the delete retry also fails', async () => {
+    const { store, transport } = createStore({ shouldDeleteOnEmpty: (data) => data.ids.length === 0 });
+    const onSuccess = vi.fn();
+    const onError = vi.fn();
+
+    store.setContext(ctxA);
+    await flush();
+    (transport.get as ReturnType<typeof vi.fn>).mockResolvedValue('{"ids":["a"]}');
+    (transport.delete as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('timeout'));
+
+    store.commit({ next: { ids: [] }, onSuccess, onError });
+    await flush();
+
+    expect(transport.delete).toHaveBeenCalledTimes(2);
+    expect(onError).toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
   it('reconciles a failed write that landed anyway: re-GET match means success', async () => {
     const { store, transport } = createStore();
     (transport.put as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('timeout'));

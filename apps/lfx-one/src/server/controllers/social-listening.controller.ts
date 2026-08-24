@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SOCIAL_LISTENING_PREFERENCE_APP_NAME } from '@lfx-one/shared/constants';
+import { SOCIAL_LISTENING_PREFERENCE_APP_NAME, SOCIAL_LISTENING_PREFERENCE_VALUE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { isSocialListeningPreferenceName } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -412,6 +412,10 @@ export class SocialListeningController {
 
     if (typeof body?.value !== 'string') {
       throw ServiceValidationError.forField('value', 'Request body must be { value: string }', { operation });
+    }
+
+    if (body.value.length > SOCIAL_LISTENING_PREFERENCE_VALUE_MAX_LENGTH) {
+      throw ServiceValidationError.forField('value', 'value exceeds the maximum allowed size', { operation });
     }
 
     try {

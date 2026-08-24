@@ -3,18 +3,24 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { resolveAriaPressedPt } from './button.utils';
+import { resolveButtonAriaPt } from './button.utils';
 
-describe('resolveAriaPressedPt', () => {
-  it('returns undefined (no pt object) when pressed is unset — the ordinary-button case', () => {
-    expect(resolveAriaPressedPt(undefined)).toBeUndefined();
+describe('resolveButtonAriaPt', () => {
+  it('returns undefined (no pt object) when both are unset — the ordinary-button case', () => {
+    expect(resolveButtonAriaPt(undefined, undefined)).toBeUndefined();
   });
 
-  it('returns a pt object with aria-pressed=true when pressed', () => {
-    expect(resolveAriaPressedPt(true)).toEqual({ root: { 'aria-pressed': true } });
+  it('returns a pt object with aria-pressed only when expanded is unset', () => {
+    expect(resolveButtonAriaPt(true, undefined)).toEqual({ root: { 'aria-pressed': true } });
+    expect(resolveButtonAriaPt(false, undefined)).toEqual({ root: { 'aria-pressed': false } });
   });
 
-  it('returns a pt object with aria-pressed=false when explicitly not pressed', () => {
-    expect(resolveAriaPressedPt(false)).toEqual({ root: { 'aria-pressed': false } });
+  it('returns a pt object with aria-expanded only when pressed is unset', () => {
+    expect(resolveButtonAriaPt(undefined, true)).toEqual({ root: { 'aria-expanded': true } });
+    expect(resolveButtonAriaPt(undefined, false)).toEqual({ root: { 'aria-expanded': false } });
+  });
+
+  it('merges both attributes into one root object when both are set', () => {
+    expect(resolveButtonAriaPt(true, false)).toEqual({ root: { 'aria-pressed': true, 'aria-expanded': false } });
   });
 });

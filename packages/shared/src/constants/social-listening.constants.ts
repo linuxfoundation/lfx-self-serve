@@ -241,5 +241,8 @@ export const SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES = [
   SOCIAL_LISTENING_SAVED_FILTERS_PREFERENCE_PREFIX,
 ] as const;
 
+/** Server-side ceiling on a preference value's serialized size — the BFF proxies arbitrary JSON to the upstream user service, so cap it (bookmarks at the 500-id client cap serialize to ~25KB). */
+export const SOCIAL_LISTENING_PREFERENCE_VALUE_MAX_LENGTH = 64_000;
+
 /** Empty read-state doc — mark-all-as-unread writes it (no DELETE) and corrupt docs parse to it. */
 export const EMPTY_READ_STATE: ReadStateData = { readBeforeTs: null, readIds: [], unreadIds: [] };

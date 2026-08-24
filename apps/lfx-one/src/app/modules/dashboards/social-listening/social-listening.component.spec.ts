@@ -611,6 +611,30 @@ describe('SocialListeningComponent', () => {
       expect(markAllAsRead).toHaveBeenCalledWith('2026-08-01T00:00:00Z');
     });
 
+    it('retains the global-newest mark-all cutoff after window 0 is pruned from the cache', async () => {
+      // Window 0 rows stamp newer than every deeper window — the retained cutoff must survive window 0's eviction.
+      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => {
+        const response = feedResponse(req);
+        const ts = (req.offset ?? 0) === 0 ? '2026-08-01T00:00:00Z' : '2026-07-01T00:00:00Z';
+        return of({ ...response, mentions: response.mentions.map((m) => ({ ...m, MENTION_TS: ts })) });
+      });
+      fixture.destroy();
+      fixture = TestBed.createComponent(SocialListeningComponent);
+      fixture.detectChanges();
+      await settle();
+
+      // Page into window 4 — windows 0 and 1 fall out of the ±2 band.
+      for (const page of [5, 10, 15, 20]) {
+        fixture.componentInstance.onPageChange({ page, rows: 20 });
+        await settle();
+      }
+      expect(cachedWindows()).toEqual([2, 3, 4]);
+
+      fixture.componentInstance.onMarkAllAsRead();
+
+      expect(markAllAsRead).toHaveBeenCalledWith('2026-08-01T00:00:00Z');
+    });
+
     it('resets the page on read-filter change without clearing the window cache or refetching', async () => {
       fixture.componentInstance.onPageChange({ page: 4, rows: 20 });
       await settle();

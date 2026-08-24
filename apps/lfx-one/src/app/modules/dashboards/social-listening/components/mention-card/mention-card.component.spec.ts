@@ -220,7 +220,7 @@ describe('MentionCardComponent', () => {
     expect(emitted).toEqual([mention]);
   });
 
-  it('reflects the read state in aria-pressed, dims the card, and swaps the eye icon', async () => {
+  it('reflects the read state in aria-pressed, tints the card background, and swaps the eye icon', async () => {
     setMention(baseMention());
     fixture.componentRef.setInput('isRead', false);
     await fixture.whenStable();

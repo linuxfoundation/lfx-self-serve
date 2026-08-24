@@ -5,7 +5,7 @@ import { NgClass } from '@angular/common';
 import { Component, computed, effect, input, output } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { ButtonProps } from '@lfx-one/shared/interfaces';
-import { resolveAriaPressedPt } from '@lfx-one/shared/utils';
+import { resolveButtonAriaPt } from '@lfx-one/shared/utils';
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
 
@@ -40,7 +40,7 @@ export class ButtonComponent {
   public readonly size = input<ButtonProps['size']>(undefined);
   public readonly variant = input<ButtonProps['variant']>(undefined);
   public readonly fluid = input<boolean | undefined>(false);
-  public readonly style = input<Record<string, any> | null | undefined>(undefined);
+  public readonly style = input<Record<string, unknown> | null | undefined>(undefined);
   public readonly styleClass = input<string | undefined>(undefined);
 
   // Badge properties
@@ -57,10 +57,16 @@ export class ButtonComponent {
    * `pt` passthrough (`ptm('root')`) — a plain `[attr.aria-pressed]` at the call site would only reach
    * the `<p-button>` host, not the real button. Do not combine with `tooltip` on the same instance:
    * the Tooltip directive on the same host also consumes the `pt` binding for its own `role="tooltip"`
-   * container, so {@link ariaPressedPt} suppresses itself whenever `tooltip` is set rather than leak
+   * container, so {@link ariaPt} suppresses itself whenever `tooltip` is set rather than leak
    * `aria-pressed` onto that element.
    */
   public readonly ariaPressed = input<boolean | undefined>(undefined);
+  /**
+   * Expanded state for buttons that toggle a popup (e.g. a views dropdown trigger). Forwarded to the
+   * `<p-button>` branch's internal `<button>` via the same `pt` passthrough as {@link ariaPressed} —
+   * a plain `[attr.aria-expanded]` at the call site only reaches the host. Same `tooltip` conflict.
+   */
+  public readonly ariaExpanded = input<boolean | undefined>(undefined);
 
   // Navigation
   public readonly routerLink = input<string | string[] | undefined>(undefined);
@@ -78,34 +84,20 @@ export class ButtonComponent {
   public readonly tooltip = input<string | undefined>(undefined);
   public readonly tooltipPosition = input<string>('top');
 
-  /**
-   * `pt` passthrough object for the `<p-button>` branch's `aria-pressed` — hoisted to a computed so
-   * the template doesn't hand PrimeNG a fresh object literal on every change-detection pass. See
-   * {@link resolveAriaPressedPt} for why an unset input resolves to `undefined` rather than a pt
-   * object. Deliberately NOT annotated against PrimeNG's own `ButtonPassThrough` type: the same
-   * `<p-button>` host also carries `[pTooltip]`, and the Tooltip directive declares its own `pt`
-   * input of a different (non-nullable) passthrough type — Angular's template checker resolves the
-   * single `[pt]="ariaPressedPt()"` binding against both directives, so `ButtonPassThrough`'s `null`
-   * member fails to type-check against Tooltip's `pt`. The shared package's narrower
-   * `ButtonRootPassThrough` is structurally compatible with both and is what's actually verified here.
-   *
-   * That same dual-consumption means the `pt` value reaches the Tooltip directive's own root element
-   * (its `role="tooltip"` container) too, not just `<p-button>`'s. Resolving to `undefined` whenever
-   * `tooltip` is set prevents `aria-pressed` from ever landing on that tooltip container — no current
-   * call site combines the two, but this keeps a future one from silently shipping invalid ARIA. The
-   * constructor below carries the dev-mode warning for this combination — kept out of this computed
-   * since `computed()` callbacks must stay pure (no side effects, may not run at all if never read).
-   */
-  protected readonly ariaPressedPt = computed(() => (this.tooltip() ? undefined : resolveAriaPressedPt(this.ariaPressed())));
+  // Merged aria-pressed/aria-expanded `pt` for the `<p-button>` branch, hoisted to a computed so the template doesn't hand PrimeNG a fresh object per change-detection pass. `undefined` when `tooltip` is set — the Tooltip directive on this host consumes the same `pt` binding for its own `role="tooltip"` container, and the aria attributes must not leak onto it. Typed via the shared `ButtonRootPassThrough` (not PrimeNG's `ButtonPassThrough`) because the single `[pt]` binding type-checks against both `<p-button>` and `pTooltip`.
+  protected readonly ariaPt = computed(() => (this.tooltip() ? undefined : resolveButtonAriaPt(this.ariaPressed(), this.ariaExpanded())));
 
   public constructor() {
     if (typeof ngDevMode !== 'undefined' && ngDevMode) {
       effect(() => {
-        if (this.tooltip() && this.ariaPressed() !== undefined) {
-          console.warn('<lfx-button>: `ariaPressed` is ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding on this host.');
+        if (this.tooltip() && (this.ariaPressed() !== undefined || this.ariaExpanded() !== undefined)) {
+          console.warn('<lfx-button>: `ariaPressed`/`ariaExpanded` are ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding on this host.');
         }
         if (this.href() && this.ariaPressed() !== undefined) {
           console.warn('<lfx-button>: `ariaPressed` is ignored on the `href` (anchor) variant — aria-pressed is invalid on role="link".');
+        }
+        if (this.href() && this.ariaExpanded() !== undefined) {
+          console.warn('<lfx-button>: `ariaExpanded` is ignored on the `href` (anchor) variant — the `pt` passthrough only applies to the `<p-button>` branch.');
         }
       });
     }

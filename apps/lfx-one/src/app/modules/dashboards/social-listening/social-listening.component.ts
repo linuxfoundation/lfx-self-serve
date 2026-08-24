@@ -88,6 +88,7 @@ import type {
   SocialListeningCountRequest,
   SocialListeningFeedRequest,
   SocialListeningFeedResponse,
+  SocialListeningMention,
   SocialListeningPlatform,
   SocialListeningScopedOptionsRequest,
   SocialListeningScopeSignals,
@@ -173,6 +174,8 @@ export class SocialListeningComponent {
   public readonly pageSize = signal(DEFAULT_MENTION_PAGE_SIZE);
   public readonly rowsPerPageOptions = MENTION_PAGE_SIZE_OPTIONS;
   private readonly windowCache = signal<Map<number, SocialListeningWindowCacheEntry>>(new Map());
+  // Global-newest MENTION_TS, captured whenever window 0 loads — survives cache pruning so a mark-all from a deep page still stamps the true cutoff.
+  private newestMentionTs: string | null = null;
   private readonly backgroundLoading = signal(false);
   /** Bumped to force a one-time refetch of a window whose phase-2 fill failed. */
   private readonly feedRetryTick = signal(0);
@@ -421,6 +424,7 @@ export class SocialListeningComponent {
         this.currentPage.set(0);
         this.windowCache.set(new Map());
         this.retriedWindows.clear();
+        this.newestMentionTs = null;
       });
     });
 
@@ -446,6 +450,8 @@ export class SocialListeningComponent {
         this.selectedProject.set('all');
         this.selectedPlatform.set('all');
         this.activeViewId.set(null);
+        // The banner names a view from the previous foundation — leaving it up would save into the new foundation's store.
+        this.foreignViewBannerVisible.set(false);
       }
       this.previousFoundationSlug = current;
     });
@@ -538,17 +544,9 @@ export class SocialListeningComponent {
 
   /** The cutoff is the newest loaded MENTION_TS — never wall-clock, so backfilled mentions aren't silently hidden. */
   public onMarkAllAsRead(): void {
-    // Window 0's newest row is the global newest (feed sorts newest-first and loads first) — prefer it so a
-    // mark-all from a deep page doesn't leave newer windows unread; fall back to the current window if evicted.
-    const source = this.windowCache().get(0) ?? this.currentWindowData();
-    const latestTs = source.mentions.reduce<string | null>((max, m) => {
-      if (!m.MENTION_TS) return max;
-      // Epoch-ms compare — Snowflake's space-separated timestamps don't lexicographically sort against ISO "T".
-      const time = new Date(m.MENTION_TS).getTime();
-      // Skip unparseable timestamps — NaN never loses a `>` compare, so one bad value would stick as the cutoff.
-      if (Number.isNaN(time)) return max;
-      return max === null || time > new Date(max).getTime() ? m.MENTION_TS : max;
-    }, null);
+    // Prefer the retained global-newest (captured when window 0 loads; survives cache pruning) so a
+    // mark-all from a deep page doesn't stamp an older cutoff and leave newer window-0 mentions unread.
+    const latestTs = this.newestMentionTs ?? this.newestTsOf(this.currentWindowData().mentions);
     this.mentionReadStateService.markAllAsRead(latestTs);
   }
 
@@ -591,11 +589,13 @@ export class SocialListeningComponent {
 
   public onViewSelected(view: SavedFilter): void {
     this.applyView(view);
+    this.viewsOpen.set(false);
     this.foreignViewBannerVisible.set(false);
   }
 
   public onDefaultViewSelected(): void {
     this.resetToDefaultViewState();
+    this.viewsOpen.set(false);
     this.foreignViewBannerVisible.set(false);
   }
 
@@ -1065,6 +1065,10 @@ export class SocialListeningComponent {
     // An in-flight response from before a scope/filter reset can land after the cache was cleared
     // (pipeline cancellation lags one macrotask) — drop it instead of serving stale rows.
     if (cacheKey !== untracked(this.feedCacheKey)) return;
+    // Window 0 holds the global newest (feed sorts newest-first) — retain its cutoff outside the prunable cache.
+    if (windowIdx === 0) {
+      this.newestMentionTs = this.newestTsOf(data.mentions);
+    }
     this.windowCache.update((cache) => {
       const updated = new Map(cache).set(windowIdx, data);
       for (const key of Array.from(updated.keys())) {
@@ -1072,6 +1076,16 @@ export class SocialListeningComponent {
       }
       return updated;
     });
+  }
+
+  /** Newest parseable MENTION_TS in a window — epoch-ms compare since Snowflake's space-separated timestamps don't lexicographically sort against ISO "T"; NaN never wins a `>` compare, so unparseable values are skipped. */
+  private newestTsOf(mentions: SocialListeningMention[]): string | null {
+    return mentions.reduce<string | null>((max, m) => {
+      if (!m.MENTION_TS) return max;
+      const time = new Date(m.MENTION_TS).getTime();
+      if (Number.isNaN(time)) return max;
+      return max === null || time > new Date(max).getTime() ? m.MENTION_TS : max;
+    }, null);
   }
 
   private evictWindowCache(windowIdx: number): void {
