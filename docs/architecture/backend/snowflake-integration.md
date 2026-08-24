@@ -516,8 +516,8 @@ SNOWFLAKE_ROLE=
 # SNOWFLAKE_PRIVATE_KEY_PASSPHRASE=your-passphrase-here
 
 # Optional: Connection Pool Configuration (defaults shown)
-# SNOWFLAKE_MIN_CONNECTIONS=2
-# SNOWFLAKE_MAX_CONNECTIONS=10
+# SNOWFLAKE_MIN_CONNECTIONS=0
+# SNOWFLAKE_MAX_CONNECTIONS=20
 
 # Optional: Lock Strategy for Query Deduplication (defaults to 'memory')
 # SNOWFLAKE_LOCK_STRATEGY=memory
@@ -539,13 +539,19 @@ SNOWFLAKE_ROLE=
 ```typescript
 // packages/shared/src/constants/snowflake.constant.ts
 export const SNOWFLAKE_CONFIG = {
-  // Timeouts
-  DEFAULT_QUERY_TIMEOUT: 60000, // 60 seconds
+  // Timeouts — DEFAULT_QUERY_TIMEOUT covers pool wait + execution + result transfer
+  DEFAULT_QUERY_TIMEOUT: 15000, // 15 seconds (fail-fast; was 60s)
   CONNECTION_TIMEOUT: 30000, // 30 seconds
+  CONNECTION_ACQUIRE_TIMEOUT: 15000, // 15 seconds
 
   // Pool configuration
-  MIN_CONNECTIONS: 2,
-  MAX_CONNECTIONS: 10,
+  MIN_CONNECTIONS: 0, // on-demand; no eager warm-up
+  MAX_CONNECTIONS: 20,
+  MAX_WAITING_CLIENTS: 10,
+
+  // Circuit breaker (omitted from older copies of this snippet)
+  CIRCUIT_BREAKER_FAILURE_THRESHOLD: 5,
+  CIRCUIT_BREAKER_RESET_TIMEOUT_MS: 60000, // 60 seconds
 
   // Lock management
   LOCK_CLEANUP_INTERVAL: 60000, // 60 seconds
@@ -842,13 +848,18 @@ Solution:
 #### 3. Query Timeout
 
 ```text
-Error: Query execution timeout
-Cause: Query taking longer than configured timeout
+Error: Snowflake query timed out after 15000ms
+Cause: The BFF Promise.race ceiling (SNOWFLAKE_CONFIG.DEFAULT_QUERY_TIMEOUT, 15s)
+  covers pool acquire + warehouse execution + downloading/materializing rows.
+  Snowflake QUERY_HISTORY can still show SUCCESS in <1s while this error fires —
+  that is a result-transfer / over-fetch failure, not a slow warehouse.
 Solution:
-  1. Optimize query with indexes/partitions
-  2. Increase SNOWFLAKE_CONFIG.DEFAULT_QUERY_TIMEOUT
-  3. Consider breaking into smaller queries
-  4. Check Snowflake warehouse size
+  1. Check whether the query returns far more rows than the wire shape needs
+     (fold/filter/limit in SQL; do not raise the timeout to paper over it)
+  2. Confirm QUERY_HISTORY elapsed time; if the warehouse was fast, do not
+     resize the warehouse and do not raise DEFAULT_QUERY_TIMEOUT
+  3. Only if QUERY_HISTORY itself is slow: optimize the SQL, then consider
+     warehouse size as a last resort
 ```
 
 #### 4. Read-Only Validation Failure
