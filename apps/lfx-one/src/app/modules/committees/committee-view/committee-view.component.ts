@@ -258,7 +258,7 @@ export class CommitteeViewComponent {
   public readonly inviteToastKey = INVITE_TOAST_KEY;
   public pendingInvitation: Signal<PendingInvitation | null> = computed(() => {
     const committee = this.committee();
-    if (!committee?.uid || !this.isVisitor() || committee.join_mode !== 'invite_only') {
+    if (!committee?.uid || !this.isVisitor()) {
       return null;
     }
     return findPendingInvitationForCommittee(this.invitationService.pendingInvitations(), this.invitationService.resolvedInviteUids(), committee.uid);
