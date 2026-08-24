@@ -371,7 +371,16 @@ export class NewsletterManageComponent {
   // can be saved but not sent. A null layout falls back to body_html content.
   public readonly bodyPersistable = computed(() => {
     if (this.bodyLayoutValue()) return true;
-    return stripHtml(this.bodyHtmlValue()).trim().length > 0;
+    if (stripHtml(this.bodyHtmlValue()).trim().length > 0) return true;
+    // Switching Blocks -> Basic clears the layout to null AND the body to empty,
+    // which the two checks above would treat as nothing to save. But on an
+    // EXISTING draft that clear is a deliberate change: without persisting it the
+    // stored body_layout reloads and silently undoes the switch. So an existing
+    // draft that differs from its saved state stays persistable even when empty;
+    // a brand-new draft with no content does not (nothing to autosave yet). The
+    // Blocks direction avoids this by seeding an empty non-null layout; this is
+    // the mirror for the Basic direction.
+    return this.isEditMode() && this.isDirty();
   });
   public readonly audienceFilled = computed(() => (this.committeeUidsValue() ?? []).length > 0);
   // body_html is server-derived, so it only reflects the canvas once a save has

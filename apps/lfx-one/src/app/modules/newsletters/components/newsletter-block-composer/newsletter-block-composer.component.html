@@ -444,14 +444,20 @@
         </div>
       </div>
 
-      <!-- Email-size indicator: bytes + Gmail-clipping status (Gatewaze parity).
-         Hidden until the manifest loads, so it never shows a misleading 0.0 KB
-         before the email can be rendered. -->
+      <!-- Email-size indicator: bytes + Gmail-clipping status. Hidden until the
+         manifest loads, so it never shows a misleading 0.0 KB before the email
+         can be rendered. -->
       <div class="flex items-center justify-end gap-1.5 text-xs" data-testid="newsletter-composer-size">
         @if (manifestLoading()) {
           <span class="text-gray-300">—</span>
         } @else {
           @switch (emailSizeStatus()) {
+            @case ('oversize') {
+              <i class="fa-light fa-triangle-exclamation text-red-500" aria-hidden="true"></i>
+              <span class="font-medium text-red-600" data-testid="newsletter-composer-size-oversize"
+                >Too large to send — over the ~100 KB render limit; remove some content.</span
+              >
+            }
             @case ('clip') {
               <i class="fa-light fa-triangle-exclamation text-red-500" aria-hidden="true"></i>
               <span class="font-medium text-red-600">{{ emailSizeLabel() }} — over Gmail's ~102 KB limit; it will be clipped.</span>

@@ -3,6 +3,7 @@
 
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
 import { isPlatformBrowser } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import {
   afterRenderEffect,
   Component,
@@ -183,8 +184,16 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // The AUTHORITATIVE rendered email: the server MJML render of the current
   // layout — the same output the send path dispatches — debounced. The client
   // `fullHtml` above is only a canvas estimate; MJML adds table/style boilerplate
-  // it can't see, so the size and source must come from the server render.
-  protected readonly serverHtml: Signal<string> = this.initServerHtml();
+  // it can't see, so the size and source must come from the server render. The
+  // render result carries an `oversize` flag: the server refuses to render a
+  // layout whose assembled email exceeds NEWSLETTER_BODY_MAX_LENGTH (a 422), and
+  // that must surface as a hard error rather than a silent fall back to the
+  // smaller client estimate.
+  private readonly serverRender: Signal<{ html: string; oversize: boolean }> = this.initServerRender();
+  protected readonly serverHtml: Signal<string> = computed(() => this.serverRender().html);
+  // True when the last server render was rejected for exceeding the size limit.
+  // The same layout will fail every save and test-send, so the UI must say so.
+  protected readonly renderOversize: Signal<boolean> = computed(() => this.serverRender().oversize);
   // Source view: the server render once available, falling back to the instant
   // client render so the panel isn't blank before the first server response.
   protected readonly sourceHtml: Signal<string> = computed(() => this.serverHtml() || this.fullHtml());
@@ -197,7 +206,11 @@ export class NewsletterBlockComposerComponent implements OnInit {
     return html ? new TextEncoder().encode(html).length : 0;
   });
   protected readonly emailSizeLabel: Signal<string> = computed(() => `${(this.emailBytes() / 1024).toFixed(1)} KB`);
-  protected readonly emailSizeStatus: Signal<'ok' | 'warn' | 'clip'> = computed(() => {
+  // 'oversize' takes precedence over the byte thresholds: on an oversize render
+  // the byte count reflects the smaller client estimate (the server render was
+  // refused), so it would otherwise read as 'ok' while every save fails.
+  protected readonly emailSizeStatus: Signal<'oversize' | 'ok' | 'warn' | 'clip'> = computed(() => {
+    if (this.renderOversize()) return 'oversize';
     const bytes = this.emailBytes();
     if (bytes >= NEWSLETTER_GMAIL_CLIP_BYTES) return 'clip';
     if (bytes >= NEWSLETTER_GMAIL_WARN_BYTES) return 'warn';
@@ -744,11 +757,17 @@ export class NewsletterBlockComposerComponent implements OnInit {
   /**
    * The server-rendered email HTML for the current layout, debounced so we
    * render at most once per editing pause. Browser-only; empty until the first
-   * response (and for an empty canvas). Failures degrade to '' — callers
-   * (sourceHtml / emailBytes) fall back to the client estimate rather than
-   * blanking or showing 0 KB.
+   * response (and for an empty canvas). Emits `{ html, oversize }`:
+   * - A 422 means the server refused to render because the assembled email
+   *   exceeds NEWSLETTER_BODY_MAX_LENGTH. That is a HARD error, not a transient
+   *   one: the same layout will fail every save and test-send. So it sets
+   *   `oversize` (driving a red "too large" status) instead of silently falling
+   *   back to the client estimate, which is smaller and would read as "ok".
+   * - Any other failure degrades to empty html with `oversize` false — callers
+   *   (sourceHtml / emailBytes) fall back to the client estimate rather than
+   *   blanking or showing 0 KB.
    */
-  private initServerHtml(): Signal<string> {
+  private initServerRender(): Signal<{ html: string; oversize: boolean }> {
     const renderInput = computed(() => ({ layout: this.toLayout(), wrapperContent: this.wrapperPreviewContent() }));
     return toSignal(
       toObservable(renderInput).pipe(
@@ -756,18 +775,24 @@ export class NewsletterBlockComposerComponent implements OnInit {
         switchMap(({ layout, wrapperContent }) => {
           const projectUid = this.projectContext.activeContextUid();
           if (!isPlatformBrowser(this.platformId) || !projectUid || layout.blocks.length === 0) {
-            return of('');
+            return of({ html: '', oversize: false });
           }
           return this.newsletterService.renderPreview(projectUid, { body_layout: layout, wrapper_content: wrapperContent }).pipe(
-            map((response) => response.body_html ?? ''),
+            map((response) => ({ html: response.body_html ?? '', oversize: false })),
             catchError((err: unknown) => {
-              console.error('newsletter-block-composer: render-preview failed; email-size + source fall back to the client estimate', err);
-              return of('');
+              // render-preview validates the same size ceiling as render-on-write,
+              // so a 422 here is the size limit — the only 422 this already-built
+              // layout can produce. Treat it as a hard oversize error.
+              const oversize = err instanceof HttpErrorResponse && err.status === 422;
+              if (!oversize) {
+                console.error('newsletter-block-composer: render-preview failed; email-size + source fall back to the client estimate', err);
+              }
+              return of({ html: '', oversize });
             })
           );
         })
       ),
-      { initialValue: '' }
+      { initialValue: { html: '', oversize: false } }
     );
   }
 
