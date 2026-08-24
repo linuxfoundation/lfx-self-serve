@@ -311,6 +311,13 @@ export const MEETING_TO_COMMITTEE_VOTING_STATUS: Record<MeetingAllowedVotingStat
 };
 
 /**
+ * Voting status options for the committee member form.
+ * Excludes None — the committee service rejects it on voting-enabled committees
+ * (LFXV2-2075); it persists only as a legacy value on pre-existing members.
+ */
+export const MEMBER_FORM_VOTING_STATUSES = VOTING_STATUSES.filter(({ value }) => value !== CommitteeMemberVotingStatus.NONE);
+
+/**
  * Available appointment sources for committee members
  * @description Defines how a member was appointed to the committee
  * @readonly

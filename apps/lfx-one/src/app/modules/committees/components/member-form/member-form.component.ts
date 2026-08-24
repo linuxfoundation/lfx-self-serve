@@ -11,7 +11,7 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { SelectComponent } from '@components/select/select.component';
-import { APPOINTED_BY_OPTIONS, COMMITTEE_PERMISSION_OPTIONS, LINKEDIN_PROFILE_PATTERN, MEMBER_ROLES, VOTING_STATUSES } from '@lfx-one/shared/constants';
+import { APPOINTED_BY_OPTIONS, COMMITTEE_PERMISSION_OPTIONS, LINKEDIN_PROFILE_PATTERN, MEMBER_FORM_VOTING_STATUSES, MEMBER_ROLES } from '@lfx-one/shared/constants';
 import {
   Committee,
   CommitteeMember,
@@ -57,7 +57,7 @@ export class MemberFormComponent {
 
   // Member options
   public roleOptions = MEMBER_ROLES;
-  public votingStatusOptions = VOTING_STATUSES;
+  public votingStatusOptions = MEMBER_FORM_VOTING_STATUSES;
   public appointedByOptions = APPOINTED_BY_OPTIONS;
   public permissionOptions = [...COMMITTEE_PERMISSION_OPTIONS];
 
