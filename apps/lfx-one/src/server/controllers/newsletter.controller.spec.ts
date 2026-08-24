@@ -16,6 +16,7 @@ const { listNewsletters, createNewsletter, updateNewsletter, scheduleNewsletter,
 // committee.controller.spec.ts / project.controller.spec.ts.
 vi.mock('@lfx-one/shared/constants', () => ({
   NEWSLETTER_BODY_MAX_LENGTH: 50_000,
+  NEWSLETTER_BODY_LAYOUT_MAX_LENGTH: 5_000,
   NEWSLETTER_RAW_CONTENT_MAX_LENGTH: 10_000,
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
   NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH: 5_000,
@@ -197,6 +198,52 @@ describe('NewsletterController create/update — empty-body clear', () => {
     const next = vi.fn();
 
     await new NewsletterController().createNewsletter({ params: { projectUid: 'p1' }, body: clearedPayload, path: '/x' } as any, buildRes(), next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(createNewsletter).not.toHaveBeenCalled();
+  });
+});
+
+describe('NewsletterController create/update — layout validation', () => {
+  it('accepts an empty blocks layout (a wrapper-only draft is saveable)', async () => {
+    createNewsletter.mockResolvedValue({ id: 'n1', version: 1 });
+    const next = vi.fn();
+    const payload = {
+      subject: 'Hello',
+      body_layout: { wrapper_key: 'default', blocks: [] },
+      ed_reply_email: 'ed@example.com',
+      committee_uids: ['committee-1'],
+    };
+
+    await new NewsletterController().createNewsletter({ params: { projectUid: 'p1' }, body: payload, path: '/x' } as any, buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createNewsletter).toHaveBeenCalledWith(expect.anything(), 'p1', payload);
+  });
+
+  it('rejects a present layout whose blocks is not an array', async () => {
+    const next = vi.fn();
+    const payload = {
+      subject: 'Hello',
+      body_layout: { wrapper_key: 'default', blocks: 'nope' },
+      ed_reply_email: 'ed@example.com',
+      committee_uids: ['committee-1'],
+    };
+
+    await new NewsletterController().createNewsletter({ params: { projectUid: 'p1' }, body: payload as any, path: '/x' } as any, buildRes(), next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(createNewsletter).not.toHaveBeenCalled();
+  });
+
+  it('rejects a layout whose serialized size exceeds the cap', async () => {
+    const next = vi.fn();
+    const blocks = Array.from({ length: 200 }, (_, i) => ({ block_type: 'text', content: { body: `block ${i} with some filler content` } }));
+    const payload = { subject: 'Hello', body_layout: { wrapper_key: 'default', blocks }, ed_reply_email: 'ed@example.com', committee_uids: ['committee-1'] };
+
+    await new NewsletterController().createNewsletter({ params: { projectUid: 'p1' }, body: payload as any, path: '/x' } as any, buildRes(), next);
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
