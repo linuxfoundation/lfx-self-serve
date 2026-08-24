@@ -886,7 +886,7 @@ export class OrgLensProjectDetailService {
         FROM ranked
         WHERE org_rank > ?
         GROUP BY ${periodColumn}
-        ORDER BY IFF(ACCOUNT_ID = '', 1, 0), ACCOUNT_ID, ${periodColumn} ASC
+        ORDER BY ACCOUNT_ID, ${periodColumn} ASC
       `,
       binds
     );

@@ -81,6 +81,8 @@ describe('OrgLensProjectDetailService.getTrendBlock', () => {
     expect(sql).toContain('MAX_BY(COMBINED_INFLUENCE_SCORE, SPAN_MONTH)');
     expect(sql).toContain("COALESCE(MAX(ORG_NAME), '') ASC");
     expect(sql).toContain('UNION ALL');
+    expect(sql).toContain('ORDER BY ACCOUNT_ID, SPAN_MONTH ASC');
+    expect(sql).not.toContain('IFF(');
     expect(placeholderCount(sql)).toBe(binds.length);
     expect(binds).toEqual([SLUG, 12, 10, 'All others', 10]);
   });
@@ -119,6 +121,8 @@ describe('OrgLensProjectDetailService.getTrendBlock', () => {
     expect(sql).toContain('ACCOUNT_ID IS NOT NULL');
     expect(sql).toContain("ACCOUNT_ID <> ''");
     expect(sql).toContain('ROW_NUMBER()');
+    expect(sql).toContain('ORDER BY ACCOUNT_ID, BUCKET_INDEX ASC');
+    expect(sql).not.toContain('IFF(');
     expect(placeholderCount(sql)).toBe(binds.length);
     expect(binds).toEqual([SLUG, 10, 'All others', 10]);
   });
