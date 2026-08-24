@@ -177,7 +177,14 @@ export class OrgGroupsComponent {
     // A filter value from the previous org (e.g. its foundation slug) would almost never match the
     // next org's roster. `skip(1)` so the URL-seeded initial filter survives first load — only an
     // actual org switch clears it, mirroring committee-members' resetAllState() on orgUid$.
-    this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => this.clearFilters());
+    // Also closes the seat-holders drawer: OrgGroupsComponent isn't destroyed on an org switch, so
+    // a drawer left open would otherwise keep the previous org's selectedGroup (and, via its own
+    // orgUid-keyed cache, would just show the new org's roster filtered by the old org's committeeUid).
+    this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => {
+      this.clearFilters();
+      this.seatHoldersDrawerVisible.set(false);
+      this.selectedGroup.set(null);
+    });
   }
 
   protected clearFilters(): void {

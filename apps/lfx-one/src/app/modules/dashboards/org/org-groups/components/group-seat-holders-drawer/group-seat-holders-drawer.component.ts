@@ -6,7 +6,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
 import { votingStatusPillClass } from '@lfx-one/shared/constants';
-import type { CommitteeMemberAssignment } from '@lfx-one/shared/interfaces';
+import type { CommitteeMemberAssignment, CommitteeMemberSeatHolderVm } from '@lfx-one/shared/interfaces';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, finalize, map, of, shareReplay, switchMap, throwError, type Observable } from 'rxjs';
 
@@ -30,16 +30,27 @@ export class GroupSeatHoldersDrawerComponent {
 
   protected readonly loading = signal(false);
   protected readonly error = signal(false);
-  protected readonly votingStatusPillClass = votingStatusPillClass;
 
   // getCommitteeMembers(orgUid) always drains the org's FULL, non-truncated committee roster —
   // there's no server-side committeeUid filter (committee-service's seats endpoint doesn't offer
   // one). The OSPO persona this drawer serves opens it for several groups in one sitting, so a
-  // fresh fetch per open would re-trigger that full drain every time — cache the observable per
-  // orgUid (stable for the page's lifetime) and just re-filter it client-side on each open.
-  private assignments$: Observable<CommitteeMemberAssignment[]> | null = null;
+  // fresh fetch per open would re-trigger that full drain every time — cache the observable, keyed
+  // by orgUid so an in-place org switch (OrgGroupsComponent isn't destroyed/recreated on switch,
+  // see its orgUid$ subscription) rebuilds it instead of replaying the previous org's roster.
+  private cache: { orgUid: string; assignments$: Observable<CommitteeMemberAssignment[]> } | null = null;
 
-  protected readonly seatHolders: Signal<CommitteeMemberAssignment[] | null> = this.initSeatHolders();
+  private readonly seatHolders: Signal<CommitteeMemberAssignment[] | null> = this.initSeatHolders();
+
+  // Filtered-list length once loaded, falling back to the row's precomputed seatCount() before
+  // that — keeps the header in sync with the rendered rows (each row is one seat/assignment, same
+  // unit the header counts) instead of drifting from a separately-sourced number.
+  protected readonly displayedCount: Signal<number> = computed(() => this.seatHolders()?.length ?? this.seatCount());
+
+  // Precomputes the voting-status pill class per row so the template stays a flat binding
+  // (no function call on every change-detection pass).
+  protected readonly seatHolderVms: Signal<CommitteeMemberSeatHolderVm[]> = computed(() =>
+    (this.seatHolders() ?? []).map((a) => ({ ...a, votingStatusPillClass: votingStatusPillClass(a.votingStatus) }))
+  );
 
   private initSeatHolders(): Signal<CommitteeMemberAssignment[] | null> {
     const trigger$ = toObservable(computed(() => ({ visible: this.visible(), orgUid: this.orgUid(), committeeUid: this.committeeUid() })));
@@ -51,22 +62,29 @@ export class GroupSeatHoldersDrawerComponent {
           this.error.set(false);
           this.loading.set(true);
 
-          if (!this.assignments$) {
-            this.assignments$ = this.committeeMembersService.getCommitteeMembers(orgUid).pipe(
-              map((response) => response.assignments),
-              catchError((err: unknown) => {
-                // Drop the cache on failure so the next drawer open retries the fetch instead of
-                // replaying the same error forever.
-                this.assignments$ = null;
-                return throwError(() => err);
-              }),
-              shareReplay(1)
-            );
+          if (!this.cache || this.cache.orgUid !== orgUid) {
+            this.cache = {
+              orgUid,
+              assignments$: this.committeeMembersService.getCommitteeMembers(orgUid).pipe(
+                map((response) => response.assignments),
+                catchError((err: unknown) => {
+                  // Drop the cache — but only if it's still this orgUid's entry, so a fetch for a
+                  // since-switched-to org can't be clobbered by a slower, now-stale failure — so the
+                  // next drawer open retries the fetch instead of replaying the same error forever.
+                  if (this.cache?.orgUid === orgUid) {
+                    this.cache = null;
+                  }
+                  return throwError(() => err);
+                }),
+                shareReplay(1)
+              ),
+            };
           }
 
-          return this.assignments$.pipe(
+          return this.cache.assignments$.pipe(
             map((assignments) => assignments.filter((a) => a.committeeUid === committeeUid)),
-            catchError(() => {
+            catchError((err: unknown) => {
+              console.error('Failed to load group seat holders:', err);
               this.error.set(true);
               return of([] as CommitteeMemberAssignment[]);
             }),
