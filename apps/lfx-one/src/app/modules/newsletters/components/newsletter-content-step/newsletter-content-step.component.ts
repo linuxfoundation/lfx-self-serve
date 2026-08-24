@@ -106,7 +106,16 @@ export class NewsletterContentStepComponent implements OnInit {
     // listener on teardown.
     if (isPlatformBrowser(this.platformId)) {
       const mq = window.matchMedia('(max-width: 767px)');
-      const onChange = (e: MediaQueryListEvent): void => this.isMobile.set(e.matches);
+      const onChange = (e: MediaQueryListEvent): void => {
+        this.isMobile.set(e.matches);
+        // Crossing the breakpoint mounts or unmounts the composer. On the return
+        // to desktop it re-mounts and re-reads initialLayout, which is memoized
+        // on layoutSeedVersion — so bump the seed here too. Without it the
+        // re-mounted composer would seed the layout captured before the mobile
+        // round-trip, and its next edit would overwrite the live form layout
+        // with that stale tree.
+        this.layoutSeedVersion.update((v) => v + 1);
+      };
       this.isMobile.set(mq.matches);
       mq.addEventListener('change', onChange);
       this.destroyRef.onDestroy(() => mq.removeEventListener('change', onChange));

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NO_ERRORS_SCHEMA, PLATFORM_ID } from '@angular/core';
+import { Component, input, NO_ERRORS_SCHEMA, OnInit, output, PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -11,6 +11,20 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { afterEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 import { NewsletterContentStepComponent } from './newsletter-content-step.component';
+
+// Stub for lfx-newsletter-block-composer that records the layout it was seeded
+// with on mount. The real composer reads initialLayout once at mount, so a
+// re-mount (e.g. a mobile round-trip) must receive the CURRENT layout — this
+// stub captures exactly that so the resize re-seed regression is assertable.
+@Component({ selector: 'lfx-newsletter-block-composer', template: '' })
+class StubBlockComposerComponent implements OnInit {
+  public static seededWith: NewsletterLayout | null = null;
+  public readonly initialLayout = input<NewsletterLayout | null>(null);
+  public readonly layoutChange = output<NewsletterLayout>();
+  public ngOnInit(): void {
+    StubBlockComposerComponent.seededWith = this.initialLayout();
+  }
+}
 
 /**
  * Covers the mobile-gating behavior of the Content step, which is only stated in
@@ -73,7 +87,9 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
       // does not run; the unknown lfx-* elements pass under NO_ERRORS_SCHEMA. The
       // real ConfirmDialog stays so the confirm-discard path is exercised.
       .overrideComponent(NewsletterContentStepComponent, {
-        set: { imports: [ReactiveFormsModule, ConfirmDialogModule], schemas: [NO_ERRORS_SCHEMA] },
+        // Keep a real (stub) composer so its initialLayout seeding is assertable;
+        // the other lfx-* child editors stay unknown and pass under NO_ERRORS_SCHEMA.
+        set: { imports: [ReactiveFormsModule, ConfirmDialogModule, StubBlockComposerComponent], schemas: [NO_ERRORS_SCHEMA] },
       })
       .compileComponents();
 
@@ -151,6 +167,39 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
     expect(q('newsletter-content-composer-mobile-notice')).not.toBeNull();
     // The block content is retained on the form, not discarded by the resize.
     expect(form.get('bodyLayout')!.value).toEqual(POPULATED_LAYOUT);
+  });
+
+  it('re-seeds the composer with the CURRENT layout after a desktop → mobile → desktop round-trip', async () => {
+    stubMatchMedia(false);
+    const form = makeForm(POPULATED_LAYOUT);
+    StubBlockComposerComponent.seededWith = null;
+    await createWith(form);
+    // Mounted on desktop, seeded from the initial layout.
+    expect(StubBlockComposerComponent.seededWith).toEqual(POPULATED_LAYOUT);
+
+    // A desktop edit lands on the form (the composer would emit layoutChange).
+    const edited: NewsletterLayout = {
+      wrapper_key: 'default',
+      blocks: [
+        { block_type: 'hero', content: {} },
+        { block_type: 'cta', content: {} },
+      ],
+    } as NewsletterLayout;
+    form.get('bodyLayout')!.setValue(edited);
+
+    // Round-trip the viewport: to mobile (composer unmounts)...
+    fireResize(true);
+    fixture.detectChanges();
+    expect(q('newsletter-content-composer')).toBeNull();
+
+    // ...and back to desktop, which re-mounts the composer.
+    StubBlockComposerComponent.seededWith = null;
+    fireResize(false);
+    fixture.detectChanges();
+
+    // The re-mounted composer must seed from the edited layout, not the stale
+    // pre-round-trip tree; otherwise its next edit overwrites the live form.
+    expect(StubBlockComposerComponent.seededWith).toEqual(edited);
   });
 
   it('confirms before discarding, then clears the body, when switching to Basic from the mobile notice', async () => {
