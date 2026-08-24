@@ -704,6 +704,23 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     expect(prepareSign).not.toHaveBeenCalled();
     expect(isStarting(fixture)).toBe(false);
     expect(location.href).toBe(HOME);
+
+    await sign(fixture);
+    await Promise.resolve();
+    expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(2);
+  });
+
+  it('does not spin Sign CLA while the account picker is still open', async () => {
+    const fixture = await setup({ dismissAccount: 'hold' });
+
+    await sign(fixture);
+
+    expect(opened).toContain(GithubAccountSelectComponent);
+    expect(isStarting(fixture)).toBe(false);
+    expect(prepareSign).not.toHaveBeenCalled();
+
+    await sign(fixture);
+    expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(1);
   });
 
   // --- Where the hand-off address comes from (FR-004, FR-006) ---------------
