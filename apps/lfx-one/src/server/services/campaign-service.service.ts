@@ -12,7 +12,9 @@ import type {
   HubSpotMarketingEmail,
   CampaignEventDetails,
   CampaignGoal,
+  CampaignIndexDoc,
   CampaignJobStatus,
+  CampaignListResult,
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformResult,
@@ -24,11 +26,13 @@ import type {
   MetaAdVariant,
   RedditAdVariant,
   MetaBriefCopy,
+  QueryServiceResponse,
   RedditBriefCopy,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -314,6 +318,86 @@ export class CampaignServiceClient {
 
   public constructor(microserviceProxy?: MicroserviceProxyService) {
     this.microserviceProxy = microserviceProxy ?? new MicroserviceProxyService();
+  }
+
+  /**
+   * List the campaigns belonging to a brief, from the platform's Query Service.
+   *
+   * NOT from campaign-service. That service has no list endpoint by DESIGN — `docs/architecture.md`
+   * D5 and `docs/api-catalog.md` rule 3 give Query Service ownership of lists, and an earlier
+   * attempt to add one (campaign-service PR #117) was built and withdrawn for exactly that reason.
+   * The absent route is a decision, not a gap, so this reads the index instead.
+   *
+   * Scoped BOTH ways, and neither is redundant. `parent=project:<slug>` is what the platform
+   * applies FGA against — campaign docs carry `AccessCheckRelation: campaign_manager` on that
+   * project — so it is the authorization boundary, not a filter. `filters=brief_id:<id>` narrows
+   * to the brief, and it has to be a filter rather than a parent because `ParentRefs` is
+   * project-scoped only: there is no `brief:<id>` ref to address.
+   *
+   * The brief id is RE-CHECKED on every row rather than trusted from the filter. Whether
+   * `data.brief_id` is a term field or an analysed one is the single assumption this read rests
+   * on (LFXV2-3099), and an analysed field would match on token overlap — returning another
+   * brief's campaigns for a similar id. A wrong row here would put one brief's campaigns, and
+   * their spend, under another's. Cheap to verify, expensive to get wrong.
+   *
+   * `failOnPartial: true` because a truncated list is worse than an error: the caller cannot tell
+   * a short list from a complete one, and the missing campaigns are live and spending.
+   */
+  public async listBriefCampaigns(req: Request, projectSlug: string, briefId: string): Promise<CampaignListResult> {
+    if (projectSlug === '' || briefId === '') {
+      // Refused rather than defaulted: a query missing either scope would either fail
+      // authorization or, worse, widen past the brief the caller asked about.
+      //
+      // `possiblyStale: true` on a REFUSAL, which looks odd until you read what the field means to
+      // a caller: `false` asserts the empty list is authoritative — that this brief has no
+      // campaigns. Nothing was queried here, so that assertion would be manufactured from a
+      // programming error, and it is exactly the false absence this field exists to prevent. The
+      // HTTP path never reaches this (the controller refuses both blanks first), so this guards
+      // direct callers, where an unqualified "no campaigns" is the most expensive thing to say.
+      return { campaigns: [], possiblyStale: true, statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle) };
+    }
+
+    const docs = await fetchAllQueryResources<CampaignIndexDoc>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CampaignIndexDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'campaign',
+          parent: `project:${projectSlug}`,
+          filters: [`brief_id:${briefId}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+
+    // Derive the ETag here, where the wire contract lives. The index stores `version` only, but a
+    // write against a campaign needs `If-Match`, and campaign-service's ETag is exactly
+    // `"<version>"` — quotes included (`briefETag` in internal/service/brief.go). Deriving it once
+    // beats leaving each caller to rediscover a quoting rule that only Go source states; a caller
+    // that got it wrong would see a 412 and read it as someone else's concurrent edit.
+    const campaigns = docs.filter((d) => d?.brief_id === briefId).map((d) => ({ ...d, etag: typeof d.version === 'number' ? `"${d.version}"` : undefined }));
+    if (campaigns.length !== docs.length) {
+      // The filter matched rows this brief does not own — the field is analysed, not a term, or
+      // the contract moved. Report it loudly: the rows are dropped here, but every other consumer
+      // of this filter has the same exposure.
+      logger.warning(req, 'list_brief_campaigns', 'query returned campaigns belonging to another brief', {
+        briefId,
+        returned: docs.length,
+        kept: campaigns.length,
+      });
+    }
+
+    // An empty result is ambiguous by construction: indexing is asynchronous, so "not indexed
+    // yet" and "none exist" are the same answer here. Say so rather than letting the caller read
+    // absence as proof.
+    // Reported with the list because the client cannot infer it: this read is ungated, while the
+    // toggle route refuses every UUID when the flag is off — so a default deployment would render
+    // controls that can only fail. Read at request time rather than cached, so a flag flip does
+    // not need a redeploy of this process to take effect on the next list.
+    return {
+      campaigns,
+      possiblyStale: campaigns.length === 0,
+      statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle),
+    };
   }
 
   /**

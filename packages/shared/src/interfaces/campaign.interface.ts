@@ -1414,6 +1414,149 @@ export interface HubSpotUtmCreateResult {
 }
 
 // ---------------------------------------------------------------------------
+// Campaign List (Query Service)
+// ---------------------------------------------------------------------------
+
+/**
+ * A campaign as the platform's Query Service indexes it.
+ *
+ * Mirrors campaign-service's `CampaignDoc` (`internal/infrastructure/indexer/contract.go`)
+ * field for field, in the SNAKE_CASE the index stores — this is a wire shape, not a UI model,
+ * and renaming here would hide drift rather than absorb it.
+ *
+ * Read from Query Service rather than campaign-service deliberately: `docs/architecture.md` D5
+ * and `docs/api-catalog.md` rule 3 give Query Service ownership of lists, and campaign-service
+ * has no list endpoint by DESIGN. An earlier attempt to add one (campaign-service PR #117) was
+ * withdrawn for exactly this reason — the absent route is a decision, not a gap.
+ *
+ * `platform_campaign_id` is optional because it is absent until the ad platform confirms the
+ * create; a campaign row exists before its upstream id does.
+ */
+export interface CampaignIndexDoc {
+  id: string;
+  project_id: string;
+  brief_id: string;
+  platform: string;
+  platform_campaign_id?: string;
+  campaign_name: string;
+  status: string;
+  version: number;
+  /**
+   * The `If-Match` validator for a write against this campaign, DERIVED from `version`.
+   *
+   * Not an indexed field — the index stores `version` alone. campaign-service's ETag is exactly
+   * `"<version>"`, quotes included (`briefETag`), so the server derives it once here rather than
+   * leaving every caller to re-derive a wire format they would have to read Go source to learn.
+   * A caller that quoted it differently would get a 412 that looks like a concurrent edit.
+   */
+  etag?: string;
+}
+
+/**
+ * One campaign as the Optimize tab's row renders it: the indexed document plus what the UI has
+ * CONFIRMED about it this session.
+ *
+ * `status` is not `campaign.status`. The index is asynchronous, so a row re-read moments after a
+ * pause still reports the old status; showing that back to whoever just paused a campaign reads as
+ * the pause having failed. The overlay wins when present, and it is only ever set from a confirmed
+ * response.
+ */
+export interface CampaignRow {
+  campaign: CampaignIndexDoc;
+  /** What the row displays: this session's confirmed status, else the indexed one. */
+  status: string;
+  /**
+   * What the row's button offers, derived from `status` via `campaignToggleAction`.
+   *
+   * Three states, not a boolean. A boolean can only say "Pause or Resume", and upstream has a
+   * third answer: `pending`, `group_created` and `unconfirmed` are all refused by
+   * `model.CampaignStatusToggleable`, so a two-state row files them under Resume and offers an
+   * action that is guaranteed to 409. `unavailable` is that third answer, and any status this UI
+   * has not seen falls into it rather than into a doomed button.
+   */
+  action: CampaignToggleAction;
+  /**
+   * Why the toggle is disabled — set for `unavailable` rows only, empty otherwise.
+   *
+   * Carried on the row rather than looked up in the template, so the reason is rendered from the
+   * same `status` the action was derived from and the two cannot disagree.
+   */
+  unavailableReason: string;
+  /**
+   * Whether a 412 refused this row's validator and no re-read has yet proved it advanced.
+   *
+   * Distinct from `unavailable`, which is about what the row IS — its status, platform, or the
+   * deployment's capability. This is about what this session KNOWS: the exact `If-Match` the next
+   * click would send has already been rejected, so the click is a round trip to a certain 412
+   * while the conflict banner is telling the operator to refresh first. It clears when a delivered
+   * list shows this row's indexed etag has moved, per row rather than for the list.
+   */
+  conflicted: boolean;
+  /**
+   * The button's visible word, and the verb inside its accessible name.
+   *
+   * One field for both so speech input ("click Pause") keeps matching the visible text — the
+   * accessible name CONTAINS this word rather than replacing it. Carried on the row rather than
+   * ternaried in the template because there are now three cases, and a nested ternary in a
+   * template is exactly the construct this repo forbids.
+   */
+  toggleLabel: string;
+  /**
+   * The button's `aria-describedby` value, or `null` when there is nothing to point at.
+   *
+   * Carried on the row rather than computed by a template method: templates may only read
+   * signals, computed values and pipes (`docs/reviews/frontend-checklist.md` §4), and the method
+   * form re-ran for every row on every change detection pass. Space-separated because
+   * `aria-describedby` takes a LIST and a row can hold both an error and an unavailable reason.
+   */
+  describedBy: string | null;
+}
+
+/**
+ * What a campaign row's toggle offers.
+ *
+ * `unavailable` is not "we do not know" — it is a positive statement that campaign-service will
+ * refuse a run-state change for this status, which is why the row disables the button and states
+ * a reason instead of hiding it.
+ */
+export type CampaignToggleAction = 'pause' | 'resume' | 'unavailable';
+
+/**
+ * What `GET /api/campaigns/list` reports back.
+ *
+ * `campaigns` is what the index currently holds for the brief. That is NOT the same as what
+ * exists: indexing is asynchronous, so a campaign created seconds ago may not appear yet. The
+ * caller must not read an empty list as "no campaigns were created" — the create job's own
+ * per-platform results are the authority immediately after a create, and this read is for
+ * later sessions. `possiblyStale` marks the window where the two can disagree.
+ */
+export interface CampaignListResult {
+  campaigns: CampaignIndexDoc[];
+  /**
+   * True when the list may not yet reflect a very recent create.
+   *
+   * Set when the query succeeded but returned nothing, which is indistinguishable at this layer
+   * from "indexed and genuinely empty". Reported rather than resolved because the caller knows
+   * something this layer does not — whether it just created campaigns.
+   */
+  possiblyStale: boolean;
+  /**
+   * Whether THIS deployment can actually service a pause/resume.
+   *
+   * Returned with the list because the two routes are gated differently and the client cannot
+   * infer it: `/list` is ungated (it reads the Query Service index), while the toggle route
+   * refuses every UUID unless `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` is on — and the chart
+   * leaves that flag unset by default. Without this field a default deployment renders a row of
+   * buttons whose every click fails, which reads to an operator as the campaign refusing to stop
+   * rather than as a capability that was never switched on.
+   *
+   * A server fact, so it is reported by the server rather than mirrored into a client-side flag
+   * that would drift from the deployment it describes.
+   */
+  statusToggleEnabled: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Campaign Status Toggle
 // ---------------------------------------------------------------------------
 
