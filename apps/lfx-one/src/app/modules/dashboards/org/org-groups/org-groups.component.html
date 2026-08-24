@@ -3,10 +3,14 @@
 
 <main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-groups-page">
   <header class="flex flex-col gap-2" data-testid="org-groups-header">
-    <h1 class="font-display font-light text-2xl" data-testid="org-groups-title">{{ committeeLabel.plural }}</h1>
-    <p class="text-sm text-gray-500" data-testid="org-groups-subtitle">
-      {{ committeeLabel.plural }} your organization's employees participate in across Linux Foundation projects.
-    </p>
+    <h1 class="font-display font-light text-2xl" data-testid="org-groups-title">
+      @if (companyName()) {
+        {{ committeeLabel.plural }} &mdash; {{ companyName() }}
+      } @else {
+        {{ committeeLabel.plural }}
+      }
+    </h1>
+    <p class="text-sm text-gray-500" data-testid="org-groups-subtitle">Where your employees hold seats across Linux Foundation projects.</p>
   </header>
 
   @if (hasNoOrgAccess()) {
@@ -22,34 +26,76 @@
       </p>
     </section>
   } @else if (!loaded()) {
-    <section class="grid grid-cols-2 gap-4 sm:grid-cols-4" data-testid="org-groups-skeleton">
-      @for (i of [1, 2, 3, 4]; track i) {
-        <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
-          <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
-          <p-skeleton width="3rem" height="1.75rem" />
-          <p-skeleton width="80%" height="0.75rem" />
-        </div>
-      }
+    <section
+      [class]="statGridClass"
+      [style.--cols]="statSkeletonTiles.length"
+      aria-label="{{ committeeLabel.singular }} participation summary"
+      data-testid="org-groups-skeleton">
+      <ng-container [ngTemplateOutlet]="statCardsSkeleton" />
+    </section>
+    <section aria-label="{{ committeeLabel.singular }} list" data-testid="org-groups-list-loading">
+      <div class="flex flex-col gap-3" data-testid="org-groups-list-skeleton">
+        <ng-container [ngTemplateOutlet]="groupListSkeleton" />
+      </div>
     </section>
   } @else if (!hasCompany()) {
-    <lfx-empty-state icon="fa-light fa-building" title="Select an organization to view group participation." data-testid="org-groups-no-company-state" />
+    <lfx-empty-state
+      icon="fa-light fa-building"
+      title="Select an organization to view {{ committeeLabelSingularLower }} participation."
+      data-testid="org-groups-no-company-state" />
   } @else if (fetchError()) {
     <lfx-empty-state
       icon="fa-light fa-circle-exclamation"
-      title="Unable to load group participation"
-      description="Something went wrong while fetching group data. Please try refreshing the page."
+      title="Unable to load {{ committeeLabelSingularLower }} participation"
+      subtitle="Something went wrong while fetching {{ committeeLabelSingularLower }} data. Please try refreshing the page."
       data-testid="org-groups-error-state" />
   } @else {
+    @if (showRoster()) {
+      <!-- Filter bar -->
+      <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4" data-testid="org-groups-filter-bar">
+        <div class="flex-1">
+          <label for="org-groups-search-input" class="sr-only">Search {{ committeeLabelPluralLower }}</label>
+          <lfx-input-text
+            [form]="filterForm"
+            control="search"
+            id="org-groups-search-input"
+            placeholder="Search {{ committeeLabelPluralLower }}..."
+            icon="fa-light fa-magnifying-glass"
+            styleClass="w-full"
+            size="small"
+            dataTest="org-groups-search-input" />
+        </div>
+        <div class="w-full md:w-56">
+          <lfx-select
+            [form]="filterForm"
+            control="foundation"
+            size="small"
+            [options]="foundationOptions()"
+            styleClass="w-full"
+            ariaLabel="Filter by foundation"
+            dataTest="org-groups-foundation-filter" />
+        </div>
+        <div class="w-full md:w-56">
+          <lfx-select
+            [form]="filterForm"
+            control="type"
+            size="small"
+            [options]="typeOptions()"
+            styleClass="w-full"
+            ariaLabel="Filter by type"
+            dataTest="org-groups-type-filter" />
+        </div>
+      </div>
+    }
+
     <!-- Stat strip -->
-    <section class="grid grid-cols-2 gap-4 sm:grid-cols-4" aria-label="Group participation summary" data-testid="org-groups-stat-strip">
+    <section
+      [class]="statGridClass"
+      [style.--cols]="groupsLoading() ? statSkeletonTiles.length : statTileCount()"
+      aria-label="{{ committeeLabel.singular }} participation summary"
+      data-testid="org-groups-stat-strip">
       @if (groupsLoading()) {
-        @for (i of [1, 2, 3, 4]; track i) {
-          <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
-            <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
-            <p-skeleton width="3rem" height="1.75rem" />
-            <p-skeleton width="80%" height="0.75rem" />
-          </div>
-        }
+        <ng-container [ngTemplateOutlet]="statCardsSkeleton" />
       } @else {
         <!-- Total groups card -->
         <div class="flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-groups-stat-total">
@@ -67,83 +113,182 @@
           <p class="mt-1 text-2xl font-semibold text-gray-900">{{ totalSeats() }}</p>
           <p class="text-xs text-gray-500">Total Seats</p>
         </div>
-        <!-- Working groups card -->
-        <div class="flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-groups-stat-wg">
-          <div class="flex h-8 w-8 items-center justify-center rounded-full bg-amber-50">
-            <i class="fa-light fa-users-gear text-amber-700 text-sm" aria-hidden="true"></i>
+        <!-- One tile per non-zero behavioral class, largest first, other last -->
+        @for (tile of visibleClassTiles(); track tile.cls) {
+          @let config = behavioralClassConfig[tile.cls];
+          <div class="flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-4" [attr.data-testid]="'org-groups-stat-' + tile.cls">
+            <div class="flex h-8 w-8 items-center justify-center rounded-full" [class]="config.bgColor">
+              <i [class]="config.icon + ' ' + config.color + ' text-sm'" aria-hidden="true"></i>
+            </div>
+            <p class="mt-1 text-2xl font-semibold text-gray-900" [attr.data-testid]="'org-groups-tile-count-' + tile.cls">{{ tile.count }}</p>
+            <p class="text-xs text-gray-500">{{ config.label }}</p>
           </div>
-          <p class="mt-1 text-2xl font-semibold text-gray-900">{{ behavioralClassCounts()['working-group'] }}</p>
-          <p class="text-xs text-gray-500">Working Groups</p>
-        </div>
-        <!-- SIGs card -->
-        <div class="flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-groups-stat-sig">
-          <div class="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50">
-            <i class="fa-light fa-comments text-blue-700 text-sm" aria-hidden="true"></i>
-          </div>
-          <p class="mt-1 text-2xl font-semibold text-gray-900">{{ behavioralClassCounts()['special-interest-group'] }}</p>
-          <p class="text-xs text-gray-500">SIGs</p>
-        </div>
+        }
       }
     </section>
 
+    @if (showRoster()) {
+      <div class="flex items-center justify-between text-sm text-gray-500" data-testid="org-groups-result-line">
+        <span data-testid="org-groups-result-count" aria-live="polite"
+          >Showing {{ filteredGroups().length }} of {{ groups().length }} {{ committeeLabelPluralLower }}</span
+        >
+        @if (isFiltering()) {
+          <button
+            type="button"
+            class="text-xs font-medium text-gray-500 underline hover:text-gray-900"
+            data-testid="org-groups-clear-filters"
+            (click)="clearFilters()">
+            Clear filters
+          </button>
+        }
+      </div>
+    }
+
     <!-- Group list -->
-    <section aria-label="Group list" data-testid="org-groups-list">
+    <section aria-label="{{ committeeLabel.singular }} list" data-testid="org-groups-list">
       @if (groupsLoading()) {
         <div class="flex flex-col gap-3" data-testid="org-groups-list-skeleton">
-          @for (i of [1, 2, 3, 4, 5]; track i) {
-            <div class="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4">
-              <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
-              <div class="flex flex-col gap-1 flex-1">
-                <p-skeleton width="40%" height="1rem" />
-                <p-skeleton width="25%" height="0.75rem" />
-              </div>
-              <p-skeleton width="3rem" height="1.25rem" />
-            </div>
-          }
+          <ng-container [ngTemplateOutlet]="groupListSkeleton" />
         </div>
       } @else if (groups().length === 0) {
         <lfx-empty-state
           icon="fa-light fa-users-rectangle"
-          title="No group participation found."
-          description="Your organization's employees are not listed as members of any working groups or committees."
+          title="No {{ committeeLabelSingularLower }} participation found."
+          subtitle="Your organization's employees are not listed as members of any {{ committeeLabelPluralLower }}."
           data-testid="org-groups-empty-state" />
+      } @else if (filteredGroups().length === 0) {
+        <lfx-empty-state
+          icon="fa-light fa-filter-slash"
+          title="No {{ committeeLabelPluralLower }} match the current filters"
+          subtitle="Try adjusting your search or filter selections."
+          ctaLabel="Clear filters"
+          ctaIcon="fa-light fa-filter-slash"
+          (ctaClick)="clearFilters()"
+          data-testid="org-groups-filtered-empty-state" />
       } @else {
         <div class="flex flex-col gap-2" role="list" data-testid="org-groups-list-items">
-          @for (group of groupsWithClass(); track group.uid) {
+          @for (group of filteredGroups(); track group.uid) {
             @let config = behavioralClassConfig[group.cls];
-            <a
-              [routerLink]="['/groups', group.uid]"
+            <div
               role="listitem"
-              class="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-              [attr.data-testid]="'org-groups-item-' + group.uid"
-              [attr.aria-label]="group.name + ', ' + config.label + ', ' + group.org_seat_count + ' seats'">
-              <!-- Icon -->
-              <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" [class]="config.bgColor">
-                <i [class]="config.icon + ' ' + config.color + ' text-base'" aria-hidden="true"></i>
+              class="has-[.peer:hover]:border-blue-200 has-[.peer:hover]:bg-blue-50/30 relative flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors"
+              [attr.data-testid]="'org-groups-item-' + group.uid">
+              <!-- Whole-row click/focus target ("stretched link"): covers the row so the group
+                   itself is still reachable by clicking or tabbing to anywhere in the row, while
+                   the foundation link below remains an independent, individually-focusable sibling
+                   rather than an (invalid) nested anchor. `peer` lets the row (via has-[.peer:hover]
+                   above) and the sibling content wrapper (via peer-hover below) react to *this*
+                   link's own hover state specifically — since the foundation link inside re-enables
+                   its own pointer-events, hovering it does NOT count as hovering this anchor, so the
+                   two links highlight/color independently rather than together. Text selection over
+                   the row content is traded away for this (pointer-events-none below) — matches the
+                   existing stretched-link precedent in shared/components/sidebar/sidebar.component.html. -->
+              <a
+                [routerLink]="['/groups', group.uid]"
+                class="peer absolute inset-0 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                [attr.data-testid]="'org-groups-row-link-' + group.uid"
+                [attr.aria-label]="group.ariaLabel"></a>
+
+              <!-- text-gray-900 + peer-hover:text-blue-700 here, with no color class on the name
+                   `<p>` itself, so the name inherits this wrapper's color — every other child
+                   (seat count, icons, tag) sets its own explicit color and is unaffected. -->
+              <div
+                class="pointer-events-none flex w-full items-start gap-4 text-gray-900 transition-colors peer-hover:text-blue-700 sm:items-center"
+                [attr.data-testid]="'org-groups-item-row-content-' + group.uid">
+                <!-- Icon -->
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" [class]="config.bgColor">
+                  <i [class]="config.icon + ' ' + config.color + ' text-base'" aria-hidden="true"></i>
+                </div>
+
+                <!-- Name + meta + behavioral class chip: stacked below `sm`; `sm:contents` folds this
+                     wrapper away so the name/meta block and chip become direct flex items of the row
+                     again, reproducing the pre-existing desktop layout. `sm:contents` gives the wrapper
+                     no box of its own at `sm+`, so its own `flex-1`/`min-w-0` stop applying there — the
+                     inner block below carries its own `flex-1 min-w-0` so it, not the wrapper, is the
+                     item that grows to push the chip/seat-count/chevron to the row's right edge. Kept
+                     unconditional (not `sm:`-scoped): at mobile this block is a column child with no
+                     extra vertical space to grow into (the row is `items-start`, sized to content), so
+                     the class is inert there and only takes effect once `sm:contents` makes it a real
+                     horizontal flex item. -->
+                <div class="flex flex-1 min-w-0 flex-col gap-2 sm:contents" [attr.data-testid]="'org-groups-item-meta-wrapper-' + group.uid">
+                  <div class="flex flex-1 min-w-0 flex-col gap-0.5" [attr.data-testid]="'org-groups-item-meta-block-' + group.uid">
+                    <p class="truncate text-sm font-medium" [attr.data-testid]="'org-groups-item-name-' + group.uid">
+                      {{ group.name }}
+                    </p>
+                    <!-- /org/memberships/:slug, not /org/projects/:slug — the org-projects page is
+                         Snowflake/CDP-scoped to sub-project activity rows and doesn't resolve
+                         foundation-level slugs (verified live: /org/projects/uepf 404s,
+                         /org/memberships/uepf works). Known residual gap, two causes: (1) the
+                         memberships route only resolves an *active* Snowflake membership row for
+                         the org (server's org-lens-memberships.service.ts getMembershipDetail) — a
+                         foundation the org has a committee seat in but no active membership for
+                         (expired tier, or a seat that predates/exists independent of formal
+                         membership) dead-ends on the memberships not-found state; (2)
+                         group.project_slug here is the project-service slug from the
+                         committee-service seat record,
+                         while the memberships route matches against Snowflake's foundationSlug —
+                         verified equal for the sampled cases (uepf, cncf) but not guaranteed equal
+                         in general, so a slug mismatch is a second, unverified way to dead-end.
+                         Narrower than before this fix (the common case now works), not fully
+                         closed. -->
+                    @if (group.project_slug) {
+                      <a
+                        [routerLink]="['/org/memberships', group.project_slug]"
+                        class="pointer-events-auto relative z-10 block w-fit truncate text-xs text-gray-500 transition-colors hover:text-blue-700 hover:underline"
+                        [attr.data-testid]="'org-groups-item-project-' + group.uid"
+                        [attr.aria-label]="group.projectAriaLabel">
+                        {{ group.projectLabel }}
+                      </a>
+                    } @else if (group.projectLabel) {
+                      <p class="truncate text-xs text-gray-500" [attr.data-testid]="'org-groups-item-project-' + group.uid">{{ group.projectLabel }}</p>
+                    }
+                  </div>
+
+                  <!-- `flex`, not the default: as a flex item here the host would blockify to
+                       `block` regardless, but block gives it an inline-formatting-context strut
+                       sized by the inherited body font — `flex` avoids that extra height. -->
+                  <lfx-tag
+                    [value]="config.label"
+                    [severity]="'secondary'"
+                    class="flex w-fit shrink-0"
+                    [attr.data-testid]="'org-groups-item-class-chip-' + group.uid" />
+                </div>
+
+                <!-- Seat count -->
+                <div class="flex items-center gap-1 shrink-0 text-sm text-gray-600" [attr.data-testid]="'org-groups-item-seats-' + group.uid">
+                  <i class="fa-light fa-user-check text-gray-400 text-xs" aria-hidden="true"></i>
+                  <span>{{ group.org_seat_count }}</span>
+                </div>
+
+                <i class="fa-light fa-chevron-right text-gray-300 text-xs shrink-0" aria-hidden="true"></i>
               </div>
-
-              <!-- Name + meta -->
-              <div class="flex flex-col gap-0.5 flex-1 min-w-0">
-                <p class="truncate text-sm font-medium text-gray-900" data-testid="org-groups-item-name">{{ group.name }}</p>
-                @if (group.project_slug) {
-                  <p class="truncate text-xs text-gray-400" data-testid="org-groups-item-project">{{ group.project_slug }}</p>
-                }
-              </div>
-
-              <!-- Behavioral class chip -->
-              <lfx-tag [value]="config.label" [severity]="'secondary'" class="shrink-0 hidden sm:flex" />
-
-              <!-- Seat count -->
-              <div class="flex items-center gap-1 shrink-0 text-sm text-gray-600" data-testid="org-groups-item-seats">
-                <i class="fa-light fa-user-check text-gray-400 text-xs" aria-hidden="true"></i>
-                <span>{{ group.org_seat_count }}</span>
-              </div>
-
-              <i class="fa-light fa-chevron-right text-gray-300 text-xs shrink-0" aria-hidden="true"></i>
-            </a>
+            </div>
           }
         </div>
       }
     </section>
   }
+
+  <ng-template #statCardsSkeleton>
+    @for (i of statSkeletonTiles; track i) {
+      <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-groups-stat-skeleton-card">
+        <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
+        <p-skeleton width="3rem" height="1.75rem" />
+        <p-skeleton width="80%" height="0.75rem" />
+      </div>
+    }
+  </ng-template>
+
+  <ng-template #groupListSkeleton>
+    @for (i of [1, 2, 3, 4, 5]; track i) {
+      <div class="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-groups-list-skeleton-row">
+        <p-skeleton width="2rem" height="2rem" borderRadius="9999px" />
+        <div class="flex flex-col gap-1 flex-1">
+          <p-skeleton width="40%" height="1rem" />
+          <p-skeleton width="25%" height="0.75rem" />
+        </div>
+        <p-skeleton width="3rem" height="1.25rem" />
+      </div>
+    }
+  </ng-template>
 </main>

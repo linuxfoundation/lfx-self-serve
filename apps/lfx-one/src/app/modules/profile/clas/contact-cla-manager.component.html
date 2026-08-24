@@ -1,0 +1,52 @@
+<!--
+Copyright The Linux Foundation and each contributor to LFX.
+SPDX-License-Identifier: MIT
+-->
+
+<div class="flex flex-col" data-testid="contact-cla-manager-dialog">
+  <p class="mb-4 text-sm text-slate-600" data-testid="contact-cla-manager-hint">{{ hint }}</p>
+
+  @if (loading()) {
+    <p class="text-sm text-slate-500" data-testid="contact-cla-manager-loading">Loading CLA managers…</p>
+  } @else if (loadError()) {
+    <lfx-message severity="error" text="Couldn't load the CLA manager(s) for this agreement." />
+  } @else if (!hasManagers()) {
+    <div data-testid="contact-cla-manager-empty">
+      <lfx-message severity="info" text="No CLA manager is currently reachable for this company. Contact Linux Foundation support for help." />
+    </div>
+  } @else {
+    <p class="mb-2 text-sm font-medium text-slate-700">CLA manager(s)</p>
+    <div class="flex flex-col gap-2" data-testid="contact-cla-manager-list">
+      @for (manager of managers(); track manager.lfUsername) {
+        <div class="rounded border border-slate-200 px-3 py-2">
+          <lfx-checkbox
+            [form]="managerForm"
+            [control]="manager.lfUsername"
+            [label]="manager.label"
+            [attr.data-testid]="'contact-cla-manager-' + manager.lfUsername" />
+        </div>
+      }
+    </div>
+
+    <label class="mt-4 mb-2 text-sm font-medium text-slate-700" for="cla-manager-message">Message</label>
+    <lfx-textarea
+      class="block w-full"
+      [form]="form"
+      control="message"
+      [rows]="3"
+      styleClass="w-full cla-manager-message"
+      placeholder="Add a note for the CLA manager…"
+      id="cla-manager-message" />
+  }
+
+  @if (sendError()) {
+    <lfx-message class="mt-3" severity="error" text="Couldn't send the request. Try again." />
+  }
+
+  <div class="mt-4 flex justify-end gap-2.5">
+    <lfx-button label="Cancel" [text]="true" (onClick)="onCancel()" data-testid="contact-cla-manager-cancel" />
+    @if (hasManagers() && !loadError()) {
+      <lfx-button label="Send" [disabled]="!canSend()" [loading]="sending()" (onClick)="onSend()" data-testid="contact-cla-manager-send" />
+    }
+  </div>
+</div>

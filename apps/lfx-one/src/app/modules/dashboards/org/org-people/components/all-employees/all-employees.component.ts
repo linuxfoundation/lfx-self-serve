@@ -219,7 +219,6 @@ export class AllEmployeesComponent {
   }
 
   protected onPersonClick(row: OrgAllEmployeeRowVm): void {
-    if (row.isSynthetic) return;
     this.drawer.open({
       personKey: row.personKey,
       name: row.name,
