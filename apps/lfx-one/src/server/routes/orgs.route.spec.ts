@@ -38,7 +38,12 @@ vi.mock('../services/microservice-proxy.service', () => ({
     public proxyRequestWithResponse = proxyRequestWithResponse;
   },
 }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'lguerra' }));
+// `isImpersonating` is needed because the LFXV2-3288 logo route now runs `blockDuringImpersonation`
+// before its raw body parser (mirrors profile.route.ts's picture-upload gate). A partial mock that
+// omitted it would make the middleware call `undefined(req)` and 500 every test in this file.
+// Toggled via `impersonatingStub` so the impersonation-blocked scenario can flip it per test.
+let impersonatingStub = false;
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'lguerra', isImpersonating: () => impersonatingStub }));
 vi.mock('../services/logger.service', () => ({
   logger: {
     info: vi.fn(),
@@ -75,6 +80,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  impersonatingStub = false;
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
 });
 
@@ -175,5 +181,25 @@ describe('orgs router — POST /uid/:uid/logo', () => {
 
     expect(res.status).toBe(413);
     expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * PR #1583 — pins that `blockDuringImpersonation` is wired on this route (not just imported).
+   * Without a router-level assertion, a future refactor could drop the middleware and every other
+   * test in this file would still pass, since they exercise the raw parser + proxy path with
+   * impersonation off. The middleware's own unit tests can't catch a wiring regression here.
+   */
+  it('refuses the upload with 403 while impersonating and never forwards it upstream', async () => {
+    impersonatingStub = true;
+
+    const res = await fetch(`${baseUrl}/api/orgs/uid/${UID}/logo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png' },
+      body: Buffer.from('fake-png-bytes'),
+    });
+
+    expect(res.status).toBe(403);
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 });

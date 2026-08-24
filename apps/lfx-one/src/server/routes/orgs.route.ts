@@ -6,6 +6,7 @@ import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { OrgIdentityController } from '../controllers/org-identity.controller';
 import { MicroserviceError } from '../errors/microservice.error';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 import { OrgLensAccessController } from '../controllers/org-lens-access.controller';
 import { OrgLensBoardCommitteeController } from '../controllers/org-lens-board-committee.controller';
 import { OrgLensContributionsController } from '../controllers/org-lens-contributions.controller';
@@ -69,8 +70,15 @@ function buildOrgsRouter(): Router {
   router.get('/uid/:uid/addresses', (req, res, next) => orgIdentityController.getOrgAddresses(req, res, next));
   // LFXV2-3288 — Org logo upload proxy. Body is the raw image bytes (not multipart), forwarded as-is
   // to member-service's `POST /b2b_orgs/{uid}/logo`.
+  //
+  // Gated by `blockDuringImpersonation` for the same reason `profile.route.ts` gates picture uploads:
+  // the auth middleware forwards the target user's bearer token, so a write while impersonating
+  // would replace the target org's shared, externally-visible logo attributed upstream to the
+  // target account — a "real, hard-to-retract, externally-visible action" per the middleware's
+  // own contract (`impersonation-readonly.middleware.ts`). Reads (GET canonical) remain available.
   router.post(
     '/uid/:uid/logo',
+    blockDuringImpersonation,
     express.raw({ type: [...ALLOWED_ORG_LOGO_MIME_TYPES], limit: MAX_ORG_LOGO_SIZE_BYTES }),
     handleLogoUploadParseError,
     (req: Request, res: Response, next: NextFunction) => orgIdentityController.uploadLogo(req, res, next)
