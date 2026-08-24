@@ -439,8 +439,8 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
       prepare?: () => Observable<PrepareSignResponse>;
       closesWith?: ClaGroupOption | null;
       accountClosesWith?: string | null;
-      dismissGroup?: 'close' | 'destroy';
-      dismissAccount?: 'close' | 'destroy';
+      dismissGroup?: 'close' | 'destroy' | 'hold';
+      dismissAccount?: 'close' | 'destroy' | 'hold';
     } = {}
   ): Promise<ComponentFixture<ProfileClasComponent>> {
     location = { href: HOME };
@@ -527,7 +527,10 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     return () => throwError(() => ({ status, error: { error: message, code: status === 403 ? 'FORBIDDEN' : 'UPSTREAM_ERROR' } }));
   }
 
-  function dialogEvents(closeValue: unknown, dismiss: 'close' | 'destroy'): { onClose: Observable<unknown>; onDestroy: Observable<unknown> } {
+  function dialogEvents(closeValue: unknown, dismiss: 'close' | 'destroy' | 'hold'): { onClose: Observable<unknown>; onDestroy: Observable<unknown> } {
+    if (dismiss === 'hold') {
+      return { onClose: EMPTY, onDestroy: EMPTY };
+    }
     if (dismiss === 'destroy') {
       return { onClose: EMPTY, onDestroy: of(undefined) };
     }
@@ -600,6 +603,18 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     await sign(fixture);
     await Promise.resolve();
     expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(2);
+  });
+
+  it('does not spin Sign CLA while the project picker is still open', async () => {
+    const fixture = await setup({ dismissGroup: 'hold' });
+
+    await sign(fixture);
+
+    expect(isStarting(fixture)).toBe(false);
+    expect(getGithubAccounts).not.toHaveBeenCalled();
+
+    await sign(fixture);
+    expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(1);
   });
 
   // --- Cardinality (FR-002) -------------------------------------------------
