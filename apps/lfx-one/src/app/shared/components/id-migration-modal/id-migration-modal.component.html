@@ -23,7 +23,16 @@
         styleClass="w-full"
         dataTest="id-migration-reason" />
     </div>
-    <lfx-textarea [form]="form" control="comment" placeholder="Anything else? (optional)" [rows]="3" dataTest="id-migration-comment" />
+    <div class="flex flex-col gap-1">
+      <label for="id-migration-comment" class="text-sm text-gray-900">Anything else? (optional)</label>
+      <lfx-textarea
+        [form]="form"
+        control="comment"
+        id="id-migration-comment"
+        placeholder="Anything else? (optional)"
+        [rows]="3"
+        dataTest="id-migration-comment" />
+    </div>
   </form>
 
   <!-- Actions: "Stay here" dismisses silently; "Continue" logs the reason then opens ID in a new tab -->
