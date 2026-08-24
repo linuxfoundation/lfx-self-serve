@@ -1012,6 +1012,10 @@ describe('OrgGroupsComponent — CSV export', () => {
     return el as HTMLElement;
   }
 
+  function exportHint(fixture: ComponentFixture<OrgGroupsComponent>): HTMLElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="org-groups-export-csv-hint"]');
+  }
+
   it('enables the export button with no tooltip once there are rows to export', async () => {
     const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
 
@@ -1022,6 +1026,7 @@ describe('OrgGroupsComponent — CSV export', () => {
     const wrapper = exportTooltipWrapper(fixture);
     expect(wrapper.hasAttribute('tabindex')).toBe(false);
     expect(wrapper.hasAttribute('role')).toBe(false);
+    expect(exportHint(fixture)).toBeNull();
   });
 
   it('disables the export button and shows "No rows to export" when the active filter matches nothing', async () => {
@@ -1038,6 +1043,11 @@ describe('OrgGroupsComponent — CSV export', () => {
     expect(wrapper.getAttribute('tabindex')).toBe('0');
     expect(wrapper.getAttribute('role')).toBe('note');
     expect(wrapper.getAttribute('aria-label')).toBe('No rows to export');
+    // Always-visible fallback for a sighted keyboard-only user, who gets no hover/focus tooltip —
+    // aria-hidden so a screen reader (already covered by the wrapper's aria-label) doesn't double-read it.
+    const hint = exportHint(fixture);
+    expect(hint?.textContent?.trim()).toBe('No rows to export');
+    expect(hint?.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('exports only the rows the active filter leaves visible, not the full roster', async () => {

@@ -115,6 +115,15 @@
             (onClick)="exportCsv()"
             data-testid="org-groups-export-csv" />
         </div>
+        <!-- Always-visible fallback for the tooltip: closes the gap for a sighted keyboard-only
+             user (no screen reader), who would otherwise get no explanation at all — see the
+             comment above for why the tooltip itself can't be made to show on keyboard focus.
+             aria-hidden because the wrapper's aria-label already carries this to screen readers;
+             without it, a screen reader landing on the wrapper's role="note" region could read the
+             explanation twice. -->
+        @if (hasNoRowsToExport()) {
+          <span class="text-xs text-gray-500" aria-hidden="true" data-testid="org-groups-export-csv-hint">{{ noRowsToExportLabel }}</span>
+        }
       </div>
     }
 
