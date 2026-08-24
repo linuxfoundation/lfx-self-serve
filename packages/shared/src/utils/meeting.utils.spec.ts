@@ -8,7 +8,7 @@ import '@angular/compiler';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { PollStatus, RecurrenceType } from '../enums';
+import { CommitteeMemberVotingStatus, PollStatus, RecurrenceType } from '../enums';
 import {
   CANCELLED_COLOR,
   lfxColors,
@@ -47,6 +47,7 @@ import {
   convertRecurrenceToPattern,
   extractRegistrantEmails,
   filterUnlistedEmails,
+  fromMeetingApiVotingStatuses,
   getMeetingEditCommands,
   getMeetingOrganizerDisplayName,
   isCalendarDeadlinePast,
@@ -69,6 +70,7 @@ import {
   selectCommitteeCadenceMeeting,
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
+  toMeetingApiVotingStatuses,
 } from './meeting.utils';
 
 /**
@@ -1264,6 +1266,71 @@ describe('sanitizeMeetingCommitteeUids', () => {
 
   it('drops null, undefined, and blank uids', () => {
     expect(sanitizeMeetingCommitteeUids([null, undefined, '', '   ', 'group-1', 'group-2'])).toEqual(['group-1', 'group-2']);
+  });
+});
+
+describe('toMeetingApiVotingStatuses', () => {
+  it('returns [] for null, undefined, and empty input', () => {
+    expect(toMeetingApiVotingStatuses(null)).toEqual([]);
+    expect(toMeetingApiVotingStatuses(undefined)).toEqual([]);
+    expect(toMeetingApiVotingStatuses([])).toEqual([]);
+  });
+
+  it('maps every selectable display status to the meeting API vocabulary', () => {
+    expect(toMeetingApiVotingStatuses([CommitteeMemberVotingStatus.VOTING_REP])).toEqual(['voting_rep']);
+    expect(toMeetingApiVotingStatuses([CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP])).toEqual(['alt_voting_rep']);
+    expect(toMeetingApiVotingStatuses([CommitteeMemberVotingStatus.OBSERVER])).toEqual(['observer']);
+    expect(toMeetingApiVotingStatuses([CommitteeMemberVotingStatus.EMERITUS])).toEqual(['emeritus']);
+  });
+
+  it('drops unknown and null values and dedupes', () => {
+    expect(toMeetingApiVotingStatuses([CommitteeMemberVotingStatus.VOTING_REP, 'bogus', null, CommitteeMemberVotingStatus.VOTING_REP])).toEqual(['voting_rep']);
+  });
+});
+
+describe('fromMeetingApiVotingStatuses', () => {
+  it('returns [] for null, undefined, and empty input', () => {
+    expect(fromMeetingApiVotingStatuses(null)).toEqual([]);
+    expect(fromMeetingApiVotingStatuses(undefined)).toEqual([]);
+    expect(fromMeetingApiVotingStatuses([])).toEqual([]);
+  });
+
+  it('maps API values back to display statuses', () => {
+    expect(fromMeetingApiVotingStatuses(['voting_rep', 'alt_voting_rep', 'observer', 'emeritus'])).toEqual([
+      CommitteeMemberVotingStatus.VOTING_REP,
+      CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP,
+      CommitteeMemberVotingStatus.OBSERVER,
+      CommitteeMemberVotingStatus.EMERITUS,
+    ]);
+  });
+
+  it('collapses none to Observer and dedupes when both are stored', () => {
+    expect(fromMeetingApiVotingStatuses(['none'])).toEqual([CommitteeMemberVotingStatus.OBSERVER]);
+    expect(fromMeetingApiVotingStatuses(['observer', 'none'])).toEqual([CommitteeMemberVotingStatus.OBSERVER]);
+  });
+
+  it('drops unknown values', () => {
+    expect(fromMeetingApiVotingStatuses(['voting_rep', 'bogus'])).toEqual([CommitteeMemberVotingStatus.VOTING_REP]);
+  });
+
+  it('hydrates legacy display values stored before the API-vocabulary migration', () => {
+    expect(fromMeetingApiVotingStatuses(['Voting Rep', 'Alternate Voting Rep', 'Observer', 'Emeritus'])).toEqual([
+      CommitteeMemberVotingStatus.VOTING_REP,
+      CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP,
+      CommitteeMemberVotingStatus.OBSERVER,
+      CommitteeMemberVotingStatus.EMERITUS,
+    ]);
+    expect(fromMeetingApiVotingStatuses(['voting_rep', 'Observer'])).toEqual([CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.OBSERVER]);
+  });
+
+  it('round-trips the selectable statuses through both mappers', () => {
+    const display = [
+      CommitteeMemberVotingStatus.VOTING_REP,
+      CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP,
+      CommitteeMemberVotingStatus.OBSERVER,
+      CommitteeMemberVotingStatus.EMERITUS,
+    ];
+    expect(fromMeetingApiVotingStatuses(toMeetingApiVotingStatuses(display))).toEqual(display);
   });
 });
 

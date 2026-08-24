@@ -8,7 +8,7 @@ import { MultiSelectComponent } from '@components/multi-select/multi-select.comp
 import { Committee, CommitteeMember, MeetingCommittee } from '@lfx-one/shared';
 import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import { COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared/constants';
-import { sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids } from '@lfx-one/shared/utils';
+import { fromMeetingApiVotingStatuses, sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids, toMeetingApiVotingStatuses } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
@@ -124,7 +124,7 @@ export class MeetingCommitteeManagerComponent {
     const committeeIds = validCommittees.map((c) => c.uid);
     this.selectedCommitteeIds.set(committeeIds);
 
-    // Get voting statuses
+    // Get voting statuses (stored in the meeting API vocabulary)
     const existingVotingStatuses: string[] = [];
     validCommittees.forEach((committee) => {
       if (committee.allowed_voting_statuses) {
@@ -132,7 +132,8 @@ export class MeetingCommitteeManagerComponent {
       }
     });
 
-    const uniqueVotingStatuses = [...new Set(existingVotingStatuses)];
+    // Map API values back to the display vocabulary the multiselect options use
+    const uniqueVotingStatuses = fromMeetingApiVotingStatuses(existingVotingStatuses);
     this.selectedVotingStatuses.set(uniqueVotingStatuses);
 
     this.committeeForm.patchValue(
@@ -186,7 +187,7 @@ export class MeetingCommitteeManagerComponent {
     const committees = this.committeeOptions();
     const ids = sanitizeMeetingCommitteeUids(committeeIds);
     const hasVotingCommittees = committees.some((c) => ids.includes(c.uid) && c.enable_voting);
-    const allowedVotingStatuses = hasVotingCommittees ? selectedVotingStatuses : [];
+    const allowedVotingStatuses = hasVotingCommittees ? toMeetingApiVotingStatuses(selectedVotingStatuses) : [];
 
     const committeeData: MeetingCommittee[] = ids.map((uid) => ({
       uid,
