@@ -28,6 +28,34 @@ function gotoMembersTab(page: Page): Promise<void> {
 
 test.setTimeout(120_000);
 
+test.describe('Committee invite banner (GH-1806)', () => {
+  test('visitor: invitation banner visible in closed mode when a pending invite exists', async ({ page }) => {
+    // Visitor = my_role null (not yet a member)
+    await mockCommitteeApis(page, { committee: baseCommittee({ my_role: null, writer: false, join_mode: 'closed' }) });
+
+    // Return one pending invite for this visitor from the cross-surface cache endpoint
+    await page.route('**/api/user/pending-invitations*', (route) => {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            uid: 'invite-visitor-1',
+            committee_uid: COMMITTEE_UID,
+            invitee_email: 'visitor@example.com',
+            role: 'Member',
+            status: 'pending',
+            created_at: '2026-08-24T16:05:00Z',
+          },
+        ]),
+      });
+    });
+
+    await gotoCommitteeTabHelper(page, COMMITTEE_UID);
+    await expect(page.getByTestId('committee-view-invitation-banner')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+});
+
 test.describe('Group Members tab join modes (LFXV2-2690)', () => {
   test('admin: Add Member button visible in closed mode; pending invites section hidden when no invites exist', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Chair', writer: true, join_mode: 'closed' }) });
@@ -35,7 +63,7 @@ test.describe('Group Members tab join modes (LFXV2-2690)', () => {
 
     await expect(page.getByTestId('add-member-btn')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     // Hidden because there are no pending invites in the response, not because of join_mode.
-    await expect(page.getByTestId('pending-invites')).toHaveCount(0);
+    await expect(page.getByTestId('filter-pill-pending')).toHaveCount(0);
   });
 
   test('admin: pending invites section visible in closed mode when invites exist', async ({ page }) => {
@@ -62,7 +90,7 @@ test.describe('Group Members tab join modes (LFXV2-2690)', () => {
 
     await gotoMembersTab(page);
 
-    await expect(page.getByTestId('pending-invites')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('filter-pill-pending')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('member in invite_only group: Invite Someone button visible, not Add Member', async ({ page }) => {
