@@ -156,15 +156,27 @@ require it."_ — with `docs/reviews/backend-checklist.md` and
 Auth is applied by a **single global `authMiddleware`** mounted once in
 `apps/lfx-one/src/server/server.ts`, not by per-route middleware. Its
 `DEFAULT_ROUTE_CONFIG` in
-`apps/lfx-one/src/server/middleware/auth.middleware.ts` classifies each request,
-and any route not matched by a documented public entry falls through to
-`defaultAuth: 'required'`. So a new route being unprotected is **not** a missing
-middleware call — it is a new **public** exemption. The finding is a new
-`DEFAULT_ROUTE_CONFIG` entry (or public-prefix router mount) that opens a route
-to `optional`/`public` auth without the change being a documented public
-surface. Verify the new route against that config and the classification
-ordering; do not expect each router to carry its own middleware, and do not
-demand a checklist line requiring it — there is none.
+`apps/lfx-one/src/server/middleware/auth.middleware.ts` classifies each request
+by **prefix or pattern** — for example `{ pattern: '/public/api', auth:
+'optional' }` covers _every_ route under that prefix — and any route not matched
+by a documented public entry falls through to `defaultAuth: 'required'`. So a
+new route being unprotected is **not** a missing middleware call — it is a
+**public/optional exemption**, and that exemption can be reached two ways:
+
+- a new `DEFAULT_ROUTE_CONFIG` entry or a new public-prefix router mount that
+  opens a route to `optional`/`public` auth; **or**
+- a new or changed handler added to a router **already mounted** under an
+  existing optional/public prefix (any of the `public-*.route.ts` routers under
+  `/public/api`, or an SSR path matching an existing optional pattern), which
+  inherits that classification with **no config or mount change at all**.
+
+Resolve every added or changed route to its **effective path and resulting auth
+classification**, then flag any that is anonymously reachable without the
+exposure being a documented public surface. Do not restrict the finding to
+changes of the config or the mount itself — a sensitive handler dropped into an
+existing `public-*.route.ts` is the most likely real instance. Do not expect
+each router to carry its own middleware, and do not demand a checklist line
+requiring it — there is none.
 
 ### 4. SSR safety around browser-only APIs
 
