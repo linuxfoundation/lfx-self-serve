@@ -170,9 +170,8 @@ export class CommitteeMembersComponent implements OnInit {
   // manager's `writer` flag is already true (LFXV2-2059).
   public readonly canManageMembers = computed(() => canManageCommitteeMembers(this.committee()));
   public readonly joinMode = computed(() => this.committee()?.join_mode as JoinMode | undefined);
-  /** Invites are forbidden in closed mode (LFXV2-2690). */
   public readonly showPendingInvites = computed(
-    () => this.canManageMembers() && this.joinMode() !== 'closed' && (this.invitesLoading() || this.invites().length > 0)
+    () => this.canManageMembers() && (this.invitesLoading() || this.invites().length > 0)
   );
   public readonly tabOptions = computed<FilterPillOption[]>(() => {
     const opts: FilterPillOption[] = [{ id: 'all', label: 'All' }];
