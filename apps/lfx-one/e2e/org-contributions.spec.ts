@@ -13,12 +13,15 @@
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
  * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
- * - S3's company-email assertions additionally need `org-lens-private-release` toggled ON
- *   (GH-1655) — S3 self-skips at runtime if the email section isn't present
+ * - S3's company-email assertions pin `org-lens-private-release` ON via the same
+ *   `stubFeatureFlags` localStorage override used by the ROI specs (GH-1655) — no LaunchDarkly
+ *   targeting needed for this one
  */
 
 import type { OrgAllEmployeeDetail, OrgContributionsResponse } from '@lfx-one/shared/interfaces';
+import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
+import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const CONTRIBUTIONS_URL = '/org/contributions';
 const DATA_LOAD_TIMEOUT = 30_000;
@@ -250,6 +253,7 @@ test.describe('Org Lens Code Contributions — commits tab (S2)', () => {
 
 test.describe('Org Lens Code Contributions — person detail drawer (S3)', () => {
   test('S3: clicking a committer opens the shared person-detail drawer on the Code tab', async ({ page }) => {
+    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: true });
     await gotoContributions(page);
     await waitForContributionsLoaded(page);
 
@@ -261,10 +265,7 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
     await expect(page.getByTestId('person-detail-drawer-tab-code')).toHaveAttribute('aria-selected', 'true');
 
     const emailSection = page.getByTestId('person-detail-drawer-email');
-    if ((await emailSection.count()) === 0) {
-      test.skip(true, 'org-lens-private-release flag appears off — company email section not present');
-    }
-    await expect(emailSection).toBeVisible();
+    await expect(emailSection).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(emailSection).toContainText('aramirez@acme-corp.example');
     await expect(emailSection).toContainText('aramirez@acme-corp.co.uk.example');
   });
