@@ -16,10 +16,12 @@ import type {
   OrgLensGroupsResponse,
   OrgLensGroupVm,
 } from '@lfx-one/shared/interfaces';
-import { getGroupBehavioralClass } from '@lfx-one/shared/utils';
+import { downloadCsv, getGroupBehavioralClass, localDateStamp } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, distinctUntilChanged, filter, map, of, skip, switchMap, tap } from 'rxjs';
 
+import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -32,7 +34,17 @@ import { PersonaService } from '@services/persona.service';
 
 @Component({
   selector: 'lfx-org-groups',
-  imports: [EmptyStateComponent, InputTextComponent, NgTemplateOutlet, RouterLink, SelectComponent, SkeletonModule, TagComponent],
+  imports: [
+    ButtonComponent,
+    EmptyStateComponent,
+    InputTextComponent,
+    NgTemplateOutlet,
+    RouterLink,
+    SelectComponent,
+    SkeletonModule,
+    TagComponent,
+    TooltipModule,
+  ],
   templateUrl: './org-groups.component.html',
 })
 export class OrgGroupsComponent {
@@ -57,7 +69,7 @@ export class OrgGroupsComponent {
     type: new FormControl<GroupBehavioralClass | ''>(this.initTypeFromUrl(), { nonNullable: true }),
   });
 
-  protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
+  protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName);
 
   // Total Groups + Total Seats — the two fixed tiles in the template that visibleClassTiles()
   // doesn't cover. Keep in sync with the stat-strip markup.
@@ -139,6 +151,10 @@ export class OrgGroupsComponent {
   protected readonly foundationOptions: Signal<OrgDropdownOption[]> = this.initFoundationOptions();
   protected readonly typeOptions: Signal<OrgDropdownOption[]> = this.initTypeOptions();
   protected readonly filteredGroups: Signal<OrgLensGroupVm[]> = this.initFilteredGroups();
+  // Single source of truth for the export button's disabled state and its tooltip/aria explanation,
+  // so every binding that reads it can't drift apart (mirrors showRoster's rationale above).
+  protected readonly hasNoRowsToExport: Signal<boolean> = computed(() => this.filteredGroups().length === 0);
+  protected readonly noRowsToExportLabel = 'No rows to export';
 
   public constructor() {
     // State → URL, mirrors org-projects' filterForm.valueChanges → router.navigate pattern. `merge`
@@ -158,6 +174,25 @@ export class OrgGroupsComponent {
 
   protected clearFilters(): void {
     this.filterForm.reset({ search: '', foundation: '', type: '' });
+  }
+
+  // Exports the currently filtered (not the full) roster, in the same order the list renders —
+  // filteredGroups() is exactly what the template's @for iterates, unsorted client-side. Deliberately
+  // no "Total Seats" column: the only per-row candidate (total_members) is unpopulated upstream (#1792)
+  // and isn't even a field on OrgLensGroupSummary; the response-level total_seats is an org-wide
+  // aggregate, not a per-row value.
+  protected exportCsv(): void {
+    const rows = this.filteredGroups();
+    if (!rows.length) {
+      return;
+    }
+    const header = [this.committeeLabel.singular, 'Foundation', 'Type', 'Our Seats', `${this.committeeLabel.singular} UID`];
+    const body = rows.map((g) => [g.name, g.projectLabel, BEHAVIORAL_CLASS_CONFIG[g.cls].label, g.org_seat_count, g.uid]);
+    // accountSlug is normalized to '' (not null/undefined) during org-switch/enrichment windows
+    // (see account-context.service.ts's PLACEHOLDER_ACCOUNT and toAccount()) — `||`, not `??`, so
+    // that empty string also falls back rather than producing a bare "org-lens-groups--<date>.csv".
+    const slug = this.accountContext.selectedAccount().accountSlug || 'org';
+    downloadCsv(`org-lens-groups-${slug}-${localDateStamp()}.csv`, [header, ...body]);
   }
 
   private initGroupsData(): Signal<OrgLensGroupsResponse | null | undefined> {
