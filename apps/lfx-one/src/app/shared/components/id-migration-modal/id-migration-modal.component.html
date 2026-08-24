@@ -1,0 +1,41 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="id-migration-modal">
+  <!-- Header: body renders its own headline + subhead (dialog opened with showHeader:false) -->
+  <div class="flex flex-col gap-1">
+    <h2 id="id-migration-heading" class="text-xl font-bold text-gray-900 leading-tight">We're retiring Individual Dashboard</h2>
+    <p class="text-base text-gray-500">What's missing in LFX that's sending you back?</p>
+  </div>
+
+  <!-- Reason + optional comment -->
+  <form [formGroup]="form" class="flex flex-col gap-3">
+    <div class="flex flex-col gap-1">
+      <label for="id-migration-reason" class="text-sm text-gray-900">Reason</label>
+      <lfx-select
+        [form]="form"
+        control="reason"
+        inputId="id-migration-reason"
+        [options]="reasons"
+        optionLabel="label"
+        optionValue="value"
+        size="large"
+        styleClass="w-full"
+        dataTest="id-migration-reason" />
+    </div>
+    <lfx-textarea [form]="form" control="comment" placeholder="Anything else? (optional)" [rows]="3" dataTest="id-migration-comment" />
+  </form>
+
+  <!-- Actions: "Stay here" dismisses silently; "Continue" logs the reason then opens ID in a new tab -->
+  <div class="flex items-stretch gap-3">
+    <lfx-button label="Stay here" severity="secondary" [outlined]="true" size="small" type="button" (onClick)="stayHere()" data-testid="id-migration-stay-button" />
+    <lfx-button
+      label="Continue to Individual Dashboard"
+      icon="fa-light fa-arrow-up-right"
+      iconPos="right"
+      size="small"
+      type="button"
+      (onClick)="continueToIndividualDashboard()"
+      data-testid="id-migration-continue-button" />
+  </div>
+</div>

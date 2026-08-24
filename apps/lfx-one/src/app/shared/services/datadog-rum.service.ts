@@ -50,4 +50,16 @@ export class DataDogRumService {
 
     datadogRum.addError(error, context);
   }
+
+  /**
+   * Emit a custom RUM action (product event) with optional context, attributed to the user
+   * set via setUser(). Used for queryable per-user product analytics. No-op on the server.
+   */
+  public addAction(name: string, context?: Record<string, unknown>): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    datadogRum.addAction(name, context);
+  }
 }
