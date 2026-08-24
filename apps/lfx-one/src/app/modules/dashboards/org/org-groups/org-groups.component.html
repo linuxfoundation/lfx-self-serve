@@ -50,9 +50,11 @@
       <!-- Filter bar -->
       <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4" data-testid="org-groups-filter-bar">
         <div class="flex-1">
+          <label for="org-groups-search-input" class="sr-only">Search {{ committeeLabelPluralLower }}</label>
           <lfx-input-text
             [form]="filterForm"
             control="search"
+            id="org-groups-search-input"
             placeholder="Search {{ committeeLabelPluralLower }}..."
             icon="fa-light fa-magnifying-glass"
             styleClass="w-full"
@@ -124,7 +126,9 @@
 
     @if (showRoster()) {
       <div class="flex items-center justify-between text-sm text-gray-500" data-testid="org-groups-result-line">
-        <span data-testid="org-groups-result-count">Showing {{ filteredGroups().length }} of {{ groups().length }} {{ committeeLabelPluralLower }}</span>
+        <span data-testid="org-groups-result-count" aria-live="polite"
+          >Showing {{ filteredGroups().length }} of {{ groups().length }} {{ committeeLabelPluralLower }}</span
+        >
         @if (isFiltering()) {
           <button
             type="button"
