@@ -11,7 +11,13 @@ import { TableComponent } from '@components/table/table.component';
 import { COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared';
 import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import { Committee, CommitteeMember, Meeting } from '@lfx-one/shared/interfaces';
-import { fromMeetingApiVotingStatuses, normalizeMeetingApiVotingStatuses, sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids, toMeetingApiVotingStatuses } from '@lfx-one/shared/utils';
+import {
+  fromMeetingApiVotingStatuses,
+  normalizeMeetingApiVotingStatuses,
+  sanitizeMeetingCommittees,
+  sanitizeMeetingCommitteeUids,
+  toMeetingApiVotingStatuses,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
