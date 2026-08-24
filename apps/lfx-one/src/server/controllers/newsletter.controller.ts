@@ -175,7 +175,7 @@ export class NewsletterController {
 
     try {
       const payload = req.body as CreateNewsletterRequest;
-      this.validateCommonPayload(payload, req.path, 'newsletter_create');
+      this.validateCommonPayload(payload, req.path, 'newsletter_create', false);
       this.validateCommitteeUids(payload.committee_uids, req.path, 'newsletter_create');
       this.validateScheduledAt(payload, req.path, 'newsletter_create');
 
@@ -277,7 +277,7 @@ export class NewsletterController {
     try {
       const version = parseIfMatch(req);
       const payload = req.body as UpdateNewsletterRequest;
-      this.validateCommonPayload(payload, req.path, 'newsletter_update');
+      this.validateCommonPayload(payload, req.path, 'newsletter_update', true);
       this.validateCommitteeUids(payload.committee_uids, req.path, 'newsletter_update');
       this.validateScheduledAt(payload, req.path, 'newsletter_update');
 
@@ -581,7 +581,10 @@ export class NewsletterController {
   private validateCommonPayload(
     payload: { subject?: string; body_html?: string; body_layout?: NewsletterLayout | null; ed_reply_email?: string },
     path: string,
-    operation: string
+    operation: string,
+    // Update only: allow an explicit body_layout:null + empty body to clear an
+    // existing draft back to the basic editor. A create still requires a body.
+    isUpdate: boolean
   ): void {
     const fieldErrors: Record<string, string> = {};
 
@@ -608,8 +611,14 @@ export class NewsletterController {
     const hasBodyHtml = typeof payload?.body_html === 'string' && payload.body_html.trim().length > 0;
     if (layoutPresent && !layoutValid) {
       fieldErrors['body_layout'] = 'A block layout must have a blocks array';
-    } else if (!hasBodyHtml && !layoutValid) {
-      // Neither authored html nor a (blocks-mode) layout — nothing to persist.
+    } else if (!hasBodyHtml && !layoutValid && !(isUpdate && payload?.body_layout === null)) {
+      // Neither authored html nor a (blocks-mode) layout — nothing to persist, so
+      // a NEW newsletter must carry a body. An UPDATE that explicitly clears the
+      // layout (body_layout: null) with an empty body is allowed: it converts an
+      // existing draft back to the basic editor, a deliberate discard the author
+      // must be able to persist (otherwise the stored layout reverts on reload).
+      // The send gate still requires content, so an emptied draft saves but
+      // cannot send. Upstream applies the same allowance on its explicit-null path.
       fieldErrors['body_html'] = 'Body is required';
     } else if (!layoutValid && typeof payload?.body_html === 'string' && payload.body_html.length > NEWSLETTER_BODY_MAX_LENGTH) {
       // Only cap authored body_html on the HTML-only path. In blocks mode the

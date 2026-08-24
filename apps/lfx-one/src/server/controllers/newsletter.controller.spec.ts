@@ -170,6 +170,40 @@ describe('NewsletterController create/update — validateScheduledAt', () => {
   });
 });
 
+describe('NewsletterController create/update — empty-body clear', () => {
+  const clearedPayload = { subject: 'Hello', body_html: '', body_layout: null, ed_reply_email: 'ed@example.com', committee_uids: ['committee-1'] };
+
+  it('accepts an update that clears an existing draft (body_layout:null + empty body)', async () => {
+    updateNewsletter.mockResolvedValue({ id: 'n1', version: 2 });
+    const next = vi.fn();
+
+    await new NewsletterController().updateNewsletter(
+      {
+        params: { projectUid: 'p1', newsletterUid: 'n1' },
+        body: clearedPayload,
+        headers: { 'if-match': '1' },
+        header: (h: string) => (h === 'If-Match' ? '1' : ''),
+        path: '/x',
+      } as any,
+      buildRes(),
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(updateNewsletter).toHaveBeenCalledWith(expect.anything(), 'p1', 'n1', 1, clearedPayload);
+  });
+
+  it('rejects a create with the same empty body (a new newsletter must carry content)', async () => {
+    const next = vi.fn();
+
+    await new NewsletterController().createNewsletter({ params: { projectUid: 'p1' }, body: clearedPayload, path: '/x' } as any, buildRes(), next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(createNewsletter).not.toHaveBeenCalled();
+  });
+});
+
 describe('NewsletterController.scheduleNewsletter — If-Match + optional override', () => {
   function reqWithIfMatch(ifMatch: string | undefined, body: any = {}) {
     return {
