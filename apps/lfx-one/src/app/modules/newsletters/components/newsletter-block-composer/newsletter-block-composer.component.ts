@@ -758,15 +758,16 @@ export class NewsletterBlockComposerComponent implements OnInit {
    * The server-rendered email HTML for the current layout, debounced so we
    * render at most once per editing pause. Browser-only; empty until the first
    * response (and for an empty canvas). Emits `{ html, failed }`:
-   * - A 422 means the server refused to render the layout — it is unprocessable
-   *   (too large, an unsupported block/template_key, or an MJML failure). That is
+   * - A 400 (layout too large or malformed, rejected by the BFF's render-preview
+   *   validation) or a 422 (unprocessable layout — an unsupported block/template
+   *   or an MJML failure) means the server refused to render the layout. That is
    *   a HARD error, not transient: the same layout will fail every save and
    *   test-send. So it sets `failed` (driving a red render-error status) instead
    *   of silently falling back to the client estimate, which is smaller and would
-   *   read as "ok". The upstream uses one 422 for all of these, so the status is
-   *   deliberately generic rather than claiming a specific cause.
-   * - Any other failure (5xx, network) is treated as transient: empty html with
-   *   `failed` false, so callers (sourceHtml / emailBytes) fall back to the
+   *   read as "ok". These map to several causes with no distinguishing signal, so
+   *   the status is deliberately generic rather than claiming a specific cause.
+   * - Any other failure (5xx, network, auth) is treated as transient: empty html
+   *   with `failed` false, so callers (sourceHtml / emailBytes) fall back to the
    *   client estimate rather than blanking or showing 0 KB.
    */
   private initServerRender(): Signal<{ html: string; failed: boolean }> {
@@ -782,10 +783,12 @@ export class NewsletterBlockComposerComponent implements OnInit {
           return this.newsletterService.renderPreview(projectUid, { body_layout: layout, wrapper_content: wrapperContent }).pipe(
             map((response) => ({ html: response.body_html ?? '', failed: false })),
             catchError((err: unknown) => {
-              // A 422 is an unprocessable layout (the same status the save path
-              // returns), so treat it as a hard render error the author must fix.
-              // Other errors are transient and fall back to the client estimate.
-              const failed = err instanceof HttpErrorResponse && err.status === 422;
+              // A 400 (layout too large / malformed, from validateRenderPreviewPayload)
+              // or 422 (unprocessable layout) is a DETERMINISTIC rejection of this
+              // layout — the save path rejects it the same way — so treat it as a
+              // hard render error the author must fix. Other errors (5xx, network,
+              // auth) are transient and fall back to the client estimate.
+              const failed = err instanceof HttpErrorResponse && (err.status === 400 || err.status === 422);
               if (!failed) {
                 console.error('newsletter-block-composer: render-preview failed; email-size + source fall back to the client estimate', err);
               }
