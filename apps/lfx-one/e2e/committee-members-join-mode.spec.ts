@@ -53,6 +53,8 @@ test.describe('Committee invite banner (GH-1806)', () => {
 
     await gotoCommitteeTabHelper(page, COMMITTEE_UID);
     await expect(page.getByTestId('committee-view-invitation-banner')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // Banner replaces the Contact Admin CTA — both must not coexist.
+    await expect(page.getByTestId('committee-view-contact-admin-btn')).toHaveCount(0);
   });
 });
 
