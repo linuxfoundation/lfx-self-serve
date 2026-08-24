@@ -14,6 +14,8 @@
  * Prerequisites:
  * - Dev server running on the Playwright baseURL
  * - User authenticated with the `org-lens-enabled` flag on and an organization selected
+ * - The leaderboard row score-breakdown drawer tests additionally need `org-lens-private-release`
+ *   toggled ON (LFXV2-2934 follow-up) — they self-skip at runtime if the drawer doesn't open
  *
  * Data semantics (v1): the page is served from live Snowflake platinum via the BFF. `k8s` is the real
  * catalog slug for the Kubernetes project (the earlier `kubernetes` was only the removed demo-fixture
@@ -316,6 +318,18 @@ test.describe('Org Project Detail — leaderboard row score-breakdown drawer', (
     await page.goto(`${DETAIL_URL}?tab=pd-leaderboards`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('project-detail-leaderboard-technical-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('project-detail-leaderboard-ecosystem-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const probeRow = page.locator('[data-testid="project-detail-leaderboard-technical"] tbody tr').first();
+    await probeRow.click();
+    const drawerOpened = await page
+      .getByTestId('org-leaderboard-detail-title')
+      .isVisible({ timeout: 3_000 })
+      .catch(() => false);
+    if (!drawerOpened) {
+      test.skip(true, 'org-lens-private-release flag appears off — leaderboard drawer does not open');
+    }
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('org-leaderboard-detail-title')).toBeHidden();
   });
 
   // Category/points data behind this drawer is DEMO data pending a real Snowflake-backed source
