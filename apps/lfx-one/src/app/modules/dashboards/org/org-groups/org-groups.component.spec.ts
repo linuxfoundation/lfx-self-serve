@@ -752,4 +752,35 @@ describe('OrgGroupsComponent stat strip', () => {
     expect(outerSkeleton.length).toBeGreaterThan(0);
     expect(outerSkeleton.length).toBe(innerSkeleton.length);
   });
+
+  // Pins the true max tile count (2 fixed + all 6 behavioral classes non-zero, incl.
+  // governing-board — never exercised by RESPONSE above) against the skeleton's reserved card
+  // count, so a 7th GroupBehavioralClass member — which would grow this max — fails here loudly
+  // instead of silently letting the loaded grid outgrow the skeleton (per dealako's PR #1790
+  // review: statSkeletonTiles' length is type-derived, but nothing asserted the two actually agree
+  // at the true max).
+  it('matches the skeleton reservation when every behavioral class, including governing-board, renders a tile', async () => {
+    await render({
+      getGroups: () =>
+        of({
+          groups: [
+            { uid: 'g1', name: 'Board One', category: 'Board', org_seat_count: 1 },
+            { uid: 'g2', name: 'TSC One', category: 'Technical Steering Committee', org_seat_count: 1 },
+            { uid: 'g3', name: 'WG One', category: 'Working Group', org_seat_count: 1 },
+            { uid: 'g4', name: 'SIG One', category: 'Special Interest Group', org_seat_count: 1 },
+            { uid: 'g5', name: 'Ambassador One', category: 'Ambassador', org_seat_count: 1 },
+            { uid: 'g6', name: 'Committee One', category: 'Committee', org_seat_count: 1 },
+          ],
+          total_groups: 6,
+          total_seats: 6,
+        }),
+    });
+
+    const section = rootElement().querySelector('[data-testid="org-groups-stat-strip"]') as HTMLElement;
+
+    // 6 non-zero classes + the 2 fixed totals — the same 8 the skeleton reserves (see the
+    // toBe(8) skeleton-card assertions in the top-level describe above).
+    expect(classTiles()).toHaveLength(6);
+    expect(section.style.getPropertyValue('--cols').trim()).toBe('8');
+  });
 });

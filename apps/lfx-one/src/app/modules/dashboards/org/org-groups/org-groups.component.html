@@ -26,7 +26,11 @@
       </p>
     </section>
   } @else if (!loaded()) {
-    <section [class]="statGridSkeletonClass" aria-label="{{ committeeLabel.singular }} participation summary" data-testid="org-groups-skeleton">
+    <section
+      [class]="statGridClass"
+      [style.--cols]="statSkeletonTiles.length"
+      aria-label="{{ committeeLabel.singular }} participation summary"
+      data-testid="org-groups-skeleton">
       <ng-container [ngTemplateOutlet]="statCardsSkeleton" />
     </section>
     <section aria-label="{{ committeeLabel.singular }} list" data-testid="org-groups-list-loading">
@@ -86,8 +90,8 @@
 
     <!-- Stat strip -->
     <section
-      [class]="groupsLoading() ? statGridSkeletonClass : statGridLoadedClass"
-      [style.--cols]="statTileCount()"
+      [class]="statGridClass"
+      [style.--cols]="groupsLoading() ? statSkeletonTiles.length : statTileCount()"
       aria-label="{{ committeeLabel.singular }} participation summary"
       data-testid="org-groups-stat-strip">
       @if (groupsLoading()) {

@@ -63,25 +63,30 @@ export class OrgGroupsComponent {
   // doesn't cover. Keep in sync with the stat-strip markup.
   private readonly fixedStatTileCount = 2;
 
-  // Fixed placeholder count for the loading skeletons, set to the true max rendered tile count
-  // (2 fixed + all 6 behavioral classes non-zero — see statGridLoadedClass) so the skeleton and
-  // loaded grid only ever diverge on the zero-classes edge case, per GH-1779's "skeleton tile
-  // count matches the rendered tile count" acceptance criterion.
-  protected readonly statSkeletonTiles: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8];
+  // Placeholder count for the loading skeletons, derived from BEHAVIORAL_CLASS_CONFIG (one entry
+  // per GroupBehavioralClass member) rather than a hand-maintained literal, so the true max
+  // rendered tile count (2 fixed + every behavioral class non-zero) can't silently drift out of
+  // sync with the type if a class is ever added — see statGridClass for how the grid layout
+  // tracks this same value. Per GH-1779's "skeleton tile count matches the rendered tile count"
+  // acceptance criterion, the skeleton and loaded grid only ever diverge on the zero-classes edge
+  // case (per dealako's PR #1790 review).
+  protected readonly statSkeletonTiles: readonly number[] = Array.from(
+    { length: Object.keys(BEHAVIORAL_CLASS_CONFIG).length + this.fixedStatTileCount },
+    (_, i) => i + 1
+  );
 
-  // Mobile fixed at 2 columns, sm+ fixed at 3. At `lg:` and up, the loaded grid switches to one
-  // equal-width column per tile via --cols (2-8, since a class only tiles when non-zero) — that's
-  // the tightest case, not the roomiest: at 7-8 tiles columns get narrow enough for a longer
-  // label to wrap. Accepted deliberately, since a static per-count cap would reintroduce the
-  // ragged trailing row this grid exists to avoid. The skeleton and loaded grids share this same
-  // base and now share the same max card count (8, see statSkeletonTiles) — layout shift on data
-  // arrival only happens when fewer than 8 tiles end up rendering. The value is a plain --cols
-  // integer rather than a repeat(min(var(--cols),N)) clamp because CSS Grid requires an integer
-  // repeat count and silently drops the whole declaration otherwise (see
-  // events-summary-section.component.html for the same constraint).
+  // Mobile fixed at 2 columns, sm+ fixed at 3. At `lg:` and up, both the skeleton and the loaded
+  // grid switch to one equal-width column per tile via --cols — the skeleton binds it to
+  // statSkeletonTiles.length (see the template), the loaded grid to statTileCount() (2-8, since a
+  // class only tiles when non-zero). Sharing one grid class means the two can never drift out of
+  // sync on layout, only on --cols' value while data is still loading — the tightest live case is
+  // not the roomiest: at 7-8 tiles columns get narrow enough for a longer label to wrap. Accepted
+  // deliberately, since a static per-count cap would reintroduce the ragged trailing row this grid
+  // exists to avoid. The value is a plain --cols integer rather than a repeat(min(var(--cols),N))
+  // clamp because CSS Grid requires an integer repeat count and silently drops the whole
+  // declaration otherwise (see events-summary-section.component.html for the same constraint).
   private readonly statGridBase = 'grid grid-cols-2 gap-4 sm:grid-cols-3';
-  protected readonly statGridSkeletonClass = `${this.statGridBase} lg:grid-cols-8`;
-  protected readonly statGridLoadedClass = `${this.statGridBase} lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]`;
+  protected readonly statGridClass = `${this.statGridBase} lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]`;
 
   // ── Auth / access guards (mirrors org-meetings pattern) ───────────────────
   protected readonly hasNoOrgAccess: Signal<boolean> = computed(
