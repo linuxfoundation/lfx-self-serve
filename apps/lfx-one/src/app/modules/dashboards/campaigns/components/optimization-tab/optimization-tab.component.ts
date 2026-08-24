@@ -216,6 +216,27 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly conflictedCount = computed(() => this.conflictedCampaignIds().size);
 
   /**
+   * Whether any OTHER row is still actually usable — the precondition for saying so.
+   *
+   * The banner's reassurance that other campaigns can still be paused or resumed was written as
+   * an unconditional sentence, which made it false in three ordinary shapes: a brief with only
+   * the conflicted row, every row conflicted, and siblings already `unavailable` for a platform
+   * or status reason. Recovery copy that asserts controls the operator cannot see is the same
+   * defect as the over-broad instruction it replaced, pointed the other way.
+   *
+   * Derived from the rendered rows rather than a count, so it agrees with the buttons by
+   * construction: a row is offerable exactly when it is not conflicted and its action is a real
+   * direction, which is the same condition the template's `[disabled]` uses.
+   */
+  protected readonly hasActionableSiblings = computed(() => {
+    const rows = this.campaignRows();
+    if (rows === null) {
+      return false;
+    }
+    return rows.some((row) => !row.conflicted && row.action !== 'unavailable');
+  });
+
+  /**
    * The status each campaign holds after any toggle this session, keyed by campaign id.
    *
    * Overlays the indexed status rather than replacing it. The index is asynchronous, so a row

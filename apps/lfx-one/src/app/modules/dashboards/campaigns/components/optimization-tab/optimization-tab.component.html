@@ -84,12 +84,19 @@
         disabled — every other row stays clickable by design, since their validators are untested
         rather than disproved. An instruction broader than the enforcement reads as a broken page:
         the operator is told to stop, sees live buttons, and cannot tell which the warning is about.
+
+        The reassurance about the other rows is CONDITIONAL on there being one that is genuinely
+        usable. Stated unconditionally it was false whenever the brief holds only the conflicted
+        row, every row is conflicted, or the siblings are already `unavailable` — promising live
+        controls that are not on screen, which is the same defect pointed the other way.
       -->
       <p class="text-sm text-amber-800">
         {{ conflictedCount() === 1 ? 'A campaign below was' : conflictedCount() + ' campaigns below were' }} changed by someone else while this page was open,
         so {{ conflictedCount() === 1 ? 'its status' : 'their statuses' }} may not match the ad platform.
-        {{ conflictedCount() === 1 ? 'Its toggle is' : 'Their toggles are' }} disabled until you refresh the list. Other campaigns are unaffected and can still
-        be paused or resumed.
+        {{ conflictedCount() === 1 ? 'Its toggle is' : 'Their toggles are' }} disabled until you refresh the list.
+        @if (hasActionableSiblings()) {
+          Other campaigns are unaffected and can still be paused or resumed.
+        }
       </p>
       <div>
         <button

@@ -1782,8 +1782,48 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     // It must not tell the operator to stop using controls that remain enabled...
     expect(banner.textContent).not.toContain('pausing or resuming anything');
     expect(banner.textContent).toContain('Other campaigns are unaffected');
+    expect(banner.textContent).toContain('paused or resumed');
     // ...and that claim has to be TRUE, which is the half a copy-only assertion would miss.
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').disabled).toBe(true);
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-2"]').disabled).toBe(false);
+  });
+
+  /**
+   * ...and it must NOT promise usable siblings when there are none.
+   *
+   * The reassurance was written as an unconditional sentence, which is false in three ordinary
+   * shapes: a brief holding only the conflicted row, every row conflicted, and siblings already
+   * `unavailable`. Recovery copy asserting controls that are not on screen is the same defect as
+   * the over-broad instruction it replaced, pointed the other way.
+   *
+   * Two cases in one test because they are one rule with two causes — a sole row, and a sibling
+   * that exists but is not offerable.
+   */
+  it('omits the sibling reassurance when no other row is actionable', () => {
+    conflict();
+    // Sole row: there is no sibling at all.
+    render([doc({ status: 'created', etag: '"3"' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    const banner = (): HTMLElement => fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]');
+    expect(banner()).not.toBeNull();
+    expect(banner().textContent).toContain('disabled until you refresh');
+    expect(banner().textContent).not.toContain('Other campaigns are unaffected');
+  });
+
+  it('omits the sibling reassurance when the only other row is itself unavailable', () => {
+    conflict();
+    // `c-2` exists but is `pending` upstream, so its toggle is already disabled — it is not a
+    // control the operator can fall back on, which is what the sentence would be promising.
+    render([doc({ id: 'c-1', status: 'created', etag: '"3"' }), doc({ id: 'c-2', status: 'pending', etag: '"4"', campaign_name: 'Not Ready' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    const banner = fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]');
+    expect(banner).not.toBeNull();
+    expect(banner.textContent).not.toContain('Other campaigns are unaffected');
+    // The claim would have been false: that sibling's control is disabled too.
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-2"]').disabled).toBe(true);
   });
 });
