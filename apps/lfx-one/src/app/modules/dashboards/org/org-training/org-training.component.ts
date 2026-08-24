@@ -36,6 +36,7 @@ import { catchError, debounceTime, finalize, of, switchMap } from 'rxjs';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
@@ -56,6 +57,7 @@ import { TrainingEmployeesDrawerComponent } from './components/training-employee
     OrgTrainingsTableComponent,
     CertEmployeesDrawerComponent,
     TrainingEmployeesDrawerComponent,
+    PersonDetailDrawerComponent,
   ],
   templateUrl: './org-training.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -4,7 +4,6 @@ description: Frequently asked questions about navigating the LFX Self Serve dash
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, faq, lens, persona]
-last_generated: 2026-05-22
 last_updated: 2026-05-22
 intercom_collection: Dashboards
 ---

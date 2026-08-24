@@ -4,8 +4,7 @@ description: View your Linux Foundation training enrollments and certifications 
 audience: [all]
 product_area: Trainings
 tags: [trainings, courses, enrollments, certifications, learning]
-last_generated: 2026-05-22
-last_updated: 2026-06-22
+last_updated: 2026-08-19
 intercom_collection: Trainings
 ---
 
@@ -19,9 +18,9 @@ The information below reflects **your** training enrollments and certifications 
 
 - View your enrolled training courses
 - Check your enrollment and completion status
-- Access your earned certifications and rewards
+- Access your earned certifications and [rewards, incentives, and coupons](rewards/)
 
-Training enrollment is handled on the Linux Foundation training platform. LFX Self Serve displays your enrolled courses and certifications in read-only view. Use the **LF Training Portal** link on the Useful links tab to access your courses.
+Training enrollment is handled on the Linux Foundation training platform. LFX Self Serve displays your enrolled courses and certifications in read-only view. Use the **LF Training Portal** link in the Useful links section (right sidebar) to access your courses.
 
 ### Who this applies to
 
@@ -29,7 +28,7 @@ All authenticated users can view their training enrollments.
 
 ### Navigation
 
-Go to **app.lfx.dev** and select **Training & Certifications** from the left navigation sidebar (route: `/me/training`). The page shows tabs for Certifications, Enrolled Trainings, Rewards, and Useful links.
+Go to **app.lfx.dev** and select **Training & Certifications** from the left navigation sidebar (route: `/me/training`). The page shows tabs for Certifications, Enrolled Trainings, and Rewards, plus a **Useful links** section in the right sidebar.
 
 ### Relationship to badges
 
@@ -55,5 +54,6 @@ Viewing your company's training activity in Org Lens requires **admin access** t
 
 ## Related sections
 
+- [Training Rewards and Coupons](rewards/) — view reward points, claim incentives, and redeem coupons
 - [Badges](../badges/) — credentials earned from completed training programs
 - [Transactions](../account/transactions/) — training purchases appear in your transaction history

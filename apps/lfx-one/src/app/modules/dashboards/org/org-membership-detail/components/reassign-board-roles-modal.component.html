@@ -24,7 +24,7 @@
     @if (currentMember(); as person) {
       <div class="flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 p-4" data-testid="reassign-board-current-member">
         <div class="text-xs font-semibold uppercase tracking-wide text-amber-800">CURRENT MEMBER · WILL BE REMOVED FROM SELECTED ROLES</div>
-        <div class="flex items-center gap-3">
+        <button type="button" class="flex items-center gap-3 text-left" data-testid="reassign-board-current-person" (click)="onCurrentMemberClick()">
           <div class="flex h-9 w-9 items-center justify-center rounded-full bg-pink-500 text-sm font-semibold text-white">
             {{ person.initials }}
           </div>
@@ -32,7 +32,7 @@
             <span class="text-sm font-semibold text-gray-900">{{ person.fullName }}</span>
             <span class="text-xs text-gray-600">{{ person.email }}</span>
           </div>
-        </div>
+        </button>
       </div>
     }
 

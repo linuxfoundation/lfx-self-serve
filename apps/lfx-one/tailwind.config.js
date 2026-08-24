@@ -7,6 +7,7 @@ import {
   BAND_CHIP_CLASS,
   BAND_SIGNAL_FILL,
   BAND_SIGNAL_FILL_LIGHT,
+  BEHAVIORAL_CLASS_CONFIG,
   DELTA_DIRECTION_TEXT_CLASS,
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
@@ -43,9 +44,18 @@ export default {
     // Org Lens meetings — KPI card icon tints and delta text colors (ORG_MEETINGS_KPI_ICON_CLASS /
     // DELTA_DIRECTION_TEXT_CLASS in @lfx-one/shared, not scanned here)
     ...Object.values(ORG_MEETINGS_KPI_ICON_CLASS).flatMap((classes) => classes.split(' ')),
-    ...Object.values(DELTA_DIRECTION_TEXT_CLASS),
+    ...Object.values(DELTA_DIRECTION_TEXT_CLASS).flatMap((classes) => classes.split(' ')),
     // Groups dashboard engagement stat cards (GROUPS_ENGAGEMENT_ICON_CLASS in @lfx-one/shared, not scanned here)
     ...Object.values(GROUPS_ENGAGEMENT_ICON_CLASS).flatMap((classes) => classes.split(' ')),
+    // Behavioral-class tints — org-groups stat tiles, committee dashboard/table chips, my-groups
+    // cards, and the public group pages all key off this map (BEHAVIORAL_CLASS_CONFIG in
+    // @lfx-one/shared, not scanned here). `.split(' ')` guards against a future multi-token value.
+    // Without this entry, `bg-rose-50` (ambassador-program) specifically was never generated —
+    // its only occurrence in scanned content is the `!`-prefixed `!bg-rose-50` in
+    // transaction-type-style.pipe.ts, which Tailwind extracts as a distinct candidate, so the
+    // bare utility rendered with no background tint on every one of the surfaces above, not just
+    // the new org-groups stat tiles.
+    ...Object.values(BEHAVIORAL_CLASS_CONFIG).flatMap((config) => [config.bgColor, config.color].flatMap((c) => c.split(' '))),
     // Meeting summary modal — dynamic section border/icon colors (applied via [ngClass])
     'border-l-blue-400',
     'border-l-emerald-400',
@@ -60,8 +70,8 @@ export default {
     // Org Lens project bands — chip + signal-bar fill classes (BAND_CHIP_CLASS / BAND_SIGNAL_FILL /
     // BAND_SIGNAL_FILL_LIGHT in @lfx-one/shared, not scanned here)
     ...Object.values(BAND_CHIP_CLASS).flatMap((classes) => classes.split(' ')),
-    ...Object.values(BAND_SIGNAL_FILL),
-    ...Object.values(BAND_SIGNAL_FILL_LIGHT),
+    ...Object.values(BAND_SIGNAL_FILL).flatMap((classes) => classes.split(' ')),
+    ...Object.values(BAND_SIGNAL_FILL_LIGHT).flatMap((classes) => classes.split(' ')),
     // Org Lens projects page — separate band signal-fill map with a red "silent" tier (org-lens-projects.constants.ts, not scanned here)
     'fill-red-500',
     'fill-red-200',

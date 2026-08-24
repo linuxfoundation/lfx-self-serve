@@ -15,7 +15,12 @@ export default defineConfig({
   resolve: {
     // Mirrors the tsconfig path alias so server specs exercise the real shared barrels
     // instead of drift-prone vi.mock stubs.
-    alias: { '@lfx-one/shared': fileURLToPath(new URL('../../packages/shared/src', import.meta.url)) },
+    alias: {
+      // A deep source import the package's `exports` map doesn't publish; it resolves through
+      // the tsconfig `@lfx-one/shared/*` path alias at build time. Mirrored here for specs.
+      '@lfx-one/shared/constants/pdf.constants': fileURLToPath(new URL('../../packages/shared/src/constants/pdf.constants.ts', import.meta.url)),
+      '@lfx-one/shared': fileURLToPath(new URL('../../packages/shared/src', import.meta.url)),
+    },
   },
   test: {
     include: ['src/server/**/*.spec.ts'],

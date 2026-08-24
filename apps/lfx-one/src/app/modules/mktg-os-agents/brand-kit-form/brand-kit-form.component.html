@@ -1,0 +1,103 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="brand-kit-form">
+  <!-- Header -->
+  <div class="flex items-start justify-between gap-4">
+    <div class="flex flex-col">
+      <h2 class="font-medium text-base text-gray-900" data-testid="brand-kit-form-title">Develop LF Project Brand Kit</h2>
+      <p class="text-xs text-gray-500">Answer the seven intake questions below — the agent generates the complete Brand Kit document in one pass.</p>
+    </div>
+    <lfx-button
+      label="Back to marketplace"
+      icon="fa-light fa-arrow-left"
+      [text]="true"
+      size="small"
+      ariaLabel="Back to the marketplace"
+      data-testid="brand-kit-form-back-button"
+      (onClick)="onBack()" />
+  </div>
+
+  @if (errorMessage()) {
+    <lfx-message severity="error" [text]="errorMessage()" data-testid="brand-kit-form-error" />
+  }
+
+  <!-- Result view -->
+  @if (result(); as ready) {
+    <lfx-card data-testid="brand-kit-form-result">
+      <div class="flex flex-col gap-4">
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex flex-col">
+            <span class="font-medium text-sm text-gray-900">{{ ready.projectName || ready.project }} Brand Kit — draft v{{ ready.version }}</span>
+            @if (ready.persistence) {
+              <span class="text-xs text-gray-500" data-testid="brand-kit-form-retention-note"
+                >Review the document below. It is saved to this project's marketing artifacts — download a copy anytime.</span
+              >
+            } @else {
+              <span class="text-xs text-gray-500" data-testid="brand-kit-form-retention-note"
+                >Review the document below. Download it to keep a copy — it is not stored anywhere else.</span
+              >
+            }
+          </div>
+          <div class="flex items-center gap-2">
+            <lfx-button
+              label="Download .md"
+              icon="fa-light fa-download"
+              size="small"
+              ariaLabel="Download the Brand Kit document as Markdown"
+              data-testid="brand-kit-form-download-button"
+              (onClick)="onDownload()" />
+            <lfx-button
+              label="Start over"
+              icon="fa-light fa-rotate-left"
+              [text]="true"
+              size="small"
+              ariaLabel="Clear the result and start a new intake"
+              data-testid="brand-kit-form-start-over-button"
+              (onClick)="onStartOver()" />
+          </div>
+        </div>
+        <div class="border-t border-gray-100 pt-4">
+          <lfx-markdown-renderer [content]="ready.documentMarkdown || ''" data-testid="brand-kit-form-document" />
+        </div>
+      </div>
+    </lfx-card>
+  } @else if (generating()) {
+    <!-- Generating state -->
+    <lfx-card data-testid="brand-kit-form-generating">
+      <div class="flex items-center gap-3 py-6 justify-center" role="status" aria-live="polite">
+        <i class="fa-light fa-spinner-third animate-spin text-lg text-blue-500" aria-hidden="true"></i>
+        <span class="text-sm text-gray-600">Generating the Brand Kit — this usually takes a few minutes. Keep this page open.</span>
+      </div>
+    </lfx-card>
+  } @else {
+    <!-- Intake form -->
+    <form [formGroup]="intakeForm" (ngSubmit)="onSubmit()" class="flex flex-col gap-4" data-testid="brand-kit-form-intake">
+      @for (q of questions; track q.key) {
+        <div class="flex flex-col gap-1.5">
+          <label [for]="'brand-kit-q-' + q.questionNumber" class="text-sm font-medium text-gray-700"> {{ q.questionNumber }}. {{ q.question }} </label>
+          <lfx-textarea
+            [id]="'brand-kit-q-' + q.questionNumber"
+            [form]="intakeForm"
+            [control]="q.key"
+            [rows]="2"
+            [autoResize]="true"
+            [describedBy]="'brand-kit-q-' + q.questionNumber + '-error'"
+            [invalid]="intakeForm.controls[q.key].touched && intakeForm.controls[q.key].invalid"
+            [dataTest]="'brand-kit-form-answer-' + q.key" />
+          @if (intakeForm.controls[q.key].touched && intakeForm.controls[q.key].invalid) {
+            <span [id]="'brand-kit-q-' + q.questionNumber + '-error'" class="text-xs text-red-500">This answer is required.</span>
+          }
+        </div>
+      }
+      <div>
+        <lfx-button
+          type="submit"
+          label="Generate Brand Kit"
+          icon="fa-light fa-wand-magic-sparkles"
+          ariaLabel="Submit the intake answers and generate the Brand Kit"
+          data-testid="brand-kit-form-submit-button" />
+      </div>
+    </form>
+  }
+</div>

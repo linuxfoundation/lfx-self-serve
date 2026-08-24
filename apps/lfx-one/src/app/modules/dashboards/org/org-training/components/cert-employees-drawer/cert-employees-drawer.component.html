@@ -61,19 +61,25 @@
       <ul class="flex flex-col divide-y divide-gray-100" data-testid="cert-employees-list">
         @for (employee of filteredEmployees(); track employee.contactId) {
           <li class="flex items-center gap-3 py-3" [attr.data-testid]="'cert-employee-' + employee.contactId">
-            <!-- Avatar -->
-            <div
-              class="flex items-center justify-center w-9 h-9 rounded-full text-white text-xs font-semibold flex-shrink-0 {{ employee.avatarColorClass }}"
-              aria-hidden="true">
-              {{ employee.initials }}
-            </div>
-            <!-- Name + title -->
-            <div class="flex flex-col gap-0.5 min-w-0 flex-1">
-              <span class="text-sm font-medium text-gray-900 truncate">{{ employee.name }}</span>
-              @if (employee.jobTitle) {
-                <span class="text-xs text-gray-500 truncate">{{ employee.jobTitle }}</span>
-              }
-            </div>
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 items-center gap-3 bg-transparent p-0 text-left"
+              [attr.data-testid]="'cert-employee-person-' + employee.contactId"
+              (click)="onPersonClick(employee)">
+              <!-- Avatar -->
+              <div
+                class="flex items-center justify-center w-9 h-9 rounded-full text-white text-xs font-semibold flex-shrink-0 {{ employee.avatarColorClass }}"
+                aria-hidden="true">
+                {{ employee.initials }}
+              </div>
+              <!-- Name + title -->
+              <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+                <span class="text-sm font-medium text-gray-900 truncate hover:underline">{{ employee.name }}</span>
+                @if (employee.jobTitle) {
+                  <span class="text-xs text-gray-500 truncate">{{ employee.jobTitle }}</span>
+                }
+              </div>
+            </button>
             <!-- Status badge -->
             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 {{ statusBadgeClass() }}">{{ statusLabel() }}</span>
           </li>
