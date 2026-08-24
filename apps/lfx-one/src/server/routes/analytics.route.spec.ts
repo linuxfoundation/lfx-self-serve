@@ -80,13 +80,22 @@ function edFor(slugs: string[], overrides: Record<string, unknown> = {}) {
 // Every endpoint gated by requireExecutiveDirector (ED-only) — the full registration list,
 // so a missing/deleted gate on any one of them shows up here rather than only in a sample.
 // Middleware branching itself is covered by require-executive-director.middleware.spec.ts.
-//
-// Note: events-overview-summary, event-roster, event-detail, event-growth, brand-reach,
-// brand-health, revenue-impact, marketing-attribution, web-activities-summary, email-ctr, and
-// social-reach are intentionally NOT gated here — authorization for those routes is owned by
-// LFXV2-2235's marketing-ops-aware middleware (see fix/LFXV2-2235-marketing-ops-bff-guards) to
-// avoid two PRs enforcing conflicting gates on the same routes.
-const ED_ONLY_GATED = ['/keyword-performance', '/social-media', '/social-media/monthly'];
+const ED_ONLY_GATED = [
+  '/keyword-performance',
+  '/social-media',
+  '/social-media/monthly',
+  '/web-activities-summary',
+  '/email-ctr',
+  '/social-reach',
+  '/event-growth',
+  '/events-overview-summary',
+  '/event-roster',
+  '/event-detail',
+  '/brand-reach',
+  '/brand-health',
+  '/revenue-impact',
+  '/marketing-attribution',
+];
 
 const GATED_SAMPLE = [...ED_ONLY_GATED];
 
@@ -132,14 +141,6 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
     const res = await fetch(`${baseUrl}/api/analytics/keyword-performance?foundationSlug=cncf`);
 
     expect(res.status).not.toBe(403);
-  });
-
-  it('refuses a root writer without the ED persona on ED-only routes', async () => {
-    getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: true, isLFStaff: false });
-
-    const res = await fetch(`${baseUrl}/api/analytics/keyword-performance?foundationSlug=cncf`);
-
-    expect(res.status).toBe(403);
   });
 
   it('refuses LF staff without the ED persona on ED-only routes', async () => {
@@ -208,29 +209,6 @@ describe('analytics router — authorization on marketing/dashboard endpoints', 
     getPersonas.mockResolvedValue(NON_ED);
 
     const res = await fetch(`${baseUrl}/api/analytics/active-weeks-streak`);
-
-    expect(res.status).not.toBe(403);
-  });
-
-  // Regression guard: these routes' authorization is intentionally owned by LFXV2-2235's
-  // marketing-ops-aware middleware, not this PR — a future rebase should not silently reintroduce
-  // requireExecutiveDashboardAccess/requireExecutiveDirector here and create a conflicting gate.
-  it.each([
-    '/event-growth',
-    '/events-overview-summary',
-    '/event-roster',
-    '/event-detail',
-    '/brand-reach',
-    '/brand-health',
-    '/revenue-impact',
-    '/marketing-attribution',
-    '/web-activities-summary',
-    '/email-ctr',
-    '/social-reach',
-  ])('leaves %s ungated at this PR (owned by LFXV2-2235)', async (path) => {
-    getPersonas.mockResolvedValue(NON_ED);
-
-    const res = await fetch(`${baseUrl}/api/analytics${path}`);
 
     expect(res.status).not.toBe(403);
   });

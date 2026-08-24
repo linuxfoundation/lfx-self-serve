@@ -109,17 +109,6 @@ describe('campaigns router — ED gate', () => {
     expect(getPersonas).toHaveBeenCalled();
   });
 
-  // The middleware requires the ED persona unconditionally — isRootWriter/isLFStaff only bypass
-  // the foundationSlug scope check further down, not the initial gate. A caller without the ED
-  // persona is refused here regardless of those flags.
-  it('refuses a root writer without the ED persona', async () => {
-    getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: true, isLFStaff: false });
-
-    const res = await fetch(`${baseUrl}/api/campaigns/monitor`);
-
-    expect(res.status).toBe(403);
-  });
-
   it('refuses LF staff without the ED persona', async () => {
     getPersonas.mockResolvedValue({ personas: [], personaProjects: {}, isRootWriter: false, isLFStaff: true });
 

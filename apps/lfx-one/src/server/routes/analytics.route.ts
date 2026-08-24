@@ -143,18 +143,14 @@ router.get('/org-involvement-event-attendance-monthly', (req, res, next) => anal
 router.get('/org-involvement-certified-employees-monthly', (req, res, next) => analyticsController.orgCertifiedEmployeesMonthly(req, res, next));
 router.get('/org-involvement-training-enrollments', (req, res, next) => analyticsController.orgTrainingEnrollments(req, res, next));
 
-// Web activities summary endpoint (marketing dashboard)
-// Authorization for this route is handled by LFXV2-2235's marketing-ops-aware middleware
-// (see fix/LFXV2-2235-marketing-ops-bff-guards) — not duplicated here to avoid conflicting gates.
-router.get('/web-activities-summary', (req, res, next) => analyticsController.getWebActivitiesSummary(req, res, next));
+// Web activities summary endpoint (marketing dashboard) — ED-only.
+router.get('/web-activities-summary', requireExecutiveDirector, (req, res, next) => analyticsController.getWebActivitiesSummary(req, res, next));
 
-// Email CTR endpoint (marketing dashboard)
-// Authorization for this route is handled by LFXV2-2235's marketing-ops-aware middleware.
-router.get('/email-ctr', (req, res, next) => analyticsController.getEmailCtr(req, res, next));
+// Email CTR endpoint (marketing dashboard) — ED-only.
+router.get('/email-ctr', requireExecutiveDirector, (req, res, next) => analyticsController.getEmailCtr(req, res, next));
 
-// Social reach endpoint (marketing dashboard)
-// Authorization for this route is handled by LFXV2-2235's marketing-ops-aware middleware.
-router.get('/social-reach', (req, res, next) => analyticsController.getSocialReach(req, res, next));
+// Social reach endpoint (marketing dashboard) — ED-only.
+router.get('/social-reach', requireExecutiveDirector, (req, res, next) => analyticsController.getSocialReach(req, res, next));
 
 // Keyword performance endpoint (marketing dashboard) — only reachable from the ED-only
 // Performance Marketing tab; LF Staff never see this tab, so it stays ED-only.
@@ -195,17 +191,16 @@ router.get('/code-contribution-summary', (req, res, next) => analyticsController
 // Board Meeting Participation summary endpoint (health metrics page)
 router.get('/board-meeting-participation-summary', (req, res, next) => analyticsController.getBoardMeetingParticipationSummary(req, res, next));
 
-// ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
-// Authorization for these routes is handled by LFXV2-2235's marketing-ops-aware middleware
-// (see fix/LFXV2-2235-marketing-ops-bff-guards) — not duplicated here to avoid conflicting gates.
-router.get('/event-growth', (req, res, next) => analyticsController.getEventGrowth(req, res, next));
-router.get('/events-overview-summary', (req, res, next) => analyticsController.getEventsOverviewSummary(req, res, next));
-router.get('/event-roster', (req, res, next) => analyticsController.getEventRoster(req, res, next));
-router.get('/event-detail', (req, res, next) => analyticsController.getEventDetail(req, res, next));
-router.get('/brand-reach', (req, res, next) => analyticsController.getBrandReach(req, res, next));
-router.get('/brand-health', (req, res, next) => analyticsController.getBrandHealth(req, res, next));
-router.get('/revenue-impact', (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
-router.get('/marketing-attribution', (req, res, next) => analyticsController.getMarketingAttribution(req, res, next));
+// ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views.
+// All are ED-only (foundation marketing, revenue, and event data).
+router.get('/event-growth', requireExecutiveDirector, (req, res, next) => analyticsController.getEventGrowth(req, res, next));
+router.get('/events-overview-summary', requireExecutiveDirector, (req, res, next) => analyticsController.getEventsOverviewSummary(req, res, next));
+router.get('/event-roster', requireExecutiveDirector, (req, res, next) => analyticsController.getEventRoster(req, res, next));
+router.get('/event-detail', requireExecutiveDirector, (req, res, next) => analyticsController.getEventDetail(req, res, next));
+router.get('/brand-reach', requireExecutiveDirector, (req, res, next) => analyticsController.getBrandReach(req, res, next));
+router.get('/brand-health', requireExecutiveDirector, (req, res, next) => analyticsController.getBrandHealth(req, res, next));
+router.get('/revenue-impact', requireExecutiveDirector, (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
+router.get('/marketing-attribution', requireExecutiveDirector, (req, res, next) => analyticsController.getMarketingAttribution(req, res, next));
 
 // Multi-foundation summary endpoint (multi-foundation dashboard) — any authenticated user viewing
 // their own multi-persona foundations. Authorization is enforced server-side by
