@@ -64,7 +64,7 @@
           <a
             [routerLink]="['/groups', group.uid]"
             role="listitem"
-            class="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+            class="flex items-start gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 sm:items-center"
             [attr.data-testid]="'public-foundation-groups-item-' + group.uid"
             [attr.aria-label]="group.name + ', ' + config.label">
             <!-- Icon -->
@@ -72,19 +72,26 @@
               <i [class]="config.icon + ' ' + config.color + ' text-base'" aria-hidden="true"></i>
             </div>
 
-            <!-- Name + meta -->
-            <div class="flex flex-col gap-0.5 flex-1 min-w-0">
-              <p class="truncate text-sm font-medium text-gray-900" data-testid="public-foundation-groups-item-name">{{ group.name }}</p>
-              @if (group.context.project_name) {
-                <p class="truncate text-xs text-gray-400" data-testid="public-foundation-groups-item-project">{{ group.context.project_name }}</p>
-              }
-              @if (group.description) {
-                <p class="truncate text-xs text-gray-500 mt-0.5 hidden sm:block" data-testid="public-foundation-groups-item-desc">{{ group.description }}</p>
-              }
-            </div>
+            <!-- Name + meta + behavioral class chip: stacked below `sm`; `sm:contents` folds this
+                 wrapper away at `sm+` so the name/meta block and chip become direct flex items of
+                 the row again, reproducing the pre-existing desktop layout. `display: contents`
+                 gives the wrapper no box of its own at `sm+`, so its own `flex-1`/`min-w-0` stop
+                 applying there — the inner meta block carries the same classes so it, not the
+                 wrapper, is what grows at `sm+` (GH-1791, porting the pattern from #1789). -->
+            <div class="flex flex-1 min-w-0 flex-col gap-2 sm:contents" data-testid="public-foundation-groups-item-meta-wrapper">
+              <div class="flex flex-1 min-w-0 flex-col gap-0.5" data-testid="public-foundation-groups-item-meta-block">
+                <p class="truncate text-sm font-medium text-gray-900" data-testid="public-foundation-groups-item-name">{{ group.name }}</p>
+                @if (group.context.project_name) {
+                  <p class="truncate text-xs text-gray-500" data-testid="public-foundation-groups-item-project">{{ group.context.project_name }}</p>
+                }
+                @if (group.description) {
+                  <p class="truncate text-xs text-gray-500 mt-0.5 hidden sm:block" data-testid="public-foundation-groups-item-desc">{{ group.description }}</p>
+                }
+              </div>
 
-            <!-- Behavioral class chip -->
-            <lfx-tag [value]="config.label" [severity]="'secondary'" class="shrink-0 hidden sm:flex" />
+              <!-- Behavioral class chip -->
+              <lfx-tag [value]="config.label" [severity]="'secondary'" class="flex w-fit shrink-0" data-testid="public-foundation-groups-item-class-chip" />
+            </div>
 
             <!-- Join mode badge -->
             @if (group.joinLabel) {
