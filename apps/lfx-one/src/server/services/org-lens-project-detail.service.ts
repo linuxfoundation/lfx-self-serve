@@ -1351,18 +1351,36 @@ export class OrgLensProjectDetailService {
     return labels.length > 0 ? [...new Set(labels)].join(', ') : 'LFX Insights';
   }
 
-  /** Group flat trend rows into per-org series (combined oldest → newest). */
+  /** Group flat trend rows into per-org series over the shared month axis (oldest → newest). */
   private buildTrendByAccount(rows: TrendRow[]): Map<string, TrendSeries> {
-    const byAccount = new Map<string, TrendSeries>();
+    const scoresByAccount = new Map<string, { orgName: string; orgLogoUrl: string; byMonth: Map<string, number> }>();
+    const months = new Set<string>();
     for (const row of rows) {
-      const key = this.trendSeriesKey(row.ACCOUNT_ID, row.ORG_NAME);
-      if (key === null) continue;
-      let series = byAccount.get(key);
-      if (!series) {
-        series = { accountId: key, orgName: row.ORG_NAME ?? '', orgLogoUrl: row.ORG_LOGO_URL ?? '', combined: [] };
-        byAccount.set(key, series);
+      const ym = this.toYearMonth(row.SPAN_MONTH);
+      if (!ym) continue;
+      months.add(ym);
+      const key = this.trendSeriesKey(row.ACCOUNT_ID);
+      let entry = scoresByAccount.get(key);
+      if (!entry) {
+        entry = {
+          orgName: key === '' ? OrgLensProjectDetailService.trendOthersLabel : (row.ORG_NAME ?? ''),
+          orgLogoUrl: row.ORG_LOGO_URL ?? '',
+          byMonth: new Map(),
+        };
+        scoresByAccount.set(key, entry);
       }
-      series.combined.push(this.round1(this.num(row.COMBINED_INFLUENCE_SCORE)));
+      entry.byMonth.set(ym, this.round1(this.num(row.COMBINED_INFLUENCE_SCORE)));
+    }
+
+    const axis = [...months].sort();
+    const byAccount = new Map<string, TrendSeries>();
+    for (const [accountId, entry] of scoresByAccount) {
+      byAccount.set(accountId, {
+        accountId,
+        orgName: entry.orgName,
+        orgLogoUrl: entry.orgLogoUrl,
+        combined: axis.map((ym) => entry.byMonth.get(ym) ?? 0),
+      });
     }
     return byAccount;
   }
@@ -1379,11 +1397,14 @@ export class OrgLensProjectDetailService {
     const scoresByAccount = new Map<string, { orgName: string; orgLogoUrl: string; byBucket: Map<number, number> }>();
     for (const row of rows) {
       if (row.BUCKET_INDEX === null || row.BUCKET_INDEX === undefined) continue;
-      const key = this.trendSeriesKey(row.ACCOUNT_ID, row.ORG_NAME);
-      if (key === null) continue;
+      const key = this.trendSeriesKey(row.ACCOUNT_ID);
       let entry = scoresByAccount.get(key);
       if (!entry) {
-        entry = { orgName: row.ORG_NAME ?? '', orgLogoUrl: row.ORG_LOGO_URL ?? '', byBucket: new Map() };
+        entry = {
+          orgName: key === '' ? OrgLensProjectDetailService.trendOthersLabel : (row.ORG_NAME ?? ''),
+          orgLogoUrl: row.ORG_LOGO_URL ?? '',
+          byBucket: new Map(),
+        };
         scoresByAccount.set(key, entry);
       }
       entry.byBucket.set(this.num(row.BUCKET_INDEX), this.round1(this.num(row.COMBINED_INFLUENCE_SCORE)));
@@ -1406,7 +1427,7 @@ export class OrgLensProjectDetailService {
     const named: TrendSeries[] = [];
     let others: TrendSeries | undefined;
     for (const series of byAccount.values()) {
-      if (series.orgName === OrgLensProjectDetailService.trendOthersLabel && series.accountId === '') {
+      if (series.accountId === '') {
         others = series;
       } else {
         named.push(series);
@@ -1735,9 +1756,8 @@ export class OrgLensProjectDetailService {
     return Math.round(value * 10) / 10;
   }
 
-  private trendSeriesKey(accountId: string | null, orgName: string | null): string | null {
-    if (!accountId && (orgName ?? '') === OrgLensProjectDetailService.trendOthersLabel) return '';
-    return accountId || null;
+  private trendSeriesKey(accountId: string | null): string {
+    return accountId || '';
   }
 
   private plural(n: number, singular: string, pluralForm: string): string {

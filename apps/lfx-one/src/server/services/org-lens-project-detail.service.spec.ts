@@ -143,6 +143,46 @@ describe('OrgLensProjectDetailService.getTrendBlock', () => {
     expect(block?.trend[2]?.accountId).toBe('');
   });
 
+  it('zero-fills a missing month on the shared axis instead of shifting later points', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('PROJECT_NAME')) return { rows: [heroRow] };
+      return {
+        rows: [
+          { ACCOUNT_ID: 'org-b', ORG_NAME: 'Beta', ORG_LOGO_URL: '', SPAN_MONTH: '2025-01-01', COMBINED_INFLUENCE_SCORE: 1 },
+          { ACCOUNT_ID: 'org-b', ORG_NAME: 'Beta', ORG_LOGO_URL: '', SPAN_MONTH: '2025-02-01', COMBINED_INFLUENCE_SCORE: 20 },
+          { ACCOUNT_ID: 'org-b', ORG_NAME: 'Beta', ORG_LOGO_URL: '', SPAN_MONTH: '2025-03-01', COMBINED_INFLUENCE_SCORE: 8 },
+          { ACCOUNT_ID: 'org-a', ORG_NAME: 'Alpha', ORG_LOGO_URL: '', SPAN_MONTH: '2025-01-01', COMBINED_INFLUENCE_SCORE: 2 },
+          { ACCOUNT_ID: 'org-a', ORG_NAME: 'Alpha', ORG_LOGO_URL: '', SPAN_MONTH: '2025-03-01', COMBINED_INFLUENCE_SCORE: 9 },
+        ],
+      };
+    });
+
+    const block = await service.getTrendBlock(ORG, SLUG, '1y');
+
+    expect(block?.trend[0]?.orgName).toBe('Alpha');
+    expect(block?.trend[0]?.combined).toEqual([2, 0, 9]);
+    expect(block?.trend[1]?.orgName).toBe('Beta');
+    expect(block?.trend[1]?.combined).toEqual([1, 20, 8]);
+  });
+
+  it('treats the empty account-id sentinel as All others regardless of org name', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('PROJECT_NAME')) return { rows: [heroRow] };
+      return {
+        rows: [
+          { ACCOUNT_ID: 'org-a', ORG_NAME: 'Alpha', ORG_LOGO_URL: '', SPAN_MONTH: '2025-01-01', COMBINED_INFLUENCE_SCORE: 4 },
+          { ACCOUNT_ID: '', ORG_NAME: 'the rest', ORG_LOGO_URL: '', SPAN_MONTH: '2025-01-01', COMBINED_INFLUENCE_SCORE: 7 },
+        ],
+      };
+    });
+
+    const block = await service.getTrendBlock(ORG, SLUG, '1y');
+
+    expect(block?.trend.map((series) => series.accountId)).toEqual(['org-a', '']);
+    expect(block?.trend[1]?.orgName).toBe('All others');
+    expect(block?.trend[1]?.combined).toEqual([7]);
+  });
+
   it('breaks latest-score ties by organization name then account id', async () => {
     execute.mockImplementation(async (sql: string) => {
       if (sql.includes('PROJECT_NAME')) return { rows: [heroRow] };
