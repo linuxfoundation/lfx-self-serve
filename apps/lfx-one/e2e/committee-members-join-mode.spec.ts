@@ -91,6 +91,8 @@ test.describe('Group Members tab join modes (LFXV2-2690)', () => {
     await gotoMembersTab(page);
 
     await expect(page.getByTestId('filter-pill-pending')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await page.getByTestId('filter-pill-pending').click();
+    await expect(page.getByTestId('invite-row-invite-1')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('member in invite_only group: Invite Someone button visible, not Add Member', async ({ page }) => {
