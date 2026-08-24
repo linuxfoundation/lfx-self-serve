@@ -2,6 +2,7 @@
 name: self-serve-learnings-reviewer
 description: Repo-owned empirical-review brain for lfx-self-serve, the repo-learnings role of this repo's local pre-PR review. Matches one commit or range against this repo's knowledge base of patterns extracted from real past PR review comments, applies the known-false-positive floor last, and returns a Markdown review in which every finding quotes its KB entry. Loaded directly by the launcher; not a skill a developer invokes by hand.
 ---
+
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
@@ -29,17 +30,17 @@ repo's own KB at `docs/reviews/knowledge-base/`, versioned with the code they
 describe. There is exactly one copy of that KB and this skill does not duplicate
 it.
 
-| File | What it covers |
-| --- | --- |
-| `docs/reviews/knowledge-base/security.md` | credential disclosure, identity enumeration, public-meeting visibility, untrusted URL/href binding, sanitizer bypass, cookie-as-identity, SSRF — **read on every run** |
-| `docs/reviews/knowledge-base/code-truthiness.md` | JSDoc/comment vs behaviour drift, doc/PR-desc vs code drift, KPI/chart label vs data-source mismatch, missing spec for new surface, form-validator vs API/flag mismatch |
-| `docs/reviews/knowledge-base/typescript-correctness.md` | generic return types that lie, non-null assertions on async results, deep imports around the barrel, timer leaks, observable readiness races, UTC day-shift |
-| `docs/reviews/knowledge-base/frontend-state-and-timing.md` | SSE parsing/disconnect, `toObservable`/`startWith` double-emit, missing `distinctUntilChanged`, effect resets, async-context readiness |
-| `docs/reviews/knowledge-base/server-request-handling.md` | interceptor order vs SSR cookies, guard ordering, new API route without auth middleware, shared instance state, query-string casting/trimming/validation, id-format regexes |
-| `docs/reviews/knowledge-base/templates-and-accessibility.md` | nested interactive elements, icon-only buttons without labels, `aria-pressed`, click without keydown, `@for` track identity, PrimeNG wrapper bypass |
-| `docs/reviews/knowledge-base/data-and-snowflake.md` | dev-schema leak, placeholder/bind-count mismatch, missing `ORDER BY`/`LIMIT`, SELECT vs row-interface mismatch, date-column typing |
-| `docs/reviews/knowledge-base/observability-and-logging.md` | OTel ignore-list drift, health endpoint inside the rate limiter, count-variable mismatch, INFO for high-frequency fetch, `err` field convention |
-| `docs/reviews/knowledge-base/known-false-positives.md` | the floor — findings this repo has explicitly rejected |
+| File                                                         | What it covers                                                                                                                                                              |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/reviews/knowledge-base/security.md`                    | credential disclosure, identity enumeration, public-meeting visibility, untrusted URL/href binding, sanitizer bypass, cookie-as-identity, SSRF — **read on every run**      |
+| `docs/reviews/knowledge-base/code-truthiness.md`             | JSDoc/comment vs behaviour drift, doc/PR-desc vs code drift, KPI/chart label vs data-source mismatch, missing spec for new surface, form-validator vs API/flag mismatch     |
+| `docs/reviews/knowledge-base/typescript-correctness.md`      | generic return types that lie, non-null assertions on async results, deep imports around the barrel, timer leaks, observable readiness races, UTC day-shift                 |
+| `docs/reviews/knowledge-base/frontend-state-and-timing.md`   | SSE parsing/disconnect, `toObservable`/`startWith` double-emit, missing `distinctUntilChanged`, effect resets, async-context readiness                                      |
+| `docs/reviews/knowledge-base/server-request-handling.md`     | interceptor order vs SSR cookies, guard ordering, new API route without auth middleware, shared instance state, query-string casting/trimming/validation, id-format regexes |
+| `docs/reviews/knowledge-base/templates-and-accessibility.md` | nested interactive elements, icon-only buttons without labels, `aria-pressed`, click without keydown, `@for` track identity, PrimeNG wrapper bypass                         |
+| `docs/reviews/knowledge-base/data-and-snowflake.md`          | dev-schema leak, placeholder/bind-count mismatch, missing `ORDER BY`/`LIMIT`, SELECT vs row-interface mismatch, date-column typing                                          |
+| `docs/reviews/knowledge-base/observability-and-logging.md`   | OTel ignore-list drift, health endpoint inside the rate limiter, count-variable mismatch, INFO for high-frequency fetch, `err` field convention                             |
+| `docs/reviews/knowledge-base/known-false-positives.md`       | the floor — findings this repo has explicitly rejected                                                                                                                      |
 
 Each pattern file opens with a **Read when:** line naming the file surfaces that
 make it relevant, and each pattern is a `##` heading of the form
@@ -59,7 +60,7 @@ do not make it an `INCOMPLETE`. The entry format is the one described above,
 learned from the pattern files themselves.
 
 **The one exception to target-only reading is the false-positive floor**, which
-is read at *both* the base and the target revision and suppresses only where the
+is read at _both_ the base and the target revision and suppresses only where the
 two agree — see below.
 
 If the knowledge base cannot be read at the target revision, you cannot do your
@@ -169,10 +170,10 @@ base and again for `<rev>` = target, and keep the two results apart.
 
 **Never substitute one revision's floor for the other.** A failure at either
 revision is `INCOMPLETE`; it is never grounds for falling back, forward, or
-through to the floor you *were* able to read.
+through to the floor you _were_ able to read.
 
 **Evaluate suppression per candidate, against each floor separately**, and
-compare *semantically* — what the entry actually covers. The floor's entries are
+compare _semantically_ — what the entry actually covers. The floor's entries are
 prose (**Pattern matched:** / **Why false:**), so read the meaning, and never
 text-diff or byte-diff floor entries against each other:
 
@@ -262,8 +263,8 @@ Raise nothing you are not at least 80% confident is real.
 
 If you complete the review and nothing clears the bar, **say so explicitly in
 one sentence** — that is a good outcome and it must be unmistakable, for
-example: *"Reviewed `<target>` against the knowledge base. No Critical or
-Important findings."*
+example: _"Reviewed `<target>` against the knowledge base. No Critical or
+Important findings."_
 
 If you launched but **cannot complete** the review, make the **first line** of
 your report exactly:
