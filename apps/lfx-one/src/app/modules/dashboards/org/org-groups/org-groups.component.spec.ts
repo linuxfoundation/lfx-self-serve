@@ -1,52 +1,456 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter, Router } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL } from '@lfx-one/shared/constants';
+import type { Account, OrgDropdownOption, OrgLensGroupSummary, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensGroupsService } from '@services/org-lens-groups.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
-import { of } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
-
-import type { Account, OrgLensGroupsResponse, OrgLensGroupSummary } from '@lfx-one/shared/interfaces';
+import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { signal, type WritableSignal } from '@angular/core';
 
 import { OrgGroupsComponent } from './org-groups.component';
 
-const ACCOUNT: Account = { accountId: 'a1', accountName: 'Acme Corp', uid: 'org-1' };
-
-function group(over: Partial<OrgLensGroupSummary> = {}): OrgLensGroupSummary {
-  return {
-    uid: 'g1',
-    name: 'WG Identity & Trust',
-    category: 'Working Group',
-    org_seat_count: 3,
-    ...over,
-  };
+interface RenderOptions {
+  accountName?: string;
+  orgNavigationLoaded?: boolean;
+  getGroups?: () => ReturnType<OrgLensGroupsService['getGroups']>;
+  queryParams?: Record<string, string>;
 }
+
+interface Rendered {
+  fixture: ComponentFixture<OrgGroupsComponent>;
+  navigate: ReturnType<typeof vi.fn>;
+  selectedAccount: WritableSignal<Account>;
+}
+
+async function render(options: RenderOptions = {}): Promise<Rendered> {
+  const { accountName = 'Acme Motors, Inc.', orgNavigationLoaded = true, getGroups = () => of(emptyGroupsResponse()), queryParams = {} } = options;
+
+  const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName, accountSlug: 'acme', membershipTier: '', uid: 'org-uid-1' });
+
+  TestBed.resetTestingModule();
+  await TestBed.configureTestingModule({
+    imports: [OrgGroupsComponent],
+    providers: [
+      {
+        provide: AccountContextService,
+        useValue: { selectedAccount, hasOrgSelectorAccess: signal(true) },
+      },
+      { provide: OrgNavigationService, useValue: { loaded: signal(orgNavigationLoaded) } },
+      { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
+      { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
+      { provide: OrgLensGroupsService, useValue: { getGroups } },
+      // Real Router (via provideRouter) so the rendered group rows' [routerLink] (createUrlTree, etc.)
+      // keeps working; only `navigate` — the method the URL-sync subscription actually calls — is spied on.
+      provideRouter([]),
+      {
+        provide: ActivatedRoute,
+        useValue: {
+          snapshot: { queryParamMap: convertToParamMap(queryParams), queryParams },
+        },
+      },
+    ],
+  }).compileComponents();
+
+  const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true) as unknown as ReturnType<typeof vi.fn>;
+
+  const fixture = TestBed.createComponent(OrgGroupsComponent);
+  await fixture.whenStable();
+  fixture.detectChanges();
+  return { fixture, navigate, selectedAccount };
+}
+
+function emptyGroupsResponse(): OrgLensGroupsResponse {
+  return { groups: [], total_groups: 0, total_seats: 0 };
+}
+
+/** Server-sorted (seat count desc, then name asc) — the component never re-sorts, so fixtures already reflect that order. */
+function buildGroups(): OrgLensGroupSummary[] {
+  return [
+    { uid: 'g1', name: 'Committee Steering TAG', category: 'TSC', project_uid: 'p-cncf', project_slug: 'cncf', project_name: 'CNCF', org_seat_count: 10 },
+    { uid: 'g2', name: 'Zephyr Working Group', category: 'Working Group', project_uid: 'p-zephyr', project_slug: 'zephyr-project', org_seat_count: 5 },
+    {
+      uid: 'g3',
+      name: 'Ambassador Program',
+      category: 'Ambassador',
+      project_uid: 'p-ossf',
+      project_slug: 'openssf',
+      project_name: 'OpenSSF',
+      org_seat_count: 3,
+    },
+    { uid: 'g4', name: 'Committee Newsletter', category: 'Newsletter', project_uid: 'p-cncf', project_slug: 'cncf', project_name: 'CNCF', org_seat_count: 1 },
+  ];
+}
+
+function groupsResponse(groups: OrgLensGroupSummary[]): OrgLensGroupsResponse {
+  return { groups, total_groups: groups.length, total_seats: groups.reduce((sum, g) => sum + g.org_seat_count, 0) };
+}
+
+function listSkeletonRows(fixture: ComponentFixture<OrgGroupsComponent>): NodeListOf<Element> {
+  return fixture.nativeElement.querySelectorAll('[data-testid="org-groups-list-skeleton-row"]');
+}
+
+function statSkeletonCards(fixture: ComponentFixture<OrgGroupsComponent>): NodeListOf<Element> {
+  return fixture.nativeElement.querySelectorAll('[data-testid="org-groups-stat-skeleton-card"]');
+}
+
+function has(fixture: ComponentFixture<OrgGroupsComponent>, testid: string): boolean {
+  return !!fixture.nativeElement.querySelector(`[data-testid="${testid}"]`);
+}
+
+/** The row-link testid ('org-groups-row-link-<uid>') is deliberately not a prefix-extension of the
+ *  row container's ('org-groups-item-<uid>') — the latter also prefixes the per-row -name/-project/-seats
+ *  sub-testids, so it can't be used for a `^=` row count without over-matching. */
+function renderedItemUids(fixture: ComponentFixture<OrgGroupsComponent>): string[] {
+  return Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="org-groups-row-link-"]')).map((el) =>
+    (el as HTMLElement).getAttribute('data-testid')!.replace('org-groups-row-link-', '')
+  );
+}
+
+/** filterForm/typeOptions are `protected` — reach in via a narrow cast, mirroring the repo's existing spec convention (see brand-kit-form.component.spec.ts). */
+function filterForm(fixture: ComponentFixture<OrgGroupsComponent>): {
+  get(key: string): { setValue(v: string): void } | null;
+  reset(v: Record<string, string>): void;
+} {
+  return (
+    fixture.componentInstance as unknown as {
+      filterForm: { get(key: string): { setValue(v: string): void } | null; reset(v: Record<string, string>): void };
+    }
+  ).filterForm;
+}
+
+function typeOptions(fixture: ComponentFixture<OrgGroupsComponent>): OrgDropdownOption[] {
+  return (fixture.componentInstance as unknown as { typeOptions: () => OrgDropdownOption[] }).typeOptions();
+}
+
+function foundationOptions(fixture: ComponentFixture<OrgGroupsComponent>): OrgDropdownOption[] {
+  return (fixture.componentInstance as unknown as { foundationOptions: () => OrgDropdownOption[] }).foundationOptions();
+}
+
+/** Lets the real `debounceTime(150)` on the filter form settle, then flushes change detection. */
+async function flushFilterChange(fixture: ComponentFixture<OrgGroupsComponent>): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  fixture.detectChanges();
+  await fixture.whenStable();
+}
+
+describe('OrgGroupsComponent', () => {
+  it('renders the same skeleton shape for the initial page load and the group-fetch loading state', async () => {
+    // !loaded() branch — org navigation hasn't resolved yet.
+    const { fixture: initialLoad } = await render({ orgNavigationLoaded: false });
+    expect(has(initialLoad, 'org-groups-skeleton')).toBe(true);
+    expect(has(initialLoad, 'org-groups-stat-strip')).toBe(false);
+    expect(has(initialLoad, 'org-groups-list-loading')).toBe(true);
+    expect(has(initialLoad, 'org-groups-list')).toBe(false);
+    expect(statSkeletonCards(initialLoad).length).toBe(8);
+    expect(listSkeletonRows(initialLoad).length).toBe(5);
+
+    // groupsLoading() branch — page loaded, but the group fetch never resolves.
+    const { fixture: groupsFetching } = await render({ getGroups: () => new Subject<OrgLensGroupsResponse>() });
+    expect(has(groupsFetching, 'org-groups-stat-strip')).toBe(true);
+    expect(has(groupsFetching, 'org-groups-skeleton')).toBe(false);
+    expect(has(groupsFetching, 'org-groups-list')).toBe(true);
+    expect(has(groupsFetching, 'org-groups-list-loading')).toBe(false);
+    expect(has(groupsFetching, 'org-groups-stat-total')).toBe(false);
+    expect(statSkeletonCards(groupsFetching).length).toBe(8);
+    expect(listSkeletonRows(groupsFetching).length).toBe(5);
+  });
+
+  it('renders the populated stat strip and group list once data arrives', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-groups-stat-total"]')?.textContent).toContain('4');
+    expect(fixture.nativeElement.querySelector('[data-testid="org-groups-stat-seats"]')?.textContent).toContain('19');
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="org-groups-list-items"] > div').length).toBe(4);
+    expect(fixture.nativeElement.querySelector('[data-testid="org-groups-skeleton"]')).toBeNull();
+  });
+
+  it('includes the selected account name in the H1, separated by a dash', async () => {
+    const { fixture } = await render({ accountName: 'Acme Motors, Inc.' });
+
+    const title = fixture.nativeElement.querySelector('[data-testid="org-groups-title"]');
+
+    expect(title?.textContent?.trim()).toBe('Groups — Acme Motors, Inc.');
+  });
+
+  it('omits the dash from the H1 when no account name is selected', async () => {
+    const { fixture } = await render({ accountName: '' });
+
+    const title = fixture.nativeElement.querySelector('[data-testid="org-groups-title"]');
+
+    expect(title?.textContent?.trim()).toBe('Groups');
+  });
+
+  it('derives the roster-empty copy from COMMITTEE_LABEL rather than a hardcoded literal', async () => {
+    const { fixture } = await render({ getGroups: () => of(emptyGroupsResponse()) });
+
+    const emptyState = fixture.nativeElement.querySelector('[data-testid="org-groups-empty-state"]');
+
+    expect(emptyState?.textContent).toContain(`No ${COMMITTEE_LABEL.singular.toLowerCase()} participation found.`);
+    expect(emptyState?.textContent).toContain(`any ${COMMITTEE_LABEL.plural.toLowerCase()}.`);
+  });
+
+  it('renders the fetchError subtitle now that the empty-state input mismatch is fixed', async () => {
+    const { fixture } = await render({ getGroups: () => throwError(() => new Error('boom')) });
+
+    const errorState = fixture.nativeElement.querySelector('[data-testid="org-groups-error-state"]');
+
+    expect(errorState?.textContent).toContain('Something went wrong while fetching group data. Please try refreshing the page.');
+  });
+
+  it('search matches on group name and on foundation name', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    filterForm(fixture).get('search')?.setValue('zephyr');
+    await flushFilterChange(fixture);
+
+    // 'zephyr' only appears in g2's NAME, not any foundation label.
+    expect(renderedItemUids(fixture)).toEqual(['g2']);
+
+    filterForm(fixture).get('search')?.setValue('cncf');
+    await flushFilterChange(fixture);
+
+    // 'cncf' appears only in g1/g4's FOUNDATION name ("CNCF"), not in either group's name.
+    expect(renderedItemUids(fixture)).toEqual(['g1', 'g4']);
+  });
+
+  it('composes search, foundation, and type filters with AND', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    // 'committee' matches g1 + g4 by name; foundation slug 'cncf' also matches g1 + g4;
+    // type 'special-interest-group' narrows to g4 alone (g1 is oversight-committee).
+    filterForm(fixture).get('search')?.setValue('committee');
+    filterForm(fixture).get('foundation')?.setValue('cncf');
+    filterForm(fixture).get('type')?.setValue('special-interest-group');
+    await flushFilterChange(fixture);
+
+    expect(renderedItemUids(fixture)).toEqual(['g4']);
+  });
+
+  it('excludes zero-count classes from type options and shows correct counts for present ones', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    const options = typeOptions(fixture);
+    const labels = options.map((o) => o.label);
+
+    // No governing-board or "other" groups in the fixture — must not appear.
+    expect(labels.some((l) => l.startsWith('Boards'))).toBe(false);
+    expect(labels.some((l) => l.startsWith('Other'))).toBe(false);
+
+    expect(labels).toContain('All types');
+    expect(labels).toContain('Oversight (1)');
+    expect(labels).toContain('Working Groups (1)');
+    expect(labels).toContain('Ambassadors (1)');
+    expect(labels).toContain('SIGs (1)');
+  });
+
+  it('keys foundation options on project_slug (a stable identity) with the resolved name as the label', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    const options = foundationOptions(fixture);
+
+    expect(options).toContainEqual({ label: 'All foundations', value: '' });
+    expect(options).toContainEqual({ label: 'CNCF', value: 'cncf' });
+    expect(options).toContainEqual({ label: 'OpenSSF', value: 'openssf' });
+    // g2 has no project_name — falls back to the slug for both label and value.
+    expect(options).toContainEqual({ label: 'zephyr-project', value: 'zephyr-project' });
+    // g1 and g4 share the 'cncf' slug — must appear once, not twice.
+    expect(options.filter((o) => o.value === 'cncf')).toHaveLength(1);
+  });
+
+  it('lets a resolved name win the shared label even when the unenriched sibling sorts first', async () => {
+    // Server sort is seat-count desc, so the UNENRICHED group of this foundation sorts ahead of the
+    // enriched one — exactly the ordering that would leak the raw slug if label selection depended on
+    // iteration order instead of "does this group have a project_name".
+    const groups: OrgLensGroupSummary[] = [
+      { uid: 'h1', name: 'Big Unenriched Group', category: 'TSC', project_uid: 'p-x', project_slug: 'x-project', org_seat_count: 10 },
+      {
+        uid: 'h2',
+        name: 'Small Enriched Group',
+        category: 'Ambassador',
+        project_uid: 'p-x',
+        project_slug: 'x-project',
+        project_name: 'X Project',
+        org_seat_count: 1,
+      },
+    ];
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(groups)) });
+
+    expect(foundationOptions(fixture)).toContainEqual({ label: 'X Project', value: 'x-project' });
+
+    // Search by the resolved name must also match the unenriched sibling, not just the enriched group.
+    filterForm(fixture).get('search')?.setValue('X Project');
+    await flushFilterChange(fixture);
+    expect(renderedItemUids(fixture)).toEqual(['h1', 'h2']);
+  });
+
+  it('also matches search on the raw slug, as a convenience for a search term that is the technical slug', async () => {
+    const groups: OrgLensGroupSummary[] = [
+      { uid: 'h1', name: 'Group One', category: 'TSC', project_uid: 'p-x', project_slug: 'x-project', project_name: 'X Project', org_seat_count: 1 },
+    ];
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(groups)) });
+
+    // 'x-project' appears only in the slug — not in the name or the resolved label ("X Project").
+    filterForm(fixture).get('search')?.setValue('x-project');
+    await flushFilterChange(fixture);
+
+    expect(renderedItemUids(fixture)).toEqual(['h1']);
+  });
+
+  it('renders filtered-empty copy distinct from roster-empty copy when a filter matches nothing', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    filterForm(fixture).get('search')?.setValue('no-such-group-xyz');
+    await flushFilterChange(fixture);
+
+    const filteredEmpty = fixture.nativeElement.querySelector('[data-testid="org-groups-filtered-empty-state"]');
+    const rosterEmpty = fixture.nativeElement.querySelector('[data-testid="org-groups-empty-state"]');
+
+    expect(filteredEmpty).toBeTruthy();
+    expect(rosterEmpty).toBeFalsy();
+    expect(filteredEmpty?.textContent).toContain(`No ${COMMITTEE_LABEL.plural.toLowerCase()} match the current filters`);
+    expect(filteredEmpty?.textContent).not.toContain('participation found');
+  });
+
+  it('hides the filter bar while the roster is empty or still loading', async () => {
+    const { fixture: emptyRoster } = await render({ getGroups: () => of(emptyGroupsResponse()) });
+    expect(emptyRoster.nativeElement.querySelector('[data-testid="org-groups-filter-bar"]')).toBeFalsy();
+
+    const { fixture: stillLoading } = await render({ getGroups: () => new Subject<OrgLensGroupsResponse>() });
+    expect(stillLoading.nativeElement.querySelector('[data-testid="org-groups-filter-bar"]')).toBeFalsy();
+
+    const { fixture: loaded } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+    expect(loaded.nativeElement.querySelector('[data-testid="org-groups-filter-bar"]')).toBeTruthy();
+  });
+
+  it('keeps a URL-seeded filter on first render (does not clear it as if the org just switched)', async () => {
+    const { fixture } = await render({
+      getGroups: () => of(groupsResponse(buildGroups())),
+      queryParams: { q: 'zephyr' },
+    });
+    // Flush the same real-time debounce window an org-switch reset would go through — without this,
+    // the assertion would pass whether or not the skip(1) guard actually protects the seeded value.
+    await flushFilterChange(fixture);
+
+    expect(renderedItemUids(fixture)).toEqual(['g2']);
+  });
+
+  it('clears the filter form when the selected org actually switches', async () => {
+    const { fixture, selectedAccount } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    filterForm(fixture).get('search')?.setValue('zephyr');
+    await flushFilterChange(fixture);
+    expect(renderedItemUids(fixture)).toEqual(['g2']);
+
+    // clearFilters() resets the form synchronously, but filteredGroups reads the debounced filterValues
+    // signal, so this needs the same real-time flush as a direct user edit.
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', accountSlug: 'vendor-corp', membershipTier: '', uid: 'org-uid-2' });
+    await flushFilterChange(fixture);
+
+    expect(renderedItemUids(fixture)).toEqual(['g1', 'g2', 'g3', 'g4']);
+  });
+
+  it('clearing filters restores the full list in the original (seat-desc, name-asc) order', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    filterForm(fixture).get('search')?.setValue('zephyr');
+    await flushFilterChange(fixture);
+    expect(renderedItemUids(fixture)).toEqual(['g2']);
+
+    const clearButton = fixture.nativeElement.querySelector('[data-testid="org-groups-clear-filters"]') as HTMLButtonElement;
+    expect(clearButton).toBeTruthy();
+    clearButton.click();
+    await flushFilterChange(fixture);
+
+    expect(renderedItemUids(fixture)).toEqual(['g1', 'g2', 'g3', 'g4']);
+  });
+
+  it('decodes ?q=, ?foundation=, and ?type= from the URL into the filtered result on initial render', async () => {
+    const { fixture } = await render({
+      getGroups: () => of(groupsResponse(buildGroups())),
+      queryParams: { q: 'committee', foundation: 'cncf', type: 'special-interest-group' },
+    });
+    // Flush past the debounce window so this also proves the decoded filter *survives* first render,
+    // not just that the (pre-debounce) initial value happens to already reflect it.
+    await flushFilterChange(fixture);
+
+    expect(renderedItemUids(fixture)).toEqual(['g4']);
+  });
+
+  it('writes the query param on filter change and removes it when reset to default', async () => {
+    const { fixture, navigate } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    filterForm(fixture).get('type')?.setValue('working-group');
+    await flushFilterChange(fixture);
+
+    expect(navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({
+        queryParams: { q: null, foundation: null, type: 'working-group' },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      })
+    );
+
+    navigate.mockClear();
+    filterForm(fixture).get('type')?.setValue('');
+    await flushFilterChange(fixture);
+
+    expect(navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({
+        queryParams: { q: null, foundation: null, type: null },
+      })
+    );
+  });
+
+  it('falls back to the default when ?type= is a malformed/unknown value, without throwing', async () => {
+    // render() itself would reject/throw if construction failed on the bogus param — awaiting it directly
+    // is the assertion that decoding a malformed value never throws.
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())), queryParams: { type: 'bogus-value' } });
+
+    // No type filter applied — full roster renders.
+    expect(renderedItemUids(fixture)).toEqual(['g1', 'g2', 'g3', 'g4']);
+  });
+
+  it('preserves an unrelated ?project= param (never overwrites the app-wide reserved key) when a filter changes', async () => {
+    const { fixture, navigate } = await render({
+      getGroups: () => of(groupsResponse(buildGroups())),
+      queryParams: { project: 'some-other-project' },
+    });
+
+    filterForm(fixture).get('foundation')?.setValue('openssf');
+    await flushFilterChange(fixture);
+
+    expect(navigate).toHaveBeenCalled();
+    const [, navOptions] = navigate.mock.calls[navigate.mock.calls.length - 1] as [unknown, { queryParams: Record<string, unknown> }];
+    expect(navOptions.queryParams).not.toHaveProperty('project');
+  });
+});
 
 describe('OrgGroupsComponent — project label and row/foundation routing', () => {
   let fixture: ComponentFixture<OrgGroupsComponent>;
 
-  async function render(response: OrgLensGroupsResponse): Promise<void> {
-    TestBed.resetTestingModule();
-    await TestBed.configureTestingModule({
-      imports: [OrgGroupsComponent],
-      providers: [
-        { provide: AccountContextService, useValue: { selectedAccount: signal(ACCOUNT), hasOrgSelectorAccess: signal(true) } },
-        { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
-        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
-        { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
-        { provide: OrgLensGroupsService, useValue: { getGroups: () => of(response) } },
-        provideRouter([]),
-      ],
-    }).compileComponents();
+  // Named renderRow (not render) — a same-named local function would shadow the module-level
+  // render() and recurse into itself instead of delegating to it.
+  async function renderRow(response: OrgLensGroupsResponse): Promise<void> {
+    ({ fixture } = await render({ accountName: 'Acme Corp', getGroups: () => of(response) }));
+  }
 
-    fixture = TestBed.createComponent(OrgGroupsComponent);
-    await fixture.whenStable();
+  function group(over: Partial<OrgLensGroupSummary> = {}): OrgLensGroupSummary {
+    return {
+      uid: 'g1',
+      name: 'WG Identity & Trust',
+      category: 'Working Group',
+      org_seat_count: 3,
+      ...over,
+    };
   }
 
   function projectLineElement(): HTMLElement | null {
@@ -65,7 +469,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
   }
 
   it('prefers project_name over project_slug in the project line and aria-label', async () => {
-    await render({
+    await renderRow({
       groups: [group({ project_name: 'Cloud Native Computing Foundation', project_slug: 'cncf' })],
       total_groups: 1,
       total_seats: 3,
@@ -76,7 +480,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
   });
 
   it('falls back to project_slug when project_name is absent', async () => {
-    await render({
+    await renderRow({
       groups: [group({ project_slug: 'cncf' })],
       total_groups: 1,
       total_seats: 3,
@@ -87,7 +491,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
   });
 
   it('omits the project line and label segment when neither is set', async () => {
-    await render({
+    await renderRow({
       groups: [group()],
       total_groups: 1,
       total_seats: 3,
@@ -98,7 +502,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
   });
 
   it('uses the singular "seat" in the aria-label for a single-seat group', async () => {
-    await render({
+    await renderRow({
       groups: [group({ org_seat_count: 1 })],
       total_groups: 1,
       total_seats: 1,
@@ -108,7 +512,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
   });
 
   it('renders the foundation name as a link to /org/memberships/<slug> when project_slug is present', async () => {
-    await render({
+    await renderRow({
       groups: [group({ project_name: 'Ultra Ethernet Consortium Fund', project_slug: 'uepf' })],
       total_groups: 1,
       total_seats: 3,
@@ -124,7 +528,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
   });
 
   it('renders the foundation name as plain text (no link) when project_slug is absent', async () => {
-    await render({
+    await renderRow({
       // project_name can be set from the committee index even when project_slug is missing —
       // the link must still be gated on project_slug alone, per the destination route's contract.
       groups: [group({ project_name: 'Ultra Ethernet Consortium Fund', project_slug: undefined })],
@@ -138,7 +542,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
   });
 
   it('clicking the foundation link navigates to the membership route, not the group route', async () => {
-    await render({
+    await renderRow({
       groups: [group({ project_name: 'Ultra Ethernet Consortium Fund', project_slug: 'uepf' })],
       total_groups: 1,
       total_seats: 3,
@@ -158,7 +562,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
   // the absolute-inset-0 / pointer-events overlay actually covers the row and routes clicks
   // correctly at runtime. That overlay-mechanics risk needs an e2e/Playwright check to close.
   it('links the row itself to the group detail route', async () => {
-    await render({
+    await renderRow({
       groups: [group({ uid: 'g1', project_slug: 'cncf' })],
       total_groups: 1,
       total_seats: 3,
@@ -166,5 +570,217 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
 
     const rowLink = fixture.nativeElement.querySelector('[data-testid="org-groups-row-link-g1"]');
     expect(rowLink?.getAttribute('href')).toBe('/groups/g1');
+  });
+});
+
+/**
+ * GH-1779: the stat strip used to hardcode Working Groups + SIGs as if they were the only
+ * behavioral classes, silently dropping every other class from the total (19 unaccounted groups
+ * on a live org). This spec pins the fix — every non-zero class renders exactly one tile, a
+ * zero-count class (e.g. governing-board, typically 0 since the BFF drops the exact "Board"
+ * category) renders none, and the rendered tiles always sum back to total_groups — plus that the
+ * two loading skeletons agree on a placeholder count so resolving data doesn't jump the tile
+ * count twice.
+ */
+describe('OrgGroupsComponent stat strip', () => {
+  // 4 oversight-committee / 3 working-group / 2 special-interest-group / 1 ambassador-program /
+  // 1 other (Committee) — five of the six classes (governing-board stays 0 for the "renders no
+  // tile" case below), with distinct non-tied counts (other ties ambassador-program at 1 but is
+  // pinned last regardless) so a regression that hardcodes back to a subset of classes — the
+  // original GH-1779 shape — fails here instead of passing on an accidentally-narrow fixture.
+  const RESPONSE: OrgLensGroupsResponse = {
+    groups: [
+      { uid: 'g1', name: 'WG One', category: 'Working Group', org_seat_count: 5 },
+      { uid: 'g2', name: 'WG Two', category: 'Working Group', org_seat_count: 3 },
+      { uid: 'g3', name: 'WG Three', category: 'Working Group', org_seat_count: 1 },
+      { uid: 'g4', name: 'SIG One', category: 'Special Interest Group', org_seat_count: 4 },
+      { uid: 'g5', name: 'SIG Two', category: 'Special Interest Group', org_seat_count: 2 },
+      { uid: 'g6', name: 'Committee One', category: 'Committee', org_seat_count: 1 },
+      { uid: 'g7', name: 'TSC One', category: 'Technical Steering Committee', org_seat_count: 6 },
+      { uid: 'g8', name: 'TSC Two', category: 'Technical Steering Committee', org_seat_count: 5 },
+      { uid: 'g9', name: 'TSC Three', category: 'Technical Steering Committee', org_seat_count: 4 },
+      { uid: 'g10', name: 'TSC Four', category: 'Technical Steering Committee', org_seat_count: 1 },
+      { uid: 'g11', name: 'Ambassador One', category: 'Ambassador', org_seat_count: 2 },
+    ],
+    total_groups: 11,
+    total_seats: 34,
+  };
+
+  let fixture: ComponentFixture<OrgGroupsComponent>;
+
+  async function render(opts: { orgLoaded?: boolean; getGroups?: () => Observable<OrgLensGroupsResponse> } = {}): Promise<void> {
+    const { orgLoaded = true, getGroups = () => of(RESPONSE) } = opts;
+
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [OrgGroupsComponent],
+      providers: [
+        provideRouter([]),
+        {
+          provide: AccountContextService,
+          useValue: { selectedAccount: signal({ accountId: 'org-1', accountName: 'Org One', uid: 'org-1' } as Account), hasOrgSelectorAccess: signal(true) },
+        },
+        { provide: OrgNavigationService, useValue: { loaded: signal(orgLoaded) } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: signal(orgLoaded) } },
+        { provide: PersonaService, useValue: { personaLoaded: signal(orgLoaded) } },
+        { provide: OrgLensGroupsService, useValue: { getGroups: vi.fn(getGroups) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(OrgGroupsComponent);
+    await fixture.whenStable();
+  }
+
+  function rootElement(): HTMLElement {
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  function statTile(cls: string): HTMLElement | null {
+    return rootElement().querySelector(`[data-testid="org-groups-stat-${cls}"]`);
+  }
+
+  // Count testid is keyed by class, not position, and namespaced as org-groups-tile-count-*
+  // (not org-groups-stat-*) so it can't be picked up by the tile-prefix queries below.
+  function statCount(cls: string): number {
+    return Number(rootElement().querySelector(`[data-testid="org-groups-tile-count-${cls}"]`)?.textContent?.trim());
+  }
+
+  // `div[...]` excludes the enclosing `<section data-testid="org-groups-stat-strip">`, whose own
+  // testid also matches the `^=` prefix.
+  function classTiles(): HTMLElement[] {
+    const all = Array.from(rootElement().querySelectorAll<HTMLElement>('div[data-testid^="org-groups-stat-"]'));
+    return all.filter((el) => !['org-groups-stat-total', 'org-groups-stat-seats'].includes(el.getAttribute('data-testid') ?? ''));
+  }
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('renders no tile for a zero-count behavioral class', async () => {
+    await render();
+
+    expect(statTile('governing-board')).toBeNull();
+  });
+
+  it('renders one tile per non-zero behavioral class, labeled from BEHAVIORAL_CLASS_CONFIG', async () => {
+    await render();
+
+    expect(statTile('oversight-committee')?.textContent).toContain(BEHAVIORAL_CLASS_CONFIG['oversight-committee'].label);
+    expect(statTile('working-group')?.textContent).toContain(BEHAVIORAL_CLASS_CONFIG['working-group'].label);
+    expect(statTile('special-interest-group')?.textContent).toContain(BEHAVIORAL_CLASS_CONFIG['special-interest-group'].label);
+    expect(statTile('ambassador-program')?.textContent).toContain(BEHAVIORAL_CLASS_CONFIG['ambassador-program'].label);
+    expect(statTile('other')?.textContent).toContain(BEHAVIORAL_CLASS_CONFIG.other.label);
+    expect(classTiles()).toHaveLength(5);
+  });
+
+  it('renders the correct count on each class tile', async () => {
+    await render();
+
+    expect(statCount('oversight-committee')).toBe(4);
+    expect(statCount('working-group')).toBe(3);
+    expect(statCount('special-interest-group')).toBe(2);
+    expect(statCount('ambassador-program')).toBe(1);
+    expect(statCount('other')).toBe(1);
+  });
+
+  // Independent of the per-class assertions above, so a class silently missing its tile (the
+  // original GH-1779 bug) fails here regardless.
+  it('sums the rendered class tiles to total_groups', async () => {
+    await render();
+
+    const counts = classTiles().map((el) => ({
+      tile: el.getAttribute('data-testid'),
+      count: Number(el.querySelector('[data-testid^="org-groups-tile-count-"]')?.textContent?.trim()),
+    }));
+
+    // Checked before the sum so a tile missing its count element fails with its testid named,
+    // not a bare NaN.
+    expect(counts.filter(({ count }) => !Number.isFinite(count))).toEqual([]);
+    expect(counts.reduce((sum, { count }) => sum + count, 0)).toBe(RESPONSE.total_groups);
+  });
+
+  it('orders the class tiles largest-first, other last', async () => {
+    await render();
+
+    const order = classTiles().map((el) => el.getAttribute('data-testid'));
+    expect(order).toEqual([
+      'org-groups-stat-oversight-committee',
+      'org-groups-stat-working-group',
+      'org-groups-stat-special-interest-group',
+      'org-groups-stat-ambassador-program',
+      'org-groups-stat-other',
+    ]);
+  });
+
+  it('pins the other tile last even when it has the highest count', async () => {
+    await render({
+      getGroups: () =>
+        of({
+          groups: [
+            { uid: 'g1', name: 'WG One', category: 'Working Group', org_seat_count: 1 },
+            { uid: 'g2', name: 'Committee One', category: 'Committee', org_seat_count: 1 },
+            { uid: 'g3', name: 'Committee Two', category: 'Committee', org_seat_count: 1 },
+          ],
+          total_groups: 3,
+          total_seats: 3,
+        }),
+    });
+
+    const order = classTiles().map((el) => el.getAttribute('data-testid'));
+    expect(order).toEqual(['org-groups-stat-working-group', 'org-groups-stat-other']);
+  });
+
+  it('sizes the grid to the actual rendered tile count via --cols', async () => {
+    await render();
+
+    const section = rootElement().querySelector('[data-testid="org-groups-stat-strip"]') as HTMLElement;
+    // --cols must equal actual grid children (any tag, via :scope > *), not just testid-tagged
+    // ones — paired with the completeness check below so an untagged child fails loudly.
+    const gridChildren = section.querySelectorAll(':scope > *').length;
+
+    expect(section.querySelectorAll('[data-testid^="org-groups-stat-"]')).toHaveLength(gridChildren);
+    expect(section.style.getPropertyValue('--cols').trim()).toBe(String(gridChildren));
+  });
+
+  it('renders the same skeleton card count whether org access or group data is still loading', async () => {
+    await render({ orgLoaded: false });
+    const outerSkeleton = fixture.nativeElement.querySelectorAll('[data-testid="org-groups-skeleton"] [data-testid="org-groups-stat-skeleton-card"]');
+
+    await render({ getGroups: () => NEVER });
+    const innerSkeleton = fixture.nativeElement.querySelectorAll('[data-testid="org-groups-stat-strip"] [data-testid="org-groups-stat-skeleton-card"]');
+
+    expect(outerSkeleton.length).toBeGreaterThan(0);
+    expect(outerSkeleton.length).toBe(innerSkeleton.length);
+  });
+
+  // Pins the true max tile count (2 fixed + all 6 behavioral classes non-zero, incl.
+  // governing-board — never exercised by RESPONSE above) against the skeleton's reserved card
+  // count, so a 7th GroupBehavioralClass member — which would grow this max — fails here loudly
+  // instead of silently letting the loaded grid outgrow the skeleton (per dealako's PR #1790
+  // review: statSkeletonTiles' length is type-derived, but nothing asserted the two actually agree
+  // at the true max).
+  it('matches the skeleton reservation when every behavioral class, including governing-board, renders a tile', async () => {
+    await render({
+      getGroups: () =>
+        of({
+          groups: [
+            { uid: 'g1', name: 'Board One', category: 'Board', org_seat_count: 1 },
+            { uid: 'g2', name: 'TSC One', category: 'Technical Steering Committee', org_seat_count: 1 },
+            { uid: 'g3', name: 'WG One', category: 'Working Group', org_seat_count: 1 },
+            { uid: 'g4', name: 'SIG One', category: 'Special Interest Group', org_seat_count: 1 },
+            { uid: 'g5', name: 'Ambassador One', category: 'Ambassador', org_seat_count: 1 },
+            { uid: 'g6', name: 'Committee One', category: 'Committee', org_seat_count: 1 },
+          ],
+          total_groups: 6,
+          total_seats: 6,
+        }),
+    });
+
+    const section = rootElement().querySelector('[data-testid="org-groups-stat-strip"]') as HTMLElement;
+
+    // 6 non-zero classes + the 2 fixed totals — the same 8 the skeleton reserves (see the
+    // toBe(8) skeleton-card assertions in the top-level describe above).
+    expect(classTiles()).toHaveLength(6);
+    expect(section.style.getPropertyValue('--cols').trim()).toBe('8');
   });
 });

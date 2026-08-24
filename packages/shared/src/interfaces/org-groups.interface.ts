@@ -39,3 +39,9 @@ export interface OrgLensGroupVm extends OrgLensGroupSummary {
    *  two link targets apart. Empty string when projectLabel is empty. */
   projectAriaLabel: string;
 }
+
+/** One non-zero behavioral-class tile rendered in the org-groups stat strip. */
+export interface OrgLensGroupClassTile {
+  cls: GroupBehavioralClass;
+  count: number;
+}
