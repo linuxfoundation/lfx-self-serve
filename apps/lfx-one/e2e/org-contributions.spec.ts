@@ -13,6 +13,8 @@
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
  * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
+ * - S3's company-email assertions additionally need `org-lens-private-release` toggled ON
+ *   (GH-1655) — S3 self-skips at runtime if the email section isn't present
  */
 
 import type { OrgAllEmployeeDetail, OrgContributionsResponse } from '@lfx-one/shared/interfaces';
@@ -259,6 +261,9 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
     await expect(page.getByTestId('person-detail-drawer-tab-code')).toHaveAttribute('aria-selected', 'true');
 
     const emailSection = page.getByTestId('person-detail-drawer-email');
+    if ((await emailSection.count()) === 0) {
+      test.skip(true, 'org-lens-private-release flag appears off — company email section not present');
+    }
     await expect(emailSection).toBeVisible();
     await expect(emailSection).toContainText('aramirez@acme-corp.example');
     await expect(emailSection).toContainText('aramirez@acme-corp.co.uk.example');

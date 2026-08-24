@@ -39,6 +39,14 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
 
 /**
+ * Gates Org Lens UI that currently renders demo/placeholder data pending a real backend source —
+ * person-detail-drawer company emails (GH-1655) and the leaderboard row score-breakdown drawer
+ * (LFXV2-2934). Remove each gate as its real-data backend lands; retire this flag once both are
+ * unguarded.
+ */
+export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
+
+/**
  * `localStorage` key holding a `Record<string, boolean>` of locally-forced flag values, read by
  * `FeatureFlagService.getBooleanFlag` in **non-production builds only**.
  *
