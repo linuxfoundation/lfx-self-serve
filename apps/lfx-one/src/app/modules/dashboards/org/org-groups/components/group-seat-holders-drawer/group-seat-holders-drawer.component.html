@@ -1,0 +1,71 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full"
+  data-testid="group-seat-holders-drawer">
+  <ng-template #header>
+    <div class="flex items-start gap-3 w-full">
+      <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
+        <i class="fa-light fa-user-check text-lg" aria-hidden="true"></i>
+      </div>
+      <div class="flex flex-col gap-0.5 min-w-0">
+        <h2 class="text-base font-semibold text-gray-900 truncate" data-testid="group-seat-holders-drawer-title">{{ groupName() }}</h2>
+        <p class="text-sm text-gray-500 truncate" data-testid="group-seat-holders-drawer-subtitle">
+          {{ seatCount() }} {{ seatCount() === 1 ? 'seat' : 'seats' }}
+        </p>
+        <a
+          [routerLink]="['/groups', groupUid()]"
+          class="w-fit text-xs font-medium text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+          [attr.aria-label]="'View public group page for ' + groupName()"
+          data-testid="group-seat-holders-drawer-view-group-link">
+          View group page
+          <i class="fa-light fa-arrow-up-right-from-square ml-0.5 text-[10px]" aria-hidden="true"></i>
+        </a>
+      </div>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-4 h-full">
+    @if (loading()) {
+      <div class="flex items-center justify-center py-16">
+        <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
+      </div>
+    } @else if (error()) {
+      <div class="flex flex-col items-center justify-center py-16 text-center" data-testid="group-seat-holders-drawer-error">
+        <i class="fa-light fa-triangle-exclamation text-3xl text-amber-500 mb-3" aria-hidden="true"></i>
+        <p class="text-sm text-gray-700">Unable to load seat holders.</p>
+        <p class="text-xs text-gray-500">Please close and reopen the drawer to try again.</p>
+      </div>
+    } @else if ((seatHolders() ?? []).length === 0) {
+      <div class="flex flex-col items-center justify-center py-16 text-center" data-testid="group-seat-holders-drawer-empty">
+        <i class="fa-light fa-users text-3xl text-gray-300 mb-3" aria-hidden="true"></i>
+        <p class="text-sm text-gray-500">No seat holders found for this group.</p>
+      </div>
+    } @else {
+      <ul class="flex flex-col divide-y divide-gray-100" data-testid="group-seat-holders-list">
+        @for (assignment of seatHolders(); track assignment.seatId) {
+          <li class="flex items-center gap-3 py-3" [attr.data-testid]="'group-seat-holder-' + assignment.seatId">
+            <lfx-person-avatar
+              [avatarUrl]="assignment.person.avatarUrl"
+              [name]="assignment.person.fullName"
+              [initials]="assignment.person.initials"
+              [identity]="assignment.person.email" />
+            <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+              <span class="text-sm font-medium text-gray-900 truncate">{{ assignment.person.fullName }}</span>
+              <span class="text-xs text-gray-500 truncate">{{ assignment.role }}</span>
+            </div>
+            <span
+              class="inline-block rounded-full border px-2 py-0.5 text-xs font-medium flex-shrink-0"
+              [class]="votingStatusPillClass(assignment.votingStatus)">
+              {{ assignment.votingStatus || 'Non-voting' }}
+            </span>
+          </li>
+        }
+      </ul>
+    }
+  </div>
+</p-drawer>

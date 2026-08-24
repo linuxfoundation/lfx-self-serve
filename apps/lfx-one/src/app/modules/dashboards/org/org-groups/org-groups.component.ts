@@ -32,11 +32,14 @@ import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 
+import { GroupSeatHoldersDrawerComponent } from './components/group-seat-holders-drawer/group-seat-holders-drawer.component';
+
 @Component({
   selector: 'lfx-org-groups',
   imports: [
     ButtonComponent,
     EmptyStateComponent,
+    GroupSeatHoldersDrawerComponent,
     InputTextComponent,
     NgTemplateOutlet,
     RouterLink,
@@ -70,6 +73,7 @@ export class OrgGroupsComponent {
   });
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName);
+  protected readonly orgUid = computed(() => this.accountContext.selectedAccount().uid ?? '');
 
   // Total Groups + Total Seats — the two fixed tiles in the template that visibleClassTiles()
   // doesn't cover. Keep in sync with the stat-strip markup.
@@ -156,6 +160,10 @@ export class OrgGroupsComponent {
   protected readonly hasNoRowsToExport: Signal<boolean> = computed(() => this.filteredGroups().length === 0);
   protected readonly noRowsToExportLabel = 'No rows to export';
 
+  // ── Seat holders drawer (GH-1780) ──────────────────────────────────────────
+  protected readonly seatHoldersDrawerVisible = signal(false);
+  protected readonly selectedGroup = signal<OrgLensGroupVm | null>(null);
+
   public constructor() {
     // State → URL, mirrors org-projects' filterForm.valueChanges → router.navigate pattern. `merge`
     // preserves unrelated params (e.g. ?project=, utm_*); null at default lets merge strip an owned key.
@@ -174,6 +182,11 @@ export class OrgGroupsComponent {
 
   protected clearFilters(): void {
     this.filterForm.reset({ search: '', foundation: '', type: '' });
+  }
+
+  protected onSeatHoldersClick(group: OrgLensGroupVm): void {
+    this.selectedGroup.set(group);
+    this.seatHoldersDrawerVisible.set(true);
   }
 
   // Exports the currently filtered (not the full) roster, in the same order the list renders —

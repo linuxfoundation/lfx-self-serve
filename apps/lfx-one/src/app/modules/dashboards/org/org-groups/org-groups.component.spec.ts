@@ -6,6 +6,7 @@ import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import type { Account, OrgDropdownOption, OrgLensGroupSummary, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
+import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensGroupsService } from '@services/org-lens-groups.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -48,6 +49,10 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
       { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
       { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
       { provide: OrgLensGroupsService, useValue: { getGroups } },
+      // The seat-holders drawer (GH-1780) is unconditionally mounted, so its injected
+      // CommitteeMembersService needs a stub too — otherwise DI resolves the real service, which
+      // needs a real HttpClient this testing module never provides.
+      { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
       // Real Router (via provideRouter) so the rendered group rows' [routerLink] (createUrlTree, etc.)
       // keeps working; only `navigate` — the method the URL-sync subscription actually calls — is spied on.
       provideRouter([]),
@@ -844,6 +849,7 @@ describe('OrgGroupsComponent stat strip', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(orgLoaded) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(orgLoaded) } },
         { provide: OrgLensGroupsService, useValue: { getGroups: vi.fn(getGroups) } },
+        { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
       ],
     }).compileComponents();
 
