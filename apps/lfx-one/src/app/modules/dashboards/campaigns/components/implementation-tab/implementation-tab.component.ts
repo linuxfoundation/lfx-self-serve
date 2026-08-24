@@ -195,12 +195,16 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * True when the restored objective is one the picker no longer offers — today only `leads`.
    *
-   * Without this the select is BLANK: assigning `HTMLSelectElement.value` a string matching no
-   * `<option>` sets `selectedIndex` to -1 and deselects everything. The stored value survives in
-   * the signal and still reaches the wire, but the user sees an empty required-looking field and
-   * the first touch of the control overwrites `leads` for good — the option they had is gone.
-   * Rendering it as a disabled option keeps the field truthful and makes the state visible
-   * instead of silently rewritable.
+   * Without this the select does not go blank — it shows the FIRST selectable objective, which is
+   * worse. The template binds `[selected]` per `<option>` rather than `[value]` on the select, and
+   * Angular applies that binding before the restored option exists, so the browser falls back to
+   * index 0 and displays `awareness`. The stored `leads` survives in the signal and still reaches
+   * the wire, so the screen and the payload disagree: the operator sees a valid, selectable
+   * objective they never chose and can submit it without noticing, and the first touch of the
+   * control overwrites `leads` for good — the option they had is gone.
+   *
+   * Rendering it as a disabled option is what makes display and dispatch agree; disabled is what
+   * keeps it visible without letting anyone newly choose it.
    *
    * The widening cast is deliberate: `META_SELECTABLE_OBJECTIVES` is narrowed to
    * `SelectableMetaObjective` so a hidden objective cannot be listed in it, which also makes

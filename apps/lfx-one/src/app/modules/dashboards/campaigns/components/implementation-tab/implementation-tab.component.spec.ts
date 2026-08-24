@@ -698,14 +698,19 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
   });
 
   /**
-   * The DOM half, which the signal assertion above cannot cover. Assigning
-   * `HTMLSelectElement.value` a string matching no `<option>` sets `selectedIndex` to -1 and
-   * deselects everything, so before the disabled legacy option existed this field rendered
-   * BLANK — an empty required-looking control whose first touch silently overwrote the stored
-   * `leads`. Asserting `selectedIndex` and the visible label is what binds that fix; a test
-   * that stopped at the signal passed with the field empty.
+   * The DOM half, which the signal assertion above cannot cover — and the symptom is worse than
+   * an empty field. The template selects per-`<option>` via `[selected]`, so a restored `leads`
+   * with no matching option does not blank the control: Angular applies the binding while the
+   * option does not yet exist, and the browser falls back to index 0. Before the disabled legacy
+   * option existed this field displayed `awareness` — the FIRST selectable objective — a
+   * confidently wrong value the operator could submit without ever noticing, while the signal
+   * still held `leads`. Reverting the fix makes this test report exactly that: `expected
+   * 'awareness' to be 'leads'`.
+   *
+   * Asserting `selectedIndex`, the value and the visible label is what binds the fix; a test that
+   * stopped at the signal passed while the screen showed a different campaign than the wire sent.
    */
-  it('shows the restored leads objective in the select rather than blanking it', async () => {
+  it('shows the restored leads objective in the select rather than displaying the first selectable one', async () => {
     const restored = await restoredWithObjective('leads');
     const select = restored.nativeElement.querySelector('[data-testid="implementation-meta-objective"]') as HTMLSelectElement;
 
