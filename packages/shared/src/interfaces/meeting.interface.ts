@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { PAST_MEETING_SORT } from '../constants/meeting.constants';
-import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
+import type { ArtifactVisibility, CancelOnCommitteeRemoval, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
 import type { TagSeverity } from './components.interface';
 
 // ============================================================================
@@ -293,6 +293,8 @@ export interface Meeting {
   show_meeting_attendees?: boolean | null;
   /** Who can access meeting artifacts (recordings, transcripts, AI summaries) */
   artifact_visibility: ArtifactVisibility | null;
+  /** Per-meeting override for cancelling registration on committee removal; "inherit" defers to the project default */
+  cancel_on_committee_removal: CancelOnCommitteeRemoval | null;
   /** Minutes before meeting registrants can join */
   early_join_time_minutes?: number;
   /** Array of organizer usernames */
@@ -441,6 +443,7 @@ export interface CreateMeetingRequest {
   youtube_upload_enabled?: boolean; // YouTube upload integration
   show_meeting_attendees?: boolean; // Show meeting attendees on meeting details page
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
+  cancel_on_committee_removal?: CancelOnCommitteeRemoval; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
   owner?: MeetingOwnerInput; // Meeting owner; omit to default to the creator
@@ -471,6 +474,7 @@ export interface UpdateMeetingRequest {
   youtube_upload_enabled?: boolean | null; // YouTube upload integration
   show_meeting_attendees?: boolean | null; // Show meeting attendees on meeting details page
   artifact_visibility?: ArtifactVisibility | null; // Who can access meeting artifacts
+  cancel_on_committee_removal?: CancelOnCommitteeRemoval | null; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
   owner?: MeetingOwnerInput; // Meeting owner; omit to preserve the stored owner (cannot be unset)

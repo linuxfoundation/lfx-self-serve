@@ -60,6 +60,20 @@ export enum ArtifactVisibility {
 }
 
 /**
+ * Per-meeting override for cancelling registration on committee removal
+ * @description Governs the public-meeting branch only: whether removing someone from a linked
+ * committee also cancels their registration on this specific meeting, overriding the project default
+ */
+export enum CancelOnCommitteeRemoval {
+  /** Use the project-level default */
+  INHERIT = 'inherit',
+  /** Always cancel registration on committee removal for this meeting */
+  CANCEL = 'cancel',
+  /** Never cancel registration on committee removal for this meeting */
+  KEEP = 'keep',
+}
+
+/**
  * Query service meeting resource types
  * @description Types used when fetching meetings from the query service
  */
