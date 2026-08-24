@@ -3,7 +3,13 @@
 
 import { Signal, WritableSignal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { PreferenceContext, UserPreferenceCommitArgs, UserPreferenceQueuedCommit, UserPreferenceState, UserPreferenceStoreConfig } from '@lfx-one/shared/interfaces';
+import {
+  PreferenceContext,
+  UserPreferenceCommitArgs,
+  UserPreferenceQueuedCommit,
+  UserPreferenceState,
+  UserPreferenceStoreConfig,
+} from '@lfx-one/shared/interfaces';
 import { EMPTY, Observable, Subject, catchError, concatMap, distinctUntilChanged, finalize, from, switchMap, takeUntil, tap } from 'rxjs';
 
 /**

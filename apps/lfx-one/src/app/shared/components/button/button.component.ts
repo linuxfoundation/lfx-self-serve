@@ -91,13 +91,17 @@ export class ButtonComponent {
     if (typeof ngDevMode !== 'undefined' && ngDevMode) {
       effect(() => {
         if (this.tooltip() && (this.ariaPressed() !== undefined || this.ariaExpanded() !== undefined)) {
-          console.warn('<lfx-button>: `ariaPressed`/`ariaExpanded` are ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding on this host.');
+          console.warn(
+            '<lfx-button>: `ariaPressed`/`ariaExpanded` are ignored when `tooltip` is also set — both consume the same PrimeNG `pt` binding on this host.'
+          );
         }
         if (this.href() && this.ariaPressed() !== undefined) {
           console.warn('<lfx-button>: `ariaPressed` is ignored on the `href` (anchor) variant — aria-pressed is invalid on role="link".');
         }
         if (this.href() && this.ariaExpanded() !== undefined) {
-          console.warn('<lfx-button>: `ariaExpanded` is ignored on the `href` (anchor) variant — the `pt` passthrough only applies to the `<p-button>` branch.');
+          console.warn(
+            '<lfx-button>: `ariaExpanded` is ignored on the `href` (anchor) variant — the `pt` passthrough only applies to the `<p-button>` branch.'
+          );
         }
       });
     }

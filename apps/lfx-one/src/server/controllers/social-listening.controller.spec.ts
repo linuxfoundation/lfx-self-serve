@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { NextFunction, Request, Response } from 'express';
+import type { NextFunction } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ServiceValidationError } from '../errors';
