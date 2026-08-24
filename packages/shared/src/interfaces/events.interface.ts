@@ -293,6 +293,8 @@ export interface PDFTemplateDetails {
   desc: string;
   onBehalf: string;
   logo: string;
+  /** Rendered logo width in PDF points; falls back to DEFAULT_LOGO_WIDTH when omitted */
+  logoWidth?: number;
   signature: string;
   signatureText: string;
 }
@@ -304,6 +306,8 @@ export interface CertificateEventRow {
   EVENT_LOCATION: string | null;
   EVENT_CITY: string | null;
   EVENT_COUNTRY: string | null;
+  /** Origin system for the event (cvent, regfox, bevy, backfill); 'backfill' identifies CSV-imported events */
+  EVENT_SOURCE: string | null;
   PROJECT_ID: string;
   /** Attendance flag (1 = attended); certificates are only issued for attended events */
   USER_ATTENDED: number | null;

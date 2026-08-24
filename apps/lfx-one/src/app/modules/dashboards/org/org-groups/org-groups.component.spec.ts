@@ -571,6 +571,135 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
     const rowLink = fixture.nativeElement.querySelector('[data-testid="org-groups-row-link-g1"]');
     expect(rowLink?.getAttribute('href')).toBe('/groups/g1');
   });
+
+  describe('contrast (GH-1782)', () => {
+    it('foundation link uses passing gray-500/blue-700 contrast, not gray-400/blue-600 (GH-1782)', async () => {
+      await renderRow({
+        groups: [group({ project_name: 'Ultra Ethernet Consortium Fund', project_slug: 'uepf' })],
+        total_groups: 1,
+        total_seats: 3,
+      });
+
+      const link = projectLineElement();
+      expect(link).not.toBeNull();
+      expect(link?.className).toContain('text-gray-500');
+      expect(link?.className).not.toContain('text-gray-400');
+      expect(link?.className).toContain('hover:text-blue-700');
+      expect(link?.className).not.toContain('hover:text-blue-600');
+    });
+
+    it('foundation plain-text fallback uses passing gray-500 contrast, not gray-400 (GH-1782)', async () => {
+      await renderRow({
+        groups: [group({ project_name: 'Ultra Ethernet Consortium Fund', project_slug: undefined })],
+        total_groups: 1,
+        total_seats: 3,
+      });
+
+      const fallback = projectLineElement();
+      expect(fallback).not.toBeNull();
+      expect(fallback?.className).toContain('text-gray-500');
+      expect(fallback?.className).not.toContain('text-gray-400');
+    });
+
+    it('group name hovers to passing blue-700, not blue-600 (GH-1782)', async () => {
+      await renderRow({ groups: [group()], total_groups: 1, total_seats: 3 });
+
+      // The name `<p>` sets no color of its own (see the template comment above this row) — it
+      // inherits from this wrapper, so the hover color only takes effect if the name actually lives
+      // inside it. Assert containment, not just that each element independently exists.
+      const rowContent = fixture.nativeElement.querySelector('[data-testid^="org-groups-item-row-content-"]');
+      const name = fixture.nativeElement.querySelector('[data-testid^="org-groups-item-name-"]');
+      expect(rowContent).not.toBeNull();
+      expect(rowContent?.contains(name)).toBe(true);
+      expect(rowContent?.className).toContain('peer-hover:text-blue-700');
+      expect(rowContent?.className).not.toContain('peer-hover:text-blue-600');
+
+      // `peer-hover:` compiles to `.peer:hover ~ &` — it only fires if the stretched row link is a
+      // *preceding* sibling of this wrapper (same parent, earlier in document order), not merely
+      // present somewhere in the row.
+      const rowLink = fixture.nativeElement.querySelector('[data-testid^="org-groups-row-link-"]');
+      expect(rowLink).not.toBeNull();
+      expect((rowLink?.className ?? '').split(/\s+/)).toContain('peer');
+      expect(rowLink?.parentElement).toBe(rowContent?.parentElement);
+      expect((rowLink?.compareDocumentPosition(rowContent) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+  });
+
+  describe('responsive row layout (GH-1782)', () => {
+    it('behavioral class chip has no hidden class at any breakpoint (GH-1782)', async () => {
+      await renderRow({
+        groups: [group()],
+        total_groups: 1,
+        total_seats: 3,
+      });
+
+      const chip = fixture.nativeElement.querySelector('[data-testid^="org-groups-item-class-chip-"]');
+      expect(chip).not.toBeNull();
+      const chipClasses = (chip?.getAttribute('class') ?? '').split(/\s+/);
+      expect(chipClasses.some((c: string) => c === 'hidden' || c.endsWith(':hidden'))).toBe(false);
+    });
+
+    it('behavioral class chip keeps its explicit flex display and shrink-0, so a "drop redundant class" pass cannot silently regress it (GH-1782)', async () => {
+      // Without `flex`, the host still renders (it blockifies to `block` as a flex item either
+      // way) — no other assertion here would fail, only the strut-height regression `flex` fixes
+      // would silently come back. Without `shrink-0`, the chip would default to flex-shrink: 1 as
+      // a direct sibling of the flex-1 name column once `sm:contents` folds the wrapper away at
+      // `sm+`, letting it get squeezed instead of keeping its natural width.
+      await renderRow({ groups: [group()], total_groups: 1, total_seats: 3 });
+
+      const chip = fixture.nativeElement.querySelector('[data-testid^="org-groups-item-class-chip-"]');
+      expect(chip).not.toBeNull();
+      const chipClasses = (chip?.getAttribute('class') ?? '').split(/\s+/);
+      expect(chipClasses).toContain('flex');
+      expect(chipClasses).toContain('shrink-0');
+    });
+
+    it('name/meta block keeps a growing flex class, so it fills the row and pins the chip/seat/chevron right at every breakpoint (GH-1782)', async () => {
+      // Regression coverage: an earlier revision of this fix moved `flex-1` onto the `sm:contents`
+      // wrapper instead of this block. Since `display: contents` gives that wrapper no box of its
+      // own at `sm+`, its flex classes stopped applying there, and the name column collapsed to
+      // content width — bunching the chip/seat-count/chevron to the left instead of the row's right
+      // edge. Every a11y assertion in this file still passed throughout, so this test locks the
+      // layout-critical class directly onto the element that must carry it, and checks it's actually
+      // the wrapper's child — not just that both elements independently exist somewhere in the DOM.
+      await renderRow({ groups: [group()], total_groups: 1, total_seats: 3 });
+
+      const nameBlock = fixture.nativeElement.querySelector('[data-testid^="org-groups-item-meta-block-"]');
+      const wrapper = fixture.nativeElement.querySelector('[data-testid^="org-groups-item-meta-wrapper-"]');
+      const nameBlockClasses = (nameBlock?.className ?? '').split(/\s+/);
+
+      expect(nameBlock).not.toBeNull();
+      expect(wrapper).not.toBeNull();
+      expect(wrapper?.contains(nameBlock)).toBe(true);
+      expect(wrapper?.className).toContain('sm:contents');
+      expect(nameBlockClasses).toContain('flex-1');
+      expect(nameBlockClasses).toContain('min-w-0');
+    });
+  });
+
+  describe('row testid contract', () => {
+    it('gives each row its own uid-scoped testids, not a duplicate shared across rows (GH-1782)', async () => {
+      await renderRow({
+        groups: [group({ uid: 'g1' }), group({ uid: 'g2', name: 'SIG Storage' })],
+        total_groups: 2,
+        total_seats: 6,
+      });
+
+      for (const prefix of ['org-groups-item-row-content-', 'org-groups-item-meta-wrapper-', 'org-groups-item-meta-block-', 'org-groups-item-class-chip-']) {
+        const matches = fixture.nativeElement.querySelectorAll(`[data-testid^="${prefix}"]`);
+        expect(matches.length).toBe(2);
+        expect(matches[0].getAttribute('data-testid')).toBe(`${prefix}g1`);
+        expect(matches[1].getAttribute('data-testid')).toBe(`${prefix}g2`);
+      }
+
+      // These wrapper/block testids must NOT fall under the `org-groups-item-name-` prefix: an
+      // existing e2e spec (org-groups-row-link-robust.spec.ts) collects exactly that prefix and
+      // asserts it resolves 1:1 to the name <p> elements — a collision here would silently break it.
+      const nameMatches = fixture.nativeElement.querySelectorAll('[data-testid^="org-groups-item-name-"]');
+      expect(nameMatches.length).toBe(2);
+      expect(Array.from(nameMatches).every((el) => (el as HTMLElement).tagName === 'P')).toBe(true);
+    });
+  });
 });
 
 /**
