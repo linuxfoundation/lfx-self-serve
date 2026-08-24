@@ -7,6 +7,7 @@ import {
   COMING_SOON_SENTINEL,
   DEFAULT_EVENT_SORT_FIELD,
   DEFAULT_VISA_REQUEST_SORT_FIELD,
+  EVENT_SOURCE_BACKFILL,
   MY_EVENT_STATUS,
   VALID_EVENT_SORT_FIELDS,
   VALID_VISA_REQUEST_SORT_FIELDS,
@@ -37,7 +38,7 @@ import {
   VisaRequestRow,
   VisaRequestsResponse,
 } from '@lfx-one/shared/interfaces';
-import { formatDateToUTC, normalizeToUrl } from '@lfx-one/shared/utils';
+import { formatDateToUTC, isBackfillEventSource, normalizeToUrl } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -133,10 +134,11 @@ export class EventsService {
             PROJECT_SLUG,
             ACCOUNT_NAME,
             ACCOUNT_LOGO_URL,
+            EVENT_SOURCE,
             EVENT_URL,
             EVENT_REGISTRATION_URL
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-          WHERE IS_PAST_EVENT = FALSE
+          WHERE NOT (${this.isPastEventSql()})
             ${eventIdFilter}
             ${affiliatedFilter}
           QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY EVENT_START_DATE) = 1
@@ -155,11 +157,12 @@ export class EventsService {
             PROJECT_SLUG,
             ACCOUNT_NAME,
             ACCOUNT_LOGO_URL,
+            EVENT_SOURCE,
             EVENT_URL,
             EVENT_REGISTRATION_URL
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
           WHERE USER_EMAIL = ?
-            AND IS_PAST_EVENT = FALSE
+            AND NOT (${this.isPastEventSql()})
             AND REGISTRATION_STATUS = 'Accepted'
             ${eventIdFilter}
           QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY EVENT_START_DATE) = 1
@@ -180,7 +183,7 @@ export class EventsService {
             TRAVEL_FUND_END_TS
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
           WHERE USER_EMAIL = ?
-            AND IS_PAST_EVENT = FALSE
+            AND NOT (${this.isPastEventSql()})
             AND REGISTRATION_STATUS = 'Accepted'
         ),
         combined AS (
@@ -202,6 +205,7 @@ export class EventsService {
           e.PROJECT_SLUG,
           e.ACCOUNT_NAME,
           e.ACCOUNT_LOGO_URL,
+          e.EVENT_SOURCE,
           e.EVENT_URL,
           e.EVENT_REGISTRATION_URL,
           r.USER_ROLE,
@@ -213,6 +217,9 @@ export class EventsService {
           r.NET_REVENUE,
           r.USER_ATTENDED,
           (r.EVENT_ID IS NOT NULL) AS IS_REGISTERED,
+          -- Both CTEs feeding "combined" filter on NOT (isPastEventSql()), so every row reaching
+          -- here is non-past by construction. EVENT_SOURCE is still selected so mapRowToEvent can
+          -- mark an attended-but-not-yet-ended backfill row as Attended.
           FALSE AS IS_PAST_EVENT,
           r.TRAVEL_FUND_END_TS,
           COUNT(*) OVER() AS TOTAL_RECORDS
@@ -256,7 +263,7 @@ export class EventsService {
       });
     } else {
       // Past tab (or no isPast filter): show only the user's own registered events.
-      const isPastFilter = isPast !== undefined ? `AND IS_PAST_EVENT = ${isPast ? 'TRUE' : 'FALSE'}` : '';
+      const isPastFilter = isPast !== undefined ? `AND ${isPast ? '' : 'NOT '}(${this.isPastEventSql()})` : '';
       const eventIdFilter = eventId ? 'AND EVENT_ID = ?' : '';
       const projectNameFilter = projectName ? 'AND PROJECT_NAME = ?' : '';
       const searchQueryFilter = searchQuery ? 'AND EVENT_NAME ILIKE ?' : '';
@@ -285,6 +292,7 @@ export class EventsService {
           TAX_AMOUNT,
           NET_REVENUE,
           IS_PAST_EVENT,
+          EVENT_SOURCE,
           EVENT_URL,
           EVENT_REGISTRATION_URL,
           USER_ATTENDED,
@@ -934,6 +942,28 @@ export class EventsService {
     return { data, total, pageSize: normalizedPageSize, offset: normalizedOffset };
   }
 
+  /**
+   * SQL expression yielding whether an event is past, correcting the stale flag for backfill rows.
+   *
+   * IS_PAST_EVENT is a build-time snapshot of `event_start_date < CURRENT_DATE()` frozen into a
+   * materialized dbt table, so it only refreshes when the model rebuilds. That is only load-bearing
+   * for CSV-backfilled rows, whose synthetic dates can leave the flag wrong indefinitely and strand
+   * an attended event in the Upcoming tab. For those rows recompute from the dates at query time;
+   * every other source keeps the stored column verbatim, so their behaviour is unchanged.
+   *
+   * An event counts as past once it has *ended*, so a multi-day conference stays in Upcoming while
+   * it is running. Rows with both dates null yield NULL, which — like the previous
+   * `IS_PAST_EVENT = FALSE` comparison — excludes them from both tabs.
+   *
+   * Uses unqualified column names, so it is only valid directly against
+   * ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS, not against a projected CTE.
+   */
+  private isPastEventSql(): string {
+    return `CASE WHEN LOWER(TRIM(EVENT_SOURCE)) = '${EVENT_SOURCE_BACKFILL}'
+                 THEN COALESCE(EVENT_END_DATE, EVENT_START_DATE) < CURRENT_DATE()
+                 ELSE IS_PAST_EVENT END`;
+  }
+
   /** Status filter for the past events query (unqualified column names, no IS NULL support). */
   private buildStatusFilter(status: string): { filter: string; binds: string[] } {
     switch (status) {
@@ -1036,7 +1066,9 @@ export class EventsService {
     let status: MyEventStatus;
     if (!row.IS_REGISTERED) {
       status = MY_EVENT_STATUS.NOT_REGISTERED;
-    } else if (row.IS_PAST_EVENT && row.USER_ATTENDED) {
+    } else if (row.USER_ATTENDED && (row.IS_PAST_EVENT || isBackfillEventSource(row.EVENT_SOURCE))) {
+      // Backfill rows are attendance records by construction, so USER_ATTENDED is authoritative for
+      // them even when the event's synthetic dates have not passed yet. See EVENT_SOURCE_BACKFILL.
       status = MY_EVENT_STATUS.ATTENDED;
     } else {
       status = MY_EVENT_STATUS.REGISTERED;
