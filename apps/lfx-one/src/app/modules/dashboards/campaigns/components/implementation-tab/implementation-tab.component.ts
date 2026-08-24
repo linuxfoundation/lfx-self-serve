@@ -1312,8 +1312,9 @@ export class ImplementationTabComponent implements OnInit {
       // The brief-derived ARRAYS are deliberately NOT here — `metaVariants`, `linkedInVariants`,
       // `redditVariants` and the four Reddit targeting lists. They have no editor: the full set of
       // event bindings in this component's template contains no handler that writes any of them,
-      // and their only writes are `populateFromBrief` and `applyDraft`. Carrying them made the
-      // draft round-trip the brief's own recommendation back to itself.
+      // and `populateFromBrief` is now their ONLY writer — `applyDraft` no longer has a restore
+      // arm for any of the seven, which is exactly what this change removed. Carrying them made
+      // the draft round-trip the brief's own recommendation back to itself.
       //
       // Removing them is not a loss, and that was MEASURED rather than reasoned about, because the
       // reasoning goes the wrong way twice:

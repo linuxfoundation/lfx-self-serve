@@ -463,8 +463,12 @@ export interface CampaignImplementationDraft {
    * The brief-derived arrays — Reddit's variants, subreddits, interests, keywords and geos, plus
    * `linkedInVariants` and `metaVariants` — are NOT carried. They have no user mutation path: the
    * complete set of event bindings in the implementation tab's template contains no handler that
-   * writes any of them, and their only writes are `populateFromBrief` and `applyDraft`. A draft
-   * that carried them round-tripped the brief's own recommendation back to itself.
+   * writes any of them, and `populateFromBrief` is now their ONLY writer — `applyDraft` has no
+   * restore arm for any of the seven, which is precisely what this change removed. A draft that
+   * carried them round-tripped the brief's own recommendation back to itself.
+   *
+   * That single-writer fact is the reason the exclusion is safe, so do not "restore" them here on
+   * the assumption that `applyDraft` still writes them: re-adding them re-creates the bug below.
    *
    * Carrying them was also actively worse than not, which is the part that has to be measured
    * rather than argued, since the argument runs the wrong way twice:
