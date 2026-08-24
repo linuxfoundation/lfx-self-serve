@@ -29,12 +29,40 @@ function gotoMembersTab(page: Page): Promise<void> {
 test.setTimeout(120_000);
 
 test.describe('Group Members tab join modes (LFXV2-2690)', () => {
-  test('admin: Add Member button visible in closed mode; pending invites section hidden', async ({ page }) => {
+  test('admin: Add Member button visible in closed mode; pending invites section hidden when no invites exist', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Chair', writer: true, join_mode: 'closed' }) });
     await gotoMembersTab(page);
 
     await expect(page.getByTestId('add-member-btn')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    // Hidden because there are no pending invites in the response, not because of join_mode.
     await expect(page.getByTestId('pending-invites')).toHaveCount(0);
+  });
+
+  test('admin: pending invites section visible in closed mode when invites exist', async ({ page }) => {
+    await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Chair', writer: true, join_mode: 'closed' }) });
+
+    // Override the default empty invites mock with a real pending invite.
+    await page.route(`**/api/committees/${COMMITTEE_UID}/invites*`, (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            uid: 'invite-1',
+            committee_uid: COMMITTEE_UID,
+            invitee_email: 'pending@example.com',
+            role: 'Member',
+            status: 'pending',
+            created_at: '2026-08-24T16:05:00Z',
+          },
+        ]),
+      });
+    });
+
+    await gotoMembersTab(page);
+
+    await expect(page.getByTestId('pending-invites')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('member in invite_only group: Invite Someone button visible, not Add Member', async ({ page }) => {
