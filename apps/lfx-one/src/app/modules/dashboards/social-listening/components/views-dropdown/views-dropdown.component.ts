@@ -78,13 +78,15 @@ export class ViewsDropdownComponent {
     event.stopPropagation();
     if (this.deletingViewIds().has(view.id)) return;
 
-    // Repo dialog pattern (p-confirmDialog hosted by the page), not PCC's ConfirmPopup — copy/buttons are PCC's.
+    // Repo dialog pattern (p-confirmDialog hosted by the page), not PCC's ConfirmPopup.
     this.confirmationService.confirm({
-      message: `Remove "${view.name}"?`,
+      header: 'Remove saved view?',
+      message: `Are you sure you want to remove "${view.name}"? This action cannot be undone.`,
+      icon: 'pi pi-trash',
       acceptLabel: 'Remove',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
-      rejectButtonStyleClass: 'p-button-text p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
       accept: () => this.viewDeleted.emit(view),
     });
   }

@@ -121,7 +121,8 @@ describe('ViewsDropdownComponent', () => {
 
     expect(confirmationService.confirm).toHaveBeenCalledTimes(1);
     const options = confirmationService.confirm.mock.calls[0]?.[0];
-    expect(options.message).toBe('Remove "Alpha"?');
+    expect(options.header).toBe('Remove saved view?');
+    expect(options.message).toBe('Are you sure you want to remove "Alpha"? This action cannot be undone.');
     expect(options.acceptLabel).toBe('Remove');
     expect(options.rejectLabel).toBe('Cancel');
     expect(deleted).toEqual([viewA]);
