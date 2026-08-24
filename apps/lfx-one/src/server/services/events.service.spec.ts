@@ -3,6 +3,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Imported from source, not through the mocked '@lfx-one/shared/utils' barrel, so the SQL/JS
+// whitespace-agreement assertion below checks the real implementation.
+import { isBackfillEventSource } from '../../../../../packages/shared/src/utils/event.utils';
+
 // Mirrors project.service.spec.ts: the `@lfx-one/shared/*` subpaths aren't wired into this app's
 // vitest config, so each is mocked. The event/url/date helpers are pulled in via importActual
 // rather than stubbed — the backfill match is the behaviour under test here, so a stub would let
@@ -144,7 +148,7 @@ describe('EventsService.getMyEvents past-event SQL', () => {
   it('recomputes the past flag from the dates only for backfill rows', async () => {
     const sql = await sqlFor({ isPast: true });
 
-    expect(sql).toContain("LOWER(TRIM(EVENT_SOURCE)) = 'backfill'");
+    expect(sql).toContain("LOWER(TRIM(EVENT_SOURCE, ' \\t\\n\\r')) = 'backfill'");
     expect(sql).toContain('COALESCE(EVENT_END_DATE, EVENT_START_DATE) < CURRENT_DATE()');
     // The ELSE branch is the guarantee that every other source keeps its stored value.
     expect(sql).toContain('ELSE IS_PAST_EVENT END');
@@ -168,5 +172,55 @@ describe('EventsService.getMyEvents past-event SQL', () => {
     const sql = await sqlFor({ isPast: true });
 
     expect(sql).toContain('EVENT_SOURCE,');
+  });
+
+  it('trims the same whitespace Snowflake-side that isBackfillEventSource trims in JS', async () => {
+    // Snowflake's one-argument TRIM strips only spaces. Without the explicit character set a value
+    // like '\tbackfill\n' would take the ELSE branch in SQL while the mapper called it Attended,
+    // stranding the row in Upcoming with a Past status.
+    const sql = await sqlFor({ isPast: true });
+
+    expect(sql).not.toContain('TRIM(EVENT_SOURCE))');
+    for (const ws of ['\\t', '\\n', '\\r']) {
+      expect(sql).toContain(ws);
+    }
+    expect(isBackfillEventSource('\tbackfill\n')).toBe(true);
+  });
+});
+
+describe('EventsService filter options use the same past-event predicate', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    snowflakeMocks.execute.mockResolvedValue({ rows: [] });
+    service = new EventsService();
+  });
+
+  function lastSql(): string {
+    return snowflakeMocks.execute.mock.calls[0][0] as string;
+  }
+
+  // These feed the tab-scoped filter dropdowns. If they kept the raw column, a backfill event could
+  // sit in the Past tab while its foundation stayed in the Upcoming dropdown.
+  it('applies the predicate to the past foundations query', async () => {
+    await service.getEventOrganizations({} as never, USER_EMAIL, { isPast: true } as never);
+
+    expect(lastSql()).toContain("AND (CASE WHEN LOWER(TRIM(EVENT_SOURCE, ' \\t\\n\\r')) = 'backfill'");
+    expect(lastSql()).not.toContain('IS_PAST_EVENT = TRUE');
+  });
+
+  it('applies the negated predicate to the upcoming foundations query', async () => {
+    await service.getEventOrganizations({} as never, USER_EMAIL, { isPast: false, affiliatedProjectSlugs: ['example'] } as never);
+
+    expect(lastSql()).toContain('WHERE NOT (CASE WHEN');
+    expect(lastSql()).not.toContain('IS_PAST_EVENT = FALSE');
+  });
+
+  it('applies the negated predicate to the upcoming countries query', async () => {
+    await service.getUpcomingCountries({} as never);
+
+    expect(lastSql()).toContain('WHERE NOT (CASE WHEN');
+    expect(lastSql()).not.toContain('IS_PAST_EVENT = FALSE');
   });
 });

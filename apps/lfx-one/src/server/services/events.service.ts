@@ -458,7 +458,7 @@ export class EventsService {
         SELECT DISTINCT PROJECT_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE USER_EMAIL = ?
-          AND IS_PAST_EVENT = TRUE
+          AND (${this.isPastEventSql()})
           ${projectNameFilter}
         ORDER BY PROJECT_NAME
       `;
@@ -475,7 +475,7 @@ export class EventsService {
       sql = `
         SELECT DISTINCT PROJECT_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-        WHERE IS_PAST_EVENT = FALSE
+        WHERE NOT (${this.isPastEventSql()})
           AND ((USER_EMAIL = ? AND REGISTRATION_STATUS = 'Accepted') ${affiliatedFilter})
           ${projectNameFilter}
         ORDER BY PROJECT_NAME
@@ -510,7 +510,7 @@ export class EventsService {
     const sql = `
       SELECT DISTINCT EVENT_COUNTRY
       FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-      WHERE IS_PAST_EVENT = FALSE
+      WHERE NOT (${this.isPastEventSql()})
         AND EVENT_COUNTRY IS NOT NULL
       ORDER BY EVENT_COUNTRY
     `;
@@ -955,11 +955,16 @@ export class EventsService {
    * it is running. Rows with both dates null yield NULL, which — like the previous
    * `IS_PAST_EVENT = FALSE` comparison — excludes them from both tabs.
    *
+   * TRIM is given an explicit character set because Snowflake's one-argument TRIM strips only
+   * spaces, while isBackfillEventSource() uses JS trim() and so also strips tabs and newlines.
+   * Left unqualified the two would disagree on a value like '\tbackfill\n', taking the ELSE branch
+   * here while the mapper reported Attended — stranding the row in Upcoming with a Past status.
+   *
    * Uses unqualified column names, so it is only valid directly against
    * ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS, not against a projected CTE.
    */
   private isPastEventSql(): string {
-    return `CASE WHEN LOWER(TRIM(EVENT_SOURCE)) = '${EVENT_SOURCE_BACKFILL}'
+    return `CASE WHEN LOWER(TRIM(EVENT_SOURCE, ' \\t\\n\\r')) = '${EVENT_SOURCE_BACKFILL}'
                  THEN COALESCE(EVENT_END_DATE, EVENT_START_DATE) < CURRENT_DATE()
                  ELSE IS_PAST_EVENT END`;
   }
