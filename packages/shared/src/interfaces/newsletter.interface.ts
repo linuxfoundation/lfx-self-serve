@@ -217,6 +217,12 @@ export interface NewsletterReaderState {
 }
 
 export interface CreateNewsletterRequest {
+  /**
+   * Optionally files the edition under a publication. Omitting it leaves the
+   * edition unfiled, which is valid: publications are created explicitly, a
+   * project is not given a default one, and server-initiated editions (the
+   * weekly brief) have no publication to pick.
+   */
   publication_id?: string;
   subject: string;
   body_html: string;

@@ -163,8 +163,17 @@ export class NewsletterListComponent {
     }
   }
 
+  // The composer sits at the flat `newsletters/create` path, so the publication
+  // being composed into has to travel with the navigation. The upstream service
+  // requires publication_id on create — an edition is always composed inside a
+  // publication and there is no project default to fall back to — so without
+  // this the composer would save into nothing and the create would 400.
   protected goToCreate(): void {
-    this.router.navigate(['..', 'create'], { relativeTo: this.route });
+    const pubId = this.publicationId();
+    this.router.navigate(['..', 'create'], {
+      relativeTo: this.route,
+      queryParams: pubId ? { publication: pubId } : {},
+    });
   }
 
   protected goToRow(item: NewsletterListItem): void {

@@ -99,6 +99,12 @@ export class NewsletterManageComponent {
   // === Services ===
   protected readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  // The publication this edition is being composed into, carried on the
+  // ?publication= query param because the composer sits at the flat
+  // `newsletters/create` path rather than under `newsletters/:pubId`. Read once
+  // from the entry snapshot: it is a create-time input, and the edition's
+  // publication does not change while the composer is open.
+  private readonly composePublicationId = signal<string | undefined>(this.route.snapshot.queryParamMap.get('publication') ?? undefined);
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
   private readonly newsletterService = inject(NewsletterService);
@@ -1492,7 +1498,11 @@ export class NewsletterManageComponent {
       );
     }
 
-    const create: CreateNewsletterRequest = basePayload;
+    // publication_id is only sent on create. The upstream service requires it
+    // (an edition is always composed inside a publication, and there is no
+    // project default to resolve to), and it is immutable afterwards — the PUT
+    // omits the key entirely so the edition keeps its current publication.
+    const create: CreateNewsletterRequest = { ...basePayload, publication_id: this.composePublicationId() };
     return this.newsletterService.createNewsletter(projectUid, create).pipe(
       take(1),
       finalize(clearSavingFlags),
