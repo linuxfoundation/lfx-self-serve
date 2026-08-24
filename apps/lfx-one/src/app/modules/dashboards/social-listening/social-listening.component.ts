@@ -55,7 +55,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { SavedFilterService } from '@services/saved-filter.service';
 import { SocialListeningService } from '@services/social-listening.service';
 import { UserService } from '@services/user.service';
-import { ConfirmationService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
 import {
@@ -65,6 +65,7 @@ import {
   EMPTY,
   filter,
   finalize,
+  firstValueFrom,
   ignoreElements,
   map,
   merge,
@@ -145,6 +146,7 @@ export class SocialListeningComponent {
   private readonly savedFilterService = inject(SavedFilterService);
   private readonly dialogService = inject(DialogService);
   private readonly userService = inject(UserService);
+  private readonly messageService = inject(MessageService);
 
   private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
   private readonly serverWindowSize = MENTION_SERVER_WINDOW_SIZE;
@@ -258,7 +260,19 @@ export class SocialListeningComponent {
   public readonly authorsLoading = computed(() => this.authorsState().loading);
 
   public readonly activeFilterCount = computed(() => countActiveFilters(this.currentPredicate()));
-  public readonly activeFilterPills = computed(() => buildActiveFilterPills(this.currentPredicate()));
+  // Analytics can't apply bookmark/read filters (`mentionIds` is feed-only, read state is never sent) —
+  // on that tab those pills would claim a filter the charts ignore, so build pills without them.
+  public readonly activeFilterPills = computed(() => {
+    const predicate = this.currentPredicate();
+    if (this.activeTab() === 'analytics') {
+      return buildActiveFilterPills({
+        ...predicate,
+        bookmarkFilter: DEFAULT_MENTION_PREDICATE.bookmarkFilter,
+        readFilter: DEFAULT_MENTION_PREDICATE.readFilter,
+      });
+    }
+    return buildActiveFilterPills(predicate);
+  });
 
   // No feedState fallback: on a cache miss the feed's data belongs to a prior window/filter set, so serving it flashes stale rows.
   private readonly currentWindowData = computed(() => this.windowCache().get(this.windowIndex()) ?? EMPTY_FEED_RESPONSE);
@@ -284,6 +298,8 @@ export class SocialListeningComponent {
     return this.backgroundLoading() || this.feedState().loading;
   });
   public readonly error = computed(() => this.feedState().error);
+  /** Unread mode with a failed read-state load: the list swaps for an error banner so an empty fallback doc can't pose as "all caught up". */
+  public readonly readStateError = computed(() => this.selectedReadFilter() === 'unread' && this.readState().error !== null);
   /** Current window's background fill failed past its automatic retry — the list swaps the empty state for a retry row. */
   public readonly phase2Failed = computed(() => this.windowCache().get(this.windowIndex())?.phase2Failed === true);
   public readonly first = computed(() => this.currentPage() * this.pageSize());
@@ -537,6 +553,28 @@ export class SocialListeningComponent {
     this.mentionBookmarkService.toggleBookmark(mention.id);
   }
 
+  /** Any active feed predicate or a non-default period means the loaded windows (and their newest) are a subset of the foundation feed. */
+  private feedNarrowed(): boolean {
+    return Object.keys(this.currentFilters()).length > 0 || this.selectedPeriod() !== this.defaultPeriod;
+  }
+
+  /** Resolves the foundation-global newest (limit-1 unfiltered fetch; the feed sorts newest-first) and stamps it as the read cutoff. */
+  private async markAllFromUnfilteredNewest(): Promise<void> {
+    const foundationSlug = this.foundationSlug();
+    if (!foundationSlug) return;
+
+    try {
+      const response = await firstValueFrom(this.socialListeningService.getMentionsFeed({ foundationSlug, period: this.defaultPeriod, limit: 1, offset: 0 }));
+      this.mentionReadStateService.markAllAsRead(this.newestTsOf(response.mentions));
+    } catch {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Mark all as read failed',
+        detail: 'Could not resolve the latest mentions — nothing was marked as read. Please try again.',
+      });
+    }
+  }
+
   /** Card toggle → the read-state service owns the loading gate, the optimistic write, and the toasts. */
   public onReadToggled(mention: Mention): void {
     this.mentionReadStateService.toggleRead(mention.id, mention.timestamp);
@@ -544,6 +582,11 @@ export class SocialListeningComponent {
 
   /** The cutoff is the newest loaded MENTION_TS — never wall-clock, so backfilled mentions aren't silently hidden. */
   public onMarkAllAsRead(): void {
+    // The read-state doc is foundation-global, so a narrowed feed's newest can't stand in for it.
+    if (this.feedNarrowed()) {
+      void this.markAllFromUnfilteredNewest();
+      return;
+    }
     // Prefer the retained global-newest (captured when window 0 loads; survives cache pruning) so a
     // mark-all from a deep page doesn't stamp an older cutoff and leave newer window-0 mentions unread.
     const latestTs = this.newestMentionTs ?? this.newestTsOf(this.currentWindowData().mentions);
@@ -1003,7 +1046,8 @@ export class SocialListeningComponent {
   private initUnreadWindowMentions(): Signal<Mention[]> {
     return computed(() => {
       // Empty while the read state loads — without the guard the unread view flashes every mention as unread.
-      if (this.readState().loading) return [];
+      // Same on load error: the store falls back to an empty doc, which would classify everything as unread.
+      if (this.readState().loading || this.readState().error) return [];
       return this.currentWindowData()
         .mentions.map(mapRawToMention)
         .filter((m) => !this.mentionReadStateService.isRead(m.id, m.timestamp));

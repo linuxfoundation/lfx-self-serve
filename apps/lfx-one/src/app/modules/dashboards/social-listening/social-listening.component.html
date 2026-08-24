@@ -137,8 +137,15 @@
             <lfx-message severity="error" [text]="countErrorMessage" data-testid="social-listening-count-error" />
           }
 
+          @if (readStateError()) {
+            <lfx-message
+              severity="error"
+              text="Your read state could not be loaded, so the unread view is unavailable. Refresh the page and try again."
+              data-testid="social-listening-read-state-error" />
+          }
+
           <!-- The list (and its empty state) stays hidden behind an error banner so the two never contradict -->
-          @if (!error()) {
+          @if (!error() && !readStateError()) {
             <lfx-mentions-list
               [mentions]="mentions()"
               [loading]="loading()"

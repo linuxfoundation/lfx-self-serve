@@ -23,8 +23,8 @@ import type { ResolvedPeriodRange, SocialListeningFilterParams, SocialListeningS
  * `ServiceValidationError` at WARN. Array values arrive as repeated params.
  */
 
-/** Foundation slugs are lowercase alphanumeric + hyphens, matching every other foundation-scoped endpoint. */
-const FOUNDATION_SLUG_PATTERN = /^[a-z0-9-]+$/;
+/** Foundation slugs are alphanumeric + hyphens. Case-insensitive because the dashboard-access middleware compares slugs case-insensitively and the client sends `project.slug` verbatim — the parsed value is normalized to lowercase before it reaches the Snowflake bind / cache key. */
+const FOUNDATION_SLUG_PATTERN = /^[a-z0-9-]+$/i;
 
 /** Matches the `isFilterSafeIdentifier()` ceiling so a passing slug can always build a Valkey cache key. */
 const FOUNDATION_SLUG_MAX_LENGTH = 64;
@@ -60,7 +60,7 @@ export function parseFoundationSlug(req: Request, operation: string): string {
     throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', { operation });
   }
 
-  return foundationSlug;
+  return foundationSlug.toLowerCase();
 }
 
 /** Foundation + half-open `[startDate, endDate)` window + the two scope selects. `ytd` — defaulted or explicit — ends at tomorrow's UTC date so today's mentions fall inside the exclusive bound. */

@@ -44,6 +44,10 @@ describe('parseFoundationSlug', () => {
     expectFieldError(() => parseFoundationSlug(reqWith({ foundationSlug: 'LF_Project' }), 'op'), 'foundationSlug');
   });
 
+  it('accepts a mixed-case slug and normalizes it to lowercase (middleware authorizes case-insensitively; the client sends project.slug verbatim)', () => {
+    expect(parseFoundationSlug(reqWith({ foundationSlug: 'LF-Project' }), 'op')).toBe('lf-project');
+  });
+
   it('400s past the 64-character cache-key ceiling', () => {
     expectFieldError(() => parseFoundationSlug(reqWith({ foundationSlug: 'a'.repeat(65) }), 'op'), 'foundationSlug');
   });

@@ -19,6 +19,7 @@ import {
 import { logger } from '../services/logger.service';
 import { SocialListeningService } from '../services/social-listening.service';
 import { UserPreferenceService } from '../services/user-preference.service';
+import { isImpersonating } from '../utils/auth-helper';
 
 import type { PreferenceReadResponse, PreferenceUpsertRequest } from '@lfx-one/shared/interfaces';
 
@@ -45,6 +46,15 @@ export class SocialListeningController {
 
     try {
       const name = this.parsePreferenceName(req, operation);
+
+      // The API Gateway token always resolves the impersonator's profile — during impersonation
+      // answer "no preference" so the target-scoped page never renders the impersonator's state.
+      if (isImpersonating(req)) {
+        const response: PreferenceReadResponse = { name, value: null };
+        res.json(response);
+        return;
+      }
+
       const value = await this.userPreferenceService.getPreference(req, SOCIAL_LISTENING_PREFERENCE_APP_NAME, name);
 
       logger.success(req, operation, startTime, { found: value !== null });

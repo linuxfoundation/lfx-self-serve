@@ -46,6 +46,13 @@ export class MentionReadStateService {
     onContextChange: () => {
       this.overflowWarningShown = false;
     },
+    onLoadError: () => {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Read state unavailable',
+        detail: 'Your read state could not be loaded. Refresh the page and try again.',
+      });
+    },
   });
 
   public readonly state = this.store.state;
