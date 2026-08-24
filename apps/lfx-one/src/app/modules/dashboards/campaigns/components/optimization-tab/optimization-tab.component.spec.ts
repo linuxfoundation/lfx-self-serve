@@ -4,8 +4,10 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { CAMPAIGN_TOGGLE_FAILURE_MESSAGES } from '@lfx-one/shared/constants';
 import { CampaignIndexDoc, CampaignRow, CampaignStatusUpdateResult } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
+import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -28,6 +30,10 @@ import { OptimizationTabComponent } from './optimization-tab.component';
 describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
   let fixture: ComponentFixture<OptimizationTabComponent>;
   let updateCampaignStatus: ReturnType<typeof vi.fn>;
+  // The toggle now reports its outcome through the app-root toast as well as the row, because the
+  // request outlives this component. Captured so the announcement can be asserted rather than
+  // merely not-crashing.
+  let messageAdd: ReturnType<typeof vi.fn>;
 
   const doc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => ({
     id: 'c-1',
@@ -45,11 +51,13 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     updateCampaignStatus = vi
       .fn()
       .mockReturnValue(of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused' }));
+    messageAdd = vi.fn();
 
     await TestBed.configureTestingModule({
       imports: [OptimizationTabComponent],
       providers: [
         provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: messageAdd } },
         {
           provide: CampaignService,
           useValue: {
@@ -1241,5 +1249,229 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     button.click();
     fixture.detectChanges();
     expect(updateCampaignStatus).not.toHaveBeenCalled();
+  });
+
+  /**
+   * dealako follow-up #1: the mutation must not be aborted by leaving the Optimize tab.
+   *
+   * `lfx-optimization-tab` renders inside the parent's `@case ('optimization')`, so switching tab
+   * DESTROYS it. Piping the toggle through `takeUntilDestroyed(this.destroyRef)` therefore
+   * cancelled the in-flight pause: the operator clicked Pause, saw "Working", switched tab, and
+   * the request they believed they had submitted was aborted with nothing shown.
+   *
+   * `fixture.destroy()` is exactly what the `@switch` does — this is the lifecycle the operator
+   * actually triggers, not a synthetic one.
+   *
+   * Asserted on the SUBSCRIBER COUNT of the in-flight subject, which is the only thing that
+   * distinguishes the two implementations. A completion-based assertion would not: with
+   * `takeUntilDestroyed` the observable is unsubscribed (the HTTP layer aborts the XHR) while the
+   * subject itself is untouched, so nothing about the subject's own state changes. `observed`
+   * answers the actual question — is anyone still listening for this response, or was the
+   * mutation cut loose?
+   */
+  it('does NOT abort an in-flight toggle when the Optimize tab is destroyed', () => {
+    const inFlight = new Subject<CampaignStatusUpdateResult>();
+    updateCampaignStatus.mockReturnValue(inFlight.asObservable());
+    render([doc({ status: 'created', etag: '"3"' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    // Precondition: the request is genuinely outstanding, so the assertion below is about the
+    // teardown rather than about a request that already finished.
+    expect(inFlight.observed).toBe(true);
+
+    // What `@switch (selectedTab())` does on a trip to another tab.
+    fixture.destroy();
+
+    // The finding. Under `takeUntilDestroyed` this is false: the subscription is torn down and the
+    // pause is cancelled mid-flight.
+    expect(inFlight.observed).toBe(true);
+  });
+
+  /**
+   * The other half of #1: surviving the abort is worthless if the operator never learns the result.
+   *
+   * The row that would have shown it is gone with the component, so the outcome has to reach a
+   * surface that outlives the tab. `MessageService` is provided at app root and rendered by
+   * `app.component`, above the `@switch`.
+   *
+   * Asserted on the toast CONTENT, not merely that `add` was called: a component that announced
+   * every response with the same generic string would satisfy a call-count assertion while
+   * telling the operator nothing about which campaign did what.
+   */
+  it('tells the operator the toggle landed even though the tab that started it is gone', () => {
+    const inFlight = new Subject<CampaignStatusUpdateResult>();
+    updateCampaignStatus.mockReturnValue(inFlight.asObservable());
+    render([doc({ status: 'created', etag: '"3"', campaign_name: 'KubeCon EU' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    fixture.destroy();
+
+    // The response the operator navigated away from, arriving after the component is gone.
+    inFlight.next({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"9"' });
+
+    expect(messageAdd).toHaveBeenCalledTimes(1);
+    const toast = messageAdd.mock.calls[0][0];
+    expect(toast.severity).toBe('success');
+    expect(toast.summary).toBe('Paused KubeCon EU');
+  });
+
+  /**
+   * And a FAILED toggle after teardown, which is the arm that actually costs money.
+   *
+   * A pause that failed leaves the campaign RUNNING. If that failure is swallowed because the tab
+   * was destroyed, the operator believes they paused a campaign that is still spending — the
+   * exact "silently cancelled" outcome the finding names, reached through the error arm instead.
+   *
+   * `sticky` is asserted because it is load-bearing rather than cosmetic: a timed toast for "your
+   * pause did not happen" can expire unseen while the operator is on another tab.
+   */
+  it('reports a toggle FAILURE after teardown, rather than swallowing it with the component', () => {
+    const inFlight = new Subject<CampaignStatusUpdateResult>();
+    updateCampaignStatus.mockReturnValue(inFlight.asObservable());
+    render([doc({ status: 'created', etag: '"3"', campaign_name: 'KubeCon EU' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    fixture.destroy();
+
+    inFlight.error(new HttpErrorResponse({ status: 500, statusText: 'Server Error' }));
+
+    expect(messageAdd).toHaveBeenCalledTimes(1);
+    const toast = messageAdd.mock.calls[0][0];
+    expect(toast.severity).toBe('error');
+    expect(toast.summary).toBe('KubeCon EU');
+    // The per-direction copy, so the toast states which way the failure left the campaign.
+    expect(toast.detail).toBe(CAMPAIGN_TOGGLE_FAILURE_MESSAGES.pause);
+    expect(toast.sticky).toBe(true);
+  });
+
+  /**
+   * dealako follow-up #2: a conflicted row that LEAVES the list must not latch the banner.
+   *
+   * `clearConflictStateFor` only ever saw ids derived from delivered rows, so a campaign that a
+   * 412 conflicted and that was then deleted/archived upstream never re-appeared, never entered
+   * `advanced`, and stayed in `conflictedCampaignIds` forever — a banner whose Refresh control
+   * provably cannot dismiss it, because the row it is about never comes back.
+   *
+   * Two rows deliberately: `c-1` conflicts and then vanishes, `c-2` stays. A single-row fixture
+   * would pass against a fix that simply wiped the whole set on any delivery, which is the
+   * over-broad fix that would re-break the per-row evidence this component was rewritten for.
+   */
+  it('clears the banner for a conflicted row that is gone from a later full delivery', () => {
+    conflict();
+    render([doc({ status: 'created', etag: '"3"' }), doc({ id: 'c-2', status: 'created', etag: '"4"', campaign_name: 'Other' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+
+    // `c-1` was deleted upstream. `c-2` comes back UNCHANGED at '"4"', so it contributes no
+    // "advance" — nothing here could clear the banner via the etag path, which is what makes this
+    // a test of the absence rule specifically.
+    refreshFromParent([doc({ id: 'c-2', status: 'created', etag: '"4"', campaign_name: 'Other' })]);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+  });
+
+  /**
+   * The safety half of #2, and the reason absence clears only on a TRUSTWORTHY list.
+   *
+   * `possiblyStale` is the server's own statement that the delivery may be incomplete — it is set
+   * when the index returned nothing (which can just mean "not indexed yet") and on a refusal,
+   * which answers `[]` with the flag rather than an error. Reading absence from that list as
+   * "the campaign is gone, so its conflict is resolved" would clear a LIVE conflict on the
+   * strength of a lagging index: the failure-as-confident-value defect this whole PR exists to
+   * remove, re-introduced by its own fix.
+   *
+   * The row is absent AND the list is stale, so only the staleness gate can keep the banner up.
+   */
+  it('keeps the banner when the conflicted row is missing from a POSSIBLY STALE delivery', () => {
+    conflict();
+    render([doc({ status: 'created', etag: '"3"' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+
+    // The index has not caught up: an empty-but-stale list, which proves nothing about `c-1`.
+    fixture.componentRef.setInput('briefCampaigns', null);
+    fixture.detectChanges();
+    fixture.componentRef.setInput('campaignsPossiblyStale', true);
+    fixture.componentRef.setInput('briefCampaigns', []);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+  });
+
+  /**
+   * dealako follow-up #3: the pending state is announced from a live region, and it is tested.
+   *
+   * The previous announcement swapped the button's `aria-label` to "Working" and set `aria-busy`
+   * on the SAME button that goes native-`disabled` in the same tick. A disabled button leaves the
+   * focus order and screen readers do not reliably announce attribute changes on an unfocused,
+   * disabled element, so the announcement was only perceivable to someone who manually navigated
+   * back to a control they could no longer focus.
+   *
+   * Held in flight with a Subject so the pending branch is actually observed — the prior aria
+   * tests all ran against non-pending rows, which is why this branch shipped uncovered.
+   *
+   * Asserted on the region's TEXT naming both the action and the campaign. A fix that rendered an
+   * empty live region, or one saying only "Working", would pass a presence-only assertion while
+   * announcing nothing the operator can act on.
+   */
+  it('announces the pending toggle in a live region, naming the action and the campaign', () => {
+    const inFlight = new Subject<CampaignStatusUpdateResult>();
+    updateCampaignStatus.mockReturnValue(inFlight.asObservable());
+    render([doc({ status: 'created', etag: '"3"', campaign_name: 'KubeCon EU' })]);
+
+    const region = (): HTMLElement => fixture.nativeElement.querySelector('[data-testid="optimization-toggle-announcement"]');
+    // The region must PRE-EXIST its content: a live region created in the same tick as its text
+    // is frequently not announced at all.
+    expect(region()).not.toBeNull();
+    expect((region().textContent ?? '').trim()).toBe('');
+    // And it must be a polite status region rather than an ordinary div.
+    expect(region().getAttribute('aria-live')).toBe('polite');
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    // The pending announcement, while the request is genuinely outstanding.
+    expect(inFlight.observed).toBe(true);
+    expect(region().textContent).toContain('Pausing');
+    expect(region().textContent).toContain('KubeCon EU');
+    // The button is disabled and busy, which is precisely why the region has to carry the message.
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-busy')).toBe('true');
+
+    inFlight.next({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"9"' });
+    fixture.detectChanges();
+
+    // ...and the completion, so the narration does not stop at "Pausing" forever.
+    expect(region().textContent).toContain('Paused');
+    expect(region().textContent).toContain('KubeCon EU');
+    expect(button.getAttribute('aria-busy')).toBeNull();
+  });
+
+  /**
+   * The button's accessible NAME stays stable across the pending transition.
+   *
+   * It used to become "Working <campaign>" while in flight. A control whose accessible name
+   * changes mid-interaction breaks speech input ("click Pause" no longer matches) and makes the
+   * button unidentifiable in a rotor listing. The transient state belongs on `aria-busy` and in
+   * the live region; the NAME should keep naming the control.
+   */
+  it('keeps the button accessible name stable while a toggle is in flight', () => {
+    const inFlight = new Subject<CampaignStatusUpdateResult>();
+    updateCampaignStatus.mockReturnValue(inFlight.asObservable());
+    render([doc({ status: 'created', etag: '"3"', campaign_name: 'KubeCon EU' })]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.getAttribute('aria-label')).toBe('Pause KubeCon EU');
+
+    button.click();
+    fixture.detectChanges();
+
+    expect(button.getAttribute('aria-label')).toBe('Pause KubeCon EU');
   });
 });

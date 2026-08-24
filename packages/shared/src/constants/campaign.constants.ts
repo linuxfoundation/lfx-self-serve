@@ -357,6 +357,35 @@ export const CAMPAIGN_TOGGLE_LABELS: Readonly<Record<CampaignToggleAction, strin
   unavailable: 'Unavailable',
 };
 
+/**
+ * What the toggle is DOING, worded for an assistive-technology announcement, per direction.
+ *
+ * Present progressive because this is announced while the request is out — "Pausing" is a claim
+ * about an attempt in progress, which is exactly what is true at that moment. The completed forms
+ * live in `CAMPAIGN_TOGGLE_DONE_VERBS` and are announced only from a CONFIRMED response.
+ *
+ * Split out of the template because the pending state is now announced from a live region rather
+ * than an `aria-label` swap on the button: a native `disabled` button leaves the focus order, and
+ * screen readers do not reliably announce attribute changes on an unfocused, disabled element.
+ */
+export const CAMPAIGN_TOGGLE_PENDING_VERBS: Readonly<Record<Exclude<CampaignToggleAction, 'unavailable'>, string>> = {
+  pause: 'Pausing',
+  resume: 'Resuming',
+};
+
+/**
+ * What the toggle DID, for the completion announcement.
+ *
+ * Only ever used on a confirmed response arm. The service's reported status is what decides the
+ * wording at the call site — a `created_degraded` campaign is paused upstream while its row status
+ * deliberately does not move, so the announcement must not promise a transition the service
+ * declined to record.
+ */
+export const CAMPAIGN_TOGGLE_DONE_VERBS: Readonly<Record<Exclude<CampaignToggleAction, 'unavailable'>, string>> = {
+  pause: 'Paused',
+  resume: 'Resumed',
+};
+
 export const GADS_STATUS_ENUM: Partial<Record<number, CampaignStatus>> = {
   2: 'enabled',
   3: 'paused',

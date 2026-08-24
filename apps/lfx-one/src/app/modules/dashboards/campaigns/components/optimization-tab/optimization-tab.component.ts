@@ -28,8 +28,10 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import {
   CAMPAIGN_TOGGLE_CONFLICT_MESSAGE,
+  CAMPAIGN_TOGGLE_DONE_VERBS,
   CAMPAIGN_TOGGLE_FAILURE_MESSAGES,
   CAMPAIGN_TOGGLE_LABELS,
+  CAMPAIGN_TOGGLE_PENDING_VERBS,
   CAMPAIGN_UNAVAILABLE_DEFAULT_REASON,
   CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
   CAMPAIGN_UNAVAILABLE_PLATFORM_REASON,
@@ -41,7 +43,8 @@ import {
 } from '@lfx-one/shared/constants';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
-import { skip, type Subscription } from 'rxjs';
+import { MessageService } from 'primeng/api';
+import { skip, take, type Subscription } from 'rxjs';
 
 @Component({
   selector: 'lfx-optimization-tab',
@@ -52,6 +55,11 @@ import { skip, type Subscription } from 'rxjs';
 export class OptimizationTabComponent implements OnInit {
   private readonly campaignService = inject(CampaignService);
   private readonly destroyRef = inject(DestroyRef);
+  // Provided at app root and rendered by `app.component`, OUTSIDE the `@switch` that owns this
+  // tab. That is what makes it the right surface for a toggle outcome: the request now outlives
+  // the component, so its result has to land somewhere the component's destruction cannot take
+  // with it.
+  private readonly messageService = inject(MessageService);
 
   /**
    * The campaigns this brief created, or `null` when the list has not been loaded.
@@ -110,6 +118,24 @@ export class OptimizationTabComponent implements OnInit {
    */
   protected readonly togglePending = signal<Record<string, boolean>>({});
   protected readonly toggleError = signal<Record<string, string>>({});
+
+  /**
+   * The text of the visually-hidden `aria-live="polite"` region that narrates a toggle.
+   *
+   * A separate surface from the button's own label, and that separation is the fix. The pending
+   * state used to be announced by swapping the button's `aria-label` to "Working" and setting
+   * `aria-busy`, on the SAME button that goes native-`disabled` in the same tick. A disabled
+   * button leaves the focus order, and screen readers do not reliably announce an attribute
+   * change on an unfocused, disabled element — so the announcement the change existed to make
+   * was only perceivable if the user manually navigated back to a control they could no longer
+   * focus.
+   *
+   * A live region has no such dependency: it is announced wherever focus happens to be. Empty
+   * when there is nothing to say, so the region does not re-announce stale text — and written on
+   * DISPATCH, on CONFIRMATION and on FAILURE, so the narration covers the whole interaction
+   * rather than only its beginning.
+   */
+  protected readonly toggleAnnouncement = signal('');
 
   /**
    * The campaigns whose validator a 412 has refused and which no re-read has since advanced.
@@ -469,7 +495,34 @@ export class OptimizationTabComponent implements OnInit {
     // Captured at DISPATCH, compared on the response arms. A switch away from this brief while the
     // request is out makes both arms writes about a context that is gone.
     const dispatchedIn = this.contextGeneration;
+    // Captured at DISPATCH too, and for a different reason than `dispatchedIn`: the toast arm
+    // below runs after this component may be gone, so it cannot read `campaign.campaign_name`
+    // off a signal or an input at that point without reaching into a destroyed view.
+    const campaignName = campaign.campaign_name;
+    // Announced on DISPATCH, into the live region rather than onto the button that is about to be
+    // disabled. This is the announcement the pending state owes the operator, and it is made
+    // while the control still exists to be described.
+    this.toggleAnnouncement.set(`${CAMPAIGN_TOGGLE_PENDING_VERBS[direction]} ${campaignName}`);
 
+    // Deliberately NOT `takeUntilDestroyed`. This is a state-changing mutation against live ad
+    // spend, and `lfx-optimization-tab` renders inside `@case ('optimization')` on the parent —
+    // so a tab switch DESTROYS this component. Tying the request to component lifetime meant the
+    // XHR was aborted mid-flight: the operator clicked Pause, saw "Working", switched tab, and
+    // the pause they believed they had submitted was cancelled with nothing shown. If it had not
+    // yet committed upstream, the campaign kept spending.
+    //
+    // `docs/reviews/frontend-checklist.md` §6 is "No bare .subscribe()", and it lists
+    // `takeUntilDestroyed()`, `take(1)` and `firstValueFrom` as equally acceptable ways to bound
+    // a subscription. It does NOT mandate tying a mutation to the view. `take(1)` satisfies it
+    // and completes the subscription on the first emission, so nothing leaks: an HttpClient
+    // request is a finite, self-completing observable, and the only thing `takeUntilDestroyed`
+    // added here was the abort.
+    //
+    // Writes made after destruction are inert — signal writes on a dead view render nothing —
+    // and the `dispatchedIn` guard already discards responses that outlived their context. What
+    // is NOT inert is the toast: `MessageService` is provided at app root and rendered by
+    // `app.component`, which outlives the tab, so the outcome reaches the operator wherever they
+    // navigated to.
     this.campaignService
       .updateCampaignStatus({
         projectSlug: this.projectSlug(),
@@ -479,9 +532,15 @@ export class OptimizationTabComponent implements OnInit {
         status,
         etag,
       })
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      .pipe(take(1))
       .subscribe({
         next: (result) => {
+          // Announced BEFORE the context guard, and that ordering is the point. The guard below
+          // discards writes aimed at rows that are no longer on screen — but the mutation itself
+          // still LANDED, and the operator who asked for it is entitled to know that whether or
+          // not they are still looking at this brief. The toast is the only surface that survives
+          // both a context switch and this component's destruction.
+          this.announceToggleOutcome(direction, campaignName, result.serviceStatus ?? result.newStatus);
           // A response that outlived its context writes nothing. Its campaign id belongs to the
           // abandoned brief, and the maps it would write are keyed by id alone — so the overlay
           // would render against whichever row of the NEW list happens to share that id.
@@ -512,6 +571,18 @@ export class OptimizationTabComponent implements OnInit {
         // telling a 412 from a 500 or a dropped connection, so every failure got the same "try
         // again" — including the one failure for which retrying provably cannot work.
         error: (err: unknown) => {
+          // Branched on the HTTP STATUS, not on the error `code`. The BFF's error middleware
+          // writes the upstream status verbatim (`res.status(error.statusCode)`), so a 412 raised
+          // by campaign-service's If-Match check arrives here as an `HttpErrorResponse` with
+          // `status === 412`. Its `code` field is the generic `'CLIENT_ERROR'` that every 4xx
+          // carries, so branching on that would fire on 405 and 409 too.
+          //
+          // Computed ABOVE the context guard because the toast below needs it. A failure the
+          // operator caused is still theirs to hear about after they switch tabs — otherwise the
+          // pause they think they submitted fails in silence, which is the whole defect.
+          const conflict = err instanceof HttpErrorResponse && err.status === 412;
+          const message = conflict ? CAMPAIGN_TOGGLE_CONFLICT_MESSAGE : CAMPAIGN_TOGGLE_FAILURE_MESSAGES[direction];
+          this.announceToggleFailure(campaignName, message);
           // Same guard as the success arm, and it matters more here: a 412 landing after a switch
           // would re-arm the conflict banner for a brief that was never conflicted, and add an id
           // that is not in the new list — so no delivery could ever clear it, because the per-row
@@ -525,14 +596,6 @@ export class OptimizationTabComponent implements OnInit {
           // the button still offers the action that did not happen. Claiming the pause landed
           // would be the expensive lie here — someone would stop watching a campaign that is
           // still spending.
-          //
-          // Branched on the HTTP STATUS, not on the error `code`. The BFF's error middleware
-          // writes the upstream status verbatim (`res.status(error.statusCode)`), so a 412 raised
-          // by campaign-service's If-Match check arrives here as an `HttpErrorResponse` with
-          // `status === 412`. Its `code` field is the generic `'CLIENT_ERROR'` that every 4xx
-          // carries, so branching on that would fire on 405 and 409 too.
-          const conflict = err instanceof HttpErrorResponse && err.status === 412;
-          const message = conflict ? CAMPAIGN_TOGGLE_CONFLICT_MESSAGE : CAMPAIGN_TOGGLE_FAILURE_MESSAGES[direction];
           this.toggleError.update((e) => ({ ...e, [campaign.id]: message }));
           // A 412 also makes the LIST stale, not just this row: it is the index's proof that the
           // campaign moved under someone else's write. Surfacing the existing re-read affordance
@@ -835,7 +898,7 @@ export class OptimizationTabComponent implements OnInit {
     // brief within one project. The etag bookkeeping is reset with it — those validators and the
     // baseline they are compared against belong to the abandoned list, and judging the next
     // context's first delivery against them would compare ids across two different briefs.
-    toObservable(computed(() => `${this.projectSlug()} ${this.briefId()}`))
+    toObservable(computed(() => `${this.projectSlug()}\u0000${this.briefId()}`))
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => {
         // Anything still in flight belongs to the context being abandoned.
@@ -897,7 +960,79 @@ export class OptimizationTabComponent implements OnInit {
         if (superseded.length > 0) {
           this.clearConflictStateFor(superseded);
         }
+
+        // A conflicted row that is no longer IN the list is cleared too.
+        //
+        // `superseded` is by construction a subset of the delivered rows, so on its own it can
+        // only ever clear a conflict the operator can still see. A row that a 412 conflicted and
+        // that was then deleted or archived upstream never appears in another delivery, so it
+        // never entered `advanced`, never reached `clearConflictStateFor`, and kept
+        // `campaignsConflicted()` true — a banner offering a Refresh that provably cannot dismiss
+        // it, because the row it is about will never come back. That is the same latched-banner
+        // defect this component was rewritten to remove, narrowed to a row that left.
+        //
+        // Gated on `!campaignsPossiblyStale()`, and that gate is the whole safety argument.
+        // Absence is only evidence of removal when the delivery is a COMPLETE, current picture:
+        //
+        //   - A failed read never reaches here at all — `loadBriefCampaigns` sets `briefCampaigns`
+        //     to `null` on its error arm, and `null` is handled above as "read in flight". So a
+        //     failure can never present as an empty list. That is what stops this from becoming
+        //     "the read broke, therefore everything is resolved".
+        //   - `possiblyStale` is the server's own statement that the list may be incomplete: it is
+        //     set when the index returned nothing (which may only mean "not indexed yet") and on a
+        //     refusal, which answers `[]` with the flag rather than an error. Treating absence
+        //     from THAT list as proof a campaign is gone would clear a live conflict on the
+        //     strength of a lagging index.
+        //
+        // So conflicts survive a stale or failed delivery and are only dropped by a list that is
+        // both successful and complete. Intersecting rather than deleting per id keeps this
+        // total: any conflicted id absent from a trustworthy full list goes, however it got there.
+        if (!this.campaignsPossiblyStale()) {
+          this.conflictedCampaignIds.update((ids) => {
+            const stillListed = new Set<string>();
+            for (const id of ids) {
+              if (id in delivered) {
+                stillListed.add(id);
+              }
+            }
+            // Same identity-preserving contract as `clearConflictStateFor`: returning a new Set
+            // when nothing changed would re-fire `campaignsConflicted` and every computed reading
+            // it on every delivery.
+            return stillListed.size === ids.size ? ids : stillListed;
+          });
+        }
       });
+  }
+
+  /**
+   * Narrates a CONFIRMED toggle: live region for the in-page reader, toast for everyone else.
+   *
+   * The toast exists because the request now outlives this component. `take(1)` replaced
+   * `takeUntilDestroyed` so a pause is not aborted by a tab switch, which means the response can
+   * arrive when this tab is gone — and a result nobody can see is barely better than the abort it
+   * replaced. `MessageService` renders from `app.component`, above the `@switch`, so it lands.
+   *
+   * `reportedStatus` is what the SERVICE said, not what was requested, for the same reason the
+   * row overlay reads it: pausing a `created_degraded` campaign pauses it upstream while leaving
+   * the row's status alone. The announcement states the direction that was confirmed, so it
+   * cannot promise a transition the service declined to record.
+   */
+  private announceToggleOutcome(direction: Exclude<CampaignToggleAction, 'unavailable'>, campaignName: string, reportedStatus: string): void {
+    const summary = `${CAMPAIGN_TOGGLE_DONE_VERBS[direction]} ${campaignName}`;
+    this.toggleAnnouncement.set(summary);
+    this.messageService.add({ severity: 'success', summary, detail: `Campaign status is now ${normalizeCampaignStatus(reportedStatus)}.`, life: 5000 });
+  }
+
+  /**
+   * Narrates a FAILED toggle to the same two surfaces.
+   *
+   * `sticky` rather than timed: this is the arm that says a pause did NOT happen on a campaign
+   * that is still spending money. A message that disappears on its own is the wrong affordance
+   * for that — the operator has to dismiss it, which is the acknowledgement the failure warrants.
+   */
+  private announceToggleFailure(campaignName: string, message: string): void {
+    this.toggleAnnouncement.set(`${campaignName}: ${message}`);
+    this.messageService.add({ severity: 'error', summary: campaignName, detail: message, sticky: true });
   }
 
   /**

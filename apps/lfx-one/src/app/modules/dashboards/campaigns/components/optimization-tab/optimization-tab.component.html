@@ -118,6 +118,18 @@
           }
         </p>
       } @else {
+        <!--
+          The toggle's narration for assistive tech. A live region rather than attributes on the
+          button, because the button goes native-`disabled` the moment a toggle starts: it leaves
+          the focus order, and a screen reader will not reliably announce an `aria-label` or
+          `aria-busy` change on an unfocused, disabled element. A polite live region is announced
+          wherever focus is, so "Pausing X" / "Paused X" / a failure actually reaches the operator.
+
+          `aria-live` is on an element that is ALWAYS rendered, with only its text changing.
+          Wrapping it in an `@if` would create the region and its content in the same tick, and a
+          region that does not pre-exist its content is frequently not announced at all.
+        -->
+        <div class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="optimization-toggle-announcement">{{ toggleAnnouncement() }}</div>
         <ul class="flex flex-col gap-2">
           @for (row of rows; track row.campaign.id) {
             <li class="flex items-center justify-between gap-3 rounded-md border border-gray-100 px-3 py-2">
@@ -163,7 +175,7 @@
                 type="button"
                 (click)="toggleCampaign(row)"
                 [disabled]="togglePending()[row.campaign.id] || row.action === 'unavailable' || row.conflicted"
-                [attr.aria-label]="(togglePending()[row.campaign.id] ? 'Working' : row.toggleLabel) + ' ' + row.campaign.campaign_name"
+                [attr.aria-label]="row.toggleLabel + ' ' + row.campaign.campaign_name"
                 [attr.aria-busy]="togglePending()[row.campaign.id] ? 'true' : null"
                 [attr.aria-describedby]="row.describedBy"
                 class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
