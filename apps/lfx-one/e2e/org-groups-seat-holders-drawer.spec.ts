@@ -108,4 +108,20 @@ test.describe('Org Groups — seat holders drawer (GH-1780)', () => {
     await page.waitForURL((url) => url.pathname.startsWith(`/groups/${GROUP_UID}`));
     expect(page.url()).toContain(`/groups/${GROUP_UID}`);
   });
+
+  test('shows the empty state when no assignment matches the clicked group', async ({ page }) => {
+    // Overrides the beforeEach stub — a later-registered page.route takes precedence over an
+    // earlier one for a matching request, so this replaces the fixture roster for this test only.
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/people\/committee-members$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ orgUid: MOCK_ACCOUNT_ID, assignments: [], stats: { individualCount: 0, committeeCount: 0, foundationsCovered: 0 } }),
+      })
+    );
+
+    await page.getByTestId(`org-groups-item-seats-${GROUP_UID}`).click();
+
+    await expect(page.getByTestId('group-seat-holders-drawer-empty')).toBeVisible();
+  });
 });

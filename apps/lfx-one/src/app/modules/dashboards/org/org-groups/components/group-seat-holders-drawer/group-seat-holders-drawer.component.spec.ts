@@ -41,9 +41,12 @@ describe('GroupSeatHoldersDrawerComponent', () => {
 
   // p-drawer renders into document.body, not the fixture host, and a previous test's overlay
   // otherwise survives into the next one — mirrors event-detail-drawer.component.spec.ts.
+  // restoreAllMocks undoes the console.error spies a couple of tests below install — without it
+  // those spies leak into every later test in the file and silently swallow real console errors.
   afterEach(() => {
     fixture?.destroy();
     document.body.innerHTML = '';
+    vi.restoreAllMocks();
   });
 
   async function setup(impl: ReturnType<typeof vi.fn>): Promise<void> {
@@ -198,8 +201,22 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     fixture.componentRef.setInput('committeeUid', 'c-1');
     fixture.componentRef.setInput('seatCount', 7);
     fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
     fixture.detectChanges();
 
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('7 seats');
+  });
+
+  // A failed fetch resolves seatHolders() to [] (see the outer catchError), not null — without
+  // excluding the error() branch from displayedCount's fallback, the header would read "0 seats"
+  // instead of the row's already-known count right next to the "Unable to load" panel.
+  it('keeps the pre-loaded seatCount in the header on a failed fetch, not 0', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await setup(vi.fn().mockReturnValue(throwError(() => new Error('boom'))));
+
+    await open('org-1', 'c-1', 'Storage Working Group', 7);
+
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeTruthy();
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('7 seats');
   });
 });

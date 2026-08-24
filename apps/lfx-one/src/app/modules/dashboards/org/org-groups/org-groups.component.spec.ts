@@ -3,6 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import type { Account, OrgDropdownOption, OrgLensGroupSummary, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
@@ -53,6 +54,10 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
       // CommitteeMembersService needs a stub too — otherwise DI resolves the real service, which
       // needs a real HttpClient this testing module never provides.
       { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
+      // p-drawer's synthetic `@panelState` animation throws NG05105 without this — mirrors
+      // event-detail-drawer.component.spec.ts. Needed once a test actually opens the seat-holders
+      // drawer (setting seatHoldersDrawerVisible true), not for tests that never do.
+      provideNoopAnimations(),
       // Real Router (via provideRouter) so the rendered group rows' [routerLink] (createUrlTree, etc.)
       // keeps working; only `navigate` — the method the URL-sync subscription actually calls — is spied on.
       provideRouter([]),
@@ -138,6 +143,23 @@ function typeOptions(fixture: ComponentFixture<OrgGroupsComponent>): OrgDropdown
 
 function foundationOptions(fixture: ComponentFixture<OrgGroupsComponent>): OrgDropdownOption[] {
   return (fixture.componentInstance as unknown as { foundationOptions: () => OrgDropdownOption[] }).foundationOptions();
+}
+
+/** seatHoldersDrawerVisible/selectedGroup are `protected` — same cast convention as filterForm above. */
+function seatHoldersDrawerState(fixture: ComponentFixture<OrgGroupsComponent>): { visible: boolean; selectedGroupUid: string | null } {
+  const instance = fixture.componentInstance as unknown as {
+    seatHoldersDrawerVisible: () => boolean;
+    selectedGroup: () => { uid: string } | null;
+  };
+  return { visible: instance.seatHoldersDrawerVisible(), selectedGroupUid: instance.selectedGroup()?.uid ?? null };
+}
+
+/** Row seat-count testid doubles as the drawer trigger — see org-groups.component.html. */
+function clickSeatHoldersTrigger(fixture: ComponentFixture<OrgGroupsComponent>, uid: string): void {
+  const el = fixture.nativeElement.querySelector(`[data-testid="org-groups-item-seats-${uid}"]`) as HTMLButtonElement | null;
+  if (!el) throw new Error(`no seat-holders trigger rendered for ${uid}`);
+  el.click();
+  fixture.detectChanges();
 }
 
 /** Lets the real `debounceTime(150)` on the filter form settle, then flushes change detection. */
@@ -450,6 +472,21 @@ describe('OrgGroupsComponent', () => {
     await flushFilterChange(fixture);
 
     expect(renderedItemUids(fixture)).toEqual(['g1', 'g2', 'g3', 'g4']);
+  });
+
+  // OrgGroupsComponent isn't destroyed on an in-place org switch, so a seat-holders drawer left
+  // open (or its selected group left set) would otherwise mismatch the new org — see the drawer's
+  // own orgUid-keyed cache and group-seat-holders-drawer.component.ts for the other half of this.
+  it('closes the seat-holders drawer and clears the selected group when the selected org switches', async () => {
+    const { fixture, selectedAccount } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    clickSeatHoldersTrigger(fixture, 'g1');
+    expect(seatHoldersDrawerState(fixture)).toEqual({ visible: true, selectedGroupUid: 'g1' });
+
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', accountSlug: 'vendor-corp', membershipTier: '', uid: 'org-uid-2' });
+    await flushFilterChange(fixture);
+
+    expect(seatHoldersDrawerState(fixture)).toEqual({ visible: false, selectedGroupUid: null });
   });
 
   it('clearing filters restores the full list in the original (seat-desc, name-asc) order', async () => {

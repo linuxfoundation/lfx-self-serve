@@ -43,8 +43,11 @@ export class GroupSeatHoldersDrawerComponent {
 
   // Filtered-list length once loaded, falling back to the row's precomputed seatCount() before
   // that — keeps the header in sync with the rendered rows (each row is one seat/assignment, same
-  // unit the header counts) instead of drifting from a separately-sourced number.
-  protected readonly displayedCount: Signal<number> = computed(() => this.seatHolders()?.length ?? this.seatCount());
+  // unit the header counts) instead of drifting from a separately-sourced number. The error()
+  // branch is excluded from that fallback: a failed fetch resolves seatHolders() to [] (not null,
+  // see the outer catchError below), which would otherwise read "0 seats" next to the error panel
+  // instead of the row's already-known count.
+  protected readonly displayedCount: Signal<number> = computed(() => (this.error() ? this.seatCount() : (this.seatHolders()?.length ?? this.seatCount())));
 
   // Precomputes the voting-status pill class per row so the template stays a flat binding
   // (no function call on every change-detection pass).
