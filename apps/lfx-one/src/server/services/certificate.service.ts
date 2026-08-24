@@ -13,7 +13,14 @@ import { AuthorizationError, ResourceNotFoundError } from '../errors';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { PDFTemplateDetails, CertificateData, CertificateEventRow } from '@lfx-one/shared/interfaces';
-import { DEFAULT_TEMPLATE, PROJECT_TEMPLATES } from '@lfx-one/shared/constants/pdf.constants';
+import {
+  DEFAULT_LOGO_WIDTH,
+  DEFAULT_TEMPLATE,
+  LF_OPEN_SOURCE_LOGO,
+  LF_OPEN_SOURCE_LOGO_MATCH,
+  LF_OPEN_SOURCE_LOGO_WIDTH,
+  PROJECT_TEMPLATES,
+} from '@lfx-one/shared/constants/pdf.constants';
 
 // In production, import.meta.url points to the server bundle (dist/lfx-one/server/server.mjs)
 // and pdf-templates are copied there by the build script.
@@ -55,7 +62,20 @@ export class CertificateService {
       });
     }
 
-    const template = PROJECT_TEMPLATES[eventRow.PROJECT_ID] ?? DEFAULT_TEMPLATE;
+    const baseTemplate = PROJECT_TEMPLATES[eventRow.PROJECT_ID] ?? DEFAULT_TEMPLATE;
+
+    // Legal requires the LF Open Source mark for China backfill events, whichever project owns
+    // them. Logo only — name, address, body copy and signature stay with the base template.
+    const isLfOpenSourceOverride = this.requiresLfOpenSourceLogo(eventRow);
+    const template = isLfOpenSourceOverride ? { ...baseTemplate, logo: LF_OPEN_SOURCE_LOGO, logoWidth: LF_OPEN_SOURCE_LOGO_WIDTH } : baseTemplate;
+
+    if (isLfOpenSourceOverride) {
+      logger.debug(req, 'generate_certificate', 'Applying LF Open Source logo override', {
+        event_id: data.eventId,
+        event_source: eventRow.EVENT_SOURCE,
+        event_country: eventRow.EVENT_COUNTRY,
+      });
+    }
 
     logger.debug(req, 'generate_certificate', 'Building PDF', {
       event_id: data.eventId,
@@ -63,6 +83,17 @@ export class CertificateService {
     });
 
     return this.buildPdf(data.userName, eventRow, template);
+  }
+
+  /**
+   * Trimmed and lowercased so casing drift in imported CSV data doesn't skip the override, and
+   * whole-string so 'Hong Kong (SAR China)' doesn't match. Unmatched values keep the base logo.
+   */
+  private requiresLfOpenSourceLogo(event: CertificateEventRow): boolean {
+    const source = event.EVENT_SOURCE?.trim().toLowerCase();
+    const country = event.EVENT_COUNTRY?.trim().toLowerCase();
+
+    return source === LF_OPEN_SOURCE_LOGO_MATCH.EVENT_SOURCE.toLowerCase() && country === LF_OPEN_SOURCE_LOGO_MATCH.EVENT_COUNTRY.toLowerCase();
   }
 
   private async getEventRow(req: Request, eventId: string, userEmail: string): Promise<CertificateEventRow> {
@@ -74,6 +105,7 @@ export class CertificateService {
         EVENT_LOCATION,
         EVENT_CITY,
         EVENT_COUNTRY,
+        EVENT_SOURCE,
         PROJECT_ID,
         USER_ATTENDED
       FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
@@ -109,7 +141,7 @@ export class CertificateService {
       doc.font('Helvetica');
 
       // Project logo (top-left)
-      doc.image(join(TEMPLATE_DIR, 'images', template.logo), PAGE_START, 47, { width: 145 });
+      doc.image(join(TEMPLATE_DIR, 'images', template.logo), PAGE_START, 47, { width: template.logoWidth ?? DEFAULT_LOGO_WIDTH });
 
       // Address & link (top-right)
       doc

@@ -11,6 +11,10 @@ export interface OrgLensGroupSummary {
   category: string;
   project_uid?: string;
   project_slug?: string;
+  /** Human-readable foundation/project name resolved from the project index (keyed by
+   *  project_uid) or, failing that, the committee index (keyed by committee uid) — absent when
+   *  neither resolves one; consumers should fall back to project_slug (see OrgLensGroupVm.projectLabel). */
+  project_name?: string;
   /** Distinct org employees holding seats in this committee (deduped by email). */
   org_seat_count: number;
 }
@@ -23,7 +27,21 @@ export interface OrgLensGroupsResponse {
   total_seats: number;
 }
 
-/** View-model used by the org-groups list — extends the API summary with the pre-computed behavioral class. */
+/** View-model used by the org-groups list — extends the API summary with pre-computed display fields. */
 export interface OrgLensGroupVm extends OrgLensGroupSummary {
   cls: GroupBehavioralClass;
+  /** Pre-computed `project_name || project_slug` display label — empty string when neither is set. */
+  projectLabel: string;
+  /** Pre-computed row `aria-label`: name, behavioral class, seat count, and projectLabel when set. */
+  ariaLabel: string;
+  /** Pre-computed accessible name for the foundation link (only rendered when project_slug is
+   *  set) — distinguishes it from the row's own aria-label so screen-reader users can tell the
+   *  two link targets apart. Empty string when projectLabel is empty. */
+  projectAriaLabel: string;
+}
+
+/** One non-zero behavioral-class tile rendered in the org-groups stat strip. */
+export interface OrgLensGroupClassTile {
+  cls: GroupBehavioralClass;
+  count: number;
 }

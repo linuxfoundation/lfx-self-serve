@@ -74,6 +74,11 @@ export class ProfileClasComponent {
   // signatureID currently resolving a PDF URL (drives the row's spinner + guards double-clicks).
   protected readonly downloadingId = signal<string | null>(null);
 
+  /** True while the chosen group's hand-off URL is being resolved; also guards a double hand-off. */
+  protected readonly starting = signal(false);
+
+  private readonly signDialogOpen = signal(false);
+
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
 
   private readonly state = this.initState();
@@ -102,9 +107,6 @@ export class ProfileClasComponent {
    */
   protected readonly canSign = computed(() => this.myClasM2Enabled() && !this.userService.impersonating());
 
-  /** True while the chosen group's hand-off URL is being resolved; also guards a double hand-off. */
-  protected readonly starting = signal(false);
-
   protected retry(): void {
     this.refresh$.next();
   }
@@ -121,11 +123,8 @@ export class ProfileClasComponent {
    * dialog rule and the sibling profile tabs.
    */
   protected openSignDialog(): void {
-    // Guarded from the moment the picker opens, not from when a group is chosen. `starting` is
-    // only set once the hand-off begins, which leaves the button live for as long as the picker
-    // is open — long enough to open a second one and bind twice.
-    if (!this.myClasM2Enabled() || this.starting()) return;
-    this.starting.set(true);
+    if (!this.myClasM2Enabled() || this.starting() || this.signDialogOpen()) return;
+    this.signDialogOpen.set(true);
 
     const dialogRef = this.dialogService.open(ClaGroupSelectComponent, {
       header: 'Sign a CLA',
@@ -135,7 +134,8 @@ export class ProfileClasComponent {
       dismissableMask: true,
     }) as DynamicDialogRef;
 
-    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((option: ClaGroupOption | null | undefined) => {
+    this.whenDialogSettles<ClaGroupOption>(dialogRef, (option) => {
+      this.signDialogOpen.set(false);
       if (!option) {
         this.starting.set(false);
         return;
@@ -180,8 +180,7 @@ export class ProfileClasComponent {
    * contributor had already signed by the time anyone knew as whom.
    */
   private handOffToConsole(option: ClaGroupOption): void {
-    // Already flagged as in flight by `openSignDialog`, which owns the guard because the window
-    // worth guarding opens with the picker rather than with this call.
+    this.starting.set(true);
     this.myClasService
       .getGithubAccounts()
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -238,6 +237,9 @@ export class ProfileClasComponent {
       return;
     }
 
+    this.starting.set(false);
+    this.signDialogOpen.set(true);
+
     const dialogRef = this.dialogService.open(GithubAccountSelectComponent, {
       header: 'Choose a GitHub account',
       width: '32rem',
@@ -247,7 +249,8 @@ export class ProfileClasComponent {
       data: { accounts },
     }) as DynamicDialogRef;
 
-    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((githubId: string | null | undefined) => {
+    this.whenDialogSettles<string>(dialogRef, (githubId) => {
+      this.signDialogOpen.set(false);
       if (!githubId) {
         this.starting.set(false);
         return;
@@ -265,6 +268,23 @@ export class ProfileClasComponent {
       }
 
       this.prepareThenHandOff(option, chosen);
+    });
+  }
+
+  private whenDialogSettles<T>(dialogRef: DynamicDialogRef, onSettle: (value: T | null | undefined) => void): void {
+    let closed = false;
+
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((value: T | null | undefined) => {
+      closed = true;
+      onSettle(value);
+    });
+
+    dialogRef.onDestroy.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      queueMicrotask(() => {
+        if (!closed) {
+          onSettle(undefined);
+        }
+      });
     });
   }
 
