@@ -28,7 +28,14 @@
 
   <!-- Actions: "Stay here" dismisses silently; "Continue" logs the reason then opens ID in a new tab -->
   <div class="flex items-stretch gap-3">
-    <lfx-button label="Stay here" severity="secondary" [outlined]="true" size="small" type="button" (onClick)="stayHere()" data-testid="id-migration-stay-button" />
+    <lfx-button
+      label="Stay here"
+      severity="secondary"
+      [outlined]="true"
+      size="small"
+      type="button"
+      (onClick)="stayHere()"
+      data-testid="id-migration-stay-button" />
     <lfx-button
       label="Continue to Individual Dashboard"
       icon="fa-light fa-arrow-up-right"
