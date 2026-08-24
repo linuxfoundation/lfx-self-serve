@@ -1,0 +1,51 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { HttpClient } from '@angular/common/http';
+import { TestBed } from '@angular/core/testing';
+import { NEWSLETTER_MAX_PUBLICATION_PAGES } from '@lfx-one/shared/constants';
+import { NewsletterPublicationListResponse } from '@lfx-one/shared/interfaces';
+import { of } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { NewsletterService } from './newsletter.service';
+
+/**
+ * Covers the publication list paging walk. The upstream publication list is
+ * paginated and caps the page size, so the publication-list page (which has no
+ * paging controls) relies on listAllPublications to follow next_page_token.
+ */
+describe('NewsletterService.listAllPublications', () => {
+  let get: ReturnType<typeof vi.fn>;
+  let service: NewsletterService;
+
+  beforeEach(() => {
+    get = vi.fn();
+    TestBed.configureTestingModule({
+      providers: [{ provide: HttpClient, useValue: { get, post: vi.fn(), put: vi.fn(), delete: vi.fn() } }],
+    });
+    service = TestBed.inject(NewsletterService);
+  });
+
+  it('concatenates every page and stops when a response omits the token', async () => {
+    get
+      .mockReturnValueOnce(of({ publications: [{ id: 'pub-1' }], next_page_token: 'tok-1' } as NewsletterPublicationListResponse))
+      .mockReturnValueOnce(of({ publications: [{ id: 'pub-2' }] } as NewsletterPublicationListResponse));
+
+    const result = await new Promise<NewsletterPublicationListResponse>((resolve) => service.listAllPublications('proj-1').subscribe(resolve));
+
+    expect(result.publications.map((p) => p.id)).toEqual(['pub-1', 'pub-2']);
+    expect(get).toHaveBeenCalledTimes(2);
+    // The second call carries the first page's token.
+    expect(get.mock.calls[1][1].params.get('page_token')).toBe('tok-1');
+  });
+
+  it('stops at the page cap when the server keeps returning a token', async () => {
+    get.mockReturnValue(of({ publications: [{ id: 'pub-x' }], next_page_token: 'always' } as NewsletterPublicationListResponse));
+
+    const result = await new Promise<NewsletterPublicationListResponse>((resolve) => service.listAllPublications('proj-1').subscribe(resolve));
+
+    expect(get).toHaveBeenCalledTimes(NEWSLETTER_MAX_PUBLICATION_PAGES);
+    expect(result.publications.length).toBe(NEWSLETTER_MAX_PUBLICATION_PAGES);
+  });
+});

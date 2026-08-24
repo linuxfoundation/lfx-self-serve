@@ -172,6 +172,16 @@ export interface NewsletterPublicationListResponse {
   next_page_token?: string;
 }
 
+/**
+ * Query parameters for the publication list. The upstream list is paginated and
+ * caps the page size, so a caller that needs every publication follows
+ * `next_page_token` until the response omits it.
+ */
+export interface NewsletterPublicationListParams {
+  page_token?: string;
+  page_size?: number;
+}
+
 export interface Newsletter {
   id: string;
   project_uid: string;

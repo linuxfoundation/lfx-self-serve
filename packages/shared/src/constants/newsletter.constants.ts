@@ -45,6 +45,13 @@ export const NEWSLETTER_ANALYTICS_FETCH_CONCURRENCY = 5;
 // upstream or from each other.
 export const NEWSLETTER_TOP_LINKS_LIMIT = 20;
 
+// The publication list is paginated upstream (default page 20, server cap 100),
+// so the publication-list page walks `next_page_token` to get the whole set.
+// This bounds that walk: a project has a handful of publications, so 10 pages
+// is far more than it needs, and a server that keeps returning a token cannot
+// make the request run forever.
+export const NEWSLETTER_MAX_PUBLICATION_PAGES = 10;
+
 // Per-request timeout for the send endpoint, overriding the API client's 30s
 // default. The new upstream accepts sends in well under a second (202 +
 // background fan-out), but while a pre-async newsletter-service is deployed

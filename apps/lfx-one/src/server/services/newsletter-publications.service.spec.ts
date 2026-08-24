@@ -41,7 +41,12 @@ describe('NewsletterPublicationsService — delegation', () => {
 
   it('forwards listPublications', async () => {
     await service.listPublications(req, 'p1');
-    expect(client.listPublications).toHaveBeenCalledWith(req, 'p1');
+    expect(client.listPublications).toHaveBeenCalledWith(req, 'p1', {});
+  });
+
+  it('forwards the publication list pagination params', async () => {
+    await service.listPublications(req, 'p1', { page_token: 'tok-1', page_size: 5 });
+    expect(client.listPublications).toHaveBeenCalledWith(req, 'p1', { page_token: 'tok-1', page_size: 5 });
   });
 
   it('forwards getPublication', async () => {

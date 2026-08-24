@@ -37,7 +37,7 @@ describe('NewsletterPublicationListComponent', () => {
     await TestBed.configureTestingModule({
       imports: [NewsletterPublicationListComponent],
       providers: [
-        { provide: NewsletterService, useValue: { listPublications: vi.fn() } },
+        { provide: NewsletterService, useValue: { listAllPublications: vi.fn() } },
         { provide: ProjectContextService, useValue: { activeContextUid } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: Router, useValue: { navigate: vi.fn() } },
@@ -59,7 +59,7 @@ describe('NewsletterPublicationListComponent', () => {
 
   it('starts in the loading state so the skeletons show before the first emission (no empty-state flash)', async () => {
     await setup('proj-1');
-    vi.mocked(newsletterService.listPublications).mockReturnValue(of({ publications: [] }));
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [] }));
 
     // Create without flushing the async context emission.
     fixture = TestBed.createComponent(NewsletterPublicationListComponent);
@@ -71,11 +71,11 @@ describe('NewsletterPublicationListComponent', () => {
 
   it('loads publications for the active project context', async () => {
     await setup('proj-1');
-    vi.mocked(newsletterService.listPublications).mockReturnValue(of({ publications: [makePublication()] }));
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [makePublication()] }));
 
     await create();
 
-    expect(newsletterService.listPublications).toHaveBeenCalledWith('proj-1');
+    expect(newsletterService.listAllPublications).toHaveBeenCalledWith('proj-1');
     expect(component['publications']()).toEqual([makePublication()]);
     expect(component['loading']()).toBe(false);
     expect(component['hasPublications']()).toBe(true);
@@ -83,11 +83,11 @@ describe('NewsletterPublicationListComponent', () => {
 
   it('does not call the service when there is no active context', async () => {
     await setup('');
-    vi.mocked(newsletterService.listPublications).mockReturnValue(of({ publications: [makePublication()] }));
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [makePublication()] }));
 
     await create();
 
-    expect(newsletterService.listPublications).not.toHaveBeenCalled();
+    expect(newsletterService.listAllPublications).not.toHaveBeenCalled();
     expect(component['publications']()).toEqual([]);
     expect(component['loading']()).toBe(false);
     expect(component['hasPublications']()).toBe(false);
@@ -95,7 +95,7 @@ describe('NewsletterPublicationListComponent', () => {
 
   it('surfaces a load failure via the message service and clears loading', async () => {
     await setup('proj-1');
-    vi.mocked(newsletterService.listPublications).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { message: 'boom' } })));
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { message: 'boom' } })));
 
     await create();
 
@@ -106,7 +106,7 @@ describe('NewsletterPublicationListComponent', () => {
 
   it("navigates to a publication's editions relative to the current route", async () => {
     await setup('proj-1');
-    vi.mocked(newsletterService.listPublications).mockReturnValue(of({ publications: [] }));
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [] }));
     await create();
 
     component['goToPublicationEditions'](makePublication({ id: 'pub-42' }));

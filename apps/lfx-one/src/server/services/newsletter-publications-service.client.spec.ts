@@ -36,7 +36,15 @@ describe('NewsletterPublicationsServiceClient', () => {
 
   it('GETs the project-scoped publication collection', async () => {
     await client.listPublications(req, 'proj-1');
-    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/proj-1/newsletter-publications', 'GET');
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/proj-1/newsletter-publications', 'GET', undefined);
+  });
+
+  it('forwards the publication list pagination params as query parameters', async () => {
+    await client.listPublications(req, 'proj-1', { page_token: 'tok-1', page_size: 5 });
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/proj-1/newsletter-publications', 'GET', {
+      page_token: 'tok-1',
+      page_size: '5',
+    });
   });
 
   it('GETs a single publication by uid', async () => {

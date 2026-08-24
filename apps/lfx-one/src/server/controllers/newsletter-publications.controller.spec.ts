@@ -34,10 +34,11 @@ function buildRes() {
 }
 
 // Build a request; `ifMatch` (when provided) is surfaced via the `header()` accessor the controller uses.
-function buildReq(params: Record<string, string>, body: unknown = {}, ifMatch?: string) {
+function buildReq(params: Record<string, string>, body: unknown = {}, ifMatch?: string, query: Record<string, string> = {}) {
   return {
     params,
     body,
+    query,
     path: '/x',
     header: (h: string) => (h === 'If-Match' ? (ifMatch ?? '') : ''),
   } as any;
@@ -73,8 +74,31 @@ describe('NewsletterPublicationsController.listPublications — happy path', () 
     const next = vi.fn();
     await new NewsletterPublicationsController().listPublications(buildReq({ projectUid: 'p1' }), res, next);
     expect(next).not.toHaveBeenCalled();
-    expect(listPublications).toHaveBeenCalledWith(expect.anything(), 'p1');
+    expect(listPublications).toHaveBeenCalledWith(expect.anything(), 'p1', { page_token: undefined, page_size: undefined });
     expect(res.json).toHaveBeenCalledWith({ publications: [{ id: 'pub-1' }] });
+  });
+
+  it('forwards page_token and page_size, and passes next_page_token back', async () => {
+    listPublications.mockResolvedValue({ publications: [{ id: 'pub-2' }], next_page_token: 'tok-2' });
+    const res = buildRes();
+    const next = vi.fn();
+    const req = buildReq({ projectUid: 'p1' }, {}, undefined, { page_token: 'tok-1', page_size: '5' });
+
+    await new NewsletterPublicationsController().listPublications(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(listPublications).toHaveBeenCalledWith(expect.anything(), 'p1', { page_token: 'tok-1', page_size: 5 });
+    expect(res.json).toHaveBeenCalledWith({ publications: [{ id: 'pub-2' }], next_page_token: 'tok-2' });
+  });
+
+  it.each(['0', '-1', 'abc', '1.5'])('rejects page_size=%s without calling the service', async (pageSize) => {
+    const next = vi.fn();
+    const req = buildReq({ projectUid: 'p1' }, {}, undefined, { page_size: pageSize });
+
+    await new NewsletterPublicationsController().listPublications(req, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(listPublications).not.toHaveBeenCalled();
   });
 });
 

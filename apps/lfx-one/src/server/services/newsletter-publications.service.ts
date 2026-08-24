@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreatePublicationRequest, NewsletterPublication, NewsletterPublicationListResponse, UpdatePublicationRequest } from '@lfx-one/shared/interfaces';
+import {
+  CreatePublicationRequest,
+  NewsletterPublication,
+  NewsletterPublicationListParams,
+  NewsletterPublicationListResponse,
+  UpdatePublicationRequest,
+} from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { NewsletterPublicationsServiceClient } from './newsletter-publications-service.client';
@@ -25,8 +31,8 @@ export class NewsletterPublicationsService {
     return this.publicationsClient.createPublication(req, projectUid, payload);
   }
 
-  public listPublications(req: Request, projectUid: string): Promise<NewsletterPublicationListResponse> {
-    return this.publicationsClient.listPublications(req, projectUid);
+  public listPublications(req: Request, projectUid: string, params: NewsletterPublicationListParams = {}): Promise<NewsletterPublicationListResponse> {
+    return this.publicationsClient.listPublications(req, projectUid, params);
   }
 
   public getPublication(req: Request, projectUid: string, publicationUid: string): Promise<NewsletterPublication> {

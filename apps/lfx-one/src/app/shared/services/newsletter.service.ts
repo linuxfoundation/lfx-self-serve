@@ -3,6 +3,7 @@
 
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
+import { NEWSLETTER_MAX_PUBLICATION_PAGES } from '@lfx-one/shared/constants';
 import {
   CreateNewsletterRequest,
   CreatePublicationRequest,
@@ -16,6 +17,7 @@ import {
   NewsletterListResponse,
   NewsletterOptOutListResponse,
   NewsletterPublication,
+  NewsletterPublicationListParams,
   NewsletterPublicationListResponse,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
@@ -27,7 +29,7 @@ import {
   UpdateNewsletterRequest,
   UpdatePublicationRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, take } from 'rxjs';
+import { catchError, EMPTY, expand, Observable, of, reduce, take } from 'rxjs';
 
 /**
  * Angular HTTP client for the newsletter feature.
@@ -162,8 +164,39 @@ export class NewsletterService {
   // their consumers — the publication create/manage UI is the next increment
   // (LFXV2-2582 follow-up). Editions are read via `listNewsletters(..., publication_id)`.
 
-  public listPublications(projectUid: string): Observable<NewsletterPublicationListResponse> {
-    return this.http.get<NewsletterPublicationListResponse>(`/api/projects/${this.enc(projectUid)}/newsletter-publications`).pipe(take(1));
+  /**
+   * Fetch one page of publications. The server caps the page size, so the
+   * response can carry a `next_page_token`.
+   */
+  public listPublications(projectUid: string, params: NewsletterPublicationListParams = {}): Observable<NewsletterPublicationListResponse> {
+    let httpParams = new HttpParams();
+    if (params.page_token) {
+      httpParams = httpParams.set('page_token', params.page_token);
+    }
+    if (params.page_size) {
+      httpParams = httpParams.set('page_size', String(params.page_size));
+    }
+    return this.http
+      .get<NewsletterPublicationListResponse>(`/api/projects/${this.enc(projectUid)}/newsletter-publications`, { params: httpParams })
+      .pipe(take(1));
+  }
+
+  /**
+   * Fetch every publication in the project by following `next_page_token`. The
+   * publication list page has no paging controls, so it needs the full set.
+   * MAX_PUBLICATION_PAGES bounds the walk so a server that keeps returning a
+   * token cannot make this request forever.
+   */
+  public listAllPublications(projectUid: string): Observable<NewsletterPublicationListResponse> {
+    return this.listPublications(projectUid).pipe(
+      expand((page, index) =>
+        page.next_page_token && index < NEWSLETTER_MAX_PUBLICATION_PAGES - 1 ? this.listPublications(projectUid, { page_token: page.next_page_token }) : EMPTY
+      ),
+      reduce<NewsletterPublicationListResponse, NewsletterPublicationListResponse>(
+        (acc, page) => ({ publications: [...acc.publications, ...page.publications] }),
+        { publications: [] }
+      )
+    );
   }
 
   public getPublication(projectUid: string, publicationUid: string): Observable<NewsletterPublication> {

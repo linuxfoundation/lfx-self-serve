@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreatePublicationRequest, NewsletterPublication, NewsletterPublicationListResponse, UpdatePublicationRequest } from '@lfx-one/shared/interfaces';
+import {
+  CreatePublicationRequest,
+  NewsletterPublication,
+  NewsletterPublicationListParams,
+  NewsletterPublicationListResponse,
+  UpdatePublicationRequest,
+} from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -27,12 +33,24 @@ export class NewsletterPublicationsServiceClient {
     );
   }
 
-  public async listPublications(req: Request, projectUid: string): Promise<NewsletterPublicationListResponse> {
+  /**
+   * The upstream list is paginated and caps the page size, so `page_token` and
+   * `page_size` are forwarded and `next_page_token` is returned to the caller.
+   */
+  public async listPublications(req: Request, projectUid: string, params: NewsletterPublicationListParams = {}): Promise<NewsletterPublicationListResponse> {
+    const query: Record<string, string> = {};
+    if (params.page_token) {
+      query['page_token'] = params.page_token;
+    }
+    if (params.page_size) {
+      query['page_size'] = String(params.page_size);
+    }
     return this.microserviceProxy.proxyRequest<NewsletterPublicationListResponse>(
       req,
       'LFX_V2_SERVICE',
       `/projects/${projectUid}/newsletter-publications`,
-      'GET'
+      'GET',
+      Object.keys(query).length ? query : undefined
     );
   }
 

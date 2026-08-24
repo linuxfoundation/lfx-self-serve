@@ -62,7 +62,9 @@ export class NewsletterPublicationListComponent {
             return EMPTY;
           }
           this.loading.set(true);
-          return this.newsletterService.listPublications(uid).pipe(
+          // The upstream list is paginated, and this page has no paging
+          // controls, so follow the page tokens and show the whole set.
+          return this.newsletterService.listAllPublications(uid).pipe(
             catchError((err: HttpErrorResponse) => {
               this.loading.set(false);
               this.showLoadError(err);

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreatePublicationRequest, UpdatePublicationRequest } from '@lfx-one/shared/interfaces';
+import { CreatePublicationRequest, NewsletterPublicationListParams, UpdatePublicationRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -19,7 +19,10 @@ export class NewsletterPublicationsController {
   private publicationsService: NewsletterPublicationsService = new NewsletterPublicationsService();
 
   /**
-   * GET /api/projects/:projectUid/newsletter-publications
+   * GET /api/projects/:projectUid/newsletter-publications?page_token=...&page_size=...
+   *
+   * The upstream list is paginated and caps the page size, so the pagination
+   * parameters are forwarded and `next_page_token` is passed back unchanged.
    */
   public async listPublications(req: Request, res: Response, next: NextFunction): Promise<void> {
     // require* runs inside the try so a bad path param reaches next(error) rather
@@ -28,8 +31,15 @@ export class NewsletterPublicationsController {
 
     try {
       const projectUid = this.requireProjectUid(req);
-      const result = await this.publicationsService.listPublications(req, projectUid);
-      logger.success(req, 'newsletter_publications_list', startTime, { count: result.publications.length });
+      const params: NewsletterPublicationListParams = {
+        page_token: req.query['page_token'] ? String(req.query['page_token']) : undefined,
+        page_size: this.parsePageSize(req),
+      };
+      const result = await this.publicationsService.listPublications(req, projectUid, params);
+      logger.success(req, 'newsletter_publications_list', startTime, {
+        count: result.publications.length,
+        has_more: !!result.next_page_token,
+      });
       res.json(result);
     } catch (error) {
       next(error);
@@ -109,6 +119,27 @@ export class NewsletterPublicationsController {
       });
     }
     return projectUid;
+  }
+
+  /**
+   * Read an optional page_size query parameter. Undefined means the caller did
+   * not ask for a size, so the upstream default applies. A value that is not a
+   * positive integer is rejected here rather than forwarded.
+   */
+  private parsePageSize(req: Request): number | undefined {
+    const raw = req.query['page_size'];
+    if (raw === undefined || String(raw).trim() === '') {
+      return undefined;
+    }
+    const pageSize = Number(String(raw).trim());
+    if (!Number.isInteger(pageSize) || pageSize < 1) {
+      throw ServiceValidationError.forField('page_size', 'page_size must be a positive integer', {
+        operation: 'newsletter_publications_list',
+        service: 'newsletter_publications_controller',
+        path: req.path,
+      });
+    }
+    return pageSize;
   }
 
   private requirePublicationUid(req: Request): string {
