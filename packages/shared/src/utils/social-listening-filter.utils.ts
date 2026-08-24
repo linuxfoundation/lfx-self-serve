@@ -15,17 +15,21 @@ import {
   MENTION_RELEVANCE_OPTIONS,
   MENTION_SEARCH_MIN_CHARS,
   MENTION_SENTIMENT_OPTIONS,
+  SAVED_FILTERS_DOC_VERSION,
   SOCIAL_LISTENING_QUERY_PARAMS,
 } from '../constants/social-listening.constants';
 import type {
   FilterPredicate,
+  SavedFilter,
+  SavedFiltersDoc,
   SavedViewScope,
   ScopeState,
   SocialListeningQueryParams,
   SocialListeningScopeSignals,
   SocialListeningSignals,
 } from '../interfaces/social-listening.interface';
-import { resolvePeriodRange } from './marketing-impact.utils';
+import type { ParseResult } from '../interfaces/user-preference.interface';
+import { getDefaultMarketingImpactPeriod, resolvePeriodRange } from './marketing-impact.utils';
 import { normalizeKeywords } from './social-listening.utils';
 
 export function predicateFromSignals(s: SocialListeningSignals): FilterPredicate {
@@ -175,6 +179,21 @@ export function predicatesEqual(a: FilterPredicate, b: FilterPredicate): boolean
   );
 }
 
+/** Asymmetric with `predicatesEqual`: `search` is a refinement the user can change without losing the active saved-view label (PCC port). */
+export function sameSavedViewLabelPredicate(a: FilterPredicate, b: FilterPredicate): boolean {
+  return (
+    a.sentiment === b.sentiment &&
+    a.relevance === b.relevance &&
+    a.language === b.language &&
+    a.hasTitle === b.hasTitle &&
+    a.bookmarkFilter === b.bookmarkFilter &&
+    a.readFilter === b.readFilter &&
+    sortedEqual(a.keywords, b.keywords) &&
+    sortedEqual(a.tags, b.tags) &&
+    sortedEqual(a.authors, b.authors)
+  );
+}
+
 function asScalar(value: string | string[] | null | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
   if (typeof value === 'string') return value;
@@ -186,8 +205,8 @@ function asMultiValue(value: string | string[] | null | undefined): string[] {
   return (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === 'string' && v !== '');
 }
 
-/** Explicit `null` at DEFAULT so `queryParamsHandling: 'merge'` strips the key from the URL; 3rd-party / utm_* keys survive. */
-export function encodePredicateToQueryParams(p: FilterPredicate, scope: ScopeState, defaultPeriod: string): SocialListeningQueryParams {
+/** Explicit `null` at DEFAULT (or no active view) so `queryParamsHandling: 'merge'` strips the key from the URL; 3rd-party / utm_* keys survive. */
+export function encodePredicateToQueryParams(p: FilterPredicate, scope: ScopeState, viewId: string | null, defaultPeriod: string): SocialListeningQueryParams {
   const q = SOCIAL_LISTENING_QUERY_PARAMS;
   return {
     [q.tab]: scope.activeTab === DEFAULT_MENTION_SCOPE_STATE.activeTab ? null : scope.activeTab,
@@ -204,6 +223,7 @@ export function encodePredicateToQueryParams(p: FilterPredicate, scope: ScopeSta
     [q.tags]: p.tags.length > 0 ? [...p.tags] : null,
     [q.authors]: p.authors.length > 0 ? [...p.authors] : null,
     [q.search]: p.search === DEFAULT_MENTION_PREDICATE.search ? null : p.search,
+    [q.view]: viewId ?? null,
   };
 }
 
@@ -221,8 +241,11 @@ function coercePeriod(value: string | undefined, defaultPeriod: string): string 
   return value && resolvePeriodRange(value) ? value : defaultPeriod;
 }
 
-/** Falls back to DEFAULT for any missing key; coerces literals to valid union values. */
-export function decodePredicateFromQueryParams(params: SocialListeningQueryParams, defaultPeriod: string): { predicate: FilterPredicate; scope: ScopeState } {
+/** Falls back to DEFAULT for any missing key; coerces literals to valid union values. `viewId` is the raw `?view=` scalar, `null` when absent. */
+export function decodePredicateFromQueryParams(
+  params: SocialListeningQueryParams,
+  defaultPeriod: string
+): { predicate: FilterPredicate; scope: ScopeState; viewId: string | null } {
   const q = SOCIAL_LISTENING_QUERY_PARAMS;
 
   const activeTab: ScopeState['activeTab'] = asScalar(params[q.tab]) === 'analytics' ? 'analytics' : 'feed';
@@ -253,7 +276,7 @@ export function decodePredicateFromQueryParams(params: SocialListeningQueryParam
     platform: asScalar(params[q.platform]) || DEFAULT_MENTION_SCOPE_STATE.platform,
   };
 
-  return { predicate, scope };
+  return { predicate, scope, viewId: asScalar(params[q.view]) || null };
 }
 
 export function scopesEqual(a: ScopeState, b: ScopeState): boolean {
@@ -269,4 +292,34 @@ export function queryParamsEqual(a: SocialListeningQueryParams, b: SocialListeni
     if (!sortedEqual(asMultiValue(a[key]), asMultiValue(b[key]))) return false;
   }
   return true;
+}
+
+/**
+ * Parses the persisted saved-filters doc (PCC port): an unknown version, a non-array `filters`, or an
+ * unparseable input yields a read-only fallback so a newer/foreign doc is never clobbered; malformed rows are salvaged past.
+ */
+export function parseSavedFilters(raw: unknown): ParseResult<SavedFilter[]> {
+  const defaultPeriod = getDefaultMarketingImpactPeriod();
+  try {
+    const parsed = (typeof raw === 'string' ? JSON.parse(raw) : raw) as Partial<SavedFiltersDoc> | null;
+    if (typeof parsed?.version !== 'number' || parsed.version !== SAVED_FILTERS_DOC_VERSION) {
+      return { data: [], readOnly: true };
+    }
+    if (!Array.isArray(parsed.filters)) return { data: [], readOnly: true };
+    const filters: SavedFilter[] = [];
+    for (const entry of parsed.filters as unknown[]) {
+      const f = entry as Partial<SavedFilter> | null;
+      if (!f || typeof f.id !== 'string' || typeof f.name !== 'string') continue;
+      filters.push({
+        id: f.id,
+        name: f.name,
+        predicate: normalizePredicate(f.predicate),
+        scope: normalizeViewScope(f.scope, defaultPeriod),
+        createdAt: typeof f.createdAt === 'string' ? f.createdAt : new Date().toISOString(),
+      });
+    }
+    return { data: filters };
+  } catch {
+    return { data: [], readOnly: true };
+  }
 }

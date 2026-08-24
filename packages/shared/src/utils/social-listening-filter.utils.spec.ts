@@ -7,9 +7,10 @@ import {
   DEFAULT_MENTION_PREDICATE,
   DEFAULT_MENTION_SCOPE_STATE,
   MENTION_FILTER_UI_MAX_VALUES,
+  SAVED_FILTERS_DOC_VERSION,
   SOCIAL_LISTENING_QUERY_PARAMS,
 } from '../constants/social-listening.constants';
-import type { FilterPredicate, ScopeState, SocialListeningQueryParams } from '../interfaces/social-listening.interface';
+import type { FilterPredicate, SavedFilter, SavedFiltersDoc, ScopeState, SocialListeningQueryParams } from '../interfaces/social-listening.interface';
 import {
   countActiveFilters,
   decodePredicateFromQueryParams,
@@ -19,8 +20,10 @@ import {
   normalizeMentionSearch,
   normalizePredicate,
   normalizeViewScope,
+  parseSavedFilters,
   predicatesEqual,
   queryParamsEqual,
+  sameSavedViewLabelPredicate,
   scopesEqual,
   viewScopesEqual,
 } from './social-listening-filter.utils';
@@ -40,7 +43,7 @@ function scope(overrides: Partial<ScopeState> = {}): ScopeState {
 
 describe('encode / decode round-trip', () => {
   it('elides every default to null so merge-handling strips them from the URL', () => {
-    const params = encodePredicateToQueryParams(predicate(), scope(), DEFAULT_PERIOD);
+    const params = encodePredicateToQueryParams(predicate(), scope(), null, DEFAULT_PERIOD);
 
     expect(Object.values(params).every((value) => value === null)).toBe(true);
   });
@@ -58,14 +61,14 @@ describe('encode / decode round-trip', () => {
     });
     const originalScope = scope({ activeTab: 'analytics', period: '2026-03', sourceProjectId: 'proj-1', platform: 'reddit' });
 
-    const decoded = decodePredicateFromQueryParams(encodePredicateToQueryParams(original, originalScope, DEFAULT_PERIOD), DEFAULT_PERIOD);
+    const decoded = decodePredicateFromQueryParams(encodePredicateToQueryParams(original, originalScope, null, DEFAULT_PERIOD), DEFAULT_PERIOD);
 
     expect(decoded.predicate).toEqual(original);
     expect(decoded.scope).toEqual(originalScope);
   });
 
   it('round-trips the elided defaults back to the defaults', () => {
-    const decoded = decodePredicateFromQueryParams(encodePredicateToQueryParams(predicate(), scope(), DEFAULT_PERIOD), DEFAULT_PERIOD);
+    const decoded = decodePredicateFromQueryParams(encodePredicateToQueryParams(predicate(), scope(), null, DEFAULT_PERIOD), DEFAULT_PERIOD);
 
     expect(decoded.predicate).toEqual(predicate());
     expect(decoded.scope).toEqual(scope());
@@ -74,25 +77,25 @@ describe('encode / decode round-trip', () => {
   it('round-trips the bookmark filter and elides it at the default', () => {
     const original = predicate({ bookmarkFilter: 'bookmarked' });
 
-    const encoded = encodePredicateToQueryParams(original, scope(), DEFAULT_PERIOD);
+    const encoded = encodePredicateToQueryParams(original, scope(), null, DEFAULT_PERIOD);
     expect(encoded[q.bookmarks]).toBe('bookmarked');
     expect(decodePredicateFromQueryParams(encoded, DEFAULT_PERIOD).predicate).toEqual(original);
 
-    expect(encodePredicateToQueryParams(predicate(), scope(), DEFAULT_PERIOD)[q.bookmarks]).toBeNull();
+    expect(encodePredicateToQueryParams(predicate(), scope(), null, DEFAULT_PERIOD)[q.bookmarks]).toBeNull();
   });
 
   it('round-trips the read filter and elides it at the default', () => {
     const original = predicate({ readFilter: 'unread' });
 
-    const encoded = encodePredicateToQueryParams(original, scope(), DEFAULT_PERIOD);
+    const encoded = encodePredicateToQueryParams(original, scope(), null, DEFAULT_PERIOD);
     expect(encoded[q.read]).toBe('unread');
     expect(decodePredicateFromQueryParams(encoded, DEFAULT_PERIOD).predicate).toEqual(original);
 
-    expect(encodePredicateToQueryParams(predicate(), scope(), DEFAULT_PERIOD)[q.read]).toBeNull();
+    expect(encodePredicateToQueryParams(predicate(), scope(), null, DEFAULT_PERIOD)[q.read]).toBeNull();
   });
 
   it('resolves the period from the runtime default rather than the constant placeholder', () => {
-    const encoded = encodePredicateToQueryParams(predicate(), scope({ period: DEFAULT_PERIOD }), DEFAULT_PERIOD);
+    const encoded = encodePredicateToQueryParams(predicate(), scope({ period: DEFAULT_PERIOD }), null, DEFAULT_PERIOD);
     expect(encoded[q.period]).toBeNull();
 
     const decoded = decodePredicateFromQueryParams({}, DEFAULT_PERIOD);
@@ -101,7 +104,7 @@ describe('encode / decode round-trip', () => {
   });
 
   it('encodes multi-value keys as arrays (the router emits repeated params)', () => {
-    const encoded = encodePredicateToQueryParams(predicate({ keywords: ['a', 'b'], tags: ['x'], authors: ['@u1', '@u2'] }), scope(), DEFAULT_PERIOD);
+    const encoded = encodePredicateToQueryParams(predicate({ keywords: ['a', 'b'], tags: ['x'], authors: ['@u1', '@u2'] }), scope(), null, DEFAULT_PERIOD);
 
     expect(encoded[q.keywords]).toEqual(['a', 'b']);
     expect(encoded[q.tags]).toEqual(['x']);
@@ -120,7 +123,7 @@ describe('encode / decode round-trip', () => {
     // Regression: the old comma-joined codec split `a,b` back into two bogus selections.
     const original = predicate({ tags: ['a,b'], authors: ['Last, First'] });
 
-    const decoded = decodePredicateFromQueryParams(encodePredicateToQueryParams(original, scope(), DEFAULT_PERIOD), DEFAULT_PERIOD);
+    const decoded = decodePredicateFromQueryParams(encodePredicateToQueryParams(original, scope(), null, DEFAULT_PERIOD), DEFAULT_PERIOD);
 
     expect(decoded.predicate.tags).toEqual(['a,b']);
     expect(decoded.predicate.authors).toEqual(['Last, First']);
@@ -129,7 +132,7 @@ describe('encode / decode round-trip', () => {
   it('preserves non-delimiter characters verbatim', () => {
     const original = predicate({ search: 'a=b&c #hash /slash %pct', authors: ['@user name'] });
 
-    const decoded = decodePredicateFromQueryParams(encodePredicateToQueryParams(original, scope(), DEFAULT_PERIOD), DEFAULT_PERIOD);
+    const decoded = decodePredicateFromQueryParams(encodePredicateToQueryParams(original, scope(), null, DEFAULT_PERIOD), DEFAULT_PERIOD);
 
     expect(decoded.predicate.search).toBe('a=b&c #hash /slash %pct');
     expect(decoded.predicate.authors).toEqual(['@user name']);
@@ -138,7 +141,10 @@ describe('encode / decode round-trip', () => {
   it('normalizes keywords on ingress, not on encode', () => {
     // Encode keeps the array verbatim — the predicate reaching it has already been through
     // predicateFromSignals/normalizePredicate. Decode is where untrusted input is canonicalized.
-    expect(encodePredicateToQueryParams(predicate({ keywords: ['Kubernetes', 'cncf'] }), scope(), DEFAULT_PERIOD)[q.keywords]).toEqual(['Kubernetes', 'cncf']);
+    expect(encodePredicateToQueryParams(predicate({ keywords: ['Kubernetes', 'cncf'] }), scope(), null, DEFAULT_PERIOD)[q.keywords]).toEqual([
+      'Kubernetes',
+      'cncf',
+    ]);
 
     expect(decodePredicateFromQueryParams({ [q.keywords]: ['Kubernetes', 'KUBERNETES', 'cncf'] }, DEFAULT_PERIOD).predicate.keywords).toEqual([
       'kubernetes',
@@ -201,7 +207,7 @@ describe('decode coercion', () => {
 
   it('round-trips array filters at the UI selection cap', () => {
     const values = Array.from({ length: MENTION_FILTER_UI_MAX_VALUES }, (_, i) => `tag-${i}`);
-    const encoded = encodePredicateToQueryParams(predicate({ tags: values }), scope(), DEFAULT_PERIOD);
+    const encoded = encodePredicateToQueryParams(predicate({ tags: values }), scope(), null, DEFAULT_PERIOD);
 
     expect(decodePredicateFromQueryParams(encoded, DEFAULT_PERIOD).predicate.tags).toEqual(values);
   });
@@ -209,7 +215,7 @@ describe('decode coercion', () => {
 
 describe('queryParamsEqual', () => {
   it('ignores keys the codec does not own', () => {
-    const encoded = encodePredicateToQueryParams(predicate({ sentiment: 'positive' }), scope(), DEFAULT_PERIOD);
+    const encoded = encodePredicateToQueryParams(predicate({ sentiment: 'positive' }), scope(), null, DEFAULT_PERIOD);
     // Live router params carry `project` (projectQueryParamGuard) and any utm_* the visitor arrived with.
     const live: SocialListeningQueryParams = { ...encoded, project: 'cncf', utm_source: 'newsletter' };
 
@@ -300,5 +306,107 @@ describe('view scope helpers', () => {
     expect(scopesEqual(scope(), scope())).toBe(true);
     expect(scopesEqual(scope(), scope({ activeTab: 'analytics' }))).toBe(false);
     expect(scopesEqual(scope(), scope({ period: '2026-03' }))).toBe(false);
+  });
+});
+
+describe('saved-view codec (?view=)', () => {
+  it('round-trips a view id and strips the key at null', () => {
+    const encoded = encodePredicateToQueryParams(predicate(), scope(), 'view-1', DEFAULT_PERIOD);
+    expect(encoded[q.view]).toBe('view-1');
+    expect(decodePredicateFromQueryParams(encoded, DEFAULT_PERIOD).viewId).toBe('view-1');
+
+    expect(encodePredicateToQueryParams(predicate(), scope(), null, DEFAULT_PERIOD)[q.view]).toBeNull();
+    expect(decodePredicateFromQueryParams({}, DEFAULT_PERIOD).viewId).toBeNull();
+  });
+
+  it('collapses a repeated ?view= to its first value and treats empty as absent', () => {
+    expect(decodePredicateFromQueryParams({ [q.view]: ['a', 'b'] }, DEFAULT_PERIOD).viewId).toBe('a');
+    expect(decodePredicateFromQueryParams({ [q.view]: '' }, DEFAULT_PERIOD).viewId).toBeNull();
+  });
+
+  it('queryParamsEqual covers the view key (missing/null ≡ absent)', () => {
+    expect(queryParamsEqual({ [q.view]: 'a' }, {})).toBe(false);
+    expect(queryParamsEqual({ [q.view]: 'a' }, { [q.view]: 'a' })).toBe(true);
+    expect(queryParamsEqual({ [q.view]: null }, {})).toBe(true);
+  });
+});
+
+describe('sameSavedViewLabelPredicate', () => {
+  it('ignores search-only drift but detects any other difference', () => {
+    const base = predicate({ sentiment: 'positive', keywords: ['a'], tags: ['x'], search: 'mesh' });
+
+    expect(sameSavedViewLabelPredicate(base, { ...base, search: 'refined' })).toBe(true);
+    expect(sameSavedViewLabelPredicate(base, { ...base, search: '' })).toBe(true);
+    expect(sameSavedViewLabelPredicate(base, { ...base, sentiment: 'negative' })).toBe(false);
+    expect(sameSavedViewLabelPredicate(base, { ...base, keywords: ['b'] })).toBe(false);
+    expect(sameSavedViewLabelPredicate(base, { ...base, readFilter: 'unread' })).toBe(false);
+    expect(sameSavedViewLabelPredicate(base, { ...base })).toBe(true);
+  });
+});
+
+describe('parseSavedFilters', () => {
+  const validScope = { period: '2026-03', sourceProjectId: 'proj-1', platform: 'reddit' };
+
+  function savedFilter(overrides: Partial<SavedFilter> = {}): SavedFilter {
+    return { id: 'v1', name: 'Crisis', predicate: predicate(), scope: { ...validScope }, createdAt: '2026-01-01T00:00:00.000Z', ...overrides };
+  }
+
+  it('parses a stringified doc and re-normalizes each row', () => {
+    const doc: SavedFiltersDoc = {
+      version: SAVED_FILTERS_DOC_VERSION,
+      filters: [savedFilter({ predicate: { ...predicate(), sentiment: 'negative', keywords: ['Kubernetes', 'KUBERNETES'] } })],
+    };
+
+    const result = parseSavedFilters(JSON.stringify(doc));
+
+    expect(result.readOnly).toBeUndefined();
+    expect(result.data).toEqual([savedFilter({ predicate: predicate({ sentiment: 'negative', keywords: ['kubernetes'] }) })]);
+  });
+
+  it('accepts an already-parsed doc object', () => {
+    const doc: SavedFiltersDoc = { version: SAVED_FILTERS_DOC_VERSION, filters: [savedFilter()] };
+
+    expect(parseSavedFilters(doc)).toEqual({ data: [savedFilter()] });
+  });
+
+  it('returns read-only for an unknown or missing version so a newer doc is never clobbered', () => {
+    expect(parseSavedFilters({ version: SAVED_FILTERS_DOC_VERSION + 1, filters: [] })).toEqual({ data: [], readOnly: true });
+    expect(parseSavedFilters({ filters: [] })).toEqual({ data: [], readOnly: true });
+    expect(parseSavedFilters(JSON.stringify({ version: 'one', filters: [] }))).toEqual({ data: [], readOnly: true });
+  });
+
+  it('returns read-only when filters is not an array', () => {
+    expect(parseSavedFilters({ version: SAVED_FILTERS_DOC_VERSION, filters: 'nope' })).toEqual({ data: [], readOnly: true });
+  });
+
+  it('salvages valid rows — drops entries without string id/name and backfills createdAt', () => {
+    const doc = {
+      version: SAVED_FILTERS_DOC_VERSION,
+      filters: [
+        savedFilter(),
+        { name: 'no id' },
+        { id: 42, name: 'bad id' },
+        null,
+        savedFilter({ id: 'v2', name: 'No date', createdAt: undefined as unknown as string }),
+      ],
+    };
+
+    const result = parseSavedFilters(doc);
+
+    expect(result.readOnly).toBeUndefined();
+    expect(result.data.map((f) => f.id)).toEqual(['v1', 'v2']);
+    expect(result.data[1]?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('normalizes a partial scope against the runtime default period', () => {
+    const result = parseSavedFilters({ version: SAVED_FILTERS_DOC_VERSION, filters: [savedFilter({ scope: { platform: 'X' } as SavedFilter['scope'] })] });
+
+    expect(result.data[0]?.scope.platform).toBe('X');
+    expect(result.data[0]?.scope.period).not.toBe('');
+    expect(result.data[0]?.scope.sourceProjectId).toBe('all');
+  });
+
+  it('returns read-only on a JSON throw', () => {
+    expect(parseSavedFilters('{not json')).toEqual({ data: [], readOnly: true });
   });
 });

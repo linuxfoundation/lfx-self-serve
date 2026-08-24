@@ -1,0 +1,94 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="views-dropdown" data-testid="views-dropdown">
+  <div class="mb-3 flex items-center justify-between px-1">
+    <h3 class="flex items-center gap-1.5 text-sm font-bold tracking-wide text-gray-800">
+      <i
+        class="fa-light fa-circle-info text-xs text-gray-400"
+        pTooltip="Choose your filters, then save them as a preset view for quick access later. Switch between saved preset views at any time."
+        tooltipPosition="right"></i>
+      SAVED FILTER VIEWS
+    </h3>
+  </div>
+
+  @let activeId = activeViewId();
+
+  <ul #viewsList class="views-list" (keydown)="onListKeydown($event)">
+    <li class="view-row default-view-row" [class.view-row--active]="activeId === null">
+      <button type="button" class="view-row__apply" data-testid="views-dropdown-default-row" (click)="defaultViewSelected.emit()">
+        @if (activeId === null) {
+          <i class="pi pi-check view-row__check"></i>
+        }
+        <span class="view-row__name">No Preset View</span>
+      </button>
+    </li>
+
+    @if (savedViews().length > 0) {
+      <li class="views-list__divider" aria-hidden="true"></li>
+    }
+
+    @if (isLoading()) {
+      <li class="views-list__skeleton-row" data-testid="views-dropdown-skeleton"><p-skeleton height="2rem"></p-skeleton></li>
+      <li class="views-list__skeleton-row" data-testid="views-dropdown-skeleton"><p-skeleton height="2rem"></p-skeleton></li>
+      <li class="views-list__skeleton-row" data-testid="views-dropdown-skeleton"><p-skeleton height="2rem"></p-skeleton></li>
+    } @else {
+      @for (view of savedViews(); track view.id) {
+        @let isDeleting = deletingViewIds().has(view.id);
+        @let showTooltip = view.name.length > nameTooltipThreshold;
+        <li class="view-row" [class.view-row--active]="activeId === view.id" data-testid="views-dropdown-view-row">
+          <button type="button" class="view-row__apply" (click)="viewSelected.emit(view)">
+            @if (activeId === view.id) {
+              <i class="pi pi-check view-row__check"></i>
+            }
+            <span class="view-row__name" [pTooltip]="view.name" [tooltipDisabled]="!showTooltip" tooltipPosition="top">
+              {{ view.name }}
+            </span>
+          </button>
+          <div class="view-row__actions">
+            @if (isDeleting) {
+              <span class="row-action row-action--loading" aria-hidden="true" data-testid="views-dropdown-deleting">
+                <i class="fa-light fa-spinner-third fa-spin text-gray-400"></i>
+              </span>
+            } @else {
+              <button
+                type="button"
+                class="row-action row-action--danger"
+                [attr.aria-label]="'Delete view ' + view.name"
+                pTooltip="Delete view"
+                tooltipPosition="top"
+                [disabled]="readOnly()"
+                (click)="onDeleteClick($event, view)"
+                data-testid="views-dropdown-delete">
+                <i class="fa-light fa-trash"></i>
+              </button>
+            }
+          </div>
+        </li>
+      }
+    }
+  </ul>
+
+  @if (!isLoading() && savedViews().length === 0) {
+    <div class="empty-state" data-testid="views-dropdown-empty">
+      <p class="mt-1 text-xs text-gray-400">No saved views yet. Apply some filters and save them as a view to access them quickly.</p>
+    </div>
+  }
+
+  @if (canSaveCurrentView()) {
+    <div class="views-dropdown__footer">
+      <button
+        type="button"
+        class="footer-action footer-action--primary"
+        [disabled]="atSavedViewLimit() || readOnly()"
+        [pTooltip]="'Limit of ' + savedViewLimit() + ' reached. Remove a view to save a new one.'"
+        [tooltipDisabled]="!atSavedViewLimit()"
+        tooltipPosition="top"
+        (click)="saveCurrentViewRequested.emit()"
+        data-testid="views-dropdown-save-current">
+        <i class="fa-light fa-plus"></i>
+        <span>Save current view</span>
+      </button>
+    </div>
+  }
+</div>

@@ -106,6 +106,18 @@ export const MENTION_IDS_MAX_VALUES = 500;
 /** Cap per read-state ID array (`readIds`/`unreadIds`) — same value as the bookmark cap, distinct semantic: cutoff overrides, not a query bound. */
 export const MAX_READ_IDS = 500;
 
+/** Saved-view cap per user+foundation (LFXV2-3002 Block 3, PCC parity) — bounds the preference doc payload and the dropdown. */
+export const MAX_SAVED_FILTERS_PER_PROJECT = 50;
+
+/** Persisted saved-filters doc version — an unknown version parses read-only so a doc written by a newer client is never clobbered. */
+export const SAVED_FILTERS_DOC_VERSION = 1;
+
+/** Save-view dialog name cap (PCC parity). */
+export const SAVED_VIEW_NAME_MAX_LENGTH = 50;
+
+/** Views-dropdown names at or below this length render in full, so the hover tooltip is suppressed as redundant. */
+export const VIEWS_DROPDOWN_NAME_TOOLTIP_THRESHOLD = 22;
+
 /** Row cap for the `mentions-tags` endpoint — serves both the tag filter dropdown and the analytics top-tags panel. */
 export const MENTION_TOP_TAGS_LIMIT = 10;
 
@@ -159,7 +171,7 @@ export const FILTERS_PANEL_FOCUSABLE_SELECTOR = 'a[href], button:not([disabled])
 // ---------------------------------------------------------------------------
 
 /**
- * URL query-param keys for the predicate + scope round-trip; PCC's `view` key is dropped (Block 3) and `range` is renamed to `period`.
+ * URL query-param keys for the predicate + scope + saved-view round-trip; PCC's `range` is renamed to `period`.
  * This page must own its route — before any embedded-shell composition, namespace the generic keys (`tab`, `q`, e.g. `slTab`).
  */
 export const SOCIAL_LISTENING_QUERY_PARAMS = {
@@ -179,6 +191,7 @@ export const SOCIAL_LISTENING_QUERY_PARAMS = {
   tags: 'tags',
   authors: 'authors',
   search: 'q',
+  view: 'view',
 } as const;
 
 /** Default predicate. Consumers must clone the array fields before mutating — `predicateFromSignals`/`applyPredicateToSignals` already do. */

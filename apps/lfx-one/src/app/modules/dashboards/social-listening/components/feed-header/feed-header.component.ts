@@ -47,6 +47,12 @@ export class FeedHeaderComponent {
   public readonly activeFilterCount = input(0);
   public readonly filtersPrefetch = output<void>();
 
+  // === Saved views trigger (LFXV2-3002 Block 3) ===
+  public readonly viewsVisible = model(false);
+  public readonly activeViewName = input<string | null>(null);
+
+  protected readonly viewsLabel = computed(() => this.activeViewName() ?? 'No Preset View');
+
   // === Analytics export (LFXV2-3018) — button renders on the Analytics tab only ===
   public readonly exporting = input(false);
   /** Disabled beyond the in-flight export (e.g. while analytics panels still load). */
@@ -99,8 +105,17 @@ export class FeedHeaderComponent {
     }
   }
 
+  // One panel at a time (PCC's activePanel union): opening one closes the other.
   protected toggleFilters(): void {
-    this.filtersVisible.update((visible) => !visible);
+    const opening = !this.filtersVisible();
+    if (opening) this.viewsVisible.set(false);
+    this.filtersVisible.set(opening);
+  }
+
+  protected toggleViews(): void {
+    const opening = !this.viewsVisible();
+    if (opening) this.filtersVisible.set(false);
+    this.viewsVisible.set(opening);
   }
 
   /** Dialog contract: closing the panel (Escape, backdrop, toggle) must hand focus back to its trigger. */

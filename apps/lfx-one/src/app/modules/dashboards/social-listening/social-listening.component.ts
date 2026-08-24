@@ -12,6 +12,8 @@ import { MessageComponent } from '@components/message/message.component';
 import {
   DEFAULT_MENTION_PAGE_SIZE,
   DEFAULT_MENTION_PREDICATE,
+  DEFAULT_MENTION_VIEW_SCOPE,
+  MAX_SAVED_FILTERS_PER_PROJECT,
   MENTION_FILTER_MAX_VALUES,
   MENTION_MAX_CACHED_WINDOWS,
   MENTION_MAX_FEED_OFFSET,
@@ -23,12 +25,15 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   applyPredicateToSignals,
+  applyViewScopeToSignals,
   buildActiveFilterPills,
   buildMentionFilters,
   countActiveFilters,
   decodePredicateFromQueryParams,
   encodePredicateToQueryParams,
   getDefaultMarketingImpactPeriod,
+  isDefaultViewScope,
+  isEmptyPredicate,
   mapAuthorsToOptions,
   mapLanguagesToOptions,
   mapPlatformsToOptions,
@@ -39,13 +44,20 @@ import {
   predicatesEqual,
   predicateFromSignals,
   queryParamsEqual,
+  sameSavedViewLabelPredicate,
   scopesEqual,
+  viewScopeFromSignals,
+  viewScopesEqual,
 } from '@lfx-one/shared/utils';
 import { MentionBookmarkService } from '@services/mention-bookmark.service';
 import { MentionReadStateService } from '@services/mention-read-state.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SavedFilterService } from '@services/saved-filter.service';
 import { SocialListeningService } from '@services/social-listening.service';
 import { UserService } from '@services/user.service';
+import { ConfirmationService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { DialogService } from 'primeng/dynamicdialog';
 import {
   catchError,
   debounceTime,
@@ -70,12 +82,15 @@ import type {
   LoadableState,
   Mention,
   MentionFilters,
+  SavedFilter,
+  SavedViewScope,
   ScopeState,
   SocialListeningCountRequest,
   SocialListeningFeedRequest,
   SocialListeningFeedResponse,
   SocialListeningPlatform,
   SocialListeningScopedOptionsRequest,
+  SocialListeningScopeSignals,
   SocialListeningSignals,
   SocialListeningSubProject,
   SocialListeningTab,
@@ -86,6 +101,8 @@ import { SocialListeningAnalyticsComponent } from './components/analytics/social
 import { FeedHeaderComponent } from './components/feed-header/feed-header.component';
 import { FiltersPanelComponent } from './components/filters-panel/filters-panel.component';
 import { MentionsListComponent } from './components/mentions-list/mentions-list.component';
+import { SaveViewDialogComponent } from './components/save-view-dialog/save-view-dialog.component';
+import { ViewsDropdownComponent } from './components/views-dropdown/views-dropdown.component';
 
 /** Shared immutable empty-feed value for initial/error/no-scope states. */
 const EMPTY_FEED_RESPONSE: SocialListeningFeedResponse = { mentions: [], computedAt: null };
@@ -106,12 +123,14 @@ const EMPTY_FEED_RESPONSE: SocialListeningFeedResponse = { mentions: [], compute
     FiltersPanelComponent,
     MentionsListComponent,
     SocialListeningAnalyticsComponent,
+    ViewsDropdownComponent,
+    ConfirmDialogModule,
   ],
   templateUrl: './social-listening.component.html',
   styleUrl: './social-listening.component.scss',
   // Component-scoped (PCC parity): each store's destroyRef/injector scopes to the page, so the
   // preference state reloads on foundation switch and is dropped on page leave.
-  providers: [MentionBookmarkService, MentionReadStateService],
+  providers: [MentionBookmarkService, MentionReadStateService, SavedFilterService, DialogService, ConfirmationService],
 })
 export class SocialListeningComponent {
   private readonly destroyRef = inject(DestroyRef);
@@ -122,6 +141,8 @@ export class SocialListeningComponent {
   private readonly socialListeningService = inject(SocialListeningService);
   private readonly mentionBookmarkService = inject(MentionBookmarkService);
   private readonly mentionReadStateService = inject(MentionReadStateService);
+  private readonly savedFilterService = inject(SavedFilterService);
+  private readonly dialogService = inject(DialogService);
   private readonly userService = inject(UserService);
 
   private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
@@ -161,6 +182,11 @@ export class SocialListeningComponent {
   // === Filters panel state (LFXV2-3017) ===
   public readonly filtersOpen = signal(false);
   private readonly filtersOpenedOnce = signal(false);
+
+  // === Saved views (LFXV2-3002 Block 3) ===
+  public readonly activeViewId = signal<string | null>(null);
+  public readonly viewsOpen = signal(false);
+  public readonly foreignViewBannerVisible = signal(false);
 
   // === Analytics export state (LFXV2-3018) — the header emits, the analytics component captures ===
   public readonly exporting = signal(false);
@@ -292,6 +318,28 @@ export class SocialListeningComponent {
     { equal: scopesEqual }
   );
 
+  // Scope bundle captured by saved views (period/project/platform only — the tab is not part of a view).
+  private readonly scopeSignals: SocialListeningScopeSignals = {
+    selectedPeriod: this.selectedPeriod,
+    selectedProject: this.selectedProject,
+    selectedPlatform: this.selectedPlatform,
+  };
+
+  public readonly currentViewScope = computed<SavedViewScope>(() => viewScopeFromSignals(this.scopeSignals), { equal: viewScopesEqual });
+
+  // === Saved-view state (derived from the SavedFilterService store) ===
+  public readonly savedFilters = computed(() => this.savedFilterService.state().data);
+  public readonly deletingViewIds = computed(() => this.savedFilterService.deletingViewIds());
+  public readonly savedFiltersLoading = computed(() => this.savedFilterService.state().loading);
+  public readonly savedViewsReadOnly = computed(() => this.savedFilterService.state().readOnly);
+  public readonly atSavedViewLimit = computed(() => this.savedFilters().length >= MAX_SAVED_FILTERS_PER_PROJECT);
+  public readonly savedViewNames = computed(() => this.savedFilters().map((v) => v.name));
+  public readonly savedViewLimit = MAX_SAVED_FILTERS_PER_PROJECT;
+  public readonly canSaveCurrentView = computed(
+    () => (!isEmptyPredicate(this.currentPredicate()) || !isDefaultViewScope(this.currentViewScope(), this.defaultPeriod)) && !this.savedViewsReadOnly()
+  );
+  public readonly activeViewName: Signal<string | null> = this.initActiveViewName();
+
   public constructor() {
     // Relative timestamps refresh on a shared tick — browser-only (setInterval), one interval
     // for the whole page instead of PCC's per-card intervals.
@@ -303,9 +351,10 @@ export class SocialListeningComponent {
     // URL → state. Deep-equality guards make this idempotent for emissions we caused ourselves
     // (the URL-write effect below) and for router churn unrelated to our params.
     this.route.queryParams.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
-      const { predicate, scope } = decodePredicateFromQueryParams(params, this.defaultPeriod);
-      if (predicatesEqual(predicate, this.currentPredicate()) && scopesEqual(scope, this.currentScope())) return;
+      const { predicate, scope, viewId } = decodePredicateFromQueryParams(params, this.defaultPeriod);
+      if (predicatesEqual(predicate, this.currentPredicate()) && scopesEqual(scope, this.currentScope()) && viewId === this.activeViewId()) return;
       applyPredicateToSignals(predicate, this.signals);
+      this.activeViewId.set(viewId);
       this.activeTab.set(scope.activeTab);
       this.selectedPeriod.set(scope.period);
       this.selectedProject.set(scope.sourceProjectId);
@@ -316,7 +365,7 @@ export class SocialListeningComponent {
     // State → URL. `merge` preserves 3rd-party params (utm_*); the encoder emits explicit nulls
     // for owned keys at default so merge removes them. queryParamsEqual prevents write loops.
     effect(() => {
-      const target = encodePredicateToQueryParams(this.currentPredicate(), this.currentScope(), this.defaultPeriod);
+      const target = encodePredicateToQueryParams(this.currentPredicate(), this.currentScope(), this.activeViewId(), this.defaultPeriod);
       // Don't strip a deep-linked ?search= while the debounced query is still catching up to the input.
       const pendingSearch = this.searchInput().trim();
       if (pendingSearch.length >= MENTION_SEARCH_MIN_CHARS && pendingSearch !== this.searchQuery()) return;
@@ -352,9 +401,13 @@ export class SocialListeningComponent {
       });
     });
 
-    // Close the panel on tab leave — remounting it on return would steal focus into a dialog the user never reopened.
+    // Close the panels on tab leave — remounting them on return would steal focus into a dialog the user never reopened.
     effect(() => {
-      if (this.activeTab() === 'analytics') untracked(() => this.filtersOpen.set(false));
+      if (this.activeTab() === 'analytics')
+        untracked(() => {
+          this.filtersOpen.set(false);
+          this.viewsOpen.set(false);
+        });
     });
 
     // Any scope/filter change restarts pagination from the first page with a cold window cache.
@@ -379,6 +432,7 @@ export class SocialListeningComponent {
       untracked(() => {
         this.mentionBookmarkService.setContext(ctx);
         this.mentionReadStateService.setContext(ctx);
+        this.savedFilterService.setContext(ctx);
       });
     });
 
@@ -391,6 +445,7 @@ export class SocialListeningComponent {
       if (previous !== null && previous !== '' && previous !== current) {
         this.selectedProject.set('all');
         this.selectedPlatform.set('all');
+        this.activeViewId.set(null);
       }
       this.previousFoundationSlug = current;
     });
@@ -433,6 +488,30 @@ export class SocialListeningComponent {
         this.selectedTags.set([]);
       }
       this.previousScopeKey = scopeKey;
+    });
+
+    // Foreign-view detector (PCC port): gated on !savedFiltersLoading() so a cold ?view= id isn't wiped
+    // before the list arrives. Not-found + non-default state → clear id + banner; found-but-drifted → silent clear.
+    effect(() => {
+      const projectId = this.projectContextService.selectedFoundationSfid();
+      const userId = this.userService.user()?.sub;
+      if (!projectId || !userId) return;
+      if (this.savedFiltersLoading()) return;
+      const id = this.activeViewId();
+      if (!id) return;
+      const predicate = this.currentPredicate();
+      const scope = this.currentViewScope();
+      untracked(() => {
+        const view = this.savedFilters().find((v) => v.id === id);
+        if (!view) {
+          this.activeViewId.set(null);
+          if (!isEmptyPredicate(predicate) || !isDefaultViewScope(scope, this.defaultPeriod)) {
+            this.foreignViewBannerVisible.set(true);
+          }
+        } else if (!sameSavedViewLabelPredicate(predicate, view.predicate) || !viewScopesEqual(scope, view.scope)) {
+          this.activeViewId.set(null);
+        }
+      });
     });
 
     // One-way latch (3017): defer filter-option requests until the panel is first opened;
@@ -489,6 +568,68 @@ export class SocialListeningComponent {
     }
   }
 
+  // === Saved views (LFXV2-3002 Block 3, PCC port) ===
+
+  /** Applies a view's predicate + scope; the commit keeps the scope-key reset effect from wiping its keywords/tags. */
+  public applyView(view: SavedFilter): void {
+    this.activeViewId.set(view.id);
+    applyPredicateToSignals(view.predicate, this.signals);
+    applyViewScopeToSignals(view.scope, this.scopeSignals);
+    this.commitScopeKey();
+  }
+
+  public saveCurrentView(name: string): void {
+    const created = this.savedFilterService.addSavedFilter(name, this.currentPredicate(), this.currentViewScope());
+    if (created) this.activeViewId.set(created.id);
+  }
+
+  public onSavedViewDeleted(id: string): void {
+    this.savedFilterService.removeSavedFilter(id, () => {
+      if (this.activeViewId() === id) this.resetToDefaultViewState();
+    });
+  }
+
+  public onViewSelected(view: SavedFilter): void {
+    this.applyView(view);
+    this.foreignViewBannerVisible.set(false);
+  }
+
+  public onDefaultViewSelected(): void {
+    this.resetToDefaultViewState();
+    this.foreignViewBannerVisible.set(false);
+  }
+
+  public openSaveDialog(): void {
+    // Guard at the entry point so a user at the limit (or read-only) doesn't fill in a name only to be rejected on close.
+    if (this.atSavedViewLimit() || this.savedViewsReadOnly()) return;
+
+    const ref = this.dialogService.open(SaveViewDialogComponent, {
+      header: 'Save current view',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      style: { width: '24rem' },
+      draggable: false,
+      resizable: false,
+      data: { existingNames: this.savedViewNames() },
+    });
+    ref?.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((name: string | undefined) => {
+      if (name) {
+        this.saveCurrentView(name);
+        this.foreignViewBannerVisible.set(false);
+      }
+    });
+  }
+
+  public onSaveFromForeignBanner(): void {
+    // Dismissal happens in openSaveDialog's onClose when a save completes — dismissing here would fire even on cancel.
+    this.openSaveDialog();
+  }
+
+  public dismissForeignViewBanner(): void {
+    this.foreignViewBannerVisible.set(false);
+  }
+
   /** Triggers the analytics PNG export (LFXV2-3018) by bumping the nonce the analytics component reacts to. */
   public onExportAnalytics(): void {
     this.exportNonce.update((nonce) => nonce + 1);
@@ -527,6 +668,14 @@ export class SocialListeningComponent {
     const scopeKey = this.computeScopeKey();
     if (!scopeKey) return;
     this.previousScopeKey = scopeKey;
+  }
+
+  /** Resets predicate + scope to the defaults and drops the active view — the "No Preset View" / active-view-deleted path. */
+  private resetToDefaultViewState(): void {
+    applyPredicateToSignals({ ...DEFAULT_MENTION_PREDICATE, keywords: [], tags: [], authors: [] }, this.signals);
+    applyViewScopeToSignals({ ...DEFAULT_MENTION_VIEW_SCOPE, period: this.defaultPeriod }, this.scopeSignals);
+    this.activeViewId.set(null);
+    this.commitScopeKey();
   }
 
   private initSearchQuery(): Signal<string> {
@@ -889,6 +1038,14 @@ export class SocialListeningComponent {
       if (!timestamp) return null;
       const date = new Date(timestamp);
       return isNaN(date.getTime()) ? null : date;
+    });
+  }
+
+  private initActiveViewName(): Signal<string | null> {
+    return computed(() => {
+      const id = this.activeViewId();
+      if (!id) return null;
+      return this.savedFilters().find((v) => v.id === id)?.name ?? null;
     });
   }
 

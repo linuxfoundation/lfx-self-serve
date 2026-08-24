@@ -4,18 +4,24 @@
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
+import { DEFAULT_MENTION_PREDICATE, MAX_SAVED_FILTERS_PER_PROJECT } from '@lfx-one/shared/constants';
 import { getDefaultMarketingImpactPeriod, isReadInState } from '@lfx-one/shared/utils';
 import { MentionBookmarkService } from '@services/mention-bookmark.service';
 import { MentionReadStateService } from '@services/mention-read-state.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SavedFilterService } from '@services/saved-filter.service';
 import { SocialListeningService } from '@services/social-listening.service';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject, of, throwError } from 'rxjs';
+import { DialogService } from 'primeng/dynamicdialog';
+import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
+  FilterPredicate,
   Mention,
   ReadStateData,
+  SavedFilter,
+  SavedViewScope,
   SocialListeningFeedRequest,
   SocialListeningFeedResponse,
   SocialListeningMention,
@@ -24,6 +30,7 @@ import type {
   UserPreferenceState,
 } from '@lfx-one/shared/interfaces';
 
+import { FeedHeaderComponent } from './components/feed-header/feed-header.component';
 import { SocialListeningComponent } from './social-listening.component';
 
 /**
@@ -55,6 +62,14 @@ describe('SocialListeningComponent', () => {
   let foundationSignal: ReturnType<typeof signal>;
   let foundationSfid: WritableSignal<string | null>;
   let userSignal: WritableSignal<User | null>;
+  /** SavedFilterService harness — state is the live saved-view list; add/remove mutate it like the real store. */
+  let savedFilterState: WritableSignal<UserPreferenceState<SavedFilter[]>>;
+  let savedFilterDeletingIds: WritableSignal<ReadonlySet<string>>;
+  let setSavedFilterContext: ReturnType<typeof vi.fn>;
+  let addSavedFilter: ReturnType<typeof vi.fn>;
+  let removeSavedFilter: ReturnType<typeof vi.fn>;
+  let dialogOpen: ReturnType<typeof vi.fn>;
+  let dialogClose$: Subject<string | undefined>;
 
   function rawMention(id: string): SocialListeningMention {
     return { MENTION_ID: id, MENTION_TS: '2026-08-01T00:00:00Z' } as SocialListeningMention;
@@ -128,6 +143,20 @@ describe('SocialListeningComponent', () => {
     foundationSignal = signal(FOUNDATION);
     foundationSfid = signal<string | null>(null);
     userSignal = signal<User | null>(null);
+    savedFilterState = signal<UserPreferenceState<SavedFilter[]>>({ data: [], loading: false, readOnly: false, error: null });
+    savedFilterDeletingIds = signal<ReadonlySet<string>>(new Set());
+    setSavedFilterContext = vi.fn();
+    addSavedFilter = vi.fn((name: string, predicate: FilterPredicate, scope: SavedViewScope): SavedFilter => {
+      const created: SavedFilter = { id: 'view-new', name, predicate, scope, createdAt: '2026-08-01T00:00:00.000Z' };
+      savedFilterState.update((s) => ({ ...s, data: [...s.data, created] }));
+      return created;
+    });
+    removeSavedFilter = vi.fn((id: string, onRemoved?: () => void) => {
+      savedFilterState.update((s) => ({ ...s, data: s.data.filter((f) => f.id !== id) }));
+      onRemoved?.();
+    });
+    dialogClose$ = new Subject<string | undefined>();
+    dialogOpen = vi.fn(() => ({ onClose: dialogClose$.asObservable() }));
 
     await TestBed.configureTestingModule({
       imports: [SocialListeningComponent],
@@ -162,13 +191,24 @@ describe('SocialListeningComponent', () => {
       .overrideComponent(SocialListeningComponent, {
         set: {
           template: '',
-          // The page scopes both preference services to itself — swap them here or the real stores would hit the transport.
+          // The page scopes the preference services + dialog/confirm plumbing to itself — swap them here or the real stores would hit the transport.
           providers: [
             { provide: MentionBookmarkService, useValue: { state: bookmarkState, setContext: setBookmarkContext, toggleBookmark } },
             {
               provide: MentionReadStateService,
               useValue: { state: readState, setContext: setReadContext, isRead, toggleRead, markAllAsRead, markAllAsUnread },
             },
+            {
+              provide: SavedFilterService,
+              useValue: {
+                state: savedFilterState,
+                deletingViewIds: savedFilterDeletingIds,
+                setContext: setSavedFilterContext,
+                addSavedFilter,
+                removeSavedFilter,
+              },
+            },
+            { provide: DialogService, useValue: { open: dialogOpen } },
           ],
         },
       })
@@ -626,5 +666,314 @@ describe('SocialListeningComponent', () => {
       fixture.componentInstance.onMarkAllAsUnread();
       expect(markAllAsUnread).toHaveBeenCalledTimes(1);
     });
+  });
+
+  describe('saved views', () => {
+    function savedView(overrides: Partial<SavedFilter> = {}): SavedFilter {
+      return {
+        id: 'v1',
+        name: 'Crisis',
+        predicate: { ...DEFAULT_MENTION_PREDICATE, keywords: [], tags: [], authors: [] },
+        scope: { period: getDefaultMarketingImpactPeriod(), sourceProjectId: 'all', platform: 'all' },
+        createdAt: '2026-08-01T00:00:00.000Z',
+        ...overrides,
+      };
+    }
+
+    function withPredicate(predicate: Partial<FilterPredicate>): Partial<SavedFilter> {
+      return { predicate: { ...DEFAULT_MENTION_PREDICATE, keywords: [], tags: [], authors: [], ...predicate } };
+    }
+
+    /** The foreign-view detector is inert until the user + foundation resolve (context effect). */
+    async function resolveContext(): Promise<void> {
+      userSignal.set({ sub: 'u1' } as User);
+      foundationSfid.set('001ABC0000XYZDEFAAA');
+      await settle();
+    }
+
+    it('sets the saved-filter context together with the other preference services', async () => {
+      expect(setSavedFilterContext).toHaveBeenCalledWith(null);
+
+      await resolveContext();
+
+      expect(setSavedFilterContext).toHaveBeenLastCalledWith({ userId: 'u1', projectId: '001ABC0000XYZDEFAAA' });
+    });
+
+    it('applies a view — predicate + scope + activeViewId together — preserving its keywords/tags across the scope change', async () => {
+      const view = savedView({
+        ...withPredicate({ sentiment: 'negative', keywords: ['kubernetes'], tags: ['ai'] }),
+        scope: { period: '2026-03', sourceProjectId: 'proj-1', platform: 'reddit' },
+      });
+
+      fixture.componentInstance.applyView(view);
+      await settle();
+
+      expect(fixture.componentInstance.activeViewId()).toBe('v1');
+      expect(fixture.componentInstance.selectedSentiment()).toBe('negative');
+      expect(fixture.componentInstance.selectedPeriod()).toBe('2026-03');
+      expect(fixture.componentInstance.selectedProject()).toBe('proj-1');
+      expect(fixture.componentInstance.selectedPlatform()).toBe('reddit');
+      // The scope-key reset effect must not wipe the view's array filters (applyView commits the scope key first).
+      expect(fixture.componentInstance.selectedKeywords()).toEqual(['kubernetes']);
+      expect(fixture.componentInstance.selectedTags()).toEqual(['ai']);
+      expect(currentParams['view']).toBe('v1');
+      expect(currentParams['sentiment']).toBe('negative');
+    });
+
+    it('saves the current view and marks the created view active', async () => {
+      fixture.componentInstance.selectedSentiment.set('negative');
+      await settle();
+
+      fixture.componentInstance.saveCurrentView('Crisis');
+      await settle();
+
+      expect(addSavedFilter).toHaveBeenCalledWith(
+        'Crisis',
+        expect.objectContaining({ sentiment: 'negative' }),
+        expect.objectContaining({ period: getDefaultMarketingImpactPeriod(), sourceProjectId: 'all', platform: 'all' })
+      );
+      expect(fixture.componentInstance.activeViewId()).toBe('view-new');
+      expect(currentParams['view']).toBe('view-new');
+    });
+
+    it('resets predicate + scope to defaults when the active view is deleted, and keeps state when another view is deleted', async () => {
+      const view = savedView({ ...withPredicate({ sentiment: 'negative' }), scope: { period: '2026-03', sourceProjectId: 'proj-1', platform: 'reddit' } });
+      const other = savedView({ id: 'v2', name: 'Other' });
+      savedFilterState.set({ data: [view, other], loading: false, readOnly: false, error: null });
+      fixture.componentInstance.applyView(view);
+      await settle();
+
+      // A non-active delete leaves the applied view untouched.
+      fixture.componentInstance.onSavedViewDeleted('v2');
+      await settle();
+      expect(fixture.componentInstance.activeViewId()).toBe('v1');
+      expect(fixture.componentInstance.selectedSentiment()).toBe('negative');
+
+      fixture.componentInstance.onSavedViewDeleted('v1');
+      await settle();
+
+      expect(removeSavedFilter).toHaveBeenCalledWith('v1', expect.any(Function));
+      expect(fixture.componentInstance.activeViewId()).toBeNull();
+      expect(fixture.componentInstance.selectedSentiment()).toBe('all');
+      expect(fixture.componentInstance.selectedPeriod()).toBe(getDefaultMarketingImpactPeriod());
+      expect(fixture.componentInstance.selectedProject()).toBe('all');
+      expect(fixture.componentInstance.selectedPlatform()).toBe('all');
+      expect(currentParams['view']).toBeUndefined();
+    });
+
+    it('clears the active-view label on manual filter drift — but never for a search-only edit', async () => {
+      await resolveContext();
+      const view = savedView(withPredicate({ sentiment: 'negative' }));
+      savedFilterState.set({ data: [view], loading: false, readOnly: false, error: null });
+      fixture.componentInstance.applyView(view);
+      await settle();
+      expect(fixture.componentInstance.activeViewName()).toBe('Crisis');
+
+      // Search refinement keeps the label (sameSavedViewLabelPredicate ignores search).
+      fixture.componentInstance.searchInput.set('mesh');
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      await settle();
+      expect(fixture.componentInstance.activeViewId()).toBe('v1');
+      expect(fixture.componentInstance.activeViewName()).toBe('Crisis');
+      expect(currentParams['view']).toBe('v1');
+
+      // A non-search drift silently clears the label and strips ?view= from the URL.
+      fixture.componentInstance.selectedSentiment.set('positive');
+      await settle();
+      expect(fixture.componentInstance.activeViewId()).toBeNull();
+      expect(fixture.componentInstance.activeViewName()).toBeNull();
+      expect(fixture.componentInstance.foreignViewBannerVisible()).toBe(false);
+      expect(currentParams['view']).toBeUndefined();
+    });
+
+    it('keeps a cold ?view= id while the saved list loads, then resolves it without a banner', async () => {
+      const view = savedView();
+      savedFilterState.set({ data: [], loading: true, readOnly: false, error: null });
+
+      // Rebuild with the deep link already in the URL (the subscribe reads it at construction).
+      fixture.destroy();
+      currentParams = { view: 'v1' };
+      queryParams$.next(currentParams);
+      fixture = TestBed.createComponent(SocialListeningComponent);
+      fixture.detectChanges();
+      await settle();
+
+      expect(fixture.componentInstance.activeViewId()).toBe('v1');
+      expect(fixture.componentInstance.foreignViewBannerVisible()).toBe(false);
+
+      await resolveContext();
+      // Still loading — the detector must not wipe the id.
+      expect(fixture.componentInstance.activeViewId()).toBe('v1');
+
+      savedFilterState.set({ data: [view], loading: false, readOnly: false, error: null });
+      await settle();
+
+      expect(fixture.componentInstance.activeViewId()).toBe('v1');
+      expect(fixture.componentInstance.activeViewName()).toBe('Crisis');
+      expect(fixture.componentInstance.foreignViewBannerVisible()).toBe(false);
+    });
+
+    it('shows the foreign-view banner for an unknown ?view= with non-default state and clears the id', async () => {
+      await resolveContext();
+      savedFilterState.set({ data: [savedView()], loading: false, readOnly: false, error: null });
+      fixture.componentInstance.selectedSentiment.set('negative');
+      await settle();
+
+      fixture.componentInstance.activeViewId.set('someone-elses-view');
+      await settle();
+
+      expect(fixture.componentInstance.activeViewId()).toBeNull();
+      expect(fixture.componentInstance.foreignViewBannerVisible()).toBe(true);
+      expect(currentParams['view']).toBeUndefined();
+    });
+
+    it('clears a found-but-drifted view id silently — no banner', async () => {
+      await resolveContext();
+      // The view exists but its predicate (negative) doesn't match the current default state.
+      savedFilterState.set({ data: [savedView(withPredicate({ sentiment: 'negative' }))], loading: false, readOnly: false, error: null });
+      await settle();
+
+      fixture.componentInstance.activeViewId.set('v1');
+      await settle();
+
+      expect(fixture.componentInstance.activeViewId()).toBeNull();
+      expect(fixture.componentInstance.foreignViewBannerVisible()).toBe(false);
+    });
+
+    it('saves a copy of the foreign view from the banner and hides the banner', async () => {
+      await resolveContext();
+      savedFilterState.set({ data: [], loading: false, readOnly: false, error: null });
+      fixture.componentInstance.selectedSentiment.set('negative');
+      fixture.componentInstance.activeViewId.set('foreign-id');
+      await settle();
+      expect(fixture.componentInstance.foreignViewBannerVisible()).toBe(true);
+
+      fixture.componentInstance.onSaveFromForeignBanner();
+
+      expect(dialogOpen).toHaveBeenCalledWith(expect.any(Function), expect.objectContaining({ header: 'Save current view', data: { existingNames: [] } }));
+
+      dialogClose$.next('My Crisis');
+      await settle();
+
+      expect(addSavedFilter).toHaveBeenCalledWith('My Crisis', expect.objectContaining({ sentiment: 'negative' }), expect.anything());
+      expect(fixture.componentInstance.activeViewId()).toBe('view-new');
+      expect(fixture.componentInstance.foreignViewBannerVisible()).toBe(false);
+    });
+
+    it('dismisses the foreign-view banner without saving', async () => {
+      await resolveContext();
+      savedFilterState.set({ data: [], loading: false, readOnly: false, error: null });
+      fixture.componentInstance.selectedSentiment.set('negative');
+      fixture.componentInstance.activeViewId.set('foreign-id');
+      await settle();
+      expect(fixture.componentInstance.foreignViewBannerVisible()).toBe(true);
+
+      fixture.componentInstance.dismissForeignViewBanner();
+
+      expect(fixture.componentInstance.foreignViewBannerVisible()).toBe(false);
+      expect(dialogOpen).not.toHaveBeenCalled();
+    });
+
+    it('does not open the save dialog at the limit or when the store is read-only', async () => {
+      savedFilterState.set({
+        data: Array.from({ length: MAX_SAVED_FILTERS_PER_PROJECT }, (_, i) => savedView({ id: `v${i}`, name: `View ${i}` })),
+        loading: false,
+        readOnly: false,
+        error: null,
+      });
+
+      fixture.componentInstance.openSaveDialog();
+      expect(dialogOpen).not.toHaveBeenCalled();
+
+      savedFilterState.set({ data: [], loading: false, readOnly: true, error: null });
+      fixture.componentInstance.openSaveDialog();
+      expect(dialogOpen).not.toHaveBeenCalled();
+    });
+
+    it('strips ?view= when No Preset View is selected and resets to the defaults', async () => {
+      const view = savedView({ ...withPredicate({ sentiment: 'negative' }), scope: { period: '2026-03', sourceProjectId: 'proj-1', platform: 'reddit' } });
+      savedFilterState.set({ data: [view], loading: false, readOnly: false, error: null });
+      fixture.componentInstance.applyView(view);
+      await settle();
+      expect(currentParams['view']).toBe('v1');
+
+      fixture.componentInstance.onDefaultViewSelected();
+      await settle();
+
+      expect(fixture.componentInstance.activeViewId()).toBeNull();
+      expect(fixture.componentInstance.selectedSentiment()).toBe('all');
+      expect(fixture.componentInstance.selectedPeriod()).toBe(getDefaultMarketingImpactPeriod());
+      expect(fixture.componentInstance.selectedProject()).toBe('all');
+      expect(fixture.componentInstance.selectedPlatform()).toBe('all');
+      expect(currentParams['view']).toBeUndefined();
+      expect(currentParams['sentiment']).toBeUndefined();
+    });
+
+    it('applies an inbound ?view= deep link to the active view state', async () => {
+      currentParams = { view: 'v1', sentiment: 'negative' };
+      queryParams$.next(currentParams);
+      await settle();
+
+      expect(fixture.componentInstance.activeViewId()).toBe('v1');
+      expect(fixture.componentInstance.selectedSentiment()).toBe('negative');
+    });
+
+    it('clears the active view on foundation switch', async () => {
+      const view = savedView(withPredicate({ sentiment: 'negative' }));
+      savedFilterState.set({ data: [view], loading: false, readOnly: false, error: null });
+      fixture.componentInstance.applyView(view);
+      await settle();
+      expect(fixture.componentInstance.activeViewId()).toBe('v1');
+
+      foundationSignal.set({ uid: 'f2', name: 'LF', slug: 'linuxfoundation' });
+      await settle();
+
+      expect(fixture.componentInstance.activeViewId()).toBeNull();
+    });
+  });
+});
+
+/** Panel exclusivity lives in the feed-header toggle handlers (PCC's activePanel union semantics); the header has no spec file of its own. */
+describe('FeedHeaderComponent — panel exclusivity', () => {
+  let headerFixture: ComponentFixture<FeedHeaderComponent>;
+
+  beforeEach(async () => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({ imports: [FeedHeaderComponent] })
+      .overrideComponent(FeedHeaderComponent, { set: { template: '' } })
+      .compileComponents();
+
+    headerFixture = TestBed.createComponent(FeedHeaderComponent);
+    headerFixture.componentRef.setInput('activeTab', 'feed');
+    headerFixture.componentRef.setInput('selectedPeriod', '2026-08');
+    headerFixture.componentRef.setInput('selectedProject', 'all');
+    headerFixture.componentRef.setInput('selectedPlatform', 'all');
+    headerFixture.componentRef.setInput('searchInput', '');
+    headerFixture.detectChanges();
+    await headerFixture.whenStable();
+  });
+
+  function toggles(): { toggleViews: () => void; toggleFilters: () => void } {
+    return headerFixture.componentInstance as unknown as { toggleViews: () => void; toggleFilters: () => void };
+  }
+
+  it('opening one panel closes the other; toggling off leaves both closed', () => {
+    const header = headerFixture.componentInstance;
+
+    toggles().toggleFilters();
+    expect(header.filtersVisible()).toBe(true);
+    expect(header.viewsVisible()).toBe(false);
+
+    toggles().toggleViews();
+    expect(header.viewsVisible()).toBe(true);
+    expect(header.filtersVisible()).toBe(false);
+
+    toggles().toggleFilters();
+    expect(header.filtersVisible()).toBe(true);
+    expect(header.viewsVisible()).toBe(false);
+
+    toggles().toggleFilters();
+    expect(header.filtersVisible()).toBe(false);
+    expect(header.viewsVisible()).toBe(false);
   });
 });

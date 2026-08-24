@@ -400,7 +400,7 @@ export interface ScopeState {
   platform: string;
 }
 
-/** Reserved for the deferred saved-views follow-up ticket — kept now so the query-param round-trip stays stable and saved views become "persist a predicate". */
+/** Per-user saved view (LFXV2-3002 Block 3, PCC parity) — the unit saved views persist and `?view=` deep-links reference. */
 export interface SavedFilter {
   /** UUID v4, client-generated; stable for URL ?view= sharing. */
   id: string;
@@ -409,6 +409,12 @@ export interface SavedFilter {
   scope: SavedViewScope;
   /** ISO timestamp. */
   createdAt: string;
+}
+
+/** Persisted preference doc for saved views — `version` gates future migrations; an unknown version parses read-only. */
+export interface SavedFiltersDoc {
+  version: number;
+  filters: SavedFilter[];
 }
 
 // ---------------------------------------------------------------------------

@@ -140,3 +140,78 @@ describe('FiltersPanelComponent', () => {
     expect(preventDefault).not.toHaveBeenCalled();
   });
 });
+
+/** "Save as View" header button: disabled logic + output emission. Template is overridden to the header row only — the real template's PrimeNG multiselects are irrelevant here. */
+describe('FiltersPanelComponent — Save as View', () => {
+  let fixture: ComponentFixture<FiltersPanelComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({ imports: [FiltersPanelComponent] })
+      .overrideComponent(FiltersPanelComponent, {
+        set: {
+          template: `
+            <button type="button" class="save-view-btn"
+                    [disabled]="!canSaveCurrentView() || atSavedViewLimit()"
+                    [pTooltip]="'Limit of ' + savedViewLimit() + ' reached. Remove a view to save a new one.'"
+                    [tooltipDisabled]="!atSavedViewLimit()" tooltipPosition="top"
+                    data-testid="social-listening-filters-save-view" (click)="saveViewRequested.emit()">
+              Save as View
+            </button>
+          `,
+        },
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(FiltersPanelComponent);
+    fixture.componentRef.setInput('selectedSentiment', 'all');
+    fixture.componentRef.setInput('selectedRelevance', 'all');
+    fixture.componentRef.setInput('selectedLanguage', 'all');
+    fixture.componentRef.setInput('selectedHasTitle', 'all');
+    fixture.componentRef.setInput('selectedBookmarkFilter', 'all');
+    fixture.componentRef.setInput('selectedReadFilter', 'all');
+    fixture.componentRef.setInput('selectedKeywords', []);
+    fixture.componentRef.setInput('selectedTags', []);
+    fixture.componentRef.setInput('selectedAuthors', []);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  function saveButton(): HTMLButtonElement {
+    return fixture.nativeElement.querySelector('[data-testid="social-listening-filters-save-view"]');
+  }
+
+  it('is disabled when the current view cannot be saved or the limit is reached', async () => {
+    fixture.componentRef.setInput('canSaveCurrentView', false);
+    fixture.componentRef.setInput('atSavedViewLimit', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(saveButton().disabled).toBe(true);
+
+    fixture.componentRef.setInput('canSaveCurrentView', true);
+    fixture.componentRef.setInput('atSavedViewLimit', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(saveButton().disabled).toBe(true);
+  });
+
+  it('is enabled when the current view can be saved below the limit', async () => {
+    fixture.componentRef.setInput('canSaveCurrentView', true);
+    fixture.componentRef.setInput('atSavedViewLimit', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it('emits saveViewRequested on click', async () => {
+    const emitted: string[] = [];
+    fixture.componentInstance.saveViewRequested.subscribe(() => emitted.push('go'));
+
+    fixture.componentRef.setInput('canSaveCurrentView', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    saveButton().click();
+    expect(emitted).toEqual(['go']);
+  });
+});

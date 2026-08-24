@@ -17,16 +17,17 @@ import {
 } from '@lfx-one/shared/constants';
 import { capitalizeFirst, formatTag } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 
 import type { AuthorOption, SocialListeningOption } from '@lfx-one/shared/interfaces';
 
 /**
- * Social Listening filters panel (LFXV2-3017, PCC port): selects + keywords/tags/authors multiselects.
- * Saved views are deferred (Block 3); `filtersForm` bridges state to the page.
+ * Social Listening filters panel (LFXV2-3017, PCC port): selects + keywords/tags/authors multiselects,
+ * plus the "Save as View" entry point (LFXV2-3002 Block 3). `filtersForm` bridges state to the page.
  */
 @Component({
   selector: 'lfx-filters-panel',
-  imports: [ReactiveFormsModule, MultiSelectComponent, SelectComponent, SkeletonModule],
+  imports: [ReactiveFormsModule, MultiSelectComponent, SelectComponent, SkeletonModule, TooltipModule],
   templateUrl: './filters-panel.component.html',
   styleUrl: './filters-panel.component.scss',
 })
@@ -57,8 +58,14 @@ export class FiltersPanelComponent {
   public readonly authorsLoading = input(false);
   public readonly activeFilterCount = input(0);
 
+  // === Saved views (LFXV2-3002 Block 3) ===
+  public readonly canSaveCurrentView = input(false);
+  public readonly atSavedViewLimit = input(false);
+  public readonly savedViewLimit = input(0);
+
   // === Outputs ===
   public readonly filtersCleared = output<void>();
+  public readonly saveViewRequested = output<void>();
 
   // Neutral defaults — the model→form bridges below populate the real values at construction
   // (required models can't be read in field initializers).
