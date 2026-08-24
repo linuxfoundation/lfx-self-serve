@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ArtifactVisibility, MeetingVisibility } from '../enums';
+import { ArtifactVisibility, CancelOnCommitteeRemoval, MeetingVisibility } from '../enums';
 import type { AttachmentCategory, CardSelectorOption, MeetingTypeConfig } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
@@ -111,6 +111,17 @@ export const ARTIFACT_VISIBILITY_OPTIONS = [
   { label: 'Meeting Hosts Only', value: ArtifactVisibility.MEETING_HOSTS },
   { label: 'Meeting Guests', value: ArtifactVisibility.MEETING_PARTICIPANTS },
   { label: 'Public', value: ArtifactVisibility.PUBLIC },
+];
+
+/**
+ * Cancel-on-committee-removal per-meeting override options
+ * @description Lets a meeting override the project default for whether committee removal cancels
+ * registration on this (public) meeting
+ */
+export const CANCEL_ON_COMMITTEE_REMOVAL_OPTIONS = [
+  { label: 'Use project default', value: CancelOnCommitteeRemoval.INHERIT },
+  { label: 'Cancel registration', value: CancelOnCommitteeRemoval.CANCEL },
+  { label: 'Keep registration', value: CancelOnCommitteeRemoval.KEEP },
 ];
 
 /**

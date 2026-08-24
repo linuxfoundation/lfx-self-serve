@@ -5,14 +5,15 @@ import { Component, computed, DestroyRef, inject, input, InputSignal, output, Ou
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
+import { SelectComponent } from '@components/select/select.component';
 import { Committee, CommitteeMember, MeetingCommittee } from '@lfx-one/shared';
-import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
-import { COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared/constants';
+import { CommitteeMemberVotingStatus, MeetingVisibility } from '@lfx-one/shared/enums';
+import { CANCEL_ON_COMMITTEE_REMOVAL_OPTIONS, COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared/constants';
 import { sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, filter, forkJoin, map, of, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, filter, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
 
 interface CommitteeMemberDisplay extends CommitteeMember {
   committeeName: string;
@@ -21,7 +22,7 @@ interface CommitteeMemberDisplay extends CommitteeMember {
 
 @Component({
   selector: 'lfx-meeting-committee-manager',
-  imports: [ReactiveFormsModule, MultiSelectComponent, TooltipModule],
+  imports: [ReactiveFormsModule, MultiSelectComponent, SelectComponent, TooltipModule],
   templateUrl: './meeting-committee-manager.component.html',
 })
 export class MeetingCommitteeManagerComponent {
@@ -55,6 +56,9 @@ export class MeetingCommitteeManagerComponent {
   // Voting status options for dropdown
   public readonly votingStatusOptions = MEETING_VOTING_STATUSES;
   public readonly committeeLabel = COMMITTEE_LABEL;
+  public readonly committeeLabelSingularLower = COMMITTEE_LABEL.singular.toLowerCase();
+  public readonly cancelOnCommitteeRemovalOptions = CANCEL_ON_COMMITTEE_REMOVAL_OPTIONS;
+  public readonly meetingVisibility = MeetingVisibility;
 
   // Computed signals
   public hasVotingEnabledCommittee = computed(() => {
@@ -62,6 +66,7 @@ export class MeetingCommitteeManagerComponent {
     const committees = this.committeeOptions();
     return committees.some((c) => selectedIds.includes(c.uid) && c.enable_voting);
   });
+  public isPublicVisibility: Signal<boolean> = this.initIsPublicVisibility();
 
   public constructor() {
     this.committeeForm = new FormGroup({
@@ -166,6 +171,23 @@ export class MeetingCommitteeManagerComponent {
         )
       ),
       { initialValue: [] }
+    );
+  }
+
+  /**
+   * Tracks the parent form's visibility control reactively, so the template can bind a
+   * signal instead of calling form().get('visibility')?.value on every check cycle.
+   */
+  private initIsPublicVisibility(): Signal<boolean> {
+    return toSignal(
+      toObservable(this.form).pipe(
+        switchMap((form) => {
+          const control = form.get('visibility');
+          return control ? control.valueChanges.pipe(startWith(control.value)) : of(null);
+        }),
+        map((value) => value === this.meetingVisibility.PUBLIC)
+      ),
+      { initialValue: false }
     );
   }
 

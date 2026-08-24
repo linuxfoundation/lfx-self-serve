@@ -73,7 +73,8 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Crowdfunding auth start — needs session auth but no bearer token (initiates CF auth-code redirect)
   { pattern: '/api/crowdfunding/auth/start', type: 'api', auth: 'required', tokenRequired: false },
 
-  // Protected API routes - require authentication and token
+  // Protected API routes - require authentication and token. `classifyRoute`'s `apiFallback` mirrors this row's
+  // shape so a malformed/undecodable API path fails closed the same way — keep the two in sync.
   { pattern: '/api', type: 'api', auth: 'required', tokenRequired: true },
 
   // Invite error page — public so unauthenticated users see the error instead of being redirected to login
@@ -124,12 +125,8 @@ function classifyRoute(path: string, config: AuthConfig): RouteAuthConfig {
     auth: config.defaultAuth,
   };
 
-  // Fail-closed classification for malformed input on an API-prefixed path (`/api` or `/public/api`).
-  // Still `required` auth, but preserves `type: 'api'` + `tokenRequired` so a malformed/encoded API
-  // request returns a JSON 401 (not an HTML login redirect that XHR/fetch clients can't follow) and still
-  // triggers bearer-token extraction. Mirrors the `/api` catch-all row in DEFAULT_ROUTE_CONFIG; the
-  // `/public/api` prefix (normally `auth: 'optional'`) also fails closed to `required` here, since a
-  // malformed/undecodable path can't be trusted to be the anonymous public route it appears to be.
+  // Fail-closed classification for a malformed API path — mirrors the `/api` row so XHR/fetch clients get a JSON
+  // 401 (+ bearer extraction), not an HTML redirect. `/public/api` (normally `optional`) also hardens to `required`.
   const apiFallback: RouteAuthConfig = {
     pattern: '/api',
     type: 'api',
@@ -137,8 +134,8 @@ function classifyRoute(path: string, config: AuthConfig): RouteAuthConfig {
     tokenRequired: true,
   };
 
-  // Any API-prefixed path — the raw `/api` mount and the `/public/api` mount both serve JSON, so a
-  // malformed request to either must fail closed to the JSON 401 shape rather than an SSR redirect.
+  // Raw (un-decoded) prefix by design: an encoded `api` prefix that also fails to decode degrades to the SSR
+  // redirect shape instead of the JSON 401 — still fail-closed, and no real fetch/XHR client encodes the prefix.
   const isApiPath = path.startsWith('/api') || path.startsWith('/public/api');
 
   // Decode percent-encoding per segment before matching so the SSR auth boundary matches Angular's
@@ -164,9 +161,8 @@ function classifyRoute(path: string, config: AuthConfig): RouteAuthConfig {
       })
       .join('/');
   } catch {
-    // Decoding failed (malformed escape like `%ZZ`, or an encoded separator `%2F` that would shift
-    // segment boundaries). Fail closed — but keep API-prefixed paths classified as `api` so they get a
-    // JSON 401 with bearer extraction rather than an SSR login redirect.
+    // Decoding failed (`%ZZ`, or a `%2F` separator that would shift segment boundaries). Fail closed, keeping
+    // API paths as `api` so they get a JSON 401 with bearer extraction rather than an SSR login redirect.
     return isApiPath ? apiFallback : fallback;
   }
 
