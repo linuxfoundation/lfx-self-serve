@@ -12,6 +12,7 @@ import {
   MAX_ORG_LOGO_SIZE_BYTES,
   MIN_ORG_LOGO_DIMENSION_PX,
   ORG_DESCRIPTION_MAX_LENGTH,
+  ORG_LENS_PRIVATE_RELEASE_FLAG,
   SECTOR_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type { OrgCanonicalRecord, OrgProfileEditableFields, OrgUpdateRequest } from '@lfx-one/shared/interfaces';
@@ -27,6 +28,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { finalize } from 'rxjs';
 
 import { InitialsPipe } from '@pipes/initials.pipe';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgProfileService } from '@services/org-profile.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 
@@ -63,6 +65,7 @@ export class OrgProfileEditComponent implements OnInit {
   private readonly orgProfileService = inject(OrgProfileService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   /** Source record loaded on the read-only view; reused here to avoid re-fetching (research R4). */
   public readonly record = input.required<OrgCanonicalRecord>();
@@ -86,6 +89,26 @@ export class OrgProfileEditComponent implements OnInit {
   protected readonly logoDragActive = signal(false);
   /** Overrides `record().logoUrl` after a successful upload so the preview updates without waiting on the parent's own record refresh. */
   protected readonly logoUrl = signal<string | null>(null);
+
+  /**
+   * Raw read of the umbrella Org Lens private-release gate. Kept private on purpose: many Org Lens
+   * surfaces are rolling out under this same flag, but each one is expected to expose its own
+   * per-feature wrapper (below) so a later split — swapping the umbrella flag for a dedicated
+   * child flag, or ANDing on an additional entitlement — is a single-line change here instead of
+   * a template/handler sweep.
+   */
+  private readonly isOrgLensPrivateReleaseEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_PRIVATE_RELEASE_FLAG, false);
+
+  /**
+   * Per-feature gate for the Company Logo Upload affordance (PR #1583). Today it just wraps the
+   * umbrella `org_lens_private_release` flag; the wrapper exists so logo upload can be flipped
+   * independently later (e.g. graduating to its own LaunchDarkly key, or ANDing on a member-service
+   * writer entitlement) without touching every template binding or handler guard downstream. When
+   * false, the logo area renders as a static preview only — no Upload Logo button, no dropzone
+   * click / drag handling, no file input. Existing logos remain visible so read-only viewers still
+   * get context. Defaults false so a mis-provisioned SDK never leaks the upload path.
+   */
+  protected readonly isOrgLensUploadLogoEnabled = computed(() => this.isOrgLensPrivateReleaseEnabled());
 
   /** Per-field touched-and-invalid flags — keep `form.get(...)` out of the template (CLAUDE.md "No functions in HTML templates"). */
   protected readonly descriptionInvalid = signal(false);
@@ -160,7 +183,10 @@ export class OrgProfileEditComponent implements OnInit {
 
   /** Open the OS file picker via the hidden input — keeps the trigger a real, keyboard-operable `<button>`. */
   protected triggerLogoUpload(): void {
-    if (this.busy()) return;
+    // Defense-in-depth: template already hides the Upload Logo button and the hidden file input
+    // when the flag is off (PR #1583). Guarding here too closes the imperative call path — a
+    // synthetic click or `@ViewChild` grabbed from a leftover reference cannot bypass the gate.
+    if (this.busy() || !this.isOrgLensUploadLogoEnabled()) return;
     this.logoInput()?.nativeElement.click();
   }
 
@@ -169,12 +195,13 @@ export class OrgProfileEditComponent implements OnInit {
     const file = input.files?.[0];
     // Clear the input so re-selecting the same file (e.g. after a rejected upload) still fires change.
     input.value = '';
+    if (!this.isOrgLensUploadLogoEnabled()) return;
     if (file) this.handleLogoFile(file);
   }
 
   protected onLogoDragOver(event: DragEvent): void {
     event.preventDefault();
-    if (!this.busy()) this.logoDragActive.set(true);
+    if (!this.busy() && this.isOrgLensUploadLogoEnabled()) this.logoDragActive.set(true);
   }
 
   protected onLogoDragLeave(event: DragEvent): void {
@@ -185,7 +212,7 @@ export class OrgProfileEditComponent implements OnInit {
   protected onLogoDrop(event: DragEvent): void {
     event.preventDefault();
     this.logoDragActive.set(false);
-    if (this.busy()) return;
+    if (this.busy() || !this.isOrgLensUploadLogoEnabled()) return;
     const file = event.dataTransfer?.files?.[0];
     if (file) this.handleLogoFile(file);
   }

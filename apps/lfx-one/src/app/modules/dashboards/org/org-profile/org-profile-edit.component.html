@@ -17,12 +17,21 @@
   </nav>
 
   <div class="rounded-lg border border-gray-200 bg-white p-6">
-    <!-- Logo + Upload Logo button (LFXV2-3288). Drop zone doubles as the preview; click or drag-drop a file. -->
+    <!-- Logo + Upload Logo button (LFXV2-3288). Drop zone doubles as the preview; click or drag-drop a file.
+         The Upload Logo affordance (button, instruction copy, hidden file input) and every interactive
+         class/handler on the dropzone are gated behind the per-feature `isOrgLensUploadLogoEnabled`
+         wrapper (PR #1583) — today it just reads `org_lens_private_release`, but the wrapper lets
+         logo upload flip independently of other Org Lens surfaces later. When the flag is off, this
+         collapses to a static preview: no cursor-pointer, no dashed border, no click/drag surface,
+         no file picker — matching the read-only view most Org Lens users get today. -->
     <header class="flex items-center gap-4 border-b border-gray-100 pb-4">
       <div
-        class="relative flex h-20 w-20 shrink-0 cursor-pointer items-center justify-center rounded-md border-2 border-dashed"
-        [class.border-blue-500]="logoDragActive()"
-        [class.border-transparent]="!logoDragActive()"
+        class="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-md"
+        [class.cursor-pointer]="isOrgLensUploadLogoEnabled()"
+        [class.border-2]="isOrgLensUploadLogoEnabled()"
+        [class.border-dashed]="isOrgLensUploadLogoEnabled()"
+        [class.border-blue-500]="isOrgLensUploadLogoEnabled() && logoDragActive()"
+        [class.border-transparent]="isOrgLensUploadLogoEnabled() && !logoDragActive()"
         (click)="triggerLogoUpload()"
         (dragover)="onLogoDragOver($event)"
         (dragleave)="onLogoDragLeave($event)"
@@ -43,24 +52,26 @@
           </div>
         }
       </div>
-      <input
-        #logoInput
-        type="file"
-        accept="image/png,image/jpeg,image/svg+xml"
-        class="hidden"
-        [disabled]="busy()"
-        (change)="onLogoFileSelected($event)"
-        data-testid="org-profile-edit-logo-input" />
-      <div class="flex flex-col gap-1">
-        <p-button
-          label="Upload Logo"
-          severity="secondary"
-          [outlined]="true"
+      @if (isOrgLensUploadLogoEnabled()) {
+        <input
+          #logoInput
+          type="file"
+          accept="image/png,image/jpeg,image/svg+xml"
+          class="hidden"
           [disabled]="busy()"
-          (onClick)="triggerLogoUpload()"
-          data-testid="org-profile-edit-upload-logo-button" />
-        <p class="text-xs text-gray-500">PNG, JPEG, or SVG, not more than 2MB.</p>
-      </div>
+          (change)="onLogoFileSelected($event)"
+          data-testid="org-profile-edit-logo-input" />
+        <div class="flex flex-col gap-1">
+          <p-button
+            label="Upload Logo"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="busy()"
+            (onClick)="triggerLogoUpload()"
+            data-testid="org-profile-edit-upload-logo-button" />
+          <p class="text-xs text-gray-500">PNG, JPEG, or SVG, not more than 2MB.</p>
+        </div>
+      }
     </header>
 
     <form [formGroup]="form" (ngSubmit)="onSave()" class="mt-6 flex flex-col gap-6" data-testid="org-profile-edit-form">

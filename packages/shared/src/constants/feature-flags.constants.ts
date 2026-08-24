@@ -39,6 +39,19 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
 
 /**
+ * Private-release gate for Org Lens surfaces still restricted to internal audiences (LFXV2-3288 /
+ * PR #1583) — currently the Company Logo Upload control on the Org Profile edit page. Default false:
+ * a general Org Lens viewer should see the logo preview but NOT the upload affordance until the
+ * feature is opened up. Flag naming follows LaunchDarkly's project-side convention
+ * (`org_lens_private_release`) rather than the kebab-case used by older gates.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or the
+ * downstream member-service upload endpoint; server-side authorization (writer/admin) remains the
+ * source of truth for whether an upload actually succeeds.
+ */
+export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org_lens_private_release';
+
+/**
  * `localStorage` key holding a `Record<string, boolean>` of locally-forced flag values, read by
  * `FeatureFlagService.getBooleanFlag` in **non-production builds only**.
  *
