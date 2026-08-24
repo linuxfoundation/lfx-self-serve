@@ -29,13 +29,14 @@ import {
   computeHealthyOrBetterCount,
   computeHealthyOrBetterPct,
   computeScoredCount,
+  mapV1BandToV2,
   mapV1DistributionToV2,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, map, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
@@ -279,6 +280,16 @@ export class ProjectHealthScoresDrawerComponent {
           this.selectedStatuses.set(new Set());
           this.searchForm.get('query')!.setValue('');
           return this.analyticsService.getFoundationProjectsDetail(slug).pipe(
+            // Normalize each row's category here (not just the aggregate distribution) so a
+            // BFF still on the old rolling deployment can't return v1 names (stable/unsteady)
+            // that leave categoryBadge/categoryLabel lookups undefined and break row rendering.
+            map((response) => ({
+              ...response,
+              projects: response.projects.map((project) => ({
+                ...project,
+                healthScoreCategory: (mapV1BandToV2(project.healthScoreCategory) ?? null) as FoundationHealthScore | null,
+              })),
+            })),
             tap(() => this.tableLoading.set(false)),
             catchError(() => {
               this.tableLoading.set(false);
