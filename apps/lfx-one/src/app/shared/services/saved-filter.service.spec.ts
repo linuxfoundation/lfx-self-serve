@@ -117,6 +117,27 @@ describe('SavedFilterService', () => {
     });
   });
 
+  it('blocks save and remove after a load failure so persisted views are not clobbered', async () => {
+    socialListeningService.getPreference.mockReturnValue(throwError(() => new Error('boom')));
+    service.setContext(ctx);
+    await flush();
+    expect(service.state().error).toBeTruthy();
+    messageService.add.mockClear();
+
+    expect(service.addSavedFilter('Crisis', predicate(), validScope)).toBeNull();
+    expect(messageService.add).toHaveBeenCalledWith({
+      severity: 'error',
+      summary: 'Saved views unavailable',
+      detail: 'Your saved views could not be loaded. Refresh the page and try again.',
+    });
+
+    service.removeSavedFilter('v1');
+    expect(messageService.add).toHaveBeenCalledTimes(2);
+
+    expect(socialListeningService.upsertPreference).not.toHaveBeenCalled();
+    expect(socialListeningService.deletePreference).not.toHaveBeenCalled();
+  });
+
   it('gates save and remove while the initial load is in flight', async () => {
     socialListeningService.getPreference.mockReturnValue(NEVER);
     service.setContext(ctx);

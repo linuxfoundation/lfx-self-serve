@@ -73,8 +73,14 @@ export class SavedFilterService {
   }
 
   public addSavedFilter(name: string, predicate: FilterPredicate, scope: SavedViewScope): SavedFilter | null {
-    const { data: current, loading, readOnly } = this.store.state();
+    const { data: current, loading, readOnly, error } = this.store.state();
     if (loading) return null;
+
+    // A failed load leaves an empty fallback list — writing from it would clobber the persisted views.
+    if (error) {
+      this.notifyUnavailable();
+      return null;
+    }
 
     if (readOnly) {
       this.warnReadOnly('Saving');
@@ -125,8 +131,13 @@ export class SavedFilterService {
   }
 
   public removeSavedFilter(id: string, onRemoved?: () => void): void {
-    const { data: current, loading, readOnly } = this.store.state();
+    const { data: current, loading, readOnly, error } = this.store.state();
     if (loading) return;
+
+    if (error) {
+      this.notifyUnavailable();
+      return;
+    }
 
     if (readOnly) {
       this.warnReadOnly('Removing');
@@ -161,6 +172,14 @@ export class SavedFilterService {
       if (deleting) next.add(id);
       else next.delete(id);
       return next;
+    });
+  }
+
+  private notifyUnavailable(): void {
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Saved views unavailable',
+      detail: 'Your saved views could not be loaded. Refresh the page and try again.',
     });
   }
 
