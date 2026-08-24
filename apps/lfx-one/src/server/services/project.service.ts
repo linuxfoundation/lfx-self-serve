@@ -151,6 +151,7 @@ import {
 import { Request } from 'express';
 import FormData from 'form-data';
 
+import { QUERY_SERVICE_PAGE_SIZE } from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
@@ -310,6 +311,9 @@ export class ProjectService {
     const params = {
       ...query,
       type: 'project',
+      // Overrides any caller-supplied page_size — the query service's 50-result default turns
+      // a large org's project list into a long sequential page scan (GH-1735).
+      page_size: QUERY_SERVICE_PAGE_SIZE,
     };
 
     const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
