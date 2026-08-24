@@ -142,6 +142,35 @@ describe('OrgProfileEditComponent — logo upload', () => {
     expect(emitted).toEqual([updated]);
   });
 
+  /**
+   * PR #1583 — in-flight upload must be announced, not just spun. Before this, the overlay was a
+   * bare div with a decorative <i> and no text, so screen-reader users got silence for the whole
+   * upload. Pins the role="status" region, the sr-only copy, and the button's loading label so a
+   * future restyle of the overlay can't quietly drop the announcement again.
+   */
+  it('announces the in-flight upload to assistive tech and swaps the button into a loading label', async () => {
+    selectFile(pngFile());
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const root: HTMLElement = fixture.nativeElement;
+    const status = root.querySelector('[role="status"]');
+    expect(status).not.toBeNull();
+    expect(status?.getAttribute('aria-live')).toBe('polite');
+    expect(status?.textContent).toContain('Uploading logo');
+    // The spinner glyph carries no meaning of its own — it must not be read out alongside the copy.
+    expect(status?.querySelector('i')?.getAttribute('aria-hidden')).toBe('true');
+    expect(root.querySelector('[data-testid="org-profile-edit-upload-logo-button"]')?.textContent).toContain('Uploading');
+
+    uploadLogo$.next({ ...record, logoUrl: 'https://cdn.example.com/logo.png?v=2' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Region is removed once settled, so the next upload re-inserts it and is announced afresh.
+    expect(root.querySelector('[role="status"]')).toBeNull();
+    expect(root.querySelector('[data-testid="org-profile-edit-upload-logo-button"]')?.textContent).toContain('Upload Logo');
+  });
+
   it('shows a permission-denied toast on a 403 and does not update logoUrl', async () => {
     selectFile(pngFile());
     await fixture.whenStable();

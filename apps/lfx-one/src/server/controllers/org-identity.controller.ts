@@ -148,10 +148,18 @@ export class OrgIdentityController {
   /**
    * LFXV2-3288 — `POST /api/orgs/uid/:uid/logo`. BFF proxy leg to member-service's
    * `POST /b2b_orgs/{uid}/logo` (LFXV2-2016): forwards the browser's raw upload using the caller's
-   * own access token (never M2M), reusing the already-buffered request body (no streaming), and
-   * propagating member-service's response as-is — the settled transport contract from the
-   * object-storage skill (PR #67). Member-service owns S3 write + Salesforce `Logo_URL__c` patch;
-   * this BFF does not touch object storage directly.
+   * own access token (never M2M) and reuses the already-buffered request body (no streaming) — the
+   * settled transport contract from the object-storage skill (PR #67). Member-service owns the S3
+   * write + Salesforce `Logo_URL__c` patch; this BFF does not touch object storage directly.
+   *
+   * The *request* body is a pass-through; the **response is not**. member-service's
+   * `MemberServiceB2bOrgResponse` is remapped through `toCanonicalRecord` into the BFF's
+   * `OrgCanonicalRecord` contract (`logo_url` → `logoUrl`, `primary_domain` → `primaryDomain`,
+   * `number_of_employees` → `numberOfEmployees`, …, with `uid`/`accountId` both anchored to
+   * `sfid ?? uid`). Upstream response headers are deliberately dropped rather than forwarded:
+   * the ETag fetched below is an *internal* concurrency token for the If-Match precondition, not a
+   * cache validator for the browser, so re-emitting it would invite a client to send an
+   * `If-None-Match` this endpoint does not honour. The response is sent `Cache-Control: no-store`.
    */
   public async uploadLogo(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'upload_org_logo', {
