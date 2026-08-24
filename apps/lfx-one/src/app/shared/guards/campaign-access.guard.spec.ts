@@ -9,12 +9,12 @@ import { PersonaService } from '@shared/services/persona.service';
 import { firstValueFrom, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { executiveDirectorGuard } from './executive-director.guard';
+import { campaignAccessGuard } from './campaign-access.guard';
 
 // Covers only the localStorage-override branch before this file existed (round-4 review on
 // PR #1585). Now also exercises: the SSR fast path, the provider-ready flag-on/off branches, and
 // the mid-flight ED promotion that can happen as a side effect of `refreshEnrichedPersonas`.
-describe('executiveDirectorGuard', () => {
+describe('campaignAccessGuard', () => {
   let currentPersona: ReturnType<typeof signal<string>>;
   let isCampaignManager: ReturnType<typeof signal<boolean>>;
   let refreshEnrichedPersonas: ReturnType<typeof vi.fn>;
@@ -29,7 +29,7 @@ describe('executiveDirectorGuard', () => {
     }) as unknown as ActivatedRouteSnapshot;
 
   const runGuard = async (r: ActivatedRouteSnapshot = route()) => {
-    const result = TestBed.runInInjectionContext(() => executiveDirectorGuard(r, {} as RouterStateSnapshot));
+    const result = TestBed.runInInjectionContext(() => campaignAccessGuard(r, {} as RouterStateSnapshot));
     // The guard returns `true` synchronously for the ED/SSR fast paths, a bare UrlTree
     // synchronously for the override-off redirect, and an Observable for every other branch.
     if (typeof result === 'boolean' || !('subscribe' in (result as object))) {

@@ -11,7 +11,11 @@ const campaignController = new CampaignController();
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
-// server flag is off.
+// server flag is off — this is an intentional tightening of the prior (fully open) behavior, not
+// a preserved no-op: with the flag off, a previously-unauthenticated-relative-to-Campaigns caller
+// now gets a 403 unless they hold the ED persona. The "kill switch" restores the FGA-off baseline
+// (ED-only), not the pre-PR baseline (no auth at all) — reverting to the latter would reopen the
+// hole this route.use() closes.
 router.use(requireCampaignManager);
 
 router.post('/brief/generate', (req, res, next) => campaignController.generateBrief(req, res, next));

@@ -839,6 +839,9 @@ describe('PlanningTabComponent delivery-type mode', () => {
     (fixture.componentInstance as unknown as { generate(): void }).generate();
     await fixture.whenStable();
 
+    // Arg 0 is the project slug the BFF's FGA middleware scopes access to — a wrong or empty
+    // value here would 403 a legitimately-scoped campaign manager without this test noticing.
+    expect(generateBrief.mock.calls[0][0]).toBe('foundation-a');
     expect(generateBrief.mock.calls[0][1].totalBudget).toBeUndefined();
   });
 
@@ -852,6 +855,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
     (fixture.componentInstance as unknown as { generate(): void }).generate();
     await fixture.whenStable();
 
+    expect(generateBrief.mock.calls[0][0]).toBe('foundation-a');
     expect(generateBrief.mock.calls[0][1].totalBudget).toBe(5000);
   });
 
@@ -876,6 +880,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
     await fixture.whenStable();
 
     expect(generateBrief).toHaveBeenCalledTimes(1);
+    expect(generateBrief.mock.calls[0][0]).toBe('foundation-a');
     const request = generateBrief.mock.calls[0][1];
     // Absent, not empty: `[]` would claim the user deselected every channel rather than that ad
     // channels do not apply. `toBeUndefined` alone would pass on an explicit `platforms: undefined`,
@@ -895,6 +900,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
     await fixture.whenStable();
 
     expect(generateBrief).toHaveBeenCalledTimes(1);
+    expect(generateBrief.mock.calls[0][0]).toBe('foundation-a');
     expect(generateBrief.mock.calls[0][1].platforms).toEqual(['google-ads']);
   });
 
@@ -942,6 +948,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
     await fixture.whenStable();
 
     expect(refineBrief).toHaveBeenCalledTimes(1);
+    expect(refineBrief.mock.calls[0][0]).toBe('foundation-a');
     expect(refineBrief.mock.calls[0][1].platforms).toEqual(['google-ads']);
   });
 });

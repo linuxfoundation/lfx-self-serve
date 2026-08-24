@@ -23,7 +23,7 @@ import { PersonaService } from '../services/persona.service';
  * `mktgOsAgentsEnabledGuard`/`akritesEnabledGuard`: the client-side rerun of this guard
  * after hydration awaits `providerReady` and makes the real decision (LFXV2-2236).
  */
-export const executiveDirectorGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
+export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const personaService = inject(PersonaService);
   const router = inject(Router);
 

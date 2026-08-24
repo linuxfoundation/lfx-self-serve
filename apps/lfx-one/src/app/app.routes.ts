@@ -7,7 +7,7 @@ import { Routes } from '@angular/router';
 import { authGuard } from './shared/guards/auth.guard';
 import { authenticatedMatchGuard } from './shared/guards/authenticated-match.guard';
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
-import { executiveDirectorGuard } from './shared/guards/executive-director.guard';
+import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
@@ -58,7 +58,7 @@ export const routes: Routes = [
       {
         path: 'foundation/campaigns',
         data: { lens: 'foundation' },
-        canActivate: [executiveDirectorGuard, projectQueryParamGuard],
+        canActivate: [campaignAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/campaigns/campaigns.component').then((m) => m.CampaignsComponent),
       },
       // Foundation Lens — Projects page

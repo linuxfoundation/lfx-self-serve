@@ -26,7 +26,7 @@ import { PersonaService } from '../services/persona.service';
  * server it would emit `false`, fall through to the legacy path, and issue a real SSR redirect
  * for a non-ED `marketing_auditor` before the client ever gets a chance to re-evaluate the guard
  * — permanently locking them out. On the server this returns `true` directly (matching
- * `executiveDirectorGuard`) and defers the full flag + FGA evaluation to the client-side rerun,
+ * `campaignAccessGuard`) and defers the full flag + FGA evaluation to the client-side rerun,
  * which awaits `providerReady` before reading it (LFXV2-2236).
  */
 export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {

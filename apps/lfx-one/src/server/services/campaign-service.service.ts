@@ -415,7 +415,7 @@ export class CampaignServiceClient {
    * own brief.
    *
    * `projectSlug` is the foundation the user has selected, NOT a constant. `/foundation/campaigns`
-   * is reachable by an ED of any foundation (`executiveDirectorGuard` gates on persona, and
+   * is reachable by an ED of any foundation (`campaignAccessGuard` gates on persona, and
    * `projectQueryParamGuard` seeds the context from `?project=`), while campaign-service scopes
    * and authorises every brief on its project. Hard-coding `tlf` would either 403 a CNCF ED or —
    * for an LF staffer who also holds TLF access — file their CNCF work in TLF's brief table,
