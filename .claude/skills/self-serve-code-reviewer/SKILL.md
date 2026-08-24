@@ -153,9 +153,18 @@ pages, `/public/api`) allow anonymous access (optional auth), protected routes
 require it."_ — with `docs/reviews/backend-checklist.md` and
 `docs/architecture/backend/authentication.md` as the detail.
 
-A new API route that neither sits under a documented public prefix nor carries
-the auth middleware its neighbours carry is a finding: quote the checklist line
-that requires the middleware.
+Auth is applied by a **single global `authMiddleware`** mounted once in
+`apps/lfx-one/src/server/server.ts`, not by per-route middleware. Its
+`DEFAULT_ROUTE_CONFIG` in
+`apps/lfx-one/src/server/middleware/auth.middleware.ts` classifies each request,
+and any route not matched by a documented public entry falls through to
+`defaultAuth: 'required'`. So a new route being unprotected is **not** a missing
+middleware call — it is a new **public** exemption. The finding is a new
+`DEFAULT_ROUTE_CONFIG` entry (or public-prefix router mount) that opens a route
+to `optional`/`public` auth without the change being a documented public
+surface. Verify the new route against that config and the classification
+ordering; do not expect each router to carry its own middleware, and do not
+demand a checklist line requiring it — there is none.
 
 ### 4. SSR safety around browser-only APIs
 
@@ -178,9 +187,10 @@ specific line you are citing.
 
 ### 6. Styling: stacking and colour tokens
 
-`.claude/rules/styling.md`, and `CLAUDE.md` — _"Use `flex + flex-col + gap-_`,
-not `space-y-_`, for vertical stacking."_ and, under **What NOT to do**,
-_"Hard-code brand hex values (reference `lfxColors` scales)"_.
+`.claude/rules/styling.md`, and `CLAUDE.md` — the rule
+"Use `flex + flex-col + gap-*`, not `space-y-*`, for vertical stacking." and,
+under **What NOT to do**,
+"Hard-code brand hex values (reference `lfxColors` scales)".
 
 A new `space-y-*` vertical stack, or a hard-coded brand hex where an
 `lfxColors` token exists, is a finding. Quote the rule.

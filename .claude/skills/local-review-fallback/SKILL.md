@@ -10,11 +10,11 @@ description: Launch the three local reviewers as Claude subagents when lfx-local
 
 Launch exactly three generic subagents in one parallel batch, using model `opus` for all three:
 
-| Role             | Skill to load                   |
-| ---------------- | ------------------------------- |
-| `general`        | `lfx-general-code-review`       |
-| `repo_code`      | `self-serve-code-reviewer`      |
-| `repo_learnings` | `self-serve-learnings-reviewer` |
+| Role             | Skill to load                        |
+| ---------------- | ------------------------------------ |
+| `general`        | `lfx-skills:lfx-general-code-review` |
+| `repo_code`      | `self-serve-code-reviewer`           |
+| `repo_learnings` | `self-serve-learnings-reviewer`      |
 
 Give every subagent the same `target repo`, `target_sha`, `base_sha` (or `none`), exact `review exactly:` range and optional `extra` hint supplied by the host.
 
