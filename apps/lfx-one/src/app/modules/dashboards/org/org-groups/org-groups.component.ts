@@ -11,6 +11,7 @@ import type {
   BehavioralClassDisplayConfig,
   GroupBehavioralClass,
   OrgDropdownOption,
+  OrgLensGroupClassTile,
   OrgLensGroupSummary,
   OrgLensGroupsResponse,
   OrgLensGroupVm,
@@ -58,6 +59,35 @@ export class OrgGroupsComponent {
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
 
+  // Total Groups + Total Seats — the two fixed tiles in the template that visibleClassTiles()
+  // doesn't cover. Keep in sync with the stat-strip markup.
+  private readonly fixedStatTileCount = 2;
+
+  // Placeholder count for the loading skeletons, derived from BEHAVIORAL_CLASS_CONFIG (one entry
+  // per GroupBehavioralClass member) rather than a hand-maintained literal, so the true max
+  // rendered tile count (2 fixed + every behavioral class non-zero) can't silently drift out of
+  // sync with the type if a class is ever added — see statGridClass for how the grid layout
+  // tracks this same value. Per GH-1779's "skeleton tile count matches the rendered tile count"
+  // acceptance criterion, the skeleton and loaded grid only ever diverge on the zero-classes edge
+  // case (per dealako's PR #1790 review).
+  protected readonly statSkeletonTiles: readonly number[] = Array.from(
+    { length: Object.keys(BEHAVIORAL_CLASS_CONFIG).length + this.fixedStatTileCount },
+    (_, i) => i + 1
+  );
+
+  // Mobile fixed at 2 columns, sm+ fixed at 3. At `lg:` and up, both the skeleton and the loaded
+  // grid switch to one equal-width column per tile via --cols — the skeleton binds it to
+  // statSkeletonTiles.length (see the template), the loaded grid to statTileCount() (2-8, since a
+  // class only tiles when non-zero). Sharing one grid class means the two can never drift out of
+  // sync on layout, only on --cols' value while data is still loading — the tightest live case is
+  // not the roomiest: at 7-8 tiles columns get narrow enough for a longer label to wrap. Accepted
+  // deliberately, since a static per-count cap would reintroduce the ragged trailing row this grid
+  // exists to avoid. The value is a plain --cols integer rather than a repeat(min(var(--cols),N))
+  // clamp because CSS Grid requires an integer repeat count and silently drops the whole
+  // declaration otherwise (see events-summary-section.component.html for the same constraint).
+  private readonly statGridBase = 'grid grid-cols-2 gap-4 sm:grid-cols-3';
+  protected readonly statGridClass = `${this.statGridBase} lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]`;
+
   // ── Auth / access guards (mirrors org-meetings pattern) ───────────────────
   protected readonly hasNoOrgAccess: Signal<boolean> = computed(
     () => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded() && !this.accountContext.hasOrgSelectorAccess()
@@ -99,7 +129,10 @@ export class OrgGroupsComponent {
   protected readonly totalGroups: Signal<number> = computed(() => this.groupsData()?.total_groups ?? 0);
   protected readonly totalSeats: Signal<number> = computed(() => this.groupsData()?.total_seats ?? 0);
 
-  protected readonly behavioralClassCounts: Signal<Record<GroupBehavioralClass, number>> = this.initBehavioralClassCounts();
+  private readonly behavioralClassCounts: Signal<Record<GroupBehavioralClass, number>> = this.initBehavioralClassCounts();
+  protected readonly visibleClassTiles: Signal<OrgLensGroupClassTile[]> = this.initVisibleClassTiles();
+
+  protected readonly statTileCount: Signal<number> = computed(() => this.visibleClassTiles().length + this.fixedStatTileCount);
 
   protected readonly isFiltering: Signal<boolean> = this.initIsFiltering();
   private readonly foundationLabelsBySlug: Signal<Map<string, string>> = this.initFoundationLabelsBySlug();
@@ -264,5 +297,22 @@ export class OrgGroupsComponent {
     const raw = this.route.snapshot.queryParamMap.get('type');
     const validKeys = new Set(Object.keys(this.behavioralClassConfig));
     return raw && validKeys.has(raw) ? (raw as GroupBehavioralClass) : '';
+  }
+
+  // Sorted descending by count so the strip reads largest-class-first, not `BEHAVIORAL_CLASS_CONFIG`
+  // key order — except `other`, pinned last regardless of count: it's a catch-all (raw category
+  // "Committee" lands here alongside true miscellany), and leading with it would tell the reader
+  // less than the specific classes it groups. Filters out any class with zero groups —
+  // governing-board is usually 0 here since the BFF drops the exact "Board" category, but a
+  // broader board-ish category (e.g. "Governing Board") can still classify as governing-board and
+  // get its own tile; the filter is generic on count, not a governing-board special case.
+  private initVisibleClassTiles(): Signal<OrgLensGroupClassTile[]> {
+    return computed(() => {
+      const counts = this.behavioralClassCounts();
+      return (Object.keys(counts) as GroupBehavioralClass[])
+        .map((cls) => ({ cls, count: counts[cls] }))
+        .filter((tile) => tile.count > 0)
+        .sort((a, b) => (a.cls === 'other' ? 1 : 0) - (b.cls === 'other' ? 1 : 0) || b.count - a.count);
+    });
   }
 }
