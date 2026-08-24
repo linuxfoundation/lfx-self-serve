@@ -18,6 +18,7 @@ import type {
   RedditObjective,
   RedditObjectiveParams,
 } from '../interfaces/campaign.interface';
+import { COUNTRIES } from './countries.constants';
 
 /** Tab definitions for the Campaigns page tab navigation. */
 export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
@@ -190,7 +191,21 @@ export const META_OBJECTIVE_PARAMS: Readonly<Record<MetaObjective, MetaObjective
   awareness: { campaignObjective: 'OUTCOME_AWARENESS', optimizationGoal: 'REACH', promotedObjectType: 'none' },
   traffic: { campaignObjective: 'OUTCOME_TRAFFIC', optimizationGoal: 'LINK_CLICKS', promotedObjectType: 'none' },
   engagement: { campaignObjective: 'OUTCOME_ENGAGEMENT', optimizationGoal: 'POST_ENGAGEMENT', promotedObjectType: 'page_id' },
-  leads: { campaignObjective: 'OUTCOME_LEADS', optimizationGoal: 'LEAD_GENERATION', promotedObjectType: 'page_id' },
+  // `leads` runs a WEBSITE-TRAFFIC campaign, matching `objectiveParams` in
+  // `lfx-v2-campaign-service` (`internal/platform/meta/client.go`) rather than the name.
+  //
+  // OUTCOME_LEADS + LEAD_GENERATION requires the ad's creative to reference an instant form via
+  // `call_to_action.value.lead_gen_form_id`. Neither path builds one — this service creates only
+  // a website-click creative (`object_story_spec.link_data` pointing at the registration URL) —
+  // so LEAD_GENERATION creates the campaign and then fails at the ad set, orphaning a billable
+  // resource. That is the exact create-then-orphan shape the pixel and placement guards exist to
+  // prevent, and the objective selector shipped in this branch is what first makes it reachable.
+  //
+  // OUTCOME_TRAFFIC + LINK_CLICKS with no promoted object is the pairing that always succeeds
+  // end-to-end. OUTCOME_LEADS + LINK_CLICKS is deliberately NOT used: Meta requires a pixel and
+  // `custom_event_type` for it, which this flow does not supply. Full instant-form parity is
+  // tracked as LFXV2-2665.
+  leads: { campaignObjective: 'OUTCOME_TRAFFIC', optimizationGoal: 'LINK_CLICKS', promotedObjectType: 'none' },
   conversions: { campaignObjective: 'OUTCOME_SALES', optimizationGoal: 'OFFSITE_CONVERSIONS', promotedObjectType: 'pixel_id' },
 } as const;
 
@@ -203,6 +218,130 @@ export const META_DEFAULT_PLACEMENTS: Readonly<MetaPlacement> = {
   audienceNetwork: false,
   messengerInbox: false,
 } as const;
+
+/** Display labels for the Meta campaign objectives, in the order the objective selector renders them. */
+export const META_OBJECTIVE_LABELS: Readonly<Record<MetaObjective, string>> = {
+  awareness: 'Awareness',
+  traffic: 'Traffic',
+  engagement: 'Engagement',
+  leads: 'Leads',
+  conversions: 'Conversions',
+} as const;
+
+/**
+ * The placements a user may actually toggle.
+ *
+ * `messengerInbox` is deliberately absent. Meta removed Messenger Inbox as an ad placement in
+ * November 2025, and campaign-service's `buildPlacementTargeting` refuses any request that
+ * enables it outright rather than letting the ad-set call fail after the campaign — a paid
+ * resource — already exists. Excluding the key here means the UI cannot construct that request:
+ * the toggle is rendered permanently disabled from this list's complement, never bound to a
+ * control that could send `true`.
+ *
+ * Derived lists (the selector, the "at least one enabled" guard) MUST read this rather than
+ * re-listing the members, so a future placement added to `MetaPlacement` is a compile-time
+ * decision here instead of a silent omission there.
+ */
+export const META_SELECTABLE_PLACEMENTS: readonly (keyof MetaPlacement)[] = ['facebookFeed', 'instagramFeed', 'stories', 'reels', 'audienceNetwork'] as const;
+
+/** Display labels for every Meta placement, including the retired one the UI renders disabled. */
+export const META_PLACEMENT_LABELS: Readonly<Record<keyof MetaPlacement, string>> = {
+  facebookFeed: 'Facebook Feed',
+  instagramFeed: 'Instagram Feed',
+  stories: 'Stories',
+  reels: 'Reels',
+  audienceNetwork: 'Audience Network',
+  messengerInbox: 'Messenger Inbox',
+} as const;
+
+/** Why `messengerInbox` is not selectable — rendered beside the disabled toggle. */
+export const META_MESSENGER_INBOX_RETIRED_REASON = 'Removed by Meta in November 2025';
+
+/** Meta object ids (Pixel, Page) are numeric strings; mirrors campaign-service's `numericIDRE`. */
+export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
+
+/** ISO 3166-1 alpha-2 shape for a Meta geo target, after normalisation. */
+export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
+
+/**
+ * The officially assigned ISO 3166-1 alpha-2 codes, derived from `COUNTRIES`.
+ *
+ * A Set rather than a repeated `.some()` scan: `normalizeGeoTargets` runs per code per keystroke
+ * on the chip path, and `COUNTRIES` holds 249 entries. Derived rather than re-listed so it cannot
+ * fall out of step with the dropdown the user picks from.
+ */
+export const ASSIGNED_COUNTRY_CODES: ReadonlySet<string> = new Set<string>(COUNTRIES.map((c) => c.value));
+
+/**
+ * Assigned countries Meta will not accept as an ad-targeting geo.
+ *
+ * Mirrors `metaIneligibleCountries` in `lfx-v2-campaign-service`
+ * (`internal/platform/meta/client.go`), which is the path this app is cutting over to. Kept in
+ * step with it deliberately: while the cutover is dark the legacy TypeScript service handles the
+ * create, and without this list it would accept a code the Go path refuses — so the SAME user
+ * input would succeed or fail depending only on a flag.
+ *
+ * These are ASSIGNED codes, so `ASSIGNED_COUNTRY_CODES` passes them; ineligibility is a separate,
+ * Meta-specific fact and is checked separately. Two groups, both non-targetable: comprehensively
+ * sanctioned or policy-prohibited markets, and ISO territories with no resident population and so
+ * no Meta ad market.
+ *
+ * Best-effort rather than authoritative, exactly as the Go list documents itself. A still-eligible
+ * code that slips through is rejected by Meta at the ad-set POST — after the campaign exists — so
+ * this list reduces that window rather than closing it.
+ */
+export const META_INELIGIBLE_COUNTRIES: ReadonlySet<string> = new Set<string>([
+  // Comprehensively sanctioned or prohibited by Meta ads policy.
+  'CU',
+  'IR',
+  'KP',
+  'RU',
+  'SY',
+  // Uninhabited / non-targetable ISO territories (no Meta ad market).
+  'AQ',
+  'BV',
+  'HM',
+  'TF',
+  'GS',
+  'UM',
+]);
+
+/**
+ * Normalise a list of Meta geo targets: trim, uppercase, drop mis-shaped codes, de-dupe.
+ *
+ * The single owner of geo normalisation. Every entry point — the chip add path, the brief seed
+ * path, and the server's pre-flight validation — routes through this so the same input can never
+ * mean two different things depending on which door it came through. That split is exactly what
+ * let a stored `us` and a typed `US` become two chips AND two wire entries: the add path
+ * normalised, the seed path did not, and the server uppercased without de-duping, so `["us","US"]`
+ * reached Meta as `["US","US"]`.
+ *
+ * De-duping is FIRST-SEEN order, matching campaign-service.
+ *
+ * Validation is ASSIGNMENT, not eligibility, and the line between them is deliberate. A code must
+ * be an officially assigned ISO 3166-1 alpha-2 value (`COUNTRIES`, which excludes the
+ * user-assigned `AA`/`QM-QZ`/`XA-XZ`/`ZZ` ranges and the reserved `EU`/`UK`/... codes and
+ * documents itself as safe for exactly this use). A shape-only `/^[A-Z]{2}$/` check accepted `ZZ`,
+ * which no ad platform can ever target: `executeMetaCampaignCreation` filters only the regulated
+ * markets, so `ZZ` survived to `geo_locations` and Meta rejected it at AD-SET creation — after the
+ * campaign POST had already created a billable resource. Assignment is a closed, stable fact, so
+ * checking it here cannot drift.
+ *
+ * Which of the assigned countries Meta will actually accept remains the service's call, since it
+ * additionally drops sanctioned and regulated markets; duplicating THAT list here would drift.
+ */
+export function normalizeGeoTargets(codes: readonly string[] | null | undefined): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const code of codes ?? []) {
+    if (typeof code !== 'string') continue;
+    const upper = code.trim().toUpperCase();
+    if (!META_GEO_CODE_PATTERN.test(upper) || !ASSIGNED_COUNTRY_CODES.has(upper) || seen.has(upper)) continue;
+    seen.add(upper);
+    normalized.push(upper);
+  }
+  return normalized;
+}
 
 /** Valid statuses for the campaign status toggle endpoint. */
 export const VALID_CAMPAIGN_TOGGLE_STATUSES: ReadonlySet<CampaignToggleStatus> = new Set<CampaignToggleStatus>(['ACTIVE', 'PAUSED']);

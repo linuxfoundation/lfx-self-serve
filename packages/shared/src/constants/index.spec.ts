@@ -30,9 +30,12 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('constants barrel', () => {
+  // Longer than the 5 s default: this transforms and evaluates the whole barrel and everything it
+  // re-exports, which takes ~3.5 s alone and intermittently exceeds 5 s under a full parallel run.
+  // The assertion is unchanged — only the budget for doing real work is.
   it('loads in a plain-Node environment', async () => {
     await expect(import('./index')).resolves.toBeTruthy();
-  });
+  }, 30_000);
 });
 
 describe('tailwind.config.js', () => {

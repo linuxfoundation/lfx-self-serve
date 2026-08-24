@@ -20,6 +20,7 @@ import { take } from 'rxjs';
 
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 
 /** Spec 027 US3 — bulk-reassign one person's N Membership-Entitlement committee seats; the parent fans out the PUTs. */
 @Component({
@@ -33,6 +34,7 @@ export class ReassignCommitteeRolesModalComponent {
   private readonly directory = inject(OrgPeopleDirectoryStateService);
   private readonly dialogConfig = inject<DynamicDialogConfig<ReassignCommitteeRolesDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
+  private readonly drawer = inject(PersonDetailDrawerService);
 
   // === Dialog-injected data ===
   protected readonly person: ReassignCommitteeRolesPersonRef | null = this.dialogConfig.data?.person ?? null;
@@ -232,6 +234,17 @@ export class ReassignCommitteeRolesModalComponent {
   protected onCancel(): void {
     if (this.isSaving()) return;
     this.dialogRef.close(null);
+  }
+
+  protected onCurrentPersonClick(): void {
+    if (!this.person) return;
+    this.drawer.open({
+      name: this.person.fullName,
+      initials: this.person.initials,
+      avatarUrl: this.person.avatarUrl ?? null,
+      avatarColorClass: 'bg-purple-500',
+      email: this.person.email,
+    });
   }
 
   private initCheckedFoundationCount(): number {

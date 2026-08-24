@@ -10,15 +10,15 @@ const DATA_LOAD_TIMEOUT = 30_000;
 
 const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 const MOCK_UID = MOCK_ACCOUNT_ID;
-const MOCK_ACCOUNT_NAME = 'Toyota';
-const MOCK_ACCOUNT_SLUG = 'toyota';
+const MOCK_ACCOUNT_NAME = 'Acme Motors';
+const MOCK_ACCOUNT_SLUG = 'acme-motors';
 
 // SC-001 dev-mode budget multiplier — `ng serve` adds 3–10× per interaction vs the production build.
 const PERF_DEV_MULTIPLIER = 5;
 
-const CHIANING_EMAIL = 'johnny.wang@toyota.com';
+const MORGAN_EMAIL = 'morgan.diaz@acme-motors.example';
 
-// Three entitlement seats for Chianing Wang, all on Ultra Ethernet Consortium, plus a second person
+// Three entitlement seats for Morgan Diaz, all on Ultra Ethernet Consortium, plus a second person
 // on a different foundation so the stats tiles have concrete multi-foundation values.
 function committeeMembersResponse() {
   const uec = (uid: string, committeeUid: string, committeeName: string) => ({
@@ -35,7 +35,7 @@ function committeeMembersResponse() {
     appointedBy: 'Membership Entitlement',
     isOrgEditable: true,
     reason: null,
-    person: { email: CHIANING_EMAIL, firstName: 'Chianing', lastName: 'Wang', fullName: 'Chianing Wang', jobTitle: 'Infrastructure Architect', initials: 'CW' },
+    person: { email: MORGAN_EMAIL, firstName: 'Morgan', lastName: 'Diaz', fullName: 'Morgan Diaz', jobTitle: 'Infrastructure Architect', initials: 'MD' },
   });
   return {
     orgUid: MOCK_UID,
@@ -44,8 +44,8 @@ function committeeMembersResponse() {
       uec('m-perf', 'c-perf', 'Performance Working Group'),
       uec('m-link', 'c-link', 'Link Layer Working Group'),
       {
-        seatId: 'm-erick',
-        memberUid: 'm-erick',
+        seatId: 'm-casey',
+        memberUid: 'm-casey',
         committeeUid: 'c-tsc',
         committeeName: 'Technical Steering Committee',
         committeeCategory: 'Technical',
@@ -57,7 +57,14 @@ function committeeMembersResponse() {
         appointedBy: 'Community',
         isOrgEditable: false,
         reason: "This seat is held by foundation election or appointment, not by your organization's membership entitlement.",
-        person: { email: 'erick.mau@toyota.com', firstName: 'Erick', lastName: 'Mau', fullName: 'Erick Mau', jobTitle: 'Maintainer', initials: 'EM' },
+        person: {
+          email: 'casey.nguyen@acme-motors.example',
+          firstName: 'Casey',
+          lastName: 'Nguyen',
+          fullName: 'Casey Nguyen',
+          jobTitle: 'Maintainer',
+          initials: 'CN',
+        },
       },
     ],
     stats: { individualCount: 2, committeeCount: 4, foundationsCovered: 2 },
@@ -142,9 +149,9 @@ test.describe('Org People → Committee tab (spec 027 US1 + US2)', () => {
     console.log(`[SC-001] committee tab load → stats visible: ${elapsed} ms (prod budget 3000 ms; dev allowance ${3000 * PERF_DEV_MULTIPLIER} ms)`);
     expect(elapsed).toBeLessThan(3000 * PERF_DEV_MULTIPLIER);
 
-    // One row per person (Chianing Wang + Erick Mau).
-    await expect(page.getByTestId(`org-people-committee-row-${CHIANING_EMAIL}`)).toBeVisible();
-    await expect(page.getByTestId('org-people-committee-row-erick.mau@toyota.com')).toBeVisible();
+    // One row per person (Morgan Diaz + Casey Nguyen).
+    await expect(page.getByTestId(`org-people-committee-row-${MORGAN_EMAIL}`)).toBeVisible();
+    await expect(page.getByTestId('org-people-committee-row-casey.nguyen@acme-motors.example')).toBeVisible();
 
     // SC-004: stat tiles match the table-derived counts.
     const individuals = await page.getByTestId('org-people-committee-stat-individuals').innerText();
@@ -175,18 +182,18 @@ test.describe('Org People → Committee tab (spec 027 US1 + US2)', () => {
     await stubCommitteeMembers(page);
 
     await gotoCommitteeTab(page);
-    const pencil = page.getByTestId(`org-people-committee-reassign-${CHIANING_EMAIL}`);
+    const pencil = page.getByTestId(`org-people-committee-reassign-${MORGAN_EMAIL}`);
     await expect(pencil).toBeDisabled();
   });
 
-  test('expands Chianing Wang and shows 3 sub-rows on Ultra Ethernet Consortium (US2)', async ({ page }) => {
+  test('expands Morgan Diaz and shows 3 sub-rows on Ultra Ethernet Consortium (US2)', async ({ page }) => {
     await stubAccountContext(page);
     await stubCommitteeMembers(page);
 
     await gotoCommitteeTab(page);
-    await page.getByTestId(`org-people-committee-row-${CHIANING_EMAIL}`).click();
+    await page.getByTestId(`org-people-committee-row-${MORGAN_EMAIL}`).click();
 
-    const expanded = page.getByTestId(`org-people-committee-expanded-${CHIANING_EMAIL}`);
+    const expanded = page.getByTestId(`org-people-committee-expanded-${MORGAN_EMAIL}`);
     await expect(expanded).toBeVisible();
     await expect(expanded.locator('[data-testid^="org-people-committee-subrow-"]')).toHaveCount(3);
   });
@@ -198,8 +205,8 @@ test.describe('Org People → Committee tab (spec 027 US1 + US2)', () => {
     await gotoCommitteeTab(page);
     await page.getByTestId('org-people-committee-search-input').locator('input').fill('performance');
 
-    await expect(page.getByTestId(`org-people-committee-row-${CHIANING_EMAIL}`)).toBeVisible();
-    await expect(page.getByTestId('org-people-committee-row-erick.mau@toyota.com')).toHaveCount(0);
+    await expect(page.getByTestId(`org-people-committee-row-${MORGAN_EMAIL}`)).toBeVisible();
+    await expect(page.getByTestId('org-people-committee-row-casey.nguyen@acme-motors.example')).toHaveCount(0);
   });
 
   test('committee filter narrows the rows to that committee (US2)', async ({ page }) => {
@@ -211,7 +218,7 @@ test.describe('Org People → Committee tab (spec 027 US1 + US2)', () => {
     await page.getByTestId('org-people-committee-committee-filter').click();
     await page.getByRole('option', { name: 'Performance Working Group' }).click();
 
-    await expect(page.getByTestId(`org-people-committee-row-${CHIANING_EMAIL}`)).toBeVisible();
-    await expect(page.getByTestId('org-people-committee-row-erick.mau@toyota.com')).toHaveCount(0);
+    await expect(page.getByTestId(`org-people-committee-row-${MORGAN_EMAIL}`)).toBeVisible();
+    await expect(page.getByTestId('org-people-committee-row-casey.nguyen@acme-motors.example')).toHaveCount(0);
   });
 });

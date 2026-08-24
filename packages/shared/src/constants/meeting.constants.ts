@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ArtifactVisibility, MeetingVisibility } from '../enums';
+import { ArtifactVisibility, CancelOnCommitteeRemoval, MeetingVisibility } from '../enums';
 import type { AttachmentCategory, CardSelectorOption, MeetingTypeConfig } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
@@ -11,6 +11,14 @@ import { lfxColors } from './colors.constants';
  * the meeting organizer — the organizer derivation skips them.
  */
 export const MEETING_ORGANIZER_SKIP_IDENTIFIERS = ['zoom.webhooks', 'zoom.events'];
+
+/**
+ * Upper bound on registrants a single "import from a meeting" (LFXV2-2607) can pull in. A sync
+ * BFF fetch-then-invite-fan-out for a large roster (100s-1000s of registrants) risks timeouts and
+ * confusing partial-failure states — the same failure mode that broke this feature in PCC. Above
+ * this, the import is refused rather than attempted; see meeting.controller.ts:getMeetingRegistrants.
+ */
+export const IMPORT_REGISTRANTS_MAX = 50;
 
 /**
  * Host-key visibility window — minutes before meeting start when the key becomes visible.
@@ -103,6 +111,17 @@ export const ARTIFACT_VISIBILITY_OPTIONS = [
   { label: 'Meeting Hosts Only', value: ArtifactVisibility.MEETING_HOSTS },
   { label: 'Meeting Guests', value: ArtifactVisibility.MEETING_PARTICIPANTS },
   { label: 'Public', value: ArtifactVisibility.PUBLIC },
+];
+
+/**
+ * Cancel-on-committee-removal per-meeting override options
+ * @description Lets a meeting override the project default for whether committee removal cancels
+ * registration on this (public) meeting
+ */
+export const CANCEL_ON_COMMITTEE_REMOVAL_OPTIONS = [
+  { label: 'Use project default', value: CancelOnCommitteeRemoval.INHERIT },
+  { label: 'Cancel registration', value: CancelOnCommitteeRemoval.CANCEL },
+  { label: 'Keep registration', value: CancelOnCommitteeRemoval.KEEP },
 ];
 
 /**

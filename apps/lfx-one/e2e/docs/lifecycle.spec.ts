@@ -36,17 +36,13 @@ test.use({ storageState: { cookies: [], origins: [] } });
 test.describe.configure({ timeout: TEST_TIMEOUT });
 
 test.describe('Docs portal — content lifecycle (US6)', () => {
-  test('renamed/deleted article URL serves the not-found page', async ({ page }) => {
+  test('renamed/deleted article URL serves the not-found page in place', async ({ page }) => {
     const response = await page.goto('/docs/this-article-was-renamed', { waitUntil: 'domcontentloaded' });
 
-    // SSR returns 404 for the dedicated /docs/not-found route via
-    // app.routes.server.ts. Browsers may follow internal navigations
-    // without a status code change, so we accept either the
-    // server-rendered 404 or a soft client redirect to the not-found
-    // page that still surfaces the recovery UI.
-    if (response) {
-      expect([200, 404]).toContain(response.status());
-    }
+    // On a miss the not-found view renders inline at the original URL (no
+    // redirect); SSR emits a real 404 there via the render-context flag.
+    expect(response?.status()).toBe(404);
+    await expect(page).toHaveURL(/\/docs\/this-article-was-renamed$/);
     await expect(page.getByTestId('docs-not-found')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 

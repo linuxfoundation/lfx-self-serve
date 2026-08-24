@@ -4,7 +4,6 @@ description: How to view, update, and close polls in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, manage, polls, results]
-last_generated: 2026-05-22
 last_updated: 2026-05-22
 intercom_collection: Votes
 ---

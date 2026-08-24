@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { IMPORT_REGISTRANTS_MAX } from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiResponse,
@@ -17,7 +18,6 @@ import {
   MeetingJoinURL,
   MeetingRecurrence,
   MeetingRegistrant,
-  MeetingUserInfo,
   MeetingRsvp,
   PaginatedResponse,
   PastMeeting,
@@ -49,11 +49,12 @@ import {
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { ResourceNotFoundError } from '../errors';
+import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
+import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
@@ -63,11 +64,13 @@ import { ProjectService } from './project.service';
  */
 export class MeetingService {
   private accessCheckService: AccessCheckService;
+  private committeeService: CommitteeService;
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
+    this.committeeService = new CommitteeService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.projectService = new ProjectService();
   }
@@ -389,24 +392,28 @@ export class MeetingService {
   }
 
   /**
-   * Resolves the `created_by` (meeting creator) for a set of live `v1_meeting` UIDs by
-   * querying the indexed projection — the only source that carries it (the ITX detail
-   * payload and webhook-created past meetings do not).
+   * Resolves the organizer identity fields (`created_by` and `owner`) for a set of live
+   * `v1_meeting` UIDs by querying the indexed projection — the only source that carries
+   * them (the ITX detail payload and webhook-created past meetings do not, and
+   * `v1_past_meeting` never carries `owner`).
    *
    * Batches the lookup with the query service's OR-semantics `tags` param so a page of
    * meetings costs one call per chunk rather than N. UIDs that no longer resolve (deleted
    * series) are simply absent from the returned map, so callers omit the organizer display.
    *
-   * @returns Map of meeting UID → `created_by`, only for meetings that carry one.
+   * Values are returned as indexed — zero-valued owners (meetings predating the field) are
+   * NOT filtered here; callers vet them via `resolveMeetingOwner` before writing.
+   *
+   * @returns Map of meeting UID → `{ created_by?, owner? }`, only for meetings carrying at least one.
    */
-  public async resolveCreatedByForMeetings(req: Request, meetingUids: string[]): Promise<Map<string, MeetingUserInfo>> {
-    const result = new Map<string, MeetingUserInfo>();
+  public async resolveCreatedByForMeetings(req: Request, meetingUids: string[]): Promise<Map<string, Pick<Meeting, 'created_by' | 'owner'>>> {
+    const result = new Map<string, Pick<Meeting, 'created_by' | 'owner'>>();
     const uniqueUids = [...new Set(meetingUids.filter(Boolean))];
     if (uniqueUids.length === 0) {
       return result;
     }
 
-    logger.debug(req, 'resolve_created_by_for_meetings', 'Resolving created_by from v1_meeting index', {
+    logger.debug(req, 'resolve_created_by_for_meetings', 'Resolving created_by/owner from v1_meeting index', {
       requested: meetingUids.length,
       unique: uniqueUids.length,
     });
@@ -438,8 +445,13 @@ export class MeetingService {
           });
           for (const resource of response.resources) {
             const uid = resource.data?.id || resource.id?.split(':').pop() || resource.id;
-            if (uid && resource.data?.created_by) {
-              result.set(uid, resource.data.created_by);
+            const createdBy = resource.data?.created_by;
+            const owner = resource.data?.owner;
+            if (uid && (createdBy || owner)) {
+              result.set(uid, {
+                ...(createdBy ? { created_by: createdBy } : {}),
+                ...(owner ? { owner } : {}),
+              });
             }
           }
           pageToken = response.page_token;
@@ -459,7 +471,7 @@ export class MeetingService {
 
     // Surface partial-failure completeness: a resolved count below requested means some chunks
     // failed and were skipped (those meetings render without an organizer rather than erroring).
-    logger.debug(req, 'resolve_created_by_for_meetings', 'Resolved created_by lookups', {
+    logger.debug(req, 'resolve_created_by_for_meetings', 'Resolved created_by/owner lookups', {
       requested: uniqueUids.length,
       resolved: result.size,
     });
@@ -599,8 +611,23 @@ export class MeetingService {
    *   caller is rendering; when omitted, each registrant's most recent RSVP is
    *   returned regardless of scope — correct only for non-recurring meetings or
    *   aggregate views. See LFXV2-2864 for the seconds↔ms unit mismatch.
+   * @param failOnPartial - If true, throw instead of returning a truncated roster when a
+   *   later page fails. Callers that rely on the complete list for correctness (e.g.
+   *   importing every registrant) should set this; default preserves the existing
+   *   partial-tolerant behavior for callers that just render whatever loaded.
+   * @param maxResults - If set, stop paging once the accumulated count exceeds this many
+   *   registrants — bounds upstream calls for callers that only need to know "is this over N"
+   *   (e.g. enforcing a size cap) rather than the true total. The returned array's length is a
+   *   lower bound, not an exact count, once it exceeds `maxResults`.
    */
-  public async getMeetingRegistrants(req: Request, meetingUid: string, includeRsvp: boolean = false, occurrenceId?: string): Promise<MeetingRegistrant[]> {
+  public async getMeetingRegistrants(
+    req: Request,
+    meetingUid: string,
+    includeRsvp: boolean = false,
+    occurrenceId?: string,
+    failOnPartial: boolean = false,
+    maxResults?: number
+  ): Promise<MeetingRegistrant[]> {
     // Registrant records carry `parent_refs: ['meeting:<uid>']` but no indexed tags — use `parent`
     // to query parent_refs, matching the working pattern in getMeetingRsvps.
     const params: Record<string, any> = {
@@ -610,11 +637,14 @@ export class MeetingService {
 
     logger.debug(req, 'get_meeting_registrants', 'Fetching meeting registrants', { meeting_id: meetingUid, params });
 
-    let registrants = await fetchAllQueryResources<MeetingRegistrant>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    let registrants = await fetchAllQueryResources<MeetingRegistrant>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial, maxResults }
     );
 
     // If include_rsvp is true, fetch RSVP data and attach to registrants.
@@ -650,6 +680,56 @@ export class MeetingService {
           err: error,
         });
       }
+    }
+
+    return registrants;
+  }
+
+  /**
+   * Fetches a meeting's complete registrant roster for the committee "import registrants" flow
+   * (LFXV2-2607), enforcing the authorization and size-cap rules that gate it. Business logic
+   * lives here rather than in the controller per the three-file pattern
+   * (docs/reviews/backend-checklist.md) — this orchestrates two domain resources plus an access
+   * check and a security-critical decision, not just HTTP request/response handling.
+   *
+   * The upstream query-service has no default per-user grant filtering on v1_meeting_registrant,
+   * so `getMeetingRegistrants` with `failOnPartial: true` would otherwise return any meeting's
+   * full registrant PII to any authenticated caller who supplies its uid. Requires the caller to
+   * either have writer access on `committeeUid`, or be a member of it when it's invite_only
+   * (mirroring `canSendMemberInvites()` client-side — those callers are already independently
+   * authorized to send invites for that committee upstream, via their own bearer token, so
+   * letting them populate the invite textarea via import grants no new privilege). Also requires
+   * the committee and meeting to share a project, and refuses rosters over `IMPORT_REGISTRANTS_MAX`
+   * — a sync fetch-then-invite-fan-out for a large roster risks timeouts and confusing
+   * partial-failure states (this exact failure mode broke in PCC).
+   *
+   * @throws AuthorizationError if the caller isn't authorized, per the rules above.
+   * @throws ServiceValidationError if the roster exceeds IMPORT_REGISTRANTS_MAX.
+   */
+  public async getAuthorizedRegistrantsForImport(req: Request, meetingUid: string, committeeUid: string): Promise<MeetingRegistrant[]> {
+    const [committee, meeting, isCommitteeWriter] = await Promise.all([
+      this.committeeService.getCommitteeById(req, committeeUid, { includeMembership: true }),
+      this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false }),
+      this.accessCheckService.checkSingleAccess(req, { resource: 'committee', id: committeeUid, access: 'writer' }),
+    ]);
+
+    const isCommitteeMember = !!committee.my_role;
+    const canImport = isCommitteeWriter || (committee.join_mode === 'invite_only' && isCommitteeMember);
+    if (!canImport || committee.project_uid !== meeting.project_uid) {
+      throw new AuthorizationError('Not authorized to import registrants for this meeting', {
+        operation: 'get_authorized_registrants_for_import',
+        service: 'meeting_service',
+      });
+    }
+
+    const registrants = await this.getMeetingRegistrants(req, meetingUid, false, undefined, true, IMPORT_REGISTRANTS_MAX);
+
+    if (registrants.length > IMPORT_REGISTRANTS_MAX) {
+      throw ServiceValidationError.forField(
+        'registrants',
+        `This meeting has more than ${IMPORT_REGISTRANTS_MAX} registrants — imports are limited to ${IMPORT_REGISTRANTS_MAX} per meeting.`,
+        { operation: 'get_authorized_registrants_for_import', service: 'meeting_service' }
+      );
     }
 
     return registrants;

@@ -54,6 +54,13 @@ export interface FetchAllQueryResourcesOptions {
    * Defaults to false — partial results are returned on later-page failures.
    */
   failOnPartial?: boolean;
+  /**
+   * Stop paging as soon as the accumulated count exceeds this many results, without fetching
+   * further pages. For callers that only need to know "is this over N" (e.g. enforcing a size
+   * cap before an expensive downstream operation) rather than the true total — the returned
+   * array's length is then a lower bound, not the exact count, once it exceeds `maxResults`.
+   */
+  maxResults?: number;
 }
 
 /**
@@ -64,7 +71,9 @@ export interface FetchAllQueryResourcesOptions {
  *
  * By default, returns whatever pages were successfully fetched when a later page
  * fails (partial results). Pass `failOnPartial: true` when completeness is
- * required for correctness.
+ * required for correctness. Pass `maxResults` to stop early once a threshold is
+ * exceeded, bounding the number of upstream calls for callers that only need to
+ * know "is this over N", not the true total.
  *
  * @param req - Express request object for log correlation
  * @param fetchPage - Callback that fetches a single page given an optional page_token
@@ -84,14 +93,14 @@ export async function fetchAllQueryResources<T>(
   fetchPage: (pageToken?: string) => Promise<QueryServiceResponse<T>>,
   options: FetchAllQueryResourcesOptions = {}
 ): Promise<T[]> {
-  const { failOnPartial = false } = options;
+  const { failOnPartial = false, maxResults } = options;
   const results: T[] = [];
 
   let response = await fetchWithRetry(req, () => fetchPage(), { page: 1 });
   results.push(...response.resources.map((resource) => resource.data));
 
   let page = 1;
-  while (response.page_token) {
+  while (response.page_token && !(maxResults !== undefined && results.length > maxResults)) {
     page++;
     logger.debug(req, 'fetch_all_query_resources', 'Fetching next page', {
       page,
@@ -118,7 +127,13 @@ export async function fetchAllQueryResources<T>(
     }
   }
 
-  if (page > 1) {
+  if (maxResults !== undefined && results.length > maxResults) {
+    logger.debug(req, 'fetch_all_query_resources', 'Stopped early — accumulated count exceeded maxResults', {
+      page,
+      accumulated_count: results.length,
+      max_results: maxResults,
+    });
+  } else if (page > 1) {
     logger.debug(req, 'fetch_all_query_resources', 'Pagination complete', {
       total_pages: page,
       total_results: results.length,

@@ -4,7 +4,6 @@ description: Frequently asked questions about surveys in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, faq, nps, feedback]
-last_generated: 2026-05-22
 last_updated: 2026-05-22
 intercom_collection: Surveys
 ---

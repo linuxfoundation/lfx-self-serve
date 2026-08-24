@@ -4,7 +4,6 @@ description: View and manage the LFX credentialing badges you have earned across
 audience: [all]
 product_area: Badges
 tags: [badges, credentials, achievements, certifications]
-last_generated: 2026-05-22
 last_updated: 2026-05-22
 intercom_collection: Badges
 ---

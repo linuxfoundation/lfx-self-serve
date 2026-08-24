@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { BRAND_KIT_CONTRACT_ID, BRAND_KIT_INTAKE_QUESTIONS, BRAND_KIT_REQUIRED_HEADINGS } from '../constants/brand-kit.constants';
 import { BrandKitEnvelope } from '../interfaces/brand-kit.interface';
 import {
+  buildBrandKitObjectKey,
   extractBrandKitEnvelopeCandidates,
   findMissingBrandKitHeadings,
   renderBrandKitFormMessage,
@@ -140,6 +141,18 @@ describe('findMissingBrandKitHeadings', () => {
   it('returns empty for a complete document and lists gaps otherwise', () => {
     expect(findMissingBrandKitHeadings(buildDocument())).toEqual([]);
     expect(findMissingBrandKitHeadings('# nothing here')).toHaveLength(BRAND_KIT_REQUIRED_HEADINGS.length);
+  });
+});
+
+describe('buildBrandKitObjectKey', () => {
+  it('derives the content-addressed key from validated fields', () => {
+    const sha = sha256('doc');
+    expect(buildBrandKitObjectKey('testorbit', sha)).toBe(`brand-kit/testorbit/${sha}.md`);
+  });
+
+  it('throws on unvalidated inputs (never client-supplied paths)', () => {
+    expect(() => buildBrandKitObjectKey('../escape', 'a'.repeat(64))).toThrow();
+    expect(() => buildBrandKitObjectKey('ok-slug', 'not-a-sha')).toThrow();
   });
 });
 

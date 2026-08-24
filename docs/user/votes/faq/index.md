@@ -4,8 +4,7 @@ description: Frequently asked questions about votes and polls in LFX Self Serve.
 audience: [all]
 product_area: Votes
 tags: [votes, faq, polls, governance, elections]
-last_generated: 2026-05-22
-last_updated: 2026-05-22
+last_updated: 2026-08-17
 intercom_collection: Votes
 ---
 
@@ -43,4 +42,4 @@ Make sure you have the correct project selected in the lens switcher. Polls are 
 
 ## Who do I contact if there is an error with a vote result?
 
-Contact LFX support through the Help Center. Include the poll name, the project, and a description of the discrepancy.
+Contact LFX support via in-app messaging. Include the poll name, the project, and a description of the discrepancy.

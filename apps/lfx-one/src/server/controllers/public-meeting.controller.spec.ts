@@ -48,9 +48,11 @@ const {
 // the controller/gate use. validation.helper is mocked wholesale (see below) so its heavy
 // shared/constants + shared/utils module graph never loads.
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
-// meeting.helper (kept real via importOriginal) imports resolveMeetingOrganizer from shared/utils;
-// stub it so the real barrel (and its MeetingType enum dependency) isn't pulled into the mock graph.
-vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => null) }));
+// meeting.helper (kept real via importOriginal) imports resolveMeetingOrganizer and
+// resolveMeetingOwner from shared/utils; stub them so the real barrel (and its MeetingType enum
+// dependency) isn't pulled into the mock graph. Both null => the enrichment gate always opens,
+// but the default empty resolveCreatedByForMeetings map keeps enrichment a pass-through.
+vi.mock('@lfx-one/shared/utils', () => ({ resolveMeetingOrganizer: vi.fn(() => null), resolveMeetingOwner: vi.fn(() => null) }));
 // meeting.helper imports HOST_KEY_* from shared/constants; stub the barrel so the full constants
 // module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
 vi.mock('@lfx-one/shared/constants', () => ({
@@ -450,6 +452,93 @@ describe('PublicMeetingController.getPublicPastMeetingById parent project resolu
     expect(next).not.toHaveBeenCalled();
     const payload = res.json.mock.calls[0][0];
     expect(payload.project.parent).toBeNull();
+  });
+});
+
+describe('PublicMeetingController.getMeetingById organizer privacy (LFXV2-2802)', () => {
+  let controller: PublicMeetingController;
+
+  const createdBy = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
+  const owner = { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    getEffectiveUsernameMock.mockReturnValue('user');
+    projectSvc.getProjectById.mockResolvedValue(buildProject({ parent_uid: '' }));
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ created_by: createdBy, owner } as Partial<Meeting>));
+    meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
+    meetingSvc.getMeetingHostKey.mockResolvedValue(null);
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
+    checkAccessMock.mockResolvedValue(accessMap([]));
+  });
+
+  it('strips created_by and owner for an anonymous caller without querying the index', async () => {
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.meeting.created_by).toBeUndefined();
+    expect(payload.meeting.owner).toBeUndefined();
+    expect(meetingSvc.resolveCreatedByForMeetings).not.toHaveBeenCalled();
+  });
+
+  it('keeps created_by and owner for an authenticated caller', async () => {
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.meeting.created_by).toEqual(createdBy);
+    expect(payload.meeting.owner).toEqual(owner);
+  });
+});
+
+describe('PublicMeetingController.getPublicPastMeetingById organizer privacy (LFXV2-2802)', () => {
+  let controller: PublicMeetingController;
+
+  const createdBy = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
+  const owner = { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    projectSvc.getProjectById.mockResolvedValue(buildProject({ parent_uid: '' }));
+    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ created_by: createdBy, owner } as Partial<PastMeeting>));
+    addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: false }));
+    checkAccessMock.mockResolvedValue(accessMap([]));
+  });
+
+  it('strips created_by and owner for an anonymous caller without querying the index', async () => {
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.meeting.created_by).toBeUndefined();
+    expect(payload.meeting.owner).toBeUndefined();
+    expect(meetingSvc.resolveCreatedByForMeetings).not.toHaveBeenCalled();
+  });
+
+  it('includes created_by and owner in the non-full-access projection for an authenticated caller', async () => {
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    // checkPastMeetingAccess is mocked to undefined => the reduced non-full-access projection.
+    expect(payload.full_access).toBeFalsy();
+    expect(payload.meeting.platform_meeting_id).toBeUndefined();
+    expect(payload.meeting.created_by).toEqual(createdBy);
+    expect(payload.meeting.owner).toEqual(owner);
   });
 });
 

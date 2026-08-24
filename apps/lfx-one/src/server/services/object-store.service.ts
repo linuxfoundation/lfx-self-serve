@@ -1,11 +1,26 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BucketLocationConstraint, CreateBucketCommand, HeadBucketCommand, NotFound, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { BucketLocationConstraint, CreateBucketCommand, HeadBucketCommand, HeadObjectCommand, NotFound, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Request } from 'express';
 
 import { buildAvatarUrl, getAvatarCdnPrefix, toAvatarKeySegment } from '../utils/avatar-url.util';
 import { logger } from './logger.service';
+
+/**
+ * Storage purposes and their bucket env vars (purpose-keyed buckets —
+ * lfx-one is multi-bucket per the LFX object-store design):
+ * - `avatars`: public profile pictures (S3_BUCKET, CDN-fronted).
+ * - `marketing-os-artifacts`: private marketing artifacts, key-prefix
+ *   namespaced per artifact type (MARKETING_OS_ARTIFACTS_S3_BUCKET,
+ *   dec-brand-kit-storage-v2).
+ */
+export type ObjectStorePurpose = 'avatars' | 'marketing-os-artifacts';
+
+const PURPOSE_BUCKET_ENV: Record<ObjectStorePurpose, string> = {
+  avatars: 'S3_BUCKET',
+  'marketing-os-artifacts': 'MARKETING_OS_ARTIFACTS_S3_BUCKET',
+};
 
 /**
  * Generic S3-compatible object-store service for managing bucket readiness and uploads.
@@ -13,7 +28,7 @@ import { logger } from './logger.service';
  */
 export class ObjectStoreService {
   private client: S3Client | null = null;
-  private ensureBucketPromise: Promise<void> | null = null;
+  private ensureBucketPromises: Partial<Record<ObjectStorePurpose, Promise<void>>> = {};
 
   /**
    * Ensure the configured bucket exists (lazy, memoized). Only creates it when
@@ -22,29 +37,102 @@ export class ObjectStoreService {
    * backends where the app must never create buckets. Otherwise a HeadBucket-only check,
    * so a missing bucket in deployed envs surfaces as a permissions/config error, not a
    * silently masked "not ready yet".
+   *
+   * `options.degradable` controls the failure log level: callers that catch and degrade
+   * gracefully (e.g. `putObjectIfAbsent` consumers like Brand Kit persistence) pass true so a
+   * readiness outage logs WARN instead of ERROR — the request still succeeds, so an ERROR here
+   * would page on a recovered path. Non-degradable callers (avatar upload) keep ERROR. The
+   * severity is captured when the memoized check is created; concurrent callers of the same
+   * purpose share that promise and its single log line, which is exact today because each
+   * purpose has a single caller class (avatars → uploadProfilePicture, marketing-os-artifacts →
+   * putObjectIfAbsent).
    */
-  public async ensureBucket(): Promise<void> {
-    if (!this.ensureBucketPromise) {
+  public async ensureBucket(purpose: ObjectStorePurpose = 'avatars', options: { degradable?: boolean } = {}): Promise<void> {
+    if (!this.ensureBucketPromises[purpose]) {
       // Reset only happens here, inside the settled .catch — so concurrent callers made while a
       // check is in flight all share this same pending promise and see the same outcome, and a
       // retry is only possible on the next call after this one has already rejected.
-      this.ensureBucketPromise = this.doEnsureBucket().catch((error) => {
-        this.ensureBucketPromise = null;
+      this.ensureBucketPromises[purpose] = this.doEnsureBucket(purpose, options.degradable === true).catch((error) => {
+        this.ensureBucketPromises[purpose] = undefined;
         throw error;
       });
     }
-    return this.ensureBucketPromise;
+    return this.ensureBucketPromises[purpose];
   }
 
   /**
    * Store readiness check (HeadBucket) for health/readiness endpoints.
    */
-  public async readiness(): Promise<boolean> {
+  public async readiness(purpose: ObjectStorePurpose = 'avatars'): Promise<boolean> {
     try {
-      await this.getClient().send(new HeadBucketCommand({ Bucket: this.getBucket() }));
+      await this.getClient().send(new HeadBucketCommand({ Bucket: this.getBucket(purpose) }));
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Idempotent, content-addressed write into a purpose-keyed bucket. When the
+   * key already exists (same content by construction for content-addressed
+   * keys), the write is skipped and reported as a no-op success.
+   *
+   * Note: HEAD-then-PUT is racy under concurrency, but the race is benign for
+   * content-addressed keys — concurrent writers PUT identical bytes and the
+   * last write is indistinguishable from the first.
+   *
+   * @returns true when a new object was written, false when it already existed.
+   */
+  public async putObjectIfAbsent(
+    req: Request,
+    purpose: ObjectStorePurpose,
+    key: string,
+    body: Buffer,
+    contentType: string,
+    cacheControl: string
+  ): Promise<boolean> {
+    // degradable: a readiness failure here rethrows to consumers that catch and degrade
+    // gracefully (same rationale as the WARN in the catch below), so it must log WARN — not
+    // ERROR — or a transient S3 outage on a successfully-degraded request would still page.
+    await this.ensureBucket(purpose, { degradable: true });
+
+    const bucket = this.getBucket(purpose);
+    const client = this.getClient();
+    const startTime = logger.startOperation(req, 'object_store_put_if_absent', { purpose, key, content_type: contentType, size: body.length });
+
+    try {
+      try {
+        await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+        logger.success(req, 'object_store_put_if_absent', startTime, { key, written: false });
+        return false;
+      } catch (error) {
+        // Only a confirmed 404/NotFound means "object is missing" — anything else
+        // (403, timeout, 5xx) must rethrow, never be treated as absent.
+        const isConfirmedNotFound = error instanceof NotFound || (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === 404;
+        if (!isConfirmedNotFound) {
+          throw error;
+        }
+      }
+
+      await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType, CacheControl: cacheControl }));
+      logger.success(req, 'object_store_put_if_absent', startTime, { key, written: true });
+      return true;
+    } catch (error) {
+      // WARN, not ERROR: this idempotent write is a best-effort primitive whose
+      // failures are recoverable by design — its consumers (Brand Kit
+      // persistence) catch and degrade gracefully, per the graceful-degradation
+      // rule in logging-patterns.md. The recovering caller owns the operational
+      // WARN; an unrecovered rethrow still reaches the centralized
+      // apiErrorHandler, which logs at ERROR. Logging ERROR here as well would
+      // page on every transient outage of a path that returns a successful
+      // response.
+      logger.warning(req, 'object_store_put_if_absent', 'Object HEAD/PUT failed — rethrowing for the caller to handle', {
+        purpose,
+        key,
+        duration: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     }
   }
 
@@ -109,10 +197,11 @@ export class ObjectStoreService {
     return this.client;
   }
 
-  private getBucket(): string {
-    const bucket = process.env['S3_BUCKET'];
+  private getBucket(purpose: ObjectStorePurpose = 'avatars'): string {
+    const envVar = PURPOSE_BUCKET_ENV[purpose];
+    const bucket = process.env[envVar];
     if (!bucket) {
-      throw new Error('S3_BUCKET environment variable is required');
+      throw new Error(`${envVar} environment variable is required`);
     }
     return bucket;
   }
@@ -128,8 +217,8 @@ export class ObjectStoreService {
     return region;
   }
 
-  private async doEnsureBucket(): Promise<void> {
-    const bucket = this.getBucket();
+  private async doEnsureBucket(purpose: ObjectStorePurpose, degradable: boolean): Promise<void> {
+    const bucket = this.getBucket(purpose);
     const client = this.getClient();
     const startTime = logger.startOperation(undefined, 'object_store_ensure_bucket', { bucket });
 
@@ -143,7 +232,19 @@ export class ObjectStoreService {
       const isConfirmedNotFound = error instanceof NotFound || (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === 404;
 
       if (!isConfirmedNotFound || process.env['S3_CREATE_MISSING_BUCKET'] !== 'true') {
-        logger.error(undefined, 'object_store_ensure_bucket', startTime, error, { bucket });
+        if (degradable) {
+          // WARN, not ERROR: the caller declared it catches this rejection and degrades
+          // gracefully (graceful-degradation rule in logging-patterns.md) — the recovering
+          // caller owns the operational WARN, and an unrecovered rethrow still reaches the
+          // centralized apiErrorHandler, which logs at ERROR.
+          logger.warning(undefined, 'object_store_ensure_bucket', 'Bucket readiness check failed — rethrowing for the caller to handle', {
+            bucket,
+            duration: Date.now() - startTime,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        } else {
+          logger.error(undefined, 'object_store_ensure_bucket', startTime, error, { bucket });
+        }
         throw error;
       }
 

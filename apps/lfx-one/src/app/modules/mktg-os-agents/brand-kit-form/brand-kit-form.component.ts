@@ -5,6 +5,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, inject, OnDestroy, outp
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { isPlatformBrowser } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
@@ -20,12 +21,23 @@ const RESULT_POLL_INTERVAL_MS = 10_000;
 const RESULT_POLL_MAX_ATTEMPTS = 30;
 /** Consecutive transient poll failures tolerated before giving up. */
 const RESULT_POLL_MAX_CONSECUTIVE_ERRORS = 3;
+/**
+ * Bounded background retries when a ready result arrives without a
+ * persistence receipt: each poll re-runs the idempotent server-side write
+ * (dec-brand-kit-storage-v2), so a transient storage outage still gets the
+ * document persisted. Bounded so environments where the bucket is
+ * intentionally unconfigured don't poll for the full budget.
+ */
+const PERSIST_RETRY_MAX_ATTEMPTS = 3;
 
 /**
  * One-page Brand Kit intake form (dec-brand-kit-intake-form): all 7 of Paul's
  * questions, open-ended, single submission. Drives a one-shot form-mode agent
  * session via the BFF, polls for the validated document, and renders it with
- * a download option. No persistence — the document lives in this view only.
+ * a download option. The BFF persists the validated document server-side
+ * (dec-brand-kit-storage-v2); this view renders the document and, when the
+ * ready response is missing its persistence receipt, keeps polling a bounded
+ * number of extra times so the server retries the idempotent write.
  */
 @Component({
   selector: 'lfx-brand-kit-form',
@@ -37,6 +49,8 @@ export class BrandKitFormComponent implements OnDestroy {
   private readonly brandKitService = inject(BrandKitService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   /** Emitted when the user leaves the form back to the marketplace grid. */
   public readonly back = output<void>();
@@ -91,7 +105,7 @@ export class BrandKitFormComponent implements OnDestroy {
           if (epoch !== this.pollEpoch) {
             return;
           }
-          this.pollResult(epoch, response.sessionId, response.ownerToken, 1, 0);
+          this.pollResult(epoch, response.sessionId, response.ownerToken, 1, 0, 0);
         },
         error: () => {
           if (epoch !== this.pollEpoch) {
@@ -106,6 +120,9 @@ export class BrandKitFormComponent implements OnDestroy {
     this.pollEpoch++;
     this.clearPollTimer();
     this.back.emit();
+    // Routed standalone (no parent binds `back`) — return to the marketplace
+    // grid the same way the agent run shell does.
+    this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
   }
 
   protected onStartOver(): void {
@@ -138,7 +155,7 @@ export class BrandKitFormComponent implements OnDestroy {
   }
 
   // === Private methods ===
-  private pollResult(epoch: number, sessionId: string, ownerToken: string, attempt: number, consecutiveErrors: number): void {
+  private pollResult(epoch: number, sessionId: string, ownerToken: string, attempt: number, consecutiveErrors: number, persistRetries: number): void {
     this.brandKitService
       .getResult(sessionId, ownerToken)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -148,18 +165,49 @@ export class BrandKitFormComponent implements OnDestroy {
             return;
           }
           if (response.status === 'ready') {
+            // Show the validated document immediately — persistence is
+            // best-effort and never blocks the user.
             this.generating.set(false);
             this.result.set(response);
+            if (response.persistence || persistRetries >= PERSIST_RETRY_MAX_ATTEMPTS) {
+              return;
+            }
+            // Missing receipt: each extra poll re-triggers the server-side
+            // content-addressed write, recovering from transient storage
+            // outages without changing what the user sees.
+            this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1), RESULT_POLL_INTERVAL_MS);
+            return;
+          }
+          if (this.result()) {
+            // A non-ready payload while the document is already displayed can
+            // only be a background persistence-retry poll — it must never
+            // surface a timeout error over the rendered document or spin until
+            // the attempt budget. Spend the bounded persist-retry budget
+            // instead, mirroring the error branch below. (Once the document is
+            // displayed, `attempt` is never consulted again on any branch.)
+            if (persistRetries < PERSIST_RETRY_MAX_ATTEMPTS) {
+              this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1), RESULT_POLL_INTERVAL_MS);
+            }
             return;
           }
           if (attempt >= RESULT_POLL_MAX_ATTEMPTS) {
             this.failGeneration('The generation is taking longer than expected. Please try again later.');
             return;
           }
-          this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0), RESULT_POLL_INTERVAL_MS);
+          this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries), RESULT_POLL_INTERVAL_MS);
         },
         error: () => {
           if (epoch !== this.pollEpoch) {
+            return;
+          }
+          if (this.result()) {
+            // The document is already displayed — a failed background
+            // persistence-retry poll must not surface an error or clear it.
+            // Spend the remaining retry budget instead of abandoning it on a
+            // single transient failure; the same cap bounds both paths.
+            if (persistRetries < PERSIST_RETRY_MAX_ATTEMPTS) {
+              this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, 0, persistRetries + 1), RESULT_POLL_INTERVAL_MS);
+            }
             return;
           }
           // Tolerate transient failures — a multi-minute generation should not be
@@ -168,7 +216,10 @@ export class BrandKitFormComponent implements OnDestroy {
             this.failGeneration('Could not fetch the generation result. Please try again.');
             return;
           }
-          this.pollTimer = setTimeout(() => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, consecutiveErrors + 1), RESULT_POLL_INTERVAL_MS);
+          this.pollTimer = setTimeout(
+            () => this.pollResult(epoch, sessionId, ownerToken, attempt + 1, consecutiveErrors + 1, persistRetries),
+            RESULT_POLL_INTERVAL_MS
+          );
         },
       });
   }

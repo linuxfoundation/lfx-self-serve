@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { PAST_MEETING_SORT } from '../constants/meeting.constants';
-import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
+import type { ArtifactVisibility, CancelOnCommitteeRemoval, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
 import type { TagSeverity } from './components.interface';
 
 // ============================================================================
@@ -150,6 +150,34 @@ export interface MeetingUserInfo {
 }
 
 /**
+ * The meeting owner — the single user responsible for a meeting, settable on create/update
+ * (unlike `created_by`, which is stamped server-side from the JWT).
+ * @description Mirrors the User Reference shape on the indexed `v1_meeting` projection.
+ * ITX defaults it to the creator on creation; omitting it on update preserves the stored
+ * owner (there is no way to unset one). Meetings that predate the field carry a zero-valued
+ * owner (all fields empty strings), which consumers must treat as absent.
+ */
+export interface MeetingOwner {
+  /** Unique user ID (response/index only — not accepted on request payloads) */
+  user_id?: string;
+  /** LFID username of the user */
+  username?: string;
+  /** Email address of the user */
+  email?: string;
+  /** Display name of the user */
+  name?: string;
+  /** Profile picture URL */
+  profile_picture?: string;
+}
+
+/**
+ * The `owner` shape accepted by the ITX create/update meeting payloads (`ITXUser` — no
+ * `user_id`). Omit the field entirely to keep the default (creator on create, stored
+ * owner on update).
+ */
+export type MeetingOwnerInput = Pick<MeetingOwner, 'username' | 'name' | 'email' | 'profile_picture'>;
+
+/**
  * A single organizer entry for the "Organized by" chip — a display name plus an optional
  * `mailto:` link (absent when the organizer record has no email → rendered as plain text).
  */
@@ -220,6 +248,14 @@ export interface Meeting {
    * (e.g. `zoom.webhooks`) or the series meeting no longer exists.
    */
   created_by?: MeetingUserInfo;
+  /**
+   * The meeting owner (see {@link MeetingOwner}). Preferred over `created_by` for the
+   * organizer display; fall back to `created_by` when absent or zero-valued. Present on
+   * ITX detail responses and the indexed `v1_meeting` projection; `v1_past_meeting`
+   * records never carry it, so the BFF enriches past meetings by joining back to the
+   * live `v1_meeting` record.
+   */
+  owner?: MeetingOwner;
 
   // Required API fields
   /** UUID of the LF project */
@@ -257,6 +293,8 @@ export interface Meeting {
   show_meeting_attendees?: boolean | null;
   /** Who can access meeting artifacts (recordings, transcripts, AI summaries) */
   artifact_visibility: ArtifactVisibility | null;
+  /** Per-meeting override for cancelling registration on committee removal; "inherit" defers to the project default */
+  cancel_on_committee_removal: CancelOnCommitteeRemoval | null;
   /** Minutes before meeting registrants can join */
   early_join_time_minutes?: number;
   /** Array of organizer usernames */
@@ -405,8 +443,10 @@ export interface CreateMeetingRequest {
   youtube_upload_enabled?: boolean; // YouTube upload integration
   show_meeting_attendees?: boolean; // Show meeting attendees on meeting details page
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
+  cancel_on_committee_removal?: CancelOnCommitteeRemoval; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
+  owner?: MeetingOwnerInput; // Meeting owner; omit to default to the creator
   ai_summary_enabled?: boolean; // Whether Zoom AI Companion summary is enabled
   require_ai_summary_approval?: boolean; // Whether AI summary requires approval before sharing
   auto_email_reminder_enabled?: boolean; // Whether an automatic reminder email is sent to participants
@@ -434,8 +474,10 @@ export interface UpdateMeetingRequest {
   youtube_upload_enabled?: boolean | null; // YouTube upload integration
   show_meeting_attendees?: boolean | null; // Show meeting attendees on meeting details page
   artifact_visibility?: ArtifactVisibility | null; // Who can access meeting artifacts
+  cancel_on_committee_removal?: CancelOnCommitteeRemoval | null; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
+  owner?: MeetingOwnerInput; // Meeting owner; omit to preserve the stored owner (cannot be unset)
   ai_summary_enabled?: boolean | null; // Whether Zoom AI Companion summary is enabled
   require_ai_summary_approval?: boolean | null; // Whether AI summary requires approval before sharing
   auto_email_reminder_enabled?: boolean | null; // Whether an automatic reminder email is sent to participants
@@ -479,6 +521,32 @@ export interface MeetingTemplateGroup {
   meetingType: MeetingType;
   /** Array of templates for this meeting type */
   templates: MeetingTemplate[];
+}
+
+/**
+ * Dropdown option for the "import registrants from a meeting" picker (LFXV2-2607).
+ * `label` is the display string (title + date); `title` is kept separately so
+ * import summaries can name the meeting cleanly.
+ */
+export interface MeetingSelectOption {
+  /** Meeting id passed to the registrants fetch */
+  value: string;
+  /** Display label, e.g. "Q3 Roadmap — Jul 3, 2026" */
+  label: string;
+  /** Bare meeting title, for summary copy */
+  title: string;
+}
+
+/**
+ * Result of pulling invite-ready emails off a meeting's registrant list.
+ * `emails` is de-duplicated (case-insensitive, first-seen casing preserved);
+ * `skippedNoEmail` counts registrants that carried no usable email.
+ */
+export interface RegistrantEmailExtraction {
+  /** Unique, trimmed registrant emails ready to feed the invite flow */
+  emails: string[];
+  /** Count of registrants skipped because they had no email */
+  skippedNoEmail: number;
 }
 
 /**
