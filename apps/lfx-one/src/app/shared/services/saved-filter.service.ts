@@ -112,6 +112,10 @@ export class SavedFilterService {
 
     this.store.commit({
       next: [...current, newFilter],
+      // Re-derive at dequeue time: if an earlier queued save failed and rolled back, the eager snapshot would resurrect it.
+      rebase: (latest) => [...latest.filter((f) => f.id !== newFilter.id), newFilter],
+      // Targeted rollback: remove only this view so saves queued after this one survive.
+      rollback: () => this.store.replace(this.store.state().data.filter((f) => f.id !== newFilter.id)),
       onSuccess: () => this.messageService.add({ severity: 'success', summary: 'View saved', detail: `Saved "${newFilter.name}"` }),
       onError: () =>
         this.messageService.add({ severity: 'error', summary: 'Failed to save view', detail: `Could not save "${newFilter.name}". Please try again.` }),

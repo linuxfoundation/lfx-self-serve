@@ -73,9 +73,11 @@ export class FeedHeaderComponent {
   protected readonly periodOptions: MarketingImpactPeriodOption[] = buildMarketingImpactPeriodOptions();
 
   private readonly filtersTrigger = viewChild<unknown, ElementRef<HTMLElement>>('filtersTrigger', { read: ElementRef });
+  private readonly viewsTrigger = viewChild<unknown, ElementRef<HTMLElement>>('viewsTrigger', { read: ElementRef });
 
   /** Tracks the open→close transition so focus is only restored after the panel actually closed. */
   private filtersOpened = false;
+  private viewsOpened = false;
 
   protected readonly isAnalyticsTab = computed(() => this.activeTab() === 'analytics');
   /** PCC behavior: a foundation with exactly one sub-project shows a static badge, not a select. */
@@ -97,6 +99,7 @@ export class FeedHeaderComponent {
     this.headerForm.controls.search.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.searchInput.set(value));
 
     this.restoreFocusOnFiltersClose();
+    this.restoreFocusOnViewsClose();
   }
 
   protected onTabChange(tabId: string): void {
@@ -132,6 +135,23 @@ export class FeedHeaderComponent {
 
       this.filtersOpened = false;
       untracked(() => this.filtersTrigger()?.nativeElement.querySelector('button')?.focus());
+    });
+  }
+
+  /** Same dialog contract for the Views dropdown — its rows are removed from the DOM on close. */
+  private restoreFocusOnViewsClose(): void {
+    effect(() => {
+      if (this.viewsVisible()) {
+        this.viewsOpened = true;
+        return;
+      }
+
+      if (!this.viewsOpened) {
+        return;
+      }
+
+      this.viewsOpened = false;
+      untracked(() => this.viewsTrigger()?.nativeElement.querySelector('button')?.focus());
     });
   }
 

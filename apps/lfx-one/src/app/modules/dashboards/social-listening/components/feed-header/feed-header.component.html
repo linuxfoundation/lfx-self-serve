@@ -62,6 +62,7 @@
     <!-- Views trigger (feed tab only) — the label is the active saved view or "No Preset View" -->
     @if (!isAnalyticsTab()) {
       <lfx-button
+        #viewsTrigger
         severity="secondary"
         [outlined]="true"
         size="small"
