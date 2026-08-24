@@ -49,11 +49,11 @@
         <h3 class="mb-1 text-base font-bold text-gray-900">{{ mention.title }}</h3>
       }
 
-      <!-- Body content (markdown, sanitized) -->
+      <!-- Body content (restricted markdown: no images or raw HTML, links gated by the external-URL policy) -->
       @if (mention.content) {
         <div class="mention-body mb-3">
           <lfx-expandable-text [maxHeight]="bodyMaxHeight">
-            <lfx-markdown-renderer [content]="mention.content" [breaks]="true" data-testid="mention-card-body" />
+            <lfx-markdown-renderer [content]="mention.content" [breaks]="true" [restricted]="true" data-testid="mention-card-body" />
           </lfx-expandable-text>
         </div>
       }
