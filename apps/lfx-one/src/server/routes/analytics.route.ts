@@ -155,12 +155,16 @@ router.get('/email-ctr', requireMarketingAuditorOrLfStaff, (req, res, next) => a
 // Marketing Overview dashboard. See note above on `requireMarketingAuditorOrLfStaff`.
 router.get('/social-reach', requireMarketingAuditorOrLfStaff, (req, res, next) => analyticsController.getSocialReach(req, res, next));
 
-// Keyword performance endpoint (marketing dashboard)
-router.get('/keyword-performance', (req, res, next) => analyticsController.getKeywordPerformance(req, res, next));
+// Marketing-ops gated (LFXV2-2235): returns keyword performance metrics (marketing dashboard).
+// Part of the full Marketing Impact tab set admitted to marketing_auditor grantees, not just
+// ED — LF Staff without that grant get the Social-Listening-only view and never reach this route.
+// See note above on `requireMarketingAuditor`.
+router.get('/keyword-performance', requireMarketingAuditor, (req, res, next) => analyticsController.getKeywordPerformance(req, res, next));
 
-// Social media endpoints (marketing dashboard)
-router.get('/social-media', (req, res, next) => analyticsController.getSocialMedia(req, res, next));
-router.get('/social-media/monthly', (req, res, next) => analyticsController.getSocialMediaMonthly(req, res, next));
+// Marketing-ops gated (LFXV2-2235): returns social media metrics (marketing dashboard). See
+// note above on `requireMarketingAuditor`.
+router.get('/social-media', requireMarketingAuditor, (req, res, next) => analyticsController.getSocialMedia(req, res, next));
+router.get('/social-media/monthly', requireMarketingAuditor, (req, res, next) => analyticsController.getSocialMediaMonthly(req, res, next));
 
 // North Star metrics endpoints (executive director dashboard)
 router.get('/member-retention', (req, res, next) => analyticsController.getMemberRetention(req, res, next));
