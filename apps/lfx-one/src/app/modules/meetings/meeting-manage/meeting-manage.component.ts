@@ -53,6 +53,7 @@ import {
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
+  normalizeMeetingApiVotingStatuses,
   resolveMeetingOwner,
   sanitizeMeetingCommittees,
 } from '@lfx-one/shared/utils';
@@ -611,7 +612,12 @@ export class MeetingManageComponent {
         : undefined,
       recurrence: recurrenceObject,
       platform: formValue.platform || DEFAULT_MEETING_TOOL,
-      committees: sanitizeMeetingCommittees(formValue.committees),
+      // Canonicalize stored voting statuses at the save boundary: the form hydrates committees
+      // verbatim, so a legacy row would otherwise resubmit display values ('Voting Rep') on an unrelated edit (GH-1796).
+      committees: sanitizeMeetingCommittees(formValue.committees).map((committee) => ({
+        ...committee,
+        allowed_voting_statuses: normalizeMeetingApiVotingStatuses(committee.allowed_voting_statuses),
+      })),
       ...this.prepareOwnerData(formValue),
     };
   }

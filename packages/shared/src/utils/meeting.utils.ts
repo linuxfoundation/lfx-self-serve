@@ -1406,10 +1406,16 @@ export function fromMeetingApiVotingStatuses(statuses: ReadonlyArray<string | nu
   // Fall back to a direct display-value match so rows stored pre-migration still hydrate.
   const mapped = statuses.map((status) => {
     if (!status) return undefined;
-    return (
-      MEETING_TO_COMMITTEE_VOTING_STATUS[status as MeetingAllowedVotingStatus] ??
-      (Object.values(CommitteeMemberVotingStatus).includes(status as CommitteeMemberVotingStatus) ? (status as CommitteeMemberVotingStatus) : undefined)
-    );
+    const mappedStatus = MEETING_TO_COMMITTEE_VOTING_STATUS[status as MeetingAllowedVotingStatus];
+    if (mappedStatus) return mappedStatus;
+    if (!Object.values(CommitteeMemberVotingStatus).includes(status as CommitteeMemberVotingStatus)) return undefined;
+    // Legacy 'None' collapses to Observer like 'none' does — None is not selectable in meeting forms.
+    return status === CommitteeMemberVotingStatus.NONE ? CommitteeMemberVotingStatus.OBSERVER : (status as CommitteeMemberVotingStatus);
   });
   return [...new Set(mapped.filter((status): status is CommitteeMemberVotingStatus => Boolean(status)))];
+}
+
+/** Canonicalizes a stored status list to the deduped meeting-API vocabulary, mapping pre-migration display values. */
+export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string | null | undefined> | null | undefined): MeetingAllowedVotingStatus[] {
+  return toMeetingApiVotingStatuses(fromMeetingApiVotingStatuses(statuses));
 }

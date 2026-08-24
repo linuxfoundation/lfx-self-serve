@@ -11,7 +11,7 @@ import { TableComponent } from '@components/table/table.component';
 import { COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared';
 import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import { Committee, CommitteeMember, Meeting } from '@lfx-one/shared/interfaces';
-import { fromMeetingApiVotingStatuses, sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids, toMeetingApiVotingStatuses } from '@lfx-one/shared/utils';
+import { fromMeetingApiVotingStatuses, normalizeMeetingApiVotingStatuses, sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids, toMeetingApiVotingStatuses } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -177,7 +177,9 @@ export class MeetingCommitteeModalComponent {
     // If no changes, just close
     const currentCommittees = sanitizeMeetingCommittees(this.meeting.committees);
     const currentIds = currentCommittees.map((c) => c.uid);
-    const currentVotingStatuses = currentCommittees.flatMap((c) => c.allowed_voting_statuses || []);
+    // Canonicalize the stored side too: saves write the same list onto every committee, so a raw
+    // flatMap carries duplicates (and pre-migration display values) that would always look dirty.
+    const currentVotingStatuses = normalizeMeetingApiVotingStatuses(currentCommittees.flatMap((c) => c.allowed_voting_statuses || []));
     if (
       JSON.stringify(selectedIds.sort()) === JSON.stringify(currentIds.sort()) &&
       JSON.stringify(selectedVotingStatuses.sort()) === JSON.stringify(currentVotingStatuses.sort())

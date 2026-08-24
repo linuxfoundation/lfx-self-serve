@@ -58,6 +58,7 @@ import {
   isUnresolvableParticipantName,
   isVoteCalendarEventPast,
   normalizeIndexedMeetingAiSummary,
+  normalizeMeetingApiVotingStatuses,
   resolveMeetingOrganizer,
   resolveMeetingOwner,
   resolveMeetingCalendarColors,
@@ -1321,6 +1322,8 @@ describe('fromMeetingApiVotingStatuses', () => {
       CommitteeMemberVotingStatus.EMERITUS,
     ]);
     expect(fromMeetingApiVotingStatuses(['voting_rep', 'Observer'])).toEqual([CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.OBSERVER]);
+    // Legacy 'None' collapses to Observer like the API spelling 'none' — None is not selectable in meeting forms.
+    expect(fromMeetingApiVotingStatuses(['None'])).toEqual([CommitteeMemberVotingStatus.OBSERVER]);
   });
 
   it('round-trips the selectable statuses through both mappers', () => {
@@ -1331,6 +1334,22 @@ describe('fromMeetingApiVotingStatuses', () => {
       CommitteeMemberVotingStatus.EMERITUS,
     ];
     expect(fromMeetingApiVotingStatuses(toMeetingApiVotingStatuses(display))).toEqual(display);
+  });
+});
+
+describe('normalizeMeetingApiVotingStatuses', () => {
+  it('returns [] for null, undefined, and empty input', () => {
+    expect(normalizeMeetingApiVotingStatuses(null)).toEqual([]);
+    expect(normalizeMeetingApiVotingStatuses(undefined)).toEqual([]);
+    expect(normalizeMeetingApiVotingStatuses([])).toEqual([]);
+  });
+
+  it('dedupes statuses repeated across committees and canonicalizes legacy display values', () => {
+    expect(normalizeMeetingApiVotingStatuses(['voting_rep', 'voting_rep', 'Voting Rep', 'Observer', 'none', 'None'])).toEqual(['voting_rep', 'observer']);
+  });
+
+  it('drops unknown values', () => {
+    expect(normalizeMeetingApiVotingStatuses(['bogus', 'observer'])).toEqual(['observer']);
   });
 });
 
