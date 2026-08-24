@@ -956,9 +956,10 @@ export class EventsService {
    * `IS_PAST_EVENT = FALSE` comparison — excludes them from both tabs.
    *
    * TRIM is given an explicit character set because Snowflake's one-argument TRIM strips only
-   * spaces, while isBackfillEventSource() uses JS trim() and so also strips tabs and newlines.
-   * Left unqualified the two would disagree on a value like '\tbackfill\n', taking the ELSE branch
-   * here while the mapper reported Attended — stranding the row in Upcoming with a Past status.
+   * spaces. Left unqualified it would disagree with isBackfillEventSource() on a value like
+   * '\tbackfill\n', taking the ELSE branch here while the mapper reported Attended — stranding the
+   * row in Upcoming with a Past status. The set must stay byte-identical to the one that helper
+   * strips; it deliberately does not use JS trim(), whose whitespace class Snowflake cannot express.
    *
    * Uses unqualified column names, so it is only valid directly against
    * ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS, not against a projected CTE.
