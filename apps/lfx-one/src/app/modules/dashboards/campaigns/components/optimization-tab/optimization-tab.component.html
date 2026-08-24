@@ -78,9 +78,18 @@
   @if (campaignsConflicted()) {
     <section class="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4" role="alert" data-testid="optimization-campaigns-conflict">
       <h3 class="text-sm font-semibold text-amber-900">This list is out of date</h3>
+      <!--
+        Scoped to the affected rows, because that is what the controls actually do. The copy used
+        to say "refresh before pausing or resuming anything" while only the conflicted rows are
+        disabled — every other row stays clickable by design, since their validators are untested
+        rather than disproved. An instruction broader than the enforcement reads as a broken page:
+        the operator is told to stop, sees live buttons, and cannot tell which the warning is about.
+      -->
       <p class="text-sm text-amber-800">
-        At least one campaign was changed by someone else while this page was open, so the statuses below may not match the ad platform. Refresh the list before
-        pausing or resuming anything.
+        {{ conflictedCount() === 1 ? 'A campaign below was' : conflictedCount() + ' campaigns below were' }} changed by someone else while this page was open,
+        so {{ conflictedCount() === 1 ? 'its status' : 'their statuses' }} may not match the ad platform.
+        {{ conflictedCount() === 1 ? 'Its toggle is' : 'Their toggles are' }} disabled until you refresh the list. Other campaigns are unaffected and can still
+        be paused or resumed.
       </p>
       <div>
         <button

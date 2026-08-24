@@ -206,6 +206,16 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly campaignsConflicted = computed(() => this.conflictedCampaignIds().size > 0);
 
   /**
+   * How many rows are conflicted, so the banner can scope its instruction to them.
+   *
+   * The banner told the operator to refresh "before pausing or resuming anything" while the
+   * implementation disables only the conflicted rows — deliberately, since the other rows'
+   * validators are untested rather than disproved. An instruction broader than the enforcement
+   * leaves the operator unable to tell which campaign the warning is about.
+   */
+  protected readonly conflictedCount = computed(() => this.conflictedCampaignIds().size);
+
+  /**
    * The status each campaign holds after any toggle this session, keyed by campaign id.
    *
    * Overlays the indexed status rather than replacing it. The index is asynchronous, so a row
@@ -332,6 +342,7 @@ export class OptimizationTabComponent implements OnInit {
       return null;
     }
     const toggled = this.toggledStatus();
+    const pending = this.togglePending();
     // Read here so the row's `describedBy` recomputes when an error appears or clears. Reading it
     // inside a template method instead was the frontend-checklist §4 violation this replaces.
     const toggleErrors = this.toggleError();
@@ -343,6 +354,14 @@ export class OptimizationTabComponent implements OnInit {
       // non-string from the unvalidated wire makes any `.toLowerCase()` throw INSIDE this
       // computed, blanking the whole campaigns section on every change-detection pass. Guarding
       // one consumer just moves the crash to the next one.
+      // A row with a toggle IN FLIGHT renders the direction that request carries, not one derived
+      // from a status that may change under it. `clearConflictStateFor` can drop this row's
+      // `toggledStatus` mid-flight when a refresh proves the index advanced — correct for a
+      // resting row, but for a busy one it flipped the label and `aria-label` from "Resume" to
+      // "Pause" while the spinner still ran, so the control announced the opposite of what it was
+      // doing and of what the live region was saying. The dispatched direction is the only honest
+      // answer until the response lands.
+      const pendingDirection = pending[campaign.id];
       const status = normalizeCampaignStatus(toggled[campaign.id] ?? campaign.status);
       // Three states, not two. `campaignToggleAction` derives them from the shared status sets, so
       // a status upstream refuses — `pending`, a partial orphan, or one added after this was
@@ -360,7 +379,9 @@ export class OptimizationTabComponent implements OnInit {
       // click later. Deciding it from the row's own support check makes both cases fail closed,
       // exactly as a malformed status already does.
       const platformSupported = typeof campaign.platform === 'string' && TOGGLEABLE_CAMPAIGN_PLATFORMS.has(campaign.platform);
-      const action = deploymentDisabled || !platformSupported ? 'unavailable' : campaignToggleAction(status, campaign.platform);
+      // The dispatched direction wins while the request is out; otherwise derive it from status.
+      const derivedAction = deploymentDisabled || !platformSupported ? 'unavailable' : campaignToggleAction(status, campaign.platform);
+      const action: CampaignToggleAction = pendingDirection ?? derivedAction;
       // The platform reason wins when it applies, because it is the one the operator cannot act
       // on. A Microsoft row in `pending` is BOTH not-yet-created and not-supported-here; telling
       // them it "resolves itself once it finishes" would promise a button that never arrives.
@@ -985,7 +1006,21 @@ export class OptimizationTabComponent implements OnInit {
         // caught up with the write that caused the 412, so this row's cached validator is still
         // the best one available and its conflict is still live.
         const advanced = rows.filter((row) => row.etag !== undefined && row.etag !== this.lastDeliveredEtags[row.id]).map((row) => row.id);
-        this.lastDeliveredEtags = delivered;
+        // MERGED over the previous baseline rather than replacing it, so a row this delivery
+        // OMITTED keeps the etag it was last seen at.
+        //
+        // A wholesale replace erased the baseline for absent rows, and an absent row is not the
+        // rare case: `possiblyStale` deliveries include the empty list the index returns before it
+        // has caught up, and a refusal answers `[]` outright. Sequence that broke: a 412 conflicts
+        // `c-1` at `"3"` → a stale empty refresh drops `c-1` from the baseline → the next refresh
+        // returns `c-1` still at `"3"` → it compares against `undefined`, counts as "advanced",
+        // and clears the conflict plus the cached validator. The row's rejected etag would then be
+        // re-offered as if a re-read had proved it good, which is the opposite of what happened.
+        //
+        // Keyed on the union, so a row that genuinely disappears keeps a harmless stale entry
+        // rather than corrupting the next comparison; `conflictedCampaignIds` is what tracks
+        // whether it still matters, and the absence rule below already prunes that.
+        this.lastDeliveredEtags = { ...this.lastDeliveredEtags, ...delivered };
         // A row whose validator was minted while this very read was in flight keeps it: the write
         // that produced it is newer than the read, so the indexed etag is the older of the two.
         const concurrent = this.etagsWrittenDuringRead;

@@ -1676,4 +1676,114 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     // The actual WCAG 2.5.3 condition, asserted as a relationship rather than two fixed strings.
     expect(accessibleName).toContain(visible);
   });
+
+  /**
+   * Round-four findings against `4cc5490d7`, all three caused by the previous round's fixes.
+   */
+
+  /**
+   * A stale delivery must not erase the etag BASELINE of a row it omitted.
+   *
+   * `lastDeliveredEtags` was replaced wholesale on every delivery, and an omitted row is not the
+   * rare case — `possiblyStale` covers the empty list the index returns before it catches up, and
+   * a refusal answers `[]` outright. So: `c-1` conflicts at `"3"` → a stale empty refresh erases
+   * its baseline → the next refresh returns `c-1` still at `"3"` → it compares against `undefined`,
+   * counts as advanced, and clears the conflict and the cached validator. The row's REJECTED etag
+   * is then re-offered as though a re-read had proved it good.
+   *
+   * The assertion is that the banner survives, which is the observable form of "the baseline was
+   * kept": had `"3"` been treated as an advance, `clearConflictStateFor` would have removed the id.
+   */
+  it('keeps a conflicted row’s etag baseline across a stale delivery that omits it', () => {
+    conflict();
+    render([doc({ status: 'created', etag: '"3"' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+
+    // A stale, empty refresh: the index has not caught up, so it says nothing about `c-1`.
+    fixture.componentRef.setInput('briefCampaigns', null);
+    fixture.detectChanges();
+    fixture.componentRef.setInput('campaignsPossiblyStale', true);
+    fixture.componentRef.setInput('briefCampaigns', []);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+
+    // `c-1` comes back UNCHANGED at the same version it conflicted on. That is not an advance,
+    // so nothing has been proved and the conflict must stand.
+    fixture.componentRef.setInput('campaignsPossiblyStale', false);
+    refreshFromParent([doc({ status: 'created', etag: '"3"' })]);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).not.toBeNull();
+    // And the dead validator is still withheld rather than re-offered.
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').disabled).toBe(true);
+  });
+
+  /**
+   * The busy control must keep naming the action it is actually performing.
+   *
+   * `clearConflictStateFor` now drops `toggledStatus` when a delivery proves the index advanced.
+   * Correct for a resting row — but the button's label and accessible name are derived from that
+   * status, so for a row with a request IN FLIGHT the refresh flipped "Resume" to "Pause" while
+   * the spinner still ran. The control then announced the opposite of what it was doing, and
+   * contradicted the live region beside it.
+   *
+   * Asserted on the label AND the accessible name together, because the label-in-name rule from
+   * the previous round ties them: a fix that froze only one would break the other.
+   */
+  it('keeps a pending row labelled with the direction actually in flight', () => {
+    const inFlight = new Subject<CampaignStatusUpdateResult>();
+    // The row is already paused this session, so its resting action is Resume.
+    updateCampaignStatus.mockReturnValueOnce(
+      of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"4"' })
+    );
+    render([doc({ status: 'created', etag: '"3"', campaign_name: 'KubeCon EU' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    const button = (): HTMLButtonElement => fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button().textContent).toContain('Resume');
+
+    // Now RESUME it, and hold that request open.
+    updateCampaignStatus.mockReturnValueOnce(inFlight.asObservable());
+    button().click();
+    fixture.detectChanges();
+    expect(button().getAttribute('aria-busy')).toBe('true');
+    expect(button().textContent).toContain('Resume');
+
+    // A refresh lands mid-flight proving the index advanced past this session's write, which drops
+    // the status overlay. The resting action would now be Pause.
+    refreshFromParent([doc({ status: 'created', etag: '"5"', campaign_name: 'KubeCon EU' })]);
+
+    // The in-flight request is still a RESUME, so the control must still say so.
+    expect(inFlight.observed).toBe(true);
+    expect(button().textContent).toContain('Resume');
+    expect(button().textContent).not.toContain('Pause');
+    expect(button().getAttribute('aria-label')).toBe('Resume KubeCon EU');
+  });
+
+  /**
+   * The banner's instruction must match what the controls enforce.
+   *
+   * It told the operator to refresh "before pausing or resuming anything" while only conflicted
+   * rows are disabled — every other row stays clickable by design, because their validators are
+   * untested rather than disproved. Being told to stop while looking at live buttons reads as a
+   * broken page and hides which campaign the warning is about.
+   */
+  it('scopes the conflict banner to the affected rows, not the whole list', () => {
+    conflict();
+    render([doc({ id: 'c-1', status: 'created', etag: '"3"' }), doc({ id: 'c-2', status: 'created', etag: '"4"', campaign_name: 'Other' })]);
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    const banner = fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]');
+    expect(banner).not.toBeNull();
+    // Singular, because exactly one row conflicted.
+    expect(banner.textContent).toContain('A campaign below was');
+    // It must not tell the operator to stop using controls that remain enabled...
+    expect(banner.textContent).not.toContain('pausing or resuming anything');
+    expect(banner.textContent).toContain('Other campaigns are unaffected');
+    // ...and that claim has to be TRUE, which is the half a copy-only assertion would miss.
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').disabled).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-2"]').disabled).toBe(false);
+  });
 });
