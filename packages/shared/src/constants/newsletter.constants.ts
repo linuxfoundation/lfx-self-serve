@@ -57,11 +57,11 @@ export const NEWSLETTER_TOP_LINKS_LIMIT = 20;
 export const NEWSLETTER_SEND_TIMEOUT_MS = 120_000;
 
 // Reserved block-content keys holding the per-block outer spacing applied as a
-// wrapping style when the block renders. Mirrors gatewaze's auto-injected
-// `_spacing_padding` / `_spacing_margin` props (see the Puck editor's
-// spacing-wrapper.tsx) so the composer canvas and the eventual sent email wrap
-// each block identically. Values are raw CSS shorthand strings (e.g. "12px",
-// "8px 16px"); the default `0px` means "no wrapper" (matches gatewaze).
+// wrapping style when the block renders. Mirrors the source editor's
+// auto-injected `_spacing_padding` / `_spacing_margin` props (see the Puck
+// editor's spacing-wrapper.tsx) so the composer canvas and the eventual sent
+// email wrap each block identically. Values are raw CSS shorthand strings
+// (e.g. "12px", "8px 16px"); the default `0px` means "no wrapper".
 export const NEWSLETTER_SPACING_PADDING_KEY = '_spacing_padding';
 export const NEWSLETTER_SPACING_MARGIN_KEY = '_spacing_margin';
 export const NEWSLETTER_SPACING_KEYS = [NEWSLETTER_SPACING_PADDING_KEY, NEWSLETTER_SPACING_MARGIN_KEY] as const;

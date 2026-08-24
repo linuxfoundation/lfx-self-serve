@@ -494,7 +494,7 @@ export interface NewsletterChartData {
 }
 
 // ---------------------------------------------------------------------------
-// Gatewaze-style editor: structured layout + template manifest (spec 004 §8)
+// Block-composer editor: structured layout + template manifest (spec 004 §8)
 // ---------------------------------------------------------------------------
 
 /**
@@ -622,7 +622,7 @@ export interface NewsletterBlockPaletteGroup {
 }
 
 /**
- * The left-rail tabs of the block-composer editor (Gatewaze-Puck parity). The
+ * The left-rail tabs of the block-composer editor (Puck-style). The
  * rail switches the sidebar between the block palette and the canvas outline.
  * Field editing lives in the persistent right sidebar, not a rail tab.
  */

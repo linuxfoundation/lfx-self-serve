@@ -243,7 +243,7 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
     }
 
     // Universal Spacing controls (Padding / Margin), auto-injected at the bottom
-    // of every block — mirrors gatewaze's auto-injected `_spacing_*` props.
+    // of every block, with auto-injected `_spacing_*` props.
     group.addControl(this.paddingKey, new FormControl(this.seedSpacing(block.content[this.paddingKey])));
     group.addControl(this.marginKey, new FormControl(this.seedSpacing(block.content[this.marginKey])));
 
@@ -293,7 +293,7 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
     }
     // Persist the reserved spacing keys alongside the schema fields. Only carry
     // a value when it's a non-default override, so default-spaced blocks keep a
-    // clean `content` (matches gatewaze, which skips the wrapper at `0px`).
+    // clean `content` (the wrapper is skipped at `0px`).
     for (const key of [this.paddingKey, this.marginKey]) {
       const value = group.get(key)?.value;
       if (typeof value === 'string' && value.trim() && value.trim() !== NEWSLETTER_SPACING_DEFAULT) {

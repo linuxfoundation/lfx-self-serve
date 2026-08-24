@@ -3,7 +3,7 @@
 
 <div class="flex flex-col gap-4" data-testid="newsletter-composer">
   <div class="flex flex-col gap-4 lg:flex-row lg:items-stretch">
-    <!-- Left editor: icon rail + switchable sidebar (Gatewaze-Puck parity). The
+    <!-- Left editor: icon rail + switchable sidebar (Puck-style). The
        panel body collapses (rail stays) to hand its width to the preview. ---- -->
     <div
       class="flex overflow-hidden rounded-lg border border-gray-200 bg-white lg:shrink-0"
@@ -99,8 +99,8 @@
           @if (activeTab() === 'outline') {
             <h3 class="text-sm font-semibold text-gray-700">Outline</h3>
             @if (hasBlocks()) {
-              <!-- Only top-level blocks are draggable rows (Gatewaze DraggableOutline
-               parity — root reorder); container children render nested + static. -->
+              <!-- Only top-level blocks are draggable rows (a draggable outline
+               with root reorder); container children render nested + static. -->
               <ul class="flex flex-col gap-0.5" cdkDropList (cdkDropListDropped)="onOutlineDrop($event)" data-testid="newsletter-composer-outline">
                 @for (block of blocks(); track block.id) {
                   <li cdkDrag [cdkDragData]="block" [cdkDragDisabled]="!isBrowser()">
@@ -235,7 +235,7 @@
         (click)="onPreviewClick($event)">
         <div class="mx-auto w-full" [style.max-width.px]="showSource() ? null : viewportWidth()" data-testid="newsletter-composer-preview-column">
           @if (showSource()) {
-            <!-- Read-only HTML source of the rendered email (Gatewaze parity). -->
+            <!-- Read-only HTML source of the rendered email. -->
             <pre
               class="max-h-[32rem] overflow-auto whitespace-pre-wrap break-all rounded-md bg-gray-900 p-4 text-xs leading-relaxed text-gray-100"
               data-testid="newsletter-composer-source"><code>{{ sourceHtml() }}</code></pre>

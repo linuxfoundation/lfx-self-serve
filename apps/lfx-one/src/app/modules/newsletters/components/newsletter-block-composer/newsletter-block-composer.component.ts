@@ -141,11 +141,11 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // The floating block toolbar's position + state (null when hidden).
   protected readonly toolbar = signal<NewsletterComposerToolbarState | null>(null);
   // Preview chrome: the viewport the canvas is constrained to (desktop / mobile
-  // email widths) and the backdrop behind the email card (light / dark) —
-  // Gatewaze parity for previewing how the email reads on each.
+  // email widths) and the backdrop behind the email card (light / dark) for
+  // previewing how the email reads on each.
   protected readonly previewViewport = signal<'desktop' | 'mobile'>('desktop');
   // When true, the preview swaps the live canvas for a read-only view of the
-  // rendered email HTML (Gatewaze HTML-source parity).
+  // rendered email HTML.
   protected readonly showSource = signal<boolean>(false);
   // Collapse state for the two side panels — collapsing either hands its width
   // back to the center preview (which is otherwise squeezed by the app's own
@@ -171,11 +171,11 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // Manifest blocks grouped by category for the palette rendering.
   protected readonly paletteGroups: Signal<NewsletterBlockPaletteGroup[]> = this.initPaletteGroups();
   // The palette as rendered: the category groups when there's no search, or a
-  // single flat "Results" group of matching blocks while searching (Gatewaze
-  // block-search parity — match on label or block type).
+  // single flat "Results" group of matching blocks while searching (match on
+  // label or block type).
   protected readonly displayGroups: Signal<NewsletterBlockPaletteGroup[]> = this.initDisplayGroups();
   protected readonly hasBlocks: Signal<boolean> = computed(() => this.blocks().length > 0);
-  // The email-card width for the active viewport (Gatewaze uses 682 / 375).
+  // The email-card width for the active viewport (the reference editor uses 682 / 375).
   protected readonly viewportWidth: Signal<number> = computed(() => (this.previewViewport() === 'mobile' ? 375 : 682));
   // The full assembled email HTML (wrapper + all blocks), the same render path a
   // send uses (editMode off, so no inline-edit markers). Browser-only; feeds the
@@ -270,8 +270,8 @@ export class NewsletterBlockComposerComponent implements OnInit {
   ];
 
   // Palette search mirror: when non-empty, the palette collapses its categories
-  // into a single flat list of blocks whose label or type matches (Gatewaze
-  // block-search parity). Backed by `searchForm` (declared in the Forms slot).
+  // into a single flat list of blocks whose label or type matches. Backed by
+  // `searchForm` (declared in the Forms slot).
   protected readonly blockSearch: Signal<string> = toSignal(this.searchForm.controls.search.valueChanges, { initialValue: '' });
 
   // The wrapper chrome (header above / footer below the blocks), rendered from
@@ -400,8 +400,8 @@ export class NewsletterBlockComposerComponent implements OnInit {
   }
 
   /**
-   * Reorder top-level blocks from the Outline tab (Gatewaze DraggableOutline
-   * parity — root blocks only). The outline list contains only the top-level
+   * Reorder top-level blocks from the Outline tab (a draggable outline, root
+   * blocks only). The outline list contains only the top-level
    * blocks as draggable rows (container children render nested and static), so
    * CDK's indices map 1:1 onto the `blocks` array.
    */
@@ -725,8 +725,8 @@ export class NewsletterBlockComposerComponent implements OnInit {
         const canvas = this.canvasRef()?.nativeElement;
         if (!canvas) return;
 
-        // Only the selected block's rendered region is made editable (matches
-        // Gatewaze, where inline editing is gated to the selected component).
+        // Only the selected block's rendered region is made editable (inline
+        // editing is gated to the selected component).
         const host = selectedId ? canvas.querySelector<HTMLElement>(`[data-nl-block="${cssEscape(selectedId)}"]`) : null;
         if (host) {
           const fields = host.querySelectorAll<HTMLElement>('[data-nl-field]:not([data-nl-wired])');
@@ -945,7 +945,7 @@ export class NewsletterBlockComposerComponent implements OnInit {
   /**
    * The outer-spacing inline style for a block, from its reserved
    * `_spacing_padding` / `_spacing_margin` content keys. Empty when both are
-   * default — matching gatewaze, which skips the spacing wrapper at `0px`.
+   * default. The spacing wrapper is skipped at `0px`.
    */
   private spacingStyleFor(block: NewsletterComposerBlock): Record<string, string> {
     const padding = this.spacingValue(block.content[NEWSLETTER_SPACING_PADDING_KEY]);

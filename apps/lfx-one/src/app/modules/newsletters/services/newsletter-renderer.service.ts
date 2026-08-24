@@ -10,7 +10,7 @@ import { humanizeFieldKey, isValidUrl } from '@lfx-one/shared/utils';
 /**
  * Client-side declarative renderer for the newsletter block-composer preview.
  *
- * Mirrors the gatewaze declarative format (the same one the server parses into
+ * Mirrors the source declarative format (the same one the server parses into
  * MJML at send time): a small HTML-ish template — an element tree of
  * allowlisted tags with `{{field}}` bindings and `if` / `each` control-flow —
  * is parsed and bound against a block's content into a browser HTML string.
@@ -274,7 +274,7 @@ export class NewsletterRendererService {
 }
 
 // ---------------------------------------------------------------------------
-// Parser (ported from the gatewaze declarative format)
+// Parser (ported from the source declarative format)
 // ---------------------------------------------------------------------------
 
 interface RenderCtx {
@@ -308,7 +308,7 @@ const SCHEMA_RE = /<!--\s*SCHEMA:\s*[\s\S]*?-->/i;
  *
  * The JSX-style tags (Section / Row / Link / …) and self-closing forms don't
  * survive the HTML parser as-authored, so we normalise them first — exactly as
- * the gatewaze parser does — then collect the resulting DOM into a serialisable
+ * the source parser does, then collect the resulting DOM into a serialisable
  * node tree the renderer walks.
  */
 function parseTemplate(source: string): TemplateNode[] {
@@ -399,7 +399,7 @@ const PASSTHROUGH_ATTRS = ['href', 'src', 'alt', 'target', 'width', 'height', 'a
 
 /**
  * Shared declarative class names → the scoped preview CSS classes (see
- * newsletter-block-composer.component.scss, ported from the gatewaze
+ * newsletter-block-composer.component.scss, ported from the source
  * `_shared.ts` style objects). Anything not listed is passed through verbatim.
  */
 const CLASS_MAP: Record<string, string> = {
