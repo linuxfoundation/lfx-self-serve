@@ -74,6 +74,8 @@ describe('OrgLensProjectDetailService.getTrendBlock', () => {
 
     const { sql, binds } = trendCall();
     expect(sql).toContain("DATEADD('month', 1 - ?, MAX(SPAN_MONTH) OVER ())");
+    expect(sql).toContain('ACCOUNT_ID IS NOT NULL');
+    expect(sql).toContain("ACCOUNT_ID <> ''");
     expect(sql).toContain('ROW_NUMBER()');
     expect(sql).toContain('GROUP BY ACCOUNT_ID');
     expect(sql).toContain('MAX_BY(COMBINED_INFLUENCE_SCORE, SPAN_MONTH)');
@@ -114,6 +116,8 @@ describe('OrgLensProjectDetailService.getTrendBlock', () => {
     const { sql, binds } = lifetimeCall();
     expect(sql).not.toContain('DATEADD');
     expect(sql).toContain('ORG_LENS_PROJECT_DETAIL_TREND_LIFETIME');
+    expect(sql).toContain('ACCOUNT_ID IS NOT NULL');
+    expect(sql).toContain("ACCOUNT_ID <> ''");
     expect(sql).toContain('ROW_NUMBER()');
     expect(placeholderCount(sql)).toBe(binds.length);
     expect(binds).toEqual([SLUG, 10, 'All others', 10]);

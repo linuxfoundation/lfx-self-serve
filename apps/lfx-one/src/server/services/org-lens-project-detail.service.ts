@@ -853,6 +853,8 @@ export class OrgLensProjectDetailService {
           SELECT ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, ${periodColumn}, COMBINED_INFLUENCE_SCORE
           FROM ${table}
           WHERE PROJECT_SLUG = ?
+            AND ACCOUNT_ID IS NOT NULL
+            AND ACCOUNT_ID <> ''
           ${windowClause}
         ),
         ranked_orgs AS (
