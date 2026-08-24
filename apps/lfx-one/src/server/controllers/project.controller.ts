@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_FILE_TYPES, LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
+import { ALLOWED_FILE_TYPES, EDITABLE_STAFF_ROLES, LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   AddUserToProjectRequest,
@@ -10,6 +10,7 @@ import {
   PastMeeting,
   PublicCalendarMeeting,
   PublicProjectMeetingsResponse,
+  UpdateProjectStaffRequest,
   UpdateUserRoleRequest,
   UploadProjectDocumentRequest,
 } from '@lfx-one/shared/interfaces';
@@ -405,6 +406,70 @@ export class ProjectController {
         uid,
         username,
         new_role: roleData.role,
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /projects/:uid/staff - Set or clear an editable project staff role
+   * (Executive Director / Program Manager). `assignee: null` clears the role;
+   * an assignee with only `email` triggers a server-side directory lookup, and
+   * an assignee with `name` is a confirmed manual entry (lookup skipped).
+   * Authorization is enforced upstream via OpenFGA on the forwarded user token.
+   */
+  public async updateProjectStaff(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'update_project_staff', { uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'update_project_staff',
+          service: 'project_controller',
+        })
+      ) {
+        return;
+      }
+
+      const staffData: UpdateProjectStaffRequest = req.body ?? {};
+
+      // Validate role against the editable staff role allowlist
+      if (!staffData.role || !EDITABLE_STAFF_ROLES.includes(staffData.role)) {
+        const validationError = ServiceValidationError.forField('role', `Role must be one of: ${EDITABLE_STAFF_ROLES.join(', ')}`, {
+          operation: 'update_project_staff',
+          service: 'project_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Validate assignee: null clears the role; otherwise an object with a non-empty email
+      if (
+        staffData.assignee !== null &&
+        (typeof staffData.assignee !== 'object' || typeof staffData.assignee.email !== 'string' || staffData.assignee.email.trim() === '')
+      ) {
+        const validationError = ServiceValidationError.forField('assignee', 'Assignee must be null or an object with an email address', {
+          operation: 'update_project_staff',
+          service: 'project_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const result = await this.projectService.updateProjectStaff(req, uid, staffData.role, staffData.assignee);
+
+      logger.success(req, 'update_project_staff', startTime, {
+        uid,
+        role: staffData.role,
+        cleared: staffData.assignee === null,
       });
 
       res.json(result);

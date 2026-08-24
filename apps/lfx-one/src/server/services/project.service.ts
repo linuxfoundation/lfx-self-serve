@@ -33,6 +33,7 @@ import {
   CodeContributionSummaryResponse,
   CreateProjectDocumentRequest,
   EmailCtrResponse,
+  EditableStaffRole,
   EngagedCommunitySizeResponse,
   EventChannelAttribution,
   EventCompScore,
@@ -139,8 +140,10 @@ import {
   UniqueContributorsDailyResponse,
   UniqueContributorsWeeklyResponse,
   UniqueContributorsWeeklyRow,
+  UpdateProjectStaffRequest,
   UploadProjectDocumentRequest,
   AuditUserProfile,
+  UserInfo,
   WebActivitiesSummaryResponse,
   WebActivityDomainDetail,
 } from '@lfx-one/shared/interfaces';
@@ -758,6 +761,79 @@ export class ProjectService {
       project_id: uid,
       username: backendIdentifier,
       role: role || 'N/A',
+    });
+
+    return result;
+  }
+
+  /**
+   * Sets or clears an editable project staff role (Executive Director / Program Manager)
+   * using ETag for safe updates. An `assignee` of null clears the role; an assignee with a
+   * `name` is a confirmed manual entry (directory lookup skipped — the person was not found
+   * there); otherwise the email is resolved to a full UserInfo via the NATS directory lookup.
+   * Upstream enriches username/avatar from the email before persisting.
+   */
+  public async updateProjectStaff(
+    req: Request,
+    uid: string,
+    role: EditableStaffRole,
+    assignee: UpdateProjectStaffRequest['assignee']
+  ): Promise<ProjectSettings> {
+    // Step 1: Fetch current settings with ETag — upstream replaces the full document,
+    // so the update spreads the existing settings and changes only the named role.
+    const { data: settings, etag } = await this.etagService.fetchWithETag<ProjectSettings>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${uid}/settings`,
+      'update_project_staff_settings'
+    );
+
+    const updatedSettings = { ...settings };
+
+    // Step 2: Resolve the assignee, or clear the role
+    if (assignee === null) {
+      updatedSettings[role] = null;
+    } else if (assignee.name?.trim()) {
+      // Manual fallback — the person was not found in the directory and the caller
+      // confirmed a manual entry. Skip the NATS lookup (it would 404) and pass through
+      // name + email; upstream writes an empty username for unknown emails.
+      logger.debug(req, 'update_project_staff_settings', 'Using manual staff entry', {
+        role,
+        email: assignee.email,
+        info_source: 'manual',
+      });
+      updatedSettings[role] = {
+        name: assignee.name.trim(),
+        email: assignee.email.trim().toLowerCase(),
+      };
+    } else {
+      const userInfo: UserInfo = await this.getUserInfo(req, assignee.email);
+      updatedSettings[role] = userInfo;
+    }
+
+    // Upstream rejects empty strings on validated fields; send null instead so the key is preserved.
+    const sanitizedSettings = nullifyEmptyStrings(updatedSettings);
+
+    // Step 3: Update settings with ETag
+    const startTime = logger.startOperation(req, 'update_project_staff_settings', {
+      project_id: uid,
+      role,
+      cleared: assignee === null,
+    });
+
+    const result = await this.etagService.updateWithETag<ProjectSettings>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${uid}/settings`,
+      etag,
+      sanitizedSettings,
+      'update_project_staff_settings'
+    );
+
+    logger.success(req, 'update_project_staff_settings', startTime, {
+      project_id: uid,
+      role,
+      cleared: assignee === null,
     });
 
     return result;

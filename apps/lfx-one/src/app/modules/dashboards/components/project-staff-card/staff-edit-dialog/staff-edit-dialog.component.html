@@ -1,0 +1,91 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form()" (ngSubmit)="onSubmit()" class="flex flex-col gap-6" data-testid="staff-edit-dialog-form">
+  <div class="flex flex-col gap-3">
+    <!-- Current assignment -->
+    @if (data.currentUser; as current) {
+      <div class="rounded-md bg-gray-50 p-3 text-sm text-gray-600" data-testid="staff-edit-dialog-current">
+        Currently assigned: <strong>{{ current.name || current.email }}</strong>
+      </div>
+    }
+
+    <!-- Email - always shown first; drives the directory lookup -->
+    <div>
+      <label for="staff-email" class="mb-1 block text-sm font-medium text-gray-700"> Email <span class="text-red-500">*</span> </label>
+      <lfx-input-text
+        size="small"
+        [form]="form()"
+        control="email"
+        id="staff-email"
+        type="email"
+        placeholder="Enter email address"
+        styleClass="w-full"
+        data-testid="staff-edit-dialog-email"></lfx-input-text>
+      @if (form().get('email')?.errors?.['required'] && form().get('email')?.touched) {
+        <p class="mt-1 text-xs text-red-600">Email is required</p>
+      }
+      @if (form().get('email')?.errors?.['email'] && form().get('email')?.touched) {
+        <p class="mt-1 text-xs text-red-600">Please enter a valid email address</p>
+      }
+      @if (!showManualFields()) {
+        <p class="mt-1 text-sm text-gray-500">Enter the person's email address to look them up in the directory</p>
+      }
+    </div>
+
+    <!-- Manual entry fields - only shown after the directory lookup found no match -->
+    @if (showManualFields()) {
+      <div>
+        <label for="staff-name" class="mb-1 block text-sm font-medium text-gray-700"> Full Name <span class="text-red-500">*</span> </label>
+        <lfx-input-text
+          size="small"
+          [form]="form()"
+          control="name"
+          id="staff-name"
+          placeholder="Enter full name"
+          styleClass="w-full"
+          data-testid="staff-edit-dialog-name"></lfx-input-text>
+        @if (form().get('name')?.errors?.['required'] && form().get('name')?.touched) {
+          <p class="mt-1 text-xs text-red-600">Full name is required</p>
+        }
+      </div>
+    }
+  </div>
+
+  <!-- Form Actions -->
+  <div class="flex items-center justify-between gap-3 border-t pt-6">
+    <div>
+      @if (data.currentUser) {
+        <lfx-button
+          label="Remove from role"
+          severity="danger"
+          [text]="true"
+          (click)="onClear()"
+          size="small"
+          type="button"
+          [disabled]="submitting()"
+          data-testid="staff-edit-dialog-clear"></lfx-button>
+      }
+    </div>
+    <div class="flex justify-end gap-3">
+      <lfx-button
+        label="Cancel"
+        severity="secondary"
+        [outlined]="true"
+        (click)="onCancel()"
+        size="small"
+        type="button"
+        data-testid="staff-edit-dialog-cancel"></lfx-button>
+      <lfx-button
+        label="Save"
+        [loading]="submitting()"
+        [disabled]="submitting()"
+        type="submit"
+        size="small"
+        data-testid="staff-edit-dialog-submit"></lfx-button>
+    </div>
+  </div>
+</form>
+
+<!-- Confirmation Dialog -->
+<p-confirmDialog></p-confirmDialog>
