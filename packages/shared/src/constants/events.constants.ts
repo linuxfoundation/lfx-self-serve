@@ -42,6 +42,17 @@ export const MY_EVENT_STATUS = {
   NOT_REGISTERED: 'Not Registered',
 } as const;
 
+/**
+ * EVENT_SOURCE value marking a CSV-imported (backfilled) event registration.
+ *
+ * These rows are attendance records by construction — the upstream dbt model hard-codes
+ * user_attended = TRUE for them because the import only exists for people who were there.
+ * Their IS_PAST_EVENT flag, by contrast, is a build-time snapshot frozen into a materialized
+ * table and can stay stale indefinitely against the synthetic dates these rows carry.
+ * So for backfill rows USER_ATTENDED, not IS_PAST_EVENT, is the authoritative signal.
+ */
+export const EVENT_SOURCE_BACKFILL = 'backfill';
+
 export const VISA_REQUEST_STATUS_OPTIONS: FilterOption[] = [
   { label: 'All Statuses', value: null },
   { label: 'Submitted', value: 'Submitted' },

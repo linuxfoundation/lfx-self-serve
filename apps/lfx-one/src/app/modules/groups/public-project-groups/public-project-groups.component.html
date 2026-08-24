@@ -19,7 +19,7 @@
           }
         </h1>
         @if (foundationName()) {
-          <p class="text-sm text-gray-400" data-testid="public-project-groups-foundation">{{ foundationName() }}</p>
+          <p class="text-sm text-gray-500" data-testid="public-project-groups-foundation">{{ foundationName() }}</p>
         }
         <p class="text-sm text-gray-500" data-testid="public-project-groups-subtitle">
           Discover official working groups, special interest groups, and committees for this project.
@@ -64,27 +64,45 @@
       <div class="flex flex-col gap-2" role="list" data-testid="public-project-groups-list">
         @for (group of groupsVm(); track group.uid) {
           @let config = group.classConfig;
-          <a
-            [routerLink]="['/groups', group.uid]"
+          <div
             role="listitem"
-            class="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-            [attr.data-testid]="'public-project-groups-item-' + group.uid"
-            [attr.aria-label]="group.name + ', ' + config.label">
+            class="has-[.peer:hover]:border-blue-200 has-[.peer:hover]:bg-blue-50/30 relative flex items-start gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors sm:items-center"
+            [attr.data-testid]="'public-project-groups-item-' + group.uid">
+            <!-- Whole-row click/focus target ("stretched link"), ported from org-groups.component.html
+                 (#1786): role="listitem" belongs on this non-interactive row div, not on an anchor,
+                 which is why the actual link is this separate absolutely-positioned <a> instead. `peer`
+                 lets the row react to this specific link's hover via has-[.peer:hover]: above. Unlike
+                 org-groups, this row has no second nested link, so no pointer-events-none/z-10 handoff
+                 is needed on the content below — don't drop `peer` in a "clean up unused classes" pass,
+                 it's what drives the row's hover highlight. -->
+            <a
+              [routerLink]="['/groups', group.uid]"
+              class="peer absolute inset-0 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+              [attr.data-testid]="'public-project-groups-row-link-' + group.uid"
+              [attr.aria-label]="group.name + ', ' + config.label"></a>
+
             <!-- Icon -->
             <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" [class]="config.bgColor">
               <i [class]="config.icon + ' ' + config.color + ' text-base'" aria-hidden="true"></i>
             </div>
 
-            <!-- Name + meta -->
-            <div class="flex flex-col gap-0.5 flex-1 min-w-0">
-              <p class="truncate text-sm font-medium text-gray-900" data-testid="public-project-groups-item-name">{{ group.name }}</p>
-              @if (group.description) {
-                <p class="truncate text-xs text-gray-500 mt-0.5 hidden sm:block" data-testid="public-project-groups-item-desc">{{ group.description }}</p>
-              }
-            </div>
+            <!-- Name + meta + behavioral class chip: stacked below `sm`; `sm:contents` folds this
+                 wrapper away at `sm+` so the name/meta block and chip become direct flex items of
+                 the row again, reproducing the pre-existing desktop layout. `display: contents`
+                 gives the wrapper no box of its own at `sm+`, so its own `flex-1`/`min-w-0` stop
+                 applying there — the inner meta block carries the same classes so it, not the
+                 wrapper, is what grows at `sm+` (GH-1791, porting the pattern from #1789). -->
+            <div class="flex flex-1 min-w-0 flex-col gap-2 sm:contents" data-testid="public-project-groups-item-meta-wrapper">
+              <div class="flex flex-1 min-w-0 flex-col gap-0.5" data-testid="public-project-groups-item-meta-block">
+                <p class="truncate text-sm font-medium text-gray-900" data-testid="public-project-groups-item-name">{{ group.name }}</p>
+                @if (group.description) {
+                  <p class="truncate text-xs text-gray-500 mt-0.5 hidden sm:block" data-testid="public-project-groups-item-desc">{{ group.description }}</p>
+                }
+              </div>
 
-            <!-- Behavioral class chip -->
-            <lfx-tag [value]="config.label" [severity]="'secondary'" class="shrink-0 hidden sm:flex" />
+              <!-- Behavioral class chip -->
+              <lfx-tag [value]="config.label" [severity]="'secondary'" class="flex w-fit shrink-0" data-testid="public-project-groups-item-class-chip" />
+            </div>
 
             <!-- Join mode badge -->
             @if (group.joinLabel) {
@@ -100,7 +118,7 @@
             }
 
             <i class="fa-light fa-chevron-right text-gray-300 text-xs shrink-0" aria-hidden="true"></i>
-          </a>
+          </div>
         }
       </div>
     }

@@ -28,7 +28,7 @@ import { MyClasService } from '@services/my-clas.service';
 import { UserService } from '@services/user.service';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { Observable, of, Subject, throwError } from 'rxjs';
+import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ClaGroupSelectComponent } from './cla-group-select.component';
@@ -439,6 +439,8 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
       prepare?: () => Observable<PrepareSignResponse>;
       closesWith?: ClaGroupOption | null;
       accountClosesWith?: string | null;
+      dismissGroup?: 'close' | 'destroy' | 'hold';
+      dismissAccount?: 'close' | 'destroy' | 'hold';
     } = {}
   ): Promise<ComponentFixture<ProfileClasComponent>> {
     location = { href: HOME };
@@ -453,9 +455,9 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     open = vi.fn((component: unknown) => {
       opened.push(component);
       if (component === GithubAccountSelectComponent) {
-        return { onClose: of('accountClosesWith' in options ? options.accountClosesWith : '12345') };
+        return dialogEvents('accountClosesWith' in options ? options.accountClosesWith : '12345', options.dismissAccount ?? 'close');
       }
-      return { onClose: of('closesWith' in options ? options.closesWith : CLA_GROUP) };
+      return dialogEvents('closesWith' in options ? options.closesWith : CLA_GROUP, options.dismissGroup ?? 'close');
     });
 
     TestBed.configureTestingModule({
@@ -525,6 +527,20 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     return () => throwError(() => ({ status, error: { error: message, code: status === 403 ? 'FORBIDDEN' : 'UPSTREAM_ERROR' } }));
   }
 
+  function dialogEvents(closeValue: unknown, dismiss: 'close' | 'destroy' | 'hold'): { onClose: Observable<unknown>; onDestroy: Observable<unknown> } {
+    if (dismiss === 'hold') {
+      return { onClose: EMPTY, onDestroy: EMPTY };
+    }
+    if (dismiss === 'destroy') {
+      return { onClose: EMPTY, onDestroy: of(undefined) };
+    }
+    return { onClose: of(closeValue), onDestroy: of(undefined) };
+  }
+
+  function isStarting(fixture: ComponentFixture<ProfileClasComponent>): boolean {
+    return (fixture.componentInstance as any).starting();
+  }
+
   beforeEach(() => {
     TestBed.resetTestingModule();
   });
@@ -571,6 +587,34 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     expect(getGithubAccounts).not.toHaveBeenCalled();
     expect(prepareSign).not.toHaveBeenCalled();
     expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('releases Sign CLA when the project picker is destroyed without onClose (header X)', async () => {
+    const fixture = await setup({ dismissGroup: 'destroy' });
+
+    await sign(fixture);
+    await Promise.resolve();
+
+    expect(getGithubAccounts).not.toHaveBeenCalled();
+    expect(prepareSign).not.toHaveBeenCalled();
+    expect(isStarting(fixture)).toBe(false);
+
+    await sign(fixture);
+    await Promise.resolve();
+    expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(2);
+  });
+
+  it('does not spin Sign CLA while the project picker is still open', async () => {
+    const fixture = await setup({ dismissGroup: 'hold' });
+
+    await sign(fixture);
+
+    expect(isStarting(fixture)).toBe(false);
+    expect(getGithubAccounts).not.toHaveBeenCalled();
+
+    await sign(fixture);
+    expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(1);
   });
 
   // --- Cardinality (FR-002) -------------------------------------------------
@@ -648,6 +692,35 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
 
     expect(prepareSign).not.toHaveBeenCalled();
     expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('releases Sign CLA when the account picker is destroyed without onClose (header X)', async () => {
+    const fixture = await setup({ dismissAccount: 'destroy' });
+
+    await sign(fixture);
+    await Promise.resolve();
+
+    expect(prepareSign).not.toHaveBeenCalled();
+    expect(isStarting(fixture)).toBe(false);
+    expect(location.href).toBe(HOME);
+
+    await sign(fixture);
+    await Promise.resolve();
+    expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(2);
+  });
+
+  it('does not spin Sign CLA while the account picker is still open', async () => {
+    const fixture = await setup({ dismissAccount: 'hold' });
+
+    await sign(fixture);
+
+    expect(opened).toContain(GithubAccountSelectComponent);
+    expect(isStarting(fixture)).toBe(false);
+    expect(prepareSign).not.toHaveBeenCalled();
+
+    await sign(fixture);
+    expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(1);
   });
 
   // --- Where the hand-off address comes from (FR-004, FR-006) ---------------

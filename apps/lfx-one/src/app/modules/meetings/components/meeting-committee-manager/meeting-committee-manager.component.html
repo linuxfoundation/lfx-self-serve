@@ -80,6 +80,22 @@
           <strong>{{ filteredCommitteeMembers().length }}</strong> unique member(s) will be added to the invitation list.
         }
       </p>
+
+      @if (isPublicVisibility()) {
+        <div class="flex flex-col gap-1">
+          <label for="cancel-on-committee-removal" class="block text-neutral-950 mb-2">Registration on {{ committeeLabelSingularLower }} removal</label>
+          <lfx-select
+            [form]="form()"
+            control="cancel_on_committee_removal"
+            [options]="cancelOnCommitteeRemovalOptions"
+            styleClass="w-full"
+            inputId="cancel-on-committee-removal"
+            data-testid="cancel-on-committee-removal-select"></lfx-select>
+          <p class="mt-1 text-sm text-gray-500">
+            Whether removing someone from a linked {{ committeeLabelSingularLower }} also cancels their registration on this meeting
+          </p>
+        </div>
+      }
     }
   }
 </div>

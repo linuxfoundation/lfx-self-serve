@@ -19,7 +19,7 @@ export interface ZeroStubBarDataset extends ChartDataset<'bar'> {
  * Health score type for foundations
  * @description Indicates the overall health status of a foundation
  */
-export type FoundationHealthScore = 'excellent' | 'healthy' | 'stable' | 'unsteady' | 'critical';
+export type FoundationHealthScore = 'excellent' | 'healthy' | 'fair' | 'concerning' | 'critical';
 
 /**
  * Metric category type for dashboard filtering
