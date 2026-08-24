@@ -1447,10 +1447,39 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     inFlight.next({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"9"' });
     fixture.detectChanges();
 
-    // ...and the completion, so the narration does not stop at "Pausing" forever.
-    expect(region().textContent).toContain('Paused');
-    expect(region().textContent).toContain('KubeCon EU');
+    // On completion the region is CLEARED rather than given the outcome. `p-toast` is itself a
+    // live region (`role="alert"`), so announcing the completion here too would speak one action
+    // twice to the same user. The region owns the pending state; the toast owns the outcome — and
+    // the toast is also the only surface that still works once this tab is destroyed.
+    expect((region().textContent ?? '').trim()).toBe('');
+    expect(messageAdd).toHaveBeenCalledTimes(1);
+    expect(messageAdd.mock.calls[0][0].summary).toBe('Paused KubeCon EU');
     expect(button.getAttribute('aria-busy')).toBeNull();
+  });
+
+  /**
+   * The live region must not narrate an abandoned brief into the next one.
+   *
+   * The region is part of THIS list's rendering, unlike the toast, which belongs to the operator's
+   * action and is deliberately context-free. A switch of (project, brief) leaves the component
+   * mounted under `@case ('optimization')`, so a "Pausing <campaign>" left in the region would sit
+   * there describing a campaign the new brief does not contain.
+   */
+  it('clears the live region when the brief changes mid-toggle', () => {
+    const inFlight = new Subject<CampaignStatusUpdateResult>();
+    updateCampaignStatus.mockReturnValue(inFlight.asObservable());
+    render([doc({ status: 'created', etag: '"3"', campaign_name: 'KubeCon EU' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+    const region = (): HTMLElement => fixture.nativeElement.querySelector('[data-testid="optimization-toggle-announcement"]');
+    expect(region().textContent).toContain('Pausing');
+
+    // The operator switches brief while the toggle is still out.
+    fixture.componentRef.setInput('briefId', 'b-2');
+    render([doc({ id: 'c-9', status: 'created', etag: '"1"', campaign_name: 'Other Brief Campaign' })]);
+
+    expect((region().textContent ?? '').trim()).toBe('');
   });
 
   /**

@@ -910,6 +910,11 @@ export class OptimizationTabComponent implements OnInit {
         this.conflictedCampaignIds.set(new Set<string>());
         this.toggleError.set({});
         this.toggledEtag.set({});
+        // The live region goes with them. Its text names a campaign in the brief being abandoned,
+        // so leaving it would narrate the old context into the new one's region — and unlike the
+        // toast, which is deliberately context-free and belongs to the operator's ACTION, this
+        // region is part of THIS list's rendering.
+        this.toggleAnnouncement.set('');
         // `toggledStatus` goes too, unlike on a refresh. There it is what the service CONFIRMED
         // for rows still on screen; here those rows are gone, and keeping it would overlay one
         // brief's confirmed statuses onto another brief's ids if they ever collide.
@@ -1018,8 +1023,14 @@ export class OptimizationTabComponent implements OnInit {
    * cannot promise a transition the service declined to record.
    */
   private announceToggleOutcome(direction: Exclude<CampaignToggleAction, 'unavailable'>, campaignName: string, reportedStatus: string): void {
+    // The live region is CLEARED rather than given the outcome, and that is deliberate: the toast
+    // is itself an ARIA live region (`p-toast` renders `role="alert"`), so writing the completion
+    // to both would announce one action twice to the same user. The region owns the PENDING state
+    // — which the toast has no equivalent of — and the toast owns outcomes, which is also the only
+    // surface that works once this tab is destroyed. Clearing keeps "Pausing X" from sitting in
+    // the region as a permanent claim about an action that has already finished.
+    this.toggleAnnouncement.set('');
     const summary = `${CAMPAIGN_TOGGLE_DONE_VERBS[direction]} ${campaignName}`;
-    this.toggleAnnouncement.set(summary);
     this.messageService.add({ severity: 'success', summary, detail: `Campaign status is now ${normalizeCampaignStatus(reportedStatus)}.`, life: 5000 });
   }
 
@@ -1031,7 +1042,10 @@ export class OptimizationTabComponent implements OnInit {
    * for that — the operator has to dismiss it, which is the acknowledgement the failure warrants.
    */
   private announceToggleFailure(campaignName: string, message: string): void {
-    this.toggleAnnouncement.set(`${campaignName}: ${message}`);
+    // Same single-surface rule, and it matters more on this arm: the row also renders the failure
+    // in a `role="alert"` span (`optimization-tab.component.html:142`), so writing it here too
+    // would make one failure speak three times.
+    this.toggleAnnouncement.set('');
     this.messageService.add({ severity: 'error', summary: campaignName, detail: message, sticky: true });
   }
 
