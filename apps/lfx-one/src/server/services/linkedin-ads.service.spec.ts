@@ -114,7 +114,7 @@ describe('getLinkedInAnalytics pacing rules', () => {
   // The regression this pins: LinkedIn hardcoded `pacingPct < 40` for "underspending" while the
   // pacing BAR (PacingClassPipe) coloured the same campaign off CAMPAIGN_PACING_THRESHOLDS
   // (50). A campaign at 45% therefore rendered a red "underspending" bar next to a "normal"
-  // label, and no action item was raised. Restoring the literal 40 makes this case go green.
+  // label, and no action item was raised. Restoring the literal 40 makes this test FAIL.
   it('flags a campaign pacing between the old literal (40) and the shared threshold (50) as underspending', async () => {
     expect(CAMPAIGN_PACING_THRESHOLDS.underspending).toBe(50);
 
@@ -155,6 +155,20 @@ describe('getLinkedInAnalytics pacing rules', () => {
 
     const constrained = result.actionItems.find((i) => i.issue.startsWith('Budget constrained'));
     expect(constrained?.issue).toBe(`Budget constrained — pacing above ${CAMPAIGN_PACING_THRESHOLDS.normal}%`);
+  });
+
+  // Boundary parity with meta-ads.service.ts / reddit-ads.service.ts, which both treat the
+  // thresholds as EXCLUSIVE upper bounds. Both also `Math.round` pacingPct, so exactly 90 and
+  // exactly 100 are ordinary integer outcomes rather than edge cases. A strict-less chain
+  // (`pacingPct < normal` / `< constrained`) puts each of these one band too high, which is what
+  // the first draft of this change did.
+  it.each([
+    [90, 'normal'],
+    [100, 'constrained'],
+  ])('matches meta/reddit at exactly %i%% (a threshold is an exclusive upper bound)', async (pct, expected) => {
+    const result = await pacingFor(pct);
+
+    expect(result.campaigns[0].pacingLabel).toBe(expected);
   });
 
   // Guards the LinkedIn-only rule that this ticket must NOT drop: campaign-service's rule set has

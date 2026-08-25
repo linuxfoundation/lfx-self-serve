@@ -1014,14 +1014,19 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
       // in `PacingClassPipe` colours the same campaign off CAMPAIGN_PACING_THRESHOLDS, so local
       // numbers here made the label and the bar disagree (e.g. 45% read "underspending" red in
       // the bar but "normal" in the label).
+      //
+      // The comparison form deliberately mirrors meta-ads.service.ts and reddit-ads.service.ts
+      // exactly. Both treat the thresholds as EXCLUSIVE upper bounds (`> normal`, `> constrained`),
+      // so a campaign at exactly 90% or exactly 100% is the lower band, not the higher one. A
+      // strict-less chain here would have put those two boundaries one band above the other
+      // platforms — and Meta and Reddit both `Math.round` pacingPct, which makes integers like
+      // 90 and 100 the common case rather than an edge case.
       if (pacingPct < CAMPAIGN_PACING_THRESHOLDS.underspending) {
         pacingLabel = 'underspending';
-      } else if (pacingPct < CAMPAIGN_PACING_THRESHOLDS.normal) {
-        pacingLabel = 'normal';
-      } else if (pacingPct < CAMPAIGN_PACING_THRESHOLDS.constrained) {
-        pacingLabel = 'constrained';
-      } else {
+      } else if (pacingPct > CAMPAIGN_PACING_THRESHOLDS.constrained) {
         pacingLabel = 'overspending';
+      } else if (pacingPct > CAMPAIGN_PACING_THRESHOLDS.normal) {
+        pacingLabel = 'constrained';
       }
     }
     const startMs = camp.runSchedule?.start ?? 0;
