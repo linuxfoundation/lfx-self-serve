@@ -2151,6 +2151,15 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
         variants: [{ headline: 'Brief headline', introText: 'Brief intro', destinationUrl: 'https://example.com/brief' }],
         recommendedGeoTargets: [{ urn: 'urn:li:geo:103644278', label: 'United States' }],
         recommendedTargetingProfile: 'cloud-native',
+        // `populateFromBrief` reads `strategy.budgetRecommendation.lifetimeBudgetUsd` and, when it
+        // is a finite number, seeds BOTH `linkedInBudgetUsd` and `linkedInLifetimeBudget` (true).
+        // 7300/true is deliberately neither component default (500/false), which is what lets the
+        // omitted-fields test below distinguish "the brief's seed survived" from "the restore
+        // re-stamped the defaults". Without this seed that test asserts 500/false — the very
+        // values a defaulting implementation would write — and so cannot fail.
+        strategy: {
+          budgetRecommendation: { dailyBudgetUsd: 250, lifetimeBudgetUsd: 7300, rationale: 'Brief recommendation' },
+        },
       },
       redditCopy: {
         variants: [{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }],
@@ -2385,6 +2394,17 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    *
    * Without it, a draft persisted before this shipped would wipe a Reddit campaign's budget on the
    * next tab switch, which would be a strictly worse bug than the one being fixed.
+   *
+   * The LinkedIn pair is what gives this test teeth, and it only does so because `brief()` seeds
+   * `strategy.budgetRecommendation.lifetimeBudgetUsd`. The remount therefore starts at 7300/true,
+   * NOT at the component's 500/false, so an `applyDraft` that wrote the defaults over an omitted
+   * legacy field — the exact regression this guards — lands on 500/false and fails here. Asserting
+   * the defaults back, as an earlier revision did, agreed with that broken implementation: fixture
+   * and code shared the 500/false assumption, so the test passed either way while a real brief
+   * carrying a non-default lifetime budget would be silently downgraded (LFXV2-3230 review).
+   *
+   * Reddit has no brief-seeded budget to beat, so its 500 is the component default by nature; it
+   * is asserted to pin that an omitted field is not turned into some OTHER value.
    */
   it('leaves the platform values seeded when an older draft omits them', async () => {
     const first = await mount(null);
@@ -2394,12 +2414,17 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     }
     first.fixture.destroy();
 
+    // Guard the guard: if the brief ever stops seeding a non-default pair, the assertions below
+    // silently go back to agreeing with the defaults, and this test stops being able to fail.
+    expect(legacy['linkedInBudgetUsd']).toBeUndefined();
+    expect(legacy['linkedInLifetimeBudget']).toBeUndefined();
+
     const second = await mount(legacy as unknown as CampaignImplementationDraft);
     const c = at(second.fixture);
 
     expect(c.redditBudgetUsd()).toBe(500);
-    expect(c.linkedInBudgetUsd()).toBe(500);
-    expect(c.linkedInLifetimeBudget()).toBe(false);
+    expect(c.linkedInBudgetUsd()).toBe(7300);
+    expect(c.linkedInLifetimeBudget()).toBe(true);
   });
 
   /**
