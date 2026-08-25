@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isVotingStatus, votingStatusPillClass, votingStatusRank } from './org-people-committee-members.constants';
+import { isVotingStatus, noneRankFor, votingStatusPillClass, votingStatusRank } from './org-people-committee-members.constants';
 import { VOTING_STATUS_PRIORITY } from './persona.constants';
 
 describe('isVotingStatus', () => {
@@ -72,16 +72,31 @@ describe('votingStatusRank', () => {
   });
 
   it('never ranks a non-voting status ahead of a listed voting status', () => {
-    // Guards the NONE_RANK fallback: if "None" were ever renamed/removed from
-    // VOTING_STATUS_PRIORITY, an unguarded findIndex (-1) would invert this.
     expect(votingStatusRank('Non-voting')).toBeGreaterThan(votingStatusRank('Voting Rep'));
     expect(votingStatusRank('None')).toBeGreaterThan(votingStatusRank('Voting Rep'));
   });
+});
 
-  it('relies on "None" actually being present in VOTING_STATUS_PRIORITY', () => {
-    // NONE_RANK's fallback (list length) only fires if this ever goes false — pin the
-    // precondition directly so a rename/removal fails here, at the source, not just at
-    // the numeric boundary above.
-    expect(VOTING_STATUS_PRIORITY.map((p) => p.toLowerCase())).toContain('none');
+describe('noneRankFor', () => {
+  it('returns the index of "None" when the list carries one', () => {
+    expect(noneRankFor(['Voting Rep', 'Observer', 'None'])).toBe(2);
+  });
+
+  it('is case-insensitive', () => {
+    expect(noneRankFor(['Voting Rep', 'NONE'])).toBe(1);
+  });
+
+  // The actual regression this guards: without it, a "None"-less list would resolve via
+  // `findIndex`'s -1, which — used as a rank boundary — goes negative and ranks every unlisted
+  // status ahead of every listed one, including "Voting Rep". The list-length fallback keeps
+  // unlisted statuses tied at the bottom instead.
+  it('falls back to the list length, not -1, when the list has no "None" entry', () => {
+    expect(noneRankFor(['Voting Rep', 'Observer'])).toBe(2);
+    expect(noneRankFor([])).toBe(0);
+  });
+
+  it('resolves the real VOTING_STATUS_PRIORITY to "None"\'s actual index (sanity: "None" is present)', () => {
+    expect(noneRankFor(VOTING_STATUS_PRIORITY)).toBe(VOTING_STATUS_PRIORITY.findIndex((p) => p.toLowerCase() === 'none'));
+    expect(noneRankFor(VOTING_STATUS_PRIORITY)).not.toBe(VOTING_STATUS_PRIORITY.length);
   });
 });
