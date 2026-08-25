@@ -22,6 +22,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
@@ -109,6 +110,32 @@ describe('CampaignsComponent brief persistence', () => {
     TestBed.inject(PersonaService).currentPersona.set('contributor');
     fixture.detectChanges();
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-no-access"]')).not.toBeNull();
+  });
+
+  describe('when the client flag is on and the user holds a campaign_manager FGA grant', () => {
+    let fgaFixture: ComponentFixture<CampaignsComponent>;
+
+    beforeEach(async () => {
+      await TestBed.configureTestingModule({
+        imports: [CampaignsComponent],
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideRouter([]),
+          { provide: MessageService, useValue: { add: vi.fn() } },
+          { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
+        ],
+      }).compileComponents();
+      fgaFixture = TestBed.createComponent(CampaignsComponent);
+      const personas = TestBed.inject(PersonaService);
+      personas.currentPersona.set('contributor');
+      personas.isCampaignManager.set(true);
+      fgaFixture.detectChanges();
+    });
+
+    it('admits the contributor without requiring ED persona', () => {
+      expect((fgaFixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-no-access"]')).toBeNull();
+    });
   });
 
   it('switches to the Implementation tab before the save resolves', async () => {
