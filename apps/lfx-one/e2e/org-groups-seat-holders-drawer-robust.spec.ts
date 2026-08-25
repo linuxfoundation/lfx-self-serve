@@ -30,11 +30,8 @@ import {
 
 test.setTimeout(120_000);
 
-// `li[...]`, not the bare attribute selector — the per-row person button's testid
-// ('group-seat-holder-person-{seatId}') shares the same prefix as the row's own
-// ('group-seat-holder-{seatId}'), and an unscoped `^=` selector would match both.
 async function collectSeatTestIds(page: Page): Promise<string[]> {
-  const values = await page.locator('li[data-testid^="group-seat-holder-"]').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')));
+  const values = await page.locator('[data-testid^="group-seat-holder-"]').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')));
   return values.filter((v): v is string => v !== null);
 }
 
@@ -82,5 +79,21 @@ test.describe('Org Groups — seat holders drawer data-testid contract (GH-1780)
     await expect(page.getByTestId('group-seat-holders-drawer-empty')).toHaveCount(0);
     await expect(page.getByTestId('group-seat-holders-drawer-error')).toHaveCount(0);
     await expect(page.getByTestId('group-seat-holders-list')).toBeVisible();
+  });
+
+  // The person-open button's testid ('seat-holder-person-{seatId}') deliberately does NOT share the
+  // row's own stem ('group-seat-holder-{seatId}') — a shared stem is exactly what collectSeatTestIds()
+  // above guards against via its `[data-testid^="group-seat-holder-"]` prefix match, which would
+  // otherwise pick up both the row and its nested button. Asserts nesting (a real DOM descendant, not
+  // just two matching elements anywhere on the page) and tag (a real <button>, not a div handler).
+  test('each row nests a real <button> for opening the person-detail drawer, under its own non-colliding testid', async ({ page }) => {
+    const row = page.getByTestId(`group-seat-holder-${SEAT_TRANSPORT_1}`);
+    const button = row.getByTestId(`seat-holder-person-${SEAT_TRANSPORT_1}`);
+
+    await expect(button).toBeVisible();
+    expect(await button.evaluate((el) => el.tagName)).toBe('BUTTON');
+
+    const ids = await collectSeatTestIds(page);
+    expect(ids).not.toContain(`seat-holder-person-${SEAT_TRANSPORT_1}`);
   });
 });

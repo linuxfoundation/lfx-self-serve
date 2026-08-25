@@ -93,11 +93,8 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     return (document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent ?? '').replace(/\s+/g, ' ').trim();
   }
 
-  // `li[...]`, not the bare attribute selector — the per-row person button's testid
-  // ('group-seat-holder-person-{seatId}') shares the same prefix as the row's own
-  // ('group-seat-holder-{seatId}'), and an unscoped `^=` selector would match both.
   function rowNames(): string[] {
-    return Array.from(document.querySelectorAll('li[data-testid^="group-seat-holder-"]')).map((li) => li.textContent?.trim() ?? '');
+    return Array.from(document.querySelectorAll('[data-testid^="group-seat-holder-"]')).map((li) => li.textContent?.trim() ?? '');
   }
 
   function statusMessage(): string | null {
@@ -918,7 +915,7 @@ describe('GroupSeatHoldersDrawerComponent', () => {
   // governanceSeats, no personKey — these rows carry no warehouse personKey).
   describe('person-detail drawer stacking', () => {
     function personButton(seatId: string): HTMLElement | null {
-      return document.querySelector(`[data-testid="group-seat-holder-person-${seatId}"]`);
+      return document.querySelector(`[data-testid="seat-holder-person-${seatId}"]`);
     }
 
     it("calls PersonDetailDrawerService.open once, with defaultTab 'governance' and the person's real email", async () => {

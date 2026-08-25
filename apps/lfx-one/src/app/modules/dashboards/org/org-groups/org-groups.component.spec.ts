@@ -34,6 +34,31 @@ interface Rendered {
   selectedAccount: WritableSignal<Account>;
 }
 
+// <lfx-person-detail-drawer /> (GH-1780 follow-up — stacked on the seat-holders drawer) is
+// unconditionally mounted, so its injected PersonDetailDrawerService needs the full signal surface
+// it reads, not just `open` (see person-detail-drawer.component.ts/.html) — a bare `{ open: vi.fn() }`
+// stub, sufficient for group-seat-holders-drawer.component.spec.ts's own tests of the click-to-open
+// call, would leave every other read undefined and throw at render. Kept closed throughout (isOpen
+// false, activeContext null) — neither testing module in this file clicks a seat-holder row deep
+// enough to open it; that behavior is covered by group-seat-holders-drawer.component.spec.ts itself.
+// A shared factory, not one literal reused by reference, so each test module gets its own vi.fn()
+// spies instead of accumulating call history across tests.
+function personDrawerStub() {
+  return {
+    isOpen: signal(false),
+    activeContext: signal(null),
+    activeTab: signal('events'),
+    loading: signal(false),
+    error: signal(false),
+    emailError: signal(false),
+    detail: signal(null),
+    companyEmails: signal([]),
+    open: vi.fn(),
+    close: vi.fn(),
+    setTab: vi.fn(),
+  };
+}
+
 async function render(options: RenderOptions = {}): Promise<Rendered> {
   const { accountName = 'Acme Motors, Inc.', orgNavigationLoaded = true, getGroups = () => of(emptyGroupsResponse()), queryParams = {} } = options;
 
@@ -55,29 +80,7 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
       // CommitteeMembersService needs a stub too — otherwise DI resolves the real service, which
       // needs a real HttpClient this testing module never provides.
       { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
-      // <lfx-person-detail-drawer /> (GH-1780 follow-up — stacked on the seat-holders drawer) is
-      // also unconditionally mounted. It reads the service's full signal surface, not just `open`
-      // (see person-detail-drawer.component.ts/.html) — a bare `{ open: vi.fn() }` stub, sufficient
-      // for group-seat-holders-drawer.component.spec.ts's own tests of the click-to-open call, would
-      // leave every other read undefined and throw at render. Kept closed throughout (isOpen false,
-      // activeContext null) — none of this file's tests click a seat-holder row deep enough to open
-      // it; that behavior is covered by group-seat-holders-drawer.component.spec.ts itself.
-      {
-        provide: PersonDetailDrawerService,
-        useValue: {
-          isOpen: signal(false),
-          activeContext: signal(null),
-          activeTab: signal('events'),
-          loading: signal(false),
-          error: signal(false),
-          emailError: signal(false),
-          detail: signal(null),
-          companyEmails: signal([]),
-          open: vi.fn(),
-          close: vi.fn(),
-          setTab: vi.fn(),
-        },
-      },
+      { provide: PersonDetailDrawerService, useValue: personDrawerStub() },
       // p-drawer's synthetic `@panelState` animation throws NG05105 without this — mirrors
       // event-detail-drawer.component.spec.ts. Needed once a test actually opens the seat-holders
       // drawer (setting seatHoldersDrawerVisible true), not for tests that never do.
@@ -930,24 +933,7 @@ describe('OrgGroupsComponent stat strip', () => {
         { provide: PersonaService, useValue: { personaLoaded: signal(orgLoaded) } },
         { provide: OrgLensGroupsService, useValue: { getGroups: vi.fn(getGroups) } },
         { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
-        // See the top-level render()'s own comment — <lfx-person-detail-drawer /> needs the full
-        // signal surface, not just `open`.
-        {
-          provide: PersonDetailDrawerService,
-          useValue: {
-            isOpen: signal(false),
-            activeContext: signal(null),
-            activeTab: signal('events'),
-            loading: signal(false),
-            error: signal(false),
-            emailError: signal(false),
-            detail: signal(null),
-            companyEmails: signal([]),
-            open: vi.fn(),
-            close: vi.fn(),
-            setTab: vi.fn(),
-          },
-        },
+        { provide: PersonDetailDrawerService, useValue: personDrawerStub() },
       ],
     }).compileComponents();
 

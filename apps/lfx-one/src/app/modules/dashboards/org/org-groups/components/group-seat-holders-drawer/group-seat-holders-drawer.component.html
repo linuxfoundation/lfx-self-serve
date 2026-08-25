@@ -87,37 +87,35 @@
       <ul class="flex flex-col divide-y divide-gray-100" data-testid="group-seat-holders-list">
         @for (assignment of seatHolderVms(); track assignment.seatId) {
           <li class="flex items-center gap-3 py-3" [attr.data-testid]="'group-seat-holder-' + assignment.seatId">
-            <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <lfx-person-avatar
+              [avatarUrl]="assignment.person.avatarUrl"
+              [name]="assignment.person.fullName"
+              [initials]="assignment.person.initials"
+              [identity]="assignment.person.email" />
+            <div class="flex flex-col gap-0.5 min-w-0 flex-1">
               <!-- Opens the shared person-detail drawer stacked on top (drawer-over-drawer, see
-                   onPersonClick()). Wraps avatar + name only, not the role line or the pill below
+                   onPersonClick()). Wraps the name only, not the avatar above or the role line below
                    — a real <button>, not a div with a click handler, so it's keyboard-reachable and
-                   announces as a button. A row with no usable identity (no name AND no email — the
-                   'Unknown member' fallback) stays plain text: there is nothing to open a drawer on. -->
+                   announces as a button. Name-only, not avatar+name (unlike the
+                   training-employees-drawer precedent this pattern is otherwise copied from): the
+                   role line and pill must stay outside the button, and pulling the avatar in too would
+                   either drag the role line in with it or leave the role line starting under the
+                   avatar instead of aligned with the name — this keeps the original two-line layout.
+                   A row with no usable identity (no name AND no email — the 'Unknown member' fallback)
+                   stays plain text: there is nothing to open a drawer on. -->
               @if (assignment.person.fullName || assignment.person.email) {
                 <button
                   type="button"
-                  class="flex min-w-0 items-center gap-3 bg-transparent p-0 text-left"
+                  class="w-fit min-w-0 bg-transparent p-0 text-left"
                   [attr.aria-label]="'View details for ' + (assignment.person.fullName || assignment.person.email)"
-                  [attr.data-testid]="'group-seat-holder-person-' + assignment.seatId"
+                  [attr.data-testid]="'seat-holder-person-' + assignment.seatId"
                   (click)="onPersonClick(assignment)">
-                  <lfx-person-avatar
-                    [avatarUrl]="assignment.person.avatarUrl"
-                    [name]="assignment.person.fullName"
-                    [initials]="assignment.person.initials"
-                    [identity]="assignment.person.email" />
                   <span class="text-sm font-medium text-gray-900 break-words hover:underline">
                     {{ assignment.person.fullName || assignment.person.email }}
                   </span>
                 </button>
               } @else {
-                <div class="flex min-w-0 items-center gap-3">
-                  <lfx-person-avatar
-                    [avatarUrl]="assignment.person.avatarUrl"
-                    [name]="assignment.person.fullName"
-                    [initials]="assignment.person.initials"
-                    [identity]="assignment.person.email" />
-                  <span class="text-sm font-medium text-gray-900 break-words">Unknown member</span>
-                </div>
+                <span class="text-sm font-medium text-gray-900 break-words">Unknown member</span>
               }
               <span class="text-xs text-gray-500 break-words">{{ assignment.role || '—' }}</span>
             </div>

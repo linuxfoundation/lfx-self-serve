@@ -18,6 +18,7 @@ import {
   DATA_LOAD_TIMEOUT,
   GROUP_UID,
   MOCK_ACCOUNT_ID,
+  SEAT_TRANSPORT_1,
   SECOND_GROUP_UID,
   committeeMembersResponse,
   stubAccountContext,
@@ -119,5 +120,32 @@ test.describe('Org Groups — seat holders drawer (GH-1780)', () => {
     await expect(page.getByTestId('group-seat-holders-list')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('group-seat-holders-drawer')).toContainText('Jane Doe');
     expect(requestCount).toBe(2);
+  });
+
+  // Mirrors org-people-board-tab.spec.ts's "clicking a board member name opens the person-detail
+  // drawer on Governance from table seats (no fetch)" — same opener shape (no personKey, so the
+  // personKey-keyed detail fetch must never fire), same stacked-on-top drawer, different source list.
+  test('clicking a seat holder opens the shared person-detail drawer on Governance, stacked on top', async ({ page }) => {
+    let personDetailCalls = 0;
+    await page.route('**/api/orgs/*/lens/people/*/detail', (route) => {
+      personDetailCalls += 1;
+      return route.fulfill({ status: 500, body: 'unexpected personKey-based detail fetch' });
+    });
+
+    await page.getByTestId(`org-groups-item-seats-${GROUP_UID}`).click();
+    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId(`seat-holder-person-${SEAT_TRANSPORT_1}`).click();
+
+    await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('person-detail-drawer-header')).toContainText('Jane Doe');
+    await expect(page.getByTestId('person-detail-drawer-tab-governance')).toHaveAttribute('aria-selected', 'true');
+
+    // Stacked on top of, not instead of, the seat-holders drawer.
+    await expect(page.getByTestId('group-seat-holders-drawer')).toBeVisible();
+    const drawer = page.getByTestId('person-detail-drawer');
+    await expect(drawer).toContainText('Ultra Ethernet Consortium Fund · Transport Working Group');
+
+    expect(personDetailCalls).toBe(0);
   });
 });
