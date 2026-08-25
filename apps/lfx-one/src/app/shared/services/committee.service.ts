@@ -145,17 +145,17 @@ export class CommitteeService {
     if (cached) {
       this.committeeDetailCache.delete(id);
     }
-    const request$ = this.http.get<Committee>(`/api/committees/${id}`).pipe(
-      tap({ error: () => this.committeeDetailCache.delete(id) }),
-      shareReplay(1)
-    );
+    const request$ = this.http.get<Committee>(`/api/committees/${id}`).pipe(tap({ error: () => this.committeeDetailCache.delete(id) }), shareReplay(1));
     this.pruneExpiredCommitteeDetailCache();
     this.committeeDetailCache.set(id, { observable: request$, cachedAt: Date.now() });
     return request$;
   }
 
   public deleteCommittee(id: string): Observable<void> {
-    return this.http.delete<void>(`/api/committees/${id}`).pipe(take(1), tap(() => this.committeeDetailCache.delete(id)));
+    return this.http.delete<void>(`/api/committees/${id}`).pipe(
+      take(1),
+      tap(() => this.committeeDetailCache.delete(id))
+    );
   }
 
   public createCommittee(committee: Partial<Committee>): Observable<Committee> {
@@ -166,12 +166,18 @@ export class CommitteeService {
   // one PUT still accepts it alongside base fields in a single merged payload; the BFF routes it
   // to the settings sub-resource internally (committee.service.ts's updateCommittee).
   public updateCommittee(id: string, committee: CommitteeUpdateData & Pick<CommitteeSettingsData, 'chat_webhook_url'>): Observable<Committee> {
-    return this.http.put<Committee>(`/api/committees/${id}`, committee).pipe(take(1), tap(() => this.committeeDetailCache.delete(id)));
+    return this.http.put<Committee>(`/api/committees/${id}`, committee).pipe(
+      take(1),
+      tap(() => this.committeeDetailCache.delete(id))
+    );
   }
 
   /** Updates the writers and auditors permission lists for a committee. */
   public updateCommitteePermissions(committeeId: string, writers: CommitteeUser[], auditors: CommitteeUser[]): Observable<Committee> {
-    return this.http.put<Committee>(`/api/committees/${committeeId}`, { writers, auditors }).pipe(take(1), tap(() => this.committeeDetailCache.delete(committeeId)));
+    return this.http.put<Committee>(`/api/committees/${committeeId}`, { writers, auditors }).pipe(
+      take(1),
+      tap(() => this.committeeDetailCache.delete(committeeId))
+    );
   }
 
   /**
@@ -188,15 +194,6 @@ export class CommitteeService {
   /** Fetches child committees (sub-groups) of a parent committee */
   public getChildCommittees(parentUid: string): Observable<Committee[]> {
     return this.http.get<Committee[]>(`/api/committees/${parentUid}/children`).pipe(catchError(() => of([])));
-  }
-
-  private pruneExpiredCommitteeDetailCache(): void {
-    const now = Date.now();
-    for (const [key, entry] of this.committeeDetailCache) {
-      if (now - entry.cachedAt >= COMMITTEE_DETAIL_CACHE_TTL_MS) {
-        this.committeeDetailCache.delete(key);
-      }
-    }
   }
 
   // Committee Members methods
@@ -220,15 +217,24 @@ export class CommitteeService {
   ): Observable<CommitteeMember> {
     const params = options?.skipNotification ? new HttpParams().set('skip_notification', 'true') : undefined;
 
-    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/members`, memberData, { params }).pipe(take(1), tap(() => this.committeeDetailCache.delete(committeeId)));
+    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/members`, memberData, { params }).pipe(
+      take(1),
+      tap(() => this.committeeDetailCache.delete(committeeId))
+    );
   }
 
   public updateCommitteeMember(committeeId: string, memberId: string, memberData: Partial<CreateCommitteeMemberRequest>): Observable<CommitteeMember> {
-    return this.http.put<CommitteeMember>(`/api/committees/${committeeId}/members/${memberId}`, memberData).pipe(take(1), tap(() => this.committeeDetailCache.delete(committeeId)));
+    return this.http.put<CommitteeMember>(`/api/committees/${committeeId}/members/${memberId}`, memberData).pipe(
+      take(1),
+      tap(() => this.committeeDetailCache.delete(committeeId))
+    );
   }
 
   public deleteCommitteeMember(committeeId: string, memberId: string): Observable<void> {
-    return this.http.delete<void>(`/api/committees/${committeeId}/members/${memberId}`).pipe(take(1), tap(() => this.committeeDetailCache.delete(committeeId)));
+    return this.http.delete<void>(`/api/committees/${committeeId}/members/${memberId}`).pipe(
+      take(1),
+      tap(() => this.committeeDetailCache.delete(committeeId))
+    );
   }
 
   // ── Committee Invites ───────────────────────────────────────────────────────
@@ -256,12 +262,18 @@ export class CommitteeService {
   /** Self-join an open group */
   public joinCommittee(committeeId: string, organization?: CommitteeOrganizationReference): Observable<CommitteeMember> {
     const body = organization ? { organization } : {};
-    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/join`, body).pipe(take(1), tap(() => this.committeeDetailCache.delete(committeeId)));
+    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/join`, body).pipe(
+      take(1),
+      tap(() => this.committeeDetailCache.delete(committeeId))
+    );
   }
 
   /** Leave a group */
   public leaveCommittee(committeeId: string): Observable<void> {
-    return this.http.delete<void>(`/api/committees/${committeeId}/leave`).pipe(take(1), tap(() => this.committeeDetailCache.delete(committeeId)));
+    return this.http.delete<void>(`/api/committees/${committeeId}/leave`).pipe(
+      take(1),
+      tap(() => this.committeeDetailCache.delete(committeeId))
+    );
   }
 
   /** Submit a join application for a group with join_mode 'application' */
@@ -277,9 +289,10 @@ export class CommitteeService {
 
   /** Approves a pending join application and adds the applicant as a member. */
   public approveApplication(committeeId: string, applicationId: string, body?: ApproveCommitteeJoinApplicationRequest): Observable<CommitteeMember> {
-    return this.http
-      .post<CommitteeMember>(`/api/committees/${committeeId}/applications/${applicationId}/approve`, { notify: true, ...body })
-      .pipe(take(1), tap(() => this.committeeDetailCache.delete(committeeId)));
+    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/applications/${applicationId}/approve`, { notify: true, ...body }).pipe(
+      take(1),
+      tap(() => this.committeeDetailCache.delete(committeeId))
+    );
   }
 
   /** Rejects a pending join application. */
@@ -395,5 +408,14 @@ export class CommitteeService {
       params = params.set('project_uid', projectUid);
     }
     return this.http.get<string[]>('/api/committees/my-committee-uids', { params }).pipe(catchError(() => of([])));
+  }
+
+  private pruneExpiredCommitteeDetailCache(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.committeeDetailCache) {
+      if (now - entry.cachedAt >= COMMITTEE_DETAIL_CACHE_TTL_MS) {
+        this.committeeDetailCache.delete(key);
+      }
+    }
   }
 }
