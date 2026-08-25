@@ -24,9 +24,6 @@ import { CookieRegistryService } from './cookie-registry.service';
   providedIn: 'root',
 })
 export class PersonaService {
-  /** Scope key for an unscoped (no `projectSlug`) grant probe — see {@link latestGrantProbeIdByScope}. */
-  private static readonly rootGrantScope = '__root__';
-
   private readonly http = inject(HttpClient);
   private readonly cookieService = inject(SsrCookieService);
   private readonly cookieRegistry = inject(CookieRegistryService);
@@ -70,20 +67,22 @@ export class PersonaService {
    * Monotonic counter guarding {@link refreshEnrichedPersonas} against out-of-order responses.
    * Concurrent probes (route guard + sidebar-nav, or a rapid foundation switch) can resolve in a
    * different order than they were issued — only the response from the most recently *issued*
-   * call *for the same scope* is allowed to write the marketing grant signals (see
-   * {@link latestGrantProbeIdByScope}), so a slow reply for a stale foundation can't overwrite the
-   * grant for the foundation currently on screen.
+   * call, across every scope, is allowed to write the shared grant signals below, so a slow reply
+   * for a foundation the user has already navigated away from can't overwrite the grant for the
+   * foundation currently on screen.
+   *
+   * This is deliberately global, not per-scope: an earlier per-scope version of this guard (see
+   * git history) let an unrelated, differently-scoped probe's late-arriving response overwrite
+   * `isMarketingAuditor`/`isCampaignManager` *after* a newer probe for the active foundation had
+   * already written the correct value (Cursor Bugbot finding, PR #1835) — the per-scope check
+   * only ever compared a response against other responses for its *own* scope, so it had no way
+   * to detect that a different, more-recently-issued scope had already superseded it. Global
+   * ordering fixes that, and is safe for the *signals* specifically because
+   * `marketing-impact-access.guard.ts` / `campaign-access.guard.ts` never read these signals for
+   * their own admit/deny decision — they decide from each call's own `response`, so a discarded
+   * write here never causes a false denial (see those guards' spec files).
    */
   private latestGrantProbeId = 0;
-  /**
-   * Per-scope (project slug, or root when unscoped) tail of {@link latestGrantProbeId} —
-   * scoping the "latest wins" check this way means an unrelated probe for a *different*
-   * foundation (e.g. sidebar-nav pre-checking another link) can never block a same-scope probe's
-   * write, which is exactly the race LFXV2-2235 found: a route guard's own response was the
-   * correct, current answer for the page it was about to render, but got silently discarded
-   * because a differently-scoped probe had been issued a moment later.
-   */
-  private readonly latestGrantProbeIdByScope = new Map<string, number>();
 
   public constructor() {
     const stored = this.loadFromCookie();
@@ -132,26 +131,20 @@ export class PersonaService {
     if (this.enrichedPersonasLoaded() && !force && !projectSlug) {
       return of(null);
     }
-    const scopeKey = projectSlug ?? PersonaService.rootGrantScope;
     const probeId = ++this.latestGrantProbeId;
-    this.latestGrantProbeIdByScope.set(scopeKey, probeId);
     const url = projectSlug ? `/api/user/personas?enriched=true&project=${encodeURIComponent(projectSlug)}` : '/api/user/personas?enriched=true';
     return this.http.get<PersonaApiResponse>(url).pipe(
       take(1),
       catchError(() => of(null)),
       tap((response) => {
-        this.applyPersonaResponse(response, probeId, scopeKey);
+        this.applyPersonaResponse(response, probeId);
         if (response && !response.error) {
           this.enrichedPersonasLoaded.set(true);
-          // Record which project this specific probe verified the grant against.
-          // `ProjectContextService` reads this as a single global "most recently verified"
-          // foundation (see its constructor comment), not a per-scope value like the grant
-          // booleans above — so this write must be gated on GLOBAL probe recency, not the
-          // per-scope guard. A per-scope guard would let an older, already-superseded probe for
-          // foundation A overwrite the slug after a newer probe for foundation B has already
-          // resolved, even though B represents the more current navigation (Copilot finding on
-          // PR #1835). A root-scoped call (no projectSlug) leaves this untouched — a ROOT grant
-          // isn't tied to one project.
+          // Record which project this specific probe verified the grant against. Gated on the
+          // same global probe-recency check as the grant booleans below, so this and
+          // `isMarketingAuditor`/`isCampaignManager` always move together off the same
+          // most-recently-issued response — a root-scoped call (no `projectSlug`) leaves this
+          // untouched, since a ROOT grant isn't tied to one project.
           if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager) && probeId === this.latestGrantProbeId) {
             this.marketingGrantSlug.set(projectSlug);
           }
@@ -184,7 +177,7 @@ export class PersonaService {
       });
   }
 
-  private applyPersonaResponse(response: PersonaApiResponse | null, probeId?: number, scopeKey?: string): void {
+  private applyPersonaResponse(response: PersonaApiResponse | null, probeId?: number): void {
     if (!response || response.error) {
       // Preserve last-known-good grants on a failed/errored refetch — a transient network or
       // upstream failure must not silently revoke access that was already confirmed.
@@ -202,12 +195,12 @@ export class PersonaService {
     this.detectedProjects.set(response.projects);
     this.isRootWriter.set(response.isRootWriter ?? false);
     this.isLFStaff.set(response.isLFStaff ?? false);
-    // Only apply grant fields from the most recently *issued* refreshEnrichedPersonas call for
-    // this same scope — a slower response for a foundation the user has already navigated away
-    // from must not clobber the grant a newer, faster-resolving probe already wrote for the
-    // current foundation. Scoping the check (rather than a single global "latest") means an
-    // unrelated probe for a *different* foundation can never block this write (LFXV2-2235).
-    if (probeId === undefined || scopeKey === undefined || probeId === this.latestGrantProbeIdByScope.get(scopeKey)) {
+    // Only apply grant fields from the most recently *issued* refreshEnrichedPersonas call across
+    // every scope — a slower response for a foundation the user has already navigated away from
+    // must not clobber the grant a newer, faster-resolving probe already wrote for the current
+    // foundation (LFXV2-2235). See `latestGrantProbeId`'s doc comment for why this check is
+    // global rather than per-scope.
+    if (probeId === undefined || probeId === this.latestGrantProbeId) {
       this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
       this.isCampaignManager.set(response.isCampaignManager ?? false);
     }

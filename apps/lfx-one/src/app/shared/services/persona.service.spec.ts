@@ -23,16 +23,25 @@ const mockResponse = (overrides: Partial<PersonaApiResponse>): PersonaApiRespons
 });
 
 /**
- * LFXV2-2235 follow-up (PR #1835 review): `refreshEnrichedPersonas` used to gate the grant-signal
- * write behind a single global "most recently issued call wins" counter. That let an unrelated
- * probe for a *different* foundation silently discard the write for the foundation actually being
- * navigated to — a route guard could correctly admit a user based on its own response while the
- * shared `isMarketingAuditor`/`isCampaignManager` signals the destination page reads stayed stale,
- * because a same-tick sidebar-nav probe for another slug had been issued a moment later. Scoping
- * the "latest wins" check per project slug (root vs. each foundation) fixes this: only a probe for
- * the *same* scope can supersede another's write.
+ * LFXV2-2235 follow-up (PR #1835 review): `refreshEnrichedPersonas` guards `isMarketingAuditor`,
+ * `isCampaignManager`, and `marketingGrantSlug` against out-of-order responses using a single
+ * global "most recently issued call wins" counter. A response only writes these signals if its
+ * probe is the latest one issued across every scope — a slower response for a foundation the
+ * user has already navigated away from can never clobber a newer, faster-resolving probe's
+ * write for the current foundation.
+ *
+ * An earlier version of this guard scoped the check per project slug instead of globally, on the
+ * theory that a route guard's own response should never be blocked by an unrelated probe for a
+ * different foundation (e.g. a sidebar-nav pre-check). That theory doesn't hold: the guards
+ * (`campaign-access.guard.ts`, `marketing-impact-access.guard.ts`) decide access from each call's
+ * own `response`, not from these shared signals — see those guards' spec files for the tests
+ * proving a discarded signal write never causes a false denial. Per-scope scoping only reopened a
+ * different, worse bug: a stale, differently-scoped response could resolve *after* a newer probe
+ * for the active foundation and overwrite its correct value, because the per-scope check only
+ * compares a response against others in its own scope and has no way to see that a different
+ * scope was issued more recently (Cursor Bugbot finding, PR #1835). Global ordering closes that.
  */
-describe('PersonaService — per-scope grant probe ordering', () => {
+describe('PersonaService — grant probe recency ordering', () => {
   let service: PersonaService;
   let http: HttpTestingController;
 
@@ -48,17 +57,18 @@ describe('PersonaService — per-scope grant probe ordering', () => {
     http.verify();
   });
 
-  it("does not let a later-issued probe for a different foundation block an earlier probe's own-scope write", () => {
+  it('does not let a stale, already-superseded probe for foundation A overwrite isCampaignManager/isMarketingAuditor after a newer probe for foundation B has already resolved (Cursor Bugbot finding, PR #1835)', () => {
+    // A's probe is issued first, B's second; B resolves first (legitimately, over the network),
+    // then A's stale response resolves after — it must not clobber the values B already wrote,
+    // even though A's own write would otherwise look valid in isolation.
     service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
     service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
 
-    // Foundation B's probe (issued second) resolves first — as it legitimately may over the network.
-    http.expectOne((req) => req.url.includes('project=foundation-b')).flush(mockResponse({ isCampaignManager: false }));
-    // Foundation A's probe resolves after — under the old single global counter this write would
-    // have been discarded because a "later" probe (B) already existed, even though B is unrelated.
-    http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true }));
+    http.expectOne((req) => req.url.includes('project=foundation-b')).flush(mockResponse({ isCampaignManager: true, isMarketingAuditor: true }));
+    http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: false, isMarketingAuditor: false }));
 
     expect(service.isCampaignManager()).toBe(true);
+    expect(service.isMarketingAuditor()).toBe(true);
   });
 
   it('still lets a later-issued probe for the SAME foundation supersede an earlier one for that foundation', () => {
@@ -75,10 +85,8 @@ describe('PersonaService — per-scope grant probe ordering', () => {
 
   it('does not let an older, already-superseded probe for foundation A overwrite marketingGrantSlug after a newer probe for foundation B has already resolved (Copilot finding, PR #1835)', () => {
     // ProjectContextService treats marketingGrantSlug as the single most recently *verified*
-    // foundation (a global-recency concept), unlike isMarketingAuditor/isCampaignManager which
-    // are correctly scoped per foundation. A's probe is issued first, B's second; B resolves
-    // first (legitimately, over the network), then A's stale response resolves after — it must
-    // not clobber the slug B already set.
+    // foundation — the same global-recency guard as the booleans above, so all three signals
+    // always move together off the same most-recently-issued response.
     service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
     service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
 
