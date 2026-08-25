@@ -3,7 +3,10 @@
 
 /** People → Board tab E2E (read + filter/expand/sort). Deterministic via route mocks. Inverted-filter sibling of org-people-committee-tab.spec.ts. */
 
+import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
+
+import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const PEOPLE_BOARD_URL = '/org/people?tab=board';
 const DATA_LOAD_TIMEOUT = 30_000;
@@ -341,5 +344,27 @@ test.describe('Org People → Board tab', () => {
     // The name click stopped propagation, so the row did not also expand.
     await expect(page.getByTestId(`org-people-board-expanded-${JORDAN_EMAIL}`)).toHaveCount(0);
     expect(personDetailCalls).toBe(0);
+  });
+
+  // Board rows have no personKey, so the drawer's only email source is the company-emails POST.
+  // With org-lens-private-release OFF, the fetch-side gate in PersonDetailDrawerService must skip
+  // this request entirely — not just hide the result client-side — so assert it never fires.
+  test('company-emails request never fires when org-lens-private-release is OFF', async ({ page }) => {
+    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
+    await stubAccountContext(page);
+    await stubBoardMembers(page);
+    let companyEmailCalls = 0;
+    await page.route('**/api/orgs/*/lens/people/company-emails', (route) => {
+      companyEmailCalls += 1;
+      return route.fulfill({ status: 500, body: 'unexpected company-emails fetch' });
+    });
+
+    await gotoBoardTab(page);
+    await page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}-name`).click();
+    await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
+    await expect(page.getByTestId('person-detail-drawer-email-unavailable')).toHaveCount(0);
+    expect(companyEmailCalls).toBe(0);
   });
 });
