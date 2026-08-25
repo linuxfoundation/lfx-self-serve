@@ -56,8 +56,9 @@ export class PersonDetailDrawerService {
         distinctUntilChanged()
       ),
       toObservable(this._activeContext),
+      toObservable(this.companyEmailFeatureEnabled),
     ]).pipe(
-      switchMap(([orgUid, context]) => {
+      switchMap(([orgUid, context, companyEmailFeatureEnabled]) => {
         if (!context || !orgUid) {
           this._loading.set(false);
           this._error.set(false);
@@ -85,7 +86,7 @@ export class PersonDetailDrawerService {
         // travels in the body, not the query string, keeping it out of request-log URLs. `detail`
         // stays null here — there's no personKey to fetch real activity for, so the drawer's
         // "Detailed activity isn't available" state must stay truthful rather than showing verified-empty tabs.
-        if (context.email && this.companyEmailFeatureEnabled()) {
+        if (context.email && companyEmailFeatureEnabled) {
           this._loading.set(true);
           this._error.set(false);
           this._emailError.set(false);
