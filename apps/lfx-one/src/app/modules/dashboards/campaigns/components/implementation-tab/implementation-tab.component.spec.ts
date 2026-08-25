@@ -2199,6 +2199,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     redditVariants: () => unknown[];
     redditBudgetUsd: () => number;
     metaVariants: () => unknown[];
+    metaGeoTargets: () => string[];
     submit(): void;
   }
   const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
@@ -2500,5 +2501,50 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(c.redditVariants()).toEqual([{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }]);
     expect(c.linkedInVariants()).toHaveLength(1);
     expect(c.metaVariants()).toHaveLength(1);
+  });
+
+  /**
+   * The Meta sibling of the LinkedIn empty-geo test above (`keeps an emptied geo list empty after
+   * a tab round-trip`, in the linkedin round-trip suite). `metaGeoTargets` had no empty-case
+   * guard at all, and it needs its own rather than inheriting LinkedIn's for two reasons.
+   *
+   * The mutation it pins: `applyDraft` restores Meta with `if (draft.metaGeoTargets !== undefined)`
+   * (implementation-tab.component.ts:1208), while `populateFromBrief` re-seeds `metaGeoTargets`
+   * from `metaCopy.recommendedGeos` on every remount (…:1453). Swapping that guard to
+   * `draft.metaGeoTargets?.length` lets a deliberately cleared list fall through to the brief's
+   * `['US']` recommendation — the exact silent revert this ticket exists to stop. Every other Meta
+   * assertion in this suite ends on a NON-EMPTY list, so that mutation left them all green.
+   *
+   * Not a copy of LinkedIn's arm: Meta's restore passes the draft value through
+   * `acceptedMetaGeos`, which LinkedIn's does not. Confirmed that this does not change the empty
+   * case — `acceptedMetaGeos([])` is `normalizeGeoTargets([])` (loop over `[]`, so `[]`) then
+   * `.filter(...)` on `[]`, so `[]` — which is why `[]` is the correct expectation here and not
+   * merely the assumed-symmetric one.
+   *
+   * Starts by asserting the brief seeded `['US']`, so the final `[]` is a state the test actually
+   * reached rather than one the fixture began in — without that line a component whose Meta seed
+   * never ran would pass this unchanged.
+   *
+   * Driven through the template's own `(click)`, per this suite's rule, so a regression in the
+   * chip's remove binding fails here too.
+   */
+  it('keeps an emptied meta geo list empty after a tab round-trip', async () => {
+    const first = await mount(null);
+    // The brief recommends exactly one, so removing it leaves the list genuinely empty — and this
+    // assertion is what proves the list was non-empty to begin with.
+    expect(at(first.fixture).metaGeoTargets()).toEqual(['US']);
+
+    const remove = first.fixture.nativeElement.querySelector('[data-testid="implementation-meta-geo-remove-US"]') as HTMLButtonElement;
+    remove.click();
+    first.fixture.detectChanges();
+    expect(at(first.fixture).metaGeoTargets()).toEqual([]);
+
+    const carried = first.latest();
+    first.fixture.destroy();
+
+    const second = await mount(carried);
+
+    // NOT the brief's ['US'] recommendation, which is what a length-guarded restore would produce.
+    expect(at(second.fixture).metaGeoTargets()).toEqual([]);
   });
 });
