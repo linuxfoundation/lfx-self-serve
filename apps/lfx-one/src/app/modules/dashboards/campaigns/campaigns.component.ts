@@ -1114,7 +1114,7 @@ export class CampaignsComponent {
     this.loadBriefCampaigns();
   }
 
-  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, approved: boolean): void {
+  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, etag: string | null, approved: boolean): void {
     // Adopt the brief's OWN program first. The lookup is keyed on `(event_slug, project)` and
     // carries no program type, so an Events brief can be offered while the page sits on
     // Education, and restoring it would leave the selector describing one program while the brief
@@ -1152,26 +1152,37 @@ export class CampaignsComponent {
     // there — or, worse, accepted against a brief this session never loaded.
     const key = this.ownershipKey(this.activeFoundationSlug(), brief);
     if (key !== null) {
-      // No ETag from a restore: the read path deliberately drops the load-time validator
-      // (LFXV2-3204). Classified `'overwrite'` rather than `'unknown'`, and the distinction is
-      // the one the base branch draws — whether anyone DECIDED to save without a validator.
+      // The load-time validator is RECORDED when the read produced one (LFXV2-3204). A restore
+      // is the one path that knows exactly which version the user was shown, so it is the path
+      // that can hand the next save a last-seen ETag. `replaceBrief` prefers it over the ETag
+      // its own find reads, which is what lets the precondition actually fire: a concurrent
+      // editor who moved the row since this load now produces a `stale-brief` refusal instead of
+      // being silently overwritten.
       //
-      // A restore is a decision. The user was shown the stored brief's content and chose to work
-      // from it, so the page knows which version it is editing even though it was not handed the
-      // token for it. That is unlike an indeterminate write, where nothing was displayed and
-      // nothing was chosen. Marking it `'unknown'` would refuse the first save after every
-      // restore, which is this feature's main path.
+      // `absence` is recorded ONLY when there is no validator, because dropping the validator is
+      // not neutral bookkeeping like recording one: it LICENSES the next save to overwrite,
+      // since with no last-seen ETag the server falls back to its own fresh read and the
+      // precondition passes. Handing out that licence for free on every restore is precisely the
+      // last-write-wins bug. With an ETag present the save is verified, so no licence is needed
+      // and none is granted.
       //
-      // The residual risk is real and is what LFXV2-3204 closes: another writer changing the row
-      // between the load and the save is overwritten rather than producing a 412. That is a
-      // narrower window than the unknown case — it needs a concurrent editor, not merely a lost
-      // response — and the user has at least seen the content they are replacing.
+      // When the read yielded NO ETag the classification stays `'overwrite'`, and that is
+      // deliberate rather than an oversight. It is still a DECISION — the user was shown the
+      // stored content and chose to work from it — which is the distinction this field draws
+      // against `'unknown'`, where nothing was displayed and nothing was chosen. Marking it
+      // `'unknown'` would refuse the first save after any restore whose read returned no
+      // validator, which is this feature's main path and not a conflict anyone can act on.
+      //
+      // A 412 from the recorded ETag is a speed bump, not a wall: the conflict handler promotes
+      // the session to explicit overwrite permission, so the user is told someone else got there
+      // first and the next Proceed saves their version over it. That is the chosen behaviour —
+      // one honest refusal, then the existing proceed-again path.
       // Bumped for THIS key only. A single session counter would make a restore of event A
       // invalidate a queued save of event B, discarding an id B's own predecessor save created
       // and turning a correct save into an `unowned-brief-exists` refusal. Ownership is keyed by
       // `(project, event)`, so its epoch has to be too.
       this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
-      this.knownBriefIds.set(key, { id: briefId, etag: null, absence: 'overwrite' });
+      this.knownBriefIds.set(key, { id: briefId, etag, ...(etag === null ? { absence: 'overwrite' as const } : {}) });
     }
     this.onProceedToImplementation(brief, true, approved);
   }

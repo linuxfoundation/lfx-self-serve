@@ -55,13 +55,19 @@ describe('CampaignsComponent brief persistence', () => {
     (fixture.componentInstance as unknown as { onProceedToImplementation(b: CampaignBriefOutput): void }).onProceedToImplementation(b);
   }
 
-  /** `onRestoreSavedBrief` is protected; the spec drives it as the Planning tab's output would. */
-  function restore(b: CampaignBriefOutput, briefId: string, approved = false): void {
-    (fixture.componentInstance as unknown as { onRestoreSavedBrief(b: CampaignBriefOutput, id: string, approved: boolean): void }).onRestoreSavedBrief(
-      b,
-      briefId,
-      approved
-    );
+  /**
+   * `onRestoreSavedBrief` is protected; the spec drives it as the Planning tab's output would.
+   *
+   * `etag` defaults to `null` — the validator-less restore — so the tests written before
+   * LFXV2-3204 keep asserting exactly the behaviour they were written for. Tests about the
+   * carried validator pass one explicitly.
+   */
+  function restore(b: CampaignBriefOutput, briefId: string, approved = false, etag: string | null = null): void {
+    (
+      fixture.componentInstance as unknown as {
+        onRestoreSavedBrief(b: CampaignBriefOutput, id: string, etag: string | null, approved: boolean): void;
+      }
+    ).onRestoreSavedBrief(b, briefId, etag, approved);
   }
 
   function state(): CampaignBriefPersistenceState {
@@ -473,6 +479,70 @@ describe('CampaignsComponent brief persistence', () => {
       // exists upstream, so dropping its id would refuse the next Proceed for that event as
       // unowned. What this test pins is that the RESET ran at all — `briefOutput` above — which
       // is what distinguishes a user switch from a restore-adopt.
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
+    });
+
+    it('sends the LOAD-TIME validator as If-Match, so a concurrent edit is refused not overwritten', async () => {
+      // LFXV2-3204. The hazard: two people load the same brief, the other one saves first, and
+      // this page's save silently replaces their work. `replaceBrief` prefers a caller-supplied
+      // validator over the one its own find reads, so the refusal can only happen if the restore
+      // actually CARRIES the ETag it was shown. That carry is what this pins.
+      //
+      // Asserted at argument 4 (`knownEtag`) rather than through a mocked HTTP layer, because
+      // that is the boundary this change moves: everything downstream of it — If-Match, the 412,
+      // the `stale-brief` mapping — already shipped and is covered in the service spec.
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a', true, 'W/"v1"');
+      await fixture.whenStable();
+
+      proceed();
+      await fixture.whenStable();
+
+      // The validator the user was SHOWN, and no fallback licence. Passing `true` here would let
+      // the server substitute its own fresh read, which is the overwrite this ticket closes.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', 'W/"v1"', false);
+    });
+
+    it('surfaces a concurrent edit as stale-brief, then lets the next Proceed overwrite', async () => {
+      // The full chosen behaviour end to end: one honest refusal, then the existing
+      // proceed-again path. Both halves matter — a fix that produced the 412 but stranded the
+      // user would break a shipped flow, and a fix that kept proceeding silently would not be a
+      // fix at all.
+      //
+      // The concurrent edit is simulated at the seam the component owns: the stored row moved
+      // since this page loaded it, so the server answers the carried validator with 412 and the
+      // BFF maps it to `stale-brief`.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
+      restore(brief, 'restored-a', true, 'W/"v1"');
+      await fixture.whenStable();
+
+      proceed();
+      await fixture.whenStable();
+
+      // Refused, and SAID so — not a generic failure and not a silent overwrite.
+      expect(state().status).toBe('error');
+      expect(state().message).toContain('Someone else changed this brief while you were working');
+
+      // The promotion: the refusal granted this session explicit overwrite permission, so the
+      // next Proceed carries the fallback licence and replaces whatever is stored. This is the
+      // deliberate product choice (option 1) — the 412 is a speed bump, not a wall.
+      persistBrief.mockReturnValue(NEVER);
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
+    });
+
+    it('grants no overwrite licence for free when the read produced no validator', async () => {
+      // The absence case, kept as it was. A restore whose read returned no ETag is still a
+      // DECISION — the user saw the content and chose it — so it stays `'overwrite'` rather than
+      // refusing the first save after every such restore. What changed is that this licence is
+      // no longer handed out when a validator IS available.
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a', true, null);
+      await fixture.whenStable();
+
       proceed();
       await fixture.whenStable();
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);

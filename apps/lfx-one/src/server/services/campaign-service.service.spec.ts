@@ -1347,6 +1347,26 @@ describe('CampaignServiceClient.loadBrief', () => {
     expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', { event_slug: 'kubecon-eu-2026' });
   });
 
+  // LFXV2-3204. The read has to HAND BACK the validator it observed, because `replaceBrief`
+  // prefers a caller-supplied ETag over the one its own find reads — and only a carried,
+  // load-time validator can produce a 412 when another writer moved the row in between. An
+  // earlier revision dropped it here, which made the precondition ceremonial: the find inside
+  // the save always matched itself, so a concurrent editor was overwritten rather than refused.
+  it('carries the ETag it observed, so a save can send it as If-Match', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), { etag: 'W/"7"' }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toMatchObject({ status: 'loaded', etag: 'W/"7"' });
+  });
+
+  // A read that produced no validator still yields a restorable brief. `null` here is an ABSENT
+  // validator, not permission to overwrite — what an absent one licenses is decided by the
+  // `absence` the caller records alongside it, never by the null itself.
+  it('reports a null ETag rather than inventing one when the response carried none', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), {}));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toMatchObject({ status: 'loaded', etag: null });
+  });
+
   // campaign-service creates every brief as `draft` and approval is a SECOND call, so a save whose
   // approve step failed leaves a durable row that campaign creation and audience building both
   // refuse (they gate on `approved`). The restore path suppresses the next save, so nothing
@@ -1381,7 +1401,13 @@ describe('CampaignServiceClient.loadBrief', () => {
   it('reports none when campaign-service says the slug has no brief', async () => {
     proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND);
 
-    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toEqual({ status: 'none', briefId: null, brief: null, approved: false });
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toEqual({
+      status: 'none',
+      briefId: null,
+      brief: null,
+      etag: null,
+      approved: false,
+    });
   });
 
   // `unreadable` must stay distinct from `none`, and this is the test that pins it. The save
@@ -1394,6 +1420,7 @@ describe('CampaignServiceClient.loadBrief', () => {
       status: 'unreadable',
       briefId: 'b-1',
       brief: null,
+      etag: '"3"',
       approved: false,
     });
   });

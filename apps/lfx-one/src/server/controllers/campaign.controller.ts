@@ -635,7 +635,7 @@ export class CampaignController {
       // `approved: false` is not a claim about any stored row -- with the flag off nothing was
       // read. It is the safe default the field documents: never assert approval that was not
       // observed.
-      res.json({ status: 'off', briefId: null, brief: null, approved: false } satisfies CampaignBriefLoadResult);
+      res.json({ status: 'off', briefId: null, brief: null, etag: null, approved: false } satisfies CampaignBriefLoadResult);
       return;
     }
 
