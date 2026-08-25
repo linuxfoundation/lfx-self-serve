@@ -575,8 +575,8 @@ export class OrgLensProjectsService {
   private mapHealthScore(
     row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE' | 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>
   ): Exclude<HealthScore, 'unavailable'> {
-    // Falls back to whichever raw score is present (v1, else v2) rather than defaulting to 0, so a row with an
-    // unrecognized v2 category and no v1 score doesn't get silently misclassified as critical.
+    // Falls back to whichever raw score is present (v1, else v2); the trailing `?? 0` is an unreachable
+    // safety net since callers only invoke this when hasHealthScore() has confirmed one of the two exists.
     return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) ?? classifyHealthScore(row.HEALTH_OVERALL_SCORE ?? row.HEALTH_OVERALL_SCORE_V2 ?? 0);
   }
 
