@@ -389,7 +389,19 @@ export class CampaignsComponent {
     if (!isPlatformBrowser(this.platformId) || !this.featureFlagService.providerReady()) {
       return true;
     }
-    return this.marketingOpsFgaEnabled() && this.personaService.isCampaignManager();
+    if (!this.marketingOpsFgaEnabled()) {
+      return false;
+    }
+    const slug = this.activeFoundationSlug();
+    // `isCampaignManager()` is a single global signal shared across every foundation's probe —
+    // only trust it for this foundation if `marketingGrantSlug()` (the foundation the most
+    // recently *applied* probe actually answered for) names this same foundation. Otherwise the
+    // true answer belongs to a different, differently-scoped probe that raced ahead of this one
+    // (Copilot finding, PR #1835, on `applyPersonaResponse`'s cross-scope recency gate).
+    if (slug && this.personaService.marketingGrantSlug() !== slug) {
+      return false;
+    }
+    return this.personaService.isCampaignManager();
   });
 
   /**

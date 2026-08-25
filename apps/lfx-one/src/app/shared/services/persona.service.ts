@@ -95,17 +95,23 @@ export class PersonaService {
    */
   private latestAppliedGrantProbeId = 0;
   /**
-   * Last probeId *issued* for a given scope (`projectSlug`, or `undefined` for root) — used only by
-   * {@link confirmActiveGrant} to tell a genuine cross-scope race (safe to override) apart from a
-   * same-scope race (not safe to override). `latestGrantProbeId`/`latestAppliedGrantProbeId` are
-   * global by design so an unrelated scope's newer probe can never block this scope's write, but
-   * that same bypass let a guard force-apply its own response even after a *later-issued probe for
-   * its own scope* had already applied a more current, different answer — reintroducing the exact
-   * clobber the recency gate exists to prevent, just via a different door (Copilot finding, PR
-   * #1835). Tracking issuance per scope lets {@link confirmActiveGrant} defer only when it's truly
-   * superseded within its own scope.
+   * Last probeId that actually **applied** (wrote the signals for) a given scope (`projectSlug`, or
+   * `undefined` for root) — used only by {@link confirmActiveGrant} to tell a genuine cross-scope
+   * race (safe to override) apart from a same-scope race (not safe to override).
+   * `latestGrantProbeId`/`latestAppliedGrantProbeId` are global by design so an unrelated scope's
+   * newer probe can never block this scope's write, but that same bypass let a guard force-apply
+   * its own response even after a *later-issued probe for its own scope* had already applied a more
+   * current, different answer — reintroducing the exact clobber the recency gate exists to prevent,
+   * just via a different door (Copilot finding, PR #1835).
+   *
+   * This tracks *applied* probes, not merely *issued* ones — an earlier version keyed off issuance
+   * alone, which meant a later-issued same-scope probe that errored or otherwise never wrote
+   * anything could still permanently block an earlier, still-in-flight probe's legitimate
+   * force-apply, since its mere issuance already looked like a supersession (Cursor Bugbot + Copilot
+   * findings, PR #1835). Only a probe that actually goes on to write moves this forward, matching
+   * {@link latestAppliedGrantProbeId}'s same rationale one level down, per scope.
    */
-  private readonly latestIssuedGrantProbeIdByScope = new Map<string | undefined, number>();
+  private readonly latestAppliedGrantProbeIdByScope = new Map<string | undefined, number>();
   /** Correlates a resolved {@link PersonaApiResponse} back to the probeId that produced it, so {@link confirmActiveGrant} can look up same-scope recency without changing `refreshEnrichedPersonas`'s public `Observable<PersonaApiResponse | null>` contract. */
   private readonly grantProbeIdByResponse = new WeakMap<object, number>();
 
@@ -157,13 +163,12 @@ export class PersonaService {
       return of(null);
     }
     const probeId = ++this.latestGrantProbeId;
-    this.latestIssuedGrantProbeIdByScope.set(projectSlug, probeId);
     const url = projectSlug ? `/api/user/personas?enriched=true&project=${encodeURIComponent(projectSlug)}` : '/api/user/personas?enriched=true';
     return this.http.get<PersonaApiResponse>(url).pipe(
       take(1),
       catchError(() => of(null)),
       tap((response) => {
-        this.applyPersonaResponse(response, probeId);
+        this.applyPersonaResponse(response, probeId, projectSlug);
         if (response && !response.error) {
           this.grantProbeIdByResponse.set(response, probeId);
           this.enrichedPersonasLoaded.set(true);
@@ -194,23 +199,29 @@ export class PersonaService {
    * page it just admitted to rendering its own no-access state (Copilot findings, PR #1835). A
    * guard resolving for the route about to be on screen is the most authoritative source for
    * what's true right now, so it must win outright instead of competing with the *global* recency
-   * gate — but only when the race it's overriding is cross-scope. If a *later-issued probe for
-   * this exact scope* (tracked via {@link latestIssuedGrantProbeIdByScope}) has already resolved
-   * and applied a different answer, this response is genuinely stale, not just a victim of the
-   * global/cross-scope gate, and force-applying it would restore exactly the clobber the recency
-   * gate exists to prevent (Copilot finding, PR #1835). Callers must only invoke this with an
-   * authoritative, non-errored response.
+   * gate — but only when the race it's overriding is cross-scope. If a *later probe for this exact
+   * scope has already applied* a different answer (tracked via
+   * {@link latestAppliedGrantProbeIdByScope}), this response is genuinely stale, not just a victim
+   * of the global/cross-scope gate, and force-applying it would restore exactly the clobber the
+   * recency gate exists to prevent (Copilot finding, PR #1835). This deliberately checks the last
+   * probe that *applied* for the scope, not merely the last one *issued* — an issuance-only check
+   * let a later same-scope probe that errored or otherwise never wrote anything still block this
+   * force-apply just by having been issued (Cursor Bugbot + Copilot findings, PR #1835). Callers
+   * must only invoke this with an authoritative, non-errored response.
    */
   public confirmActiveGrant(response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager'>, projectSlug?: string): void {
     const probeId = this.grantProbeIdByResponse.get(response);
-    const latestIssuedForScope = this.latestIssuedGrantProbeIdByScope.get(projectSlug);
-    if (probeId !== undefined && latestIssuedForScope !== undefined && probeId < latestIssuedForScope) {
+    const latestAppliedForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
+    if (probeId !== undefined && latestAppliedForScope !== undefined && probeId < latestAppliedForScope) {
       return;
     }
     this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
     this.isCampaignManager.set(response.isCampaignManager ?? false);
     if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager)) {
       this.marketingGrantSlug.set(projectSlug);
+    }
+    if (probeId !== undefined && probeId > (latestAppliedForScope ?? -Infinity)) {
+      this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);
     }
   }
 
@@ -238,7 +249,7 @@ export class PersonaService {
       });
   }
 
-  private applyPersonaResponse(response: PersonaApiResponse | null, probeId?: number): void {
+  private applyPersonaResponse(response: PersonaApiResponse | null, probeId?: number, projectSlug?: string): void {
     if (!response || response.error) {
       // Preserve last-known-good grants on a failed/errored refetch — a transient network or
       // upstream failure must not silently revoke access that was already confirmed.
@@ -267,6 +278,10 @@ export class PersonaService {
       this.isCampaignManager.set(response.isCampaignManager ?? false);
       if (probeId !== undefined) {
         this.latestAppliedGrantProbeId = probeId;
+        const latestAppliedForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
+        if (probeId > (latestAppliedForScope ?? -Infinity)) {
+          this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);
+        }
       }
     }
 

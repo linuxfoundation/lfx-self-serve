@@ -156,15 +156,47 @@ describe('PersonaService — grant probe recency ordering', () => {
       service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
 
       http.expectOne((req) => req.url.includes('project=foundation-b')).flush(mockResponse({ isCampaignManager: true }));
-      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true }));
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: false }));
 
-      expect(service.isCampaignManager()).toBe(true); // written by foundation-b's probe, not foundation-a's
+      // foundation-b's probe wins the global race and writes `true` — proves the signal really
+      // starts at the cross-scope winner's value, not foundation-a's, so the assertion below can't
+      // pass by coincidence if `confirmActiveGrant` were a no-op (Copilot finding, PR #1835).
+      expect(service.isCampaignManager()).toBe(true);
 
       // foundation-a's guard still has its own authoritative response — no newer probe was
       // issued for foundation-a's own scope, so this must force-apply, not defer.
       service.confirmActiveGrant(aResponse!, 'foundation-a');
 
+      expect(service.isCampaignManager()).toBe(false);
+    });
+
+    it('does not let a later-issued, same-scope probe that never applies (errors out) block an earlier probe from force-applying via confirmActiveGrant (Cursor Bugbot + Copilot findings, PR #1835)', () => {
+      const a$ = service.refreshEnrichedPersonas(true, 'foundation-a');
+      let aResponse: PersonaApiResponse | null = null;
+      a$.subscribe((response) => (aResponse = response));
+
+      // A cross-scope probe is issued after A's and resolves first, winning the global race and
+      // writing `true` — this is what A's own `applyPersonaResponse` write is blocked by, which is
+      // exactly why its guard needs `confirmActiveGrant` to force its own answer through.
+      service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
+      // A THIRD probe, for A's own scope, is issued after A's first probe but errors — it must not
+      // count as a same-scope supersession just because it was issued; it never applied anything.
+      const thirdA$ = service.refreshEnrichedPersonas(true, 'foundation-a');
+      thirdA$.subscribe();
+
+      http.expectOne((req) => req.url.includes('project=foundation-b')).flush(mockResponse({ isCampaignManager: true }));
+      const [firstAReq, thirdAReq] = http.match((req) => req.url.includes('project=foundation-a'));
+      thirdAReq.error(new ProgressEvent('network error'));
+      firstAReq.flush(mockResponse({ isCampaignManager: false }));
+
+      // Blocked globally by foundation-b's win, not by the errored third probe.
       expect(service.isCampaignManager()).toBe(true);
+
+      // A's guard force-applies its own (legitimate, non-errored) response. The errored third probe
+      // for A's own scope must not block this — it never itself applied.
+      service.confirmActiveGrant(aResponse!, 'foundation-a');
+
+      expect(service.isCampaignManager()).toBe(false);
     });
   });
 });

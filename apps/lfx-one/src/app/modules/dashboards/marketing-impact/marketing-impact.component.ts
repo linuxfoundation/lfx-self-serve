@@ -185,9 +185,25 @@ export class MarketingImpactComponent {
   // canViewExecutiveDashboards(): they keep their contributor persona and fall into the
   // Social-Listening-only branch (LFXV2-2236 gap-analysis G4).
   private initHasFullMarketingAccess(): Signal<boolean> {
-    return computed(
-      () => this.personaService.currentPersona() === 'executive-director' || (this.marketingOpsFgaEnabled() && this.personaService.isMarketingAuditor())
-    );
+    return computed(() => {
+      if (this.personaService.currentPersona() === 'executive-director') {
+        return true;
+      }
+      if (!this.marketingOpsFgaEnabled()) {
+        return false;
+      }
+      const slug = this.foundationSlug();
+      // `isMarketingAuditor()` is a single global signal shared across every foundation's probe —
+      // when this page is scoped to a specific foundation, only trust it if `marketingGrantSlug()`
+      // (the foundation the most recently *applied* probe actually answered for) names this same
+      // foundation. Otherwise the true answer belongs to a different, differently-scoped probe
+      // that raced ahead of this one (Copilot finding, PR #1835, on `applyPersonaResponse`'s
+      // cross-scope recency gate) and must not be read as if it were this foundation's grant.
+      if (slug && this.personaService.marketingGrantSlug() !== slug) {
+        return false;
+      }
+      return this.personaService.isMarketingAuditor();
+    });
   }
 
   private initContextLabel(): Signal<string> {
