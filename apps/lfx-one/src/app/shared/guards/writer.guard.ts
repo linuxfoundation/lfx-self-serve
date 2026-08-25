@@ -31,7 +31,8 @@ import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-ac
  * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting edit), resolves
  * the slug from the meeting itself first — the active context can belong to a different project
  * when the edit link carried no `?project=`. A non-404 failure on that read resolves no slug at all,
- * so the guard redirects instead of authorizing against a stale context. Otherwise prefers the `?project=` query param
+ * so the guard redirects instead of authorizing against a stale context; a flagged route with no
+ * registered probe or `:id` param is misconfigured and likewise fails closed. Otherwise prefers the `?project=` query param
  * (authoritative for the navigation target, works before the lens has synced), then falls back
  * to the active context's slug. The flag lives in route data — not a routeConfig.path check — so
  * a route rename/restructure can't silently disable the entity-scoped resolution.
@@ -76,10 +77,15 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   };
   const resolveSlug = (): Observable<string | null> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
+    if (route.data?.['entityScopedSlug'] !== true) {
+      return of(fromContext);
+    }
     const probe = writeFeature ? entityProbes[writeFeature] : undefined;
     const entityId = route.paramMap.get('id');
-    if (!probe || !entityId || route.data?.['entityScopedSlug'] !== true) {
-      return of(fromContext);
+    // A flagged route without a usable probe is misconfigured — fail closed rather than
+    // authorize against a possibly stale context.
+    if (!probe || !entityId) {
+      return of(null);
     }
     // Resolve from the entity payload, never the active context — a readable entity with a stale
     // context would authorize against the wrong project; only a 404 falls back, else fail closed.
