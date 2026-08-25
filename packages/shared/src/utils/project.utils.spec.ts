@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { ProjectFunding } from '../enums/project-funding.enum';
 import { ProjectStage } from '../enums/project-stage.enum';
 import { Project } from '../interfaces';
-import { summarizeWriterGrants } from './project.utils';
+import { divergentProjectQueryParam, summarizeWriterGrants } from './project.utils';
 
 /** Builds a Project fixture, defaulting every field so tests set only what they assert on. */
 function project(partial: Partial<Project>): Project {
@@ -70,5 +70,23 @@ describe('summarizeWriterGrants', () => {
 
   it('treats writer as false when the field is undefined (not requested / not access-checked)', () => {
     expect(summarizeWriterGrants([project({ uid: 'unchecked' })])).toEqual({ hasWriterFoundation: false, hasWriterProject: false });
+  });
+});
+
+describe('divergentProjectQueryParam', () => {
+  it('omits the param when the target matches the active project', () => {
+    expect(divergentProjectQueryParam('uid-a', 'uid-a')).toEqual({});
+  });
+
+  it('includes the param when the target diverges from the active project', () => {
+    expect(divergentProjectQueryParam('uid-a', 'uid-b')).toEqual({ project: 'uid-a' });
+  });
+
+  it('omits the param when the target is empty', () => {
+    expect(divergentProjectQueryParam('', 'uid-b')).toEqual({});
+  });
+
+  it('includes the param when there is no active project to compare against', () => {
+    expect(divergentProjectQueryParam('uid-a', '')).toEqual({ project: 'uid-a' });
   });
 });

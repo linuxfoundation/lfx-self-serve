@@ -75,3 +75,23 @@ export function summarizeWriterGrants(projects: Project[]): WriterSummary {
     hasWriterProject: writerProjects.some((project) => !computeIsFoundation(project)),
   };
 }
+
+/**
+ * Builds the `?project=` query param object for an in-app link (e.g. a
+ * back/create navigation) that needs to pin its target project — but only
+ * when that target actually diverges from the active context. Written
+ * unconditionally, the pin can outlive an in-page project switch:
+ * `ProjectContextService.syncProjectQueryParam` rewrites `?project=` via
+ * `location.replaceState`, which bypasses the Router entirely, so a
+ * route-param read never sees the rewrite. Omitting the param in the common
+ * (non-divergent) case preserves normal context-following behavior instead.
+ *
+ * Pulled out as a pure function — three LFX One newsletter call sites
+ * (NewsletterListComponent.goToCreate, NewsletterManageComponent.listQueryParams,
+ * NewsletterAnalyticsComponent.goBack) apply this exact rule, and the "only
+ * when it diverges" condition is subtle enough that inlined copies could
+ * silently drift apart with no test catching it.
+ */
+export function divergentProjectQueryParam(targetUid: string, activeUid: string): Record<string, string> {
+  return targetUid && targetUid !== activeUid ? { project: targetUid } : {};
+}

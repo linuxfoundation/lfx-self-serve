@@ -23,11 +23,13 @@ import {
   NewsletterStatusTabId,
 } from '@lfx-one/shared/interfaces';
 import {
+  divergentProjectQueryParam,
   formatFutureRelativeTime,
   formatShortDateInTimezone,
   formatTo12HourInTimezone,
   getTimezoneUtcOffsetString,
   getUserTimezone,
+  isUuid,
 } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -126,12 +128,35 @@ export class NewsletterListComponent {
   // The `:pubId` editions route carries `:projectUid` alongside it (see
   // newsletters.routes.ts) so a deep link resolves the publication's own project
   // even next to a stale or different active-context cookie. The flat `list`
-  // route has no projectUid segment, so it falls back to the active context —
-  // same fallback pattern as newsletter-manage.component.ts's routeProjectUid.
+  // route has no projectUid segment, so it falls back next to a `?project=`
+  // query param (see below), then the active context — same fallback pattern
+  // as newsletter-manage.component.ts's routeProjectUid.
   private readonly routeProjectUid: Signal<string | null> = toSignal(this.route.paramMap.pipe(map((p) => p.get('projectUid'))), {
     initialValue: this.route.snapshot.paramMap.get('projectUid'),
   });
-  public readonly projectUid: Signal<string> = computed(() => this.routeProjectUid() || this.projectContextService.activeContextUid());
+  // newsletter-manage.component.ts's goToList() carries the resolved project
+  // on ?project= for the same divergent-context reason goToCreate() does.
+  // Every navigation that reaches 'list' comes from a different route config
+  // (create, :projectUid/:id/edit), which Angular destroys/recreates rather
+  // than reuses, so an entry-snapshot read (like newsletter-manage's sibling
+  // queryProjectRef) would suffice today — this is read reactively instead as
+  // belt-and-braces against a future list-to-list navigation being added
+  // without updating this read, not because one exists now. ?project= is
+  // otherwise always a slug everywhere else it's produced in this app;
+  // goToList/goToCreate are the exception that write a UID (see their own
+  // comments), so only a UID-shaped value is used directly here — a slug
+  // falls through to activeContextUid() instead, same isUuid gating as
+  // newsletter-manage.component.ts's queryProjectUid.
+  private readonly routeProjectRef: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((p) => p.get('project'))), {
+    initialValue: this.route.snapshot.queryParamMap.get('project'),
+  });
+  private readonly routeProjectRefUid: Signal<string | null> = computed(() => {
+    const ref = this.routeProjectRef();
+    return ref && isUuid(ref) ? ref : null;
+  });
+  public readonly projectUid: Signal<string> = computed(
+    () => this.routeProjectUid() || this.routeProjectRefUid() || this.projectContextService.activeContextUid()
+  );
   protected readonly canLoadMore: Signal<boolean> = computed(() => !!this.nextPageToken() && !this.loading() && !this.loadingMore() && !!this.projectUid());
   protected readonly hasNewsletters: Signal<boolean> = computed(() => this.newsletters().length > 0 || this.armingNewsletters().length > 0);
   protected readonly hasOptOuts: Signal<boolean> = computed(() => this.optOuts().length > 0);
@@ -182,25 +207,59 @@ export class NewsletterListComponent {
     }
   }
 
-  // The composer sits at the flat `newsletters/create` path, so the publication
-  // being composed into has to travel with the navigation. Without it the new
-  // edition is created unfiled: `publication_id` is optional upstream and there
-  // is no project default to fall back to, so the edition would silently not
-  // belong to the publication the user opened. Unfiled is a valid state (the
-  // weekly brief creates editions that way), which is exactly why this has to
-  // be passed explicitly rather than inferred.
+  // The composer sits at the flat `newsletters/create` path, so both the
+  // publication being composed into AND the owning project have to travel
+  // with the navigation rather than being inferred.
   //
-  // Anchored at `route.parent` (the module mount) rather than `['..']`. A single
-  // `..` pops one URL segment, which is only correct on the one-segment `list`
-  // route. On the three-segment `:projectUid/:pubId/editions` route it resolves
-  // to `<mount>/:projectUid/:pubId/create`, which matches no route at all, so
-  // the button would do nothing. Same anchoring as goToList in
-  // newsletter-manage.component.ts and goBack in newsletter-analytics.component.ts.
+  // publication: without it the new edition is created unfiled —
+  // `publication_id` is optional upstream and there is no project default to
+  // fall back to, so the edition would silently not belong to the
+  // publication the user opened. Unfiled is a valid state (the weekly brief
+  // creates editions that way), which is exactly why this has to be passed
+  // explicitly rather than inferred.
+  //
+  // project: on the `:projectUid/:pubId/editions` mount, this.projectUid()
+  // resolves from the route's own path segment (authoritative even beside a
+  // stale active-context cookie) — a real UID, unlike every other producer
+  // of ?project= in this app, which sends a slug. Carried on that standard
+  // query param rather than a bespoke one: newsletterAccessGuard reads it
+  // directly at the create leaf, and NewsletterManageComponent reads it
+  // directly for its save payload too (both bypass depending on
+  // projectQueryParamGuard, which runs on the newsletters parent mounts but
+  // is skipped by Angular's default guard-reuse rules when only this leaf
+  // changes and the parent mount's own path params don't) — see both call
+  // sites' own comments for why. NewsletterManageComponent gates the value
+  // with isUuid() first, so this UID is only ever used where a UID is
+  // expected and a stray slug still falls through to its own slug-resolving
+  // fallback; newsletterAccessGuard passes its ?project= source through
+  // ungated, since getProject already resolves either a slug or a UID and
+  // needs no gate to do so correctly. The composer's
+  // displayName/logoUrl are resolved from projectUid() too (see
+  // NewsletterManageComponent's resolvedProject), so they end up describing
+  // the same project as the save target rather than lagging on activeContext.
+  //
+  // Only written when it actually diverges from activeContextUid(), via the
+  // shared divergentProjectQueryParam (also used by NewsletterManageComponent
+  // and NewsletterAnalyticsComponent for the same rule): a written pin
+  // persists in the URL even after an in-page project switch
+  // (ProjectContextService.syncProjectQueryParam rewrites ?project= via
+  // location.replaceState, which bypasses the Router entirely, so a route
+  // param read never sees it change) — on the lens-prefixed mounts a switch
+  // navigates away from this 3-segment URL anyway, but the flat (me/org-
+  // lens) mount has no such guard and would keep the create/list pages
+  // pinned to a project the sidebar no longer shows as active. Omitting the
+  // param in the common (non-divergent) case preserves the pre-existing
+  // context-following behavior; it's written only in the one case that
+  // needs it, and a switch away from that project is expected to require
+  // leaving this page anyway.
   protected goToCreate(): void {
     const pubId = this.publicationId();
     this.router.navigate(['create'], {
       relativeTo: this.route.parent,
-      queryParams: pubId ? { publication: pubId } : {},
+      queryParams: {
+        ...(pubId ? { publication: pubId } : {}),
+        ...divergentProjectQueryParam(this.projectUid(), this.projectContextService.activeContextUid()),
+      },
     });
   }
 
@@ -213,11 +272,16 @@ export class NewsletterListComponent {
       return;
     }
     const target = this.statusTab() === 'sent' ? 'analytics' : 'edit';
-    // Carry the newsletter's own project_uid in the URL instead of relying on
-    // ambient context — see newsletters.routes.ts for the rationale. Anchored at
-    // route.parent for the same reason as goToCreate above: `['..']` pops a
-    // single segment, so from the three-segment editions route it would build
-    // `<mount>/:projectUid/:pubId/<project>/<id>/edit`.
+    // Anchor to route.parent with the full path rather than ['..', ...]: this
+    // component is mounted at both the flat 1-segment `list` route and the
+    // 3-segment `:projectUid/:pubId/editions` route, and Angular's relative
+    // navigation pops one URL segment per '..', not one Route match — so a
+    // single '..' from the 3-segment mount would only remove 'editions',
+    // landing on a URL nothing matches. route.parent is the shared
+    // `newsletters` mount in both cases (see goBack in newsletter-analytics
+    // and goToList in newsletter-manage for the same pattern). Carry the
+    // newsletter's own project_uid in the URL instead of relying on ambient
+    // context — see newsletters.routes.ts for the rationale.
     this.router.navigate([item.project_uid, item.id, target], { relativeTo: this.route.parent });
   }
 
