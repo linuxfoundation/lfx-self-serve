@@ -97,10 +97,18 @@ export class ProjectContextService {
     // context-less one. Re-checked on every `hasMarketingOnlyGrant` emission (persona/flag data
     // arrives post-hydration) but only acts while no foundation has been set by cookie restore
     // or an explicit selection made since.
+    //
+    // When the grant was confirmed via sidebar-nav.service.ts's `marketingPersonaSlug` scoped
+    // probe, it re-checks `personaService.isMarketingAuditor`/`isCampaignManager` against
+    // exactly `selectedProject()?.slug` — so at the instant this emission fires true via that
+    // path, `projectSelection` already holds the specific slug the grant was verified against.
+    // Prefer it over the hardcoded TLF default, which is only correct for a ROOT-scoped grant
+    // (LFXV2-2235 review finding: seeding TLF unconditionally can land a project-scoped-only
+    // grant holder on a foundation they aren't authorized for).
     toObservable(this.hasMarketingOnlyGrant)
       .pipe(
         filter((hasGrant) => hasGrant && !this.foundationSelection()),
-        switchMap(() => this.projectService.getProject(MARKETING_ONLY_DEFAULT_FOUNDATION_SLUG, false)),
+        switchMap(() => this.projectService.getProject(this.projectSelection()?.slug || MARKETING_ONLY_DEFAULT_FOUNDATION_SLUG, false)),
         filter((project): project is NonNullable<typeof project> => !!project && !this.foundationSelection())
       )
       .subscribe((project) => {
