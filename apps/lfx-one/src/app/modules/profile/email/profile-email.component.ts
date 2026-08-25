@@ -11,6 +11,7 @@ import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { EmailManagementData, UserEmail } from '@lfx-one/shared/interfaces';
+import { emailsEqual } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -74,19 +75,26 @@ export class ProfileEmailComponent {
     const data = this.emailData();
     if (!data) return [];
     const primary: UserEmail = { email: data.primary_email, verified: true };
-    const alternates = data.alternate_emails.filter((e) => e.email !== data.primary_email);
+    const alternates = data.alternate_emails.filter((e) => !emailsEqual(e.email, data.primary_email));
     return [primary, ...alternates];
   });
 
   public emailsWithMetadata = computed(() => {
     const inviteEmail = this.meetingInviteEmail();
-    return this.allEmails().map((email) => ({
-      ...email,
-      isPrimary: email.email === this.emailData()?.primary_email,
-      isMeetingInvite: !!inviteEmail && email.email === inviteEmail,
-      canDelete: this.allEmails().length > 1 && email.email !== this.emailData()?.primary_email && !!email.user_id && email.email !== inviteEmail,
-      canSetPrimary: email.email !== this.emailData()?.primary_email && email.verified,
-    }));
+    const primaryEmail = this.emailData()?.primary_email;
+    return this.allEmails().map((email) => {
+      // The invite address comes from the meeting-service (v1/SFDC), a different source than this
+      // Auth0-backed list, so casing can legitimately differ — compare case-insensitively.
+      const isPrimary = emailsEqual(email.email, primaryEmail);
+      const isMeetingInvite = emailsEqual(email.email, inviteEmail);
+      return {
+        ...email,
+        isPrimary,
+        isMeetingInvite,
+        canDelete: this.allEmails().length > 1 && !isPrimary && !!email.user_id && !isMeetingInvite,
+        canSetPrimary: !isPrimary && email.verified,
+      };
+    });
   });
 
   // Public methods
@@ -160,7 +168,7 @@ export class ProfileEmailComponent {
   }
 
   public setPrimary(email: UserEmail): void {
-    if (email.email === this.emailData()?.primary_email) {
+    if (emailsEqual(email.email, this.emailData()?.primary_email)) {
       return;
     }
 
@@ -201,7 +209,7 @@ export class ProfileEmailComponent {
 
     // Defensive guard: never delete the email selected as the meeting-invitation preference.
     // The button is already hidden for it; this covers any programmatic call path.
-    if (email.email === this.meetingInviteEmail()) {
+    if (emailsEqual(email.email, this.meetingInviteEmail())) {
       return;
     }
 

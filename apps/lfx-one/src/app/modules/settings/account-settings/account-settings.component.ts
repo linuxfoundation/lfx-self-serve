@@ -12,6 +12,8 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
+import { MEETING_INVITE_PRIMARY_SENTINEL } from '@lfx-one/shared/constants';
+import { emailsEqual } from '@lfx-one/shared/utils';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ActivatedRoute } from '@angular/router';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
@@ -111,20 +113,29 @@ export class AccountSettingsComponent {
     const data = this.emailData();
     if (!data) return [];
     const primary: UserEmail = { email: data.primary_email, verified: true };
-    const alternates = (data.alternate_emails ?? []).filter((e) => e.email !== data.primary_email);
+    const alternates = (data.alternate_emails ?? []).filter((e) => !emailsEqual(e.email, data.primary_email));
     return [primary, ...alternates];
   });
 
   public emailsWithMetadata = computed(() => {
     const inviteEmail = this.meetingInviteEmail();
-    return this.allEmails().map((email) => ({
-      ...email,
-      isPrimary: email.email === this.emailData()?.primary_email,
-      isMeetingInvite: !!inviteEmail && email.email === inviteEmail,
-      canDelete: this.allEmails().length > 1 && email.email !== this.emailData()?.primary_email && !!email.user_id,
-      canSetPrimary: email.email !== this.emailData()?.primary_email && email.verified,
-      canSetMeetingInvite: email.verified && email.email !== inviteEmail,
-    }));
+    const primaryEmail = this.emailData()?.primary_email;
+    return this.allEmails().map((email) => {
+      const isPrimary = emailsEqual(email.email, primaryEmail);
+      // Explicit selection — drives the badge, which only appears once the user has chosen.
+      const isMeetingInvite = emailsEqual(email.email, inviteEmail);
+      // Where invitations actually go today: the override when set, otherwise the primary email.
+      // Offering "Meeting Invitations" on that row would be a no-op, so it's suppressed there.
+      const isEffectiveInvite = inviteEmail ? isMeetingInvite : isPrimary;
+      return {
+        ...email,
+        isPrimary,
+        isMeetingInvite,
+        canDelete: this.allEmails().length > 1 && !isPrimary && !!email.user_id,
+        canSetPrimary: !isPrimary && email.verified,
+        canSetMeetingInvite: email.verified && !isEffectiveInvite,
+      };
+    });
   });
 
   // Per-row action menu (kebab). Keyed by email address so each row resolves its own items.
@@ -283,7 +294,7 @@ export class AccountSettingsComponent {
   }
 
   public setPrimary(email: UserEmail): void {
-    if (email.email === this.emailData()?.primary_email || !email.verified) {
+    if (emailsEqual(email.email, this.emailData()?.primary_email) || !email.verified) {
       return;
     }
 
@@ -303,16 +314,26 @@ export class AccountSettingsComponent {
   }
 
   public setMeetingInvite(email: UserEmail): void {
-    if (!email.verified || email.email === this.meetingInviteEmail()) {
+    if (!email.verified || emailsEqual(email.email, this.meetingInviteEmail())) {
       return;
     }
 
     this.meetingInviteError.set(null);
 
-    this.userService.setMeetingInviteEmail(email.email).subscribe({
+    // Picking the primary row means "go back to the default". Sending its literal address would
+    // instead pin an explicit override that stops following a later primary-email change — the
+    // meeting service only clears the override for the sentinel.
+    const isReset = emailsEqual(email.email, this.emailData()?.primary_email);
+    const selection = isReset ? MEETING_INVITE_PRIMARY_SENTINEL : email.email;
+
+    this.userService.setMeetingInviteEmail(selection).subscribe({
       next: () => {
         this.emailRefresh.next();
-        this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Meeting invitation email updated successfully' });
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Success',
+          detail: isReset ? 'Meeting invitations will now follow your primary email' : 'Meeting invitation email updated successfully',
+        });
       },
       error: (err: HttpErrorResponse) => {
         // A 400 means the address exists but isn't an active, verified record upstream — retrying
@@ -341,7 +362,7 @@ export class AccountSettingsComponent {
 
     // Defensive guard: never delete the email selected as the meeting-invitation preference.
     // The menu already disables this action; this covers any programmatic call path.
-    if (email.email === this.meetingInviteEmail()) {
+    if (emailsEqual(email.email, this.meetingInviteEmail())) {
       return;
     }
 
@@ -545,7 +566,9 @@ export class AccountSettingsComponent {
           items.push({ label: 'Make Primary', icon: 'fa-light fa-star', command: () => this.setPrimary(email) });
         }
         if (email.canSetMeetingInvite) {
-          items.push({ label: 'Meeting Invitations', icon: 'fa-light fa-envelope', command: () => this.setMeetingInvite(email) });
+          // On the primary row the action clears the override rather than pinning an address.
+          const label = email.isPrimary ? 'Use for Meeting Invitations (Default)' : 'Meeting Invitations';
+          items.push({ label, icon: 'fa-light fa-envelope', command: () => this.setMeetingInvite(email) });
         }
         if (email.canDelete) {
           if (email.isMeetingInvite) {

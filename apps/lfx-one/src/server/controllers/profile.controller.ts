@@ -38,7 +38,7 @@ import {
   UserProfile,
   WorkExperienceCreateUpdateBody,
 } from '@lfx-one/shared/interfaces';
-import { isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
+import { isIdentityAlreadyLinkedError, isMeetingInvitePrimarySentinel } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -650,7 +650,11 @@ export class ProfileController {
    */
   public async setMeetingInviteEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
     const emailAddress = (req.body?.email as string) ?? '';
-    const startTime = logger.startOperation(req, 'set_meeting_invite_email', { email: emailAddress });
+    // Selecting the primary row sends the sentinel instead of an address, to clear the override.
+    const isReset = isMeetingInvitePrimarySentinel(emailAddress);
+    // `email` is PII and `data.email` is not covered by the Pino redact paths — record the shape
+    // of the request rather than the address itself.
+    const startTime = logger.startOperation(req, 'set_meeting_invite_email', { is_reset: isReset });
 
     try {
       if (!emailAddress) {
@@ -663,7 +667,7 @@ export class ProfileController {
         );
       }
 
-      if (!EMAIL_REGEX.test(emailAddress)) {
+      if (!isReset && !EMAIL_REGEX.test(emailAddress)) {
         return next(
           ServiceValidationError.forField('email', 'Invalid email format', {
             operation: 'set_meeting_invite_email',

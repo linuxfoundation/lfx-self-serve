@@ -4,6 +4,7 @@
 import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import { MeetingInviteEmail, SetMeetingInviteResult } from '@lfx-one/shared/interfaces';
+import { isMeetingInvitePrimarySentinel } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -65,18 +66,25 @@ export class MeetingPreferenceService {
    * Set the user's preferred meeting-invitation email.
    * @param req - Express request object for logging
    * @param v1Token - The user's v1 API-gateway token (req.apiGatewayToken)
-   * @param email - The verified email address to receive meeting invitations
+   * @param email - The verified email address to receive meeting invitations, or
+   *   MEETING_INVITE_PRIMARY_SENTINEL to clear the override so invitations follow the primary email
    * @returns Result with the updated preference on success, or an error message on failure
    */
   public async setMeetingInviteEmail(req: Request, v1Token: string, email: string): Promise<SetMeetingInviteResult> {
     const codec = this.natsService.getCodec();
 
-    logger.debug(req, 'set_meeting_invite_email', 'Setting preferred meeting-invite email via NATS', { email });
+    // `email` is PII and `data.email` is not covered by the Pino redact paths — log the shape of
+    // the request (reset vs. explicit selection) rather than the address itself.
+    logger.debug(req, 'set_meeting_invite_email', 'Setting preferred meeting-invite email via NATS', {
+      is_reset: isMeetingInvitePrimarySentinel(email),
+    });
 
     try {
       const payload = JSON.stringify({ token: v1Token, email });
+      // Outlast the responder's own 15s deadline. Giving up first would surface a 503 while the
+      // mutation still completes upstream, leaving the preference changed behind an error message.
       const response = await this.natsService.request(NatsSubjects.MEETING_PREFERRED_EMAIL_SET, codec.encode(payload), {
-        timeout: NATS_CONFIG.REQUEST_TIMEOUT,
+        timeout: NATS_CONFIG.MEETING_PREFERENCE_SET_TIMEOUT,
       });
 
       const parsed = JSON.parse(codec.decode(response.data));

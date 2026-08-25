@@ -18,6 +18,7 @@ import {
   RemoveIdentityDialogData,
   VerifyIdentityDialogData,
 } from '@lfx-one/shared/interfaces';
+import { emailsEqual } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MenuItem, MessageService } from 'primeng/api';
@@ -245,8 +246,7 @@ export class ProfileIdentitiesComponent implements OnInit {
   }
 
   private isMeetingInviteIdentity(identity: ConnectedIdentityFull): boolean {
-    const inviteEmail = this.meetingInviteEmail();
-    return identity.provider === 'email' && !!inviteEmail && identity.identifier === inviteEmail;
+    return identity.provider === 'email' && emailsEqual(identity.identifier, this.meetingInviteEmail());
   }
 
   private initMeetingInviteEmail(): Signal<string | null> {

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isValidEmail, parseEmailList } from './email.utils';
+import { emailsEqual, isMeetingInvitePrimarySentinel, isValidEmail, parseEmailList } from './email.utils';
 
 describe('isValidEmail', () => {
   it('accepts a well-formed address', () => {
@@ -54,5 +54,46 @@ describe('parseEmailList', () => {
 
   it('ignores empty tokens produced by trailing/duplicate separators', () => {
     expect(parseEmailList(',,a@example.com,,\n\n').valid).toEqual(['a@example.com']);
+  });
+});
+
+describe('emailsEqual', () => {
+  it('matches identical addresses', () => {
+    expect(emailsEqual('alice@example.com', 'alice@example.com')).toBe(true);
+  });
+
+  it('ignores casing differences between upstreams', () => {
+    expect(emailsEqual('Alice@Example.COM', 'alice@example.com')).toBe(true);
+  });
+
+  it('ignores surrounding whitespace', () => {
+    expect(emailsEqual('  alice@example.com ', 'alice@example.com')).toBe(true);
+  });
+
+  it('rejects different addresses', () => {
+    expect(emailsEqual('alice@example.com', 'bob@example.com')).toBe(false);
+  });
+
+  it.each([
+    [null, 'alice@example.com'],
+    ['alice@example.com', null],
+    [undefined, undefined],
+    ['', ''],
+  ])('returns false when either side is missing (%p, %p)', (a, b) => {
+    expect(emailsEqual(a, b)).toBe(false);
+  });
+});
+
+describe('isMeetingInvitePrimarySentinel', () => {
+  it('recognizes the sentinel', () => {
+    expect(isMeetingInvitePrimarySentinel('primary')).toBe(true);
+  });
+
+  it.each(['Primary', 'PRIMARY', '  primary  '])('matches upstream case-insensitively and trims (%p)', (value) => {
+    expect(isMeetingInvitePrimarySentinel(value)).toBe(true);
+  });
+
+  it.each(['primary@example.com', 'alice@example.com', '', null, undefined])('rejects anything else (%p)', (value) => {
+    expect(isMeetingInvitePrimarySentinel(value)).toBe(false);
   });
 });

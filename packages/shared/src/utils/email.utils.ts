@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MEETING_INVITE_PRIMARY_SENTINEL } from '../constants/profile.constants';
 import { EMAIL_REGEX } from '../constants/regex.constants';
 import type { EmailListParseResult } from '../interfaces';
 
@@ -10,6 +11,28 @@ export function isValidEmail(value: string | null | undefined): boolean {
     return false;
   }
   return EMAIL_REGEX.test(value.trim());
+}
+
+/**
+ * True when two email addresses refer to the same mailbox, ignoring case and
+ * surrounding whitespace. Use whenever addresses from different upstreams are
+ * compared — e.g. an Auth0 email list against a v1/SFDC email record, which can
+ * legitimately differ in casing.
+ */
+export function emailsEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) {
+    return false;
+  }
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
+ * True when `value` is the meeting-service "clear the override" sentinel rather than an address.
+ * The upstream match is case-insensitive, so mirror that here — callers use this to skip the
+ * address-format validation that would otherwise reject the sentinel.
+ */
+export function isMeetingInvitePrimarySentinel(value: string | null | undefined): boolean {
+  return (value ?? '').trim().toLowerCase() === MEETING_INVITE_PRIMARY_SENTINEL;
 }
 
 /**

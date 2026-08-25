@@ -1,0 +1,203 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// The shared utils barrel transitively pulls in @angular/common (partially compiled); load the
+// JIT compiler so those injectables resolve under vitest (mirrors user.service.spec.ts).
+import '@angular/compiler';
+
+import { MEETING_INVITE_PRIMARY_SENTINEL, NATS_CONFIG } from '@lfx-one/shared/constants';
+import { NatsSubjects } from '@lfx-one/shared/enums';
+import type { Request } from 'express';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { natsRequest, loggerMock } = vi.hoisted(() => ({
+  natsRequest: vi.fn(),
+  loggerMock: {
+    startOperation: vi.fn(() => 0),
+    success: vi.fn(),
+    warning: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
+vi.mock('./nats.service', () => ({
+  NatsService: vi.fn(() => ({
+    getCodec: () => ({
+      encode: (value: string) => new TextEncoder().encode(value),
+      decode: (data: Uint8Array) => new TextDecoder().decode(data),
+    }),
+    request: natsRequest,
+  })),
+}));
+vi.mock('./logger.service', () => ({ logger: loggerMock }));
+
+import { MeetingPreferenceService } from './meeting-preference.service';
+
+const req = {} as unknown as Request;
+const V1_TOKEN = 'v1-token';
+const ALTERNATE_EMAIL = 'alice@acme-motors.example';
+
+// The service only reads `response.data`, so a reply is just the encoded JSON body.
+function reply(body: unknown): { data: Uint8Array } {
+  return { data: new TextEncoder().encode(JSON.stringify(body)) };
+}
+
+function decodeRequestPayload(callIndex = 0): { token: string; email?: string } {
+  return JSON.parse(new TextDecoder().decode(natsRequest.mock.calls[callIndex][1]));
+}
+
+// Every logger argument across the suite, flattened — used to prove no raw address is logged.
+function loggedPayloads(): string {
+  return JSON.stringify(Object.values(loggerMock).flatMap((fn) => fn.mock.calls));
+}
+
+describe('MeetingPreferenceService', () => {
+  let service: MeetingPreferenceService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new MeetingPreferenceService();
+  });
+
+  describe('getMeetingInviteEmail', () => {
+    it('returns the override when one is set', async () => {
+      natsRequest.mockResolvedValue(reply({ email_id: 'email-1', email: ALTERNATE_EMAIL }));
+
+      await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toEqual({ email_id: 'email-1', email: ALTERNATE_EMAIL });
+      expect(natsRequest.mock.calls[0][0]).toBe(NatsSubjects.MEETING_PREFERRED_EMAIL_GET);
+      expect(decodeRequestPayload()).toEqual({ token: V1_TOKEN });
+    });
+
+    it('returns null fields when the user has no override (invitations follow primary)', async () => {
+      natsRequest.mockResolvedValue(reply({ email_id: null, email: null }));
+
+      await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toEqual({ email_id: null, email: null });
+    });
+
+    it('normalizes absent fields to null', async () => {
+      natsRequest.mockResolvedValue(reply({}));
+
+      await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toEqual({ email_id: null, email: null });
+    });
+
+    it('fails open to null when the reply carries an error', async () => {
+      natsRequest.mockResolvedValue(reply({ error: 'v1 lookup failed' }));
+
+      await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toBeNull();
+      expect(loggerMock.warning).toHaveBeenCalledWith(req, 'get_meeting_invite_email', expect.any(String), { error: 'v1 lookup failed' });
+    });
+
+    it('fails open to null when the transport throws', async () => {
+      natsRequest.mockRejectedValue(new Error('timeout'));
+
+      await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toBeNull();
+    });
+
+    // A slow read only fails open to "no override", and the settings page awaits it on load —
+    // so GET deliberately keeps the shared fast-fail budget rather than the longer SET one.
+    it('uses the shared request timeout', async () => {
+      natsRequest.mockResolvedValue(reply({ email_id: null, email: null }));
+
+      await service.getMeetingInviteEmail(req, V1_TOKEN);
+
+      expect(natsRequest.mock.calls[0][2]).toEqual({ timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+    });
+  });
+
+  describe('setMeetingInviteEmail', () => {
+    it('returns the updated preference on success', async () => {
+      natsRequest.mockResolvedValue(reply({ email_id: 'email-1', email: ALTERNATE_EMAIL }));
+
+      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
+        success: true,
+        data: { email_id: 'email-1', email: ALTERNATE_EMAIL },
+      });
+      expect(natsRequest.mock.calls[0][0]).toBe(NatsSubjects.MEETING_PREFERRED_EMAIL_SET);
+      expect(decodeRequestPayload()).toEqual({ token: V1_TOKEN, email: ALTERNATE_EMAIL });
+    });
+
+    it('forwards the reset sentinel verbatim so upstream clears the override', async () => {
+      natsRequest.mockResolvedValue(reply({ email_id: null, email: null }));
+
+      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, MEETING_INVITE_PRIMARY_SENTINEL)).resolves.toEqual({
+        success: true,
+        data: { email_id: null, email: null },
+      });
+      expect(decodeRequestPayload().email).toBe(MEETING_INVITE_PRIMARY_SENTINEL);
+      expect(loggerMock.debug).toHaveBeenCalledWith(req, 'set_meeting_invite_email', expect.any(String), { is_reset: true });
+    });
+
+    it('logs an explicit selection as a non-reset', async () => {
+      natsRequest.mockResolvedValue(reply({ email_id: 'email-1', email: ALTERNATE_EMAIL }));
+
+      await service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL);
+
+      expect(loggerMock.debug).toHaveBeenCalledWith(req, 'set_meeting_invite_email', expect.any(String), { is_reset: false });
+    });
+
+    // The responder gives its downstream call a 15s deadline; giving up first would return an
+    // error to the browser while the mutation still lands upstream.
+    it('outlasts the responder deadline with a dedicated per-call timeout', async () => {
+      natsRequest.mockResolvedValue(reply({ email_id: 'email-1', email: ALTERNATE_EMAIL }));
+
+      await service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL);
+
+      expect(natsRequest.mock.calls[0][2]).toEqual({ timeout: NATS_CONFIG.MEETING_PREFERENCE_SET_TIMEOUT });
+      expect(NATS_CONFIG.MEETING_PREFERENCE_SET_TIMEOUT).toBeGreaterThan(15000);
+    });
+
+    it.each([
+      ['is not an active, verified address', 'validation'],
+      ['Email is not yet available, please retry', 'sync_pending'],
+      ['retry shortly', 'sync_pending'],
+      ['something else broke', 'upstream'],
+    ])('classifies the upstream error %j as %s', async (upstreamError, reason) => {
+      natsRequest.mockResolvedValue(reply({ error: upstreamError }));
+
+      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
+        success: false,
+        reason,
+        error: upstreamError,
+      });
+    });
+
+    it.each([['request timeout'], ['upstream returned 503']])('maps the transport failure %j to unavailable', async (message) => {
+      natsRequest.mockRejectedValue(new Error(message));
+
+      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
+        success: false,
+        reason: 'unavailable',
+        error: 'Service temporarily unavailable',
+      });
+    });
+
+    it('maps any other transport failure to upstream', async () => {
+      natsRequest.mockRejectedValue(new Error('connection refused'));
+
+      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
+        success: false,
+        reason: 'upstream',
+        error: 'Internal server error',
+      });
+    });
+  });
+
+  // `data.email` is not covered by the Pino redact paths, so the address must never reach the
+  // logger in the first place — on the happy path or on either failure path.
+  describe('PII', () => {
+    it.each([
+      ['success', () => natsRequest.mockResolvedValue(reply({ email_id: 'email-1', email: ALTERNATE_EMAIL }))],
+      ['upstream error', () => natsRequest.mockResolvedValue(reply({ error: 'is not an active, verified address' }))],
+      ['transport failure', () => natsRequest.mockRejectedValue(new Error('timeout'))],
+    ])('keeps the raw address out of the logs on %s', async (_label, arrange) => {
+      arrange();
+
+      await service.getMeetingInviteEmail(req, V1_TOKEN);
+      await service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL);
+
+      expect(loggedPayloads()).not.toContain(ALTERNATE_EMAIL);
+    });
+  });
+});

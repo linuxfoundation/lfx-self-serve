@@ -20,6 +20,15 @@ export const PENDING_PROFILE_SAVE_KEY = 'lfx_profile_pending_save';
 export const PROFILE_BIO_MAX_LENGTH = 2000;
 
 /**
+ * Sentinel accepted by the meeting-service `preferred_email.set` RPC in place of an address to
+ * clear the meeting-invitation override, so invitations follow whatever the primary email is.
+ * Must stay in sync with `primaryEmailSentinel` in lfx-v2-meeting-service; the upstream match
+ * is case-insensitive. Sending the literal primary address instead would pin an explicit
+ * override that no longer follows a later primary-email change.
+ */
+export const MEETING_INVITE_PRIMARY_SENTINEL = 'primary';
+
+/**
  * Profile tab configuration
  */
 export const PROFILE_TABS: ProfileTab[] = [

@@ -58,6 +58,15 @@ export const NATS_CONFIG = {
   REQUEST_TIMEOUT: 5000,
 
   /**
+   * Request timeout for the meeting-service `preferred_email.set` RPC, in milliseconds.
+   *
+   * Deliberately longer than REQUEST_TIMEOUT: the responder gives its downstream SET call a
+   * 15s deadline (`preferredEmailCallTimeout` in lfx-v2-meeting-service). Giving up first
+   * would return 503 to the browser while the mutation still lands upstream.
+   */
+  MEETING_PREFERENCE_SET_TIMEOUT: 20000,
+
+  /**
    * Max concurrent request/reply round trips when resolving a batch of IDs (e.g.
    * resolveCommitteeV2UidsToV1Ids) — a caller with a large N (LF staff visible on hundreds of
    * committees) shouldn't fire hundreds of concurrent NATS requests at once.
