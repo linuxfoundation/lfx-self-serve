@@ -34,8 +34,30 @@ vi.mock('@lfx-one/shared/constants', () => ({
   PENDING_ACTION_SURVEYS_ROW_LIMIT: 0,
   PROJECT_HEALTH_SCORE_CATEGORIES: [],
   ROOT_PROJECT_SLUG: 'root',
+  // Real values (3 / 40, matching foundation-projects.constants.ts), not 0/undefined: discoverSubFoundations
+  // compares depth/budget against these at runtime, so a test exercising the depth or node cap needs the
+  // actual numeric thresholds — not the arbitrary values a bare stub would produce.
+  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH: 3,
+  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES: 40,
+  // Real values (8, matching foundation-projects.constants.ts): the detail-fetch and sibling-traversal
+  // worker pools both size via Math.min() against these, so they must be real positive numbers.
+  FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY: 8,
+  FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY: 8,
 }));
-vi.mock('@lfx-one/shared/enums', () => ({}));
+vi.mock('@lfx-one/shared/enums', () => ({
+  // Real enum, not a stub: discoverSubFoundations compares `child.stage !== ProjectStage.Active` at
+  // runtime, so tests exercising the public/Active visibility gate need the actual string values.
+  ProjectStage: {
+    FormationExploratory: 'Formation - Exploratory',
+    FormationEngaged: 'Formation - Engaged',
+    FormationOnHold: 'Formation - On Hold',
+    FormationDisengaged: 'Formation - Disengaged',
+    FormationConfidential: 'Formation - Confidential',
+    Active: 'Active',
+    Archived: 'Archived',
+    Prospect: 'Prospect',
+  },
+}));
 // computeIsFoundation and summarizeWriterGrants are pulled in from the REAL implementation
 // (not hand-copied) so foundation-classification drift — e.g. a change to computeIsFoundation's
 // Membership/stage rules — fails these tests too. summarizeWriterGrants's own `writer === true`
@@ -1072,6 +1094,286 @@ describe('ProjectService — a failed OPTIONAL email breakdown is flagged, not s
     const result = await service.getEmailCtr('tlf', undefined, EMAIL_CTR_PERIOD);
 
     expect(result.breakdownUnavailable).toBe(true);
+  });
+});
+
+/**
+ * getFoundationProjectsDetailGrouped (GH-1607) fans out getFoundationProjectsDetail across the
+ * root foundation plus every discovered sub-foundation. getProjectBySlug/discoverSubFoundations
+ * are stubbed directly rather than mocking their NATS/query-service internals — this suite is
+ * testing the new fan-out/grouping orchestration, not the already-covered descendant walk.
+ */
+describe('ProjectService — getFoundationProjectsDetailGrouped', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+    vi.spyOn(service, 'getProjectBySlug').mockResolvedValue({ uid: 'root-uid', slug: 'lfeurope', name: 'LF Europe' } as Project);
+  });
+
+  it('groups rows by which foundation slug they were fetched under', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([
+      { uid: 'sub-uid', slug: 'neonephos', name: 'NeoNephos', visible: true, groupSlug: 'neonephos', groupName: 'NeoNephos' },
+    ]);
+    execute
+      .mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'p1', PROJECT_NAME: 'Envoy', PROJECT_SLUG: 'envoy' }] })
+      .mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'p2', PROJECT_NAME: 'Nephio', PROJECT_SLUG: 'nephio' }] });
+
+    const result = await service.getFoundationProjectsDetailGrouped(req, 'lfeurope');
+
+    expect(result.groups).toEqual([
+      expect.objectContaining({ foundationSlug: 'lfeurope', foundationName: 'LF Europe', projects: [expect.objectContaining({ projectSlug: 'envoy' })] }),
+      expect.objectContaining({ foundationSlug: 'neonephos', foundationName: 'NeoNephos', projects: [expect.objectContaining({ projectSlug: 'nephio' })] }),
+    ]);
+    expect(result.totalCount).toBe(2);
+  });
+
+  it('omits a sub-foundation whose detail fetch fails instead of failing the whole request', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([
+      { uid: 'sub-uid', slug: 'neonephos', name: 'NeoNephos', visible: true, groupSlug: 'neonephos', groupName: 'NeoNephos' },
+    ]);
+    execute
+      .mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'p1', PROJECT_NAME: 'Envoy', PROJECT_SLUG: 'envoy' }] })
+      .mockRejectedValueOnce(new Error('snowflake unavailable'));
+
+    const result = await service.getFoundationProjectsDetailGrouped(req, 'lfeurope');
+
+    expect(result.groups).toEqual([expect.objectContaining({ foundationSlug: 'lfeurope' })]);
+    expect(result.totalCount).toBe(1);
+  });
+
+  it('excludes a discovered sub-foundation from its parent group instead of double-rendering it as a leaf row', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([
+      { uid: 'sub-uid', slug: 'neonephos', name: 'NeoNephos', visible: true, groupSlug: 'neonephos', groupName: 'NeoNephos' },
+    ]);
+    execute
+      // The cube rolls NeoNephos up under lfeurope's own detail, so the raw root row includes it.
+      .mockResolvedValueOnce({
+        rows: [
+          { PROJECT_ID: 'p1', PROJECT_NAME: 'Envoy', PROJECT_SLUG: 'envoy' },
+          { PROJECT_ID: 'sub-uid', PROJECT_NAME: 'NeoNephos', PROJECT_SLUG: 'neonephos' },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'p2', PROJECT_NAME: 'Nephio', PROJECT_SLUG: 'nephio' }] });
+
+    const result = await service.getFoundationProjectsDetailGrouped(req, 'lfeurope');
+
+    const rootGroup = result.groups.find((group) => group.foundationSlug === 'lfeurope');
+    expect(rootGroup?.projects.map((p) => p.projectSlug)).toEqual(['envoy']);
+    expect(result.totalCount).toBe(2);
+  });
+
+  it('falls back to the parent leaf row when a sub-foundation whose row appears there fails its own detail fetch', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([
+      { uid: 'sub-uid', slug: 'neonephos', name: 'NeoNephos', visible: true, groupSlug: 'neonephos', groupName: 'NeoNephos' },
+    ]);
+    execute
+      // The cube rolls NeoNephos up under lfeurope's own detail, same as the successful case above.
+      .mockResolvedValueOnce({
+        rows: [
+          { PROJECT_ID: 'p1', PROJECT_NAME: 'Envoy', PROJECT_SLUG: 'envoy' },
+          { PROJECT_ID: 'sub-uid', PROJECT_NAME: 'NeoNephos', PROJECT_SLUG: 'neonephos' },
+        ],
+      })
+      // NeoNephos's own section fetch fails — it must NOT also be stripped from the root row above,
+      // or it vanishes from the response entirely instead of falling back to its parent's leaf row.
+      .mockRejectedValueOnce(new Error('snowflake unavailable'));
+
+    const result = await service.getFoundationProjectsDetailGrouped(req, 'lfeurope');
+
+    expect(result.groups).toEqual([expect.objectContaining({ foundationSlug: 'lfeurope' })]);
+    const rootGroup = result.groups.find((group) => group.foundationSlug === 'lfeurope');
+    expect(rootGroup?.projects.map((p) => p.projectSlug)).toEqual(['envoy', 'neonephos']);
+    expect(result.totalCount).toBe(2);
+  });
+
+  it('never runs more than FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY sub-foundation detail fetches at once', async () => {
+    // 10 sub-foundations vs. a concurrency cap of 8 (mocked above): without the worker-pool fix
+    // this would fire all 10 Snowflake queries simultaneously and risk overflowing the shared pool.
+    const subs = Array.from({ length: 10 }, (_, i) => ({
+      uid: `sub-${i}-uid`,
+      slug: `sub-${i}`,
+      name: `Sub ${i}`,
+      visible: true,
+      groupSlug: `sub-${i}`,
+      groupName: `Sub ${i}`,
+    }));
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue(subs);
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    execute.mockImplementation(async () => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight--;
+      return { rows: [] };
+    });
+
+    await service.getFoundationProjectsDetailGrouped(req, 'lfeurope');
+
+    // The root fetch runs alone and resolves before the sub-foundation pool starts, so the only
+    // concurrency to bound is the 10 sub-foundation fetches — capped at 8, never all 10 at once.
+    expect(maxInFlight).toBeLessThanOrEqual(8);
+  });
+
+  it('propagates a root foundation detail-fetch failure instead of degrading gracefully', async () => {
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([
+      { uid: 'sub-uid', slug: 'neonephos', name: 'NeoNephos', visible: true, groupSlug: 'neonephos', groupName: 'NeoNephos' },
+    ]);
+    execute.mockRejectedValueOnce(new Error('snowflake unavailable'));
+
+    await expect(service.getFoundationProjectsDetailGrouped(req, 'lfeurope')).rejects.toThrow('snowflake unavailable');
+  });
+
+  it('merges a hidden intermediary’s own detail fetch into the nearest visible ancestor’s section instead of dropping it', async () => {
+    // neonephos is hidden (not its own section); its direct project rows are only discoverable via
+    // its own slug's Snowflake query, and must fold into the visible root's group (GH-1676 review).
+    vi.spyOn(service as any, 'discoverSubFoundations').mockResolvedValue([
+      { uid: 'sub-uid', slug: 'neonephos', name: 'NeoNephos', visible: false, groupSlug: 'lfeurope', groupName: 'LF Europe' },
+    ]);
+    execute
+      .mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'p1', PROJECT_NAME: 'Envoy', PROJECT_SLUG: 'envoy' }] })
+      .mockResolvedValueOnce({ rows: [{ PROJECT_ID: 'p2', PROJECT_NAME: 'Nephio', PROJECT_SLUG: 'nephio' }] });
+
+    const result = await service.getFoundationProjectsDetailGrouped(req, 'lfeurope');
+
+    expect(result.groups).toEqual([
+      expect.objectContaining({
+        foundationSlug: 'lfeurope',
+        projects: expect.arrayContaining([expect.objectContaining({ projectSlug: 'envoy' }), expect.objectContaining({ projectSlug: 'nephio' })]),
+      }),
+    ]);
+    expect(result.totalCount).toBe(2);
+  });
+});
+
+describe('ProjectService — discoverSubFoundations', () => {
+  let service: ProjectService;
+
+  /** Minimal fixture satisfying computeIsFoundation AND the stricter public+Active gate. */
+  function foundation(uid: string, slug: string, name: string, overrides: Partial<Project> = {}): Project {
+    return {
+      uid,
+      slug,
+      name,
+      public: true,
+      stage: 'Active',
+      legal_entity_type: 'Corporation',
+      funding: 'Funded' as ProjectFunding,
+      funding_model: ['Membership'],
+      ...overrides,
+    } as Project;
+  }
+
+  /** Wires proxyRequest so each `parent: project:<uid>` query resolves to `childrenByParent[uid]` (default: empty page). */
+  function mockChildrenByParent(childrenByParent: Record<string, Project[]>): void {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params: Record<string, any>) => {
+      const parentUid = String(params['parent']).replace('project:', '');
+      return Promise.resolve(pageOf(childrenByParent[parentUid] ?? []));
+    });
+  }
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  it('recurses into a discovered sub-foundation to find its own nested sub-foundations', async () => {
+    const n1 = foundation('n1-uid', 'n1-slug', 'N1');
+    const n2 = foundation('n2-uid', 'n2-slug', 'N2');
+    mockChildrenByParent({ 'root-uid': [n1], 'n1-uid': [n2] });
+
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+
+    expect(result).toEqual([
+      { uid: 'n1-uid', slug: 'n1-slug', name: 'N1', visible: true, groupSlug: 'n1-slug', groupName: 'N1' },
+      { uid: 'n2-uid', slug: 'n2-slug', name: 'N2', visible: true, groupSlug: 'n2-slug', groupName: 'N2' },
+    ]);
+  });
+
+  it('stops at the depth cap without fetching the capped level’s own children', async () => {
+    const n1 = foundation('n1-uid', 'n1-slug', 'N1');
+    const n2 = foundation('n2-uid', 'n2-slug', 'N2');
+    const n3 = foundation('n3-uid', 'n3-slug', 'N3');
+    const n4 = foundation('n4-uid', 'n4-slug', 'N4');
+    mockChildrenByParent({ 'root-uid': [n1], 'n1-uid': [n2], 'n2-uid': [n3], 'n3-uid': [n4] });
+
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+
+    // n4 is never discovered: reaching it would require fetching n3's children at depth 3,
+    // which FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH (3) blocks.
+    expect(result.map((r: { slug: string }) => r.slug)).toEqual(['n1-slug', 'n2-slug', 'n3-slug']);
+    expect(proxyRequest).not.toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', expect.objectContaining({ parent: 'project:n3-uid' }));
+  });
+
+  it('stops discovering once the total node cap is reached, regardless of remaining siblings', async () => {
+    const children = Array.from({ length: 41 }, (_, i) => foundation(`c${i + 1}-uid`, `c${i + 1}-slug`, `C${i + 1}`));
+    mockChildrenByParent({ 'root-uid': children });
+
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+
+    // FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES (40) caps the total regardless of the 41st sibling existing.
+    expect(result).toHaveLength(40);
+    expect(result[39].slug).toBe('c40-slug');
+  });
+
+  it('counts a hidden (non-public/non-Active) traversed foundation against the node budget too', async () => {
+    // 41 hidden children: none are visible, but the budget must still be decremented for each one
+    // traversed — otherwise a wide hidden layer could recurse past FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES
+    // (GH-1676 review, second pass).
+    const children = Array.from({ length: 41 }, (_, i) => foundation(`c${i + 1}-uid`, `c${i + 1}-slug`, `C${i + 1}`, { public: false }));
+    mockChildrenByParent({ 'root-uid': children });
+
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+
+    expect(result).toHaveLength(40);
+    expect(result.every((r: { visible: boolean }) => r.visible === false)).toBe(true);
+  });
+
+  it('folds a hidden intermediary’s own group target into the nearest visible ancestor', async () => {
+    const hiddenIntermediary = foundation('hidden-uid', 'hidden-slug', 'Hidden', { public: false });
+    const nestedVisible = foundation('nested-uid', 'nested-slug', 'Nested');
+    mockChildrenByParent({ 'root-uid': [hiddenIntermediary], 'hidden-uid': [nestedVisible] });
+
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+
+    expect(result).toEqual([
+      { uid: 'hidden-uid', slug: 'hidden-slug', name: 'Hidden', visible: false, groupSlug: 'root-slug', groupName: 'Root' },
+      { uid: 'nested-uid', slug: 'nested-slug', name: 'Nested', visible: true, groupSlug: 'nested-slug', groupName: 'Nested' },
+    ]);
+  });
+
+  it('marks non-public and non-Active foundations as not visible (but still discovers and returns them)', async () => {
+    const publicActive = foundation('a-uid', 'a-slug', 'A');
+    const privateActive = foundation('b-uid', 'b-slug', 'B', { public: false });
+    const publicFormationEngaged = foundation('c-uid', 'c-slug', 'C', { stage: 'Formation - Engaged' });
+    const notAFoundation = foundation('d-uid', 'd-slug', 'D', { funding: 'Unfunded' as ProjectFunding, funding_model: [] });
+    mockChildrenByParent({ 'root-uid': [publicActive, privateActive, publicFormationEngaged, notAFoundation] });
+
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+
+    expect(result).toEqual([
+      { uid: 'a-uid', slug: 'a-slug', name: 'A', visible: true, groupSlug: 'a-slug', groupName: 'A' },
+      { uid: 'b-uid', slug: 'b-slug', name: 'B', visible: false, groupSlug: 'root-slug', groupName: 'Root' },
+      { uid: 'c-uid', slug: 'c-slug', name: 'C', visible: false, groupSlug: 'root-slug', groupName: 'Root' },
+    ]);
+  });
+
+  it('does not abort the whole traversal when a single branch’s children fetch fails', async () => {
+    const n1 = foundation('n1-uid', 'n1-slug', 'N1');
+    const n2 = foundation('n2-uid', 'n2-slug', 'N2');
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params: Record<string, any>) => {
+      const parentUid = String(params['parent']).replace('project:', '');
+      if (parentUid === 'root-uid') return Promise.resolve(pageOf([n1, n2]));
+      if (parentUid === 'n1-uid') return Promise.reject(new Error('upstream unavailable'));
+      return Promise.resolve(pageOf([]));
+    });
+
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+
+    expect(result.map((r: { slug: string }) => r.slug)).toEqual(['n1-slug', 'n2-slug']);
   });
 });
 

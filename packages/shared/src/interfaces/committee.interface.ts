@@ -1,12 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeMemberVisibility } from '../enums/committee.enum';
-import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { BadgeSeverity } from './components.interface';
-import { GroupsIOMailingList } from './mailing-list.interface';
-import { MeetingAttachment } from './meeting-attachment.interface';
-import { UserSearchResult } from './search.interface';
+import type { CommitteeMemberVisibility } from '../enums/committee.enum';
+import type { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import type { BadgeSeverity } from './components.interface';
+import type { GroupsIOMailingList } from './mailing-list.interface';
+import type { MeetingAttachment } from './meeting-attachment.interface';
+import type { UserSearchResult } from './search.interface';
 
 // ── v2.0 Taxonomy Types ─────────────────────────────────────────────────────
 
@@ -134,6 +134,10 @@ export interface PendingInvitation {
   committee_name: string;
   /** Project display name — enriched (optional) */
   project_name?: string | null;
+  /** Owning project slug — enriched (optional); drives the `?project=` query param on the invitation's view link (GH-1566). */
+  project_slug?: string | null;
+  /** Whether the owning project is a foundation — enriched (optional); drives the `/foundation` vs `/project` tier prefix on the view link. Null/absent means tier unknown → callers keep the flat `/groups/:uid` fallback (GH-1566). */
+  is_foundation?: boolean | null;
   /** Committee category, for the My Groups class badge (optional) */
   category?: string | null;
   /** Suggested role on acceptance (from the invite) */
@@ -519,6 +523,18 @@ export interface CommitteeFoundationGroup {
 }
 
 /**
+ * One pending-invitation row on the My Groups invitations list, decorated with pre-computed link
+ * state (mirrors `MyGroupsCardVm`): `viewCommands` carries the canonical tier-prefixed path
+ * (`getEntityCommands('groups', …)`) with the flat `/groups/:uid` fallback already folded in, so
+ * the template stays binding-only (GH-1566).
+ */
+export interface PendingInvitationRowVm extends PendingInvitation {
+  viewCommands: string[];
+  /** `?project=` for the view link — present only when the invitation carries a `project_slug`. */
+  viewQueryParams: { project: string } | null;
+}
+
+/**
  * One card's display data on the My Groups card grid. Built entirely client-side from a
  * `MyCommittee` — no new upstream shape.
  */
@@ -526,6 +542,10 @@ export interface MyGroupsCardVm {
   committee: MyCommittee;
   roleBadgeSeverity: BadgeSeverity;
   lastActivityLabel: string;
+  /** Canonical tier-prefixed view-link commands (`getGroupCommands`), falling back to the flat `/groups/:uid` path when the row carries no `is_foundation`. Pre-computed per card so the template stays binding-only (GH-1566). */
+  viewCommands: string[];
+  /** `?project=` for the view link — present only when the committee carries a `project_slug`. */
+  viewQueryParams: { project: string } | null;
   /**
    * Full accessible name for the card `<a>`. `[attr.aria-label]` replaces the link's computed
    * accessible name outright, so every visible field (class label, project/foundation name, role,
@@ -533,6 +553,21 @@ export interface MyGroupsCardVm {
    * by assistive tech. See `MyGroupsCardGridComponent.initCards()`.
    */
   ariaLabel: string;
+}
+
+/**
+ * A committee-table row decorated with template-friendly link state (mirrors the
+ * `DecoratedPendingAction` precedent): the entity fields pass through untouched, and the
+ * canonical view/edit router commands + `?project=` params are pre-computed once per input
+ * change instead of per change-detection cycle (angular-reactive-data §3.5). `viewCommands` /
+ * `editCommands` already contain the flat `/groups/:uid` fallback when the row carries no
+ * `is_foundation`, so the template never branches (GH-1566).
+ */
+export interface CommitteeTableRowVm extends Committee {
+  viewCommands: string[];
+  editCommands: string[];
+  /** `?project=` for the view/edit links — present only when the committee carries a `project_slug`. */
+  linkQueryParams: { project: string } | null;
 }
 
 /**
