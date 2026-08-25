@@ -890,6 +890,12 @@ export class OptimizationTabComponent implements OnInit {
     this.selectedLinkedInAccountKey.set('');
     this.selectedRedditAccountKey.set('');
     this.selectedMetaAccountKey.set('');
+    // Clear the previous foundation's optimization data too — otherwise it stays on screen,
+    // attributed to the new foundation, until the new fetch resolves (mirrors
+    // `monitoring-tab.component.ts`'s `loadForActiveFoundation`).
+    this.linkedInData.set(null);
+    this.redditData.set(null);
+    this.metaData.set(null);
 
     this.fetchData();
     this.campaignService

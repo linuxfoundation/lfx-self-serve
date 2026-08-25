@@ -373,10 +373,24 @@ export class CampaignsComponent {
    * no grant at all. Reading `isCampaignManager()` here re-evaluates against whatever
    * `sidebar-nav.service.ts` last resolved for the active foundation, so the template gate
    * tracks the switch instead of trusting the one-time guard result forever.
+   *
+   * Mirrors `campaign-access.guard.ts`'s SSR fast path (LFXV2-2236): the flag client never
+   * initializes server-side, so `marketingOpsFgaEnabled()` defaults `false` there regardless of
+   * the operator's real grant. Denying before the browser has a chance to resolve the flag would
+   * render `campaigns-no-access` for a legitimate FGA campaign manager on first paint, then flip
+   * to granted post-hydration — the guard already accepted that same window (it defers instead of
+   * denying), so mirroring it here avoids a hydration-mismatching flash the guard's own deferral
+   * doesn't otherwise prevent at the component level.
    */
-  protected readonly hasCampaignAccess = computed(
-    () => this.personaService.currentPersona() === 'executive-director' || (this.marketingOpsFgaEnabled() && this.personaService.isCampaignManager())
-  );
+  protected readonly hasCampaignAccess = computed(() => {
+    if (this.personaService.currentPersona() === 'executive-director') {
+      return true;
+    }
+    if (!isPlatformBrowser(this.platformId) || !this.featureFlagService.providerReady()) {
+      return true;
+    }
+    return this.marketingOpsFgaEnabled() && this.personaService.isCampaignManager();
+  });
 
   /**
    * The campaigns this brief created, as the platform's index currently reports them.

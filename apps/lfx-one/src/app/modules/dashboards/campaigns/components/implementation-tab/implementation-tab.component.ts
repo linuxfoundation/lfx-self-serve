@@ -1129,12 +1129,21 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   private loadLinkedInAccounts(): void {
+    // Stamp the slug this request was made for — a foundation switch fires a new request before
+    // the previous one resolves, and `takeUntilDestroyed` alone doesn't cancel it (the component
+    // survives the switch, per `activeFoundationSlug`). Without this, a slower response for the
+    // OLD foundation can arrive after a faster one for the new foundation and silently overwrite
+    // it with the wrong account catalog.
+    const requestedSlug = this.activeFoundationSlug();
     this.linkedInAccountsLoading.set(true);
     this.campaignService
-      .getLinkedInAccounts(this.activeFoundationSlug())
+      .getLinkedInAccounts(requestedSlug)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (accounts) => {
+          if (requestedSlug !== this.activeFoundationSlug()) {
+            return;
+          }
           this.linkedInAccounts.set(accounts);
           // Keep the restored selection only if this catalog still CONTAINS it; otherwise fall
           // back to the first account.
@@ -1173,6 +1182,9 @@ export class ImplementationTabComponent implements OnInit {
           this.linkedInAccountsLoading.set(false);
         },
         error: () => {
+          if (requestedSlug !== this.activeFoundationSlug()) {
+            return;
+          }
           this.linkedInAccountsLoading.set(false);
         },
       });
