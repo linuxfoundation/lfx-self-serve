@@ -125,6 +125,7 @@ import {
   ProjectRow,
   ProjectSettings,
   ProjectsListResponse,
+  ProjectTableRow,
   ProjectSlugToIdResponse,
   ProjectUniqueContributorsDailyRow,
   QueryServiceResponse,
@@ -1999,31 +2000,39 @@ export class ProjectService {
     // Promise.all propagates a root-query rejection instead of returning an incomplete 200
     // (GH-1607 review).
     const [subFoundations, rootDetail] = await Promise.all([
-      this.discoverSubFoundations(req, rootProject.uid),
+      this.discoverSubFoundations(req, rootProject.uid, rootProject.slug, rootProject.name),
       this.getFoundationProjectsDetail(rootProject.slug),
     ]);
 
-    // Fan out through a bounded worker pool rather than firing all N sub-foundation queries at
-    // once: a wide foundation can have up to FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES of them,
-    // which can overflow the shared Snowflake pool's waiting-client queue and cause otherwise
-    // healthy queries to be rejected (GH-1607 review, same pattern as organization.service.ts's
+    // Bucket every discovered node's own Snowflake detail fetch by its `groupSlug` — a visible
+    // node's own slug (it gets a rendered section) or its nearest visible ancestor's slug (a
+    // hidden/pre-launch intermediary's projects fold into that ancestor's section instead of
+    // vanishing or getting a section of their own). Every discovered node is fetched here, not
+    // just visible ones, since a hidden intermediary can have public + Active leaf projects
+    // directly beneath it that only its own slug's Snowflake query would surface (GH-1676 review,
+    // second pass).
+    //
+    // Fan out through a bounded worker pool rather than firing all N queries at once: a wide
+    // foundation can have up to FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES of them, which can
+    // overflow the shared Snowflake pool's waiting-client queue and cause otherwise healthy
+    // queries to be rejected (GH-1607 review, same pattern as organization.service.ts's
     // getOrgLensAccountContext).
-    const subDetails: (FoundationProjectsDetailGroup | null)[] = new Array(subFoundations.length).fill(null);
+    const bucket = new Map<string, ProjectTableRow[]>();
+    bucket.set(
+      rootProject.slug,
+      rootDetail.projects.map((project) => ({ ...project, groupFoundationSlug: rootProject.slug, groupFoundationName: rootProject.name }))
+    );
     let cursor = 0;
     const worker = async (): Promise<void> => {
       while (cursor < subFoundations.length) {
         const index = cursor++;
-        const { uid, slug, name } = subFoundations[index];
+        const { slug, groupSlug, groupName } = subFoundations[index];
         try {
           const detail = await this.getFoundationProjectsDetail(slug);
-          subDetails[index] = {
-            foundationSlug: slug,
-            foundationName: name,
-            foundationUid: uid,
-            projects: detail.projects.map((project) => ({ ...project, groupFoundationSlug: slug, groupFoundationName: name })),
-          };
+          const tagged = detail.projects.map((project) => ({ ...project, groupFoundationSlug: groupSlug, groupFoundationName: groupName }));
+          bucket.set(groupSlug, [...(bucket.get(groupSlug) ?? []), ...tagged]);
         } catch (error) {
-          logger.warning(req, 'get_foundation_projects_detail_grouped', 'Failed to fetch detail for a sub-foundation, omitting it from the response', {
+          logger.warning(req, 'get_foundation_projects_detail_grouped', 'Failed to fetch detail for a discovered foundation, omitting its own rows', {
             foundation_slug: slug,
             err: error,
           });
@@ -2033,27 +2042,33 @@ export class ProjectService {
     const poolSize = Math.min(FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY, subFoundations.length);
     await Promise.all(Array.from({ length: poolSize }, () => worker()));
 
-    // Only a sub-foundation that actually resolved its own section gets its rows stripped out of
-    // whichever parent's detail list they also show up in (the cube rolls up direct children).
-    // A sub-foundation whose own fetch failed above must NOT be stripped from its parent — it has
-    // no section of its own, so its parent's leaf row is its only remaining representation.
-    // Filtering by the full discovered set regardless of fetch outcome would make a failed
-    // sub-foundation vanish entirely instead of falling back to that parent row (GH-1607 review).
-    const renderedSlugs = new Set(subDetails.filter((group): group is FoundationProjectsDetailGroup => group !== null).map((group) => group.foundationSlug));
+    // A visible node is rendered as its own section only when it ends up with at least one
+    // project to show — either from its own successful fetch, or merged in from a hidden
+    // descendant. A visible node whose own fetch failed but has merged descendant projects must
+    // still render (dropping it would silently lose those descendant projects entirely); a visible
+    // node with neither falls back to being represented only as a leaf row in its ancestor's list,
+    // same as before (GH-1676 review, second pass).
+    const renderedChildSlugs = new Set<string>();
+    for (const node of subFoundations) {
+      if (node.visible && (bucket.get(node.slug)?.length ?? 0) > 0) {
+        renderedChildSlugs.add(node.slug);
+      }
+    }
 
-    const rootGroup: FoundationProjectsDetailGroup = {
-      foundationSlug: rootProject.slug,
-      foundationName: rootProject.name,
-      foundationUid: rootProject.uid,
-      projects: rootDetail.projects
-        .filter((project) => !renderedSlugs.has(project.projectSlug))
-        .map((project) => ({ ...project, groupFoundationSlug: rootProject.slug, groupFoundationName: rootProject.name })),
-    };
+    // A slug that got its own rendered section must have its leaf-row representation stripped out
+    // of whichever bucket's raw detail list also included it (the cube rolls up direct children) —
+    // otherwise that sub-foundation shows up twice (GH-1607 review).
+    const buildGroup = (slug: string, name: string, uid: string): FoundationProjectsDetailGroup => ({
+      foundationSlug: slug,
+      foundationName: name,
+      foundationUid: uid,
+      projects: (bucket.get(slug) ?? []).filter((project) => !renderedChildSlugs.has(project.projectSlug)),
+    });
 
-    const groups: FoundationProjectsDetailGroup[] = [rootGroup];
-    for (const group of subDetails) {
-      if (group !== null) {
-        groups.push({ ...group, projects: group.projects.filter((project) => !renderedSlugs.has(project.projectSlug)) });
+    const groups: FoundationProjectsDetailGroup[] = [buildGroup(rootProject.slug, rootProject.name, rootProject.uid)];
+    for (const node of subFoundations) {
+      if (node.visible && renderedChildSlugs.has(node.slug)) {
+        groups.push(buildGroup(node.slug, node.name, node.uid));
       }
     }
 
@@ -7554,26 +7569,32 @@ export class ProjectService {
   }
 
   /**
-   * Recursively discovers nested sub-foundations beneath a foundation (or sub-foundation) UID,
-   * depth-capped by FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH and, since the depth cap alone
-   * doesn't bound worst-case fan-out under a true umbrella foundation (e.g. selecting The Linux
-   * Foundation itself, whose direct children are dozens of foundations), also capped in total by
-   * FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES via the shared `budget` counter. Traversal itself
-   * follows any child satisfying `computeIsFoundation` regardless of visibility — a hidden or
-   * pre-launch (`Formation - Engaged`) intermediate sub-foundation must not block discovery of a
-   * public + Active sub-foundation beneath it. The stricter public + Active gate is applied only
-   * when deciding what to *include* in the returned list, since that's the group metadata
-   * (slug/name) that gets serialized straight into the response (GH-1676 review). Reuses the same
-   * `parent: project:<uid>` query-service filter as `getFoundationProjectUids`/`getChildProjects`,
-   * but recurses into each discovered sub-foundation instead of stopping at one level.
+   * Recursively discovers every foundation-type descendant beneath a foundation (or sub-foundation)
+   * UID — both visible (public + Active) and hidden/pre-launch — depth-capped by
+   * FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH and, since the depth cap alone doesn't bound
+   * worst-case fan-out under a true umbrella foundation (e.g. selecting The Linux Foundation
+   * itself, whose direct children are dozens of foundations), also capped in total by
+   * FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES via the shared `budget` counter — decremented for
+   * every traversed node regardless of visibility, since an unbounded hidden layer would otherwise
+   * still enqueue a full paginated query per node (GH-1676 review, second pass).
+   *
+   * Every discovered node is returned, not just visible ones: a hidden/pre-launch intermediary can
+   * still have public + Active leaf projects directly beneath it, and those would be lost entirely
+   * if the caller only fetched Snowflake detail for visible slugs. `groupSlug`/`groupName` tell the
+   * caller which rendered section a node's own detail fetch should be merged into — a node's own
+   * slug/name when it's visible (it gets its own section), or its nearest visible ancestor's
+   * slug/name when it's hidden (its projects fold into that ancestor's section instead of getting
+   * a section of their own) (GH-1676 review, second pass).
    */
   private async discoverSubFoundations(
     req: Request,
     parentUid: string,
+    nearestVisibleSlug: string,
+    nearestVisibleName: string,
     depth: number = 0,
     budget: { remaining: number } = { remaining: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES },
     gate: { active: number; queue: (() => void)[] } = { active: 0, queue: [] }
-  ): Promise<{ uid: string; slug: string; name: string }[]> {
+  ): Promise<{ uid: string; slug: string; name: string; visible: boolean; groupSlug: string; groupName: string }[]> {
     if (depth >= FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH) {
       logger.warning(req, 'discover_sub_foundations', 'Hit max traversal depth, stopping this branch', {
         parent_uid: parentUid,
@@ -7627,12 +7648,15 @@ export class ProjectService {
           });
           return [];
         }
+        // Every traversed node counts against the budget, visible or not — an unbounded hidden
+        // layer would otherwise keep recursing (and issuing paginated /query/resources calls) well
+        // past the documented node cap (GH-1676 review, second pass).
+        budget.remaining -= 1;
         const isVisible = child.public && child.stage === ProjectStage.Active;
-        if (isVisible) {
-          budget.remaining -= 1;
-        }
-        const nested = await this.discoverSubFoundations(req, child.uid, depth + 1, budget, gate);
-        return isVisible ? [{ uid: child.uid, slug: child.slug, name: child.name }, ...nested] : nested;
+        const groupSlug = isVisible ? child.slug : nearestVisibleSlug;
+        const groupName = isVisible ? child.name : nearestVisibleName;
+        const nested = await this.discoverSubFoundations(req, child.uid, groupSlug, groupName, depth + 1, budget, gate);
+        return [{ uid: child.uid, slug: child.slug, name: child.name, visible: isVisible, groupSlug, groupName }, ...nested];
       })
     );
     return results.flat();
