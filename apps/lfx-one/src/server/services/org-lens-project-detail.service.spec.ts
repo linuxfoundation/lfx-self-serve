@@ -41,7 +41,6 @@ const heroRow = {
   FOUNDATION_NAME: 'CNCF',
   IS_LF_PROJECT: true,
   DESCRIPTION: null,
-  HEALTH_OVERALL_SCORE: 80,
   SOFTWARE_VALUE: null,
   FIRST_COMMIT_TS: null,
 };
@@ -233,19 +232,19 @@ describe('OrgLensProjectDetailService.getHeroBlock health mapping', () => {
     });
   }
 
-  it('prefers the raw v2 score over the raw v1 score when the v2 category is unrecognized and both raw scores are present', async () => {
-    mockHeroRow({ HEALTH_OVERALL_SCORE: 90, HEALTH_OVERALL_SCORE_V2: 50, HEALTH_SCORE_CATEGORY_V2: 'Typo' });
+  it('falls back to the raw v2 score when the v2 category is unrecognized', async () => {
+    mockHeroRow({ HEALTH_OVERALL_SCORE_V2: 50, HEALTH_SCORE_CATEGORY_V2: 'Typo' });
 
     const block = await service.getHeroBlock(ORG, SLUG);
 
     expect(block?.hero.health).toBe('fair');
   });
 
-  it('falls back to the raw v1 score when v2 is entirely absent (project not yet backfilled)', async () => {
-    mockHeroRow({ HEALTH_OVERALL_SCORE: 90, HEALTH_OVERALL_SCORE_V2: null, HEALTH_SCORE_CATEGORY_V2: null });
+  it('returns null health when no v2 score or category is present', async () => {
+    mockHeroRow({ HEALTH_OVERALL_SCORE_V2: null, HEALTH_SCORE_CATEGORY_V2: null });
 
     const block = await service.getHeroBlock(ORG, SLUG);
 
-    expect(block?.hero.health).toBe('excellent');
+    expect(block?.hero.health).toBeNull();
   });
 });

@@ -34,7 +34,6 @@ interface HeroRow {
   FOUNDATION_NAME: string | null;
   IS_LF_PROJECT: boolean | null;
   DESCRIPTION: string | null;
-  HEALTH_OVERALL_SCORE: number | null;
   HEALTH_OVERALL_SCORE_V2: number | null;
   HEALTH_SCORE_CATEGORY_V2: string | null;
   SOFTWARE_VALUE: number | null;
@@ -743,7 +742,7 @@ export class OrgLensProjectDetailService {
     const result = await this.snowflakeService.execute<HeroRow>(
       `
         SELECT PROJECT_NAME, PROJECT_SLUG, PROJECT_LOGO_URL, FOUNDATION_NAME, IS_LF_PROJECT,
-               DESCRIPTION, HEALTH_OVERALL_SCORE, HEALTH_OVERALL_SCORE_V2, HEALTH_SCORE_CATEGORY_V2,
+               DESCRIPTION, HEALTH_OVERALL_SCORE_V2, HEALTH_SCORE_CATEGORY_V2,
                SOFTWARE_VALUE, FIRST_COMMIT_TS
         FROM ${this.projectsTable()}
         WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
@@ -1529,10 +1528,10 @@ export class OrgLensProjectDetailService {
     };
   }
 
-  private mapHealth(row: Pick<HeroRow, 'HEALTH_OVERALL_SCORE' | 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>): OrgLensProjectHealth | null {
+  private mapHealth(row: Pick<HeroRow, 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>): OrgLensProjectHealth | null {
     const v2 = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
     if (v2) return v2;
-    const score = row.HEALTH_OVERALL_SCORE_V2 ?? row.HEALTH_OVERALL_SCORE;
+    const score = row.HEALTH_OVERALL_SCORE_V2;
     if (score === null || score === undefined) return null;
     return classifyHealthScore(score);
   }

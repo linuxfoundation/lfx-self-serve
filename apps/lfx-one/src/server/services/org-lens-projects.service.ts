@@ -406,7 +406,6 @@ export class OrgLensProjectsService {
         FOUNDATION_SLUG,
         FOUNDATION_NAME,
         FOUNDATION_LOGO_URL,
-        HEALTH_OVERALL_SCORE,
         HEALTH_OVERALL_SCORE_V2,
         HEALTH_SCORE_CATEGORY_V2,
         HEALTH_CONTRIBUTOR_PERCENTAGE,
@@ -455,7 +454,6 @@ export class OrgLensProjectsService {
         TREND_DIRECTION,
         COMBINED_SCORE_SERIES,
         DBT_RUN_AT,
-        HEALTH_OVERALL_SCORE,
         HEALTH_OVERALL_SCORE_V2,
         HEALTH_SCORE_CATEGORY_V2,
         HEALTH_CONTRIBUTOR_PERCENTAGE,
@@ -568,17 +566,14 @@ export class OrgLensProjectsService {
     return value === 'up' || value === 'down' || value === 'flat' ? value : 'flat';
   }
 
-  private hasHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE' | 'HEALTH_OVERALL_SCORE_V2'>): boolean {
-    return (row.HEALTH_OVERALL_SCORE ?? row.HEALTH_OVERALL_SCORE_V2) != null;
+  private hasHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE_V2'>): boolean {
+    return row.HEALTH_OVERALL_SCORE_V2 != null;
   }
 
-  private mapHealthScore(
-    row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE' | 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>
-  ): Exclude<HealthScore, 'unavailable'> {
-    // Prefers the v2 raw score over v1 (v2 is the score we're migrating to; v1 is only for projects Snowflake
-    // hasn't backfilled yet). The trailing `?? 0` is an unreachable safety net since callers only invoke this
-    // when hasHealthScore() has confirmed one of the two exists.
-    return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) ?? classifyHealthScore(row.HEALTH_OVERALL_SCORE_V2 ?? row.HEALTH_OVERALL_SCORE ?? 0);
+  private mapHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>): Exclude<HealthScore, 'unavailable'> {
+    // The trailing `?? 0` is an unreachable safety net since callers only invoke this when hasHealthScore()
+    // has confirmed HEALTH_OVERALL_SCORE_V2 is present.
+    return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) ?? classifyHealthScore(row.HEALTH_OVERALL_SCORE_V2 ?? 0);
   }
 
   private mapHealthMetrics(row: OrgLensProjectRow): OrgLensProject['healthMetrics'] {

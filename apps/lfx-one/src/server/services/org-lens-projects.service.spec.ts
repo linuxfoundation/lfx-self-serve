@@ -54,7 +54,6 @@ function projectsRow(overrides: Record<string, unknown> = {}) {
     TREND_DIRECTION: null,
     COMBINED_SCORE_SERIES: null,
     DBT_RUN_AT: null,
-    HEALTH_OVERALL_SCORE: null,
     HEALTH_OVERALL_SCORE_V2: null,
     HEALTH_SCORE_CATEGORY_V2: null,
     HEALTH_CONTRIBUTOR_PERCENTAGE: null,
@@ -82,39 +81,31 @@ describe('OrgLensProjectsService health score mapping', () => {
     execute.mockReset();
   });
 
-  it('classifies via the v1 score when no v2 category is present', async () => {
-    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE: 90 }));
+  it('classifies via the raw v2 score when no v2 category is present', async () => {
+    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE_V2: 90 }));
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
     expect(response.projects[0]?.health).toBe('excellent');
   });
 
-  it('prefers the warehouse v2 category over the v1 score when both are present', async () => {
-    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE: 10, HEALTH_SCORE_CATEGORY_V2: 'Fair' }));
+  it('prefers the warehouse v2 category over the raw v2 score when both are present', async () => {
+    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE_V2: 10, HEALTH_SCORE_CATEGORY_V2: 'Fair' }));
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
     expect(response.projects[0]?.health).toBe('fair');
   });
 
-  it('falls back to the raw v2 score when v1 is null and the v2 category is unrecognized', async () => {
-    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE: null, HEALTH_OVERALL_SCORE_V2: 50, HEALTH_SCORE_CATEGORY_V2: 'Typo' }));
+  it('falls back to the raw v2 score when the v2 category is unrecognized', async () => {
+    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE_V2: 50, HEALTH_SCORE_CATEGORY_V2: 'Typo' }));
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
     expect(response.projects[0]?.health).toBe('fair');
   });
 
-  it('prefers the raw v2 score over the raw v1 score when the v2 category is unrecognized and both raw scores are present', async () => {
-    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE: 90, HEALTH_OVERALL_SCORE_V2: 50, HEALTH_SCORE_CATEGORY_V2: 'Typo' }));
-
-    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
-
-    expect(response.projects[0]?.health).toBe('fair');
-  });
-
-  it('marks health unavailable when neither v1 nor v2 score is present', async () => {
+  it('marks health unavailable when no v2 score is present', async () => {
     mockProjectsRow(projectsRow());
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
