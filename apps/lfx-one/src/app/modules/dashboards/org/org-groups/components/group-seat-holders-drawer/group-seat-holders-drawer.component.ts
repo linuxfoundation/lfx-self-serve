@@ -5,7 +5,7 @@ import { Component, computed, inject, input, model, signal, type Signal } from '
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
-import { votingStatusPillClass } from '@lfx-one/shared/constants';
+import { isVotingStatus, votingStatusPillClass } from '@lfx-one/shared/constants';
 import type { CommitteeMemberAssignment, CommitteeMemberSeatHolderVm } from '@lfx-one/shared/interfaces';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, finalize, map, of, shareReplay, switchMap, throwError, type Observable } from 'rxjs';
@@ -40,27 +40,15 @@ export class GroupSeatHoldersDrawerComponent {
 
   private readonly seatHolders: Signal<CommitteeMemberAssignment[] | null> = this.initSeatHolders();
 
-  // Grouped by person (email, falling back to memberUid when blank) and sorted by display name —
-  // a person holding two roles on this committee renders as one row with both roles joined,
-  // instead of an identical avatar/name row repeated. This is also what keeps the header count
-  // (below) matching the row's own org_seat_count (distinct people, deduped by email
-  // server-side — see org-lens-groups.service.ts): both now count the same thing. Precomputes the
-  // voting-status pill class per row so the template stays a flat binding.
-  protected readonly seatHolderVms: Signal<CommitteeMemberSeatHolderVm[]> = computed(() => {
-    const byPerson = new Map<string, { assignment: CommitteeMemberAssignment; roles: string[] }>();
-    for (const a of this.seatHolders() ?? []) {
-      const key = a.person.email || a.memberUid;
-      const existing = byPerson.get(key);
-      if (existing) {
-        if (a.role && !existing.roles.includes(a.role)) existing.roles.push(a.role);
-      } else {
-        byPerson.set(key, { assignment: a, roles: a.role ? [a.role] : [] });
-      }
-    }
-    return Array.from(byPerson.values())
-      .map(({ assignment, roles }) => ({ ...assignment, role: roles.join(', '), votingStatusPillClass: votingStatusPillClass(assignment.votingStatus) }))
-      .sort((a, b) => (a.person.fullName || a.person.email).localeCompare(b.person.fullName || b.person.email));
-  });
+  // Grouped by person and sorted by display name — a person holding two roles on this committee
+  // renders as one row with both roles joined, instead of an identical avatar/name row repeated.
+  // This also keeps the header count (below) matching the row's own org_seat_count (distinct
+  // people, deduped by email server-side — see org-lens-groups.service.ts) for the common case:
+  // seats that carry an email. It does NOT match for multiple blank-email seats on the same
+  // committee — org_seat_count collapses all of those into one server-side, while this groups
+  // each by memberUid instead (a shared bucket would merge unrelated people under one "Unknown
+  // member" row, which is worse than the rarer count mismatch it would avoid).
+  protected readonly seatHolderVms: Signal<CommitteeMemberSeatHolderVm[]> = this.initSeatHolderVms();
 
   // null while loading or on error — there's no trustworthy number to show in either case, so the
   // header renders a bare "Seat holders" placeholder rather than asserting a count next to a
@@ -69,6 +57,30 @@ export class GroupSeatHoldersDrawerComponent {
 
   protected retry(): void {
     this.retryTick.update((n) => n + 1);
+  }
+
+  private initSeatHolderVms(): Signal<CommitteeMemberSeatHolderVm[]> {
+    return computed(() => {
+      const byPerson = new Map<string, { assignment: CommitteeMemberAssignment; roles: string[] }>();
+      for (const a of this.seatHolders() ?? []) {
+        const key = a.person.email || a.memberUid;
+        const existing = byPerson.get(key);
+        if (!existing) {
+          byPerson.set(key, { assignment: a, roles: a.role ? [a.role] : [] });
+          continue;
+        }
+        if (a.role && !existing.roles.includes(a.role)) existing.roles.push(a.role);
+        // The merged row's other fields (voting status, seatId, ...) come from one representative
+        // assignment — prefer a voting one so the pill doesn't depend on upstream array order for
+        // a person holding both a voting and a non-voting seat on this committee.
+        if (!isVotingStatus(existing.assignment.votingStatus) && isVotingStatus(a.votingStatus)) {
+          existing.assignment = a;
+        }
+      }
+      return Array.from(byPerson.values())
+        .map(({ assignment, roles }) => ({ ...assignment, role: roles.join(', '), votingStatusPillClass: votingStatusPillClass(assignment.votingStatus) }))
+        .sort((a, b) => (a.person.fullName || a.person.email).localeCompare(b.person.fullName || b.person.email));
+    });
   }
 
   private initSeatHolders(): Signal<CommitteeMemberAssignment[] | null> {

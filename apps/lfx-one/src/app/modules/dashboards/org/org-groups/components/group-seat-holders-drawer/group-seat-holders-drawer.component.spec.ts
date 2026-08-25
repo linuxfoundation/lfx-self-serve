@@ -285,6 +285,55 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(names[0]).toContain('Chair, Member');
   });
 
+  // Which of a merged person's two seats "wins" for the voting-status pill must not depend on
+  // upstream array order — pin it explicitly by putting the non-voting seat first.
+  it("prefers a voting seat over a non-voting one when merging a person's voting-status pill", async () => {
+    await setup(
+      vi
+        .fn()
+        .mockReturnValue(
+          of(
+            response([
+              assignment({ seatId: 's-1', committeeUid: 'c-1', role: 'Member', votingStatus: 'Non-voting' }),
+              assignment({ seatId: 's-2', committeeUid: 'c-1', role: 'Chair', votingStatus: 'Voting Rep', memberUid: 'seat-2' }),
+            ])
+          )
+        )
+    );
+
+    await open('org-1', 'c-1');
+
+    expect(text()).toContain('Voting Rep');
+    expect(text()).not.toContain('Non-voting');
+  });
+
+  // org_seat_count collapses every blank-email seat into one bucket server-side; this drawer
+  // deliberately does not mirror that (see the seatHolderVms comment) because merging two
+  // unrelated people under one "Unknown member" row would be a worse bug than the resulting
+  // header/badge mismatch for this rare case.
+  it('does not merge two different blank-email seats into one row', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          response([
+            assignment({ seatId: 's-1', committeeUid: 'c-1', person: { email: '', firstName: '', lastName: '', fullName: '', jobTitle: null, initials: '' } }),
+            assignment({
+              seatId: 's-2',
+              committeeUid: 'c-1',
+              memberUid: 'seat-2',
+              person: { email: '', firstName: '', lastName: '', fullName: '', jobTitle: null, initials: '' },
+            }),
+          ])
+        )
+      )
+    );
+
+    await open('org-1', 'c-1');
+
+    expect(subtitleText()).toBe('2 seat holders');
+    expect(rowNames()).toHaveLength(2);
+  });
+
   it('sorts seat holders by display name', async () => {
     await setup(
       vi

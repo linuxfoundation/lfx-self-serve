@@ -247,7 +247,8 @@ export class OrgGroupsComponent {
         const ariaLabel = `${g.name}, ${BEHAVIORAL_CLASS_CONFIG[cls].label}, ${g.org_seat_count} ${seatWord}` + (projectLabel ? `, ${projectLabel}` : '');
         // See org-groups.component.html for why this links to /org/memberships, not /org/projects.
         const projectAriaLabel = projectLabel ? `View ${projectLabel} membership details` : '';
-        return { ...g, cls, projectLabel, ariaLabel, projectAriaLabel };
+        const seatHoldersTriggerAriaLabel = `View ${g.org_seat_count} seat holder${g.org_seat_count === 1 ? '' : 's'} for ${g.name}`;
+        return { ...g, cls, projectLabel, ariaLabel, projectAriaLabel, seatHoldersTriggerAriaLabel };
       })
     );
   }

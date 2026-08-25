@@ -500,6 +500,14 @@ describe('OrgGroupsComponent', () => {
     expect(trigger?.getAttribute('aria-label')).toBe('View 10 seat holders for Committee Steering TAG');
   });
 
+  it('uses the singular "seat holder" in the trigger aria-label for a single-seat group', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    // g4 (Committee Newsletter) has org_seat_count: 1 in buildGroups().
+    const trigger = fixture.nativeElement.querySelector('[data-testid="org-groups-item-seats-g4"]');
+    expect(trigger?.getAttribute('aria-label')).toBe('View 1 seat holder for Committee Newsletter');
+  });
+
   it('clearing filters restores the full list in the original (seat-desc, name-asc) order', async () => {
     const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
 
