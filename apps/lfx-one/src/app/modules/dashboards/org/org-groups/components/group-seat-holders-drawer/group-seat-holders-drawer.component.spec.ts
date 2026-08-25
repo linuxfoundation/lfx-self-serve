@@ -231,9 +231,11 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(subtitleText()).toBe('7 seat holders');
   });
 
-  // Exercises the singular form on the error branch specifically — the loaded branch's singular
-  // form is covered separately below, and the two branches read different signals
-  // (seatCount() vs seatHolders().length), so one covering the other's singular case isn't implied.
+  // Pins the singular form on the error branch's displayedCount() source (seatCount()), so a
+  // future re-split of the header wording (branching the noun by error()/loaded() again, as an
+  // earlier round of this did) can't quietly regress it. Today both branches share one ternary,
+  // so this is redundant with the loaded branch's singular assertion below — kept anyway as a
+  // tripwire for that specific regression.
   it('uses the singular "seat holder" on the error branch too, not just the loaded branch', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await setup(vi.fn().mockReturnValue(throwError(() => new Error('boom'))));
