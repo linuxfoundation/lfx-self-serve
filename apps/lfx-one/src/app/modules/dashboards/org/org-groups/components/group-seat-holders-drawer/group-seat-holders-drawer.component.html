@@ -17,15 +17,17 @@
         <p class="text-sm text-gray-500 truncate" data-testid="group-seat-holders-drawer-subtitle">
           @if (displayedCount() === null) {
             Seat holders
-          } @else {
-            <!-- "seat holders", not "seats" — the row's own badge already reads "N seats" for a
-                 different number (org_seat_count, distinct people; see displayedCount() above),
-                 and both can be on screen at once. "Seat holders" is this drawer's own established
-                 term (see the empty state and the row's trigger aria-label) so it doesn't collide
-                 with the row's wording while staying accurate for both this and the error-state
-                 count (a genuinely different unit, but "how many people hold a seat" is a
-                 reasonable read of it too). -->
+          } @else if (error()) {
+            <!-- error(): displayedCount() is seatCount() (org_seat_count) — genuinely distinct
+                 people, so "seat holders" is the accurate noun here. See the else branch for why
+                 the loaded case uses a different one. -->
             {{ displayedCount() }} {{ displayedCount() === 1 ? 'seat holder' : 'seat holders' }}
+          } @else {
+            <!-- Loaded: displayedCount() is seatHolders().length — one row per SEAT/role
+                 assignment, not one per person (see GroupSeatHoldersDrawerComponent.displayedCount)
+                 — so "seat assignments" is the accurate noun; "seat holders" would misdescribe a
+                 person holding two roles as two seat holders. -->
+            {{ displayedCount() }} {{ displayedCount() === 1 ? 'seat assignment' : 'seat assignments' }}
           }
         </p>
         <a

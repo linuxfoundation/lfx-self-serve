@@ -76,6 +76,13 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     return document.body.textContent ?? '';
   }
 
+  // Normalized + exact, not a substring `.toContain` — the wording is singular/plural sensitive
+  // ("1 seat assignment" vs "1 seat assignments"), and a substring check on the singular form
+  // stays green even if the code always renders the plural.
+  function subtitleText(): string {
+    return (document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  }
+
   it('does not fetch until the drawer is opened', async () => {
     await setup(vi.fn().mockReturnValue(of(response([]))));
 
@@ -184,15 +191,17 @@ describe('GroupSeatHoldersDrawerComponent', () => {
   // seatCount() (the row's org_seat_count, distinct PEOPLE, deduped by email server-side) and this
   // list (one row per SEAT/role assignment) can genuinely disagree — a person holding two roles on
   // the committee is one of the cases. The header must show the real, loaded count once settled,
-  // not the row's count.
-  it('shows the loaded row count in the header once settled, even when it differs from the row seatCount', async () => {
+  // not the row's count — worded "seat assignments", not "seat holders", since that's the unit
+  // this branch actually counts (see the displayedCount comment and the template's error()/else
+  // split).
+  it('shows the loaded row count as "seat assignments" once settled, even when it differs from the row seatCount', async () => {
     await setup(
       vi.fn().mockReturnValue(of(response([assignment({ seatId: 's-1', committeeUid: 'c-1' }), assignment({ seatId: 's-2', committeeUid: 'c-1' })])))
     );
 
     await open('org-1', 'c-1', 'Storage Working Group', 1);
 
-    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('2 seat holders');
+    expect(subtitleText()).toBe('2 seat assignments');
   });
 
   // The header shows a plain "Seat holders" placeholder while loading, not a borrowed seatCount()
@@ -208,26 +217,25 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const subtitle = document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent ?? '';
-    expect(subtitle).toContain('Seat holders');
-    expect(subtitle).not.toContain('7');
+    expect(subtitleText()).toBe('Seat holders');
   });
 
   // A failed fetch resolves seatHolders() to [] (see the outer catchError), not null — the
   // error() branch is the one place seatCount() IS shown post-load, since there's no real list at
   // all in that state for it to later disagree with (contrast: loading() shows a blank
-  // placeholder, because there the real list is still coming).
-  it('shows the row seatCount in the header on a failed fetch, not 0', async () => {
+  // placeholder, because there the real list is still coming). "Seat holders" is the accurate
+  // noun here (unlike the loaded-list case above) because seatCount() genuinely counts people.
+  it('shows the row seatCount as "seat holders" on a failed fetch, not 0', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await setup(vi.fn().mockReturnValue(throwError(() => new Error('boom'))));
 
     await open('org-1', 'c-1', 'Storage Working Group', 7);
 
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeTruthy();
-    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('7 seat holders');
+    expect(subtitleText()).toBe('7 seat holders');
   });
 
-  it('recovers cleanly on retry after a failure: error clears, real count comes back', async () => {
+  it('recovers cleanly on retry after a failure: error clears, real "seat assignments" count comes back', async () => {
     const impl = vi
       .fn()
       .mockReturnValueOnce(throwError(() => new Error('boom')))
@@ -246,7 +254,7 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     fixture.detectChanges();
 
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeNull();
-    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('1 seat holder');
+    expect(subtitleText()).toBe('1 seat assignment');
   });
 
   // Defensive coverage, not a currently-reachable path: org-groups.component.ts closes this
@@ -273,7 +281,7 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     await setup(impl);
 
     await open('org-1', 'c-1', 'Storage Working Group', 3);
-    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('3 seat holders');
+    expect(subtitleText()).toBe('3 seat assignments');
 
     fixture.componentRef.setInput('orgUid', 'org-2');
     await fixture.whenStable();
@@ -285,9 +293,7 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     // (loading() true) before checking the header text it gates — the header assertion alone
     // previously proved vulnerable to running ahead of that write.
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-loading"]')).toBeTruthy();
-    const subtitle = document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent ?? '';
-    expect(subtitle).toContain('Seat holders');
-    expect(subtitle).not.toContain('3');
+    expect(subtitleText()).toBe('Seat holders');
   });
 
   it('renders a member with no name and no email as "Unknown member", not a blank row', async () => {

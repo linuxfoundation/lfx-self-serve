@@ -47,14 +47,12 @@ export class GroupSeatHoldersDrawerComponent {
   // NOT the client-side org-lens-groups.service.ts under app/shared/services, which is a thin
   // HTTP wrapper with no dedup logic), while seatHolders() is one row per SEAT/role assignment —
   // a person holding two roles on this committee, or two blank-email seats, makes them disagree
-  // for real, not just "not loaded yet". Two consequences, handled differently:
-  //  - While loading, the header shows null (renders as a plain "Seat holders" placeholder, no
-  //    number) rather than borrowing seatCount() as a stand-in that would visibly flip to a
-  //    different, correct number once the real list arrives.
-  //  - Once settled, the header can legitimately show a different number than the row's own
-  //    "N seats" badge (both visible on screen at once, drawer over the row) — the template's
-  //    "seat assignments" wording (not "seats") is deliberate, to keep that from reading as the
-  //    same count getting it wrong.
+  // for real, not just "not loaded yet". The template branches its wording on which case this is,
+  // not just on the number, so the label always matches the actual unit: "N seat holders" only
+  // for the error-state seatCount() (genuinely distinct people), "N seat assignments" once loaded
+  // for real (this list, one row per role — "seat holders" would misdescribe a person who holds
+  // two roles as two seat holders), and a bare "Seat holders" placeholder while loading (no number
+  // at all, so there's nothing to mislabel).
   protected readonly displayedCount: Signal<number | null> = computed(() => {
     if (this.loading()) return null;
     if (this.error()) return this.seatCount();
