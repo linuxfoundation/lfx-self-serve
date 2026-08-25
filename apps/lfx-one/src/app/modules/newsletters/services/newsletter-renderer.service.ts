@@ -684,9 +684,12 @@ function openTag(tag: string, style: string, classes: string, extraAttrs = '', s
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Strip NUL first: the container-slot sentinel in renderContainerChrome is
+  // NUL-delimited and the slot split relies on NUL never appearing in rendered
+  // content, so a bound value must not be able to smuggle one through.
+  return s.replaceAll('\u0000', '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function escapeAttr(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  return s.replaceAll('\u0000', '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }

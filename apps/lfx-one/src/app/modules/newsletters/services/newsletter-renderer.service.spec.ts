@@ -139,6 +139,20 @@ describe('NewsletterRendererService (browser)', () => {
     // The card's box style stays on the shell, not duplicated into the content.
     expect(chrome.before).not.toContain('#131313');
   });
+
+  it('strips NUL from a bound value so it cannot forge the container-slot sentinel', () => {
+    // The slot split in renderContainerChrome keys on a NUL-delimited sentinel and
+    // relies on NUL never appearing in rendered content. A bound value carrying the
+    // exact sentinel must not be able to move the split point ahead of the real slot.
+    const template = '<section class="card"><div><text>{{label}}</text><slot name="children"></slot></div></section>';
+    const chrome = service.renderContainerChrome(template, { label: 'A\u0000nl-container-slot\u0000B' });
+
+    // Split lands at the REAL slot: the whole (NUL-stripped) label stays in `before`.
+    expect(chrome.before).toContain('Anl-container-slotB');
+    // No NUL survives, and nothing from the label leaks past the slot.
+    expect(chrome.before).not.toContain('\u0000');
+    expect(chrome.after).not.toContain('nl-container-slot');
+  });
 });
 
 /**

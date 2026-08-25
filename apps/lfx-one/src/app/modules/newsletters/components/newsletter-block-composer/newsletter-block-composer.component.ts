@@ -862,7 +862,13 @@ export class NewsletterBlockComposerComponent implements OnInit {
         const host = selectedId ? canvas.querySelector<HTMLElement>(`[data-nl-block="${cssEscape(selectedId)}"]`) : null;
         if (host) {
           const fields = host.querySelectorAll<HTMLElement>('[data-nl-field]:not([data-nl-wired])');
-          fields.forEach((el) => this.wireEditable(el, selectedId!));
+          // Only wire fields the selected block owns directly. When the selection
+          // is a container, `host` also contains nested child blocks; their fields
+          // must stay bound to the child's id, not the container's, or a child
+          // inline edit would commit into the parent container's content.
+          fields.forEach((el) => {
+            if (el.closest('[data-nl-block]') === host) this.wireEditable(el, selectedId!);
+          });
         }
 
         // Keep the toolbar pinned to the selected block (unless mid-edit, where
