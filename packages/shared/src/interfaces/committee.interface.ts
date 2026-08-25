@@ -134,6 +134,10 @@ export interface PendingInvitation {
   committee_name: string;
   /** Project display name — enriched (optional) */
   project_name?: string | null;
+  /** Owning project slug — enriched (optional); drives the `?project=` query param on the invitation's view link (GH-1566). */
+  project_slug?: string | null;
+  /** Whether the owning project is a foundation — enriched (optional); drives the `/foundation` vs `/project` tier prefix on the view link. Null/absent means tier unknown → callers keep the flat `/groups/:uid` fallback (GH-1566). */
+  is_foundation?: boolean | null;
   /** Committee category, for the My Groups class badge (optional) */
   category?: string | null;
   /** Suggested role on acceptance (from the invite) */
@@ -516,6 +520,18 @@ export interface CommitteeFoundationGroup {
   /** True for a bucket holding committees whose own project IS the foundation (`is_foundation === true`) — always sorted first. Usually one bucket, but a foundation-owned committee that resolves to a *different* label than another (e.g. a named foundation project plus a separate `FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL` fallback bucket) can produce more than one; the sort tolerates any count. */
   isFoundationLevel: boolean;
   committees: Committee[];
+}
+
+/**
+ * One pending-invitation row on the My Groups invitations list, decorated with pre-computed link
+ * state (mirrors `MyGroupsCardVm`): `viewCommands` carries the canonical tier-prefixed path
+ * (`getEntityCommands('groups', …)`) with the flat `/groups/:uid` fallback already folded in, so
+ * the template stays binding-only (GH-1566).
+ */
+export interface PendingInvitationRowVm extends PendingInvitation {
+  viewCommands: string[];
+  /** `?project=` for the view link — present only when the invitation carries a `project_slug`. */
+  viewQueryParams: { project: string } | null;
 }
 
 /**

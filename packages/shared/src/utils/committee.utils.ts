@@ -14,6 +14,7 @@ import {
   OTHER_GROUPS_LABEL,
 } from '../constants/committees.constants';
 import { formatRelativeTime } from './date-time.utils';
+import { getEntityCommands } from './entity-route.utils';
 import { slugify } from './string.utils';
 
 /**
@@ -76,15 +77,14 @@ export function getGroupBehavioralClass(category: string | undefined): GroupBeha
  * active lens: foundation-owned groups live under `/foundation/groups/{uid}`, all other
  * projects under `/project/groups/{uid}`. Returns null when `is_foundation` is absent
  * (unenriched payload) so callers can fall back to the flat `/groups/{uid}` path handled by
- * `lensRedirectGuard`. Pass `leaf: 'edit'` for the edit route — one helper serves both so the
- * view/edit tier logic can't drift apart (mirror: `getMeetingEditCommands`).
+ * `lensRedirectGuard`. Pass `leaf: 'edit'` for the edit route.
+ *
+ * Thin committee-shaped wrapper over {@link getEntityCommands} — the tier/edit/fallback contract
+ * lives there alone so the two can never drift (this copy once diverged on null-tier handling);
+ * its spec covers the `groups` segment, so no duplicate route-building tests live here.
  */
 export function getGroupCommands(committee: Pick<Committee, 'uid' | 'is_foundation'>, leaf?: 'edit'): string[] | null {
-  if (committee.is_foundation === undefined) {
-    return null;
-  }
-
-  return ['/', committee.is_foundation ? 'foundation' : 'project', 'groups', committee.uid, ...(leaf ? [leaf] : [])];
+  return getEntityCommands('groups', committee.uid, committee.is_foundation, leaf);
 }
 
 /**

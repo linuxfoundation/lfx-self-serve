@@ -21,7 +21,6 @@ import {
   buildEngagementStatCards,
   canManageCommitteeMembers,
   countVotingReps,
-  getGroupCommands,
   groupCommitteesByFoundation,
   resolveCommitteeMemberPermission,
   resolveGroupsCardRoleSeverity,
@@ -135,25 +134,9 @@ describe('buildCommitteeCreateQueryParams', () => {
   });
 });
 
-describe('getGroupCommands', () => {
-  it('prefixes foundation-owned groups with /foundation', () => {
-    expect(getGroupCommands(committee({ uid: 'cmte-9', is_foundation: true }))).toEqual(['/', 'foundation', 'groups', 'cmte-9']);
-  });
-
-  it('prefixes non-foundation groups with /project', () => {
-    expect(getGroupCommands(committee({ uid: 'cmte-9', is_foundation: false }))).toEqual(['/', 'project', 'groups', 'cmte-9']);
-  });
-
-  it('appends the edit leaf when requested, sharing the same tier logic', () => {
-    expect(getGroupCommands(committee({ uid: 'cmte-9', is_foundation: true }), 'edit')).toEqual(['/', 'foundation', 'groups', 'cmte-9', 'edit']);
-    expect(getGroupCommands(committee({ uid: 'cmte-9', is_foundation: false }), 'edit')).toEqual(['/', 'project', 'groups', 'cmte-9', 'edit']);
-  });
-
-  it('returns null when is_foundation is absent so callers fall back to the flat /groups/:uid path', () => {
-    expect(getGroupCommands(committee({ uid: 'cmte-9' }))).toBeNull();
-    expect(getGroupCommands(committee({ uid: 'cmte-9' }), 'edit')).toBeNull();
-  });
-});
+// getGroupCommands has no dedicated spec block here: it delegates to getEntityCommands
+// (entity-route.utils.spec.ts already covers the 'groups' segment and both null-tier cases), so
+// duplicate route-building tests would test the delegation, not behavior.
 
 describe('canManageCommitteeMembers', () => {
   it('is true when the effective writer flag is set (covers inherited foundation Manage)', () => {
