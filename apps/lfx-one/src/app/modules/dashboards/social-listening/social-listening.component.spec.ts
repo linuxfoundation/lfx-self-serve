@@ -12,6 +12,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { SavedFilterService } from '@services/saved-filter.service';
 import { SocialListeningService } from '@services/social-listening.service';
 import { UserService } from '@services/user.service';
+import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -171,6 +172,7 @@ describe('SocialListeningComponent', () => {
           },
         },
         { provide: Router, useValue: { navigate } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: ProjectContextService, useValue: { selectedFoundation: foundationSignal, selectedFoundationSfid: foundationSfid } },
         { provide: UserService, useValue: { user: userSignal } },
         {
