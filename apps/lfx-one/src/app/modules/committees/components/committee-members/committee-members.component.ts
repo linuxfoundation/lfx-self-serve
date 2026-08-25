@@ -21,6 +21,7 @@ import {
   COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW,
   COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS,
   COMMITTEE_LABEL,
+  NO_VOTING_STATUS_LABEL,
 } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus, CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import {
@@ -161,6 +162,8 @@ export class CommitteeMembersComponent implements OnInit {
   public committeeLabel = COMMITTEE_LABEL;
   // Upstream "no role" sentinel for committee invites — kept in one place rather than inline in the template.
   public readonly noRoleSentinel = CommitteeMemberRole.NONE;
+  // Neutral label for legacy members with no recorded voting status (GH-1831).
+  public readonly noVotingStatusLabel = NO_VOTING_STATUS_LABEL;
   public readonly engagementWindowOptions = COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS;
 
   // Computed signals — inline per component-organization.md

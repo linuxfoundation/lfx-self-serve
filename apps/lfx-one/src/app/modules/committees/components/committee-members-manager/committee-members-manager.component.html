@@ -166,14 +166,14 @@
                 <span class="px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded">Failed to remove</span>
               }
               <!-- Voting status badge -->
-              @if (member.voting?.status) {
+              @if (votingEnabled()) {
                 <span
                   class="px-2 py-1 text-xs font-medium rounded"
                   [ngClass]="{
                     'bg-emerald-100 text-emerald-800': member.voting?.status === 'Voting Rep' || member.voting?.status === 'Alternate Voting Rep',
                     'bg-gray-100 text-gray-600': member.voting?.status !== 'Voting Rep' && member.voting?.status !== 'Alternate Voting Rep',
                   }">
-                  {{ member.voting?.status }}
+                  {{ member.voting?.status || noVotingStatusLabel }}
                 </span>
               }
               <!-- Role badge -->
