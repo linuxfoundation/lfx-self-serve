@@ -53,9 +53,12 @@ export class GroupSeatHoldersDrawerComponent {
   private readonly titleRef = viewChild<ElementRef<HTMLHeadingElement>>('titleRef');
   private previouslyFocusedElement: HTMLElement | null = null;
 
-  // Gates the live region's real text (see statusMessage()'s comment and the template) — starts
-  // false on every open so the freshly-mounted node's first paint is empty, then flips true after
-  // the next render so the real text arrives as a mutation on an already-painted node.
+  // Gates the live region's real text (see statusMessage()'s comment and the template). Reset to
+  // false on every close (initSeatHolders()'s !visible branch — the one path every close goes
+  // through), not on show: PrimeNG's onShow fires after *ngIf="visible" has already inserted the
+  // node for that open, so resetting only there would leave a stale `true` from the previous open
+  // sitting on the very first paint of every reopen. Flips true via afterNextRender() after the
+  // next render, so the real text always arrives as a mutation on an already-painted node.
   protected readonly contentRevealed = signal(false);
   private revealRef: AfterRenderRef | null = null;
 
@@ -115,6 +118,8 @@ export class GroupSeatHoldersDrawerComponent {
     this.previouslyFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     this.titleRef()?.nativeElement.focus();
 
+    // Belt-and-braces, not the sole guarantee — initSeatHolders()'s !visible branch is what
+    // actually resets this for every close path (see contentRevealed's own comment).
     this.contentRevealed.set(false);
     this.revealRef?.destroy();
     this.revealRef = afterNextRender(() => this.contentRevealed.set(true), { injector: this.injector });
@@ -173,9 +178,20 @@ export class GroupSeatHoldersDrawerComponent {
     return toSignal(
       trigger$.pipe(
         switchMap(({ visible, orgUid, committeeUid }) => {
-          // Keeps the last-loaded state on screen through p-drawer's leave animation instead of
-          // flashing to an empty result and a false "0 seat holders" announcement.
-          if (!visible) return EMPTY;
+          if (!visible) {
+            // Keeps the last-loaded state on screen through p-drawer's leave animation instead of
+            // flashing to an empty result and a false "0 seat holders" announcement.
+            //
+            // Also the one place every close path passes through, unlike (onHide) (see its own
+            // comment) — so it's where contentRevealed must reset, not onDrawerShow(). PrimeNG
+            // fires onShow from its animation-start callback, which runs *after* *ngIf="visible"
+            // has already inserted the live region for that open; resetting only in onDrawerShow()
+            // would leave a stale `true` from the previous open sitting on the node's very first
+            // paint on every reopen, exactly the "freshly-inserted node's initial text" problem
+            // contentRevealed exists to prevent.
+            this.contentRevealed.set(false);
+            return EMPTY;
+          }
           if (!orgUid || !committeeUid) {
             // Emits (unlike !visible above), so it resets loading/error itself — tap below only
             // clears loading on a real fetch emission, which this branch never reaches.

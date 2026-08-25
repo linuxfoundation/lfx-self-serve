@@ -59,9 +59,9 @@
        — a sibling live region would be announced inconsistently at best. Staying inside means this
        node IS destroyed and recreated on every open, so its first render can't carry the real
        status text (a freshly-inserted node's initial text is generally not announced, only later
-       mutations to an already-present node are) — contentRevealed starts false so the node mounts
-       empty, then flips true one tick after onDrawerShow() so the real text arrives as a genuine
-       mutation instead. -->
+       mutations to an already-present node are) — contentRevealed (reset false on every close, see
+       its own comment in the .ts) keeps the node's first paint on each open empty, then flips true
+       one tick later so the real text arrives as a genuine mutation instead. -->
   <p class="sr-only" role="status" aria-live="polite" data-testid="group-seat-holders-drawer-status">{{ contentRevealed() ? statusMessage() : '' }}</p>
 
   <div class="flex flex-col gap-4 h-full">

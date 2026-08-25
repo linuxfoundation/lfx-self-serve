@@ -839,6 +839,27 @@ describe('GroupSeatHoldersDrawerComponent', () => {
       expect(panel?.contains(status)).toBe(true);
     });
 
+    // contentRevealed must reset on every close, not just get set-then-immediately-reflipped by
+    // onDrawerShow() on the *next* open — otherwise a reopen's freshly-created status node would
+    // carry the stale "revealed" state from the previous open on its very first paint, exactly the
+    // freshly-inserted-content problem this whole mechanism exists to avoid. Checked synchronously
+    // right after the reopen's own render, before awaiting whenStable() again (which would let the
+    // afterNextRender hook fire and mask a broken reset).
+    it("re-mounts the status region empty on a reopen, not carrying over the previous open's revealed state", async () => {
+      await setup(vi.fn().mockReturnValue(of(response([]))));
+
+      await open('org-1', 'c-1');
+      expect(statusMessage()).toBe('0 seat holders loaded.');
+
+      fixture.componentRef.setInput('visible', false);
+      await fixture.whenStable();
+
+      fixture.componentRef.setInput('visible', true);
+      fixture.detectChanges();
+
+      expect(statusMessage()).toBe('');
+    });
+
     it('moves focus into the panel on open, away from the element that triggered it', async () => {
       await setup(vi.fn().mockReturnValue(of(response([]))));
       const trigger = document.createElement('button');
