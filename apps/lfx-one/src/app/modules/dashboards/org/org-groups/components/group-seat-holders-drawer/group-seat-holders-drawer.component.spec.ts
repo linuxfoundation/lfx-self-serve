@@ -765,8 +765,11 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     fixture.detectChanges();
 
     expect(instance.loading()).toBe(false);
-    // The DOM-visible half of the same claim: no permanent spinner, not the internal flag alone.
+    // The DOM-visible half of the same claim: no permanent spinner, not the internal flag alone —
+    // and the positive control (the empty state that should replace it) so this can't pass on a
+    // template regression that drops the whole @if chain rather than actually clearing loading.
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-loading"]')).toBeNull();
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-empty"]')).toBeTruthy();
   });
 
   it('renders a member with no name and no email as "Unknown member", not a blank row', async () => {
