@@ -66,7 +66,7 @@ export class MemberFormComponent {
 
   // Member options
   public roleOptions = MEMBER_ROLES;
-  public votingStatusOptions: MemberFormVotingStatusOption[] = MEMBER_FORM_VOTING_STATUSES;
+  public votingStatusOptions: MemberFormVotingStatusOption[];
   public appointedByOptions = APPOINTED_BY_OPTIONS;
   public permissionOptions = [...COMMITTEE_PERMISSION_OPTIONS];
 
@@ -277,11 +277,11 @@ export class MemberFormComponent {
   private buildVotingStatusOptions(): MemberFormVotingStatusOption[] {
     const legacyStatus = this.isEditing ? this.member?.voting?.status : undefined;
     if (!legacyStatus || MEMBER_FORM_VOTING_STATUSES.some(({ value }) => value === legacyStatus)) {
-      return MEMBER_FORM_VOTING_STATUSES;
+      return [...MEMBER_FORM_VOTING_STATUSES];
     }
 
     const known = VOTING_STATUSES.find(({ value }) => value === legacyStatus);
-    return [{ label: known?.label ?? legacyStatus, value: legacyStatus, disabled: true }, ...MEMBER_FORM_VOTING_STATUSES];
+    return [{ label: known ? known.label : `${legacyStatus} (unrecognized)`, value: legacyStatus, disabled: true }, ...MEMBER_FORM_VOTING_STATUSES];
   }
 
   private buildPermissionArrays(
