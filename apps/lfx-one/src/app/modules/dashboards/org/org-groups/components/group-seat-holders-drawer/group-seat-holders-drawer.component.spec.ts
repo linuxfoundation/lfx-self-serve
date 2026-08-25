@@ -89,6 +89,10 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     return Array.from(document.querySelectorAll('[data-testid="group-seat-holders-list"] li')).map((li) => li.textContent?.trim() ?? '');
   }
 
+  function statusMessage(): string | null {
+    return document.querySelector('[role="status"]')?.textContent?.trim() ?? null;
+  }
+
   it('does not fetch until the drawer is opened', async () => {
     await setup(vi.fn().mockReturnValue(of(response([]))));
 
@@ -219,6 +223,35 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(impl).toHaveBeenCalledTimes(2);
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeNull();
     expect(subtitleText()).toBe('1 seat holder');
+  });
+
+  // The single persistent role="status" region is the only signal a screen-reader user gets that
+  // a retry changed anything — the button they activated is removed from the DOM either way, and
+  // a repeat error looks identical to the first one without reading it.
+  it('announces the loaded count through the persistent status region after a successful retry', async () => {
+    const impl = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new Error('boom')))
+      .mockReturnValueOnce(of(response([assignment({ committeeUid: 'c-1' })])));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await setup(impl);
+
+    await open('org-1', 'c-1');
+    expect(statusMessage()).toBe('Unable to load seat holders.');
+
+    (document.querySelector('[data-testid="group-seat-holders-drawer-retry"]') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(statusMessage()).toBe('1 seat holder loaded.');
+  });
+
+  it('announces the loading state through the persistent status region', async () => {
+    await setup(vi.fn().mockReturnValue(NEVER));
+
+    await open('org-1', 'c-1');
+
+    expect(statusMessage()).toBe('Loading seat holders…');
   });
 
   it('shows a blank "Seat holders" placeholder while the fetch is pending', async () => {

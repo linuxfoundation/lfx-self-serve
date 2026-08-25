@@ -5,22 +5,12 @@ import { Component, computed, inject, input, model, signal, type Signal } from '
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
-import { isVotingStatus, votingStatusPillClass } from '@lfx-one/shared/constants';
+import { votingStatusPillClass, votingStatusRank } from '@lfx-one/shared/constants';
 import type { CommitteeMemberAssignment, CommitteeMemberSeatHolderVm } from '@lfx-one/shared/interfaces';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, finalize, map, of, shareReplay, switchMap, throwError, type Observable } from 'rxjs';
 
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
-
-// Ranks a merged row's representative voting status deterministically (not by upstream array
-// order): a true voting status (isVotingStatus) outranks "Observer", which outranks
-// non-voting/blank. "Observer" is a real, distinct value in this domain — isVotingStatus() alone
-// would fold it in with true voting statuses (see org-people/helpers/governance-seats.helper.ts,
-// which preserves the same distinction for a different drawer).
-function votingStatusRank(status: string | null | undefined): number {
-  if ((status ?? '').trim().toLowerCase() === 'observer') return 1;
-  return isVotingStatus(status) ? 2 : 0;
-}
 
 /** Org Lens — Groups list drill-down (GH-1780). Shows the org's seat holders for one committee, without leaving the roster. */
 @Component({
@@ -65,6 +55,18 @@ export class GroupSeatHoldersDrawerComponent {
   // spinner or an error message. The real, deduped-by-person row count otherwise.
   protected readonly displayedCount: Signal<number | null> = computed(() => (this.loading() || this.error() ? null : this.seatHolderVms().length));
 
+  // Text for a single persistent sr-only live region (see the template) — covers all three state
+  // transitions, including the ones a "Try again" click can cause (failure -> success, or failure
+  // -> failure again). A screen-reader user gets no other signal that anything changed: the button
+  // they activated is removed from the DOM either way, and the visible content between a repeat
+  // error and a fresh one looks identical without reading it.
+  protected readonly statusMessage: Signal<string> = computed(() => {
+    if (this.loading()) return 'Loading seat holders…';
+    if (this.error()) return 'Unable to load seat holders.';
+    const count = this.seatHolderVms().length;
+    return `${count} seat holder${count === 1 ? '' : 's'} loaded.`;
+  });
+
   protected retry(): void {
     this.retryTick.update((n) => n + 1);
   }
@@ -73,9 +75,11 @@ export class GroupSeatHoldersDrawerComponent {
     return computed(() => {
       const byPerson = new Map<string, { assignment: CommitteeMemberAssignment; roles: string[] }>();
       for (const a of this.seatHolders() ?? []) {
-        // Normalized the same way the server dedupes org_seat_count (trim + lowercase), so two
-        // seats for the same person that differ only in email casing/whitespace still merge.
-        const key = a.person.email.trim().toLowerCase() || a.memberUid;
+        // The BFF mapper already normalizes person.email to trim+lowercase before this drawer
+        // ever sees it (committee-seat-assignment.mapper.ts) — this repeats that normalization
+        // defensively, mirroring the server's own org_seat_count dedupe key, so a future mapper
+        // change can't silently split one person's seats into separate rows here.
+        const key = (a.person.email ?? '').trim().toLowerCase() || a.memberUid;
         const existing = byPerson.get(key);
         if (!existing) {
           byPerson.set(key, { assignment: a, roles: a.role ? [a.role] : [] });
@@ -83,9 +87,10 @@ export class GroupSeatHoldersDrawerComponent {
         }
         if (a.role && !existing.roles.includes(a.role)) existing.roles.push(a.role);
         // The merged row's other fields (voting status, seatId, ...) come from one representative
-        // assignment — rank by votingStatusRank rather than array order, so the pill can't flip
-        // between loads for a person holding two differently-ranked seats on this committee.
-        if (votingStatusRank(a.votingStatus) > votingStatusRank(existing.assignment.votingStatus)) {
+        // assignment — rank by the shared VOTING_STATUS_PRIORITY order (lower is better) rather
+        // than array order, so the pill can't flip between loads for a person holding two
+        // differently-ranked seats on this committee.
+        if (votingStatusRank(a.votingStatus) < votingStatusRank(existing.assignment.votingStatus)) {
           existing.assignment = a;
         }
       }

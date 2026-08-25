@@ -35,19 +35,19 @@
     </div>
   </ng-template>
 
+  <!-- Persistent (always rendered) so the live region exists before any state change, per ARIA
+       live-region guidance — a node that only appears already containing its final text isn't
+       reliably announced. Covers all three states in one place, including what a "Try again"
+       click can cause (failure -> success, or failure -> failure again): the visible content
+       between a repeat error and a fresh one looks identical without reading it, and the button
+       the user activated is gone from the DOM either way. Deliberately NOT on the roster's own
+       wrapper below — that would re-announce every name/role/voting pill as one utterance on
+       every successful load, which is worse than the silence this fixes. -->
+  <p class="sr-only" role="status" aria-live="polite">{{ statusMessage() }}</p>
+
   <div class="flex flex-col gap-4 h-full">
     @if (loading()) {
-      <!-- role="status"/aria-live scoped to this branch only — matches the established pattern in
-           total-members-drawer.component.html — not the whole @if chain: putting it on a shared
-           wrapper would re-announce the entire roster (name, role, voting pill for every row) as
-           one utterance whenever the list finishes loading, which is worse than the silence it
-           would fix. -->
-      <div
-        class="flex items-center justify-center py-16"
-        role="status"
-        aria-live="polite"
-        aria-label="Loading seat holders"
-        data-testid="group-seat-holders-drawer-loading">
+      <div class="flex items-center justify-center py-16" data-testid="group-seat-holders-drawer-loading">
         <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
       </div>
     } @else if (error()) {

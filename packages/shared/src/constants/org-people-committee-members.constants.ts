@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { CommitteeMembersSortColumn, OrgPeopleCommitteeMembersResponse } from '../interfaces';
+import { VOTING_STATUS_PRIORITY } from './persona.constants';
 
 /** committee-service `committee_category` value that the People → Committee tab EXCLUDES (FR-003). Compared case-insensitively. */
 export const COMMITTEE_CATEGORY_BOARD = 'Board';
@@ -39,4 +40,14 @@ export function isVotingStatus(status: string | null | undefined): boolean {
 /** Tailwind pill classes for a voting status — emerald when voting, neutral slate when "Non-voting"/"None"/empty. Delegates to `isVotingStatus` (D-102). */
 export function votingStatusPillClass(status: string | null | undefined): string {
   return isVotingStatus(status) ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-slate-50 text-slate-600';
+}
+
+/** Ranks a voting status by `VOTING_STATUS_PRIORITY` (lower = higher priority — "Voting Rep" is 0);
+ *  unrecognized or blank statuses rank last (`Infinity`), so they never displace a recognized one.
+ *  The single ranking shared by any "pick the best of several seats/statuses for one person" case —
+ *  see `multi-persona-dashboard.component.ts`'s `pickByPriority` for the sibling usage this mirrors. */
+export function votingStatusRank(status: string | null | undefined): number {
+  const s = (status ?? '').trim().toLowerCase();
+  const index = VOTING_STATUS_PRIORITY.findIndex((p) => p.toLowerCase() === s);
+  return index === -1 ? Infinity : index;
 }
