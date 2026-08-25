@@ -52,6 +52,7 @@ export class AudienceDemographicsComponent {
     this.audienceSub?.unsubscribe();
     this.loading.set(true);
     this.error.set(null);
+    this.data.set(null);
     this.audienceSub = this.campaignService
       .getAudience(this.projectSlug(), days ?? this.days())
       .pipe(takeUntilDestroyed(this.destroyRef))
