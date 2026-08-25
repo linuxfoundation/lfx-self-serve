@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { isVotingStatus, votingStatusPillClass, votingStatusRank } from './org-people-committee-members.constants';
+import { VOTING_STATUS_PRIORITY } from './persona.constants';
 
 describe('isVotingStatus', () => {
   it('treats a named voting status as voting', () => {
@@ -68,5 +69,19 @@ describe('votingStatusRank', () => {
 
   it('is case-insensitive and whitespace-trimmed for listed statuses', () => {
     expect(votingStatusRank('  voting rep  ')).toBe(votingStatusRank('Voting Rep'));
+  });
+
+  it('never ranks a non-voting status ahead of a listed voting status', () => {
+    // Guards the NONE_RANK fallback: if "None" were ever renamed/removed from
+    // VOTING_STATUS_PRIORITY, an unguarded findIndex (-1) would invert this.
+    expect(votingStatusRank('Non-voting')).toBeGreaterThan(votingStatusRank('Voting Rep'));
+    expect(votingStatusRank('None')).toBeGreaterThan(votingStatusRank('Voting Rep'));
+  });
+
+  it('relies on "None" actually being present in VOTING_STATUS_PRIORITY', () => {
+    // NONE_RANK's fallback (list length) only fires if this ever goes false — pin the
+    // precondition directly so a rename/removal fails here, at the source, not just at
+    // the numeric boundary above.
+    expect(VOTING_STATUS_PRIORITY.map((p) => p.toLowerCase())).toContain('none');
   });
 });
