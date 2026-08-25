@@ -3,7 +3,7 @@
 
 import type { ChartData, ChartDataset, ChartOptions, ChartType } from 'chart.js';
 
-import { PRESENCE_PILL_IDS } from '../constants/foundation-projects.constants';
+import type { PRESENCE_PILL_IDS } from '../constants/foundation-projects.constants';
 
 /**
  * Chart.js bar dataset that opts into the zero-bar stub plugin (`ZERO_BAR_STUB_PLUGIN`).

@@ -3,6 +3,7 @@
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { BehavioralClassDisplayConfig, CommitteeCategoryInfo, CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
+import type { MeetingAllowedVotingStatus } from '../interfaces/meeting.interface';
 import { lfxColors } from './colors.constants';
 
 // Re-export helper functions from utils for backward compatibility
@@ -287,6 +288,27 @@ export const VOTING_STATUSES = [
  * a valid member status. None is treated as Observer for filtering purposes.
  */
 export const MEETING_VOTING_STATUSES = VOTING_STATUSES.filter(({ value }) => value !== CommitteeMemberVotingStatus.NONE);
+
+/** Meeting API voting-status vocabulary — snake_case, unlike the committee domain's display strings. */
+export const MEETING_ALLOWED_VOTING_STATUSES = ['voting_rep', 'alt_voting_rep', 'observer', 'emeritus', 'none'] as const;
+
+/** Display (committee domain) → meeting API voting status. */
+export const COMMITTEE_TO_MEETING_VOTING_STATUS: Record<CommitteeMemberVotingStatus, MeetingAllowedVotingStatus> = {
+  [CommitteeMemberVotingStatus.VOTING_REP]: 'voting_rep',
+  [CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP]: 'alt_voting_rep',
+  [CommitteeMemberVotingStatus.OBSERVER]: 'observer',
+  [CommitteeMemberVotingStatus.EMERITUS]: 'emeritus',
+  [CommitteeMemberVotingStatus.NONE]: 'none',
+};
+
+/** Meeting API → display voting status. 'none' hydrates as Observer: meeting filters treat None-status members as Observers. */
+export const MEETING_TO_COMMITTEE_VOTING_STATUS: Record<MeetingAllowedVotingStatus, CommitteeMemberVotingStatus> = {
+  voting_rep: CommitteeMemberVotingStatus.VOTING_REP,
+  alt_voting_rep: CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP,
+  observer: CommitteeMemberVotingStatus.OBSERVER,
+  emeritus: CommitteeMemberVotingStatus.EMERITUS,
+  none: CommitteeMemberVotingStatus.OBSERVER,
+};
 
 /**
  * Available appointment sources for committee members
