@@ -428,11 +428,19 @@ export class MonitoringTabComponent implements OnInit {
     this.metaData.set(null);
 
     this.fetchData();
+
+    // Each account-list request is stamped with the slug it was made for. A foundation switch
+    // fires a new request before the previous one resolves, and `takeUntilDestroyed` alone
+    // doesn't cancel it (the component survives the switch). Without this guard, a slower
+    // response for the OLD foundation can arrive after a faster one for the new foundation and
+    // overwrite it with the wrong account catalog.
+    const linkedInSlug = this.activeFoundationSlug();
     this.campaignService
-      .getLinkedInAccounts(this.activeFoundationSlug())
+      .getLinkedInAccounts(linkedInSlug)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (accounts) => {
+          if (linkedInSlug !== this.activeFoundationSlug()) return;
           this.linkedInAccountOptions.set(accounts);
           if (accounts.length > 0 && !this.selectedLinkedInAccountKey()) {
             this.selectedLinkedInAccountKey.set(accounts[0].accountId);
@@ -442,15 +450,18 @@ export class MonitoringTabComponent implements OnInit {
           }
         },
         error: (err: unknown) => {
+          if (linkedInSlug !== this.activeFoundationSlug()) return;
           const httpErr = err as { error?: { message?: string }; message?: string };
           this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn accounts');
         },
       });
+    const redditSlug = this.activeFoundationSlug();
     this.campaignService
-      .getRedditAccounts(this.activeFoundationSlug())
+      .getRedditAccounts(redditSlug)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (accounts) => {
+          if (redditSlug !== this.activeFoundationSlug()) return;
           this.redditAccountOptions.set(accounts);
           if (accounts.length > 0 && !this.selectedRedditAccountKey()) {
             this.selectedRedditAccountKey.set(accounts[0].key);
@@ -460,15 +471,18 @@ export class MonitoringTabComponent implements OnInit {
           }
         },
         error: (err: unknown) => {
+          if (redditSlug !== this.activeFoundationSlug()) return;
           const httpErr = err as { error?: { message?: string }; message?: string };
           this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit accounts');
         },
       });
+    const metaSlug = this.activeFoundationSlug();
     this.campaignService
-      .getMetaAccounts(this.activeFoundationSlug())
+      .getMetaAccounts(metaSlug)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (accounts) => {
+          if (metaSlug !== this.activeFoundationSlug()) return;
           this.metaAccountOptions.set(accounts);
           if (accounts.length > 0 && !this.selectedMetaAccountKey()) {
             this.selectedMetaAccountKey.set(accounts[0].key);
@@ -478,6 +492,7 @@ export class MonitoringTabComponent implements OnInit {
           }
         },
         error: (err: unknown) => {
+          if (metaSlug !== this.activeFoundationSlug()) return;
           const httpErr = err as { error?: { message?: string }; message?: string };
           this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta accounts');
         },
