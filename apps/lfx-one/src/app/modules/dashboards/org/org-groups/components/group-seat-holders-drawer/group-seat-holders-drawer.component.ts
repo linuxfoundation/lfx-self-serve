@@ -63,11 +63,14 @@ export class GroupSeatHoldersDrawerComponent {
   // spinner or an error message. The real, deduped-by-person row count otherwise.
   protected readonly displayedCount: Signal<number | null> = computed(() => (this.loading() || this.error() ? null : this.seatHolderVms().length));
 
-  // Text for a single persistent sr-only live region (see the template) — covers all three state
-  // transitions, including the ones a "Try again" click can cause (failure -> success, or failure
-  // -> failure again). A screen-reader user gets no other signal that anything changed: the button
-  // they activated is removed from the DOM either way, and the visible content between a repeat
-  // error and a fresh one looks identical without reading it.
+  // Text for the persistent sr-only live region (see the template, mounted as a sibling of
+  // <p-drawer> so it outlives every open/close and every internal @if branch — including while
+  // `visible` is false during the close animation, matching seatHolderVms/displayedCount's own
+  // "preserve last state through close" behavior above, not just the drawer's visible content).
+  // Covers all three state transitions, including the ones a "Try again" click can cause (failure
+  // -> success, or failure -> failure again) — the button the user activated is removed from the
+  // DOM either way, and the visible content between a repeat error and a fresh one looks identical
+  // without reading it.
   protected readonly statusMessage: Signal<string> = computed(() => {
     if (this.loading()) return 'Loading seat holders…';
     if (this.error()) return 'Unable to load seat holders.';

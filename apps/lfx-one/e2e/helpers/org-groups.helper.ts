@@ -196,6 +196,7 @@ export async function gotoGroups(page: Page): Promise<void> {
 
   await page.goto(GROUPS_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
+  await expect(page).not.toHaveURL(/auth0\.com/);
 
   if (!page.url().includes('/org/groups')) {
     test.skip(true, 'org-lens-enabled flag appears off — /org/groups redirected away');

@@ -1,19 +1,31 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- Outside <p-drawer> deliberately: p-drawer's own content is *ngIf'd on `visible`, so a node
+     inside it is destroyed and recreated fresh on every open — a freshly-inserted node's initial
+     text is generally not reliably announced by screen readers, only later mutations to an
+     already-present node are. This node survives across opens (and across closes — see
+     statusMessage()'s own comment), so even the very first "Loading seat holders…" is a mutation
+     on a node that was already there, not content set once at insertion time. -->
+<p class="sr-only" role="status" aria-live="polite" data-testid="group-seat-holders-drawer-status">{{ statusMessage() }}</p>
+
 <p-drawer
   [(visible)]="visible"
   position="right"
   [modal]="true"
   [ariaCloseLabel]="'Close panel'"
   [pt]="{
-    root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'group-seat-holders-drawer-title' },
+    root: {
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-labelledby': 'group-seat-holders-drawer-title',
+      'data-testid': 'group-seat-holders-drawer',
+    },
     pcCloseButton: { root: { 'data-testid': 'group-seat-holders-drawer-close' } },
   }"
   (onShow)="onDrawerShow()"
   (onHide)="onDrawerHide()"
-  styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full"
-  data-testid="group-seat-holders-drawer">
+  styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full">
   <ng-template #header>
     <div class="flex items-start gap-3 w-full">
       <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
@@ -49,10 +61,6 @@
       </div>
     </div>
   </ng-template>
-
-  <!-- Persistent (not scoped to one @if branch below) so a repeat error or a "Try again" success
-       both mutate this node's text and get announced, even when the visible content looks the same. -->
-  <p class="sr-only" role="status" aria-live="polite" data-testid="group-seat-holders-drawer-status">{{ statusMessage() }}</p>
 
   <div class="flex flex-col gap-4 h-full">
     @if (loading()) {
