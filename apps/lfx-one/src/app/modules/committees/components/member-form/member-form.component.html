@@ -180,6 +180,9 @@
           @if (form().get('voting_status')?.errors?.['required'] && form().get('voting_status')?.touched) {
             <p class="mt-1 text-xs text-red-600">Voting status is required</p>
           }
+          @if (form().get('voting_status')?.errors?.['legacyVotingStatus'] && form().get('voting_status')?.touched) {
+            <p class="mt-1 text-xs text-red-600">This legacy voting status is no longer accepted — select a new status to save</p>
+          }
         </div>
 
         <!-- Voting Status Start and End Dates -->
