@@ -30,7 +30,7 @@ import {
   QueryServiceCountResponse,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
-import { catchError, map, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
+import { catchError, map, Observable, of, shareReplay, take, tap } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -111,8 +111,14 @@ export class CommitteeService {
       .pipe(map((response) => response.count));
   }
 
-  public getCommittee(id: string): Observable<Committee> {
-    return this.getCommitteeDetail(id).pipe(tap((committee) => this.committee.set(committee ?? null)));
+  /**
+   * Fetches a committee and mirrors it into the shared `committee` signal. Shares the short-TTL
+   * detail cache via {@link getCommitteeDetail} — pass `skipCache: true` for reads that poll for a
+   * just-written change (e.g. post-join membership propagation), where replaying a cached
+   * pre-write payload would defeat the poll.
+   */
+  public getCommittee(id: string, options?: { skipCache?: boolean }): Observable<Committee> {
+    return this.getCommitteeDetail(id, options).pipe(tap((committee) => this.committee.set(committee ?? null)));
   }
 
   /**
@@ -122,8 +128,11 @@ export class CommitteeService {
    * (settings, membership, access, inherited-permission, mailing-list, project-metadata
    * enrichment) twice on every edit-page load. Probe-friendly: no `committee` signal
    * side-effect. Entries evict on error and on write (updateCommittee/updateCommitteePermissions/
-   * deleteCommittee). Pass `skipCache` to force a fresh fetch when a caller needs enrichment that
-   * a cached payload may predate. `skipCache` replaces the cache entry with the new `request$`
+   * deleteCommittee and the membership-changing writes: join/leave, member CRUD, application
+   * approve). Pass `skipCache` to force a fresh fetch when a caller needs enrichment that
+   * a cached payload may predate — including polls that wait for a just-written membership change
+   * to propagate (a cached pre-write payload would otherwise replay through the whole poll
+   * window). `skipCache` replaces the cache entry with the new `request$`
    * rather than invalidating — callers already subscribed to the prior `shareReplay(1)`
    * observable continue to completion with the old payload, so racing `skipCache` callers can
    * still observe a stale result. Mirrors MeetingService.getMeetingDetail.
@@ -211,15 +220,15 @@ export class CommitteeService {
   ): Observable<CommitteeMember> {
     const params = options?.skipNotification ? new HttpParams().set('skip_notification', 'true') : undefined;
 
-    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/members`, memberData, { params }).pipe(take(1));
+    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/members`, memberData, { params }).pipe(take(1), tap(() => this.committeeDetailCache.delete(committeeId)));
   }
 
   public updateCommitteeMember(committeeId: string, memberId: string, memberData: Partial<CreateCommitteeMemberRequest>): Observable<CommitteeMember> {
-    return this.http.put<CommitteeMember>(`/api/committees/${committeeId}/members/${memberId}`, memberData).pipe(take(1));
+    return this.http.put<CommitteeMember>(`/api/committees/${committeeId}/members/${memberId}`, memberData).pipe(take(1), tap(() => this.committeeDetailCache.delete(committeeId)));
   }
 
   public deleteCommitteeMember(committeeId: string, memberId: string): Observable<void> {
-    return this.http.delete<void>(`/api/committees/${committeeId}/members/${memberId}`).pipe(take(1));
+    return this.http.delete<void>(`/api/committees/${committeeId}/members/${memberId}`).pipe(take(1), tap(() => this.committeeDetailCache.delete(committeeId)));
   }
 
   // ── Committee Invites ───────────────────────────────────────────────────────
@@ -247,12 +256,12 @@ export class CommitteeService {
   /** Self-join an open group */
   public joinCommittee(committeeId: string, organization?: CommitteeOrganizationReference): Observable<CommitteeMember> {
     const body = organization ? { organization } : {};
-    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/join`, body).pipe(take(1));
+    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/join`, body).pipe(take(1), tap(() => this.committeeDetailCache.delete(committeeId)));
   }
 
   /** Leave a group */
   public leaveCommittee(committeeId: string): Observable<void> {
-    return this.http.delete<void>(`/api/committees/${committeeId}/leave`).pipe(take(1));
+    return this.http.delete<void>(`/api/committees/${committeeId}/leave`).pipe(take(1), tap(() => this.committeeDetailCache.delete(committeeId)));
   }
 
   /** Submit a join application for a group with join_mode 'application' */
@@ -268,7 +277,9 @@ export class CommitteeService {
 
   /** Approves a pending join application and adds the applicant as a member. */
   public approveApplication(committeeId: string, applicationId: string, body?: ApproveCommitteeJoinApplicationRequest): Observable<CommitteeMember> {
-    return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/applications/${applicationId}/approve`, { notify: true, ...body }).pipe(take(1));
+    return this.http
+      .post<CommitteeMember>(`/api/committees/${committeeId}/applications/${applicationId}/approve`, { notify: true, ...body })
+      .pipe(take(1), tap(() => this.committeeDetailCache.delete(committeeId)));
   }
 
   /** Rejects a pending join application. */
