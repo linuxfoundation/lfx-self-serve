@@ -17,7 +17,7 @@ import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, debounceTime, map, Observable, of, startWith, switchMap } from 'rxjs';
 
-import type { ChartData, ChartOptions } from 'chart.js';
+import type { Chart, ChartData, ChartOptions, TooltipModel } from 'chart.js';
 
 import type {
   LoadableState,
@@ -126,13 +126,15 @@ export class SocialListeningAnalyticsComponent {
   protected readonly overTimeOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
     plugins: {
       legend: {
         display: true,
         position: 'bottom',
         labels: { usePointStyle: true, pointStyle: 'line', padding: 15, color: lfxColors.gray[600] },
       },
-      tooltip: { mode: 'index', intersect: false },
+      // The canvas-drawn tooltip is clipped to the chart area, cutting off projects when many series are shown — render it in DOM instead.
+      tooltip: { enabled: false, external: this.buildChartExternalTooltip() },
     },
     elements: {
       line: { tension: 0.4, fill: false },
@@ -149,6 +151,8 @@ export class SocialListeningAnalyticsComponent {
     maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
+      // White DOM tooltip shared with the over-time chart — the canvas default renders a dark box.
+      tooltip: { enabled: false, external: this.buildChartExternalTooltip() },
     },
     scales: {
       x: { grid: { display: false }, ticks: { color: lfxColors.gray[500], font: { size: 11 } } },
@@ -205,6 +209,64 @@ export class SocialListeningAnalyticsComponent {
       if (!foundationSlug || !period) return null;
       return { foundationSlug, period, ...this.filters() };
     });
+  }
+
+  /**
+   * External DOM tooltip shared by the analytics charts — white card instead of the dark canvas
+   * default (and no canvas clipping); flips left near the viewport edge and clamps vertically.
+   */
+  private buildChartExternalTooltip(): (args: { chart: Chart; tooltip: TooltipModel<'line' | 'bar'> }) => void {
+    return ({ chart, tooltip }) => {
+      const tip = chart.canvas.closest('[data-chart-tooltip-host]')?.querySelector<HTMLElement>('[data-lfx-tip]');
+      if (!tip) return;
+
+      if (tooltip.opacity === 0) {
+        tip.style.display = 'none';
+        return;
+      }
+
+      tip.replaceChildren();
+
+      const titleEl = document.createElement('p');
+      titleEl.className = 'whitespace-nowrap text-xs font-semibold text-gray-900';
+      titleEl.textContent = tooltip.title?.[0] ?? '';
+      tip.appendChild(titleEl);
+
+      for (const point of tooltip.dataPoints ?? []) {
+        const row = document.createElement('div');
+        row.className = 'mt-1.5 flex items-center gap-1.5';
+
+        const dot = document.createElement('span');
+        dot.className = 'h-2 w-2 shrink-0 rounded-full';
+        // Line datasets carry one borderColor; the tag bars carry a per-index backgroundColor array.
+        const dotColor = point.dataset.borderColor ?? point.dataset.backgroundColor;
+        dot.style.backgroundColor = String(Array.isArray(dotColor) ? dotColor[point.dataIndex] : dotColor);
+        row.appendChild(dot);
+
+        const labelEl = document.createElement('span');
+        labelEl.className = 'whitespace-nowrap text-xs text-gray-500';
+        labelEl.textContent = point.dataset.label ? `${point.dataset.label}: ` : '';
+
+        const valueEl = document.createElement('strong');
+        valueEl.className = 'font-semibold text-gray-900';
+        valueEl.textContent = point.formattedValue;
+        labelEl.appendChild(valueEl);
+        row.appendChild(labelEl);
+
+        tip.appendChild(row);
+      }
+
+      const rect = chart.canvas.getBoundingClientRect();
+      tip.style.display = 'block';
+      const tipRect = tip.getBoundingClientRect();
+      let left = rect.left + tooltip.caretX + 12;
+      if (left + tipRect.width + 8 > window.innerWidth) {
+        left = rect.left + tooltip.caretX - tipRect.width - 12;
+      }
+      const top = Math.max(8, Math.min(rect.top + tooltip.caretY - tipRect.height / 2, window.innerHeight - tipRect.height - 8));
+      tip.style.left = `${left}px`;
+      tip.style.top = `${top}px`;
+    };
   }
 
   /**

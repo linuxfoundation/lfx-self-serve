@@ -9,7 +9,7 @@ import type { Mention } from '@lfx-one/shared/interfaces';
 
 import { MentionCardComponent } from './mention-card.component';
 
-/** Mention card trust boundaries: validExternalUrl gates every [href]; the open-original span is non-interactive so the stretched link is the sole tab stop. */
+/** Mention card trust boundaries: validExternalUrl gates every [href]; the stretched link is the sole tab stop to the original URL. */
 describe('MentionCardComponent', () => {
   function baseMention(overrides: Partial<Mention> = {}): Mention {
     return {
@@ -59,7 +59,7 @@ describe('MentionCardComponent', () => {
     expect(cardLink.getAttribute('href')).toBe('https://reddit.com/r/kubernetes/comments/m1');
     expect(cardLink.getAttribute('target')).toBe('_blank');
     expect(cardLink.getAttribute('rel')).toBe('noopener noreferrer');
-    expect(cardLink.getAttribute('aria-label')).toBe('Open mention (marks as read)');
+    expect(cardLink.getAttribute('aria-label')).toBe('Open original post on Reddit (marks as read)');
   });
 
   it('drops the stretched card link when originalUrl is a javascript: scheme', async () => {
@@ -67,6 +67,43 @@ describe('MentionCardComponent', () => {
     await fixture.whenStable();
 
     expect(querySelector('.card-link')).toBeNull();
+  });
+
+  it('gates the external-link affordances on the same URL policy as the stretched link', async () => {
+    setMention(baseMention());
+    await fixture.whenStable();
+
+    // Valid URL: the header icon shows even before truncation is measured.
+    expect(fixture.nativeElement.querySelectorAll('.fa-arrow-up-right-from-square')).toHaveLength(1);
+
+    setMention(baseMention({ originalUrl: 'javascript:alert(1)' }));
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelectorAll('.fa-arrow-up-right-from-square')).toHaveLength(0);
+  });
+
+  it('shows the read-more affordance only when the body is truncated with a navigable URL', async () => {
+    setMention(baseMention());
+    await fixture.whenStable();
+
+    expect(querySelector('[data-testid="mention-card-read-more"]')).toBeNull();
+
+    // jsdom reports zero heights — stub the layout boxes so the clamp measure sees overflow.
+    // A setInput nudge (not detectChanges) drives the scheduler render that fires afterEveryRender.
+    const body = querySelector('.mention-body') as HTMLElement;
+    Object.defineProperty(body, 'scrollHeight', { value: 120 });
+    Object.defineProperty(body, 'clientHeight', { value: 54 });
+    fixture.componentRef.setInput('timeTick', 1);
+    await fixture.whenStable();
+
+    expect(querySelector('[data-testid="mention-card-read-more"]')?.textContent).toContain('Read full post on Reddit');
+    expect(querySelector('.mention-body')?.className).toContain('mention-body--truncated');
+
+    // An invalid originalUrl drops the affordance even when the body is clamped.
+    setMention(baseMention({ originalUrl: 'javascript:alert(1)' }));
+    await fixture.whenStable();
+
+    expect(querySelector('[data-testid="mention-card-read-more"]')).toBeNull();
   });
 
   it('renders the author profile link only when it passes URL validation', async () => {
@@ -84,24 +121,6 @@ describe('MentionCardComponent', () => {
 
     expect(querySelector('a.card-interactive.font-medium')).toBeNull();
     expect(querySelector('span.font-medium.text-gray-900')).not.toBeNull();
-  });
-
-  it('renders the decorative open-original affordance as a non-interactive span when originalUrl is valid', async () => {
-    setMention(baseMention());
-    await fixture.whenStable();
-
-    const affordance = querySelector('[data-testid="mention-card-open-original"]');
-    expect(affordance).not.toBeNull();
-    expect(affordance?.tagName).toBe('SPAN');
-    expect(affordance?.getAttribute('aria-hidden')).toBe('true');
-    expect(affordance?.querySelector('a')).toBeNull();
-  });
-
-  it('hides the open-original affordance when originalUrl fails validation', async () => {
-    setMention(baseMention({ originalUrl: 'javascript:alert(1)' }));
-    await fixture.whenStable();
-
-    expect(querySelector('[data-testid="mention-card-open-original"]')).toBeNull();
   });
 
   it('renders the mention image only when its URL passes validation', async () => {
@@ -234,7 +253,7 @@ describe('MentionCardComponent', () => {
     expect(iconClass).toContain('fa-eye');
     expect(iconClass).not.toContain('fa-solid');
     expect(querySelector('[data-testid="mention-card"]')?.className).not.toContain('mention-card--read');
-    expect(querySelector('.card-link')?.getAttribute('aria-label')).toBe('Open mention (marks as read)');
+    expect(querySelector('.card-link')?.getAttribute('aria-label')).toBe('Open original post on Reddit (marks as read)');
 
     fixture.componentRef.setInput('isRead', true);
     await fixture.whenStable();
@@ -248,7 +267,7 @@ describe('MentionCardComponent', () => {
     expect(iconClass).toContain('text-gray-400');
     expect(querySelector('[data-testid="mention-card"]')?.className).toContain('mention-card--read');
     // Read cards no longer mark on click — the stretched link's label must not promise it.
-    expect(querySelector('.card-link')?.getAttribute('aria-label')).toBe('Open mention');
+    expect(querySelector('.card-link')?.getAttribute('aria-label')).toBe('Open original post on Reddit');
   });
 
   it('exposes the stretched link as the sole keyboard tab stop to the original URL', async () => {
@@ -257,10 +276,5 @@ describe('MentionCardComponent', () => {
 
     const cardLink = querySelector('.card-link') as HTMLAnchorElement;
     expect(cardLink?.getAttribute('tabindex')).toBe('0');
-
-    // The decorative open-original affordance must not be a focusable anchor.
-    const affordance = querySelector('[data-testid="mention-card-open-original"]');
-    expect(affordance?.tagName).toBe('SPAN');
-    expect(affordance?.hasAttribute('tabindex')).toBe(false);
   });
 });

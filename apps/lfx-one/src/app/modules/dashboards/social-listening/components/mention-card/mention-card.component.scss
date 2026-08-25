@@ -29,8 +29,8 @@
   @apply relative z-10;
 }
 
-// Lifted above the stretched link so the mention text stays selectable — the overlay would
-// otherwise swallow every mousedown and make copying a quote impossible.
+// Lifted above the stretched link so the (clamped) mention text stays selectable — the overlay
+// would otherwise swallow every mousedown and make copying a quote impossible.
 .mention-body {
   @apply relative z-10;
 }
@@ -40,6 +40,12 @@
 // because [innerHTML] content doesn't carry this component's view-encapsulation attribute.
 .mention-body ::ng-deep a {
   @apply relative z-10 break-all text-blue-600 hover:underline;
+}
+
+// Fade the clamped body's tail so truncation reads visually, not just via the ellipsis.
+.mention-body--truncated {
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
 }
 
 .action-icons {

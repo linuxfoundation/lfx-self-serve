@@ -19,8 +19,11 @@
         } @else if (overTimeError(); as overTimeErrorMessage) {
           <lfx-message severity="error" [text]="overTimeErrorMessage" data-testid="social-listening-analytics-over-time-error" />
         } @else if (overTimeData(); as overTimeChartData) {
-          <div class="h-[400px] w-full">
+          <div class="h-[400px] w-full" data-chart-tooltip-host>
             <lfx-chart type="line" [data]="overTimeChartData" [options]="overTimeOptions" height="100%" />
+            <div
+              data-lfx-tip
+              class="pointer-events-none fixed z-50 hidden max-h-[calc(100vh-1rem)] overflow-hidden rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg"></div>
           </div>
         } @else {
           <lfx-empty-state
@@ -88,8 +91,11 @@
         } @else if (tagsError(); as tagsErrorMessage) {
           <lfx-message severity="error" [text]="tagsErrorMessage" data-testid="social-listening-analytics-tags-error" />
         } @else if (tagsData(); as tagsChartData) {
-          <div class="h-[350px] w-full">
+          <div class="h-[350px] w-full" data-chart-tooltip-host>
             <lfx-chart type="bar" [data]="tagsChartData" [options]="tagsChartOptions" height="100%" />
+            <div
+              data-lfx-tip
+              class="pointer-events-none fixed z-50 hidden max-h-[calc(100vh-1rem)] overflow-hidden rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg"></div>
           </div>
         } @else {
           <lfx-empty-state

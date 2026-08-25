@@ -10,7 +10,7 @@
         target="_blank"
         rel="noopener noreferrer"
         class="card-link"
-        [attr.aria-label]="isRead() ? 'Open mention' : 'Open mention (marks as read)'"
+        [attr.aria-label]="'Open original post on ' + platformConfig().label + (isRead() ? '' : ' (marks as read)')"
         tabindex="0"
         (click)="onCardClick()"></a>
     }
@@ -24,6 +24,9 @@
         <span class="font-semibold text-amber-600">{{ displayKeyword() }}</span>
         <span class="text-gray-300">&middot;</span>
         <span>{{ platformConfig().label }}</span>
+        @if (hasOriginalUrl()) {
+          <i class="fa-light fa-arrow-up-right-from-square text-xs text-gray-400" aria-hidden="true"></i>
+        }
         <span class="text-gray-300">&middot;</span>
         <span class="text-gray-400">{{ timeAgo() }}</span>
         <span class="text-gray-300">&middot;</span>
@@ -51,23 +54,27 @@
 
       <!-- Body content (restricted markdown: no images or raw HTML, links gated by the external-URL policy) -->
       @if (mention.content) {
-        <div class="mention-body mb-3">
-          <lfx-expandable-text [maxHeight]="bodyMaxHeight">
-            <lfx-markdown-renderer [content]="mention.content" [breaks]="true" [restricted]="true" data-testid="mention-card-body" />
-          </lfx-expandable-text>
+        <div #bodyEl class="mention-body line-clamp-3 mb-3 break-words" [class.mention-body--truncated]="truncated()">
+          <lfx-markdown-renderer [content]="mention.content" [breaks]="true" [restricted]="true" data-testid="mention-card-body" />
         </div>
+      }
+
+      <!-- Decorative: the stretched link handles the click and stays the sole tab stop to the original URL. -->
+      @if (truncated() && hasOriginalUrl()) {
+        <span class="-mt-2 mb-3 text-sm font-medium text-blue-600" data-testid="mention-card-read-more">
+          Read full post on {{ platformConfig().label }}
+          <i class="fa-light fa-arrow-up-right-from-square ml-1 text-xs" aria-hidden="true"></i>
+        </span>
       }
 
       <!-- Analysis -->
       @if (mention.analysis) {
         <div class="mb-3">
-          <lfx-expandable-text [maxHeight]="analysisMaxHeight">
-            <p class="text-xs text-gray-700">{{ mention.analysis }}</p>
-          </lfx-expandable-text>
+          <p class="line-clamp-2 text-xs text-gray-700">{{ mention.analysis }}</p>
         </div>
       }
 
-      <!-- Pills row (mt-auto keeps it flush with the card bottom, aligned with the pinned open-original icon) -->
+      <!-- Pills row (mt-auto keeps it flush with the card bottom) -->
       <div class="mt-auto flex flex-wrap items-center gap-2">
         <lfx-tag [value]="sentimentConfig().label" [icon]="sentimentConfig().icon" [severity]="sentimentConfig().severity" [rounded]="true" />
         <lfx-tag [value]="relevanceConfig().label + ' Relevance'" [severity]="relevanceConfig().severity" [rounded]="true" />
@@ -130,17 +137,10 @@
             [alt]="mention.title || 'Mention image'"
             loading="lazy"
             (error)="onImageError(imageUrl)"
-            class="mb-8 max-h-36 w-48 rounded-lg object-cover"
+            class="max-h-36 w-48 rounded-lg object-cover"
             data-testid="mention-card-image" />
         }
       }
     </div>
-
-    <!-- Decorative open-original affordance: pointer-events-none + aria-hidden keep the stretched .card-link as the sole tab stop. -->
-    @if (mention.originalUrl | validExternalUrl) {
-      <span class="icon-btn pointer-events-none absolute right-5 bottom-5 z-10" aria-hidden="true" data-testid="mention-card-open-original">
-        <i class="fa-light fa-arrow-up-right-from-square text-base"></i>
-      </span>
-    }
   </div>
 }

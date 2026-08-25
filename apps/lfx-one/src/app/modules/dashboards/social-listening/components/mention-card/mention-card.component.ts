@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
-import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
+import { afterEveryRender, Component, computed, DestroyRef, ElementRef, inject, input, output, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
@@ -13,17 +12,13 @@ import {
   MENTION_RELEVANCE_CONFIG,
   MENTION_SENTIMENT_CONFIG,
 } from '@lfx-one/shared/constants';
-import { capitalizeFirst, stripMarkdown, timeAgo } from '@lfx-one/shared/utils';
+import { capitalizeFirst, normalizeToUrl, stripMarkdown, timeAgo } from '@lfx-one/shared/utils';
 import { FormatTagPipe } from '@pipes/format-tag.pipe';
 import { ValidExternalUrlPipe } from '@pipes/valid-external-url.pipe';
 import { TooltipModule } from 'primeng/tooltip';
 
 import type { Mention, MentionPlatformConfigEntry, MentionRelevanceConfigEntry, MentionSentimentConfigEntry } from '@lfx-one/shared/interfaces';
 
-/** Collapsed mention body: ~3 lines of text-sm (PCC used max-h-[4.5rem]). */
-const BODY_COLLAPSED_MAX_HEIGHT_PX = 72;
-/** Collapsed analysis line: ~2 lines of text-xs. */
-const ANALYSIS_COLLAPSED_MAX_HEIGHT_PX = 40;
 /** How long the copy-link button shows its transient "Copied!" state. */
 const COPIED_STATE_MS = 1000;
 
@@ -33,7 +28,7 @@ const COPIED_STATE_MS = 1000;
  */
 @Component({
   selector: 'lfx-mention-card',
-  imports: [ExpandableTextComponent, MarkdownRendererComponent, TagComponent, FormatTagPipe, ValidExternalUrlPipe, TooltipModule],
+  imports: [MarkdownRendererComponent, TagComponent, FormatTagPipe, ValidExternalUrlPipe, TooltipModule],
   templateUrl: './mention-card.component.html',
   styleUrl: './mention-card.component.scss',
 })
@@ -54,7 +49,10 @@ export class MentionCardComponent {
   public readonly copied = signal(false);
   /** Keyed by URL, not a boolean: row components are reused across pages, so a flag would hide the next mention's thumbnail. */
   public readonly failedImageUrl = signal<string | null>(null);
+  /** Drives the fade + "Read full post" affordance; measured against the clamped body after each render. */
+  public readonly truncated = signal(false);
   private copyTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  private readonly bodyEl = viewChild<ElementRef<HTMLElement>>('bodyEl');
 
   public readonly platformConfig = computed<MentionPlatformConfigEntry>(
     () => MENTION_PLATFORM_CONFIG[this.mention().platform] ?? MENTION_PLATFORM_CONFIG.other
@@ -73,14 +71,25 @@ export class MentionCardComponent {
     return subreddit ? `https://www.reddit.com/r/${encodeURIComponent(subreddit)}` : '';
   });
   public readonly hasTitle = computed(() => !!this.mention().title);
+  /** Same policy as the card's stretched link (`validExternalUrl`), so affordances never outlive a navigable URL. */
+  public readonly hasOriginalUrl = computed(() => !!normalizeToUrl(this.mention().originalUrl));
   public readonly timeAgo: Signal<string> = this.initTimeAgo();
   /** Pre-filled share message (subject `{Keyword} - Worth sharing`) for the forward-by-email anchor. */
   public readonly forwardEmailHref: Signal<string> = this.initForwardEmailHref();
 
-  protected readonly bodyMaxHeight = BODY_COLLAPSED_MAX_HEIGHT_PX;
-  protected readonly analysisMaxHeight = ANALYSIS_COLLAPSED_MAX_HEIGHT_PX;
-
   public constructor() {
+    // Browser-only hook: clientHeight/scrollHeight compare tells whether line-clamp actually cut content.
+    // Set-only-on-change converges in one extra render pass, so resize/font-swap self-correct without a loop.
+    afterEveryRender({
+      earlyRead: () => {
+        const el = this.bodyEl()?.nativeElement;
+        return !!el && el.scrollHeight > el.clientHeight + 1;
+      },
+      write: (truncated) => {
+        if (truncated !== this.truncated()) this.truncated.set(truncated);
+      },
+    });
+
     this.destroyRef.onDestroy(() => {
       if (this.copyTimeoutId) {
         clearTimeout(this.copyTimeoutId);
