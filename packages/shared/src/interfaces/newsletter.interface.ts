@@ -147,13 +147,16 @@ export interface NewsletterPublication {
   // Upstream emits these as `omitempty` pointers, so a value that is not set
   // arrives with the key ABSENT — undefined at runtime, never null. Declaring
   // them required would be a type lie that only bites once something
-  // dereferences them.
-  template_set_id?: string | null;
-  view_online_base?: string | null;
+  // dereferences them. Plain optional (no `| null`), matching how every other
+  // response-side omitempty pointer in this file is typed (e.g. Newsletter's
+  // sent_at, group_id, scheduled_at) — `| null` is reserved for the tri-state
+  // update request fields below, where a client-sent `null` is meaningful.
+  template_set_id?: string;
+  view_online_base?: string;
   /** Which composer this publication's editions open in. Editions inherit it. */
   editor_type: string;
   /** Optional per-publication From address the editions inherit. */
-  sender_email?: string | null;
+  sender_email?: string;
   created_by: string;
   version: number;
   created_at: string;
@@ -164,11 +167,17 @@ export interface CreatePublicationRequest {
   slug: string;
   name: string;
   wrapper_content?: unknown;
-  template_set_id?: string | null;
+  // Plain optional, not tri-state: upstream types these as `*string` with
+  // plain `omitempty` (not `json.RawMessage`), so a client-sent `null` and an
+  // omitted key both unmarshal to the same nil pointer — there is no "clear"
+  // signal to distinguish on a brand-new resource. `| null` is reserved for
+  // the update requests below, where the raw-message tri-state makes it
+  // meaningful.
+  template_set_id?: string;
   /** Omitted defaults to the Classic composer upstream. */
   editor_type?: string;
-  sender_email?: string | null;
-  view_online_base?: string | null;
+  sender_email?: string;
+  view_online_base?: string;
 }
 
 export interface UpdatePublicationRequest {
@@ -216,7 +225,7 @@ export interface Newsletter {
    * Two meanings depending on `status`: while `draft`, the author's saved
    * intent — saving it does not by itself contact the send provider. Once
    * `status='scheduled'`, the committed release time armed at the provider.
-   * Null when no schedule has ever been set. Survives cancel-schedule (which
+   * Absent (undefined) when no schedule has ever been set. Survives cancel-schedule (which
    * reverts to `draft` but retains this value) so re-arming doesn't require
    * re-entering the time.
    */
@@ -273,6 +282,17 @@ export interface UpdateNewsletterRequest {
    * schedule must always send the current value back.
    */
   scheduled_at?: string | null;
+  /**
+   * Deliberately NOT full-replace, unlike every other field above — mirrors
+   * UpdatePublicationRequest's tri-state fields: omit the key to preserve the
+   * edition's current publication link, send `null` (or `""`) to unfile it,
+   * send a uuid to move it to that publication. Callers that only want to
+   * touch subject/body/etc. must omit this key entirely rather than sending
+   * back the current value, since sending it back is indistinguishable from
+   * "move to this same publication" but omitting it is the actual "leave
+   * alone" signal upstream reads.
+   */
+  publication_id?: string | null;
 }
 
 export interface NewsletterListItem extends Newsletter {
