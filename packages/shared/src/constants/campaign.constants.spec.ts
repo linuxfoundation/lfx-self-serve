@@ -3,18 +3,68 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { normalizeGeoTargets } from './campaign.constants';
+import { META_OBJECTIVE_LABELS, META_OBJECTIVE_PARAMS, META_SELECTABLE_OBJECTIVES, campaignToggleAction, normalizeGeoTargets } from './campaign.constants';
 
-/**
- * `normalizeGeoTargets` is the single owner of Meta geo normalisation, shared by the campaign
- * form's chip add path, its brief-seed path, and the server's `validateGeoTargets`. It exists
- * because those three used to disagree: the add path uppercased and de-duped, the seed path did
- * neither, and the server uppercased WITHOUT de-duping — so a brief carrying `us` plus a typed
- * `US` produced two chips and shipped `["US","US"]` to Meta.
- *
- * De-duping is asserted here rather than in either consumer because it is the property that has
- * to hold identically on both layers; a consumer-only test would let one side regress silently.
- */
+describe('campaignToggleAction', () => {
+  it('offers pause for the statuses that are running upstream', () => {
+    expect(campaignToggleAction('created', 'google-ads')).toBe('pause');
+    expect(campaignToggleAction('active', 'google-ads')).toBe('pause');
+  });
+
+  /** Spending but refused a resume with 409 — pauseable, never resumable. */
+  it('keeps created_degraded pauseable', () => {
+    expect(campaignToggleAction('created_degraded', 'google-ads')).toBe('pause');
+  });
+
+  it('offers resume for a paused campaign', () => {
+    expect(campaignToggleAction('paused', 'google-ads')).toBe('resume');
+  });
+
+  it('compares status case-insensitively', () => {
+    expect(campaignToggleAction('CREATED', 'google-ads')).toBe('pause');
+    expect(campaignToggleAction('Paused', 'google-ads')).toBe('resume');
+  });
+
+  /**
+   * `enabled` is a Google Ads platform word, not a campaign-service status — it appears nowhere in
+   * `internal/domain/model`. Mapping it onto Pause would be the fail-OPEN direction.
+   */
+  it('treats a status the service never writes as unknown', () => {
+    expect(campaignToggleAction('enabled', 'google-ads')).toBe('unavailable');
+  });
+
+  it('refuses a platform this app does not offer, at any status', () => {
+    expect(campaignToggleAction('created', 'microsoft-ads')).toBe('unavailable');
+    expect(campaignToggleAction('paused', 'twitter-ads')).toBe('unavailable');
+  });
+
+  /** Optional so the status-only question stays askable; absence is not "unsupported". */
+  it('does not read an absent platform as unsupported', () => {
+    expect(campaignToggleAction('created')).toBe('pause');
+  });
+
+  /**
+   * The wire is not typed at runtime. `CampaignIndexDoc.status` is declared `string`, but nothing
+   * between the index and this call validates it, so a missing or non-string status arrives
+   * intact. `.toLowerCase()` on it threw a TypeError — and because the call is inside a computed
+   * that maps EVERY row, one malformed document blanked the entire campaigns section rather than
+   * one row, re-throwing on each change-detection pass.
+   *
+   * The binding assertion is that each of these RETURNS `unavailable`. Asserting merely that the
+   * call does not throw would pass on a guard that returned `pause`, which is the fail-open answer
+   * this function exists to avoid.
+   */
+  it.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['a number', 123],
+    ['an object', {}],
+    ['an empty string', ''],
+  ])('falls closed to unavailable for %s rather than throwing', (_label, status) => {
+    expect(campaignToggleAction(status as unknown as string, 'google-ads')).toBe('unavailable');
+  });
+});
+
 describe('normalizeGeoTargets', () => {
   it('uppercases lowercase codes', () => {
     expect(normalizeGeoTargets(['us', 'jp'])).toEqual(['US', 'JP']);
@@ -90,5 +140,77 @@ describe('normalizeGeoTargets', () => {
     const input = ['us', 'US'];
     normalizeGeoTargets(input);
     expect(input).toEqual(['us', 'US']);
+  });
+});
+
+/**
+ * `leads` is hidden from the picker while LFXV2-2665 builds instant-form support, but it is NOT
+ * removed from the type, the params map or the labels map. The two halves are asserted separately
+ * because they can regress independently: restoring the option is one edit, and deleting the
+ * fallback that keeps old briefs dispatching is another.
+ */
+describe('META_SELECTABLE_OBJECTIVES', () => {
+  it('omits leads', () => {
+    expect(META_SELECTABLE_OBJECTIVES).not.toContain('leads');
+  });
+
+  /** Asserted as a literal list, not derived: a test built from the constant would agree with any value it took. */
+  it('offers exactly the four supported objectives, in render order', () => {
+    expect(META_SELECTABLE_OBJECTIVES).toEqual(['awareness', 'traffic', 'engagement', 'conversions']);
+  });
+
+  it('offers only objectives the params map can dispatch', () => {
+    for (const objective of META_SELECTABLE_OBJECTIVES) {
+      expect(META_OBJECTIVE_PARAMS[objective]).toBeDefined();
+    }
+  });
+
+  /**
+   * Partitions the objective union: every `MetaObjective` is either selectable or deliberately
+   * hidden, never silently neither. The compile-time guard beside the constant is what enforces
+   * this — a new objective that reaches neither list fails `tsc`, naming the omitted member —
+   * and this pins the runtime half so the partition cannot drift unnoticed.
+   */
+  it('together with the hidden objectives, covers every objective the params map defines', () => {
+    const hidden = ['leads'];
+    const covered = [...META_SELECTABLE_OBJECTIVES, ...hidden].sort();
+
+    expect(covered).toEqual(Object.keys(META_OBJECTIVE_PARAMS).sort());
+  });
+});
+
+/**
+ * The restore path. A brief or draft persisted before `leads` was hidden still carries it, and it
+ * must keep dispatching as the WEBSITE-TRAFFIC campaign it has always run — not error, and not
+ * silently become a real OUTCOME_LEADS campaign, which would fail at the ad set and orphan a
+ * billable campaign.
+ */
+describe('persisted leads objective', () => {
+  it('still resolves through the params map', () => {
+    expect(META_OBJECTIVE_PARAMS['leads']).toBeDefined();
+  });
+
+  /** Wire values asserted literally: reading the constant back could never fail. */
+  it('dispatches as a website-traffic campaign with no promoted object', () => {
+    expect(META_OBJECTIVE_PARAMS['leads']).toEqual({
+      campaignObjective: 'OUTCOME_TRAFFIC',
+      optimizationGoal: 'LINK_CLICKS',
+      promotedObjectType: 'none',
+    });
+  });
+
+  /**
+   * The campaign name and ad-set name in `meta-ads.service.ts` index the labels map with whatever
+   * objective the request carries. A hidden objective with no label would put the string
+   * `undefined` into the name of a campaign Meta bills against.
+   */
+  it('still resolves to a display label', () => {
+    expect(META_OBJECTIVE_LABELS['leads']).toBe('Leads');
+  });
+
+  it('has a label for every objective the params map can dispatch', () => {
+    for (const objective of Object.keys(META_OBJECTIVE_PARAMS) as (keyof typeof META_OBJECTIVE_PARAMS)[]) {
+      expect(META_OBJECTIVE_LABELS[objective]).toBeTruthy();
+    }
   });
 });

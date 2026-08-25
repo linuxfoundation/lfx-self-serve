@@ -30,7 +30,6 @@ import {
   PastOccurrenceSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
-  Project,
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateMeetingAttachmentRequest,
@@ -40,7 +39,6 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildRecurrenceNeverEndDate,
-  computeIsFoundation,
   getPastMeetingTranscriptUrl,
   mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary,
@@ -50,6 +48,7 @@ import {
 import { Request } from 'express';
 
 import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
@@ -227,16 +226,13 @@ export class MeetingService {
     // Project enrichment runs in parallel with the committee-name lookup (both depend only on
     // the meeting payload), so it adds no sequential latency.
     const [project, committeeNameMap] = await Promise.all([
-      includeProject ? this.fetchMeetingProject(req, meeting) : Promise.resolve(null),
+      includeProject
+        ? fetchEntityProject(req, this.projectService, meeting.project_uid, { operation: 'get_meeting_by_id', meeting_id: meeting.id })
+        : Promise.resolve(null),
       committees ? this.getCommitteeNameMap(req, [meeting]) : Promise.resolve(null),
     ]);
     if (project) {
-      meeting.project_slug = project.slug;
-      meeting.project_name = project.name;
-      meeting.is_foundation = computeIsFoundation(project);
-      // parent_project_uid is deliberately NOT mapped here: nothing in the detail/edit flow
-      // consumes it, and it discloses hierarchy the caller may hold no relation to. List
-      // payloads still carry it via enrichWithProjectData for the dashboard filters.
+      Object.assign(meeting, toEntityProjectFields(project));
     }
 
     if (committees && committeeNameMap) {
@@ -1796,36 +1792,6 @@ export class MeetingService {
 
   public async getMeetingProjectName<T extends Meeting>(req: Request, meetings: T[]): Promise<T[]> {
     return this.projectService.enrichWithProjectData(req, meetings) as Promise<T[]>;
-  }
-
-  /**
-   * Fetches the meeting's project for detail enrichment. Returns null on failure so the meeting
-   * still loads — the frontend falls back to resolving project context from `project_uid`.
-   *
-   * Uses the query-service metadata lookup (getProjectsByIds) rather than getProjectById: the
-   * /projects/:uid endpoint is relation-gated, and a meeting writer may lack a project-level
-   * viewer relation (the committee-writer case writerGuard handles) — the direct fetch would
-   * 403 for exactly those users, and the client fallback hits the same gated endpoint, leaving
-   * the edit page in a stale context. The query-service path needs no project relation.
-   * Meeting access was already checked by the caller, and the exposed fields
-   * (slug/name/is_foundation) are non-sensitive.
-   */
-  private async fetchMeetingProject(req: Request, meeting: Meeting): Promise<Project | null> {
-    if (!meeting.project_uid) {
-      return null;
-    }
-
-    try {
-      const projects = await this.projectService.getProjectsByIds(req, [meeting.project_uid]);
-      return projects.get(meeting.project_uid) ?? null;
-    } catch (error) {
-      logger.warning(req, 'get_meeting_by_id', 'Failed to fetch project for meeting enrichment; continuing without project fields', {
-        meeting_id: meeting.id,
-        project_uid: meeting.project_uid,
-        err: error,
-      });
-      return null;
-    }
   }
 
   /**

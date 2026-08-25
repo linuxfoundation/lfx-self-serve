@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA, PD_HEALTH_TAG, PD_TIME_RANGE_TYPE, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA, PD_HEALTH_TAG, PD_TIME_RANGE_MONTHS, PD_TIME_RANGE_TYPE, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   OrgLensCardDetailCell,
   OrgLensCardDetailRow,
@@ -20,7 +20,7 @@ import type {
   OrgLensProjectTrendSeries,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
-import { buildInsightsUrl, classifyHealthScore } from '@lfx-one/shared/utils';
+import { buildInsightsUrl, classifyHealthScore, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { escapeSqlLikePattern } from '../helpers/validation.helper';
@@ -34,7 +34,8 @@ interface HeroRow {
   FOUNDATION_NAME: string | null;
   IS_LF_PROJECT: boolean | null;
   DESCRIPTION: string | null;
-  HEALTH_OVERALL_SCORE: number | null;
+  HEALTH_OVERALL_SCORE_V2: number | null;
+  HEALTH_SCORE_CATEGORY_V2: string | null;
   SOFTWARE_VALUE: number | null;
   FIRST_COMMIT_TS: Date | string | null;
 }
@@ -217,10 +218,11 @@ interface LeaderboardRow {
  */
 export class OrgLensProjectDetailService {
   // Number of individually-named orgs in the stacked trend; every remaining org is folded into a
-  // single "All others" band server-side so the chart still reflects the FULL project-wide
-  // influence distribution (a raw top-N truncation would drop the tail and inflate the leaders'
-  // normalized shares on projects with many orgs).
+  // single "All others" band in SQL so the chart still reflects the FULL project-wide influence
+  // distribution (a raw top-N truncation would drop the tail and inflate the leaders' normalized
+  // shares on projects with many orgs).
   private static readonly trendNamedOrgCap = 10;
+  private static readonly trendOthersLabel = 'All others';
 
   // Sparklines are emitted as a dense, contiguous, current-month-anchored monthly array; the
   // shipped component maps points to a fixed 36-month label axis by position and slices per range.
@@ -498,7 +500,7 @@ export class OrgLensProjectDetailService {
     // Gate on the (org, slug) catalog row like every other block, so project-wide trend is not
     // served for a project the org has no activity on (and the 404 stays consistent across blocks).
     // `all`: read the adaptive lifetime-bucketed trend + its shared bucket axis (periods[], D7/D9).
-    // 1y/2y: read the trailing recent-monthly trend; the client slices to 12/24 and derives labels.
+    // 1y/2y: read the trailing recent-monthly trend already range-filtered and top-N folded in SQL.
     let block: OrgLensTrendBlock;
     if (range === 'all') {
       const [heroRow, trendRows, axis] = await Promise.all([this.fetchHeroRow(orgUid, slug), this.fetchTrendLifetime(slug), this.fetchLifetimeAxis(slug)]);
@@ -513,7 +515,7 @@ export class OrgLensProjectDetailService {
         periods: axis.map((bucket) => bucket.label),
       };
     } else {
-      const [heroRow, trendRows] = await Promise.all([this.fetchHeroRow(orgUid, slug), this.fetchTrend(slug)]);
+      const [heroRow, trendRows] = await Promise.all([this.fetchHeroRow(orgUid, slug), this.fetchTrend(slug, PD_TIME_RANGE_MONTHS[range])]);
       if (!heroRow) return null;
       block = { trend: this.buildTrendSeries(this.buildTrendByAccount(trendRows)) };
     }
@@ -740,7 +742,8 @@ export class OrgLensProjectDetailService {
     const result = await this.snowflakeService.execute<HeroRow>(
       `
         SELECT PROJECT_NAME, PROJECT_SLUG, PROJECT_LOGO_URL, FOUNDATION_NAME, IS_LF_PROJECT,
-               DESCRIPTION, HEALTH_OVERALL_SCORE, SOFTWARE_VALUE, FIRST_COMMIT_TS
+               DESCRIPTION, HEALTH_OVERALL_SCORE_V2, HEALTH_SCORE_CATEGORY_V2,
+               SOFTWARE_VALUE, FIRST_COMMIT_TS
         FROM ${this.projectsTable()}
         WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
         LIMIT 1
@@ -829,29 +832,65 @@ export class OrgLensProjectDetailService {
     return result.rows;
   }
 
-  private async fetchTrend(slug: string): Promise<TrendRow[]> {
-    const result = await this.snowflakeService.execute<TrendRow>(
-      `
-        SELECT ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, SPAN_MONTH, COMBINED_INFLUENCE_SCORE
-        FROM ${this.trendTable()}
-        WHERE PROJECT_SLUG = ?
-        ORDER BY ACCOUNT_ID, SPAN_MONTH ASC
-      `,
-      [slug]
-    );
-    return result.rows;
+  private async fetchTrend(slug: string, windowMonths: number): Promise<TrendRow[]> {
+    return this.fetchFoldedTrend<TrendRow>(slug, this.trendTable(), 'SPAN_MONTH', windowMonths);
   }
 
   /** All-time trend: per-(account, bucket) combined scores over the project's shared lifetime bucket axis. */
   private async fetchTrendLifetime(slug: string): Promise<TrendLifetimeRow[]> {
-    const result = await this.snowflakeService.execute<TrendLifetimeRow>(
+    return this.fetchFoldedTrend<TrendLifetimeRow>(slug, this.trendLifetimeTable(), 'BUCKET_INDEX');
+  }
+
+  private async fetchFoldedTrend<T>(slug: string, table: string, periodColumn: 'SPAN_MONTH' | 'BUCKET_INDEX', windowMonths?: number): Promise<T[]> {
+    const cap = OrgLensProjectDetailService.trendNamedOrgCap;
+    const others = OrgLensProjectDetailService.trendOthersLabel;
+    const windowClause = windowMonths === undefined ? '' : `QUALIFY ${periodColumn} >= DATEADD('month', 1 - ?, MAX(${periodColumn}) OVER ())`;
+    const binds: (string | number)[] = [slug];
+    if (windowMonths !== undefined) binds.push(windowMonths);
+    binds.push(cap, others, cap);
+
+    const result = await this.snowflakeService.execute<T>(
       `
-        SELECT ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, BUCKET_INDEX, COMBINED_INFLUENCE_SCORE
-        FROM ${this.trendLifetimeTable()}
-        WHERE PROJECT_SLUG = ?
-        ORDER BY ACCOUNT_ID, BUCKET_INDEX ASC
+        WITH windowed AS (
+          SELECT ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, ${periodColumn}, COMBINED_INFLUENCE_SCORE
+          FROM ${table}
+          WHERE PROJECT_SLUG = ?
+            AND ACCOUNT_ID IS NOT NULL
+            AND ACCOUNT_ID <> ''
+          ${windowClause}
+        ),
+        ranked_orgs AS (
+          SELECT
+            ACCOUNT_ID,
+            ROW_NUMBER() OVER (
+              ORDER BY MAX_BY(COMBINED_INFLUENCE_SCORE, ${periodColumn}) DESC NULLS LAST,
+                       COALESCE(MAX(ORG_NAME), '') ASC,
+                       ACCOUNT_ID ASC
+            ) AS org_rank
+          FROM windowed
+          GROUP BY ACCOUNT_ID
+        ),
+        ranked AS (
+          SELECT w.ACCOUNT_ID, w.ORG_NAME, w.ORG_LOGO_URL, w.${periodColumn}, w.COMBINED_INFLUENCE_SCORE, r.org_rank
+          FROM windowed w
+          JOIN ranked_orgs r ON r.ACCOUNT_ID = w.ACCOUNT_ID
+        )
+        SELECT ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, ${periodColumn}, COMBINED_INFLUENCE_SCORE
+        FROM ranked
+        WHERE org_rank <= ?
+        UNION ALL
+        SELECT
+          '' AS ACCOUNT_ID,
+          ? AS ORG_NAME,
+          '' AS ORG_LOGO_URL,
+          ${periodColumn},
+          SUM(COMBINED_INFLUENCE_SCORE) AS COMBINED_INFLUENCE_SCORE
+        FROM ranked
+        WHERE org_rank > ?
+        GROUP BY ${periodColumn}
+        ORDER BY ACCOUNT_ID, ${periodColumn} ASC
       `,
-      [slug]
+      binds
     );
     return result.rows;
   }
@@ -1316,18 +1355,36 @@ export class OrgLensProjectDetailService {
     return labels.length > 0 ? [...new Set(labels)].join(', ') : 'LFX Insights';
   }
 
-  /** Group flat trend rows into per-org series (combined oldest → newest). */
+  /** Group flat trend rows into per-org series over the shared month axis (oldest → newest). */
   private buildTrendByAccount(rows: TrendRow[]): Map<string, TrendSeries> {
-    const byAccount = new Map<string, TrendSeries>();
+    const scoresByAccount = new Map<string, { orgName: string; orgLogoUrl: string; byMonth: Map<string, number> }>();
+    const months = new Set<string>();
     for (const row of rows) {
-      const accountId = row.ACCOUNT_ID;
-      if (!accountId) continue;
-      let series = byAccount.get(accountId);
-      if (!series) {
-        series = { accountId, orgName: row.ORG_NAME ?? '', orgLogoUrl: row.ORG_LOGO_URL ?? '', combined: [] };
-        byAccount.set(accountId, series);
+      const ym = this.toYearMonth(row.SPAN_MONTH);
+      if (!ym) continue;
+      months.add(ym);
+      const key = this.trendSeriesKey(row.ACCOUNT_ID);
+      let entry = scoresByAccount.get(key);
+      if (!entry) {
+        entry = {
+          orgName: key === '' ? OrgLensProjectDetailService.trendOthersLabel : (row.ORG_NAME ?? ''),
+          orgLogoUrl: row.ORG_LOGO_URL ?? '',
+          byMonth: new Map(),
+        };
+        scoresByAccount.set(key, entry);
       }
-      series.combined.push(this.round1(this.num(row.COMBINED_INFLUENCE_SCORE)));
+      entry.byMonth.set(ym, this.round1(this.num(row.COMBINED_INFLUENCE_SCORE)));
+    }
+
+    const axis = [...months].sort();
+    const byAccount = new Map<string, TrendSeries>();
+    for (const [accountId, entry] of scoresByAccount) {
+      byAccount.set(accountId, {
+        accountId,
+        orgName: entry.orgName,
+        orgLogoUrl: entry.orgLogoUrl,
+        combined: axis.map((ym) => entry.byMonth.get(ym) ?? 0),
+      });
     }
     return byAccount;
   }
@@ -1343,12 +1400,16 @@ export class OrgLensProjectDetailService {
   private buildTrendLifetimeByAccount(rows: TrendLifetimeRow[], axis: number[]): Map<string, TrendSeries> {
     const scoresByAccount = new Map<string, { orgName: string; orgLogoUrl: string; byBucket: Map<number, number> }>();
     for (const row of rows) {
-      const accountId = row.ACCOUNT_ID;
-      if (!accountId || row.BUCKET_INDEX === null || row.BUCKET_INDEX === undefined) continue;
-      let entry = scoresByAccount.get(accountId);
+      if (row.BUCKET_INDEX === null || row.BUCKET_INDEX === undefined) continue;
+      const key = this.trendSeriesKey(row.ACCOUNT_ID);
+      let entry = scoresByAccount.get(key);
       if (!entry) {
-        entry = { orgName: row.ORG_NAME ?? '', orgLogoUrl: row.ORG_LOGO_URL ?? '', byBucket: new Map() };
-        scoresByAccount.set(accountId, entry);
+        entry = {
+          orgName: key === '' ? OrgLensProjectDetailService.trendOthersLabel : (row.ORG_NAME ?? ''),
+          orgLogoUrl: row.ORG_LOGO_URL ?? '',
+          byBucket: new Map(),
+        };
+        scoresByAccount.set(key, entry);
       }
       entry.byBucket.set(this.num(row.BUCKET_INDEX), this.round1(this.num(row.COMBINED_INFLUENCE_SCORE)));
     }
@@ -1365,31 +1426,26 @@ export class OrgLensProjectDetailService {
     return byAccount;
   }
 
-  /**
-   * Wire trend payload: the top-N orgs by most-recent-month combined score as individual series,
-   * plus a single "All others" series that sums EVERY remaining org month-by-month. Folding the
-   * complete tail (rather than truncating it) keeps the payload bounded while preserving the true
-   * project-wide distribution the client normalizes to 100%.
-   */
   private buildTrendSeries(byAccount: Map<string, TrendSeries>): OrgLensProjectTrendSeries[] {
     const latest = (series: TrendSeries): number => series.combined[series.combined.length - 1] ?? 0;
-    const sorted = [...byAccount.values()].sort((a, b) => latest(b) - latest(a));
-    const named = sorted.slice(0, OrgLensProjectDetailService.trendNamedOrgCap);
-    const rest = sorted.slice(OrgLensProjectDetailService.trendNamedOrgCap);
-
-    const series: OrgLensProjectTrendSeries[] = named.map((s) => ({
-      accountId: s.accountId,
-      orgName: s.orgName,
-      orgLogoUrl: s.orgLogoUrl,
-      combined: s.combined,
-    }));
-
-    if (rest.length > 0) {
-      const len = rest.reduce((max, s) => Math.max(max, s.combined.length), 0);
-      const combined = Array.from({ length: len }, (_, i) => this.round1(rest.reduce((sum, s) => sum + (s.combined[i] ?? 0), 0)));
-      series.push({ accountId: '', orgName: 'All others', orgLogoUrl: '', combined });
+    const named: TrendSeries[] = [];
+    let others: TrendSeries | undefined;
+    for (const series of byAccount.values()) {
+      if (series.accountId === '') {
+        others = series;
+      } else {
+        named.push(series);
+      }
     }
-
+    named.sort((a, b) => latest(b) - latest(a) || a.orgName.localeCompare(b.orgName) || a.accountId.localeCompare(b.accountId));
+    const toWire = (series: TrendSeries): OrgLensProjectTrendSeries => ({
+      accountId: series.accountId,
+      orgName: series.orgName,
+      orgLogoUrl: series.orgLogoUrl,
+      combined: series.combined,
+    });
+    const series = named.map(toWire);
+    if (others !== undefined) series.push(toWire(others));
     return series;
   }
 
@@ -1467,12 +1523,15 @@ export class OrgLensProjectDetailService {
       lfxInsightsUrl: buildInsightsUrl(`/project/${slug}`),
       firstCommit: toIsoDate(row.FIRST_COMMIT_TS),
       softwareValueUsd: row.SOFTWARE_VALUE ?? null,
-      health: this.mapHealth(row.HEALTH_OVERALL_SCORE),
+      health: this.mapHealth(row),
       foundationLabel,
     };
   }
 
-  private mapHealth(score: number | null): OrgLensProjectHealth | null {
+  private mapHealth(row: Pick<HeroRow, 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>): OrgLensProjectHealth | null {
+    const v2 = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
+    if (v2) return v2;
+    const score = row.HEALTH_OVERALL_SCORE_V2;
     if (score === null || score === undefined) return null;
     return classifyHealthScore(score);
   }
@@ -1702,6 +1761,10 @@ export class OrgLensProjectDetailService {
 
   private round1(value: number): number {
     return Math.round(value * 10) / 10;
+  }
+
+  private trendSeriesKey(accountId: string | null): string {
+    return accountId || '';
   }
 
   private plural(n: number, singular: string, pluralForm: string): string {

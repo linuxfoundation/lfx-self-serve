@@ -15,7 +15,7 @@ import {
   ORG_PROJECTS_SEARCH_PRELOAD_LIMIT,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
-import { classifyHealthScore } from '@lfx-one/shared/utils';
+import { classifyHealthScore, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 import type {
   HealthScore,
   InfluenceBand,
@@ -406,7 +406,8 @@ export class OrgLensProjectsService {
         FOUNDATION_SLUG,
         FOUNDATION_NAME,
         FOUNDATION_LOGO_URL,
-        HEALTH_OVERALL_SCORE,
+        HEALTH_OVERALL_SCORE_V2,
+        HEALTH_SCORE_CATEGORY_V2,
         HEALTH_CONTRIBUTOR_PERCENTAGE,
         HEALTH_POPULARITY_PERCENTAGE,
         HEALTH_DEVELOPMENT_PERCENTAGE,
@@ -418,7 +419,7 @@ export class OrgLensProjectsService {
     // mapProject fills unselected org-relative metrics with placeholders and maps health from the columns above.
     // Split on computed health: present → 'health-only' (Health renders); NULL → 'unavailable' (all-Unavailable row).
     return result.rows.map((row) => {
-      const hasHealthScore = row.HEALTH_OVERALL_SCORE !== null && row.HEALTH_OVERALL_SCORE !== undefined;
+      const hasHealthScore = this.hasHealthScore(row);
       // Emit both discriminators: metricsState for the new frontend, noActivityYet so a still-running pre-close-out
       // frontend keeps treating these as unavailable during a rolling deploy.
       return {
@@ -453,7 +454,8 @@ export class OrgLensProjectsService {
         TREND_DIRECTION,
         COMBINED_SCORE_SERIES,
         DBT_RUN_AT,
-        HEALTH_OVERALL_SCORE,
+        HEALTH_OVERALL_SCORE_V2,
+        HEALTH_SCORE_CATEGORY_V2,
         HEALTH_CONTRIBUTOR_PERCENTAGE,
         HEALTH_POPULARITY_PERCENTAGE,
         HEALTH_DEVELOPMENT_PERCENTAGE,
@@ -490,14 +492,13 @@ export class OrgLensProjectsService {
 
   private mapProject(row: OrgLensProjectRow, peopleRows: OrgLensProjectPersonRow[]): OrgLensProject {
     const people = peopleRows.filter((person) => person.PROJECT_SLUG === row.PROJECT_SLUG);
-    const healthScore = row.HEALTH_OVERALL_SCORE;
-    const hasHealthScore = healthScore !== null && healthScore !== undefined;
+    const hasHealthScore = this.hasHealthScore(row);
     return {
       slug: row.PROJECT_SLUG,
       name: row.PROJECT_NAME,
       logoUrl: row.PROJECT_LOGO_URL ?? '',
       foundation: this.mapFoundation(row),
-      health: hasHealthScore ? this.mapHealthScore(healthScore) : 'unavailable',
+      health: hasHealthScore ? this.mapHealthScore(row) : 'unavailable',
       // These 'silent'/'non-lf' fallbacks are only user-visible for real (activity) rows. For no-activity rows the
       // UI shows "Unavailable" and compareInfluenceAvailability sinks them past measured rows, so the fallback band
       // is never compared against a measured one — it only affects the (tied) ordering of two no-activity rows.
@@ -565,8 +566,14 @@ export class OrgLensProjectsService {
     return value === 'up' || value === 'down' || value === 'flat' ? value : 'flat';
   }
 
-  private mapHealthScore(score: number): Exclude<HealthScore, 'unavailable'> {
-    return classifyHealthScore(score);
+  private hasHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE_V2'>): boolean {
+    return row.HEALTH_OVERALL_SCORE_V2 != null;
+  }
+
+  private mapHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>): Exclude<HealthScore, 'unavailable'> {
+    // The trailing `?? 0` is an unreachable safety net since callers only invoke this when hasHealthScore()
+    // has confirmed HEALTH_OVERALL_SCORE_V2 is present.
+    return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) ?? classifyHealthScore(row.HEALTH_OVERALL_SCORE_V2 ?? 0);
   }
 
   private mapHealthMetrics(row: OrgLensProjectRow): OrgLensProject['healthMetrics'] {

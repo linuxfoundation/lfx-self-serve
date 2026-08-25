@@ -10,6 +10,7 @@ import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { CancelOnCommitteeRemoval, MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, of, throwError } from 'rxjs';
@@ -247,6 +248,68 @@ describe('MeetingManageComponent', () => {
       component.hydratedOwner.set({ ...HYDRATED });
       component.syncHydratedOwnerFromForm();
       expect(component.hydratedOwner()).toEqual(HYDRATED);
+    });
+  });
+
+  // Pins the stale-value fix: hiding the override control (private meeting, or no linked
+  // committees) must not let a previously-chosen cancel/keep value leak into the save payload.
+  describe('cancel_on_committee_removal payload gating', () => {
+    const createPayloadComponent = async () => {
+      getMeetingDetail.mockReturnValue(of(unenrichedMeeting()));
+      getProject.mockReturnValue(of(null));
+      const fixture = await createComponent();
+      return fixture.componentInstance as any;
+    };
+
+    it('preserves an explicit cancel/keep override on a public meeting with a linked committee', async () => {
+      const component = await createPayloadComponent();
+      component.form().patchValue({
+        visibility: MeetingVisibility.PUBLIC,
+        committees: [{ uid: 'committee-1' }],
+        cancel_on_committee_removal: CancelOnCommitteeRemoval.CANCEL,
+      });
+      expect(component.prepareMeetingData().cancel_on_committee_removal).toBe(CancelOnCommitteeRemoval.CANCEL);
+    });
+
+    it('forces inherit when the meeting is private, even if a stale override value remains in the form', async () => {
+      const component = await createPayloadComponent();
+      component.form().patchValue({
+        visibility: MeetingVisibility.PRIVATE,
+        committees: [{ uid: 'committee-1' }],
+        cancel_on_committee_removal: CancelOnCommitteeRemoval.CANCEL,
+      });
+      expect(component.prepareMeetingData().cancel_on_committee_removal).toBe(CancelOnCommitteeRemoval.INHERIT);
+    });
+
+    it('forces inherit when no committee is linked, even if a stale override value remains in the form', async () => {
+      const component = await createPayloadComponent();
+      component.form().patchValue({
+        visibility: MeetingVisibility.PUBLIC,
+        committees: [],
+        cancel_on_committee_removal: CancelOnCommitteeRemoval.KEEP,
+      });
+      expect(component.prepareMeetingData().cancel_on_committee_removal).toBe(CancelOnCommitteeRemoval.INHERIT);
+    });
+  });
+
+  // GH-1796: the mapper specs cover the helpers in isolation; this pins the save-boundary wiring so
+  // dropping the normalization from prepareMeetingData() fails here instead of silently regressing.
+  describe('committees voting-status normalization (GH-1796)', () => {
+    const createPayloadComponent = async () => {
+      getMeetingDetail.mockReturnValue(of(unenrichedMeeting()));
+      getProject.mockReturnValue(of(null));
+      const fixture = await createComponent();
+      return fixture.componentInstance as any;
+    };
+
+    it('resubmits legacy display statuses in the meeting API snake_case vocabulary', async () => {
+      const component = await createPayloadComponent();
+      component.form().patchValue({
+        committees: [{ uid: 'committee-1', name: 'TSC', allowed_voting_statuses: ['Voting Rep', 'Alternate Voting Rep', 'Observer'] }],
+      });
+      expect(component.prepareMeetingData().committees).toEqual([
+        { uid: 'committee-1', name: 'TSC', allowed_voting_statuses: ['voting_rep', 'alt_voting_rep', 'observer'] },
+      ]);
     });
   });
 });

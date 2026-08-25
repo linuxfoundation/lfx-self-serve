@@ -47,10 +47,10 @@ import type {
   OrgProjectsWorkspaceId,
   SortDirection,
 } from '@lfx-one/shared/interfaces';
-import { buildInsightsUrl, downloadCsv } from '@lfx-one/shared/utils';
+import { buildInsightsUrl, downloadCsv, localDateStamp } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogModule } from 'primeng/dialog';
-import { Popover, PopoverModule } from 'primeng/popover';
+import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, concat, distinctUntilChanged, finalize, firstValueFrom, map, of, skip, switchMap, tap } from 'rxjs';
@@ -103,8 +103,6 @@ export class OrgProjectsComponent {
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
   private readonly messageService = inject(MessageService);
-  /** Pending hide timer for the health popover (lets the cursor cross into the popover). */
-  private healthHideTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Configuration
   protected readonly pageSizeOptions = [...ORG_PROJECTS_PAGE_SIZE_OPTIONS];
@@ -186,8 +184,6 @@ export class OrgProjectsComponent {
   protected readonly orgContextLoaded = computed(
     () => this.hasNoOrgAccess() || (this.orgNavigation.loaded() && this.orgRoleGrants.loaded() && this.personaService.personaLoaded())
   );
-  /** Project whose health detail is shown in the shared hover popover. */
-  protected readonly activeHealthProject = signal<OrgProjectsTableRow | null>(null);
 
   protected readonly sortField = computed<OrgProjectsSortField>(() => this.initSortField());
   protected readonly sortDir = computed<SortDirection>(() => (this.queryParamMap().get('dir') === 'asc' ? 'asc' : DEFAULT_ORG_PROJECTS_SORT_DIR));
@@ -306,9 +302,8 @@ export class OrgProjectsComponent {
       }
     });
 
-    // Clear any pending health-popover hide timer on teardown so it can't fire after destroy.
+    // Clear pending debounce timer on teardown.
     inject(DestroyRef).onDestroy(() => {
-      this.cancelHealthHide();
       if (this.addableProjectsSearchDebounceTimer) {
         clearTimeout(this.addableProjectsSearchDebounceTimer);
       }
@@ -549,9 +544,8 @@ export class OrgProjectsComponent {
         p.participants.length,
       ];
     });
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const slug = this.response()?.orgSlug ?? 'org';
-    downloadCsv(`org-lens-projects-${slug}-${date}.csv`, [header, ...body]);
+    downloadCsv(`org-lens-projects-${slug}-${localDateStamp()}.csv`, [header, ...body]);
   }
 
   // Signal-strength bars for an influence band: filled count = rank (Leading 4 → Silent 1 → Non-LF 0),
@@ -570,22 +564,6 @@ export class OrgProjectsComponent {
       // Filled bars use the band color; unfilled use a lighter tint of the same color (org dashboard design).
       colorClass: i < filled ? INFLUENCE_BAND_BAR_FILL_CLASS[band] : INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT[band],
     }));
-  }
-  protected openHealth(event: Event, project: OrgProjectsTableRow, popover: Popover): void {
-    this.cancelHealthHide();
-    this.activeHealthProject.set(project);
-    popover.show(event, event.currentTarget as HTMLElement);
-  }
-  // Delay hide so the cursor can travel from the cell into the popover (keeps the LFX Insights link clickable).
-  protected scheduleHealthHide(popover: Popover): void {
-    this.cancelHealthHide();
-    this.healthHideTimer = setTimeout(() => popover.hide(), 200);
-  }
-  protected cancelHealthHide(): void {
-    if (this.healthHideTimer !== null) {
-      clearTimeout(this.healthHideTimer);
-      this.healthHideTimer = null;
-    }
   }
   // Hover tooltip for the Influence Trend sparkline: combined / technical / ecosystem 1y deltas.
   protected trendTooltip(project: OrgLensProject): string {
@@ -1099,9 +1077,9 @@ export class OrgProjectsComponent {
         return 5;
       case 'healthy':
         return 4;
-      case 'stable':
+      case 'fair':
         return 3;
-      case 'unsteady':
+      case 'concerning':
         return 2;
       case 'critical':
         return 1;

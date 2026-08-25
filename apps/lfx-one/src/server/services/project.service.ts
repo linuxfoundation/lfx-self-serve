@@ -6,6 +6,10 @@ import {
   EVENT_GROWTH_TOP_EVENTS_LIMIT,
   getYearForRange,
   EMAIL_CAMPAIGN_LIMIT,
+  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH,
+  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
+  FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY,
+  FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
   NATS_CONFIG,
@@ -15,7 +19,7 @@ import {
   PROJECT_HEALTH_SCORE_CATEGORIES,
   ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
-import { NatsSubjects } from '@lfx-one/shared/enums';
+import { NatsSubjects, ProjectStage } from '@lfx-one/shared/enums';
 import {
   BoardMeetingInviteeRow,
   BoardMeetingParticipationSummaryResponse,
@@ -67,6 +71,8 @@ import {
   FoundationMaintainersMonthlyResponse,
   FoundationMaintainersMonthlyRow,
   FoundationMaintainersResponse,
+  FoundationProjectsDetailGroup,
+  FoundationProjectsDetailGroupedResponse,
   FoundationProjectsDetailResponse,
   FoundationProjectsDetailRow,
   FoundationProjectsLifecycleDistributionResponse,
@@ -119,6 +125,7 @@ import {
   ProjectRow,
   ProjectSettings,
   ProjectsListResponse,
+  ProjectTableRow,
   ProjectSlugToIdResponse,
   ProjectUniqueContributorsDailyRow,
   QueryServiceResponse,
@@ -142,6 +149,7 @@ import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, Resolved
 import {
   computeIsFoundation,
   getDefaultMarketingImpactMonth,
+  mapV1BandToV2,
   normalizeToUrl,
   nullifyEmptyStrings,
   resolvePeriodRange,
@@ -150,6 +158,7 @@ import {
 import { Request } from 'express';
 import FormData from 'form-data';
 
+import { QUERY_SERVICE_PAGE_SIZE } from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
@@ -165,13 +174,13 @@ import { SnowflakeService } from './snowflake.service';
 /** Valid LifecycleStage values used to guard the Snowflake LIFECYCLE_STAGE string. Hoisted to module scope so the Set isn't re-created on every row mapping. */
 const VALID_LIFECYCLE_STAGES: ReadonlySet<LifecycleStage> = new Set(Object.values(LifecycleStage));
 
-/** Valid (lowercased) health-score categories used to guard the Snowflake HEALTH_SCORE_CATEGORY string. Derived from the shared runtime list so the server and UI cannot drift. */
-const VALID_HEALTH_SCORE_CATEGORIES: ReadonlySet<FoundationHealthScore> = new Set(PROJECT_HEALTH_SCORE_CATEGORIES);
+/** Valid (lowercased) health-score categories used to guard the Snowflake HEALTH_SCORE_CATEGORY string. Derived from the shared runtime list, plus legacy v1 band names (IN-1219 may still emit these until the v2 dbt models are live), so the server and UI cannot drift. */
+const VALID_HEALTH_SCORE_CATEGORIES: ReadonlySet<string> = new Set([...PROJECT_HEALTH_SCORE_CATEGORIES, 'stable', 'unsteady']);
 
-/** Lowercase + validate the upstream HEALTH_SCORE_CATEGORY; null when absent or unrecognized. */
+/** Lowercase + validate the upstream HEALTH_SCORE_CATEGORY, mapping legacy v1 band names (stable/unsteady) to their v2 equivalents; null when absent or unrecognized. */
 function normalizeHealthScoreCategory(raw: string | null): FoundationHealthScore | null {
-  const category = raw?.toLowerCase() as FoundationHealthScore | undefined;
-  return category && VALID_HEALTH_SCORE_CATEGORIES.has(category) ? category : null;
+  const category = raw?.toLowerCase();
+  return category && VALID_HEALTH_SCORE_CATEGORIES.has(category) ? (mapV1BandToV2(category) as FoundationHealthScore) : null;
 }
 
 /** Upstream response shape for project folders (POST response) */
@@ -309,6 +318,9 @@ export class ProjectService {
     const params = {
       ...query,
       type: 'project',
+      // Overrides any caller-supplied page_size — the query service's 50-result default turns
+      // a large org's project list into a long sequential page scan (GH-1735).
+      page_size: QUERY_SERVICE_PAGE_SIZE,
     };
 
     const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
@@ -524,26 +536,7 @@ export class ProjectService {
       batches.push(idArray.slice(i, i + BATCH_SIZE));
     }
 
-    const batchResults = await Promise.all(
-      batches.map((batch) =>
-        fetchAllQueryResources<Project>(
-          req,
-          (pageToken) =>
-            this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-              type: 'project',
-              filters_or: batch.map((uid) => `uid:${uid}`),
-              ...(pageToken && { page_token: pageToken }),
-            }),
-          { failOnPartial: true }
-        ).catch((error) => {
-          logger.warning(req, 'get_projects_by_ids', 'Batched project fetch failed for batch, skipping', {
-            batch_size: batch.length,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return [] as Project[];
-        })
-      )
-    );
+    const batchResults = await Promise.all(batches.map((batch) => this.fetchProjectBatchByIds(req, batch)));
 
     // ROOT is an administrative pseudo-project — never surface it even if a caller accidentally passes its UID.
     const byUid = new Map<string, Project>();
@@ -1902,13 +1895,15 @@ export class ProjectService {
 
     // Fold any category outside the 5 scored values into `unscored` to mirror the detail
     // endpoint's normalizeHealthScoreCategory (→ null → Unscored), so chart and table agree.
+    // Accept both v1 and v2 band names; map v2 names (fair/concerning) to v1-keyed buckets.
     result.rows.forEach((row) => {
       const category = row.HEALTH_SCORE_CATEGORY.toLowerCase();
-      if (category === 'excellent') distribution.excellent = row.PROJECT_COUNT;
-      else if (category === 'healthy') distribution.healthy = row.PROJECT_COUNT;
-      else if (category === 'stable') distribution.stable = row.PROJECT_COUNT;
-      else if (category === 'unsteady') distribution.unsteady = row.PROJECT_COUNT;
-      else if (category === 'critical') distribution.critical = row.PROJECT_COUNT;
+      const normalizedCategory = mapV1BandToV2(category);
+      if (normalizedCategory === 'excellent') distribution.excellent += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'healthy') distribution.healthy += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'fair') distribution.stable += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'concerning') distribution.unsteady += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'critical') distribution.critical += row.PROJECT_COUNT;
       else distribution.unscored += row.PROJECT_COUNT;
     });
 
@@ -1981,6 +1976,111 @@ export class ProjectService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Get per-project detail rows for a foundation AND every nested sub-foundation, grouped by
+   * which foundation slug they were fetched under (GH-1607). FOUNDATION_TOTAL_PROJECTS_DETAIL's
+   * `FOUNDATION_SLUG` column only rolls up direct-parent projects, not multi-level descendants
+   * (e.g. NeoNephos's projects aren't attributed to Linux Foundation Europe), so this walks the
+   * project-service hierarchy to discover nested sub-foundations and fans out the existing
+   * per-slug Snowflake query across all of them.
+   * @param req - Express request object, needed to walk the project-service descendant tree
+   * @param foundationSlug - Top-level foundation slug to filter by (e.g., 'lfeurope')
+   */
+  public async getFoundationProjectsDetailGrouped(req: Request, foundationSlug: string): Promise<FoundationProjectsDetailGroupedResponse> {
+    logger.debug(req, 'get_foundation_projects_detail_grouped', 'Fetching grouped project detail', { foundation_slug: foundationSlug });
+
+    const rootProject = await this.getProjectBySlug(req, foundationSlug, false);
+
+    // Start the recursive traversal and the root Snowflake query together — neither depends on
+    // the other's result, so running them concurrently saves one Snowflake round trip.
+    // The root query is not allowed to degrade gracefully like a sub-foundation branch can: a
+    // failed root means no reliable root group to anchor the frontend's grouping fallback, so
+    // Promise.all propagates a root-query rejection instead of returning an incomplete 200
+    // (GH-1607 review).
+    const [subFoundations, rootDetail] = await Promise.all([
+      this.discoverSubFoundations(req, rootProject.uid, rootProject.slug, rootProject.name),
+      this.getFoundationProjectsDetail(rootProject.slug),
+    ]);
+
+    // Bucket every discovered node's own Snowflake detail fetch by its `groupSlug` — a visible
+    // node's own slug (it gets a rendered section) or its nearest visible ancestor's slug (a
+    // hidden/pre-launch intermediary's projects fold into that ancestor's section instead of
+    // vanishing or getting a section of their own). Every discovered node is fetched here, not
+    // just visible ones, since a hidden intermediary can have public + Active leaf projects
+    // directly beneath it that only its own slug's Snowflake query would surface (GH-1676 review,
+    // second pass).
+    //
+    // Fan out through a bounded worker pool rather than firing all N queries at once: a wide
+    // foundation can have up to FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES of them, which can
+    // overflow the shared Snowflake pool's waiting-client queue and cause otherwise healthy
+    // queries to be rejected (GH-1607 review, same pattern as organization.service.ts's
+    // getOrgLensAccountContext).
+    const bucket = new Map<string, ProjectTableRow[]>();
+    bucket.set(
+      rootProject.slug,
+      rootDetail.projects.map((project) => ({ ...project, groupFoundationSlug: rootProject.slug, groupFoundationName: rootProject.name }))
+    );
+    let cursor = 0;
+    const worker = async (): Promise<void> => {
+      while (cursor < subFoundations.length) {
+        const index = cursor++;
+        const { slug, groupSlug, groupName } = subFoundations[index];
+        try {
+          const detail = await this.getFoundationProjectsDetail(slug);
+          const tagged = detail.projects.map((project) => ({ ...project, groupFoundationSlug: groupSlug, groupFoundationName: groupName }));
+          bucket.set(groupSlug, [...(bucket.get(groupSlug) ?? []), ...tagged]);
+        } catch (error) {
+          logger.warning(req, 'get_foundation_projects_detail_grouped', 'Failed to fetch detail for a discovered foundation, omitting its own rows', {
+            foundation_slug: slug,
+            err: error,
+          });
+        }
+      }
+    };
+    const poolSize = Math.min(FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY, subFoundations.length);
+    await Promise.all(Array.from({ length: poolSize }, () => worker()));
+
+    // A visible node is rendered as its own section only when it ends up with at least one
+    // project to show — either from its own successful fetch, or merged in from a hidden
+    // descendant. A visible node whose own fetch failed but has merged descendant projects must
+    // still render (dropping it would silently lose those descendant projects entirely); a visible
+    // node with neither falls back to being represented only as a leaf row in its ancestor's list,
+    // same as before (GH-1676 review, second pass).
+    const renderedChildSlugs = new Set<string>();
+    for (const node of subFoundations) {
+      if (node.visible && (bucket.get(node.slug)?.length ?? 0) > 0) {
+        renderedChildSlugs.add(node.slug);
+      }
+    }
+
+    // A slug that got its own rendered section must have its leaf-row representation stripped out
+    // of whichever bucket's raw detail list also included it (the cube rolls up direct children) —
+    // otherwise that sub-foundation shows up twice (GH-1607 review).
+    const buildGroup = (slug: string, name: string, uid: string): FoundationProjectsDetailGroup => ({
+      foundationSlug: slug,
+      foundationName: name,
+      foundationUid: uid,
+      projects: (bucket.get(slug) ?? []).filter((project) => !renderedChildSlugs.has(project.projectSlug)),
+    });
+
+    const groups: FoundationProjectsDetailGroup[] = [buildGroup(rootProject.slug, rootProject.name, rootProject.uid)];
+    for (const node of subFoundations) {
+      if (node.visible && renderedChildSlugs.has(node.slug)) {
+        groups.push(buildGroup(node.slug, node.name, node.uid));
+      }
+    }
+
+    const totalCount = groups.reduce((sum, group) => sum + group.projects.length, 0);
+
+    logger.debug(req, 'get_foundation_projects_detail_grouped', 'Fetched grouped project detail', {
+      foundation_slug: foundationSlug,
+      group_count: groups.length,
+      total_count: totalCount,
+    });
+
+    return { groups, totalCount };
   }
 
   /**
@@ -6820,7 +6920,7 @@ export class ProjectService {
         project_name: project?.name || (item as any).project_name || '',
         project_slug: project?.slug || (item as any).project_slug || '',
         // Leave is_foundation absent (not false) when the lookup fails — consumers like
-        // getMeetingEditCommands treat undefined as "tier unknown" and fall back safely,
+        // getEntityCommands treat undefined as "tier unknown" and fall back safely,
         // whereas a coerced false would mislabel a foundation-owned entity as project-owned.
         // Mirrors the meeting-detail enrichment's fail-soft contract.
         is_foundation: project ? computeIsFoundation(project) : ((item as any).is_foundation ?? undefined),
@@ -7442,6 +7542,167 @@ export class ProjectService {
   }
 
   /**
+   * Acquires one of FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY traversal slots from a
+   * `gate` shared across an entire `discoverSubFoundations` tree (not just one level), queueing
+   * the caller if none are free. Bounding this at the gate level — rather than a fresh pool sized
+   * per recursion level — keeps the *total* concurrent `/query/resources` calls in flight across
+   * every depth capped at the intended value; a fresh per-level pool would let each recursive call
+   * spin up its own concurrency budget, multiplying real fan-out past the cap under a wide+deep
+   * tree (GH-1676 review).
+   */
+  private async acquireTraversalSlot(gate: { active: number; queue: (() => void)[] }): Promise<void> {
+    if (gate.active < FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY) {
+      gate.active += 1;
+      return;
+    }
+    return new Promise((resolve) => gate.queue.push(resolve));
+  }
+
+  /** Releases a traversal slot acquired via {@link acquireTraversalSlot}, waking the next queued caller if any. */
+  private releaseTraversalSlot(gate: { active: number; queue: (() => void)[] }): void {
+    const next = gate.queue.shift();
+    if (next) {
+      next();
+      return;
+    }
+    gate.active = Math.max(0, gate.active - 1);
+  }
+
+  /**
+   * Recursively discovers every foundation-type descendant beneath a foundation (or sub-foundation)
+   * UID — both visible (public + Active) and hidden/pre-launch — depth-capped by
+   * FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH and, since the depth cap alone doesn't bound
+   * worst-case fan-out under a true umbrella foundation (e.g. selecting The Linux Foundation
+   * itself, whose direct children are dozens of foundations), also capped in total by
+   * FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES via the shared `budget` counter — decremented for
+   * every traversed node regardless of visibility, since an unbounded hidden layer would otherwise
+   * still enqueue a full paginated query per node (GH-1676 review, second pass).
+   *
+   * Every discovered node is returned, not just visible ones: a hidden/pre-launch intermediary can
+   * still have public + Active leaf projects directly beneath it, and those would be lost entirely
+   * if the caller only fetched Snowflake detail for visible slugs. `groupSlug`/`groupName` tell the
+   * caller which rendered section a node's own detail fetch should be merged into — a node's own
+   * slug/name when it's visible (it gets its own section), or its nearest visible ancestor's
+   * slug/name when it's hidden (its projects fold into that ancestor's section instead of getting
+   * a section of their own) (GH-1676 review, second pass).
+   */
+  private async discoverSubFoundations(
+    req: Request,
+    parentUid: string,
+    nearestVisibleSlug: string,
+    nearestVisibleName: string,
+    depth: number = 0,
+    budget: { remaining: number } = { remaining: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES },
+    gate: { active: number; queue: (() => void)[] } = { active: 0, queue: [] }
+  ): Promise<{ uid: string; slug: string; name: string; visible: boolean; groupSlug: string; groupName: string }[]> {
+    if (depth >= FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH) {
+      logger.warning(req, 'discover_sub_foundations', 'Hit max traversal depth, stopping this branch', {
+        parent_uid: parentUid,
+        depth,
+      });
+      return [];
+    }
+
+    await this.acquireTraversalSlot(gate);
+    let children: Project[];
+    try {
+      children = await fetchAllQueryResources<Project>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project',
+            parent: `project:${parentUid}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        // A later-page failure must not silently keep only the earlier pages: that can drop a
+        // nested sub-foundation that happened to land on a later page with no signal beyond a
+        // warning (Cursor). failOnPartial makes a partial fetch throw instead, which the outer
+        // .catch() below turns into a clean "stop this branch" rather than a silent undercount.
+        { failOnPartial: true }
+      ).catch((error) => {
+        logger.warning(req, 'discover_sub_foundations', 'Failed to resolve children, stopping traversal at this branch', {
+          parent_uid: parentUid,
+          depth,
+          err: error,
+        });
+        return [] as Project[];
+      });
+    } finally {
+      this.releaseTraversalSlot(gate);
+    }
+
+    const traversalCandidates = children.filter((child) => child.slug !== ROOT_PROJECT_SLUG && computeIsFoundation(child));
+
+    // Promise.all over a per-child map (rather than a shared-cursor worker pool) both fans siblings
+    // out concurrently — real concurrency is bounded tree-wide by `gate`, not by how many siblings
+    // exist at this level — and preserves discovery order in the returned array regardless of which
+    // child's branch resolves first (Cursor Bugbot review: worker-pool completion order was
+    // previously non-deterministic).
+    const results = await Promise.all(
+      traversalCandidates.map(async (child) => {
+        if (budget.remaining <= 0) {
+          logger.warning(req, 'discover_sub_foundations', 'Hit max discovered sub-foundation count, stopping traversal', {
+            parent_uid: parentUid,
+            depth,
+            max_nodes: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
+          });
+          return [];
+        }
+        // Every traversed node counts against the budget, visible or not — an unbounded hidden
+        // layer would otherwise keep recursing (and issuing paginated /query/resources calls) well
+        // past the documented node cap (GH-1676 review, second pass).
+        budget.remaining -= 1;
+        const isVisible = child.public && child.stage === ProjectStage.Active;
+        const groupSlug = isVisible ? child.slug : nearestVisibleSlug;
+        const groupName = isVisible ? child.name : nearestVisibleName;
+        const nested = await this.discoverSubFoundations(req, child.uid, groupSlug, groupName, depth + 1, budget, gate);
+        return [{ uid: child.uid, slug: child.slug, name: child.name, visible: isVisible, groupSlug, groupName }, ...nested];
+      })
+    );
+    return results.flat();
+  }
+
+  /**
+   * Fetches one bounded UID batch and preserves the existing fail-soft behavior.
+   * Only fully successful paginated responses are checked for omitted UIDs.
+   */
+  private async fetchProjectBatchByIds(req: Request, batch: string[]): Promise<Project[]> {
+    try {
+      const projects = await fetchAllQueryResources<Project>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project',
+            filters_or: batch.map((uid) => `uid:${uid}`),
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      );
+      this.warnOnMissingProjectUids(req, batch, projects);
+      return projects;
+    } catch (error) {
+      logger.warning(req, 'get_projects_by_ids', 'Batched project fetch failed for batch, skipping', {
+        batch_size: batch.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Emits one bounded warning containing only requested UIDs absent from a successful batch response.
+   */
+  private warnOnMissingProjectUids(req: Request, requestedUids: string[], projects: Project[]): void {
+    const returnedUids = new Set(projects.map((project) => project?.uid).filter((uid): uid is string => !!uid));
+    const missingUids = requestedUids.filter((uid) => !returnedUids.has(uid));
+    if (missingUids.length === 0) return;
+
+    logger.warning(req, 'get_projects_by_ids', 'Project batch response omitted requested UIDs', {
+      missing_uids: missingUids,
+    });
+  }
+
+  /**
    * Enrich an event with paid-ad + email campaign detail. Neither PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
    * nor EMAIL_CAMPAIGN_PERFORMANCE carries an EVENT_ID, so both are matched to the event by name
    * (fuzzy substring on CAMPAIGN_NAME / MARKETING_EMAIL_NAME). Each side degrades to an empty array on
@@ -7744,11 +8005,12 @@ export class ProjectService {
         unscored: 0,
       };
       const category = row.HEALTH_SCORE_CATEGORY.toLowerCase();
-      if (category === 'excellent') existing.excellent = row.PROJECT_COUNT;
-      else if (category === 'healthy') existing.healthy = row.PROJECT_COUNT;
-      else if (category === 'stable') existing.stable = row.PROJECT_COUNT;
-      else if (category === 'unsteady') existing.unsteady = row.PROJECT_COUNT;
-      else if (category === 'critical') existing.critical = row.PROJECT_COUNT;
+      const normalizedCategory = mapV1BandToV2(category);
+      if (normalizedCategory === 'excellent') existing.excellent += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'healthy') existing.healthy += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'fair') existing.stable += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'concerning') existing.unsteady += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'critical') existing.critical += row.PROJECT_COUNT;
       // Fold 'unscored' and any unexpected category into `unscored` to match the
       // detail endpoint's normalizeHealthScoreCategory (→ null → Unscored in the drawer).
       else existing.unscored += row.PROJECT_COUNT;

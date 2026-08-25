@@ -3,7 +3,7 @@
 
 import { SlicePipe } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -17,6 +17,7 @@ import {
   META_MESSENGER_INBOX_RETIRED_REASON,
   META_NUMERIC_ID_PATTERN,
   META_OBJECTIVE_LABELS,
+  META_SELECTABLE_OBJECTIVES,
   META_PLACEMENT_LABELS,
   META_SELECTABLE_PLACEMENTS,
   META_INELIGIBLE_COUNTRIES,
@@ -26,7 +27,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { map, startWith, Subscription, take } from 'rxjs';
+import { map, skip, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -185,7 +186,32 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInCharLimits = LINKEDIN_CHAR_LIMITS;
   protected readonly metaCharLimits = META_CHAR_LIMITS;
   protected readonly metaObjectiveLabels = META_OBJECTIVE_LABELS;
-  protected readonly metaObjectiveOptions = Object.keys(META_OBJECTIVE_LABELS) as MetaObjective[];
+  /**
+   * Read from `META_SELECTABLE_OBJECTIVES`, NOT from the labels map's keys: the labels map stays
+   * total over `MetaObjective` so restored objectives still render a name, and `leads` is hidden
+   * from the picker only. See that constant for why.
+   */
+  protected readonly metaObjectiveOptions = META_SELECTABLE_OBJECTIVES;
+  /**
+   * True when the restored objective is one the picker no longer offers — today only `leads`.
+   *
+   * Without this the select does not go blank — it shows the FIRST selectable objective, which is
+   * worse. The template binds `[selected]` per `<option>` rather than `[value]` on the select, and
+   * Angular applies that binding before the restored option exists, so the browser falls back to
+   * index 0 and displays `awareness`. The stored `leads` survives in the signal and still reaches
+   * the wire, so the screen and the payload disagree: the operator sees a valid, selectable
+   * objective they never chose and can submit it without noticing, and the first touch of the
+   * control overwrites `leads` for good — the option they had is gone.
+   *
+   * Rendering it as a disabled option is what makes display and dispatch agree; disabled is what
+   * keeps it visible without letting anyone newly choose it.
+   *
+   * The widening cast is deliberate: `META_SELECTABLE_OBJECTIVES` is narrowed to
+   * `SelectableMetaObjective` so a hidden objective cannot be listed in it, which also makes
+   * `.includes()` reject the very value this asks about. Widening for the membership test is
+   * what keeps that narrowing — the guard against re-adding `leads` — intact.
+   */
+  protected readonly metaObjectiveIsUnavailable = computed(() => !(META_SELECTABLE_OBJECTIVES as readonly MetaObjective[]).includes(this.metaObjective()));
   protected readonly metaPlacementLabels = META_PLACEMENT_LABELS;
   protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
@@ -330,6 +356,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaPixelId = signal('');
 
   // === Computed Signals ===
+  protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
   protected readonly showGoogleSection = computed(() => this.selectedPlatforms().includes('google-ads'));
   protected readonly showLinkedInSection = computed(() => this.selectedPlatforms().includes('linkedin-ads'));
   protected readonly showRedditSection = computed(() => this.selectedPlatforms().includes('reddit-ads'));
@@ -680,7 +707,24 @@ export class ImplementationTabComponent implements OnInit {
       // if one applied, the brief's copy otherwise. This is what keeps the parent's copy equal
       // to the form at rest, so a tab leave with no typing in between preserves rather than
       // reverts (the defect this line exists to close).
-      this.emitDraft();
+      //
+      // UNTRACKED, for the same reason the `applyDraft` call above is, and it became load-bearing
+      // the moment `emitDraft` started reading the platform signals. A tracked call here makes
+      // every signal `emitDraft` reads an effect DEPENDENCY, and today that is the Meta block
+      // (objective, placements, pixel id, geo targets, budget and its mode) plus the LinkedIn
+      // budget pair and the Reddit budget.
+      //
+      // The failure that buys: any of those set after mount re-runs the whole effect, which
+      // re-seeds from the brief and replays the draft over whatever the user has since changed.
+      // A user editing the Meta budget would lose their pixel id — a silent revert of exactly the
+      // kind this ticket exists to stop, in fields the triggering edit never touched.
+      //
+      // Found by measurement rather than review, on the wider emit an earlier revision of this
+      // ticket carried: adding an ad-variant array to the emit turned three unrelated LinkedIn
+      // tests red, all of them mutating a signal after mount. Those arrays are no longer emitted
+      // (they have no editor), but the hazard is a property of the TRACKING, not of which fields
+      // happen to be listed — so this stays regardless of what `emitDraft` reads next.
+      untracked(() => this.emitDraft());
     });
 
     // Emit as the user edits. `valueChanges` covers everything on `campaignForm` — copy, budget,
@@ -688,64 +732,30 @@ export class ImplementationTabComponent implements OnInit {
     // targets, targeting profile). Moving those three onto the form is what makes their restore
     // work: this subscription emits on every pick with no per-handler plumbing.
     //
-    // Still OUTSIDE it: the platform picks that remain signals — the LinkedIn budget pair and
-    // variants, and the Reddit fields — none of which `emitDraft` names, so they do not reach the
-    // draft at all. See the draft interface: the snapshot is scoped to the fields a user EDITS,
-    // which is broader than the ones they type, and excludes anything re-derived from a fetch.
+    // Still OUTSIDE it: the platform values that remain signals — the Meta block and the two
+    // budget groups. Described by shape rather than counted, since a count here is a claim the
+    // next control added to the template falsifies. `emitDraft` names each of them, so the draft
+    // carries them; what this subscription cannot do is NOTICE them changing. That is why each
+    // mutation handler calls `emitDraft` itself, and why adding a signal-backed control means
+    // touching both places rather than one.
+    //
+    // Excluded on purpose: `linkedInAccounts` and `linkedInAccountsLoading`, which are re-derived
+    // from a fetch on every mount rather than edited. The snapshot is scoped to what a user EDITS,
+    // which is broader than what they type.
     this.campaignForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       if (this.seeding) return;
       this.emitDraft();
     });
+
+    // skip(1) drops the emission toObservable fires immediately on subscribe — ngOnInit already
+    // runs the initial load, so only later foundation switches should refetch the ad-account list.
+    toObservable(this.activeFoundationSlug)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => this.loadLinkedInAccounts());
   }
 
   public ngOnInit(): void {
-    this.linkedInAccountsLoading.set(true);
-    this.campaignService
-      .getLinkedInAccounts()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (accounts) => {
-          this.linkedInAccounts.set(accounts);
-          // Keep the restored selection only if this catalog still CONTAINS it; otherwise fall
-          // back to the first account.
-          //
-          // A blank-only check was enough until this commit and is not any more. Persisting the id
-          // (LFXV2-3230) makes a STALE one reachable for the first time: the list is refetched on
-          // every mount and an account can be revoked or lose permission between them. A stale id
-          // then splits the page in two — `selectedLinkedInAccount` resolves the label and
-          // org/status line through `accounts.find(...) ?? accounts[0]`, and the `<select>` cannot
-          // render an unmatched value either, so both show the FIRST account, while `submit()`
-          // sends `linkedInAccountId()` verbatim. The operator reads one account and spends money
-          // on another, with nothing on screen to say so.
-          //
-          // That fallback pre-dates this change but was unreachable while the id was not carried
-          // on the draft, which is why closing it belongs here rather than in a follow-up.
-          //
-          // Correcting silently rather than prompting: the operator never chose this state, the
-          // first account is what every other surface is already showing, and the alternative is a
-          // modal on a path that is noisy enough. Membership also subsumes the first-visit case —
-          // '' is never in the list.
-          //
-          // Writes through the form rather than a signal, since that is where the value now lives.
-          // `emitEvent` is left ON deliberately — this assignment CHANGES what `submit()` would
-          // send, so the parent's draft has to learn about it; suppressing the event would leave
-          // the draft carrying a value the form and the request no longer agree with.
-          // An EMPTY catalog is a real answer, not a skip. `loadLinkedInConfig` falls back to
-          // `accounts: []` when the LinkedIn config is absent or malformed, so a successful
-          // response can carry nothing — and a restored id would then survive with no account to
-          // match it, dispatching a stale value while the selector shows an empty list. Clearing
-          // is the honest result, and `canSubmit`'s membership gate then BLOCKS the create rather
-          // than letting it reach LinkedIn: an empty catalog contains no id, including ''. The
-          // operator sees Create disabled with an empty account list, which is the true state.
-          if (!accounts.some((a) => a.accountId === this.linkedInAccountId())) {
-            this.campaignForm.controls.linkedInAccountId.setValue(accounts[0]?.accountId ?? '');
-          }
-          this.linkedInAccountsLoading.set(false);
-        },
-        error: () => {
-          this.linkedInAccountsLoading.set(false);
-        },
-      });
+    this.loadLinkedInAccounts();
   }
 
   // === Public Methods ===
@@ -804,13 +814,12 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.linkedInTargetingProfile.setValue(profile);
   }
 
-  protected setLinkedInLifetimeBudget(value: boolean): void {
-    this.linkedInLifetimeBudget.set(value);
-  }
-
-  protected setLinkedInBudget(value: number): void {
-    this.linkedInBudgetUsd.set(value);
-  }
+  // `setLinkedInBudget` and `setLinkedInLifetimeBudget` were removed here (LFXV2-3230), for the
+  // same reason `setLinkedInAccount` was: nothing called them. The template binds `(input)` and
+  // `(change)` to `onLinkedInBudgetInput` / `onLinkedInLifetimeBudgetChange` below, and no spec
+  // reached the setters either. Adding this ticket's `emitDraft()` call to a dead method would
+  // have made the round-trip look covered while the LIVE handler stayed unfixed — the exact trap
+  // the `setLinkedInAccount` note describes, so the tests now drive the real bindings instead.
 
   // `setLinkedInAccount` was removed here (LFXV2-3230). Nothing in this component's template
   // called it — only a test did, which made the test pass against a broken `(change)` binding.
@@ -826,12 +835,18 @@ export class ImplementationTabComponent implements OnInit {
     select.value = '';
   }
 
+  // Every handler below emits, on the same rule the Meta handlers state: these signals are
+  // invisible to `campaignForm.valueChanges`, so a mutation that does not call `emitDraft` never
+  // reaches the parent and the edit dies at the next tab switch. Naming the field in `emitDraft`
+  // is only half of it — a carried field whose handler never emits is still lost.
   protected onLinkedInBudgetInput(event: Event): void {
     this.linkedInBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+    this.emitDraft();
   }
 
   protected onLinkedInLifetimeBudgetChange(event: Event): void {
     this.linkedInLifetimeBudget.set((event.target as HTMLInputElement).checked);
+    this.emitDraft();
   }
 
   protected onMetaBudgetInput(event: Event): void {
@@ -861,6 +876,10 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onRedditBudgetInput(event: Event): void {
     this.redditBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+    // The only Reddit control the template binds today, so this is the one door a Reddit edit
+    // comes through. Deliberately not enumerating the platform's other carried values — a count
+    // here is a claim the next editor added to the template falsifies.
+    this.emitDraft();
   }
 
   protected onMetaLifetimeBudgetChange(event: Event): void {
@@ -1109,6 +1128,75 @@ export class ImplementationTabComponent implements OnInit {
     return normalizeGeoTargets(codes).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
   }
 
+  private loadLinkedInAccounts(): void {
+    // Stamp the slug this request was made for — a foundation switch fires a new request before
+    // the previous one resolves, and `takeUntilDestroyed` alone doesn't cancel it (the component
+    // survives the switch, per `activeFoundationSlug`). Without this, a slower response for the
+    // OLD foundation can arrive after a faster one for the new foundation and silently overwrite
+    // it with the wrong account catalog.
+    const requestedSlug = this.activeFoundationSlug();
+    // Drop the previous foundation's catalog before firing the new request — otherwise
+    // `canSubmit`'s membership check keeps passing against the OLD foundation's accounts for the
+    // whole in-flight window, and a Create during that window would dispatch the NEW foundation's
+    // project with the OLD foundation's LinkedIn account id. Sibling tabs clear selection/data at
+    // the start of their own `loadForActiveFoundation` for the same reason (see
+    // `monitoring-tab.component.ts`).
+    this.linkedInAccounts.set([]);
+    this.linkedInAccountsLoading.set(true);
+    this.campaignService
+      .getLinkedInAccounts(requestedSlug)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          if (requestedSlug !== this.activeFoundationSlug()) {
+            return;
+          }
+          this.linkedInAccounts.set(accounts);
+          // Keep the restored selection only if this catalog still CONTAINS it; otherwise fall
+          // back to the first account.
+          //
+          // A blank-only check was enough until this commit and is not any more. Persisting the id
+          // (LFXV2-3230) makes a STALE one reachable for the first time: the list is refetched on
+          // every mount and an account can be revoked or lose permission between them. A stale id
+          // then splits the page in two — `selectedLinkedInAccount` resolves the label and
+          // org/status line through `accounts.find(...) ?? accounts[0]`, and the `<select>` cannot
+          // render an unmatched value either, so both show the FIRST account, while `submit()`
+          // sends `linkedInAccountId()` verbatim. The operator reads one account and spends money
+          // on another, with nothing on screen to say so.
+          //
+          // That fallback pre-dates this change but was unreachable while the id was not carried
+          // on the draft, which is why closing it belongs here rather than in a follow-up.
+          //
+          // Correcting silently rather than prompting: the operator never chose this state, the
+          // first account is what every other surface is already showing, and the alternative is a
+          // modal on a path that is noisy enough. Membership also subsumes the first-visit case —
+          // '' is never in the list.
+          //
+          // Writes through the form rather than a signal, since that is where the value now lives.
+          // `emitEvent` is left ON deliberately — this assignment CHANGES what `submit()` would
+          // send, so the parent's draft has to learn about it; suppressing the event would leave
+          // the draft carrying a value the form and the request no longer agree with.
+          // An EMPTY catalog is a real answer, not a skip. `loadLinkedInConfig` falls back to
+          // `accounts: []` when the LinkedIn config is absent or malformed, so a successful
+          // response can carry nothing — and a restored id would then survive with no account to
+          // match it, dispatching a stale value while the selector shows an empty list. Clearing
+          // is the honest result, and `canSubmit`'s membership gate then BLOCKS the create rather
+          // than letting it reach LinkedIn: an empty catalog contains no id, including ''. The
+          // operator sees Create disabled with an empty account list, which is the true state.
+          if (!accounts.some((a) => a.accountId === this.linkedInAccountId())) {
+            this.campaignForm.controls.linkedInAccountId.setValue(accounts[0]?.accountId ?? '');
+          }
+          this.linkedInAccountsLoading.set(false);
+        },
+        error: () => {
+          if (requestedSlug !== this.activeFoundationSlug()) {
+            return;
+          }
+          this.linkedInAccountsLoading.set(false);
+        },
+      });
+  }
+
   private applyDraft(): void {
     const draft = this.draft();
     if (!draft) return;
@@ -1182,6 +1270,24 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.metaLifetimeBudget !== undefined) {
       this.metaLifetimeBudget.set(draft.metaLifetimeBudget);
     }
+
+    // Same present-only rule, for the same reason: an older draft omits these, and absence there
+    // means "keep what the brief seeded".
+    //
+    // Only the per-platform budgets are restored, matching what `emitDraft` now carries. The
+    // brief-derived arrays are gone from both sides deliberately — see the note there. The
+    // `!== undefined` test is what makes dropping them safe rather than merely tidy: a draft
+    // written by an OLDER build still carries them, and this loop simply no longer looks, so the
+    // brief's own seed stands instead of a stale copy being replayed over it.
+    if (draft.linkedInBudgetUsd !== undefined) {
+      this.linkedInBudgetUsd.set(draft.linkedInBudgetUsd);
+    }
+    if (draft.linkedInLifetimeBudget !== undefined) {
+      this.linkedInLifetimeBudget.set(draft.linkedInLifetimeBudget);
+    }
+    if (draft.redditBudgetUsd !== undefined) {
+      this.redditBudgetUsd.set(draft.redditBudgetUsd);
+    }
   }
 
   /**
@@ -1247,6 +1353,42 @@ export class ImplementationTabComponent implements OnInit {
       metaGeoTargets: [...this.metaGeoTargets()],
       metaBudgetUsd: this.metaBudgetUsd(),
       metaLifetimeBudget: this.metaLifetimeBudget(),
+      // The remaining signal-backed values, on the same terms as the Meta block above: snapshotted
+      // rather than referenced, and named explicitly rather than spread.
+      //
+      // Scoped to the per-platform BUDGETS, which is the whole of what this snapshot needs to
+      // carry, and the boundary is drawn by asking one question per field: can a user change it?
+      //
+      // These can. The template binds `(input)` and `(change)` on the LinkedIn budget pair,
+      // and `(input)` on the Reddit budget, so an operator types a number the brief did not
+      // recommend and that number exists nowhere but this component. Losing it is the money-shaped
+      // half of LFXV2-3315: the campaign silently reverts to the recommended spend, a decision the
+      // operator did not make and the form does not show them re-making.
+      //
+      // The brief-derived ARRAYS are deliberately NOT here — `metaVariants`, `linkedInVariants`,
+      // `redditVariants` and the four Reddit targeting lists. They have no editor: the full set of
+      // event bindings in this component's template contains no handler that writes any of them,
+      // and `populateFromBrief` is now their ONLY writer — `applyDraft` no longer has a restore
+      // arm for any of the seven, which is exactly what this change removed. Carrying them made
+      // the draft round-trip the brief's own recommendation back to itself.
+      //
+      // Removing them is not a loss, and that was MEASURED rather than reasoned about, because the
+      // reasoning goes the wrong way twice:
+      //
+      //   - `applyDraft` restores on `!== undefined`, and an empty array IS defined. So carrying
+      //     these made the restore overwrite the brief's fresh seed with a stale copy. Absent,
+      //     `populateFromBrief` re-seeds all seven from the brief the parent still holds.
+      //   - The "a brief with no redditCopy re-seeds nothing, so an unrestored value is gone"
+      //     argument does not survive being run: with no `redditCopy` the seed leaves the arrays
+      //     EMPTY, so the draft carried `[]` and there was never a value to lose.
+      //
+      // If a real editor is ever added for one of these, it belongs back here — and it needs a
+      // test that drives the new binding, not one that writes the signal and calls `emitDraft` by
+      // hand. That shape passes against a handler that never emits, which is how the LinkedIn
+      // budget pair stayed broken behind three green tests.
+      linkedInBudgetUsd: this.linkedInBudgetUsd(),
+      linkedInLifetimeBudget: this.linkedInLifetimeBudget(),
+      redditBudgetUsd: this.redditBudgetUsd(),
     });
   }
 

@@ -361,7 +361,7 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
   });
 
-  // The page is reachable by an ED of any foundation — `executiveDirectorGuard` gates on persona
+  // The page is reachable by an ED of any foundation — `campaignAccessGuard` gates on persona
   // and `projectQueryParamGuard` seeds the context from `?project=` — while campaign-service
   // scopes every brief on its project. A hard-coded `tlf` would file a CNCF ED's brief in TLF's
   // table, under a unique index that then collides it with unrelated TLF work for the same event.
@@ -2201,5 +2201,161 @@ describe('CampaignServiceClient.toggleCampaignStatus etag propagation', () => {
     const result = await new CampaignServiceClient().toggleCampaignStatus(req, args);
 
     expect(result.etag).toBe('7');
+  });
+});
+
+/**
+ * The list read is the only place a campaign becomes addressable after its creating session ends,
+ * so what it returns decides whether a later pause or metrics call can name anything at all. The
+ * assertions below are about the two ways it could lie: scoping past the brief, and reporting a
+ * not-yet-indexed list as an empty one.
+ */
+describe('CampaignServiceClient.listBriefCampaigns', () => {
+  const doc = (over: Record<string, unknown> = {}) => ({
+    id: 'c-1',
+    project_id: 'tlf',
+    brief_id: 'b-1',
+    platform: 'google-ads',
+    campaign_name: 'KubeCon',
+    status: 'created',
+    version: 1,
+    ...over,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('scopes by project PARENT and brief FILTER, which are not interchangeable', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    const call = proxyRequest.mock.calls[0];
+    expect(call[2]).toBe('/query/resources');
+    // `parent` is the FGA boundary the platform authorizes against; `filters` narrows to the
+    // brief. There is no `brief:<id>` parent ref, so the brief cannot travel as a parent.
+    expect(call[4]).toEqual(expect.objectContaining({ type: 'campaign', parent: 'project:tlf', filters: ['brief_id:b-1'] }));
+  });
+
+  // The ticket's one unverified assumption: whether `data.brief_id` is a term field or an analysed
+  // one. Analysed, it matches on token overlap and returns another brief's campaigns — putting one
+  // brief's spend under another. The re-check is what makes that a dropped row instead of a lie.
+  it('drops rows belonging to another brief rather than trusting the filter', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [{ data: doc() }, { data: doc({ id: 'c-2', brief_id: 'b-2-other' }) }],
+    });
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    expect(result.campaigns.map((c) => c.id)).toEqual(['c-1']);
+    expect(logger.warning).toHaveBeenCalledWith(
+      expect.anything(),
+      'list_brief_campaigns',
+      expect.stringContaining('another brief'),
+      expect.objectContaining({ returned: 2, kept: 1 })
+    );
+  });
+
+  /**
+   * The all-foreign case, which the mixed test above does not reach: `possiblyStale` is derived
+   * from `campaigns.length`, NOT `docs.length`, and only a read where every row is dropped tells
+   * the two apart.
+   *
+   * Both expressions agree on an empty upstream result and on the mixed case, so without this the
+   * mutation `possiblyStale: docs.length === 0` survives the whole suite. It matters because the
+   * false value renders the flat "No campaigns to show." — asserting a brief has no campaigns on
+   * a read that in fact found nothing it could trust.
+   */
+  it('marks a result possiblyStale when the brief re-check drops every row', async () => {
+    isServerFeatureEnabled.mockImplementation(() => false);
+    proxyRequest.mockResolvedValueOnce({
+      resources: [{ data: doc({ id: 'c-2', brief_id: 'b-2-other' }) }],
+    });
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    expect(result.campaigns).toEqual([]);
+    expect(result.possiblyStale).toBe(true);
+  });
+
+  // Indexing is asynchronous, so "not indexed yet" and "none exist" are the same answer here.
+  // A caller that read absence as proof would tell a user their campaigns do not exist.
+  it('marks an empty result possiblyStale rather than asserting emptiness', async () => {
+    // Pinned rather than inherited: `vi.clearAllMocks()` does not reset IMPLEMENTATIONS, so this
+    // exact-equality assertion would otherwise depend on whichever flag state an earlier test in
+    // the file happened to leave behind. The claim under test is about `possiblyStale`.
+    isServerFeatureEnabled.mockImplementation(() => false);
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false });
+  });
+
+  // The index stores `version`; a write needs `If-Match`. campaign-service's ETag is exactly
+  // `"<version>"` WITH quotes (briefETag), and a caller that quoted it differently would get a 412
+  // and read it as someone else's concurrent edit rather than as a format bug.
+  it('derives the quoted etag from the indexed version', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc({ version: 7 }) }] });
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    expect(result.campaigns[0].etag).toBe('"7"');
+  });
+
+  it('does not mark a populated result stale', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    expect(result.possiblyStale).toBe(false);
+  });
+
+  // The list read is UNGATED while the toggle route refuses every UUID with the flag off, so the
+  // client cannot infer this — a default deployment would render controls that can only 400.
+  // Asserted in BOTH directions: a field hardcoded to either constant would pass one of these.
+  it.each([
+    [true, true],
+    [false, false],
+  ])('reports the deployment status-toggle capability as %s with the list', async (flagOn, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => flag === ServerFeatureFlag.CampaignServiceStatusToggle && flagOn);
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.statusToggleEnabled).toBe(expected);
+    } finally {
+      // `vi.clearAllMocks()` in this file's beforeEach clears CALLS but not IMPLEMENTATIONS, so a
+      // stray mockImplementation here would silently re-answer every later flag question in the
+      // suite. Restored to the file's default rather than left for the next test to discover.
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  // A TRUNCATED list is worse than an error, which is what failOnPartial buys. The caller cannot
+  // tell a short list from a complete one, and the campaigns missing from it are live and
+  // spending — so a page-two failure must propagate rather than quietly return page one.
+  it('throws rather than returning a truncated list when a later page fails', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }], page_token: 'p2' }).mockRejectedValue(new Error('query service unavailable'));
+
+    await expect(new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).rejects.toThrow();
+  });
+
+  // Refused rather than defaulted: a query missing either scope either fails authorization or
+  // widens past the brief the caller asked about.
+  it.each([
+    ['no project', '', 'b-1'],
+    ['no brief id', 'tlf', ''],
+  ])('refuses a request with %s without calling the query service', async (_label, slug, brief) => {
+    isServerFeatureEnabled.mockImplementation(() => false);
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, slug, brief);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+    // possiblyStale TRUE on a refusal: nothing was queried, so the empty list must not assert
+    // that the brief has no campaigns.
+    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false });
   });
 });

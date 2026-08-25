@@ -24,12 +24,32 @@ export interface EasyClaMyCla {
   projectName?: string;
   /** Project (or foundation) logo URL — omitted when there is none or it could not be resolved. */
   projectLogo?: string;
+  /**
+   * Salesforce project id the CLA Group maps to — omitted on a foundation-level group
+   * and when the mapping is unresolved.
+   */
+  projectSFID?: string;
+  /** Salesforce foundation id — omitted when unresolved. */
+  foundationSFID?: string;
+  /**
+   * True when the resolved user is a CLA manager of the employer's CCLA for this CLA Group.
+   * Upstream declares it always-present and always false on ICLA rows; optional here so an
+   * older producer that omits it reads as not-a-manager.
+   */
+  claManager?: boolean;
   /** Employer company name — ECLA only. */
   companyName?: string;
   /** Employer signing-entity name — ECLA only. */
   signingEntityName?: string;
   userID?: string;
   signedOn?: string;
+  /**
+   * Platform this agreement was signed via (`github` / `gitlab` / `gerrit`).
+   * `gerrit` is also LF SSO / email. Omitted when the signature record has no identity.
+   */
+  signedVia?: 'github' | 'gitlab' | 'gerrit';
+  /** Username or email the agreement was signed as. Omitted with `signedVia` when unknown. */
+  signedAs?: string;
   /** Always true — unsigned records are not returned. */
   signed?: boolean;
   /** False when the signature was invalidated. */
@@ -41,6 +61,8 @@ export interface EasyClaMyCla {
    * approval lists. This is authoritative — SS does not recompute it.
    */
   valid?: boolean;
+  status: 'valid' | 'needs_attention' | 'revoked' | 'invalidated' | 'unknown';
+  statusReason?: 'not_on_approval_list' | 'unknown';
   documentMajorVersion?: number;
   documentMinorVersion?: number;
   /** True when the record is a signed ICLA eligible for PDF retrieval. */
@@ -73,6 +95,62 @@ export interface EasyClaMyClaPdf {
   expiresInSeconds?: number;
 }
 
+/** An organization on a search result (`#/definitions/cla-search-org`). */
+export interface EasyClaSearchOrg {
+  name?: string;
+  source?: string;
+  url?: string;
+}
+
+/** One CLA Group matching the search term (`#/definitions/cla-search-result`). */
+export interface EasyClaSearchResult {
+  /** Note the spelling: upstream capitalizes ID, the SS-facing option does not. */
+  claGroupID?: string;
+  claGroupName?: string;
+  projectName?: string;
+  projectSFID?: string;
+  foundationSFID?: string;
+  projectExternalID?: string;
+  iclaEnabled?: boolean;
+  cclaEnabled?: boolean;
+  /** Why it matched: claGroup / project / organization / repository. */
+  matchTypes?: string[];
+  organizations?: EasyClaSearchOrg[];
+  matchedRepositoryName?: string;
+  matchedRepositoryURL?: string;
+}
+
+/** Response for `GET /v4/cla-group/search` (`#/definitions/cla-search-list`). */
+export interface EasyClaSearchList {
+  searchTerm?: string;
+  resultCount?: number;
+  /** True when more groups matched than the limit and the set was capped. */
+  truncated?: boolean;
+  results?: EasyClaSearchResult[];
+}
+
+/**
+ * Response for `POST /v4/self-serve/prepare-sign` (`#/definitions/prepare-sign`) — the signing
+ * session the CLA service opened, plus the Console address it wants the contributor sent to.
+ *
+ * There is no `githubId` here on purpose: the verified account arrives inside `identity`, as
+ * one `"<type>:<value>"` key among several. Declaring a flat field would invent a shape the
+ * producer does not emit and hide the parse that recovers it.
+ */
+export interface EasyClaPrepareSign {
+  /** The EasyCLA record the verified identity resolved to. */
+  userId?: string;
+  /** Absolute Contributor Console decision-screen URL, composed upstream. */
+  signUrl?: string;
+  /** Identity keys the service verified as the caller's, formatted `"<type>:<value>"`. */
+  identity?: string[];
+  /** Identity keys the service did not apply. Present only on the 200. */
+  skippedIdentities?: string[];
+  /** True when the record was created rather than matched. Observability only. */
+  userCreated?: boolean;
+  githubUsername?: string;
+}
+
 /**
  * Session-derived identity keys, resolved per request and never client-supplied.
  * Passed as query params to `GET /v4/my-clas`, which re-verifies each key belongs
@@ -90,4 +168,46 @@ export interface ResolvedClaIdentity {
   githubUsernames: string[];
   /** True when the session has at least one linked GitHub identity. */
   githubLinked: boolean;
+}
+
+/** One manager from `GET /v4/my-clas/{signatureID}/cla-managers` (`#/definitions/my-cla-manager`). */
+export interface EasyClaMyClaManager {
+  lfUsername?: string;
+  name?: string;
+  email?: string;
+}
+
+/** Response for `GET /v4/my-clas/{signatureID}/cla-managers` (`#/definitions/my-cla-manager-list`). */
+export interface EasyClaMyClaManagerList {
+  signatureID?: string;
+  claGroupID?: string;
+  claGroupName?: string;
+  projectName?: string;
+  companyID?: string;
+  companyName?: string;
+  managers?: EasyClaMyClaManager[];
+  resultCount?: number;
+}
+
+/** Body for `POST /v4/my-clas/{signatureID}/cla-manager-requests` (`#/definitions/my-cla-manager-request`). */
+export interface EasyClaMyClaManagerRequest {
+  requestType: 'approval' | 'removal';
+  recipients: string[];
+  message?: string;
+}
+
+/** Response for the same POST (`#/definitions/my-cla-manager-request-result`). */
+export interface EasyClaMyClaManagerRequestResult {
+  requestID?: string;
+  signatureID?: string;
+  requestType?: 'approval' | 'removal';
+  status?: 'sent' | 'recorded';
+  recipients?: string[];
+}
+
+/** The GitHub account the CLA service verified, recovered from its identity keys. */
+export interface RecordedGithubIdentity {
+  /** Decimal digits, as the picker's options carry it. */
+  githubId: string;
+  githubUsername?: string;
 }

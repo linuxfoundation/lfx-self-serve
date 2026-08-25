@@ -57,7 +57,7 @@ export function buildLensAwareInsightsUrl(
 /**
  * Classifies an LFX Insights project health score (0–100) into a band, matching the Insights
  * primary project Health Score component (`health-score.vue`): `>= 80` Excellent, `>= 60` Healthy,
- * `>= 40` Stable, `>= 20` Unsteady, else Critical. The `unavailable` state (no score) is handled by
+ * `>= 40` Fair, `>= 20` Concerning, else Critical. The `unavailable` state (no score) is handled by
  * callers, so this returns only the five scored bands and is the single source both the Org Lens
  * Projects table and the project-detail hero classify through (they must never disagree).
  */
@@ -69,12 +69,28 @@ export function classifyHealthScore(score: number): Exclude<HealthScore, 'unavai
     return 'healthy';
   }
   if (score >= 40) {
-    return 'stable';
+    return 'fair';
   }
   if (score >= 20) {
-    return 'unsteady';
+    return 'concerning';
   }
   return 'critical';
+}
+
+const HEALTH_SCORE_CATEGORIES = new Set<Exclude<HealthScore, 'unavailable'>>(['excellent', 'healthy', 'fair', 'concerning', 'critical']);
+
+/**
+ * Normalizes the warehouse-computed `health_score_category_v2` column (lf-dbt's `get_health_score_category_v2`
+ * macro, e.g. "Excellent"/"Fair"/"Concerning") into the lowercase `HealthScore` band. Returns `null` for
+ * unset/unrecognized values so callers can fall back to `classifyHealthScore` on the v1 score for projects
+ * the warehouse hasn't backfilled with a v2 category yet.
+ */
+export function normalizeHealthScoreCategoryV2(category: string | null | undefined): Exclude<HealthScore, 'unavailable'> | null {
+  if (!category) {
+    return null;
+  }
+  const lower = category.toLowerCase() as Exclude<HealthScore, 'unavailable'>;
+  return HEALTH_SCORE_CATEGORIES.has(lower) ? lower : null;
 }
 
 function encodePathSegments(path: string): string {

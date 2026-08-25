@@ -172,6 +172,20 @@ describe('authMiddleware route classification', () => {
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'AuthenticationError' }));
   });
 
+  it('returns a 401 (not a login redirect) for an encoded separator on an /api path', async () => {
+    const req = buildReq({ path: '/api/foo/bar%2Fbaz' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    // The catch block's other throw site: `bar%2Fbaz` decodes to `bar/baz`, reintroducing a separator (the `%ZZ`
+    // cases throw inside `decodeURIComponent`). Still `apiFallback` → JSON 401, never an HTML login redirect.
+    expect(res.oidc.login).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'AuthenticationError' }));
+  });
+
   it('returns a 401 (not a login redirect) for a malformed /public/api path so XHR clients get JSON', async () => {
     const req = buildReq({ path: '/public/api/foo/%ZZ' });
     const res = buildRes();
@@ -183,6 +197,20 @@ describe('authMiddleware route classification', () => {
     // be that public route. It fails closed to the API classification (`type: 'api'`, `required`,
     // `tokenRequired`), so an unauthenticated request returns a JSON 401 via `next(AuthenticationError)`
     // rather than an HTML login redirect a fetch/XHR client can't follow.
+    expect(res.oidc.login).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'AuthenticationError' }));
+  });
+
+  it('fails closed for an encoded separator on a /public/api path instead of fail-opening to optional auth', async () => {
+    const req = buildReq({ path: '/public/api/foo%2Fbar' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    // The sharp end of the `encoded path separator` throw: without it this would decode to `/public/api/foo/bar`,
+    // match the `optional` row, and allow the request. Failing closed makes it a JSON 401 instead.
     expect(res.oidc.login).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'AuthenticationError' }));

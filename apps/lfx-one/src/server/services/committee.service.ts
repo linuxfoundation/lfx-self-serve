@@ -1765,6 +1765,66 @@ export class CommitteeService {
   }
 
   /**
+   * Batch-fetches committee resources by UID from the query service.
+   * Chunks UIDs at 100 per request (URL-length guard) using `filters_or=uid:X`
+   * for OR semantics on data.uid. Returns a map keyed by `uid` for O(1) lookup.
+   *
+   * Deliberately does NOT route through `getCommittees()` — that method applies a
+   * `public || writer || member` access filter to unscoped listings, which would drop private
+   * committees a caller here has no need to filter (e.g. `OrgLensGroupsService` has already
+   * established the org holds seats in these committees via committee-service seat records, and
+   * only reads `project_name`).
+   *
+   * Rethrows on batch failure rather than failing soft (see the comment inline below) — callers
+   * that can tolerate a partial/degraded result (e.g. `OrgLensGroupsService`) must catch this
+   * themselves and decide their own fallback.
+   */
+  public async getCommitteesByIds(req: Request, uids: string[]): Promise<Map<string, Committee>> {
+    const unique = Array.from(new Set(uids)).filter(Boolean);
+    if (unique.length === 0) return new Map();
+
+    const BATCH_SIZE = 100;
+    const batches: string[][] = [];
+    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+      batches.push(unique.slice(i, i + BATCH_SIZE));
+    }
+
+    // Rethrow batch failures — returning [] would make callers treat real memberships as
+    // "committee not found" and silently drop them (defeats failOnPartial: true).
+    const batchResults = await Promise.all(
+      batches.map(async (batch) => {
+        try {
+          return await fetchAllQueryResources<Committee>(
+            req,
+            (pageToken) =>
+              this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+                type: 'committee',
+                filters_or: batch.map((uid) => `uid:${uid}`),
+                ...(pageToken && { page_token: pageToken }),
+              }),
+            { failOnPartial: true }
+          );
+        } catch (error) {
+          logger.warning(req, 'get_committees_by_ids', 'Batched committee fetch failed', {
+            batch_size: batch.length,
+            err: error,
+          });
+          throw error;
+        }
+      })
+    );
+
+    const byUid = new Map<string, Committee>();
+    for (const committee of batchResults.flat()) {
+      if (committee?.uid) {
+        byUid.set(committee.uid, this.stripChatWebhookUrl(committee));
+      }
+    }
+
+    return byUid;
+  }
+
+  /**
    * Enforces that only a project writer may configure the committee's Slack webhook — mirrors
    * `shareToSlack`'s own strict project-writer gate (weekly-brief.service.ts), so choosing the
    * Slack destination requires the same authorization as sending to it. Stricter than upstream's
@@ -1871,56 +1931,6 @@ export class CommitteeService {
       },
       metadata: { committee_uid: committeeId },
     });
-  }
-
-  /**
-   * Batch-fetches committee resources by UID from the query service.
-   * Chunks UIDs at 100 per request (URL-length guard) using `filters_or=uid:X`
-   * for OR semantics on data.uid. Returns a map keyed by `uid` for O(1) lookup.
-   */
-  private async getCommitteesByIds(req: Request, uids: string[]): Promise<Map<string, Committee>> {
-    const unique = Array.from(new Set(uids)).filter(Boolean);
-    if (unique.length === 0) return new Map();
-
-    const BATCH_SIZE = 100;
-    const batches: string[][] = [];
-    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
-      batches.push(unique.slice(i, i + BATCH_SIZE));
-    }
-
-    // Rethrow batch failures — returning [] would make callers treat real memberships as
-    // "committee not found" and silently drop them (defeats failOnPartial: true).
-    const batchResults = await Promise.all(
-      batches.map(async (batch) => {
-        try {
-          return await fetchAllQueryResources<Committee>(
-            req,
-            (pageToken) =>
-              this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-                type: 'committee',
-                filters_or: batch.map((uid) => `uid:${uid}`),
-                ...(pageToken && { page_token: pageToken }),
-              }),
-            { failOnPartial: true }
-          );
-        } catch (error) {
-          logger.warning(req, 'get_committees_by_ids', 'Batched committee fetch failed', {
-            batch_size: batch.length,
-            err: error,
-          });
-          throw error;
-        }
-      })
-    );
-
-    const byUid = new Map<string, Committee>();
-    for (const committee of batchResults.flat()) {
-      if (committee?.uid) {
-        byUid.set(committee.uid, this.stripChatWebhookUrl(committee));
-      }
-    }
-
-    return byUid;
   }
 
   /**
