@@ -7527,24 +7527,52 @@ export class ProjectService {
   }
 
   /**
+   * Acquires one of FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY traversal slots from a
+   * `gate` shared across an entire `discoverSubFoundations` tree (not just one level), queueing
+   * the caller if none are free. Bounding this at the gate level — rather than a fresh pool sized
+   * per recursion level — keeps the *total* concurrent `/query/resources` calls in flight across
+   * every depth capped at the intended value; a fresh per-level pool would let each recursive call
+   * spin up its own concurrency budget, multiplying real fan-out past the cap under a wide+deep
+   * tree (GH-1676 review).
+   */
+  private async acquireTraversalSlot(gate: { active: number; queue: (() => void)[] }): Promise<void> {
+    if (gate.active < FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY) {
+      gate.active += 1;
+      return;
+    }
+    return new Promise((resolve) => gate.queue.push(resolve));
+  }
+
+  /** Releases a traversal slot acquired via {@link acquireTraversalSlot}, waking the next queued caller if any. */
+  private releaseTraversalSlot(gate: { active: number; queue: (() => void)[] }): void {
+    const next = gate.queue.shift();
+    if (next) {
+      next();
+      return;
+    }
+    gate.active = Math.max(0, gate.active - 1);
+  }
+
+  /**
    * Recursively discovers nested sub-foundations beneath a foundation (or sub-foundation) UID,
    * depth-capped by FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH and, since the depth cap alone
    * doesn't bound worst-case fan-out under a true umbrella foundation (e.g. selecting The Linux
    * Foundation itself, whose direct children are dozens of foundations), also capped in total by
-   * FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES via the shared `budget` counter. A "sub-foundation"
-   * is any child project that itself satisfies `computeIsFoundation` AND is public + Active — the
-   * stricter visibility gate (beyond `computeIsFoundation`, which also accepts non-public/
-   * pre-launch `Formation - Engaged` foundations for other, unrelated callers) keeps GH-1607's
-   * exclusion requirement intact for group metadata (slug/name) that gets serialized straight
-   * into the response. Reuses the same `parent: project:<uid>` query-service filter as
-   * `getFoundationProjectUids`/`getChildProjects`, but recurses into each discovered
-   * sub-foundation instead of stopping at one level.
+   * FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES via the shared `budget` counter. Traversal itself
+   * follows any child satisfying `computeIsFoundation` regardless of visibility — a hidden or
+   * pre-launch (`Formation - Engaged`) intermediate sub-foundation must not block discovery of a
+   * public + Active sub-foundation beneath it. The stricter public + Active gate is applied only
+   * when deciding what to *include* in the returned list, since that's the group metadata
+   * (slug/name) that gets serialized straight into the response (GH-1676 review). Reuses the same
+   * `parent: project:<uid>` query-service filter as `getFoundationProjectUids`/`getChildProjects`,
+   * but recurses into each discovered sub-foundation instead of stopping at one level.
    */
   private async discoverSubFoundations(
     req: Request,
     parentUid: string,
     depth: number = 0,
-    budget: { remaining: number } = { remaining: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES }
+    budget: { remaining: number } = { remaining: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES },
+    gate: { active: number; queue: (() => void)[] } = { active: 0, queue: [] }
   ): Promise<{ uid: string; slug: string; name: string }[]> {
     if (depth >= FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH) {
       logger.warning(req, 'discover_sub_foundations', 'Hit max traversal depth, stopping this branch', {
@@ -7554,58 +7582,60 @@ export class ProjectService {
       return [];
     }
 
-    const children = await fetchAllQueryResources<Project>(
-      req,
-      (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'project',
-          parent: `project:${parentUid}`,
-          ...(pageToken && { page_token: pageToken }),
-        }),
-      // A later-page failure must not silently keep only the earlier pages: that can drop a
-      // nested sub-foundation that happened to land on a later page with no signal beyond a
-      // warning (Cursor). failOnPartial makes a partial fetch throw instead, which the outer
-      // .catch() below turns into a clean "stop this branch" rather than a silent undercount.
-      { failOnPartial: true }
-    ).catch((error) => {
-      logger.warning(req, 'discover_sub_foundations', 'Failed to resolve children, stopping traversal at this branch', {
-        parent_uid: parentUid,
-        depth,
-        err: error,
+    await this.acquireTraversalSlot(gate);
+    let children: Project[];
+    try {
+      children = await fetchAllQueryResources<Project>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project',
+            parent: `project:${parentUid}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        // A later-page failure must not silently keep only the earlier pages: that can drop a
+        // nested sub-foundation that happened to land on a later page with no signal beyond a
+        // warning (Cursor). failOnPartial makes a partial fetch throw instead, which the outer
+        // .catch() below turns into a clean "stop this branch" rather than a silent undercount.
+        { failOnPartial: true }
+      ).catch((error) => {
+        logger.warning(req, 'discover_sub_foundations', 'Failed to resolve children, stopping traversal at this branch', {
+          parent_uid: parentUid,
+          depth,
+          err: error,
+        });
+        return [] as Project[];
       });
-      return [] as Project[];
-    });
+    } finally {
+      this.releaseTraversalSlot(gate);
+    }
 
-    const eligibleChildren = children.filter(
-      (child) => child.slug !== ROOT_PROJECT_SLUG && computeIsFoundation(child) && child.public && child.stage === ProjectStage.Active
-    );
+    const traversalCandidates = children.filter((child) => child.slug !== ROOT_PROJECT_SLUG && computeIsFoundation(child));
 
-    // Sibling sub-foundations are independent traversals, so they're fanned out through a bounded
-    // worker pool sharing the `budget` counter rather than awaited one at a time — otherwise a wide
-    // umbrella foundation approaching FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES would serialize
-    // dozens of pagination loops before any Snowflake detail fan-out could start (GH-1676 review).
-    const subFoundations: { uid: string; slug: string; name: string }[] = [];
-    let cursor = 0;
-    const worker = async (): Promise<void> => {
-      while (cursor < eligibleChildren.length) {
-        const child = eligibleChildren[cursor++];
+    // Promise.all over a per-child map (rather than a shared-cursor worker pool) both fans siblings
+    // out concurrently — real concurrency is bounded tree-wide by `gate`, not by how many siblings
+    // exist at this level — and preserves discovery order in the returned array regardless of which
+    // child's branch resolves first (Cursor Bugbot review: worker-pool completion order was
+    // previously non-deterministic).
+    const results = await Promise.all(
+      traversalCandidates.map(async (child) => {
         if (budget.remaining <= 0) {
           logger.warning(req, 'discover_sub_foundations', 'Hit max discovered sub-foundation count, stopping traversal', {
             parent_uid: parentUid,
             depth,
             max_nodes: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
           });
-          break;
+          return [];
         }
-        subFoundations.push({ uid: child.uid, slug: child.slug, name: child.name });
-        budget.remaining -= 1;
-        const nested = await this.discoverSubFoundations(req, child.uid, depth + 1, budget);
-        subFoundations.push(...nested);
-      }
-    };
-    const poolSize = Math.min(FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY, eligibleChildren.length);
-    await Promise.all(Array.from({ length: poolSize }, () => worker()));
-    return subFoundations;
+        const isVisible = child.public && child.stage === ProjectStage.Active;
+        if (isVisible) {
+          budget.remaining -= 1;
+        }
+        const nested = await this.discoverSubFoundations(req, child.uid, depth + 1, budget, gate);
+        return isVisible ? [{ uid: child.uid, slug: child.slug, name: child.name }, ...nested] : nested;
+      })
+    );
+    return results.flat();
   }
 
   /**

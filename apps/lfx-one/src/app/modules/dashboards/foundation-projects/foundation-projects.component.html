@@ -37,9 +37,11 @@
     </div>
 
     @let groupsCount = groupedFilteredProjects().length;
-    @if (searchQuery().trim() && filteredProjects().length === 0) {
+    @if (!loading() && searchQuery().trim() && filteredProjects().length === 0) {
       <!-- A no-match search renders one empty state regardless of group count — the per-group
-           #emptymessage below would otherwise stack an identical "no match" table per group. -->
+           #emptymessage below would otherwise stack an identical "no match" table per group.
+           Gated on !loading() so switching foundations while a search term is still active
+           doesn't flash this before the new foundation's data arrives. -->
       <div class="flex flex-col items-center gap-2 rounded-lg border border-slate-200 py-12 text-center" data-testid="foundation-projects-search-empty">
         <i class="fa-light fa-magnifying-glass text-3xl text-gray-400"></i>
         <p class="text-sm font-medium text-gray-700">No projects match your search</p>
@@ -154,6 +156,16 @@
                       <i class="fa-light fa-magnifying-glass text-3xl text-gray-400"></i>
                       <p class="text-sm font-medium text-gray-700">No projects match your search</p>
                       <p class="max-w-md text-sm text-gray-500">Try a different term or clear the search to see all projects.</p>
+                    </div>
+                  } @else if (activePill() !== 'all') {
+                    <!-- Distinct from the "no project data available" branches below — a pill-filtered
+                         group has data, it just has no rows matching the current filter (Cursor review). -->
+                    <div class="flex flex-col items-center gap-2" data-testid="foundation-projects-filter-empty">
+                      <i class="fa-light fa-filter-slash text-3xl text-gray-400"></i>
+                      <p class="text-sm font-medium text-gray-700">No projects match the selected filter</p>
+                      <p class="max-w-md text-sm text-gray-500">
+                        Try a different filter or select "All" to see every project{{ groupsCount > 1 ? ' in this group' : '' }}.
+                      </p>
                     </div>
                   } @else if (groupsCount > 1) {
                     <div class="flex flex-col items-center gap-2" data-testid="foundation-projects-empty">

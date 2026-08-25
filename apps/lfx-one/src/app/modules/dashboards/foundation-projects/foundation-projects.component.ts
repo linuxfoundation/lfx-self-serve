@@ -267,7 +267,16 @@ export class FoundationProjectsComponent {
           return from(foundationUids).pipe(
             mergeMap((uid) => {
               const params = new HttpParams().set('parent', `project:${uid}`);
-              return this.projectService.getProjects(params).pipe(catchError(() => of([])));
+              return this.projectService.getProjects(params).pipe(
+                catchError((error) => {
+                  // A failed fetch here is indistinguishable downstream from a group that
+                  // genuinely has no sub-projects — rows under this group stay on "Loading"
+                  // for groups/mailing lists/chat rather than surfacing an error state. Logged
+                  // so the failure isn't fully silent (review: no-silent-catchError convention).
+                  console.error('[FoundationProjectsComponent] Failed to resolve sub-projects for group', { uid, error });
+                  return of([]);
+                })
+              );
             }, FOUNDATION_PROJECT_COUNT_FETCH_CONCURRENCY),
             toArray(),
             map((subProjectLists) => {
