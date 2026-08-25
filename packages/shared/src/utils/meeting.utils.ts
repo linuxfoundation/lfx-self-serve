@@ -5,7 +5,9 @@ import { HttpParams } from '@angular/common/http';
 
 import {
   CANCELLED_COLOR,
+  COMMITTEE_TO_MEETING_VOTING_STATUS,
   MEETING_ORGANIZER_SKIP_IDENTIFIERS,
+  MEETING_TO_COMMITTEE_VOTING_STATUS,
   MEETING_TYPE_COLORS,
   PAST_MEETING_CALENDAR_COLOR,
   PAST_SURVEY_CALENDAR_COLOR,
@@ -16,13 +18,14 @@ import {
   VOTE_COLOR,
 } from '../constants';
 import { lfxColors } from '../constants/colors.constants';
-import { RecurrenceType } from '../enums';
+import { CommitteeMemberVotingStatus, RecurrenceType } from '../enums';
 import { PollStatus } from '../enums/poll.enum';
 import type {
   BuildMeetingOccurrenceRouteOptions,
   CalendarColor,
   CustomRecurrencePattern,
   Meeting,
+  MeetingAllowedVotingStatus,
   MeetingCommittee,
   MeetingHostCandidate,
   MeetingOccurrence,
@@ -876,8 +879,8 @@ export function transformV1SummaryToV2(summary: PastMeetingSummary): PastMeeting
     return summary;
   }
 
-  // Cast to raw shape to access both V1 fields and indexer-contract flat fields
-  // (content and edited_content are indexer-flat fields not present in PastMeetingSummary or V1PastMeetingSummary)
+  // SAFETY: cast only widens to indexer-flat fields (content/edited_content) absent from both summary types;
+  // presence is guarded by optional chaining semantics (?? / ||) below, so a missing field degrades to a default.
   const raw = summary as unknown as V1PastMeetingSummary & { content?: string; edited_content?: string };
 
   return {
@@ -1382,4 +1385,37 @@ export function sanitizeMeetingCommitteeUids(uids: ReadonlyArray<string | null |
   }
 
   return uids.filter((uid): uid is string => typeof uid === 'string' && uid.trim().length > 0);
+}
+
+/** Maps display voting statuses (committee domain) to the meeting API's snake_case vocabulary, dropping unknowns. */
+export function toMeetingApiVotingStatuses(statuses: ReadonlyArray<string | null | undefined> | null | undefined): MeetingAllowedVotingStatus[] {
+  if (!Array.isArray(statuses) || statuses.length === 0) {
+    return [];
+  }
+
+  const mapped = statuses.map((status) => (status ? COMMITTEE_TO_MEETING_VOTING_STATUS[status as CommitteeMemberVotingStatus] : undefined));
+  return [...new Set(mapped.filter((status): status is MeetingAllowedVotingStatus => Boolean(status)))];
+}
+
+/** Maps meeting API voting statuses back to display values ('none' collapses to Observer), dropping unknowns. */
+export function fromMeetingApiVotingStatuses(statuses: ReadonlyArray<string | null | undefined> | null | undefined): CommitteeMemberVotingStatus[] {
+  if (!Array.isArray(statuses) || statuses.length === 0) {
+    return [];
+  }
+
+  // Fall back to a direct display-value match so rows stored pre-migration still hydrate.
+  const mapped = statuses.map((status) => {
+    if (!status) return undefined;
+    const mappedStatus = MEETING_TO_COMMITTEE_VOTING_STATUS[status as MeetingAllowedVotingStatus];
+    if (mappedStatus) return mappedStatus;
+    if (!Object.values(CommitteeMemberVotingStatus).includes(status as CommitteeMemberVotingStatus)) return undefined;
+    // Legacy 'None' collapses to Observer like 'none' does — None is not selectable in meeting forms.
+    return status === CommitteeMemberVotingStatus.NONE ? CommitteeMemberVotingStatus.OBSERVER : (status as CommitteeMemberVotingStatus);
+  });
+  return [...new Set(mapped.filter((status): status is CommitteeMemberVotingStatus => Boolean(status)))];
+}
+
+/** Canonicalizes a stored status list to the deduped meeting-API vocabulary, mapping pre-migration display values. */
+export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string | null | undefined> | null | undefined): MeetingAllowedVotingStatus[] {
+  return toMeetingApiVotingStatuses(fromMeetingApiVotingStatuses(statuses));
 }
