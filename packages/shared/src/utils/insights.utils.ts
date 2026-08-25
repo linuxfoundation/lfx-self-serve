@@ -77,6 +77,22 @@ export function classifyHealthScore(score: number): Exclude<HealthScore, 'unavai
   return 'critical';
 }
 
+const HEALTH_SCORE_CATEGORIES = new Set<Exclude<HealthScore, 'unavailable'>>(['excellent', 'healthy', 'fair', 'concerning', 'critical']);
+
+/**
+ * Normalizes the warehouse-computed `health_score_category_v2` column (lf-dbt's `get_health_score_category_v2`
+ * macro, e.g. "Excellent"/"Fair"/"Concerning") into the lowercase `HealthScore` band. Returns `null` for
+ * unset/unrecognized values so callers can fall back to `classifyHealthScore` on the v1 score for projects
+ * the warehouse hasn't backfilled with a v2 category yet.
+ */
+export function normalizeHealthScoreCategoryV2(category: string | null | undefined): Exclude<HealthScore, 'unavailable'> | null {
+  if (!category) {
+    return null;
+  }
+  const lower = category.toLowerCase() as Exclude<HealthScore, 'unavailable'>;
+  return HEALTH_SCORE_CATEGORIES.has(lower) ? lower : null;
+}
+
 function encodePathSegments(path: string): string {
   if (!path) {
     return '';
