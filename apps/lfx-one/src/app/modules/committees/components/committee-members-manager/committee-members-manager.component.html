@@ -173,8 +173,8 @@
                     'bg-emerald-100 text-emerald-800': member.voting?.status === 'Voting Rep' || member.voting?.status === 'Alternate Voting Rep',
                     'bg-gray-100 text-gray-600': member.voting?.status !== 'Voting Rep' && member.voting?.status !== 'Alternate Voting Rep',
                   }">
-                  @if (member.voting?.status) {
-                    {{ member.voting.status }}
+                  @if (member.voting?.status; as votingStatus) {
+                    {{ votingStatus }}
                   } @else {
                     <span aria-hidden="true">{{ noVotingStatusLabel }}</span>
                     <span class="sr-only">No voting status</span>
