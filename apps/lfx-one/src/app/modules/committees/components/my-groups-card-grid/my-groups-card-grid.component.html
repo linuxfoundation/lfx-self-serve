@@ -28,7 +28,8 @@
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" data-testid="groups-card-grid">
     @for (item of visibleCards(); track item.committee.uid) {
       <a
-        [routerLink]="['/groups', item.committee.uid]"
+        [routerLink]="item.viewCommands"
+        [queryParams]="item.viewQueryParams"
         [state]="{ backLabel: 'My Groups' }"
         class="no-underline bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 h-full flex flex-col gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         [attr.aria-label]="item.ariaLabel"
