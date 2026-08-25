@@ -68,7 +68,7 @@ function projectsRow(overrides: Record<string, unknown> = {}) {
 
 function mockProjectsRow(row: ReturnType<typeof projectsRow>): void {
   execute.mockImplementation(async (sql: string) => {
-    if (sql.includes('ORG_LENS_PROJECTS\n')) {
+    if (sql.includes('ORG_LENS_PROJECTS')) {
       return { rows: [row] };
     }
     return { rows: [] };
