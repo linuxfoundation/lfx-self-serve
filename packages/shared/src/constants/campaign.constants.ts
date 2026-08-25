@@ -621,17 +621,6 @@ const MICROSOFT_MATCH_TYPE_MAP: Record<CampaignKeyword['matchType'], true> = { E
 const MICROSOFT_MATCH_TYPE_KEYS: ReadonlySet<string> = new Set(Object.keys(MICROSOFT_MATCH_TYPE_MAP).map((k) => k.toLowerCase()));
 
 /**
- * Is `value` a match type Microsoft accepts?
- *
- * CASE-INSENSITIVE and trimming, mirroring the client's `canonicalMatchType`, which does
- * `strings.ToLower(strings.TrimSpace(in))`. An exact-case `Set.has` was stricter than upstream and
- * refused `EXACT` or ` exact ` — rejecting a request the service would have accepted, and reporting
- * the platform as unconfigured rather than naming the real problem.
- *
- * The ORIGINAL value is still forwarded rather than canonicalised here: upstream canonicalises it
- * anyway, so rewriting it locally would be a second normalisation that could only drift.
- */
-/**
  * Canonicalise a match type to the PascalCase vocabulary, or null when it is not one.
  *
  * Mirrors the client's `canonicalMatchType`, and exists for the UI rather than the wire: the
@@ -753,6 +742,19 @@ export const META_INELIGIBLE_COUNTRIES: ReadonlySet<string> = new Set<string>([
  * Which of the assigned countries Meta will actually accept remains the service's call, since it
  * additionally drops sanctioned and regulated markets; duplicating THAT list here would drift.
  */
+export function normalizeGeoTargets(codes: readonly string[] | null | undefined): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const code of codes ?? []) {
+    if (typeof code !== 'string') continue;
+    const upper = code.trim().toUpperCase();
+    if (!META_GEO_CODE_PATTERN.test(upper) || !ASSIGNED_COUNTRY_CODES.has(upper) || seen.has(upper)) continue;
+    seen.add(upper);
+    normalized.push(upper);
+  }
+  return normalized;
+}
+
 /**
  * Normalise geo codes for MICROSOFT: trim, upper-case and de-duplicate, WITHOUT applying Meta's
  * assigned-country allowlist.
@@ -777,19 +779,6 @@ export function normalizeMicrosoftGeoTargets(codes: readonly string[] | null | u
     if (typeof code !== 'string') continue;
     const upper = code.trim().toUpperCase();
     if (!META_GEO_CODE_PATTERN.test(upper) || seen.has(upper)) continue;
-    seen.add(upper);
-    normalized.push(upper);
-  }
-  return normalized;
-}
-
-export function normalizeGeoTargets(codes: readonly string[] | null | undefined): string[] {
-  const seen = new Set<string>();
-  const normalized: string[] = [];
-  for (const code of codes ?? []) {
-    if (typeof code !== 'string') continue;
-    const upper = code.trim().toUpperCase();
-    if (!META_GEO_CODE_PATTERN.test(upper) || !ASSIGNED_COUNTRY_CODES.has(upper) || seen.has(upper)) continue;
     seen.add(upper);
     normalized.push(upper);
   }

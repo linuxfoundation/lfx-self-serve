@@ -837,19 +837,17 @@ export interface MicrosoftCampaignCreateRequest {
   hsToken?: string;
   /** Daily budget, whole units of the account currency. Must be finite and > 0. */
   budgetUsd: number;
-  /**
-   * NO `startDate` / `endDate`, and their absence is deliberate rather than an oversight.
-   *
-   * `microsoftConfig` (`internal/dispatch/microsoft.go:57-83`) declares no scheduling fields, and
-   * neither does the client's `CampaignInput` — unlike `metaConfig`, which carries and applies
-   * both. A Microsoft campaign is therefore created with NO flight, and sending dates here would
-   * put fields on the wire that `unmarshalPlatformConfig` silently discards, implying a schedule
-   * the operator never gets.
-   *
-   * The campaign is created PAUSED, so nothing spends until a human enables it — but there is no
-   * automatic stop, which is why the UI states this rather than hiding it. Upstream scheduling is
-   * the fix; see the note on the implementation tab's Microsoft section.
-   */
+  // NO `startDate` / `endDate`, and their absence is deliberate rather than an oversight.
+  //
+  // `microsoftConfig` (`internal/dispatch/microsoft.go:57-83`) declares no scheduling fields, and
+  // neither does the client's `CampaignInput` — unlike `metaConfig`, which carries and applies
+  // both. A Microsoft campaign is therefore created with NO flight, and sending dates here would
+  // put fields on the wire that `unmarshalPlatformConfig` silently discards, implying a schedule
+  // the operator never gets.
+  //
+  // The campaign is created PAUSED, so nothing spends until a human enables it — but there is no
+  // automatic stop, which is why the UI states this rather than hiding it. Upstream scheduling is
+  // the fix; see the note on the implementation tab's Microsoft section.
   /** ISO 3166-1 alpha-2 codes. REQUIRED, >= 1 — see the interface note on uncontrolled spend. */
   geoTargets: string[];
   /** REQUIRED, >= 1 — see the interface note on unservable campaigns. */

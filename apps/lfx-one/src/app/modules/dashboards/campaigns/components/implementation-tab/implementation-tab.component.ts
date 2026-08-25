@@ -598,6 +598,13 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly microsoftKeywordDraftTooLong = computed(() => this.microsoftKeywordDraftLength() > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH);
 
   /**
+   * The effective geo list as a display string. A computed rather than `.join()` in the template:
+   * `docs/reviews/frontend-checklist.md` permits signal reads, computeds and pipes in bindings but
+   * not logic-bearing calls, which re-run on every change-detection pass.
+   */
+  protected readonly microsoftEffectiveGeoLabel = computed(() => this.microsoftEffectiveGeoTargets().join(', '));
+
+  /**
    * Whether the keyword and geo lists are within the bounds the Microsoft client enforces before
    * its first create call. See the constants for the verified upstream values.
    *
@@ -605,12 +612,6 @@ export class ImplementationTabComponent implements OnInit {
    * counts exactly as the dispatched payload excludes them — counting the raw signals would block
    * a form whose actual request is within bounds.
    */
-  /**
-   * The effective geo list as a display string. A computed rather than `.join()` in the template:
-   * `docs/reviews/frontend-checklist.md` permits signal reads, computeds and pipes in bindings but
-   * not logic-bearing calls, which re-run on every change-detection pass.
-   */
-  protected readonly microsoftEffectiveGeoLabel = computed(() => this.microsoftEffectiveGeoTargets().join(', '));
 
   protected readonly microsoftBoundsValid = computed<boolean>(() => {
     const keywords = this.microsoftEffectiveKeywords();
@@ -1154,12 +1155,18 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Add one Microsoft geo target, normalised through the shared `normalizeGeoTargets` — the whole
+   * Add one Microsoft geo target, normalised through `normalizeMicrosoftGeoTargets` — the whole
    * list, not just the new code, so a brief-seeded list is normalised on first add too and a `us`
    * from the brief collapses with a typed `US`.
    *
-   * No eligibility filter, for the reason given on `microsoftEffectiveGeoTargets`: Microsoft
-   * resolves codes at create time and fails before creating anything.
+   * NOT `normalizeGeoTargets`, which is Meta's: that helper gates on `ASSIGNED_COUNTRY_CODES`, and
+   * the two lists genuinely diverge — `AN` is in Microsoft's table and not in ours, so routing
+   * through it silently DROPPED a code Microsoft accepts, leaving the request to fall back to the
+   * event country and target a different market.
+   *
+   * No eligibility filter here at all, for the reason given on `microsoftEffectiveGeoTargets`:
+   * Microsoft resolves codes against its own table at create time and fails before creating
+   * anything, so membership is its call rather than a list this app would have to keep in step.
    */
   protected addMicrosoftGeoTarget(code: string): void {
     // Same door-refusal as the keyword cap — the client bounds geo targets at 30.
