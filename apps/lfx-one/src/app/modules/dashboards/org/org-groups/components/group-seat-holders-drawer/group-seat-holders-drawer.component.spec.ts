@@ -679,6 +679,65 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(instance.statusMessage()).toBe('2 seat holders loaded.');
   });
 
+  // The close-preserves-state fix above (EMPTY, not null, while `visible` is false) must not leak
+  // the closed drawer's roster into a *different* group opened next — closing only defers the
+  // clear, it doesn't skip it forever.
+  it("does not carry a closed committee's roster into a reopen for a different committee", async () => {
+    await setup(
+      vi
+        .fn()
+        .mockReturnValue(
+          of(
+            response([
+              assignment({ seatId: 's-1', committeeUid: 'c-1', person: person({ fullName: 'Committee One Person' }) }),
+              assignment({ seatId: 's-2', committeeUid: 'c-2', person: person({ email: 'two@example.org', fullName: 'Committee Two Person' }) }),
+            ])
+          )
+        )
+    );
+
+    await open('org-1', 'c-1');
+    expect(text()).toContain('Committee One Person');
+
+    fixture.componentRef.setInput('visible', false);
+    await fixture.whenStable();
+
+    fixture.componentRef.setInput('committeeUid', 'c-2');
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(text()).toContain('Committee Two Person');
+    expect(text()).not.toContain('Committee One Person');
+  });
+
+  // The first-ever open for an org is always mid-fetch when the leave animation could start (the
+  // cache doesn't exist yet). `finalize` fires on unsubscribe as well as completion, so it would
+  // clear `loading` when switchMap tears the pipeline down on close — with `seatHolders` still
+  // null, that renders the empty state and a false "0 seat holders" announcement during the same
+  // close animation the EMPTY guard exists to protect. `tap` (used instead) only runs on a real
+  // emission, so closing mid-fetch must leave `loading` — and therefore the blank placeholder
+  // state, not a false empty result — exactly as it was.
+  it('does not clear the loading state to a false empty result when the drawer closes mid-fetch', async () => {
+    await setup(vi.fn().mockReturnValue(NEVER));
+
+    fixture.componentRef.setInput('orgUid', 'org-1');
+    fixture.componentRef.setInput('committeeUid', 'c-1');
+    fixture.componentRef.setInput('groupName', 'Storage Working Group');
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+
+    const instance = fixture.componentInstance as unknown as { loading: () => boolean; displayedCount: () => number | null };
+    expect(instance.loading()).toBe(true);
+    expect(instance.displayedCount()).toBeNull();
+
+    fixture.componentRef.setInput('visible', false);
+    await fixture.whenStable();
+
+    expect(instance.loading()).toBe(true);
+    expect(instance.displayedCount()).toBeNull();
+  });
+
   it('renders a member with no name and no email as "Unknown member", not a blank row', async () => {
     await setup(
       vi.fn().mockReturnValue(

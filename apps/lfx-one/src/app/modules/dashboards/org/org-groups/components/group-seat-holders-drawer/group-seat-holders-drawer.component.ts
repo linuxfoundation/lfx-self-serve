@@ -8,7 +8,7 @@ import { CommitteeMembersService } from '@modules/dashboards/org/org-people/serv
 import { votingStatusPillClass, votingStatusRank } from '@lfx-one/shared/constants';
 import type { CommitteeMemberAssignment, CommitteeMemberSeatHolderVm } from '@lfx-one/shared/interfaces';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, EMPTY, finalize, map, of, shareReplay, switchMap, throwError, type Observable } from 'rxjs';
+import { catchError, EMPTY, map, of, shareReplay, switchMap, tap, throwError, type Observable } from 'rxjs';
 
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 
@@ -150,7 +150,13 @@ export class GroupSeatHoldersDrawerComponent {
               this.error.set(true);
               return of([] as CommitteeMemberAssignment[]);
             }),
-            finalize(() => this.loading.set(false))
+            // tap, not finalize: finalize also fires on unsubscribe (switchMap tearing this down
+            // because the drawer closed mid-fetch), which would clear `loading` — with nothing yet
+            // in `seatHolders`, that renders the empty state and a false "0 seat holders"
+            // announcement during the very close animation the EMPTY guard above exists to protect.
+            // tap only runs on an actual emission (the map above, or catchError's fallback), so a
+            // closed-mid-fetch drawer keeps showing its spinner state until a real result arrives.
+            tap(() => this.loading.set(false))
           );
         })
       ),
