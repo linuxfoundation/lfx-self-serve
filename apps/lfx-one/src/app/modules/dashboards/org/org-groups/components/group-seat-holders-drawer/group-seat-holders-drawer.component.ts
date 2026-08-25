@@ -118,8 +118,7 @@ export class GroupSeatHoldersDrawerComponent {
     this.previouslyFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     this.titleRef()?.nativeElement.focus();
 
-    // Belt-and-braces, not the sole guarantee — initSeatHolders()'s !visible branch is what
-    // actually resets this for every close path (see contentRevealed's own comment).
+    // Belt-and-braces, not the sole guarantee — see contentRevealed's own comment.
     this.contentRevealed.set(false);
     this.revealRef?.destroy();
     this.revealRef = afterNextRender(() => this.contentRevealed.set(true), { injector: this.injector });
@@ -182,14 +181,13 @@ export class GroupSeatHoldersDrawerComponent {
             // Keeps the last-loaded state on screen through p-drawer's leave animation instead of
             // flashing to an empty result and a false "0 seat holders" announcement.
             //
-            // Also the one place every close path passes through, unlike (onHide) (see its own
-            // comment) — so it's where contentRevealed must reset, not onDrawerShow(). PrimeNG
-            // fires onShow from its animation-start callback, which runs *after* *ngIf="visible"
-            // has already inserted the live region for that open; resetting only in onDrawerShow()
-            // would leave a stale `true` from the previous open sitting on the node's very first
-            // paint on every reopen, exactly the "freshly-inserted node's initial text" problem
-            // contentRevealed exists to prevent.
+            // Also where contentRevealed resets — the one path every close goes through, unlike
+            // (onHide) (see its own comment). See contentRevealed's own comment for why. Destroys
+            // any pending reveal too, so an externally-driven close (no onHide) can't have its
+            // afterNextRender callback fire after this reset and re-set contentRevealed to true.
             this.contentRevealed.set(false);
+            this.revealRef?.destroy();
+            this.revealRef = null;
             return EMPTY;
           }
           if (!orgUid || !committeeUid) {

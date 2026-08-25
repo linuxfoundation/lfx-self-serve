@@ -845,7 +845,12 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     // freshly-inserted-content problem this whole mechanism exists to avoid. Checked synchronously
     // right after the reopen's own render, before awaiting whenStable() again (which would let the
     // afterNextRender hook fire and mask a broken reset).
-    it("re-mounts the status region empty on a reopen, not carrying over the previous open's revealed state", async () => {
+    //
+    // Also closes the loop past that empty first paint: asserting only the empty half would stay
+    // green even if a regression stopped contentRevealed from re-flipping to true on later opens
+    // (e.g. a revealRef that isn't re-registered), silently leaving the live region permanently
+    // unannounced from the second open onward — worse than the bug this reset exists to fix.
+    it("re-mounts the status region empty on a reopen, not carrying over the previous open's revealed state, then reveals it again", async () => {
       await setup(vi.fn().mockReturnValue(of(response([]))));
 
       await open('org-1', 'c-1');
@@ -856,8 +861,11 @@ describe('GroupSeatHoldersDrawerComponent', () => {
 
       fixture.componentRef.setInput('visible', true);
       fixture.detectChanges();
-
       expect(statusMessage()).toBe('');
+
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(statusMessage()).toBe('0 seat holders loaded.');
     });
 
     it('moves focus into the panel on open, away from the element that triggered it', async () => {
