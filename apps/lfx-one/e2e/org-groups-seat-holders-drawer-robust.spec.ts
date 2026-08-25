@@ -93,10 +93,12 @@ test.describe('Org Groups — seat holders drawer data-testid contract (GH-1780)
     await expect(button).toBeVisible();
     expect(await button.evaluate((el) => el.tagName)).toBe('BUTTON');
 
-    // Asserts the button's own testid, not collectSeatTestIds()'s output — that helper only ever
-    // locates on the 'group-seat-holder-' prefix, so anything it returns starts with that prefix by
-    // construction and could never demonstrate the no-shared-stem invariant either way.
-    const buttonTestId = await button.getAttribute('data-testid');
-    expect(buttonTestId?.startsWith('group-seat-holder-')).toBe(false);
+    // Asserts the structural property directly, not a fact about the two hard-coded string literals
+    // used to locate `row`/`button` above (which is trivially true regardless of what the button's
+    // testid actually is — both a prior fixed version of this line and its predecessor were
+    // tautological this same way). `row.locator(...)` matches descendants only, so the row's own
+    // testid doesn't self-match — this fails only if something nested under the row reuses the row's
+    // stem, which is exactly what would make collectSeatTestIds()'s prefix match over-collect it.
+    await expect(row.locator('[data-testid^="group-seat-holder-"]')).toHaveCount(0);
   });
 });
