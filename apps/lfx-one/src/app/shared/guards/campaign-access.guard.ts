@@ -44,7 +44,7 @@ export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot
   const override = featureFlagService.getFlagOverride(MARKETING_OPS_FGA_ENABLED_FLAG);
   if (override !== undefined) {
     if (!override) {
-      return router.parseUrl('/foundation/overview');
+      return router.createUrlTree(['/foundation/overview'], { queryParams: { project: route.queryParamMap.get('project') } });
     }
     // Override says flag is on; continue to FGA check below.
     return personaService.refreshEnrichedPersonas(!personaService.isCampaignManager(), projectSlug).pipe(
@@ -68,7 +68,7 @@ export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot
   return providerReady$.pipe(
     switchMap((ready) => {
       if (!ready || !featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false)()) {
-        return of(router.parseUrl('/foundation/overview'));
+        return of(router.createUrlTree(['/foundation/overview'], { queryParams: { project: route.queryParamMap.get('project') } }));
       }
 
       // Force a refetch unless we already know the caller is a campaign manager — the "already

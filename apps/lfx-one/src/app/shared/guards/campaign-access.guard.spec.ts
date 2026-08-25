@@ -85,13 +85,13 @@ describe('campaignAccessGuard', () => {
     expect(getFlagOverride).not.toHaveBeenCalled();
   });
 
-  it('redirects when the local override says the flag is off', async () => {
+  it('redirects when the local override says the flag is off, preserving the project query param', async () => {
     getFlagOverride.mockReturnValue(false);
 
-    const result = await runGuard();
+    const result = await runGuard(route({ project: 'my-project' }));
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/foundation/overview');
-    expect(result).toEqual({ redirect: '/foundation/overview' });
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/foundation/overview'], { queryParams: { project: 'my-project' } });
+    expect(result).toEqual({ denied: '/foundation/overview', opts: { queryParams: { project: 'my-project' } } });
     expect(refreshEnrichedPersonas).not.toHaveBeenCalled();
   });
 
@@ -127,12 +127,12 @@ describe('campaignAccessGuard', () => {
     expect(result).toBe(true);
   });
 
-  it('redirects once the provider is ready and the flag is off', async () => {
+  it('redirects once the provider is ready and the flag is off, preserving the project query param', async () => {
     getBooleanFlag.mockReturnValue(signal(false));
 
-    const result = await runGuard();
+    const result = await runGuard(route({ project: 'my-project' }));
 
-    expect(result).toEqual({ redirect: '/foundation/overview' });
+    expect(result).toEqual({ denied: '/foundation/overview', opts: { queryParams: { project: 'my-project' } } });
     expect(refreshEnrichedPersonas).not.toHaveBeenCalled();
   });
 
