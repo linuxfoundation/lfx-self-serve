@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
-import { NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS, NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES } from '@lfx-one/shared/constants';
+import { NEWSLETTER_DEFAULT_TEMPLATE_KEY, NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS, NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES } from '@lfx-one/shared/constants';
 import { NewsletterLayout, NewsletterScheduleWindowError } from '@lfx-one/shared/interfaces';
 import { humanizeFieldKey, stripHtml } from '@lfx-one/shared/utils';
 import { NewsletterManifestService } from '@services/newsletter-manifest.service';
@@ -109,13 +109,12 @@ export class NewsletterReviewComponent implements OnInit {
   protected readonly templateLabel = computed(() => {
     const layout = this.bodyLayoutValue();
     if (!layout) return ''; // html-only draft: no library
-    const key = layout.template_key;
-    // A keyless layout (a new draft, or one saved before per-newsletter selection)
-    // renders with project-NEUTRAL chrome over the block superset — NOT a specific
-    // library. Labelling it with the default library's name (e.g. "AAIF User
-    // Community") would misstate what gets sent, so show a neutral label; a
-    // present key uses the catalog's curated label (or a humanized key).
-    if (!key) return 'Default (neutral)';
+    // A keyless layout is NOT a neutral render: newsletter-service resolves an
+    // omitted/blank key to the default library (aaif-user-community) and renders
+    // its chrome. Label it with that default library's curated name so the review
+    // card matches what recipients actually receive; fall back to a humanized key
+    // when the catalog hasn't loaded.
+    const key = layout.template_key?.trim() || NEWSLETTER_DEFAULT_TEMPLATE_KEY;
     return this.manifestService.templates().find((t) => t.key === key)?.label ?? humanizeFieldKey(key);
   });
   protected readonly subjectDisplay = computed(() => this.subjectValue().trim() || 'Untitled draft');

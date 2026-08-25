@@ -61,7 +61,9 @@ describe('NewsletterBlockComposerComponent — Outline keyboard nesting', () => 
           useValue: { ensureLoaded: () => of(null), getBlock, manifest: signal(null), loading: signal(false), error: signal(null) },
         },
         { provide: NewsletterService, useValue: {} },
-        { provide: ProjectContextService, useValue: {} },
+        // initServerRender's debounced pipeline reads activeContextUid() before the
+        // platform guard, so the stub must expose it or the timer throws post-assert.
+        { provide: ProjectContextService, useValue: { activeContextUid: () => 'p1' } },
         {
           provide: NewsletterRendererService,
           useValue: {

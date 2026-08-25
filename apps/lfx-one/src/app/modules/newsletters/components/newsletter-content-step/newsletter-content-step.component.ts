@@ -60,6 +60,10 @@ export class NewsletterContentStepComponent implements OnInit {
   // Gates the block composer to the pilot projects. When false, only the simple
   // rich-text editor is available and the Blocks/Simple toggle is hidden.
   public readonly blocksEnabled = input<boolean>(false);
+  // The newsletter's owning project UID, threaded to the block composer so its
+  // render-preview call is scoped to the newsletter's project (which an edit
+  // route can carry distinct from the ambient lens context), not the active lens.
+  public readonly projectUid = input<string | null>(null);
 
   // === Outputs ===
   public readonly generated = output<GenerateNewsletterResponse>();

@@ -224,7 +224,6 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
     this.syncedContent = block.content;
   }
 
-  /** Build the reactive form for a block and wire its value-change emit. */
   /**
    * A stable signature of a schema's field set (each field's key + type), used
    * to detect when a library switch swapped a block's fields so the form must be
@@ -234,6 +233,7 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
     return entries.map((entry) => `${entry.key}:${entry.type}`).join('|');
   }
 
+  /** Build the reactive form for a block and wire its value-change emit. */
   private buildForm(block: NewsletterComposerBlock, entries: NewsletterFieldEntry[]): void {
     this.teardownForm();
 

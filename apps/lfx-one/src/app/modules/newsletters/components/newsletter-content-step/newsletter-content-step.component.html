@@ -108,6 +108,7 @@
           ngSkipHydration
           aria-labelledby="newsletter-body-label"
           [initialLayout]="initialLayout()"
+          [projectUid]="projectUid()"
           (layoutChange)="onLayoutChange($event)"
           data-testid="newsletter-content-composer">
         </lfx-newsletter-block-composer>

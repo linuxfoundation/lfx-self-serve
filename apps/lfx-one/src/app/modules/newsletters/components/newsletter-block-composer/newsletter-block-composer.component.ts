@@ -112,6 +112,13 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // own `template_key` takes precedence (resolved in ngOnInit); this default (the
   // full AAIF set) applies only when a draft has no explicit key.
   public readonly templateKey = input<string>(NEWSLETTER_DEFAULT_TEMPLATE_KEY);
+  // The newsletter's OWNING project UID, used to scope the render-preview call.
+  // Edit routes carry a `:projectUid` that can differ from the ambient lens
+  // context (`activeContextUid`), so the owning UID must be threaded from the
+  // parent — otherwise render-preview hits the wrong authorization scope and the
+  // authoritative size/source preview silently falls back to the client estimate.
+  // Falls back to the active context when not supplied (create flow).
+  public readonly projectUid = input<string | null>(null);
 
   // === Outputs ===
   // Emits the current layout whenever the canvas changes.
@@ -325,6 +332,11 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // a re-render (keystroke or panel-driven). Plain Map, mutated inside the
   // computed (the computed's own dependency tracking drives recomputation).
   private readonly renderCache = new Map<string, SafeHtml>();
+  // Same freeze cache for a CONTAINER's split chrome: while a container's own
+  // field is inline-edited (`editingBlockId`), `initContainerChromes` reuses the
+  // frozen chrome so the `[innerHTML]` `before`/`after` fragments aren't rebound
+  // under the live caret (which would destroy the contentEditable mid-keystroke).
+  private readonly containerChromeCache = new Map<string, { shellClass: string; shellStyle: string; before: SafeHtml; after: SafeHtml }>();
 
   public constructor() {
     // After every render that touches the selected block, (re)wire its inline
@@ -337,11 +349,13 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
     const seed = this.initialLayout();
     // Resolve the active library: the saved layout's key wins (a reopened draft
-    // keeps its library), then the bound input, then the default. The block
-    // composer is an AAIF-only pilot with a single template, so there is no
-    // picker; the key is persisted on save (toLayout) so send + preview match.
-    const seededKey = seed?.template_key;
-    const activeKey = seededKey ?? this.templateKey();
+    // keeps its library), then the bound input, then the default. A BLANK key is
+    // normalized to the default — the render path resolves a keyless layout to the
+    // same default library (aaif-user-community) and its chrome, and a blank key
+    // would otherwise build a `/templates//manifest` request that 404s the palette.
+    // Persisting the resolved key (toLayout) keeps save + render consistent.
+    const seededKey = seed?.template_key?.trim();
+    const activeKey = seededKey || this.templateKey()?.trim() || NEWSLETTER_DEFAULT_TEMPLATE_KEY;
     this.selectedTemplateKey.set(activeKey);
 
     if (seed?.blocks?.length) {
@@ -788,17 +802,31 @@ export class NewsletterBlockComposerComponent implements OnInit {
   private initContainerChromes(): Signal<Map<string, { shellClass: string; shellStyle: string; before: SafeHtml; after: SafeHtml }>> {
     return computed(() => {
       const map = new Map<string, { shellClass: string; shellStyle: string; before: SafeHtml; after: SafeHtml }>();
+      // Freeze the edited container's chrome so its before/after fragments aren't
+      // rebound under the live caret (mirrors initRenderedBlocks).
+      const frozenId = this.editingBlockId();
       if (!this.manifest()) return map;
       const templateOf = (blockType: string): string | undefined => this.manifestService.getBlock(blockType)?.template;
       for (const block of this.blocks()) {
         if (!block.isContainer) continue;
-        const chrome = this.renderer.renderContainerChrome(templateOf(block.block_type), block.content, templateOf, true);
-        map.set(block.id, {
-          shellClass: chrome.shellClass,
-          shellStyle: chrome.shellStyle,
-          before: this.sanitizer.bypassSecurityTrustHtml(chrome.before),
-          after: this.sanitizer.bypassSecurityTrustHtml(chrome.after),
-        });
+        const frozen = block.id === frozenId ? this.containerChromeCache.get(block.id) : undefined;
+        const chrome =
+          frozen ??
+          (() => {
+            const rendered = this.renderer.renderContainerChrome(templateOf(block.block_type), block.content, templateOf, true);
+            return {
+              shellClass: rendered.shellClass,
+              shellStyle: rendered.shellStyle,
+              before: this.sanitizer.bypassSecurityTrustHtml(rendered.before),
+              after: this.sanitizer.bypassSecurityTrustHtml(rendered.after),
+            };
+          })();
+        this.containerChromeCache.set(block.id, chrome);
+        map.set(block.id, chrome);
+      }
+      // Drop cache entries for containers no longer on the canvas.
+      for (const id of Array.from(this.containerChromeCache.keys())) {
+        if (!map.has(id)) this.containerChromeCache.delete(id);
       }
       return map;
     });
@@ -880,7 +908,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
       toObservable(renderInput).pipe(
         debounceTime(700),
         switchMap(({ layout, wrapperContent }) => {
-          const projectUid = this.projectContext.activeContextUid();
+          // The newsletter's OWNING project scope (edit routes can differ from the
+          // ambient lens); fall back to the active context in the create flow.
+          const projectUid = this.projectUid() || this.projectContext.activeContextUid();
           if (!isPlatformBrowser(this.platformId) || !projectUid || layout.blocks.length === 0) {
             return of({ html: '', failed: false });
           }
@@ -945,18 +975,13 @@ export class NewsletterBlockComposerComponent implements OnInit {
   }
 
   /**
-   * Whether `childType` may be placed inside container `parent`. A container's
-   * manifest entry may restrict its children via `allowed_block_types`; when that
-   * list is absent or empty, any (non-container) block is allowed. Containers
-   * never nest — that single-level rule is enforced separately at the call sites.
-   */
-  /**
-   * Whether a container accepts a child block type. `allowed_block_types` is an
-   * OPTIONAL manifest field: the current newsletter-service manifest does not
-   * emit it, so today this resolves to allow-all (correct for the single AAIF
-   * container, which accepts any brick). The gate is honored when a future
-   * manifest supplies the allowlist — an empty/absent list means "any non-container
-   * leaf", a populated list restricts to its members.
+   * Whether container `parent` accepts child block type `childType`.
+   * `allowed_block_types` is an OPTIONAL manifest field the current
+   * newsletter-service manifest does not emit, so today this resolves to allow-all
+   * (correct for the single AAIF container, which accepts any brick). The gate is
+   * honored when a future manifest supplies the allowlist — an empty/absent list
+   * means "any non-container leaf", a populated list restricts to its members.
+   * Containers never nest; that single-level rule is enforced at the call sites.
    */
   private childAllowedInContainer(parent: NewsletterComposerBlock, childType: string): boolean {
     const allowed = this.manifestService.getBlock(parent.block_type)?.allowed_block_types;
@@ -1073,14 +1098,7 @@ export class NewsletterBlockComposerComponent implements OnInit {
     return style;
   }
 
-  /**
-   * After the manifest resolves, promote any top-level block the manifest
-   * declares a container but that hydrated as a leaf. An empty (childless)
-   * container comes back from the service without a `blocks` array (omitempty),
-   * and `hydrate` runs before the manifest is available, so it can't classify it
-   * — left unreconciled it would render without its drop zone and can't accept
-   * nested blocks. Containers never nest, so only the top level needs this.
-   */
+  /** Reorder a top-level block, clamping to the canvas bounds. */
   private moveTopLevelBlock(from: number, to: number): void {
     const blocks = this.blocks();
     if (to < 0 || to >= blocks.length || from === to) return;
@@ -1119,6 +1137,14 @@ export class NewsletterBlockComposerComponent implements OnInit {
     this.emit();
   }
 
+  /**
+   * After the manifest resolves, promote any top-level block the manifest
+   * declares a container but that hydrated as a leaf. An empty (childless)
+   * container comes back from the service without a `blocks` array (omitempty),
+   * and `hydrate` runs before the manifest is available, so it can't classify it
+   * — left unreconciled it would render without its drop zone and can't accept
+   * nested blocks. Containers never nest, so only the top level needs this.
+   */
   private reconcileContainers(manifest: NewsletterTemplateManifest): void {
     const containerTypes = new Set(manifest.blocks.filter((b) => b.is_container).map((b) => b.block_type));
     let changed = false;
@@ -1424,10 +1450,10 @@ export class NewsletterBlockComposerComponent implements OnInit {
    * `template_key` records the selected block library so the newsletter renders
    * (send + preview) and reopens with the SAME template shown in the always-
    * visible Template picker — WYSIWYG. It is always persisted from the picker's
-   * current value (`selectedTemplateKey`); to render with neutral chrome the
-   * author picks the "Default" library. This supersedes the earlier keyless-
-   * neutral default (LFXV2-2747), which predated the always-visible picker and
-   * left the picker showing a template the send never actually applied.
+   * current value (`selectedTemplateKey`), which ngOnInit normalizes to the
+   * default library when a draft is keyless — the render path resolves a blank
+   * key to that same default (aaif-user-community) and its chrome, so persisting
+   * the resolved key keeps the picker, the save, and the send in agreement.
    */
   private toLayout(): NewsletterLayout {
     return {
