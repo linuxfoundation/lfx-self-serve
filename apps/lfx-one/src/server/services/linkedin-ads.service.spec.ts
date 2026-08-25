@@ -171,6 +171,15 @@ describe('getLinkedInAnalytics pacing rules', () => {
     expect(result.campaigns[0].pacingLabel).toBe(expected);
   });
 
+  // The band boundary is also a COPY bug, which is the half easiest to miss. "Budget constrained —
+  // pacing above 90%" fires for `constrained` and `overspending` alike, so mislabelling exactly
+  // 90% as constrained tells the operator it paced ABOVE 90% when it landed exactly on it.
+  it('emits no "pacing above 90%" item for a campaign sitting exactly on 90%', async () => {
+    const result = await pacingFor(CAMPAIGN_PACING_THRESHOLDS.normal);
+
+    expect(result.actionItems.some((i) => i.issue.startsWith('Budget constrained'))).toBe(false);
+  });
+
   // Guards the LinkedIn-only rule that this ticket must NOT drop: campaign-service's rule set has
   // no equivalent, so it has to keep firing from the BFF.
   it('still raises the LinkedIn-only "no ad creatives" rule ahead of pacing', async () => {
