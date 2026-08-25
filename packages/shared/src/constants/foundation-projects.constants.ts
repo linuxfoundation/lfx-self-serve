@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { FoundationProjectsDetailGroupedResponse } from '../interfaces/analytics-data.interface';
 import type { FoundationProjectRowView } from '../interfaces/dashboard-metric.interface';
 
 /**
@@ -14,6 +15,53 @@ import type { FoundationProjectRowView } from '../interfaces/dashboard-metric.in
  * project resolves.
  */
 export const FOUNDATION_PROJECT_COUNT_FETCH_CONCURRENCY = 8;
+
+/**
+ * Maximum recursion depth when walking a foundation's descendant project tree to discover
+ * nested sub-foundations (e.g. NeoNephos under Linux Foundation Europe) for the Foundation
+ * Projects page (GH-1607). The FOUNDATION_TOTAL_PROJECTS_DETAIL Snowflake cube's
+ * `FOUNDATION_SLUG` column does not roll up multi-level descendants, so the BFF walks the
+ * project-service hierarchy directly instead. A depth of 3 covers every known foundation
+ * shape (foundation → sub-foundation → project) with headroom for one extra level, while
+ * still bounding worst-case fan-out against a pathological or misconfigured tree.
+ */
+export const FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH = 3;
+
+/**
+ * Maximum number of sub-foundations {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH}'s walk
+ * will discover in total, across the whole tree, before it stops recursing further branches.
+ * The depth cap alone doesn't bound worst-case fan-out: selecting a true umbrella foundation
+ * (e.g. The Linux Foundation itself) as the page's foundation context can have dozens of direct
+ * `computeIsFoundation` children, each contributing its own Snowflake query and rendered table.
+ * This caps the total Snowflake fan-out (and rendered sections) regardless of tree breadth.
+ */
+export const FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES = 40;
+
+/**
+ * Max concurrent sibling branches walked at once by {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH}'s
+ * recursive descendant discovery. Sibling sub-foundations under the same parent are independent
+ * `/query/resources` traversals, so they're fanned out through a bounded worker pool sharing the
+ * node budget rather than awaited one at a time — otherwise a wide umbrella foundation approaching
+ * {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES} would serialize dozens of pagination loops
+ * before any Snowflake detail fan-out could start (GH-1676 review).
+ */
+export const FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY = 8;
+
+/**
+ * Max concurrent per-slug `FOUNDATION_TOTAL_PROJECTS_DETAIL` Snowflake queries fanned out across
+ * a foundation's discovered sub-foundations. A wide foundation can have up to
+ * {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES} sub-foundations; firing all of their detail
+ * queries at once can overflow the shared Snowflake pool's waiting-client queue (see
+ * `ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY` for the same pool-exhaustion concern) and cause
+ * otherwise-healthy queries to be rejected (GH-1607 review).
+ */
+export const FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY = 8;
+
+/**
+ * Empty-state fallback for the Foundation Projects page's grouped detail request —
+ * mirrors {@link DEFAULT_FOUNDATION_PROJECTS_DETAIL}'s role for the flat drawer endpoint.
+ */
+export const DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED: FoundationProjectsDetailGroupedResponse = { groups: [], totalCount: 0 };
 
 /**
  * All valid presence-filter pill IDs on the foundation projects page, in

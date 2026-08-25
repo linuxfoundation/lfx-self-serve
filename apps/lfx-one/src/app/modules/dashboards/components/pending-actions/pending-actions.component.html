@@ -132,11 +132,12 @@
                     } @else if (item.isInvitation) {
                       <div class="flex flex-col gap-0.5 sm:flex-1 sm:min-w-0 sm:px-4">
                         <!-- Title comes from the backend-built item.text (same copy as the drawer); the
-                           group name is split off as a link into the group (project-lens detail page). -->
+                           group name is split off as a link into the group's canonical tier-prefixed page (GH-1566). -->
                         <p class="text-sm text-gray-900 sm:truncate" [attr.title]="item.text" data-testid="dashboard-pending-actions-title">
                           {{ item.inviteTitlePrefix }}
                           <a
-                            [routerLink]="['/groups', item.committeeUid]"
+                            [routerLink]="item.inviteViewCommands"
+                            [queryParams]="item.inviteViewQueryParams"
                             [state]="{ backLabel: 'My Dashboard' }"
                             (click)="$event.stopPropagation()"
                             class="font-medium text-blue-600 hover:text-blue-700 hover:underline"

@@ -3,7 +3,9 @@
 
 import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, OnDestroy, PLATFORM_ID, type Signal } from '@angular/core';
+import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants';
 import type { OrgAllEmployeeCommitteeMembership, PersonDrawerTab } from '@lfx-one/shared/interfaces';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { DrawerModule } from 'primeng/drawer';
 
@@ -15,6 +17,7 @@ import { DrawerModule } from 'primeng/drawer';
 })
 export class PersonDetailDrawerComponent implements OnDestroy {
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly featureFlagService = inject(FeatureFlagService);
   protected readonly drawer = inject(PersonDetailDrawerService);
 
   protected readonly tabs: readonly { id: PersonDrawerTab; label: string }[] = [
@@ -24,6 +27,7 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     { id: 'governance', label: 'Governance' },
   ];
 
+  protected readonly companyEmailFeatureEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_PRIVATE_RELEASE_FLAG, false);
   protected readonly governanceSeats: Signal<OrgAllEmployeeCommitteeMembership[]> = computed(() => this.initGovernanceSeats());
   protected readonly codeTotals: Signal<{ commits: number; projects: number }> = computed(() => this.initCodeTotals());
   protected readonly companyEmails: Signal<string[]> = computed(() => this.initCompanyEmails());
@@ -94,7 +98,7 @@ export class PersonDetailDrawerComponent implements OnDestroy {
   }
 
   private initCompanyEmails(): string[] {
-    if (this.drawer.loading() || this.drawer.error()) {
+    if (!this.companyEmailFeatureEnabled() || this.drawer.loading() || this.drawer.error()) {
       return [];
     }
     return this.drawer.companyEmails();
