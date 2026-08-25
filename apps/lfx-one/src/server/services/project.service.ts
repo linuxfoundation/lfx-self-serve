@@ -529,26 +529,7 @@ export class ProjectService {
       batches.push(idArray.slice(i, i + BATCH_SIZE));
     }
 
-    const batchResults = await Promise.all(
-      batches.map((batch) =>
-        fetchAllQueryResources<Project>(
-          req,
-          (pageToken) =>
-            this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-              type: 'project',
-              filters_or: batch.map((uid) => `uid:${uid}`),
-              ...(pageToken && { page_token: pageToken }),
-            }),
-          { failOnPartial: true }
-        ).catch((error) => {
-          logger.warning(req, 'get_projects_by_ids', 'Batched project fetch failed for batch, skipping', {
-            batch_size: batch.length,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return [] as Project[];
-        })
-      )
-    );
+    const batchResults = await Promise.all(batches.map((batch) => this.fetchProjectBatchByIds(req, batch)));
 
     // ROOT is an administrative pseudo-project — never surface it even if a caller accidentally passes its UID.
     const byUid = new Map<string, Project>();
@@ -7446,6 +7427,46 @@ export class ProjectService {
         originalError: error instanceof Error ? error : new Error(String(error)),
       });
     }
+  }
+
+  /**
+   * Fetches one bounded UID batch and preserves the existing fail-soft behavior.
+   * Only fully successful paginated responses are checked for omitted UIDs.
+   */
+  private async fetchProjectBatchByIds(req: Request, batch: string[]): Promise<Project[]> {
+    try {
+      const projects = await fetchAllQueryResources<Project>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project',
+            filters_or: batch.map((uid) => `uid:${uid}`),
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      );
+      this.warnOnMissingProjectUids(req, batch, projects);
+      return projects;
+    } catch (error) {
+      logger.warning(req, 'get_projects_by_ids', 'Batched project fetch failed for batch, skipping', {
+        batch_size: batch.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Emits one bounded warning containing only requested UIDs absent from a successful batch response.
+   */
+  private warnOnMissingProjectUids(req: Request, requestedUids: string[], projects: Project[]): void {
+    const returnedUids = new Set(projects.map((project) => project?.uid).filter((uid): uid is string => !!uid));
+    const missingUids = requestedUids.filter((uid) => !returnedUids.has(uid));
+    if (missingUids.length === 0) return;
+
+    logger.warning(req, 'get_projects_by_ids', 'Project batch response omitted requested UIDs', {
+      missing_uids: missingUids,
+    });
   }
 
   /**
