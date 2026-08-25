@@ -600,7 +600,9 @@ export class PendingActionsComponent {
         const inviteGroupName = item.inviteGroupName ?? item.badge;
         // Canonical tier-prefixed view link (GH-1566): the invited group's own `inviteIsFoundation`
         // picks /foundation vs /project; rows without tier data keep the flat /groups/:uid fallback.
-        const inviteViewCommands = item.committeeUid ? (getEntityCommands('groups', item.committeeUid, item.inviteIsFoundation) ?? ['/groups', item.committeeUid]) : null;
+        const inviteViewCommands = item.committeeUid
+          ? (getEntityCommands('groups', item.committeeUid, item.inviteIsFoundation) ?? ['/groups', item.committeeUid])
+          : null;
         const inviteViewQueryParams = item.inviteProjectSlug ? { project: item.inviteProjectSlug } : null;
         return {
           ...item,

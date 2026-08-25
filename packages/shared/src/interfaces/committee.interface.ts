@@ -1,12 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeMemberVisibility } from '../enums/committee.enum';
-import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { BadgeSeverity } from './components.interface';
-import { GroupsIOMailingList } from './mailing-list.interface';
-import { MeetingAttachment } from './meeting-attachment.interface';
-import { UserSearchResult } from './search.interface';
+import type { CommitteeMemberVisibility } from '../enums/committee.enum';
+import type { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import type { BadgeSeverity } from './components.interface';
+import type { GroupsIOMailingList } from './mailing-list.interface';
+import type { MeetingAttachment } from './meeting-attachment.interface';
+import type { UserSearchResult } from './search.interface';
 
 // ── v2.0 Taxonomy Types ─────────────────────────────────────────────────────
 
