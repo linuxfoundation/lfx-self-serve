@@ -119,7 +119,15 @@ export class GroupSeatHoldersDrawerComponent {
           // the live region with a false "0 seat holders" announcement) while the panel is still
           // sliding out. EMPTY leaves the last-loaded state as-is; the next real open re-fetches.
           if (!visible) return EMPTY;
-          if (!orgUid || !committeeUid) return of(null);
+          if (!orgUid || !committeeUid) {
+            // Unlike the !visible branch above, this one does emit — so it must clear loading/error
+            // itself. `tap` only clears `loading` on a real fetch emission (see below), so without
+            // this a drawer closed mid-fetch and then reopened with a still-missing identifier would
+            // render a permanent spinner instead of the blank placeholder this branch intends.
+            this.error.set(false);
+            this.loading.set(false);
+            return of(null);
+          }
           this.error.set(false);
           this.loading.set(true);
 

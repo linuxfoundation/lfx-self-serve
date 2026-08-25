@@ -738,6 +738,34 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(instance.displayedCount()).toBeNull();
   });
 
+  // tap only clears `loading` on a real fetch emission — the missing-identifier branch emits
+  // `of(null)` without going through that fetch pipeline at all, so it has to clear the flag
+  // itself. Otherwise a drawer left `loading` by a mid-fetch close (previous test) that reopens
+  // with a since-cleared identifier would render a permanent spinner instead of the blank
+  // placeholder this branch intends.
+  it('clears a loading flag left by a mid-fetch close if the drawer reopens with a missing identifier', async () => {
+    await setup(vi.fn().mockReturnValue(NEVER));
+
+    fixture.componentRef.setInput('orgUid', 'org-1');
+    fixture.componentRef.setInput('committeeUid', 'c-1');
+    fixture.componentRef.setInput('groupName', 'Storage Working Group');
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+
+    const instance = fixture.componentInstance as unknown as { loading: () => boolean };
+    expect(instance.loading()).toBe(true);
+
+    fixture.componentRef.setInput('visible', false);
+    await fixture.whenStable();
+    expect(instance.loading()).toBe(true);
+
+    fixture.componentRef.setInput('committeeUid', '');
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+
+    expect(instance.loading()).toBe(false);
+  });
+
   it('renders a member with no name and no email as "Unknown member", not a blank row', async () => {
     await setup(
       vi.fn().mockReturnValue(
