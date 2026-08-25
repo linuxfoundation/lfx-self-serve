@@ -63,6 +63,14 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
         // signal directly — `isLFStaff` is written unconditionally, outside the probeId guard, so
         // it isn't subject to the same race and doesn't need to come from this response.
         const isMarketingAuditor = response && !response.error ? (response.isMarketingAuditor ?? false) : personaService.isMarketingAuditor();
+        // This guard's own response is the most authoritative source for the route it's about to
+        // admit — force-apply it so downstream signal readers (`MarketingImpactComponent`) agree
+        // with the decision made here, even if a differently-scoped background probe won the
+        // recency race and would otherwise have left the shared signal stale (Copilot finding,
+        // PR #1835).
+        if (response && !response.error) {
+          personaService.confirmActiveGrant(response, override ? projectSlug : undefined);
+        }
         const allowed = override ? personaService.canViewExecutiveDashboards() || isMarketingAuditor : personaService.canViewExecutiveDashboards();
         if (allowed) {
           return true;
@@ -92,6 +100,10 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
           // Decide the FGA grant from this call's own response, not the shared signal — see the
           // override branch above for why, and for why ED/LF-staff eligibility stays signal-based.
           const isMarketingAuditor = response && !response.error ? (response.isMarketingAuditor ?? false) : personaService.isMarketingAuditor();
+          // Force-apply this call's own response — see the override branch above for why.
+          if (response && !response.error) {
+            personaService.confirmActiveGrant(response, marketingOpsFgaEnabled ? projectSlug : undefined);
+          }
           const allowed = marketingOpsFgaEnabled
             ? personaService.canViewExecutiveDashboards() || isMarketingAuditor
             : personaService.canViewExecutiveDashboards();

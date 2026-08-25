@@ -95,4 +95,20 @@ describe('PersonaService — grant probe recency ordering', () => {
 
     expect(service.marketingGrantSlug()).toBe('foundation-b');
   });
+
+  it('does not let a later-issued probe that never itself writes (errors out) block an earlier, still-in-flight probe from applying its legitimate response (Cursor Bugbot finding, PR #1835: "Global probe gate drops grant slug")', () => {
+    // foundation-a's probe is issued first; a second, unrelated probe (e.g. a background
+    // sidebar-nav pre-check for foundation-b) is issued after it but errors before resolving.
+    // The mere issuance of that second probe must not permanently prevent foundation-a's
+    // still-in-flight, legitimately successful response from ever writing.
+    service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+    service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
+
+    http.expectOne((req) => req.url.includes('project=foundation-b')).error(new ProgressEvent('network error'));
+    http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isMarketingAuditor: true }));
+
+    expect(service.isCampaignManager()).toBe(true);
+    expect(service.isMarketingAuditor()).toBe(true);
+    expect(service.marketingGrantSlug()).toBe('foundation-a');
+  });
 });

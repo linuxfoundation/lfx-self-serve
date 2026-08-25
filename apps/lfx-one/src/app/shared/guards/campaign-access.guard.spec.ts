@@ -18,6 +18,7 @@ describe('campaignAccessGuard', () => {
   let currentPersona: ReturnType<typeof signal<string>>;
   let isCampaignManager: ReturnType<typeof signal<boolean>>;
   let refreshEnrichedPersonas: ReturnType<typeof vi.fn>;
+  let confirmActiveGrant: ReturnType<typeof vi.fn>;
   let getFlagOverride: ReturnType<typeof vi.fn>;
   let providerReady: ReturnType<typeof signal<boolean>>;
   let getBooleanFlag: ReturnType<typeof vi.fn>;
@@ -42,6 +43,9 @@ describe('campaignAccessGuard', () => {
     currentPersona = signal('maintainer');
     isCampaignManager = signal(false);
     refreshEnrichedPersonas = vi.fn().mockReturnValue(of(null));
+    confirmActiveGrant = vi.fn((response: { isCampaignManager?: boolean }) => {
+      isCampaignManager.set(response.isCampaignManager ?? false);
+    });
     getFlagOverride = vi.fn().mockReturnValue(undefined);
     providerReady = signal(true);
     getBooleanFlag = vi.fn().mockReturnValue(signal(false));
@@ -55,7 +59,7 @@ describe('campaignAccessGuard', () => {
       providers: [
         {
           provide: PersonaService,
-          useValue: { currentPersona, isCampaignManager, refreshEnrichedPersonas },
+          useValue: { currentPersona, isCampaignManager, refreshEnrichedPersonas, confirmActiveGrant },
         },
         {
           provide: FeatureFlagService,
@@ -175,28 +179,32 @@ describe('campaignAccessGuard', () => {
     expect(refreshEnrichedPersonas).toHaveBeenCalledWith(true, 'my-project');
   });
 
-  it("allows a campaign manager based on this call's own response even if a newer probe elsewhere already overwrote the shared signal back to false (LFXV2-2235 probe-race regression)", async () => {
+  it("allows a campaign manager based on this call's own response, and force-applies it to the shared signal even if a newer probe elsewhere would otherwise have overwritten it back to false (LFXV2-2235 probe-race regression)", async () => {
     getFlagOverride.mockReturnValue(true);
     // Simulate PersonaService.applyPersonaResponse discarding this response's write because a
-    // newer probeId (from e.g. sidebar-nav) was issued before it resolved — the shared signal
-    // never gets set to true, but the response this guard receives directly still carries the truth.
+    // newer probeId (from e.g. sidebar-nav) was issued before it resolved — the response this
+    // guard receives directly still carries the truth, and `confirmActiveGrant` force-applies it
+    // to the shared signal so downstream readers (`CampaignsComponent`) agree with the guard's
+    // own admitting decision (Copilot finding, PR #1835).
     refreshEnrichedPersonas.mockReturnValue(of({ isCampaignManager: true }));
 
-    const result = await runGuard();
+    const result = await runGuard(route({ project: 'my-project' }));
 
     expect(result).toBe(true);
-    expect(isCampaignManager()).toBe(false);
+    expect(confirmActiveGrant).toHaveBeenCalledWith({ isCampaignManager: true }, 'my-project');
+    expect(isCampaignManager()).toBe(true);
   });
 
-  it("allows a campaign manager based on this call's own response under the production provider-ready branch too, even if a newer probe elsewhere already overwrote the shared signal back to false (LFXV2-2235 probe-race regression)", async () => {
+  it("allows a campaign manager based on this call's own response under the production provider-ready branch too, force-applying it to the shared signal even if a newer probe elsewhere would otherwise have overwritten it back to false (LFXV2-2235 probe-race regression)", async () => {
     getBooleanFlag.mockReturnValue(signal(true));
     // Same probe-race scenario as the local-override regression test above, but exercised through
     // the providerReady/getBooleanFlag branch, which has its own separate map() implementation.
     refreshEnrichedPersonas.mockReturnValue(of({ isCampaignManager: true }));
 
-    const result = await runGuard();
+    const result = await runGuard(route({ project: 'my-project' }));
 
     expect(result).toBe(true);
-    expect(isCampaignManager()).toBe(false);
+    expect(confirmActiveGrant).toHaveBeenCalledWith({ isCampaignManager: true }, 'my-project');
+    expect(isCampaignManager()).toBe(true);
   });
 });

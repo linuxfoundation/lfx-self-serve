@@ -83,6 +83,17 @@ export class PersonaService {
    * write here never causes a false denial (see those guards' spec files).
    */
   private latestGrantProbeId = 0;
+  /**
+   * High-water mark of the last probeId that actually **wrote** `isMarketingAuditor`/
+   * `isCampaignManager`/`marketingGrantSlug` — distinct from {@link latestGrantProbeId}, which
+   * marks probe *issuance*. Gating writes on `probeId >= latestAppliedGrantProbeId` instead of
+   * exact equality against the issuance counter means a later-issued probe that never itself
+   * writes anything (it errors, or its response is empty) can't permanently lock out an earlier,
+   * still-in-flight probe's legitimate write just by having been issued — only a probe that goes
+   * on to actually apply moves this mark forward (Cursor Bugbot finding, PR #1835: "Global probe
+   * gate drops grant slug").
+   */
+  private latestAppliedGrantProbeId = 0;
 
   public constructor() {
     const stored = this.loadFromCookie();
@@ -145,12 +156,36 @@ export class PersonaService {
           // `isMarketingAuditor`/`isCampaignManager` always move together off the same
           // most-recently-issued response — a root-scoped call (no `projectSlug`) leaves this
           // untouched, since a ROOT grant isn't tied to one project.
-          if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager) && probeId === this.latestGrantProbeId) {
+          if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager) && probeId >= this.latestAppliedGrantProbeId) {
             this.marketingGrantSlug.set(projectSlug);
           }
         }
       })
     );
+  }
+
+  /**
+   * Force-applies a grant that a route guard has already decided admission from, bypassing the
+   * probe-recency gate above.
+   *
+   * `campaign-access.guard.ts`/`marketing-impact-access.guard.ts` intentionally decide admit/deny
+   * from each call's own `response` rather than `isMarketingAuditor`/`isCampaignManager` directly
+   * — see `latestGrantProbeId`'s doc comment — so a discarded write from a differently-scoped,
+   * more-recently-*issued* background probe (e.g. sidebar-nav) never causes a false denial. But
+   * components downstream of a successful navigation (`MarketingImpactComponent`,
+   * `CampaignsComponent`) read these same signals directly, with no probe of their own, so a
+   * guard admitting from its own response while the signal lost the recency race left the very
+   * page it just admitted to rendering its own no-access state (Copilot findings, PR #1835). A
+   * guard resolving for the route about to be on screen is the most authoritative source for
+   * what's true right now, so it must win outright instead of competing with the recency gate.
+   * Callers must only invoke this with an authoritative, non-errored response.
+   */
+  public confirmActiveGrant(response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager'>, projectSlug?: string): void {
+    this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
+    this.isCampaignManager.set(response.isCampaignManager ?? false);
+    if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager)) {
+      this.marketingGrantSlug.set(projectSlug);
+    }
   }
 
   private refreshFromApi(): void {
@@ -195,14 +230,18 @@ export class PersonaService {
     this.detectedProjects.set(response.projects);
     this.isRootWriter.set(response.isRootWriter ?? false);
     this.isLFStaff.set(response.isLFStaff ?? false);
-    // Only apply grant fields from the most recently *issued* refreshEnrichedPersonas call across
-    // every scope — a slower response for a foundation the user has already navigated away from
-    // must not clobber the grant a newer, faster-resolving probe already wrote for the current
-    // foundation (LFXV2-2235). See `latestGrantProbeId`'s doc comment for why this check is
-    // global rather than per-scope.
-    if (probeId === undefined || probeId === this.latestGrantProbeId) {
+    // Only apply grant fields from a probe that is at least as new as the last one that actually
+    // wrote these signals — a slower response for a foundation the user has already navigated
+    // away from must not clobber the grant a newer, faster-resolving probe already wrote for the
+    // current foundation (LFXV2-2235). Gating on the applied high-water mark rather than the
+    // issuance counter also means a later-issued probe that itself never writes (error/empty
+    // response) can't block this one just by having been issued — see `latestAppliedGrantProbeId`.
+    if (probeId === undefined || probeId >= this.latestAppliedGrantProbeId) {
       this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
       this.isCampaignManager.set(response.isCampaignManager ?? false);
+      if (probeId !== undefined) {
+        this.latestAppliedGrantProbeId = probeId;
+      }
     }
 
     if (response.personas.length > 0) {

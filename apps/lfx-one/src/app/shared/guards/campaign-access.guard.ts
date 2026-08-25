@@ -56,6 +56,13 @@ export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot
         // (HTTP 200 with `response.error` set) isn't authoritative either — applyPersonaResponse
         // preserves the last-known-good grant in that case, so the guard must fall back too.
         const isCampaignManager = response && !response.error ? (response.isCampaignManager ?? false) : personaService.isCampaignManager();
+        // This guard's own response is the most authoritative source for the route it's about to
+        // admit — force-apply it so downstream signal readers (`CampaignsComponent`) agree with
+        // the decision made here, even if a differently-scoped background probe won the recency
+        // race and would otherwise have left the shared signal stale (Copilot finding, PR #1835).
+        if (response && !response.error) {
+          personaService.confirmActiveGrant(response, projectSlug);
+        }
         if (personaService.currentPersona() === 'executive-director' || isCampaignManager) {
           return true;
         }
@@ -86,6 +93,10 @@ export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot
           // above for why (LFXV2-2235 Cursor finding: probe race can deny valid grants), and for
           // why an errored-but-non-null response also falls back to the shared signal.
           const isCampaignManager = response && !response.error ? (response.isCampaignManager ?? false) : personaService.isCampaignManager();
+          // Force-apply this call's own response — see the override branch above for why.
+          if (response && !response.error) {
+            personaService.confirmActiveGrant(response, projectSlug);
+          }
           // Re-check ED too — applyPersonaResponse can promote currentPersona as a side effect of
           // this refetch, and an ED without an explicit campaign_manager grant must still pass.
           if (personaService.currentPersona() === 'executive-director' || isCampaignManager) {
