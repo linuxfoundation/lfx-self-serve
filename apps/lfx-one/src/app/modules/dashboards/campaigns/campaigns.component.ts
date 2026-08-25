@@ -1182,11 +1182,13 @@ export class CampaignsComponent {
       // and turning a correct save into an `unowned-brief-exists` refusal. Ownership is keyed by
       // `(project, event)`, so its epoch has to be too.
       this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
-      // `?? null` rather than a bare `etag`, and `== null` rather than `=== null`, because the
+      // NORMALISED with `?? null` first, then compared with a strict `=== null`, because the
       // validator originates across an HTTP boundary: an older pod mid-rolling-deploy omits the
-      // field and JSON yields `undefined`. Treating that as "present" would withhold the
-      // overwrite licence and refuse the first save after a restore as `unverified-validator`.
-      // Absence has ONE meaning here regardless of how it is spelled.
+      // field and JSON yields `undefined`, a value the declared `string | null` forbids and the
+      // wire produces anyway. Collapsing both spellings of absence to `null` up front is what
+      // lets the strict comparison below be correct — there is no loose-null invariant here to
+      // rely on. Treating `undefined` as "present" would withhold the overwrite licence and
+      // refuse the first save after a restore as `unverified-validator`.
       const validator = etag ?? null;
       this.knownBriefIds.set(key, { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) });
     }

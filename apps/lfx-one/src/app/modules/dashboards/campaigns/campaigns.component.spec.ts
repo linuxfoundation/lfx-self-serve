@@ -58,9 +58,10 @@ describe('CampaignsComponent brief persistence', () => {
   /**
    * `onRestoreSavedBrief` is protected; the spec drives it as the Planning tab's output would.
    *
-   * `etag` defaults to `null` — the validator-less restore — so the tests written before
-   * LFXV2-3204 keep asserting exactly the behaviour they were written for. Tests about the
-   * carried validator pass one explicitly.
+   * OMITTING `etag` means the validator-less restore, so the tests written before LFXV2-3204
+   * keep asserting exactly the behaviour they were written for. Tests about the carried
+   * validator pass one explicitly. It is a rest parameter rather than a defaulted one — see
+   * the note in the body for why that distinction is load-bearing.
    */
   function restore(b: CampaignBriefOutput, briefId: string, approved = false, ...etag: (string | null | undefined)[]): void {
     // A REST parameter, not a default. A TS default fires on `undefined`, so
@@ -566,6 +567,22 @@ describe('CampaignsComponent brief persistence', () => {
       // chose it — so it stays `'overwrite'` rather than refusing the first save after every such
       // restore. What changed in LFXV2-3204 is only that the licence is no longer handed out for
       // free when a validator IS available; the test above pins that half.
+      //
+      // Is `true` RIGHT here, or merely preserved? Right, but for a narrower reason than the
+      // server's own comment gives. That comment justifies the fallback as "the caller was shown
+      // a stale-brief warning and proceeded" — which is the PROMOTION path, not this one. Nobody
+      // was warned here. The justification that actually applies is the other half of the same
+      // distinction: `allowEtagFallback` separates an absence someone DECIDED from an absence
+      // that is UNKNOWN. A restore is a decision — the stored content was displayed and chosen —
+      // whereas an indeterminate write displayed nothing and decided nothing, which is why that
+      // path records `absence: 'unknown'` and is refused.
+      //
+      // The cost is bounded and worth naming: this save takes the server's freshly read
+      // validator, so a concurrent editor who moved the row is overwritten rather than refused —
+      // exactly the hazard LFXV2-3204 closes for the case where a validator EXISTS. It is
+      // accepted only because the alternative refuses every restore whose read returned no ETag,
+      // which is this feature's main path, over a conflict the user cannot act on. If reads ever
+      // reliably carry an ETag, this branch should become `absence: 'unknown'`.
       persistBrief.mockReturnValue(NEVER);
       restore(brief, 'restored-a', true, null);
       await fixture.whenStable();
