@@ -384,7 +384,7 @@ export interface ReadStateData {
 // Filter predicate + URL-synced scope
 // ---------------------------------------------------------------------------
 
-/** URL-synced filter state. `readFilter` stays client-side (a view over the loaded window) — it round-trips through query params but never reaches feed/count requests. */
+/** URL-synced filter state. `readFilter` round-trips through query params like the rest; in unread mode the page snapshots the persisted read state onto the feed/count requests as the `unreadOnly` fragment (analytics and option queries stay read-state-blind). */
 export interface FilterPredicate {
   sentiment: string;
   relevance: string;

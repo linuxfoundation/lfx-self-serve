@@ -36,6 +36,13 @@ const FILTER_VALUE_MAX_LENGTH = 200;
 /** Search terms get more room than a single-token filter but still can't be unbounded. */
 const SEARCH_MAX_LENGTH = 500;
 
+/**
+ * Read-state cutoff shape: ISO 8601 (`2026-08-01T00:00:00Z`) or Snowflake's space-separated form
+ * (`2026-08-01 12:00:00`), optional millis — the two shapes the client persists, since `newestTsOf`
+ * passes feed-payload timestamps through verbatim.
+ */
+const READ_BEFORE_TS_PATTERN = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z?$/;
+
 /** A page can never exceed the server window the client is built around. */
 export const MAX_FEED_LIMIT = MENTION_SERVER_WINDOW_SIZE;
 
@@ -90,7 +97,7 @@ export function parseSocialListeningFilters(req: Request, operation: string): So
     unreadOnly: getStringQueryParam(req, 'unreadOnly') === 'true' || undefined,
     readIds: parseArrayParam(req, 'readIds', MENTION_READ_IDS_MAX_VALUES, operation),
     unreadIds: parseArrayParam(req, 'unreadIds', MENTION_READ_IDS_MAX_VALUES, operation),
-    readBeforeTs: parseTextParam(req, 'readBeforeTs', FILTER_VALUE_MAX_LENGTH, operation),
+    readBeforeTs: parseTimestampParam(req, 'readBeforeTs', operation),
   };
 }
 
@@ -216,6 +223,28 @@ function parseArrayParam(req: Request, name: string, cap: number, operation: str
 
   // A present-but-empty key must read as "no predicate" — a truthy `[]` zeroes the mention feed (`1 = 0`).
   return values.length === 0 ? undefined : values;
+}
+
+/**
+ * Format-checked timestamp: the value reaches `TO_TIMESTAMP_NTZ(?)` as a bind, so an unparseable
+ * shape would surface as a 500 Snowflake error instead of a 400. The regex pins the two accepted
+ * shapes; the `Date.parse` round-trip rejects regex-shaped nonsense (`2026-13-40T99:99:99Z`).
+ */
+function parseTimestampParam(req: Request, name: string, operation: string): string | undefined {
+  const value = parseTextParam(req, name, FILTER_VALUE_MAX_LENGTH, operation);
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  // Normalize the space separator so both accepted shapes parse as UTC for the validity check only — the original value is what gets bound.
+  const isoCandidate = value.replace(' ', 'T');
+  const asUtc = isoCandidate.endsWith('Z') ? isoCandidate : `${isoCandidate}Z`;
+  if (!READ_BEFORE_TS_PATTERN.test(value) || Number.isNaN(Date.parse(asUtc))) {
+    throw ServiceValidationError.forField(name, `Invalid ${name} format. Expected ISO 8601 or 'YYYY-MM-DD HH24:MI:SS'`, { operation });
+  }
+
+  return value;
 }
 
 /** Bounded integer query param. Rejects non-integers outright; out-of-range values clamp to the nearest bound. */

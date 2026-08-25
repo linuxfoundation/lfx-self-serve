@@ -106,7 +106,14 @@ export const MENTION_IDS_MAX_VALUES = 500;
 /** Cap per read-state ID array (`readIds`/`unreadIds`) — same value as the bookmark cap, distinct semantic: cutoff overrides, not a query bound. */
 export const MAX_READ_IDS = 500;
 
-/** Transport cap for the unread filter's read-state ID arrays at the HTTP boundary — matches `MAX_READ_IDS` so a valid persisted doc is never truncated in flight. */
+/**
+ * Transport cap for the unread filter's read-state ID arrays at the HTTP boundary — matches `MAX_READ_IDS`
+ * so a valid persisted doc is never truncated in flight. Note the feed/count GETs serialize both arrays as
+ * repeated query params, so a saturated doc (500 + 500 long Snowflake keys) can approach header-size limits
+ * (Node's default is 16KB). Bounded and self-limiting in practice — GC slices to the cap, mark-all clears
+ * both arrays, and a toggle only grows the side of the cutoff the mention sits on — but if saturated docs
+ * prove real, the feed/count endpoints need to move to POST rather than lowering this cap.
+ */
 export const MENTION_READ_IDS_MAX_VALUES = 500;
 
 /** Saved-view cap per user+foundation (LFXV2-3002 Block 3, PCC parity) — bounds the preference doc payload and the dropdown. */

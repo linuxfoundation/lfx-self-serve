@@ -596,6 +596,8 @@ export class SocialListeningService {
     // Unread view: `isReadInState` negated — a mention is unread iff it is not explicitly read AND
     // (no mark-all cutoff exists OR it is newer than the cutoff OR explicitly marked unread).
     // With a null cutoff the cutoff clause drops out: every non-readIds mention is already unread.
+    // A NULL MENTION_TS can never satisfy `>` — but the client's `new Date(ts)` NaN-compare also
+    // never satisfies `<=` there, so NULL stays unread here to keep the two predicates in agreement.
     if (filters.unreadOnly) {
       markers.push('unreadOnly');
       // Ids match verbatim (they are opaque Snowflake keys), so they sort but never lowercase.
@@ -608,7 +610,7 @@ export class SocialListeningService {
 
       if (filters.readBeforeTs) {
         const unreadIds = this.capValues(req, filters.unreadIds, MENTION_READ_IDS_MAX_VALUES).sort();
-        const cutoffClause = `${col('MENTION_TS')} > TO_TIMESTAMP_NTZ(?)`;
+        const cutoffClause = `(${col('MENTION_TS')} > TO_TIMESTAMP_NTZ(?) OR ${col('MENTION_TS')} IS NULL)`;
         if (unreadIds.length > 0) {
           clauses.push(`(${cutoffClause} OR ${col('_KEY')} IN (${this.placeholders(unreadIds.length)}))`);
           binds.push(filters.readBeforeTs, ...unreadIds);

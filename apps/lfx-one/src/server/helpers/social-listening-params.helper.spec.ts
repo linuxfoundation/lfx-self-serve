@@ -200,6 +200,19 @@ describe('unread read-state params (feed + count only)', () => {
     expect(parseSocialListeningFilters(reqWith({ unreadOnly: 'false' }), 'op').unreadOnly).toBeUndefined();
   });
 
+  it('accepts both cutoff shapes the client persists — ISO 8601 and space-separated Snowflake', () => {
+    for (const readBeforeTs of ['2026-01-15T10:00:00Z', '2026-01-15T10:00:00.123Z', '2026-01-15 10:00:00', '2026-01-15 10:00:00.123']) {
+      expect(parseSocialListeningFilters(reqWith({ unreadOnly: 'true', readBeforeTs }), 'op').readBeforeTs).toBe(readBeforeTs);
+    }
+  });
+
+  it.each(['not-a-timestamp', '2026-13-40T99:99:99Z', '2026-01-15', '01/15/2026 10:00 AM'])(
+    '400s a malformed readBeforeTs (%s) instead of 500ing in Snowflake',
+    (readBeforeTs) => {
+      expectFieldError(() => parseSocialListeningFilters(reqWith({ unreadOnly: 'true', readBeforeTs }), 'op'), 'readBeforeTs');
+    }
+  );
+
   it.each(['readIds', 'unreadIds'])('400s over 500 %s values', (name) => {
     const values = Array.from({ length: 501 }, (_, i) => `mention-${i}`);
 

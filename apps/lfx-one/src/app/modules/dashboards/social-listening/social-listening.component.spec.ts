@@ -566,13 +566,17 @@ describe('SocialListeningComponent', () => {
       await settle();
       expect(fixture.componentInstance.currentPage()).toBe(4);
 
-      // Unread mode narrows the feed, so mark-all first resolves the foundation-global newest via a limit-1 fetch…
-      readState.set(readStateWith({ readBeforeTs: '2026-08-01T00:00:00Z' }));
+      // Unread mode narrows the feed, so mark-all first resolves the foundation-global newest via a limit-1 fetch.
+      // Mirror the production ordering inside the mock: the store's optimistic commit lands
+      // synchronously within markAllAsRead, so the component's snapshot refresh must observe the
+      // new cutoff. (A plain fn + manual readState.set beforehand would pass even if the component
+      // refreshed before committing.)
+      markAllAsRead.mockImplementation((ts: string) => readState.set(readStateWith({ readBeforeTs: ts })));
       fixture.componentInstance.onMarkAllAsRead();
       await settle();
 
       expect(markAllAsRead).toHaveBeenCalledWith('2026-08-01T00:00:00Z');
-      // …then the refreshed snapshot re-queries with the new cutoff, restarting at page 1.
+      // Then the refreshed snapshot re-queries with the new cutoff, restarting at page 1.
       expect(fixture.componentInstance.currentPage()).toBe(0);
       expect(feedCalls().at(-1)).toMatchObject({ unreadOnly: true, readBeforeTs: '2026-08-01T00:00:00Z' });
     });
