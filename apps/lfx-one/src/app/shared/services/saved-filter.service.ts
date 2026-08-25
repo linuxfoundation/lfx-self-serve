@@ -72,7 +72,7 @@ export class SavedFilterService {
     this.store.setContext(ctx);
   }
 
-  public addSavedFilter(name: string, predicate: FilterPredicate, scope: SavedViewScope): SavedFilter | null {
+  public addSavedFilter(name: string, predicate: FilterPredicate, scope: SavedViewScope, onPersistError?: () => void): SavedFilter | null {
     const { data: current, loading, readOnly, error } = this.store.state();
     if (loading) return null;
 
@@ -123,8 +123,10 @@ export class SavedFilterService {
       // Targeted rollback: remove only this view so saves queued after this one survive.
       rollback: () => this.store.replace(this.store.state().data.filter((f) => f.id !== newFilter.id)),
       onSuccess: () => this.messageService.add({ severity: 'success', summary: 'View saved', detail: `Saved "${newFilter.name}"` }),
-      onError: () =>
-        this.messageService.add({ severity: 'error', summary: 'Failed to save view', detail: `Could not save "${newFilter.name}". Please try again.` }),
+      onError: () => {
+        onPersistError?.();
+        this.messageService.add({ severity: 'error', summary: 'Failed to save view', detail: `Could not save "${newFilter.name}". Please try again.` });
+      },
     });
 
     return newFilter;

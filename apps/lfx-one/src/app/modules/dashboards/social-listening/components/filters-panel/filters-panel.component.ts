@@ -50,12 +50,16 @@ export class FiltersPanelComponent {
   // === Inputs (option lists + per-group loading, fetched lazily by the page) ===
   public readonly languageOptions = input<SocialListeningOption[]>([]);
   public readonly languagesLoading = input(false);
+  public readonly languagesError = input(false);
   public readonly availableKeywords = input<string[]>([]);
   public readonly keywordsLoading = input(false);
+  public readonly keywordsError = input(false);
   public readonly availableTags = input<string[]>([]);
   public readonly tagsLoading = input(false);
+  public readonly tagsError = input(false);
   public readonly availableAuthors = input<AuthorOption[]>([]);
   public readonly authorsLoading = input(false);
+  public readonly authorsError = input(false);
   public readonly activeFilterCount = input(0);
 
   // === Saved views (LFXV2-3002 Block 3) ===
@@ -92,6 +96,21 @@ export class FiltersPanelComponent {
   // options land) — kept as extra options so the multiselect chips still resolve a label (PCC port).
   protected readonly displayedKeywordOptions: Signal<SocialListeningOption[]> = this.initDisplayedKeywordOptions();
   protected readonly displayedTagOptions: Signal<SocialListeningOption[]> = this.initDisplayedTagOptions();
+
+  // A failed option fetch must not pose as a valid empty result — the empty slot swaps to an error
+  // message (the pipeline refires on scope change, which is the retry path the copy points at).
+  protected readonly languagesEmptyMessage = computed(() =>
+    this.languagesError() ? 'Options could not be loaded — adjust the scope to retry' : 'No languages match the current filters'
+  );
+  protected readonly keywordsEmptyMessage = computed(() =>
+    this.keywordsError() ? 'Options could not be loaded — adjust the scope to retry' : 'No keywords match the current filters'
+  );
+  protected readonly tagsEmptyMessage = computed(() =>
+    this.tagsError() ? 'Options could not be loaded — adjust the scope to retry' : 'No tags match the current filters'
+  );
+  protected readonly authorsEmptyMessage = computed(() =>
+    this.authorsError() ? 'Options could not be loaded — adjust the scope to retry' : 'No authors match the current filters'
+  );
 
   private readonly panelContainer = viewChild<ElementRef<HTMLElement>>('panelContainer');
 

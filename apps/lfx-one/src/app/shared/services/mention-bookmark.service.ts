@@ -37,6 +37,13 @@ export class MentionBookmarkService {
     serialize: (ids) => JSON.stringify([...ids]),
     // PCC parity: emptying the set deletes the row rather than persisting '[]'.
     shouldDeleteOnEmpty: (ids) => ids.size === 0,
+    onLoadError: () => {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Bookmarks unavailable',
+        detail: 'Your bookmarks could not be loaded. Refresh the page and try again.',
+      });
+    },
   });
 
   public readonly state = this.store.state;

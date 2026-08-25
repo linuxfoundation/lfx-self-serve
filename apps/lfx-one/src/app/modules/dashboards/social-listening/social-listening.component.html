@@ -49,12 +49,16 @@
             [(selectedAuthors)]="selectedAuthors"
             [languageOptions]="languageOptions()"
             [languagesLoading]="languagesLoading()"
+            [languagesError]="languagesError()"
             [availableKeywords]="availableKeywords()"
             [keywordsLoading]="keywordsLoading()"
+            [keywordsError]="keywordsError()"
             [availableTags]="availableTags()"
             [tagsLoading]="tagsLoading()"
+            [tagsError]="tagsError()"
             [availableAuthors]="availableAuthors()"
             [authorsLoading]="authorsLoading()"
+            [authorsError]="authorsError()"
             [activeFilterCount]="activeFilterCount()"
             [canSaveCurrentView]="canSaveCurrentView()"
             [atSavedViewLimit]="atSavedViewLimit()"
@@ -144,8 +148,15 @@
               data-testid="social-listening-read-state-error" />
           }
 
+          @if (bookmarkStateError()) {
+            <lfx-message
+              severity="error"
+              text="Your bookmarks could not be loaded, so the bookmarked view is unavailable. Refresh the page and try again."
+              data-testid="social-listening-bookmark-state-error" />
+          }
+
           <!-- The list (and its empty state) stays hidden behind an error banner so the two never contradict -->
-          @if (!error() && !readStateError()) {
+          @if (!error() && !readStateError() && !bookmarkStateError()) {
             <lfx-mentions-list
               [mentions]="mentions()"
               [loading]="loading()"

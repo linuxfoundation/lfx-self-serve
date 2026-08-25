@@ -417,6 +417,28 @@ describe('SocialListeningComponent', () => {
     });
   });
 
+  describe('language invalidation', () => {
+    it('keeps a deep-linked language while the option list has not been fetched', async () => {
+      queryParams$.next({ language: 'fr' });
+      await settle();
+
+      // The lazy options fetch has never fired — an untouched list must not wipe the deep link.
+      expect(fixture.componentInstance.selectedLanguage()).toBe('fr');
+    });
+
+    it('clears a stale deep-linked language once the option list lands empty', async () => {
+      queryParams$.next({ language: 'fr' });
+      await settle();
+      expect(fixture.componentInstance.selectedLanguage()).toBe('fr');
+
+      // The fetch is armed by the first panel intent; a successful-but-empty list still invalidates.
+      fixture.componentInstance.prefetchFilterOptions();
+      await settle();
+
+      expect(fixture.componentInstance.selectedLanguage()).toBe('all');
+    });
+  });
+
   describe('bookmark mode', () => {
     it('sets the bookmark context once the signed-in user and foundation SFID resolve, and clears it when either drops', async () => {
       // Neither has resolved yet — the store stays idle.
@@ -465,6 +487,25 @@ describe('SocialListeningComponent', () => {
       fixture.componentInstance.onBookmarkToggled({ id: 'm1' } as Mention);
 
       expect(toggleBookmark).toHaveBeenCalledWith('m1');
+    });
+
+    it('holds the feed loading state while the bookmark set loads in bookmarked mode', async () => {
+      fixture.componentInstance.selectedBookmarkFilter.set('bookmarked');
+      bookmarkState.set({ data: new Set(), loading: true, readOnly: false, error: null });
+      await settle();
+
+      // The empty set is the not-yet-loaded fallback — the "no bookmarks" empty state must not paint yet.
+      expect(fixture.componentInstance.loading()).toBe(true);
+      expect(fixture.componentInstance.bookmarkStateError()).toBe(false);
+    });
+
+    it('flags an error state when the bookmark set fails to load in bookmarked mode', async () => {
+      fixture.componentInstance.selectedBookmarkFilter.set('bookmarked');
+      bookmarkState.set({ data: new Set(), loading: false, readOnly: false, error: new Error('boom') });
+      await settle();
+
+      // The template swaps the list for an error banner so the fallback empty set can't pose as "no bookmarks".
+      expect(fixture.componentInstance.bookmarkStateError()).toBe(true);
     });
 
     it('strips mentionIds from the analytics filter input', async () => {
@@ -692,6 +733,62 @@ describe('SocialListeningComponent', () => {
       fixture.componentInstance.onMarkAllAsUnread();
       expect(markAllAsUnread).toHaveBeenCalledTimes(1);
     });
+
+    it('resolves the mark-all cutoff from a live fetch when window 0 never landed', async () => {
+      // A window-0 fetch that never emits leaves newestMentionTs null — mark-all must resolve the global newest itself.
+      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) =>
+        req.limit === 1 ? of({ mentions: [{ MENTION_ID: 'g', MENTION_TS: '2026-08-05 10:00:00' } as SocialListeningMention], computedAt: null }) : of()
+      );
+      fixture.destroy();
+      fixture = TestBed.createComponent(SocialListeningComponent);
+      fixture.detectChanges();
+      await settle();
+
+      fixture.componentInstance.onMarkAllAsRead();
+      await settle();
+
+      expect(markAllAsRead).toHaveBeenCalledWith('2026-08-05 10:00:00');
+    });
+
+    it('does not stamp the mark-all cutoff when the foundation switches mid-fetch', async () => {
+      // The limit-1 cutoff fetch stays open so the foundation switch (and the store rebind) lands first.
+      const cutoff$ = new Subject<SocialListeningFeedResponse>();
+      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => (req.limit === 1 ? cutoff$.asObservable() : of(feedResponse(req))));
+      fixture.destroy();
+      fixture = TestBed.createComponent(SocialListeningComponent);
+      fixture.detectChanges();
+      await settle();
+
+      fixture.componentInstance.selectedSentiment.set('negative');
+      await settle();
+      fixture.componentInstance.onMarkAllAsRead();
+
+      foundationSignal.set({ uid: 'f2', name: 'LF', slug: 'linuxfoundation' });
+      foundationSfid.set('001XYZ0000ABCDEFAAA');
+      await settle();
+
+      cutoff$.next({ mentions: [{ MENTION_ID: 'g', MENTION_TS: '2026-08-05 10:00:00' } as SocialListeningMention], computedAt: null });
+      await settle();
+
+      expect(markAllAsRead).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the loaded newest when the unfiltered cutoff window comes back empty', async () => {
+      // No mentions in the default period (a foundation whose mentions are all in a prior year) — mark-all
+      // must still stamp the newest loaded timestamp instead of silently no-oping on a visible feed.
+      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => (req.limit === 1 ? of({ mentions: [], computedAt: null }) : of(feedResponse(req))));
+      fixture.destroy();
+      fixture = TestBed.createComponent(SocialListeningComponent);
+      fixture.detectChanges();
+      await settle();
+
+      fixture.componentInstance.selectedSentiment.set('negative');
+      await settle();
+      fixture.componentInstance.onMarkAllAsRead();
+      await settle();
+
+      expect(markAllAsRead).toHaveBeenCalledWith('2026-08-01T00:00:00Z');
+    });
   });
 
   describe('saved views', () => {
@@ -756,10 +853,34 @@ describe('SocialListeningComponent', () => {
       expect(addSavedFilter).toHaveBeenCalledWith(
         'Crisis',
         expect.objectContaining({ sentiment: 'negative' }),
-        expect.objectContaining({ period: getDefaultMarketingImpactPeriod(), sourceProjectId: 'all', platform: 'all' })
+        expect.objectContaining({ period: getDefaultMarketingImpactPeriod(), sourceProjectId: 'all', platform: 'all' }),
+        expect.any(Function)
       );
       expect(fixture.componentInstance.activeViewId()).toBe('view-new');
       expect(currentParams['view']).toBe('view-new');
+    });
+
+    it('clears the pending active view when the save write fails and rolls back', async () => {
+      // Mirror the store's failure path: rollback drops the view, then the error callback fires.
+      addSavedFilter.mockImplementation((name: string, predicate: FilterPredicate, scope: SavedViewScope, onPersistError?: () => void): SavedFilter => {
+        const created: SavedFilter = { id: 'view-new', name, predicate, scope, createdAt: '2026-08-01T00:00:00.000Z' };
+        savedFilterState.update((s) => ({ ...s, data: [...s.data, created] }));
+        queueMicrotask(() => {
+          savedFilterState.update((s) => ({ ...s, data: s.data.filter((f) => f.id !== created.id) }));
+          onPersistError?.();
+        });
+        return created;
+      });
+
+      fixture.componentInstance.selectedSentiment.set('negative');
+      await settle();
+      fixture.componentInstance.saveCurrentView('Crisis');
+      expect(fixture.componentInstance.activeViewId()).toBe('view-new');
+
+      await settle();
+      // The ghost id must be gone — otherwise the foreign-view detector would misread the failed save as a shared preset.
+      expect(fixture.componentInstance.activeViewId()).toBeNull();
+      expect(fixture.componentInstance.foreignViewBannerVisible()).toBe(false);
     });
 
     it('resets predicate + scope to defaults when the active view is deleted, and keeps state when another view is deleted', async () => {
@@ -881,7 +1002,7 @@ describe('SocialListeningComponent', () => {
       dialogClose$.next('My Crisis');
       await settle();
 
-      expect(addSavedFilter).toHaveBeenCalledWith('My Crisis', expect.objectContaining({ sentiment: 'negative' }), expect.anything());
+      expect(addSavedFilter).toHaveBeenCalledWith('My Crisis', expect.objectContaining({ sentiment: 'negative' }), expect.anything(), expect.any(Function));
       expect(fixture.componentInstance.activeViewId()).toBe('view-new');
       expect(fixture.componentInstance.foreignViewBannerVisible()).toBe(false);
     });
