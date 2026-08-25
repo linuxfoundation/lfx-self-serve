@@ -206,9 +206,15 @@ export class NewsletterRendererService {
       if (name === 'body' && ctx.bodySlot !== undefined) {
         return ctx.bodySlot;
       }
+      // A <separator> child of the slot is rendered BETWEEN consecutive child
+      // blocks (never before the first or after the last), matching the server
+      // (bind.go). Join with the rendered separator so the canvas shows the same
+      // inline rule the sent email does.
+      const separator = children.find((c) => c.kind === 'element' && c.tag === 'separator');
+      const separatorHtml = separator && separator.kind === 'element' ? separator.children.map((n) => this.renderNode(n, ctx)).join('') : '';
       return ctx.children
         .map((child) => this.renderBlock(ctx.templateOf?.(child.block_type), child.content, child.blocks ?? [], ctx.templateOf, ctx.editMode))
-        .join('');
+        .join(separatorHtml);
     }
 
     // Rich text: emit the bound field's raw HTML (author's own content). Tag the

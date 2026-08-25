@@ -105,6 +105,22 @@ describe('NewsletterRendererService (browser)', () => {
     const hidden = service.renderBlock('<text if="title">Section title</text>', { title: '' });
     expect(hidden).not.toContain('Section title');
   });
+
+  it('renders a <slot> <separator> BETWEEN children only (matching the server)', () => {
+    const templateOf = (bt: string): string | undefined => (bt === 'child' ? '<text>{{t}}</text>' : undefined);
+    const template = '<section><slot name="children"><separator><hr class="sep-rule"></separator></slot></section>';
+    const child = (t: string): NewsletterBlock => ({ block_type: 'child', content: { t }, blocks: [] });
+
+    const three = service.renderBlock(template, {}, [child('One'), child('Two'), child('Three')], templateOf);
+    expect(three).toContain('One');
+    expect(three).toContain('Three');
+    // 3 children → exactly 2 separators (never before the first or after the last).
+    expect((three.match(/sep-rule/g) ?? []).length).toBe(2);
+
+    const one = service.renderBlock(template, {}, [child('Only')], templateOf);
+    expect(one).toContain('Only');
+    expect(one).not.toContain('sep-rule');
+  });
 });
 
 /**
