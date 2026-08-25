@@ -157,15 +157,16 @@ describe('getLinkedInAnalytics pacing rules', () => {
     expect(constrained?.issue).toBe(`Budget constrained — pacing above ${CAMPAIGN_PACING_THRESHOLDS.normal}%`);
   });
 
-  // Boundary parity with meta-ads.service.ts / reddit-ads.service.ts, which both treat the
-  // thresholds as EXCLUSIVE upper bounds. Both also `Math.round` pacingPct, so exactly 90 and
-  // exactly 100 are ordinary integer outcomes rather than edge cases. A strict-less chain
+  // Boundary parity with meta-ads.service.ts / reddit-ads.service.ts. All three test with `>`
+  // rather than `>=`, so a value EQUAL to a threshold does not advance a band — each threshold is
+  // an INCLUSIVE upper bound of the band below it. Both also `Math.round` pacingPct, so exactly 90
+  // and exactly 100 are ordinary integer outcomes rather than edge cases. A strict-less chain
   // (`pacingPct < normal` / `< constrained`) puts each of these one band too high, which is what
   // the first draft of this change did.
   it.each([
     [90, 'normal'],
     [100, 'constrained'],
-  ])('matches meta/reddit at exactly %i%% (a threshold is an exclusive upper bound)', async (pct, expected) => {
+  ])('matches meta/reddit at exactly %i%% (a threshold is an inclusive upper bound)', async (pct, expected) => {
     const result = await pacingFor(pct);
 
     expect(result.campaigns[0].pacingLabel).toBe(expected);

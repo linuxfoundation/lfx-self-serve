@@ -1016,11 +1016,11 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
       // the bar but "normal" in the label).
       //
       // The comparison form deliberately mirrors meta-ads.service.ts and reddit-ads.service.ts
-      // exactly. Both treat the thresholds as EXCLUSIVE upper bounds (`> normal`, `> constrained`),
-      // so a campaign at exactly 90% or exactly 100% is the lower band, not the higher one. A
-      // strict-less chain here would have put those two boundaries one band above the other
-      // platforms — and Meta and Reddit both `Math.round` pacingPct, which makes integers like
-      // 90 and 100 the common case rather than an edge case.
+      // exactly. Because the tests are `>` rather than `>=`, a value EQUAL to a threshold does not
+      // advance a band: each threshold is an INCLUSIVE upper bound of the band below it, so 90%
+      // stays `normal` and 100% stays `constrained`. A strict-less chain here would have put those
+      // two boundaries one band above the other platforms — and Meta and Reddit both `Math.round`
+      // pacingPct, which makes integers like 90 and 100 the common case rather than an edge case.
       if (pacingPct < CAMPAIGN_PACING_THRESHOLDS.underspending) {
         pacingLabel = 'underspending';
       } else if (pacingPct > CAMPAIGN_PACING_THRESHOLDS.constrained) {
