@@ -19,7 +19,7 @@ import { OrgProjectDetailComponent } from './org-project-detail.component';
  * Covers the leaderboard row score-breakdown drawer's reactive close (GH-1798 Copilot finding):
  * `openLeaderboardDetail` only guards on `leaderboardDetailFeatureEnabled()` while opening, so a
  * LaunchDarkly config change that flips the flag off while the drawer is already open would
- * otherwise leave gated demo data on screen. The constructor `effect()` in
+ * otherwise leave gated demo data on screen. The constructor's `toObservable` subscription in
  * org-project-detail.component.ts is what closes it.
  */
 describe('OrgProjectDetailComponent — leaderboard detail drawer flag gating', () => {
@@ -79,19 +79,19 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer flag gating', 
     await fixture.whenStable();
   });
 
-  it('closes the drawer when the flag flips off while it is open', () => {
+  it('closes the drawer when the flag flips off while it is open', async () => {
     component['openLeaderboardDetail']('technical', { orgName: 'Acme', isViewingOrg: false } as never);
     expect(component['leaderboardDetailOpen']()).toBe(true);
 
     featureEnabled.set(false);
-    TestBed.flushEffects();
+    await fixture.whenStable();
 
     expect(component['leaderboardDetailOpen']()).toBe(false);
   });
 
-  it('leaves the drawer open while the flag stays on', () => {
+  it('leaves the drawer open while the flag stays on', async () => {
     component['openLeaderboardDetail']('technical', { orgName: 'Acme', isViewingOrg: false } as never);
-    TestBed.flushEffects();
+    await fixture.whenStable();
 
     expect(component['leaderboardDetailOpen']()).toBe(true);
   });
