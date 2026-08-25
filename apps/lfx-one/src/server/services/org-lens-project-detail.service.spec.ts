@@ -19,10 +19,15 @@ vi.mock('./valkey.service', () => ({
   buildOrgCacheKey: () => null,
   valkeyService: { getJson: vi.fn(), setJson: vi.fn() },
 }));
-vi.mock('@lfx-one/shared/utils', () => ({
-  buildInsightsUrl: () => '',
-  classifyHealthScore: () => 'unavailable',
-}));
+// See org-lens-projects.service.spec.ts for why this delegates to the real classification utils instead of stubbing.
+vi.mock('@lfx-one/shared/utils', async () => {
+  const actual = await import('../../../../../packages/shared/src/utils/insights.utils');
+  return {
+    buildInsightsUrl: () => '',
+    classifyHealthScore: actual.classifyHealthScore,
+    normalizeHealthScoreCategoryV2: actual.normalizeHealthScoreCategoryV2,
+  };
+});
 
 import { OrgLensProjectDetailService } from './org-lens-project-detail.service';
 
@@ -36,7 +41,6 @@ const heroRow = {
   FOUNDATION_NAME: 'CNCF',
   IS_LF_PROJECT: true,
   DESCRIPTION: null,
-  HEALTH_OVERALL_SCORE: 80,
   SOFTWARE_VALUE: null,
   FIRST_COMMIT_TS: null,
 };
@@ -211,5 +215,36 @@ describe('OrgLensProjectDetailService.getTrendBlock', () => {
     execute.mockResolvedValue({ rows: [] });
 
     await expect(service.getTrendBlock(ORG, SLUG, '1y')).resolves.toBeNull();
+  });
+});
+
+describe('OrgLensProjectDetailService.getHeroBlock health mapping', () => {
+  const service = new OrgLensProjectDetailService();
+
+  beforeEach(() => {
+    execute.mockReset();
+  });
+
+  function mockHeroRow(overrides: Record<string, unknown>): void {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('PROJECT_NAME')) return { rows: [{ ...heroRow, ...overrides }] };
+      return { rows: [] };
+    });
+  }
+
+  it('falls back to the raw v2 score when the v2 category is unrecognized', async () => {
+    mockHeroRow({ HEALTH_OVERALL_SCORE_V2: 50, HEALTH_SCORE_CATEGORY_V2: 'Typo' });
+
+    const block = await service.getHeroBlock(ORG, SLUG);
+
+    expect(block?.hero.health).toBe('fair');
+  });
+
+  it('returns null health when no v2 score or category is present', async () => {
+    mockHeroRow({ HEALTH_OVERALL_SCORE_V2: null, HEALTH_SCORE_CATEGORY_V2: null });
+
+    const block = await service.getHeroBlock(ORG, SLUG);
+
+    expect(block?.hero.health).toBeNull();
   });
 });
