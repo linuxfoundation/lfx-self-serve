@@ -4,6 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants';
 import type {
   OrgAllEmployeeDetail,
   OrgDrawerFetchResult,
@@ -12,6 +13,7 @@ import type {
   PersonDrawerTab,
 } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { catchError, combineLatest, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
 
 const EMPTY_FETCH_RESULT: OrgDrawerFetchResult = { detail: null, companyEmails: [] };
@@ -23,6 +25,9 @@ const EMPTY_FETCH_RESULT: OrgDrawerFetchResult = { detail: null, companyEmails: 
 export class PersonDetailDrawerService {
   private readonly http = inject(HttpClient);
   private readonly accountContext = inject(AccountContextService);
+  private readonly featureFlagService = inject(FeatureFlagService);
+
+  private readonly companyEmailFeatureEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_PRIVATE_RELEASE_FLAG, false);
 
   private readonly _activeContext = signal<PersonDrawerContext | null>(null);
   public readonly activeContext = this._activeContext.asReadonly();
@@ -80,7 +85,7 @@ export class PersonDetailDrawerService {
         // travels in the body, not the query string, keeping it out of request-log URLs. `detail`
         // stays null here — there's no personKey to fetch real activity for, so the drawer's
         // "Detailed activity isn't available" state must stay truthful rather than showing verified-empty tabs.
-        if (context.email) {
+        if (context.email && this.companyEmailFeatureEnabled()) {
           this._loading.set(true);
           this._error.set(false);
           this._emailError.set(false);

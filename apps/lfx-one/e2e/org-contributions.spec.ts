@@ -286,6 +286,9 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
     await expect(page.getByTestId('person-detail-drawer-loading')).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
 
     await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
+    // This personKey path's catchError never sets _emailError, so this assertion can't fail today —
+    // it's a regression guard in case that wiring changes. The non-vacuous flag-off coverage lives in
+    // org-people-board-tab.spec.ts's company-emails-request-never-fires test (no-personKey path).
     await expect(page.getByTestId('person-detail-drawer-email-unavailable')).toHaveCount(0);
   });
 });

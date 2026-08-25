@@ -346,22 +346,25 @@ test.describe('Org People → Board tab', () => {
     expect(personDetailCalls).toBe(0);
   });
 
-  // Board rows have no personKey, so the drawer's only email source is the company-emails POST —
-  // forcing that lookup to fail makes `emailError` genuinely true, so asserting the fallback stays
-  // hidden actually proves the org-lens-private-release gate (not just an untriggered condition).
-  test('company email unavailable fallback stays hidden when org-lens-private-release is OFF', async ({ page }) => {
+  // Board rows have no personKey, so the drawer's only email source is the company-emails POST.
+  // With org-lens-private-release OFF, the fetch-side gate in PersonDetailDrawerService must skip
+  // this request entirely — not just hide the result client-side — so assert it never fires.
+  test('company-emails request never fires when org-lens-private-release is OFF', async ({ page }) => {
     await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
     await stubAccountContext(page);
     await stubBoardMembers(page);
-    await page.route('**/api/orgs/*/lens/people/company-emails', (route) => route.fulfill({ status: 500, body: 'boom' }));
+    let companyEmailCalls = 0;
+    await page.route('**/api/orgs/*/lens/people/company-emails', (route) => {
+      companyEmailCalls += 1;
+      return route.fulfill({ status: 500, body: 'unexpected company-emails fetch' });
+    });
 
     await gotoBoardTab(page);
-    const emailLookup = page.waitForResponse((response) => response.url().includes('/lens/people/company-emails'));
     await page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}-name`).click();
     await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await emailLookup;
 
     await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
     await expect(page.getByTestId('person-detail-drawer-email-unavailable')).toHaveCount(0);
+    expect(companyEmailCalls).toBe(0);
   });
 });
