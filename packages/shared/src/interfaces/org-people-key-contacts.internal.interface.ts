@@ -12,6 +12,13 @@ export interface KeyContactIndexedDoc {
   role?: string;
   status?: string | null;
   avatar?: string | null;
+  /**
+   * Resolved LFID username for this contact's email, set upstream by member-service
+   * (`internal/domain/model/key_contact.go`). Optional like every other field here — the search index
+   * can omit unindexed columns per row, so treat absence as "no identity available" rather than
+   * assuming it will be there.
+   */
+  username?: string | null;
 }
 
 /** Indexed `project_membership.data` shape on query-service — server-side only; fields optional because the search index can omit unindexed columns per row. */

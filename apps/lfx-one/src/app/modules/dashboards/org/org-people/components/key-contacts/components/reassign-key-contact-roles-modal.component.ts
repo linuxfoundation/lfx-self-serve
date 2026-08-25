@@ -195,6 +195,8 @@ export class ReassignKeyContactRolesModalComponent {
       initials: this.person.initials,
       avatarColorClass: 'bg-purple-500',
       email: this.person.email,
+      // identity for the company-address lookup; the drawer must not resolve a person from an address.
+      username: this.person.username ?? null,
     });
   }
 

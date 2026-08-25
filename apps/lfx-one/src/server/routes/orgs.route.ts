@@ -149,8 +149,14 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/people/event-attendees', (req, res, next) => orgLensPeopleController.getEventAttendees(req, res, next));
   // LFXV2-1874 — People → Contributors tab. Same guard rationale as above ('contributors' must not be consumed as a personKey).
   router.get('/:orgUid/lens/people/contributors', (req, res, next) => orgLensPeopleController.getContributors(req, res, next));
-  // GH-1655 — company-emails lookup for tabs (Board/Committee) whose rows have no personKey. POST (not GET) so the looked-up email travels in the body, not the query string, keeping it out of request-log URLs.
-  router.post('/:orgUid/lens/people/company-emails', (req, res, next) => orgLensPeopleController.getCompanyEmails(req, res, next));
+  // LFXV2-3296 — company-affiliated addresses for the governance surfaces (Board/Committee/Key Contacts/Access),
+  // whose rows carry an LF username rather than a personKey. Keyed on the username, never on an address: an
+  // address-keyed lookup returning real data would let a caller harvest the other addresses attached to any
+  // address they can guess. Registered above the `/:personKey/detail` matcher so 'by-username' isn't consumed
+  // as a personKey.
+  router.get('/:orgUid/lens/people/by-username/:username/company-emails', (req, res, next) =>
+    orgLensPeopleController.getCompanyEmailsByUsername(req, res, next)
+  );
   router.get('/:orgUid/lens/people/:personKey/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetail(req, res, next));
 
   // Spec 025 — People → Org Lens Access tab (list + manager-only role change / remove).

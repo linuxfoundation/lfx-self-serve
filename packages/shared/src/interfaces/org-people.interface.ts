@@ -174,26 +174,49 @@ export interface OrgAllEmployeeDetail {
   events: OrgAllEmployeeEvent[];
   training: OrgAllEmployeeTraining[];
   /**
-   * Email address(es) on this person's LF account affiliated with the company at the domain
-   * level (per Salesforce Account domain(s)), excluding personal/academic addresses. Demo-derived
-   * pending a real Salesforce Account multi-domain + LF SSO multi-email pipeline — see
-   * `deriveDemoCompanyEmails` in org-lens-people.service.ts.
+   * Every address this person holds on a domain belonging to the organization in context, ordered
+   * primary-first then alphabetically. Sourced from
+   * `ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS`.
+   *
+   * Uncapped — ten addresses for one person is a real observed value, so consumers must not assume a
+   * bound. An empty array is an authoritative "no company address on record", not an error: personal
+   * and other-employer addresses are not omitted from this list, they are never retrieved, so no
+   * client-side filtering is required or permitted.
    */
   companyEmails: string[];
+  /**
+   * Why `companyEmails` looks the way it does. Without this the client cannot tell an authoritative
+   * empty result from a lookup that never ran, and would render "no company address on record" —
+   * a factual claim about a named individual — on the strength of a failure.
+   *
+   * - `resolved`: the lookup ran. An empty array here genuinely means none on record.
+   * - `unavailable`: no identity was available to look up with, so nothing was attempted.
+   * - `failed`: the lookup ran and errored. Deliberately does not fail the whole detail response —
+   *   the activity tabs must keep rendering.
+   */
+  companyEmailsStatus: OrgCompanyEmailsStatus;
 }
 
+export type OrgCompanyEmailsStatus = 'resolved' | 'unavailable' | 'failed';
+
 /**
- * Response for the email-based company-emails lookup — used by Org Lens tabs (Board/Committee)
- * whose rows have no `personKey` to fetch the full `OrgAllEmployeeDetail` payload on.
+ * Response for the username-keyed company-emails lookup, used by the governance surfaces (Board,
+ * Committee, Key Contacts, Org Lens Access) whose rows carry an LF username rather than a
+ * `personKey`.
+ *
+ * Keyed on an identity, never on an address. An address-keyed variant of this lookup was withdrawn:
+ * once it returns real data it becomes an interface that, given any email address, returns the other
+ * addresses the same human holds — an enumeration primitive over personal data, on a read path that
+ * does not yet enforce the organization relation.
  */
-export interface OrgLensCompanyEmailsResponse {
+export interface OrgPersonCompanyEmailsResponse {
   companyEmails: string[];
 }
 
 /**
- * Internal fetch-result shape for `PersonDetailDrawerService`. `detail` stays `null` for
- * email-only lookups (Board/Committee openers with no `personKey`) so the drawer's "Detailed
- * activity isn't available" state stays truthful instead of implying verified-empty activity.
+ * Internal fetch-result shape for `PersonDetailDrawerService`. `detail` stays `null` for openers that
+ * carry only an identity and no `personKey`, so the drawer's "Detailed activity isn't available" state
+ * stays truthful instead of implying verified-empty activity.
  */
 export interface OrgDrawerFetchResult {
   detail: OrgAllEmployeeDetail | null;

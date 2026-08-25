@@ -13,13 +13,14 @@ import type {
   OrgAllEmployeeTrainingStatus,
   OrgAllEmployeeVotingStatus,
   OrgAllEmployeesResponse,
-  OrgLensCompanyEmailsResponse,
+  OrgCompanyEmailsStatus,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, splitDisplayName } from '@lfx-one/shared/utils';
 
 import { Request } from 'express';
 
+import { logger } from './logger.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
@@ -108,6 +109,18 @@ interface TrainingRow {
 }
 
 /** Org Lens "People → All Employees" analytics — backed by the 6 PLATINUM_LFX_ONE.ORG_PEOPLE_* tables. Empty rows produce an empty envelope, never a 404. */
+/** Shape of a company-address read that reports how it went rather than throwing. */
+interface CompanyEmailsResult {
+  companyEmails: string[];
+  companyEmailsStatus: OrgCompanyEmailsStatus;
+}
+
+/** No identity was available, so no lookup was attempted — distinct from a lookup that returned nothing. */
+const UNAVAILABLE_COMPANY_EMAILS: CompanyEmailsResult = { companyEmails: [], companyEmailsStatus: 'unavailable' };
+
+/** The lookup ran and errored. The rest of the detail response still renders. */
+const FAILED_COMPANY_EMAILS: CompanyEmailsResult = { companyEmails: [], companyEmailsStatus: 'failed' };
+
 export class OrgLensPeopleService {
   private snowflakeService: SnowflakeService;
   // Lazily constructed: OrgPeopleDirectoryService's own constructor builds an OrgLensPeopleService,
@@ -143,7 +156,12 @@ export class OrgLensPeopleService {
     // roster (access/board/committee/keyContact sources) instead of burning five Snowflake
     // connections just to resolve an email.
     if (personKey.startsWith('live-')) {
-      const resolvedEmail = await this.resolveLiveOnlyEmail(req, accountId, personKey);
+      // A synthetic key joins to nothing in the warehouse, so resolve the person's LF username from
+      // the live roster and read on that instead. Where the roster carries no username the set is
+      // empty, and the drawer renders "not available from this view" rather than asserting the person
+      // has no company address.
+      const username = await this.resolveLiveOnlyUsername(req, accountId, personKey);
+      const live = username ? await this.tryFetchCompanyEmailsByUsername(accountId, username) : UNAVAILABLE_COMPANY_EMAILS;
       return {
         personKey,
         boardSeats: [],
@@ -151,11 +169,12 @@ export class OrgLensPeopleService {
         code: [],
         events: [],
         training: [],
-        companyEmails: deriveDemoCompanyEmails(resolvedEmail),
+        companyEmails: live.companyEmails,
+        companyEmailsStatus: live.companyEmailsStatus,
       };
     }
 
-    const { committeeRows, codeRows, eventRows, trainingRows, email } = await this.fetchEmployeeDetailRaw(accountId, personKey);
+    const { committeeRows, codeRows, eventRows, trainingRows, companyEmails, companyEmailsStatus } = await this.fetchEmployeeDetailRaw(accountId, personKey);
 
     const memberships = committeeRows.map((row) => this.mapCommitteeRow(row));
     const boardSeats = memberships.filter((m) => m.isBoard);
@@ -188,22 +207,23 @@ export class OrgLensPeopleService {
       code: codeRows.map((row) => this.mapCodeRow(row)),
       events,
       training,
-      companyEmails: deriveDemoCompanyEmails(email),
+      companyEmails,
+      companyEmailsStatus,
     };
   }
 
-  /** Company-affiliated emails for a raw email — used by tabs (Board/Committee) whose rows have no personKey to fetch the full detail payload on. */
-  public getCompanyEmailsByEmail(email: string): OrgLensCompanyEmailsResponse {
-    return { companyEmails: deriveDemoCompanyEmails(email) };
+  /** Company-affiliated emails for a person the caller identifies by LF username (governance surfaces). */
+  public async getCompanyEmailsByUsername(accountId: string, username: string): Promise<string[]> {
+    return this.fetchCompanyEmailsByUsername(accountId, username);
   }
 
-  /** Looks up a live-only person's merged address from the live roster (access/board/committee/keyContact sources). */
-  private async resolveLiveOnlyEmail(req: Request, accountId: string, personKey: string): Promise<string | null> {
+  /** Looks up a live-only person's LF username from the live roster (access/board/committee/keyContact sources). */
+  private async resolveLiveOnlyUsername(req: Request, accountId: string, personKey: string): Promise<string | null> {
     if (!personKey.startsWith('live-')) {
       return null;
     }
     const { rows } = await this.getDirectoryService().getLive(req, accountId);
-    return rows.find((row) => row.personKey === personKey)?.email ?? null;
+    return rows.find((row) => row.personKey === personKey)?.lfUsername ?? null;
   }
 
   private getDirectoryService(): OrgPeopleDirectoryService {
@@ -326,7 +346,7 @@ export class OrgLensPeopleService {
     };
   }
 
-  /** Cached per-org detail bundle (four raw row arrays plus the roster email); a non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. */
+  /** Cached per-org detail bundle (four raw row arrays plus the person's company addresses); a non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. */
   private async fetchEmployeeDetailRaw(
     accountId: string,
     personKey: string
@@ -335,7 +355,8 @@ export class OrgLensPeopleService {
     codeRows: CodeContributionRow[];
     eventRows: EventRow[];
     trainingRows: TrainingRow[];
-    email: string | null;
+    companyEmails: string[];
+    companyEmailsStatus: OrgCompanyEmailsStatus;
   }> {
     if (!isFilterSafeIdentifier(personKey)) {
       return this.runEmployeeDetailFetch(accountId, personKey);
@@ -358,27 +379,96 @@ export class OrgLensPeopleService {
     codeRows: CodeContributionRow[];
     eventRows: EventRow[];
     trainingRows: TrainingRow[];
-    email: string | null;
+    companyEmails: string[];
+    companyEmailsStatus: OrgCompanyEmailsStatus;
   }> {
-    const [committeeRows, codeRows, eventRows, trainingRows, email] = await Promise.all([
+    // The address read runs alongside the activity reads so the panel opens no slower, but its
+    // rejection must not take the rest down with it: a warehouse hiccup on this one table would
+    // otherwise blank every activity tab and report the person's details as unloadable. It resolves
+    // to a status instead of throwing, which is also what lets the header say "couldn't be loaded"
+    // rather than the untrue "no company address on record".
+    const [committeeRows, codeRows, eventRows, trainingRows, companyEmailsResult] = await Promise.all([
       this.fetchCommitteeMembershipRows(accountId, personKey),
       this.fetchCodeContributionRows(accountId, personKey),
       this.fetchEventRows(accountId, personKey),
       this.fetchTrainingRows(accountId, personKey),
-      this.fetchPersonEmail(accountId, personKey),
+      this.tryFetchCompanyEmails(accountId, personKey),
     ]);
-    return { committeeRows, codeRows, eventRows, trainingRows, email };
+    return {
+      committeeRows,
+      codeRows,
+      eventRows,
+      trainingRows,
+      companyEmails: companyEmailsResult.companyEmails,
+      companyEmailsStatus: companyEmailsResult.companyEmailsStatus,
+    };
   }
 
-  private async fetchPersonEmail(accountId: string, personKey: string): Promise<string | null> {
+  /** Wraps the keyed read so a failure degrades this one section rather than the whole detail response. */
+  private async tryFetchCompanyEmails(accountId: string, personKey: string): Promise<CompanyEmailsResult> {
+    try {
+      return { companyEmails: await this.fetchCompanyEmails(accountId, personKey), companyEmailsStatus: 'resolved' };
+    } catch (error) {
+      logger.info(undefined, 'get_org_lens_people_detail', 'company email lookup failed; serving detail without addresses', {
+        person_key: personKey,
+        err: error,
+      });
+      return FAILED_COMPANY_EMAILS;
+    }
+  }
+
+  /** As above, for the username-keyed read. */
+  private async tryFetchCompanyEmailsByUsername(accountId: string, username: string): Promise<CompanyEmailsResult> {
+    try {
+      return { companyEmails: await this.fetchCompanyEmailsByUsername(accountId, username), companyEmailsStatus: 'resolved' };
+    } catch (error) {
+      logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'company email lookup failed; serving detail without addresses', {
+        err: error,
+      });
+      return FAILED_COMPANY_EMAILS;
+    }
+  }
+
+  /**
+   * The person's company-affiliated addresses at this account.
+   *
+   * Every inclusion rule lives in the warehouse model, so this is a plain keyed read: the addresses a
+   * person holds that are personal or belong to another employer are not filtered here, they are never
+   * returned. No cap — the observed maximum is ten for one person, and truncating would misrepresent
+   * the set the panel exists to show.
+   *
+   * Keyed on identity only. Resolving a person from an address is prohibited: that direction is known
+   * to contain false links, so it would attribute one named individual's addresses to another.
+   */
+  private async fetchCompanyEmails(accountId: string, personKey: string): Promise<string[]> {
     const query = `
       SELECT EMAIL
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
       WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
-      LIMIT 1
+      ORDER BY IS_PRIMARY DESC, EMAIL ASC
     `;
-    const result = await this.snowflakeService.execute<{ EMAIL: string | null }>(query, [accountId, personKey]);
-    return result.rows[0]?.EMAIL ?? null;
+    const result = await this.snowflakeService.execute<{ EMAIL: string }>(query, [accountId, personKey]);
+    return result.rows.map((row) => row.EMAIL).filter((email): email is string => !!email);
+  }
+
+  /**
+   * As above, for the governance surfaces (Board, Committee, Key Contacts, Access) whose rows carry an
+   * LF username rather than a person_key.
+   *
+   * The username is resolved inside the model rather than translated to a person_key here. Translating
+   * via ORG_PEOPLE_ALL would re-apply that model's engagement gate, which drops roughly three quarters
+   * of corporate key contacts — the panel would then report "no company address on record" for people
+   * whose addresses the warehouse holds.
+   */
+  private async fetchCompanyEmailsByUsername(accountId: string, username: string): Promise<string[]> {
+    const query = `
+      SELECT EMAIL
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
+      WHERE ACCOUNT_ID = ? AND LF_USERNAME = ?
+      ORDER BY IS_PRIMARY DESC, EMAIL ASC
+    `;
+    const result = await this.snowflakeService.execute<{ EMAIL: string }>(query, [accountId, username]);
+    return result.rows.map((row) => row.EMAIL).filter((email): email is string => !!email);
   }
 
   private async fetchCommitteeMembershipRows(accountId: string, personKey: string): Promise<CommitteeMembershipRow[]> {
@@ -553,70 +643,30 @@ function isAllEmployeesRaw(value: unknown): boolean {
 }
 
 function isEmployeeDetailRaw(value: unknown): boolean {
-  const v = value as { committeeRows?: unknown; codeRows?: unknown; eventRows?: unknown; trainingRows?: unknown; email?: unknown } | null;
+  const v = value as {
+    committeeRows?: unknown;
+    codeRows?: unknown;
+    eventRows?: unknown;
+    trainingRows?: unknown;
+    companyEmails?: unknown;
+    companyEmailsStatus?: unknown;
+  } | null;
   return (
     !!v &&
     Array.isArray(v.committeeRows) &&
     Array.isArray(v.codeRows) &&
     Array.isArray(v.eventRows) &&
     Array.isArray(v.trainingRows) &&
-    // Entries cached before `email` was selected are rejected as a miss rather than replayed with a
-    // permanently-empty companyEmails.
-    'email' in v &&
-    (v.email === null || typeof v.email === 'string')
+    // Gates on `companyEmails`, which replaced the earlier single `email` field. An entry written
+    // before this change carries `email` and no `companyEmails`, so it fails here and is refetched
+    // rather than replayed — otherwise the fabricated addresses that field fed would keep being
+    // served from cache long after the code producing them was deleted.
+    Array.isArray(v.companyEmails) &&
+    v.companyEmails.every((email) => typeof email === 'string') &&
+    // Also gates on the status, so a cached entry that predates it is refetched rather than replayed
+    // with an undefined status the client would fall back to rendering as "none on record".
+    (v.companyEmailsStatus === 'resolved' || v.companyEmailsStatus === 'unavailable' || v.companyEmailsStatus === 'failed')
   );
-}
-
-/**
- * Personal/free-mail domains that are never a company-affiliated domain — a roster email at one
- * of these must not produce fabricated "sibling company domain" variants.
- */
-const PERSONAL_EMAIL_DOMAINS: ReadonlySet<string> = new Set([
-  'gmail.com',
-  'googlemail.com',
-  'yahoo.com',
-  'ymail.com',
-  'outlook.com',
-  'hotmail.com',
-  'live.com',
-  'msn.com',
-  'icloud.com',
-  'me.com',
-  'aol.com',
-  'protonmail.com',
-  'proton.me',
-]);
-
-/**
- * Matches academic-institution domains (`.edu`, `.edu.<cc>`, `.ac.<cc>`) — these are institutional,
- * not company, domains and must not produce fabricated "sibling company domain" variants either.
- */
-const ACADEMIC_EMAIL_DOMAIN_PATTERN = /(^|\.)(edu|ac)(\.[a-z]{2,3})?$/;
-
-/**
- * TEMP-DEMO-ONLY (GH-1655): stands in for a future Salesforce Account multi-domain lookup joined
- * with an LF SSO multi-email lookup. Fabricates plausible sibling-domain variants of the person's
- * real local-part so the multi-email UI can be exercised before that pipeline exists. Returns []
- * for personal/free-mail domains, since those never have a company-affiliated sibling domain to
- * derive. Remove once the real data source is wired in.
- */
-function deriveDemoCompanyEmails(email: string | null): string[] {
-  const trimmed = (email ?? '').trim().toLowerCase();
-  const atIndex = trimmed.lastIndexOf('@');
-  if (atIndex <= 0 || atIndex === trimmed.length - 1) {
-    return [];
-  }
-
-  const localPart = trimmed.slice(0, atIndex);
-  const domain = trimmed.slice(atIndex + 1);
-  if (PERSONAL_EMAIL_DOMAINS.has(domain) || ACADEMIC_EMAIL_DOMAIN_PATTERN.test(domain)) {
-    return [];
-  }
-
-  const company = domain.split('.')[0];
-  const siblingDomains = [domain, `${company}.co.uk`, `${company}.jp`];
-
-  return Array.from(new Set(siblingDomains)).map((d) => `${localPart}@${d}`);
 }
 
 /** Narrow upstream free-text voting status to the three badges; unknown values collapse to 'Non-voting'. */

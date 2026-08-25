@@ -47,7 +47,11 @@ const MOCK_PERSON_DETAIL: OrgAllEmployeeDetail = {
   ],
   events: [],
   training: [],
-  companyEmails: ['aramirez@acme-corp.example', 'aramirez@acme-corp.co.uk.example'],
+  // Two addresses on the employer's own domains — a corporate address and a contractor subdomain,
+  // which is the real shape this panel exists to surface (one human holding two identities at one
+  // employer). The previous fixture used a `.co.uk` sibling, which encoded the fabrication the panel
+  // used to perform rather than anything the warehouse can return.
+  companyEmails: ['aramirez@acme-corp.example', 'aramirez@contractor.acme-corp.example'],
 };
 
 const BASE_RESPONSE: OrgContributionsResponse = {
@@ -267,7 +271,7 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
     const emailSection = page.getByTestId('person-detail-drawer-email');
     await expect(emailSection).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(emailSection).toContainText('aramirez@acme-corp.example');
-    await expect(emailSection).toContainText('aramirez@acme-corp.co.uk.example');
+    await expect(emailSection).toContainText('aramirez@contractor.acme-corp.example');
   });
 
   test('S3b: company emails and the unavailable fallback stay hidden when org-lens-private-release is OFF', async ({ page }) => {

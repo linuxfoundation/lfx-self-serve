@@ -50,6 +50,12 @@ jobs:
 
           ./check-fixture-emails.sh "${base_sha}"
 
+      # Whole-tree scan, so it needs no base ref: the symbols it looks for are absent today, and any
+      # occurrence is a reintroduction. Kept as its own step rather than left to the pre-commit hook,
+      # which does not run for contributors who set a global core.hooksPath.
+      - name: Check Org Lens company-address guards
+        run: ./check-company-email-guards.sh
+
       - name: Enable Corepack
         run: corepack enable
 
