@@ -444,6 +444,13 @@ export class MonitoringTabComponent implements OnInit {
     this.redditData.set(null);
     this.metaData.set(null);
 
+    // Same reason as the per-platform signals above: the templates gate their loading placeholder
+    // on `loading() && !monitorData()` (and the keywords equivalent), so leaving the aggregate data
+    // from the OLD foundation in place would render it under the new foundation until the new
+    // request resolves — or indefinitely if it fails.
+    this.monitorData.set(null);
+    this.keywordsData.set(null);
+
     this.fetchData();
 
     // Each account-list request is stamped with the slug it was made for. A foundation switch

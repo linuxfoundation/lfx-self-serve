@@ -914,6 +914,11 @@ export class OptimizationTabComponent implements OnInit {
     this.redditData.set(null);
     this.metaData.set(null);
 
+    // The template gates its loading placeholder on `!monitorData()`, so the aggregate signal
+    // needs clearing too — otherwise action items/campaigns from the OLD foundation render under
+    // the new one until the new fetch resolves (or indefinitely if it fails).
+    this.monitorData.set(null);
+
     this.fetchData();
 
     // Each account-list request is stamped with the slug it was made for. A foundation switch

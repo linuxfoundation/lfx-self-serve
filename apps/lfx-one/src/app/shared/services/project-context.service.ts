@@ -100,7 +100,7 @@ export class ProjectContextService {
     toObservable(this.hasMarketingOnlyGrant)
       .pipe(
         filter((hasGrant) => hasGrant && !this.foundationSelection()),
-        switchMap(() => this.projectService.getProject(MARKETING_ONLY_DEFAULT_FOUNDATION_SLUG)),
+        switchMap(() => this.projectService.getProject(MARKETING_ONLY_DEFAULT_FOUNDATION_SLUG, false)),
         filter((project): project is NonNullable<typeof project> => !!project && !this.foundationSelection())
       )
       .subscribe((project) => {
