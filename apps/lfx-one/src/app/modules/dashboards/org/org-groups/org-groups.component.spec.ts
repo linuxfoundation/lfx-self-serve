@@ -490,6 +490,16 @@ describe('OrgGroupsComponent', () => {
     expect(seatHoldersDrawerState(fixture)).toEqual({ visible: false, selectedGroupUid: null });
   });
 
+  // WCAG 2.5.3 Label in Name: the trigger's only visible text is the seat count, so its accessible
+  // name must include that number, not just the group name — otherwise a screen-reader user loses
+  // the count entirely and a voice-control user can't target the button by its visible label.
+  it('includes the seat count in the seat-holders trigger aria-label, not just the group name', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    const trigger = fixture.nativeElement.querySelector('[data-testid="org-groups-item-seats-g1"]');
+    expect(trigger?.getAttribute('aria-label')).toBe('View 10 seat holders for Committee Steering TAG');
+  });
+
   it('clearing filters restores the full list in the original (seat-desc, name-asc) order', async () => {
     const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
 

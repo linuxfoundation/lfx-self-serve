@@ -302,7 +302,7 @@
                 <button
                   type="button"
                   class="pointer-events-auto relative z-10 flex shrink-0 items-center gap-1 rounded text-sm text-gray-600 transition-colors hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-                  [attr.aria-label]="'View seat holders for ' + group.name"
+                  [attr.aria-label]="'View ' + group.org_seat_count + ' seat holders for ' + group.name"
                   [attr.data-testid]="'org-groups-item-seats-' + group.uid"
                   (click)="onSeatHoldersClick(group)">
                   <i class="fa-light fa-user-check text-gray-400 text-xs" aria-hidden="true"></i>
@@ -345,7 +345,5 @@
     [(visible)]="seatHoldersDrawerVisible"
     [orgUid]="orgUid()"
     [committeeUid]="selectedGroup()?.uid ?? ''"
-    [groupUid]="selectedGroup()?.uid ?? ''"
-    [groupName]="selectedGroup()?.name ?? ''"
-    [seatCount]="selectedGroup()?.org_seat_count ?? 0" />
+    [groupName]="selectedGroup()?.name ?? ''" />
 </main>

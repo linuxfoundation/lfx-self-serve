@@ -24,12 +24,11 @@ export class GroupSeatHoldersDrawerComponent {
   public readonly visible = model<boolean>(false);
   public readonly orgUid = input<string>('');
   public readonly committeeUid = input<string>('');
-  public readonly groupUid = input<string>('');
   public readonly groupName = input<string>('');
-  public readonly seatCount = input<number>(0);
 
   protected readonly loading = signal(false);
   protected readonly error = signal(false);
+  private readonly retryTick = signal(0);
 
   // getCommitteeMembers(orgUid) always drains the org's FULL, non-truncated committee roster —
   // there's no server-side committeeUid filter (committee-service's seats endpoint doesn't offer
@@ -41,27 +40,41 @@ export class GroupSeatHoldersDrawerComponent {
 
   private readonly seatHolders: Signal<CommitteeMemberAssignment[] | null> = this.initSeatHolders();
 
-  // Number for the "N seat holders" header. Best-effort, not a strict person count in either
-  // branch: seatCount() (org_seat_count) collapses blank-email seats together server-side (see
-  // apps/lfx-one/src/server/services/org-lens-groups.service.ts's seenEmails), and
-  // seatHolders().length (one row per seat/role assignment) counts a person with two roles here
-  // as two. Shown null while loading — renders as a bare "Seat holders" placeholder rather than
-  // borrowing seatCount() as a stand-in that could visibly change once the real list arrives —
-  // and as seatCount() on error, since there's no real list at all in that state to fall back to.
-  protected readonly displayedCount: Signal<number | null> = computed(() => {
-    if (this.loading()) return null;
-    if (this.error()) return this.seatCount();
-    return this.seatHolders()?.length ?? null;
+  // Grouped by person (email, falling back to memberUid when blank) and sorted by display name —
+  // a person holding two roles on this committee renders as one row with both roles joined,
+  // instead of an identical avatar/name row repeated. This is also what keeps the header count
+  // (below) matching the row's own org_seat_count (distinct people, deduped by email
+  // server-side — see org-lens-groups.service.ts): both now count the same thing. Precomputes the
+  // voting-status pill class per row so the template stays a flat binding.
+  protected readonly seatHolderVms: Signal<CommitteeMemberSeatHolderVm[]> = computed(() => {
+    const byPerson = new Map<string, { assignment: CommitteeMemberAssignment; roles: string[] }>();
+    for (const a of this.seatHolders() ?? []) {
+      const key = a.person.email || a.memberUid;
+      const existing = byPerson.get(key);
+      if (existing) {
+        if (a.role && !existing.roles.includes(a.role)) existing.roles.push(a.role);
+      } else {
+        byPerson.set(key, { assignment: a, roles: a.role ? [a.role] : [] });
+      }
+    }
+    return Array.from(byPerson.values())
+      .map(({ assignment, roles }) => ({ ...assignment, role: roles.join(', '), votingStatusPillClass: votingStatusPillClass(assignment.votingStatus) }))
+      .sort((a, b) => (a.person.fullName || a.person.email).localeCompare(b.person.fullName || b.person.email));
   });
 
-  // Precomputes the voting-status pill class per row so the template stays a flat binding
-  // (no function call on every change-detection pass).
-  protected readonly seatHolderVms: Signal<CommitteeMemberSeatHolderVm[]> = computed(() =>
-    (this.seatHolders() ?? []).map((a) => ({ ...a, votingStatusPillClass: votingStatusPillClass(a.votingStatus) }))
-  );
+  // null while loading or on error — there's no trustworthy number to show in either case, so the
+  // header renders a bare "Seat holders" placeholder rather than asserting a count next to a
+  // spinner or an error message. The real, deduped-by-person row count otherwise.
+  protected readonly displayedCount: Signal<number | null> = computed(() => (this.loading() || this.error() ? null : this.seatHolderVms().length));
+
+  protected retry(): void {
+    this.retryTick.update((n) => n + 1);
+  }
 
   private initSeatHolders(): Signal<CommitteeMemberAssignment[] | null> {
-    const trigger$ = toObservable(computed(() => ({ visible: this.visible(), orgUid: this.orgUid(), committeeUid: this.committeeUid() })));
+    const trigger$ = toObservable(
+      computed(() => ({ visible: this.visible(), orgUid: this.orgUid(), committeeUid: this.committeeUid(), retryTick: this.retryTick() }))
+    );
 
     return toSignal(
       trigger$.pipe(
@@ -78,7 +91,8 @@ export class GroupSeatHoldersDrawerComponent {
                 catchError((err: unknown) => {
                   // Drop the cache — but only if it's still this orgUid's entry, so a fetch for a
                   // since-switched-to org can't be clobbered by a slower, now-stale failure — so the
-                  // next drawer open retries the fetch instead of replaying the same error forever.
+                  // next drawer open (or Try again click) retries the fetch instead of replaying the
+                  // same error forever.
                   if (this.cache?.orgUid === orgUid) {
                     this.cache = null;
                   }

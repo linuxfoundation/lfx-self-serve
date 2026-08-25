@@ -24,9 +24,9 @@
           }
         </p>
         <a
-          [routerLink]="['/groups', groupUid()]"
+          [routerLink]="['/groups', committeeUid()]"
           class="w-fit text-xs font-medium text-blue-600 transition-colors hover:text-blue-700 hover:underline"
-          [attr.aria-label]="'View public group page for ' + groupName()"
+          [attr.aria-label]="'View group page for ' + groupName()"
           data-testid="group-seat-holders-drawer-view-group-link">
           View group page
           <i class="fa-light fa-arrow-up-right-from-square ml-0.5 text-[10px]" aria-hidden="true"></i>
@@ -44,7 +44,13 @@
       <div class="flex flex-col items-center justify-center py-16 text-center" data-testid="group-seat-holders-drawer-error">
         <i class="fa-light fa-triangle-exclamation text-3xl text-amber-500 mb-3" aria-hidden="true"></i>
         <p class="text-sm text-gray-700">Unable to load seat holders.</p>
-        <p class="text-xs text-gray-500">Please close and reopen the drawer to try again.</p>
+        <button
+          type="button"
+          class="mt-3 text-sm font-medium text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+          (click)="retry()"
+          data-testid="group-seat-holders-drawer-retry">
+          Try again
+        </button>
       </div>
     } @else if (seatHolderVms().length === 0) {
       <div class="flex flex-col items-center justify-center py-16 text-center" data-testid="group-seat-holders-drawer-empty">

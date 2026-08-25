@@ -19,6 +19,7 @@ import {
   GROUP_UID,
   MOCK_ACCOUNT_ID,
   SECOND_GROUP_UID,
+  committeeMembersResponse,
   stubAccountContext,
   stubCommitteeMembers,
   stubGroups,
@@ -91,5 +92,26 @@ test.describe('Org Groups — seat holders drawer (GH-1780)', () => {
 
     await expect(page.getByTestId('group-seat-holders-drawer-error')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('group-seat-holders-drawer-empty')).not.toBeVisible();
+  });
+
+  test('the "Try again" button recovers from a failed fetch without closing the drawer', async ({ page }) => {
+    let requestCount = 0;
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/people\/committee-members$/, (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      requestCount += 1;
+      if (requestCount === 1) {
+        return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'internal error' }) });
+      }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(committeeMembersResponse()) });
+    });
+
+    await page.getByTestId(`org-groups-item-seats-${GROUP_UID}`).click();
+    await expect(page.getByTestId('group-seat-holders-drawer-error')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('group-seat-holders-drawer-retry').click();
+
+    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('group-seat-holders-drawer')).toContainText('Jane Doe');
+    expect(requestCount).toBe(2);
   });
 });

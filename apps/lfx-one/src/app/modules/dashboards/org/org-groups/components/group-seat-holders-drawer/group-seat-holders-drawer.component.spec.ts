@@ -5,11 +5,15 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
-import type { CommitteeMemberAssignment, OrgPeopleCommitteeMembersResponse } from '@lfx-one/shared/interfaces';
+import type { CommitteeMemberAssignment, CommitteeMemberPerson, OrgPeopleCommitteeMembersResponse } from '@lfx-one/shared/interfaces';
 import { NEVER, of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GroupSeatHoldersDrawerComponent } from './group-seat-holders-drawer.component';
+
+function person(overrides: Partial<CommitteeMemberPerson> = {}): CommitteeMemberPerson {
+  return { email: 'jane@example.org', firstName: 'Jane', lastName: 'Doe', fullName: 'Jane Doe', jobTitle: null, initials: 'JD', ...overrides };
+}
 
 function assignment(overrides: Partial<CommitteeMemberAssignment> = {}): CommitteeMemberAssignment {
   return {
@@ -26,7 +30,7 @@ function assignment(overrides: Partial<CommitteeMemberAssignment> = {}): Committ
     appointedBy: 'Membership Entitlement',
     isOrgEditable: true,
     reason: null,
-    person: { email: 'jane@example.org', firstName: 'Jane', lastName: 'Doe', fullName: 'Jane Doe', jobTitle: null, initials: 'JD' },
+    person: person(),
     ...overrides,
   };
 }
@@ -61,12 +65,10 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     fixture = TestBed.createComponent(GroupSeatHoldersDrawerComponent);
   }
 
-  async function open(orgUid: string, committeeUid: string, groupName = 'Storage Working Group', seatCount = 1): Promise<void> {
+  async function open(orgUid: string, committeeUid: string, groupName = 'Storage Working Group'): Promise<void> {
     fixture.componentRef.setInput('orgUid', orgUid);
     fixture.componentRef.setInput('committeeUid', committeeUid);
-    fixture.componentRef.setInput('groupUid', committeeUid);
     fixture.componentRef.setInput('groupName', groupName);
-    fixture.componentRef.setInput('seatCount', seatCount);
     fixture.componentRef.setInput('visible', true);
     await fixture.whenStable();
     fixture.detectChanges();
@@ -81,6 +83,10 @@ describe('GroupSeatHoldersDrawerComponent', () => {
   // even if the code always renders the plural.
   function subtitleText(): string {
     return (document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  function rowNames(): string[] {
+    return Array.from(document.querySelectorAll('[data-testid="group-seat-holders-list"] li')).map((li) => li.textContent?.trim() ?? '');
   }
 
   it('does not fetch until the drawer is opened', async () => {
@@ -100,8 +106,8 @@ describe('GroupSeatHoldersDrawerComponent', () => {
         .mockReturnValue(
           of(
             response([
-              assignment({ seatId: 's-1', committeeUid: 'c-1', person: { ...assignment().person, fullName: 'Jane Doe' } }),
-              assignment({ seatId: 's-2', committeeUid: 'c-2', person: { ...assignment().person, fullName: 'John Smith' } }),
+              assignment({ seatId: 's-1', committeeUid: 'c-1', person: person({ fullName: 'Jane Doe' }) }),
+              assignment({ seatId: 's-2', committeeUid: 'c-2', person: person({ email: 'john@example.org', fullName: 'John Smith' }) }),
             ])
           )
         )
@@ -114,7 +120,13 @@ describe('GroupSeatHoldersDrawerComponent', () => {
   });
 
   it('fetches once per org and reuses the cached roster for a different committee', async () => {
-    await setup(vi.fn().mockReturnValue(of(response([assignment({ committeeUid: 'c-1' }), assignment({ seatId: 's-2', committeeUid: 'c-2' })]))));
+    await setup(
+      vi
+        .fn()
+        .mockReturnValue(
+          of(response([assignment({ committeeUid: 'c-1' }), assignment({ seatId: 's-2', committeeUid: 'c-2', person: person({ email: 'john@example.org' }) })]))
+        )
+    );
 
     await open('org-1', 'c-1');
     expect(getCommitteeMembers).toHaveBeenCalledTimes(1);
@@ -130,8 +142,8 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     await setup(
       vi
         .fn()
-        .mockReturnValueOnce(of(response([assignment({ committeeUid: 'c-1', person: { ...assignment().person, fullName: 'Org One Person' } })])))
-        .mockReturnValueOnce(of(response([assignment({ committeeUid: 'c-1', person: { ...assignment().person, fullName: 'Org Two Person' } })])))
+        .mockReturnValueOnce(of(response([assignment({ committeeUid: 'c-1', person: person({ fullName: 'Org One Person' }) })])))
+        .mockReturnValueOnce(of(response([assignment({ committeeUid: 'c-1', person: person({ fullName: 'Org Two Person' }) })])))
     );
 
     await open('org-1', 'c-1');
@@ -188,50 +200,7 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeNull();
   });
 
-  // seatCount() (the row's org_seat_count) and seatHolders().length (this list) are both
-  // best-effort counts and can genuinely disagree — see the displayedCount comment. The header
-  // must show the real, loaded count once settled, not the row's precomputed one.
-  it('shows the loaded row count once settled, even when it differs from the row seatCount', async () => {
-    await setup(
-      vi.fn().mockReturnValue(of(response([assignment({ seatId: 's-1', committeeUid: 'c-1' }), assignment({ seatId: 's-2', committeeUid: 'c-1' })])))
-    );
-
-    await open('org-1', 'c-1', 'Storage Working Group', 1);
-
-    expect(subtitleText()).toBe('2 seat holders');
-  });
-
-  // The header shows a plain "Seat holders" placeholder while loading, not a borrowed seatCount()
-  // — seatCount() counts a different thing (see above), so using it as a loading placeholder would
-  // risk visibly flipping to a different, correct number once the real list arrives.
-  it('shows a blank "Seat holders" placeholder while the fetch is pending, not the row seatCount', async () => {
-    await setup(vi.fn().mockReturnValue(NEVER));
-
-    fixture.componentRef.setInput('orgUid', 'org-1');
-    fixture.componentRef.setInput('committeeUid', 'c-1');
-    fixture.componentRef.setInput('seatCount', 7);
-    fixture.componentRef.setInput('visible', true);
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(subtitleText()).toBe('Seat holders');
-  });
-
-  // A failed fetch resolves seatHolders() to [] (see the outer catchError), not null — the
-  // error() branch is the one place seatCount() IS shown post-load, since there's no real list at
-  // all in that state for it to later disagree with (contrast: loading() shows a blank
-  // placeholder, because there the real list is still coming).
-  it('shows the row seatCount in the header on a failed fetch, not 0', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    await setup(vi.fn().mockReturnValue(throwError(() => new Error('boom'))));
-
-    await open('org-1', 'c-1', 'Storage Working Group', 7);
-
-    expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeTruthy();
-    expect(subtitleText()).toBe('7 seat holders');
-  });
-
-  it('recovers cleanly on retry after a failure: error clears, real count comes back', async () => {
+  it('the "Try again" button in the error state retries the fetch without closing the drawer', async () => {
     const impl = vi
       .fn()
       .mockReturnValueOnce(throwError(() => new Error('boom')))
@@ -239,18 +208,102 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await setup(impl);
 
-    await open('org-1', 'c-1', 'Storage Working Group', 7);
-    expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeTruthy();
+    await open('org-1', 'c-1');
+    const retryButton = document.querySelector('[data-testid="group-seat-holders-drawer-retry"]') as HTMLButtonElement | null;
+    expect(retryButton).toBeTruthy();
 
-    fixture.componentRef.setInput('visible', false);
-    await fixture.whenStable();
-    fixture.detectChanges();
-    fixture.componentRef.setInput('visible', true);
+    retryButton!.click();
     await fixture.whenStable();
     fixture.detectChanges();
 
+    expect(impl).toHaveBeenCalledTimes(2);
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeNull();
     expect(subtitleText()).toBe('1 seat holder');
+  });
+
+  it('shows a blank "Seat holders" placeholder while the fetch is pending', async () => {
+    await setup(vi.fn().mockReturnValue(NEVER));
+
+    await open('org-1', 'c-1');
+
+    expect(subtitleText()).toBe('Seat holders');
+  });
+
+  it('shows a blank "Seat holders" placeholder on error too, not a stale count', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await setup(vi.fn().mockReturnValue(throwError(() => new Error('boom'))));
+
+    await open('org-1', 'c-1');
+
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeTruthy();
+    expect(subtitleText()).toBe('Seat holders');
+  });
+
+  it('shows the loaded row count once settled', async () => {
+    await setup(
+      vi
+        .fn()
+        .mockReturnValue(
+          of(
+            response([
+              assignment({ seatId: 's-1', committeeUid: 'c-1', person: person({ fullName: 'Jane Doe' }) }),
+              assignment({ seatId: 's-2', committeeUid: 'c-1', person: person({ email: 'john@example.org', fullName: 'John Smith' }) }),
+            ])
+          )
+        )
+    );
+
+    await open('org-1', 'c-1');
+
+    expect(subtitleText()).toBe('2 seat holders');
+  });
+
+  // org_seat_count (the row's badge) dedupes by email server-side, so a person holding two seats
+  // on the same committee counts once there — the drawer's list must match, both in the header
+  // count and in the rendered rows, or the row's "1 seat" and the drawer's "2 seat holders" (plus
+  // two identical-looking rows) would read as a bug rather than the same fact stated twice.
+  it('groups multiple assignments for the same person into one row with both roles joined', async () => {
+    await setup(
+      vi
+        .fn()
+        .mockReturnValue(
+          of(
+            response([
+              assignment({ seatId: 's-1', committeeUid: 'c-1', role: 'Chair' }),
+              assignment({ seatId: 's-2', committeeUid: 'c-1', role: 'Member', memberUid: 'seat-2' }),
+            ])
+          )
+        )
+    );
+
+    await open('org-1', 'c-1');
+
+    expect(subtitleText()).toBe('1 seat holder');
+    const names = rowNames();
+    expect(names).toHaveLength(1);
+    expect(names[0]).toContain('Jane Doe');
+    expect(names[0]).toContain('Chair, Member');
+  });
+
+  it('sorts seat holders by display name', async () => {
+    await setup(
+      vi
+        .fn()
+        .mockReturnValue(
+          of(
+            response([
+              assignment({ seatId: 's-1', committeeUid: 'c-1', person: person({ email: 'zeb@example.org', fullName: 'Zeb Ashe' }) }),
+              assignment({ seatId: 's-2', committeeUid: 'c-1', person: person({ email: 'amy@example.org', fullName: 'Amy Zorn' }) }),
+            ])
+          )
+        )
+    );
+
+    await open('org-1', 'c-1');
+
+    const names = rowNames();
+    expect(names[0]).toContain('Amy Zorn');
+    expect(names[1]).toContain('Zeb Ashe');
   });
 
   // Defensive coverage, not a currently-reachable path: org-groups.component.ts closes this
@@ -267,16 +320,16 @@ describe('GroupSeatHoldersDrawerComponent', () => {
       .mockReturnValueOnce(
         of(
           response([
-            assignment({ seatId: 's-1', committeeUid: 'c-1' }),
-            assignment({ seatId: 's-2', committeeUid: 'c-1' }),
-            assignment({ seatId: 's-3', committeeUid: 'c-1' }),
+            assignment({ seatId: 's-1', committeeUid: 'c-1', person: person({ fullName: 'Person One' }) }),
+            assignment({ seatId: 's-2', committeeUid: 'c-1', person: person({ email: 'two@example.org', fullName: 'Person Two' }) }),
+            assignment({ seatId: 's-3', committeeUid: 'c-1', person: person({ email: 'three@example.org', fullName: 'Person Three' }) }),
           ])
         )
       )
       .mockReturnValueOnce(NEVER);
     await setup(impl);
 
-    await open('org-1', 'c-1', 'Storage Working Group', 3);
+    await open('org-1', 'c-1');
     expect(subtitleText()).toBe('3 seat holders');
 
     fixture.componentRef.setInput('orgUid', 'org-2');
