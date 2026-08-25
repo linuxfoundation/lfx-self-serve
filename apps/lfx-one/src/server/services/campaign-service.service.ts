@@ -1215,8 +1215,11 @@ export class CampaignServiceClient {
     // detect", which is true for one of the two reasons a validator can be missing and false for
     // the other.
     //
-    // `allowEtagFallback` — the caller was shown a stale-brief warning and proceeded. It has no
-    // validator BY CHOICE, and taking the freshly read one is exactly what proceeding means.
+    // `allowEtagFallback` — the caller has no validator BY CHOICE, and taking the freshly read
+    // one is exactly what that choice means. Two client paths set it: the user proceeded past a
+    // stale-brief warning, or they restored a brief whose read carried no ETag. This layer does
+    // not distinguish them, and must not start to: both assert that stored content was displayed
+    // and acted on, which is the whole of what the flag claims.
     //
     // Without it, the absence is UNKNOWN: the write returned no ETag, or its approval outcome was
     // indeterminate. Nobody was warned and nothing was decided, so substituting a validator this

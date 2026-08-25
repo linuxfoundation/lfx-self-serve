@@ -252,8 +252,16 @@ export class CampaignsComponent {
    * `etag: null` alone cannot say WHY there is no validator, and the two reasons need opposite
    * treatment on the next save:
    *
-   * - `'overwrite'` — the user was shown a stale-brief warning and proceeded anyway. Permission
-   *   is real, so falling back to the freshly read validator is what they asked for.
+   * - `'overwrite'` — permission is real, so falling back to the freshly read validator is what
+   *   the user asked for. TWO paths set it, and both are explicit decisions taken on content the
+   *   user was actually shown:
+   *     1. The stale-brief warning was displayed and they proceeded anyway.
+   *     2. A restore whose read returned NO validator. They were shown the stored brief and chose
+   *        to work from it; there is simply no ETag to carry. Classifying that as `'unknown'`
+   *        would refuse the first save after any such restore — the feature's main path, and not
+   *        a conflict anyone can act on.
+   *   What separates both from `'unknown'` is that something was displayed and something was
+   *   chosen, NOT that a warning specifically appeared.
    * - `'unknown'` — the write returned no ETag, or its approval outcome was indeterminate. Nobody
    *   was warned and nothing was decided; falling back here would bypass the precondition
    *   silently and could overwrite an intervening writer without ever showing a conflict.
@@ -1404,9 +1412,9 @@ export class CampaignsComponent {
       // user loaded a different brief for this event, and this payload never saw it.
       const known =
         ownershipKey === null || (this.ownershipEpochs.get(ownershipKey) ?? 0) !== ownershipEpochAtSend ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
-      // `allowFallback` says the caller has no validator BY CHOICE — the stale-brief warning was
-      // shown and the user proceeded. Without it, an absent validator means "unknown", and the
-      // server refuses rather than substituting one it read itself.
+      // `allowFallback` says the caller has no validator BY CHOICE — see `knownBriefIds` for the
+      // two paths that set `absence: 'overwrite'`. Without it, an absent validator means
+      // "unknown", and the server refuses rather than substituting one it read itself.
       return firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, known?.id ?? null, known?.etag ?? null, known?.absence === 'overwrite')).then(
         (result) => {
           // Latched BEFORE the generation check, unlike everything below it. The check exists to

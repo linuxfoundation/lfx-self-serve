@@ -568,14 +568,16 @@ describe('CampaignsComponent brief persistence', () => {
       // restore. What changed in LFXV2-3204 is only that the licence is no longer handed out for
       // free when a validator IS available; the test above pins that half.
       //
-      // Is `true` RIGHT here, or merely preserved? Right, but for a narrower reason than the
-      // server's own comment gives. That comment justifies the fallback as "the caller was shown
-      // a stale-brief warning and proceeded" — which is the PROMOTION path, not this one. Nobody
-      // was warned here. The justification that actually applies is the other half of the same
-      // distinction: `allowEtagFallback` separates an absence someone DECIDED from an absence
-      // that is UNKNOWN. A restore is a decision — the stored content was displayed and chosen —
-      // whereas an indeterminate write displayed nothing and decided nothing, which is why that
-      // path records `absence: 'unknown'` and is refused.
+      // Is `true` RIGHT here, or merely preserved? Right. `allowEtagFallback` separates an
+      // absence someone DECIDED from an absence that is UNKNOWN. A restore is a decision — the
+      // stored content was displayed and chosen — whereas an indeterminate write displayed
+      // nothing and decided nothing, which is why that path records `absence: 'unknown'` and is
+      // refused. Nobody was WARNED here, but the warning was never what the flag asserted.
+      //
+      // The contract comments used to say otherwise, describing `'overwrite'` as the stale-brief
+      // warning path alone; this test previously had to note that they did not cover it. They
+      // now document both explicit sources — see `knownBriefIds` in the component, and the
+      // matching comments on `persistBrief`, the controller and `saveBrief`.
       //
       // The cost is bounded and worth naming: this save takes the server's freshly read
       // validator, so a concurrent editor who moved the row is overwritten rather than refused —
