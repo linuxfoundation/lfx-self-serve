@@ -171,6 +171,30 @@ describe('OrgProfileEditComponent — logo upload', () => {
     expect(root.querySelector('[data-testid="org-profile-edit-upload-logo-button"]')?.textContent).toContain('Upload Logo');
   });
 
+  /**
+   * PR #1583 review — the dropzone advertises role="button" and takes focus, but `triggerLogoUpload`
+   * refuses while `busy()`. Without aria-disabled a keyboard or screen-reader user activates it and
+   * gets silence. aria-disabled rather than the disabled property so the element keeps its place in
+   * the tab order (same reasoning as org-meetings-time-range).
+   */
+  it('marks the dropzone aria-disabled only while a mutation is in flight', async () => {
+    fixture.detectChanges();
+    const dropzone = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="org-profile-edit-logo-dropzone"]');
+
+    expect(dropzone?.getAttribute('role')).toBe('button');
+    expect(dropzone?.getAttribute('aria-disabled')).toBe('false');
+
+    selectFile(pngFile());
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(dropzone?.getAttribute('aria-disabled')).toBe('true');
+
+    uploadLogo$.next({ ...record, logoUrl: 'https://cdn.example.com/logo.png?v=2' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(dropzone?.getAttribute('aria-disabled')).toBe('false');
+  });
+
   it('shows a permission-denied toast on a 403 and does not update logoUrl', async () => {
     selectFile(pngFile());
     await fixture.whenStable();

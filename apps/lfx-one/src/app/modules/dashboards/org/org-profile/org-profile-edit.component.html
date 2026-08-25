@@ -35,6 +35,7 @@
         [attr.role]="isOrgLensUploadLogoEnabled() ? 'button' : null"
         [attr.tabindex]="isOrgLensUploadLogoEnabled() ? 0 : null"
         [attr.aria-label]="isOrgLensUploadLogoEnabled() ? 'Upload organization logo' : null"
+        [attr.aria-disabled]="isOrgLensUploadLogoEnabled() ? busy() : null"
         (click)="triggerLogoUpload()"
         (keydown.enter)="$event.preventDefault(); triggerLogoUpload()"
         (keydown.space)="$event.preventDefault(); triggerLogoUpload()"
