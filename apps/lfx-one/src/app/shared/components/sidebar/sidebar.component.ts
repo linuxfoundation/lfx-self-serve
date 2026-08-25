@@ -208,15 +208,10 @@ export class SidebarComponent {
   // funnel's first event (LINK_CLICK, no reason); the modal owns reason capture + navigation on
   // "Continue". Both events carry the shared funnel tag + source_app so they join with the ID side.
   protected openIdDashboardReturn(): void {
-    // Suppress the funnel event during Admin Mode impersonation: setUser() assigns the impersonated
-    // user's identity, so an admin's click would otherwise be attributed to that user and corrupt
-    // the per-user migration funnel. The link and modal still work — only the analytics is gated.
-    if (!this.userService.impersonating()) {
-      this.rumService.addAction(ID_MIGRATION_EVENTS.LINK_CLICK, {
-        funnel: ID_MIGRATION_FUNNEL,
-        source_app: ID_MIGRATION_SOURCE_APP,
-      });
-    }
+    this.rumService.addAction(ID_MIGRATION_EVENTS.LINK_CLICK, {
+      funnel: ID_MIGRATION_FUNNEL,
+      source_app: ID_MIGRATION_SOURCE_APP,
+    });
 
     this.dialogService.open(IdMigrationModalComponent, {
       // No PrimeNG header — the dialog body renders its own headline + subhead.

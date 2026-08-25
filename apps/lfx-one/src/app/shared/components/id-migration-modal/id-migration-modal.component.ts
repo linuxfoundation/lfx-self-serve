@@ -10,7 +10,6 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { environment } from '@environments/environment';
 import { ID_MIGRATION_EVENTS, ID_MIGRATION_FUNNEL, ID_MIGRATION_REASONS, ID_MIGRATION_SOURCE_APP } from '@lfx-one/shared/constants';
 import { DataDogRumService } from '@services/datadog-rum.service';
-import { UserService } from '@services/user.service';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
 
 /**
@@ -32,15 +31,16 @@ import { DynamicDialogRef } from 'primeng/dynamicdialog';
 export class IdMigrationModalComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly rumService = inject(DataDogRumService);
-  private readonly userService = inject(UserService);
   private readonly formBuilder = inject(FormBuilder);
   private readonly platformId = inject(PLATFORM_ID);
 
   // Spread into a mutable array — lfx-select's `options` input is typed `any[]`, and the source
   // constant is a `readonly` tuple (`as const`, so the reason literals stay usable as a union type).
   protected readonly reasons = [...ID_MIGRATION_REASONS];
+  // No pre-selected reason: defaulting to an option makes "chose it" and "never touched the
+  // field" indistinguishable in the funnel, and inflates whichever option sits first.
   protected readonly form: FormGroup = this.formBuilder.group({
-    reason: [ID_MIGRATION_REASONS[0].value],
+    reason: [null],
     comment: [''],
   });
 
@@ -48,18 +48,14 @@ export class IdMigrationModalComponent {
     const { reason, comment } = this.form.getRawValue();
     const trimmedComment = (comment ?? '').trim();
 
-    // Suppress the funnel event during Admin Mode impersonation: the RUM user context is the
-    // impersonated user, so an admin's "Continue" would otherwise corrupt that user's funnel.
-    // Navigation and dialog close still happen — only the analytics is gated.
-    if (!this.userService.impersonating()) {
-      this.rumService.addAction(ID_MIGRATION_EVENTS.CONTINUE, {
-        funnel: ID_MIGRATION_FUNNEL,
-        source_app: ID_MIGRATION_SOURCE_APP,
-        reason,
-        // Omit empty comments so the funnel query can distinguish "left a note" from "didn't".
-        comment: trimmedComment || undefined,
-      });
-    }
+    this.rumService.addAction(ID_MIGRATION_EVENTS.CONTINUE, {
+      funnel: ID_MIGRATION_FUNNEL,
+      source_app: ID_MIGRATION_SOURCE_APP,
+      // Omit an untouched reason and an empty comment so the funnel query can tell "answered"
+      // from "skipped" rather than reading a value the user never supplied.
+      reason: reason ?? undefined,
+      comment: trimmedComment || undefined,
+    });
 
     if (isPlatformBrowser(this.platformId)) {
       window.open(environment.urls.individualDashboard, '_blank', 'noopener,noreferrer');

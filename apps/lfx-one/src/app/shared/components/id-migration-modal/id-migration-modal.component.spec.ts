@@ -1,14 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_ID, signal } from '@angular/core';
+import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormGroup } from '@angular/forms';
 import { provideRouter } from '@angular/router';
 import { environment } from '@environments/environment';
 import { ID_MIGRATION_EVENTS, ID_MIGRATION_FUNNEL, ID_MIGRATION_REASONS, ID_MIGRATION_SOURCE_APP } from '@lfx-one/shared/constants';
 import { DataDogRumService } from '@services/datadog-rum.service';
-import { UserService } from '@services/user.service';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
@@ -19,13 +18,12 @@ import { IdMigrationModalComponent } from './id-migration-modal.component';
  * Pins the analytics contract the migration funnel depends on: "Continue" must emit the
  * CONTINUE action with the selected reason (and only a non-empty comment) before it navigates,
  * while "Stay here" must stay silent. The dialog ref and RUM service are mocked so the assertions
- * are on the payloads we hand off, not on Datadog or the dialog host.
+ * are on the payloads we hand off, not on Datadog or the dialog host. Impersonation suppression is
+ * pinned in datadog-rum.service.spec.ts — it is a property of the service, not of this component.
  */
 describe('IdMigrationModalComponent', () => {
   const close = vi.fn();
   const addAction = vi.fn();
-  // Settable so a single test can flip on Admin Mode impersonation and assert analytics is gated.
-  const impersonating = signal(false);
   let openSpy: MockInstance<typeof window.open>;
   let fixture: ComponentFixture<IdMigrationModalComponent>;
   let component: IdMigrationModalComponent;
@@ -37,7 +35,6 @@ describe('IdMigrationModalComponent', () => {
   beforeEach(async () => {
     close.mockClear();
     addAction.mockClear();
-    impersonating.set(false);
     openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
 
     await TestBed.configureTestingModule({
@@ -46,7 +43,6 @@ describe('IdMigrationModalComponent', () => {
         provideRouter([]),
         { provide: DynamicDialogRef, useValue: { close } },
         { provide: DataDogRumService, useValue: { addAction } },
-        { provide: UserService, useValue: { impersonating } },
         { provide: PLATFORM_ID, useValue: 'browser' },
       ],
     }).compileComponents();
@@ -60,9 +56,20 @@ describe('IdMigrationModalComponent', () => {
     openSpy.mockRestore();
   });
 
-  it('defaults the reason to the first option and an empty comment', () => {
-    expect(formOf(component).get('reason')?.value).toBe(ID_MIGRATION_REASONS[0].value);
+  it('pre-selects no reason so the funnel can tell "answered" from "skipped"', () => {
+    expect(formOf(component).get('reason')?.value).toBeNull();
     expect(formOf(component).get('comment')?.value).toBe('');
+  });
+
+  it('omits an untouched reason from the CONTINUE payload', () => {
+    component.continueToIndividualDashboard();
+
+    expect(addAction).toHaveBeenCalledWith(ID_MIGRATION_EVENTS.CONTINUE, {
+      funnel: ID_MIGRATION_FUNNEL,
+      source_app: ID_MIGRATION_SOURCE_APP,
+      reason: undefined,
+      comment: undefined,
+    });
   });
 
   it('stayHere closes with false and emits no analytics or navigation', () => {
@@ -99,18 +106,5 @@ describe('IdMigrationModalComponent', () => {
       reason: ID_MIGRATION_REASONS[0].value,
       comment: undefined,
     });
-  });
-
-  it('suppresses the CONTINUE analytics under impersonation but still navigates and closes', () => {
-    impersonating.set(true);
-    formOf(component).setValue({ reason: 'something_broken', comment: 'needs polish' });
-
-    component.continueToIndividualDashboard();
-
-    // Analytics gated so the impersonated user's funnel isn't polluted by an admin's click...
-    expect(addAction).not.toHaveBeenCalled();
-    // ...but the admin still reaches Individual Dashboard and the dialog still closes.
-    expect(openSpy).toHaveBeenCalledWith(environment.urls.individualDashboard, '_blank', 'noopener,noreferrer');
-    expect(close).toHaveBeenCalledWith(true);
   });
 });

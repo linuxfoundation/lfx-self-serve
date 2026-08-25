@@ -12,6 +12,18 @@ import { User } from '@lfx-one/shared/interfaces';
  */
 @Injectable({ providedIn: 'root' })
 export class DataDogRumService {
+  private impersonating = false;
+
+  /**
+   * Enable or disable product-analytics suppression for the current session.
+   * Pass `true` while the user is impersonating another account so their activity
+   * does not pollute the impersonated user's funnels. Mirrors PlausibleService/SegmentService.
+   * @param isImpersonating Whether the current session is impersonated
+   */
+  public setImpersonating(isImpersonating: boolean): void {
+    this.impersonating = isImpersonating;
+  }
+
   /**
    * Set user context for RUM sessions
    * Associates all RUM data with the authenticated user
@@ -53,10 +65,12 @@ export class DataDogRumService {
 
   /**
    * Emit a custom RUM action (product event) with optional context, attributed to the user
-   * set via setUser(). Used for queryable per-user product analytics. No-op on the server.
+   * set via setUser(). Used for queryable per-user product analytics. No-op on the server and
+   * while impersonating — setUser() assigns the impersonated user's identity, so an admin's click
+   * would otherwise be attributed to them. addError stays ungated: errors are session telemetry.
    */
   public addAction(name: string, context?: Record<string, unknown>): void {
-    if (typeof window === 'undefined') {
+    if (typeof window === 'undefined' || this.impersonating) {
       return;
     }
 
