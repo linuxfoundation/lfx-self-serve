@@ -587,6 +587,24 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     return createCampaign.mock.calls[0][0].metaConfig;
   }
 
+  /** Mount a fresh component with a persisted draft naming `objective`, as a tab revisit would. */
+  async function restoredWithObjective(objective: string): Promise<ComponentFixture<ImplementationTabComponent>> {
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    restored.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      metaObjective: objective,
+      headlines: [''],
+      descriptions: [''],
+    });
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/k' },
+      selectedPlatforms: ['meta-ads'],
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+    return restored;
+  }
+
   async function selectObjective(value: string): Promise<void> {
     const select = require<HTMLSelectElement>('implementation-meta-objective');
     select.value = value;
@@ -633,11 +651,100 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
 
   // === Objective ===
 
-  it('renders every objective the shared labels define', () => {
+  /**
+   * Asserted as a LITERAL list. The previous version compared against
+   * `Object.keys(META_OBJECTIVE_LABELS)`, which agreed with whatever that map contained and so
+   * could never have caught an objective appearing or disappearing from the picker.
+   */
+  it('renders exactly the selectable objectives, in order', () => {
     const select = require<HTMLSelectElement>('implementation-meta-objective');
     const rendered = Array.from(select.options).map((o) => o.value);
 
-    expect(rendered).toEqual(Object.keys(META_OBJECTIVE_LABELS));
+    expect(rendered).toEqual(['awareness', 'traffic', 'engagement', 'conversions']);
+  });
+
+  /**
+   * `leads` dispatches as a website-traffic campaign (see `META_OBJECTIVE_PARAMS.leads`), so
+   * offering it would label a traffic campaign "Leads". Hidden until LFXV2-2665 builds
+   * instant-form support.
+   */
+  it('does not offer leads', () => {
+    const select = require<HTMLSelectElement>('implementation-meta-objective');
+    const rendered = Array.from(select.options).map((o) => o.value);
+
+    expect(rendered).not.toContain('leads');
+  });
+
+  /** The label stays defined even though the option is gone — the server names campaigns from it. */
+  it('keeps a label for the hidden leads objective', () => {
+    expect(META_OBJECTIVE_LABELS['leads']).toBe('Leads');
+  });
+
+  /**
+   * A draft persisted before `leads` was hidden restores an objective with no matching
+   * `<option>`. Driven through the REAL draft input rather than by setting the signal directly:
+   * a signal-only test leaves `applyDraft` unexercised, and a coercion added there — mapping the
+   * unrenderable value onto the first option — silently discards the user's stored objective
+   * while passing. That mutation survived until this test went through the draft path.
+   *
+   * `leads` must survive to the wire, where `META_OBJECTIVE_PARAMS` dispatches it as the
+   * website-traffic campaign it has always been.
+   */
+  it('restores leads from a persisted draft', async () => {
+    const restored = await restoredWithObjective('leads');
+    const c = restored.componentInstance as unknown as Record<string, any>;
+
+    expect(c['metaObjective']()).toBe('leads');
+  });
+
+  /**
+   * The DOM half, which the signal assertion above cannot cover — and the symptom is worse than
+   * an empty field. The template selects per-`<option>` via `[selected]`, so a restored `leads`
+   * with no matching option does not blank the control: Angular applies the binding while the
+   * option does not yet exist, and the browser falls back to index 0. Before the disabled legacy
+   * option existed this field displayed `awareness` — the FIRST selectable objective — a
+   * confidently wrong value the operator could submit without ever noticing, while the signal
+   * still held `leads`. Reverting the fix makes this test report exactly that: `expected
+   * 'awareness' to be 'leads'`.
+   *
+   * Asserting `selectedIndex`, the value and the visible label is what binds the fix; a test that
+   * stopped at the signal passed while the screen showed a different campaign than the wire sent.
+   */
+  it('shows the restored leads objective in the select rather than displaying the first selectable one', async () => {
+    const restored = await restoredWithObjective('leads');
+    const select = restored.nativeElement.querySelector('[data-testid="implementation-meta-objective"]') as HTMLSelectElement;
+
+    expect(select.selectedIndex).toBeGreaterThanOrEqual(0);
+    expect(select.value).toBe('leads');
+    expect(select.options[select.selectedIndex].text).toContain('Leads');
+  });
+
+  /** Visible, but NOT newly choosable — the whole point of hiding it. */
+  it('renders the restored leads objective as disabled', async () => {
+    const restored = await restoredWithObjective('leads');
+    const select = restored.nativeElement.querySelector('[data-testid="implementation-meta-objective"]') as HTMLSelectElement;
+    const leadsOption = Array.from(select.options).find((o) => o.value === 'leads');
+
+    expect(leadsOption?.disabled).toBe(true);
+  });
+
+  /** A restore affordance, not a permanent fifth option — it must not appear for a normal draft. */
+  it('does not render the legacy option when the objective is selectable', async () => {
+    const restored = await restoredWithObjective('engagement');
+    const select = restored.nativeElement.querySelector('[data-testid="implementation-meta-objective"]') as HTMLSelectElement;
+
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['awareness', 'traffic', 'engagement', 'conversions']);
+  });
+
+  /**
+   * The other half of the same restore: an objective the picker CAN render must still round-trip,
+   * so the assertion above cannot be satisfied by a restore path that ignores the draft entirely.
+   */
+  it('restores a selectable objective from a persisted draft', async () => {
+    const restored = await restoredWithObjective('engagement');
+    const c = restored.componentInstance as unknown as Record<string, any>;
+
+    expect(c['metaObjective']()).toBe('engagement');
   });
 
   /**

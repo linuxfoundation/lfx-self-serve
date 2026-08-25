@@ -653,6 +653,22 @@ export interface MetaBriefCopy {
 
 export type MetaObjective = 'awareness' | 'traffic' | 'engagement' | 'leads' | 'conversions';
 
+/**
+ * Objectives deliberately withheld from the campaign objective selector.
+ *
+ * `leads` dispatches as a website-traffic campaign (see `META_OBJECTIVE_PARAMS`), so offering it
+ * would label a traffic campaign "Leads". LFXV2-2665 builds instant-form support and removes it
+ * from this union.
+ *
+ * Declared as a type so `SelectableMetaObjective` can be DERIVED rather than restated: a new member
+ * of `MetaObjective` is then a compile error in `META_SELECTABLE_OBJECTIVES` unless it is named
+ * here, instead of silently never rendering.
+ */
+export type HiddenMetaObjective = 'leads';
+
+/** The objectives the selector may offer — every `MetaObjective` that is not deliberately hidden. */
+export type SelectableMetaObjective = Exclude<MetaObjective, HiddenMetaObjective>;
+
 export interface MetaPlacement {
   facebookFeed: boolean;
   instagramFeed: boolean;
