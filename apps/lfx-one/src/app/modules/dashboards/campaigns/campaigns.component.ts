@@ -6,7 +6,13 @@ import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@a
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
-import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS, HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_PROGRAM_TYPES,
+  CAMPAIGN_TABS,
+  HUBSPOT_TEMPLATE_RENDER_LIMIT,
+  MARKETING_OPS_FGA_ENABLED_FLAG,
+} from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
@@ -20,6 +26,8 @@ import type {
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { firstValueFrom, skip, take } from 'rxjs';
 
@@ -50,7 +58,11 @@ export class CampaignsComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly campaignService = inject(CampaignService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly personaService = inject(PersonaService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly destroyRef = inject(DestroyRef);
+  /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — see LFXV2-2235/LFXV2-2236. */
+  private readonly marketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
 
   protected readonly tabs = CAMPAIGN_TABS;
   protected readonly programTypes = CAMPAIGN_PROGRAM_TYPES;
@@ -349,6 +361,36 @@ export class CampaignsComponent {
    * left sitting under another one, whether the response landed before the switch or after it.
    */
   protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
+
+  /**
+   * Reactive re-check of the grant that put this page on screen, mirroring
+   * `marketing-impact.component.ts`'s `hasFullMarketingAccess`.
+   *
+   * `campaignAccessGuard` only runs once, on navigation — it never re-fires for the
+   * `Location.replaceState` foundation switch `activeFoundationSlug` documents. Without this,
+   * a campaign_manager grant scoped to foundation A stays rendering foundation A's campaigns
+   * (as far as this page can tell) after switching to foundation B, where the operator may hold
+   * no grant at all. Reading `isCampaignManager()` here re-evaluates against whatever
+   * `sidebar-nav.service.ts` last resolved for the active foundation, so the template gate
+   * tracks the switch instead of trusting the one-time guard result forever.
+   *
+   * Mirrors `campaign-access.guard.ts`'s SSR fast path (LFXV2-2236): the flag client never
+   * initializes server-side, so `marketingOpsFgaEnabled()` defaults `false` there regardless of
+   * the operator's real grant. Denying before the browser has a chance to resolve the flag would
+   * render `campaigns-no-access` for a legitimate FGA campaign manager on first paint, then flip
+   * to granted post-hydration — the guard already accepted that same window (it defers instead of
+   * denying), so mirroring it here avoids a hydration-mismatching flash the guard's own deferral
+   * doesn't otherwise prevent at the component level.
+   */
+  protected readonly hasCampaignAccess = computed(() => {
+    if (this.personaService.currentPersona() === 'executive-director') {
+      return true;
+    }
+    if (!isPlatformBrowser(this.platformId) || !this.featureFlagService.providerReady()) {
+      return true;
+    }
+    return this.marketingOpsFgaEnabled() && this.personaService.isCampaignManager();
+  });
 
   /**
    * The campaigns this brief created, as the platform's index currently reports them.

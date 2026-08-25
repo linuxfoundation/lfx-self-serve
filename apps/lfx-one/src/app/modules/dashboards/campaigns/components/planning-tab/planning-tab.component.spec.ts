@@ -839,7 +839,10 @@ describe('PlanningTabComponent delivery-type mode', () => {
     (fixture.componentInstance as unknown as { generate(): void }).generate();
     await fixture.whenStable();
 
-    expect(generateBrief.mock.calls[0][0].totalBudget).toBeUndefined();
+    // Arg 0 is the project slug the BFF's FGA middleware scopes access to — a wrong or empty
+    // value here would 403 a legitimately-scoped campaign manager without this test noticing.
+    expect(generateBrief.mock.calls[0][0]).toBe('foundation-a');
+    expect(generateBrief.mock.calls[0][1].totalBudget).toBeUndefined();
   });
 
   it('sends a populated budget in paid mode', async () => {
@@ -852,7 +855,8 @@ describe('PlanningTabComponent delivery-type mode', () => {
     (fixture.componentInstance as unknown as { generate(): void }).generate();
     await fixture.whenStable();
 
-    expect(generateBrief.mock.calls[0][0].totalBudget).toBe(5000);
+    expect(generateBrief.mock.calls[0][0]).toBe('foundation-a');
+    expect(generateBrief.mock.calls[0][1].totalBudget).toBe(5000);
   });
 
   it('allows generation in email mode with no ad platform selected', async () => {
@@ -876,7 +880,8 @@ describe('PlanningTabComponent delivery-type mode', () => {
     await fixture.whenStable();
 
     expect(generateBrief).toHaveBeenCalledTimes(1);
-    const request = generateBrief.mock.calls[0][0];
+    expect(generateBrief.mock.calls[0][0]).toBe('foundation-a');
+    const request = generateBrief.mock.calls[0][1];
     // Absent, not empty: `[]` would claim the user deselected every channel rather than that ad
     // channels do not apply. `toBeUndefined` alone would pass on an explicit `platforms: undefined`,
     // so assert the key is not present at all.
@@ -895,7 +900,8 @@ describe('PlanningTabComponent delivery-type mode', () => {
     await fixture.whenStable();
 
     expect(generateBrief).toHaveBeenCalledTimes(1);
-    expect(generateBrief.mock.calls[0][0].platforms).toEqual(['google-ads']);
+    expect(generateBrief.mock.calls[0][0]).toBe('foundation-a');
+    expect(generateBrief.mock.calls[0][1].platforms).toEqual(['google-ads']);
   });
 
   /**
@@ -942,6 +948,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
     await fixture.whenStable();
 
     expect(refineBrief).toHaveBeenCalledTimes(1);
-    expect(refineBrief.mock.calls[0][0].platforms).toEqual(['google-ads']);
+    expect(refineBrief.mock.calls[0][0]).toBe('foundation-a');
+    expect(refineBrief.mock.calls[0][1].platforms).toEqual(['google-ads']);
   });
 });

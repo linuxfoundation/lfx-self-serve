@@ -213,6 +213,26 @@ export enum ServerFeatureFlag {
    * flipping this on in any environment that isn't fully trusted content end-to-end.
    */
   WeeklyBriefSlack = 'LFX_WEEKLY_BRIEF_SLACK_ENABLED',
+
+  /**
+   * Gates FGA-based (`marketing_auditor` / `campaign_manager`) authorization on the marketing
+   * analytics routes (`analytics.route.ts`) and campaigns routes (`campaigns.route.ts`).
+   * OFF establishes an `executive_director`-only baseline: analytics routes that were already
+   * gated by LFXV2-3294 preserve their prior behavior exactly, while campaigns routes that
+   * previously had no authorization middleware are intentionally tightened to ED-only. Every
+   * non-ED request is denied when the flag is off, but this is not a no-op rollback for
+   * campaigns — it is a new, stricter default. Operators should expect this tightening.
+   *
+   * Deliberately independent from any client-side OpenFeature flag: the Web SDK never runs
+   * server-side, so without this, a direct API caller with a `marketing_auditor` or
+   * `campaign_manager` FGA relation could not reach these routes even after the UI flag turns
+   * on the corresponding client guards. Both must be enabled for the feature to actually work.
+   *
+   * OFF by default per the LFXV2-2231 gap-analysis design requirement: the reverted PR #1112
+   * caused a total lockout for all users when its UI guards shipped without a kill switch. This
+   * flag exists so a bad rollout can be reverted with an env var, not a revert PR.
+   */
+  MarketingOpsFga = 'LFX_MARKETING_OPS_FGA_ENABLED',
 }
 
 /**

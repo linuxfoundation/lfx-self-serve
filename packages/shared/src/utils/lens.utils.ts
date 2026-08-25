@@ -22,9 +22,9 @@ import { Lens, LensGrantInputs } from '../interfaces/lens.interface';
  * reimplementing it.
  */
 export function deriveAllowedLenses(inputs: LensGrantInputs): Lens[] {
-  const { hasBoardRole, hasProjectRole, isRootWriter, hasWriterFoundation, hasWriterProject, isOrgLensEnabled, isLFStaff } = inputs;
+  const { hasBoardRole, hasProjectRole, isRootWriter, hasWriterFoundation, hasWriterProject, isOrgLensEnabled, isLFStaff, hasMarketingGrant } = inputs;
 
-  const showFoundation = hasBoardRole || isRootWriter || hasWriterFoundation || isLFStaff;
+  const showFoundation = hasBoardRole || isRootWriter || hasWriterFoundation || isLFStaff || hasMarketingGrant;
   const showProject = hasProjectRole || isRootWriter || hasWriterProject;
 
   const lenses: Lens[] = ['me'];
