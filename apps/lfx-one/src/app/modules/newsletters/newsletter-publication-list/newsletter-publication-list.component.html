@@ -23,7 +23,11 @@
             [withCard]="false"
             icon="fa-light fa-newspaper"
             title="No publications yet"
-            subtitle="Create a publication to start organizing your newsletters.">
+            subtitle="Create a publication to start organizing your newsletters."
+            ctaLabel="Create newsletter"
+            ctaIcon="fa-light fa-plus"
+            (ctaClick)="goToCreate()"
+            data-testid="newsletter-publication-list-empty-state">
           </lfx-empty-state>
         } @else {
           <div class="flex flex-col gap-3">

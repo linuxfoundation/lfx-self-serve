@@ -33,17 +33,15 @@ export const NEWSLETTER_ROUTES: Routes = [
     // scheduled/sent tabs). NewsletterListComponent renders unfiltered when no
     // :pubId is present. This is the post-action landing target for the manage
     // and analytics flows (goToList / goBack navigate to ['list']); it must
-    // stay a real route so those navigations don't fall through to the generic
-    // :pubId matcher below and render a broken "publication 'list'" editions
-    // view. Single-segment, so it precedes :pubId.
+    // stay a real route so those navigations don't fall through to the
+    // :projectUid/:pubId/editions matcher below and render a broken
+    // "publication 'list'" editions view. Single-segment, so it precedes it.
     path: 'list',
     canActivate: [authGuard, newsletterAccessGuard],
     loadComponent: () => import('./newsletter-list/newsletter-list.component').then((m) => m.NewsletterListComponent),
     data: { preload: false },
   },
   {
-    // Specific routes with two segments must come before the generic :pubId
-    // to avoid being caught by the :pubId matcher.
     path: ':projectUid/:id/edit',
     canActivate: [authGuard, newsletterAccessGuard],
     loadComponent: () => import('./newsletter-manage/newsletter-manage.component').then((m) => m.NewsletterManageComponent),
@@ -63,9 +61,21 @@ export const NEWSLETTER_ROUTES: Routes = [
   // access model. The reader is mounted directly in app.routes.ts, ahead of the
   // flat mount.
   {
-    // Publication editions list: /newsletters/:pubId shows all editions for that publication.
-    // This must come after the more specific two-segment routes.
-    path: ':pubId',
+    // Publication editions list: /newsletters/:projectUid/:pubId/editions shows
+    // all editions for that publication. projectUid travels in the URL rather
+    // than being read off the active-context cookie — the same rationale as the
+    // sibling edit/analytics routes above: a deep link opened next to a stale
+    // or different active-context cookie must still resolve the publication's
+    // own project, not whichever project the cookie currently points at.
+    //
+    // Three segments, not two: this file is also mounted at the flat
+    // `newsletters` path in app.routes.ts, where a two-segment
+    // `:projectUid/:pubId` would collide with the sibling shareable reader
+    // permalink route declared there (`newsletters/:projectSlug/:id`, checked
+    // first) and never be reached. The trailing `editions` segment disambiguates
+    // it, mirroring the edit/analytics routes' own trailing keyword. Must come
+    // after the more specific routes above.
+    path: ':projectUid/:pubId/editions',
     canActivate: [authGuard, newsletterAccessGuard],
     loadComponent: () => import('./newsletter-list/newsletter-list.component').then((m) => m.NewsletterListComponent),
     data: { preload: false },

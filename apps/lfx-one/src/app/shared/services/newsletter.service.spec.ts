@@ -3,7 +3,6 @@
 
 import { HttpClient } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import { NEWSLETTER_MAX_PUBLICATION_PAGES } from '@lfx-one/shared/constants';
 import { NewsletterPublicationListResponse } from '@lfx-one/shared/interfaces';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -40,12 +39,44 @@ describe('NewsletterService.listAllPublications', () => {
     expect(get.mock.calls[1][1].params.get('page_token')).toBe('tok-1');
   });
 
-  it('stops at the page cap when the server keeps returning a token', async () => {
+  it('follows more than ten pages — there is no artificial page cap', async () => {
+    const pageCount = 15;
+    for (let i = 0; i < pageCount; i++) {
+      const isLast = i === pageCount - 1;
+      get.mockReturnValueOnce(
+        of({ publications: [{ id: `pub-${i}` }], next_page_token: isLast ? undefined : `tok-${i}` } as NewsletterPublicationListResponse)
+      );
+    }
+
+    const result = await new Promise<NewsletterPublicationListResponse>((resolve) => service.listAllPublications('proj-1').subscribe(resolve));
+
+    expect(get).toHaveBeenCalledTimes(pageCount);
+    expect(result.publications.length).toBe(pageCount);
+  });
+
+  it('stops via repeated-token detection when a broken server keeps returning the same token', async () => {
     get.mockReturnValue(of({ publications: [{ id: 'pub-x' }], next_page_token: 'always' } as NewsletterPublicationListResponse));
 
     const result = await new Promise<NewsletterPublicationListResponse>((resolve) => service.listAllPublications('proj-1').subscribe(resolve));
 
-    expect(get).toHaveBeenCalledTimes(NEWSLETTER_MAX_PUBLICATION_PAGES);
-    expect(result.publications.length).toBe(NEWSLETTER_MAX_PUBLICATION_PAGES);
+    // First page (no token yet) + one page for the newly-seen 'always' token,
+    // then the guard stops the walk instead of looping forever.
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(result.publications.length).toBe(2);
+  });
+
+  it('gives each subscription its own seen-token set', async () => {
+    get
+      .mockReturnValueOnce(of({ publications: [{ id: 'a-1' }], next_page_token: 'tok-a' } as NewsletterPublicationListResponse))
+      .mockReturnValueOnce(of({ publications: [{ id: 'a-2' }] } as NewsletterPublicationListResponse))
+      .mockReturnValueOnce(of({ publications: [{ id: 'b-1' }], next_page_token: 'tok-a' } as NewsletterPublicationListResponse))
+      .mockReturnValueOnce(of({ publications: [{ id: 'b-2' }] } as NewsletterPublicationListResponse));
+
+    const request = service.listAllPublications('proj-1');
+    const first = await new Promise<NewsletterPublicationListResponse>((resolve) => request.subscribe(resolve));
+    const second = await new Promise<NewsletterPublicationListResponse>((resolve) => request.subscribe(resolve));
+
+    expect(first.publications.map((p) => p.id)).toEqual(['a-1', 'a-2']);
+    expect(second.publications.map((p) => p.id)).toEqual(['b-1', 'b-2']);
   });
 });

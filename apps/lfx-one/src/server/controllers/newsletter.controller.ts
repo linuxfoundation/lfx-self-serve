@@ -140,7 +140,10 @@ export class NewsletterController {
       const pageToken = req.query['page_token'] ? String(req.query['page_token']) : undefined;
       // Scopes the list to one publication's editions. Forwarded to the upstream
       // service, which validates it as a UUID (400 on malformed / cross-project).
-      const publicationId = req.query['publication_id'] ? String(req.query['publication_id']) : undefined;
+      // Presence, not truthiness — an explicitly empty `?publication_id=` must
+      // still reach upstream so its validation rejects it, rather than being
+      // silently widened here to "list every publication".
+      const publicationId = req.query['publication_id'] !== undefined ? String(req.query['publication_id']) : undefined;
 
       if (statusParam && statusParam !== 'draft' && statusParam !== 'sending' && statusParam !== 'scheduled' && statusParam !== 'sent') {
         throw ServiceValidationError.forField('status', "status must be 'draft', 'sending', 'scheduled', or 'sent'", {

@@ -92,6 +92,20 @@ describe('NewsletterController.listNewsletters — status allowlist', () => {
     expect(next).not.toHaveBeenCalled();
     expect(listNewsletters).toHaveBeenCalledWith(expect.anything(), 'p1', { status: 'sent', page_token: undefined, publication_id: 'pub-9' });
   });
+
+  it('forwards an explicitly empty publication_id instead of dropping it to undefined', async () => {
+    // Presence, not truthiness: an explicit `?publication_id=` must reach the
+    // service so upstream's own validation can reject it, rather than being
+    // silently widened here to "list every publication".
+    listNewsletters.mockResolvedValue({ newsletters: [], next_page_token: undefined });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new NewsletterController().listNewsletters({ params: { projectUid: 'p1' }, query: { publication_id: '' }, path: '/x' } as any, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(listNewsletters).toHaveBeenCalledWith(expect.anything(), 'p1', { status: undefined, page_token: undefined, publication_id: '' });
+  });
 });
 
 describe('NewsletterController create/update — validateScheduledAt', () => {

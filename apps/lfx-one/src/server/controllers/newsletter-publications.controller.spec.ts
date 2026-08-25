@@ -12,8 +12,14 @@ const { listPublications, createPublication, getPublication, updatePublication }
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest
 // config — mock the (type-only) barrel the controller imports from, same as
-// newsletter.controller.spec.ts.
+// newsletter.controller.spec.ts. `@lfx-one/shared/utils` is a real (non-type)
+// barrel that pulls in Angular-dependent utils transitively, which breaks JIT
+// compilation in this environment — mock it with the real isUuid regex so the
+// publicationUid guard tests exercise real validation behaviour.
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
+vi.mock('@lfx-one/shared/utils', () => ({
+  isUuid: (v: unknown) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v),
+}));
 vi.mock('../services/newsletter-publications.service', () => ({
   NewsletterPublicationsService: class {
     public listPublications = listPublications;
@@ -32,6 +38,8 @@ import { NewsletterPublicationsController } from './newsletter-publications.cont
 function buildRes() {
   return { json: vi.fn(), status: vi.fn().mockReturnThis(), end: vi.fn() } as any;
 }
+
+const PUB_UID = '11111111-1111-1111-1111-111111111111';
 
 // Build a request; `ifMatch` (when provided) is surfaced via the `header()` accessor the controller uses.
 function buildReq(params: Record<string, string>, body: unknown = {}, ifMatch?: string, query: Record<string, string> = {}) {
@@ -62,6 +70,13 @@ describe('NewsletterPublicationsController — path-param guards', () => {
   it('routes a missing publicationUid on get to next(error)', async () => {
     const next = vi.fn();
     await new NewsletterPublicationsController().getPublication(buildReq({ projectUid: 'p1', publicationUid: '' }), buildRes(), next);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(getPublication).not.toHaveBeenCalled();
+  });
+
+  it('routes a non-UUID publicationUid on get to next(error)', async () => {
+    const next = vi.fn();
+    await new NewsletterPublicationsController().getPublication(buildReq({ projectUid: 'p1', publicationUid: 'pub-1' }), buildRes(), next);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(getPublication).not.toHaveBeenCalled();
   });
@@ -129,25 +144,25 @@ describe('NewsletterPublicationsController.createPublication — validateCreateP
 
 describe('NewsletterPublicationsController.updatePublication — parseIfMatch + validateUpdatePublicationPayload', () => {
   it('updates for a valid If-Match + payload', async () => {
-    updatePublication.mockResolvedValue({ id: 'pub-1', version: 2 });
+    updatePublication.mockResolvedValue({ id: PUB_UID, version: 2 });
     const res = buildRes();
     const next = vi.fn();
-    await new NewsletterPublicationsController().updatePublication(buildReq({ projectUid: 'p1', publicationUid: 'pub-1' }, { name: 'New' }, '1'), res, next);
+    await new NewsletterPublicationsController().updatePublication(buildReq({ projectUid: 'p1', publicationUid: PUB_UID }, { name: 'New' }, '1'), res, next);
     expect(next).not.toHaveBeenCalled();
-    expect(updatePublication).toHaveBeenCalledWith(expect.anything(), 'p1', 'pub-1', 1, { name: 'New' });
+    expect(updatePublication).toHaveBeenCalledWith(expect.anything(), 'p1', PUB_UID, 1, { name: 'New' });
     expect(res.json).toHaveBeenCalled();
   });
 
   it('strips a weak-tag / quoted If-Match to the integer version', async () => {
-    updatePublication.mockResolvedValue({ id: 'pub-1', version: 4 });
+    updatePublication.mockResolvedValue({ id: PUB_UID, version: 4 });
     const next = vi.fn();
     await new NewsletterPublicationsController().updatePublication(
-      buildReq({ projectUid: 'p1', publicationUid: 'pub-1' }, { name: 'New' }, 'W/"3"'),
+      buildReq({ projectUid: 'p1', publicationUid: PUB_UID }, { name: 'New' }, 'W/"3"'),
       buildRes(),
       next
     );
     expect(next).not.toHaveBeenCalled();
-    expect(updatePublication).toHaveBeenCalledWith(expect.anything(), 'p1', 'pub-1', 3, { name: 'New' });
+    expect(updatePublication).toHaveBeenCalledWith(expect.anything(), 'p1', PUB_UID, 3, { name: 'New' });
   });
 
   it.each([
@@ -156,7 +171,7 @@ describe('NewsletterPublicationsController.updatePublication — parseIfMatch + 
     ['zero If-Match', { name: 'N' }, '0'],
   ])('rejects %s', async (_label, payload, ifMatch) => {
     const next = vi.fn();
-    await new NewsletterPublicationsController().updatePublication(buildReq({ projectUid: 'p1', publicationUid: 'pub-1' }, payload, ifMatch), buildRes(), next);
+    await new NewsletterPublicationsController().updatePublication(buildReq({ projectUid: 'p1', publicationUid: PUB_UID }, payload, ifMatch), buildRes(), next);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(updatePublication).not.toHaveBeenCalled();
   });
@@ -167,7 +182,18 @@ describe('NewsletterPublicationsController.updatePublication — parseIfMatch + 
     ['null body', null],
   ])('rejects %s after a valid If-Match (400, not a 500)', async (_label, payload) => {
     const next = vi.fn();
-    await new NewsletterPublicationsController().updatePublication(buildReq({ projectUid: 'p1', publicationUid: 'pub-1' }, payload, '1'), buildRes(), next);
+    await new NewsletterPublicationsController().updatePublication(buildReq({ projectUid: 'p1', publicationUid: PUB_UID }, payload, '1'), buildRes(), next);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(updatePublication).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-UUID publicationUid without calling the service', async () => {
+    const next = vi.fn();
+    await new NewsletterPublicationsController().updatePublication(
+      buildReq({ projectUid: 'p1', publicationUid: 'pub-1' }, { name: 'New' }, '1'),
+      buildRes(),
+      next
+    );
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(updatePublication).not.toHaveBeenCalled();
   });

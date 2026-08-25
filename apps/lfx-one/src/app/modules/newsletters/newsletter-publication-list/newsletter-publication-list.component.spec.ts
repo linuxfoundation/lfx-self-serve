@@ -104,13 +104,23 @@ describe('NewsletterPublicationListComponent', () => {
     expect(component['publications']()).toEqual([]);
   });
 
-  it("navigates to a publication's editions relative to the current route", async () => {
+  it("navigates to a publication's editions, carrying projectUid alongside the publication id", async () => {
     await setup('proj-1');
     vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [] }));
     await create();
 
     component['goToPublicationEditions'](makePublication({ id: 'pub-42' }));
 
-    expect(router.navigate).toHaveBeenCalledWith(['pub-42'], expect.objectContaining({ relativeTo: expect.anything() }));
+    expect(router.navigate).toHaveBeenCalledWith(['proj-1', 'pub-42', 'editions'], expect.objectContaining({ relativeTo: expect.anything() }));
+  });
+
+  it('routes the empty-state create CTA to the edition composer', async () => {
+    await setup('proj-1');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [] }));
+    await create();
+
+    component['goToCreate']();
+
+    expect(router.navigate).toHaveBeenCalledWith(['create'], expect.objectContaining({ relativeTo: expect.anything() }));
   });
 });

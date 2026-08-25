@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CreatePublicationRequest, NewsletterPublicationListParams, UpdatePublicationRequest } from '@lfx-one/shared/interfaces';
+import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -144,8 +145,11 @@ export class NewsletterPublicationsController {
 
   private requirePublicationUid(req: Request): string {
     const publicationUid = String(req.params['publicationUid'] || '').trim();
-    if (!publicationUid) {
-      throw ServiceValidationError.forField('publicationUid', 'publicationUid path parameter is required', {
+    // Publication ids are always UUIDs; rejecting anything else keeps arbitrary
+    // strings out of the upstream path this value is interpolated into (see
+    // NewsletterController.requireOptOutId for the same pattern).
+    if (!isUuid(publicationUid)) {
+      throw ServiceValidationError.forField('publicationUid', 'publicationUid path parameter must be a UUID', {
         operation: 'newsletter_publications_controller',
         service: 'newsletter_publications_controller',
         path: req.path,

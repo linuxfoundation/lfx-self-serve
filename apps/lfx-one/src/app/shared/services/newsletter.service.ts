@@ -3,7 +3,6 @@
 
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { NEWSLETTER_MAX_PUBLICATION_PAGES } from '@lfx-one/shared/constants';
 import {
   CreateNewsletterRequest,
   CreatePublicationRequest,
@@ -29,7 +28,7 @@ import {
   UpdateNewsletterRequest,
   UpdatePublicationRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, EMPTY, expand, Observable, of, reduce, take } from 'rxjs';
+import { catchError, defer, EMPTY, expand, Observable, of, reduce, take } from 'rxjs';
 
 /**
  * Angular HTTP client for the newsletter feature.
@@ -182,21 +181,34 @@ export class NewsletterService {
   }
 
   /**
-   * Fetch every publication in the project by following `next_page_token`. The
-   * publication list page has no paging controls, so it needs the full set.
-   * MAX_PUBLICATION_PAGES bounds the walk so a server that keeps returning a
-   * token cannot make this request forever.
+   * Fetch every publication in the project by following `next_page_token`
+   * until a response omits it. The publication list page has no paging
+   * controls, so it needs the full set — a project has a handful of
+   * publications, not enough to make an unbounded walk a real concern.
+   *
+   * `seenTokens` guards against a broken/looping server that keeps handing
+   * back a token it already returned: rather than truncate every project's
+   * list to an arbitrary page count, this stops only if a token repeats.
+   * Scoped inside `defer` so each subscription gets its own set.
    */
   public listAllPublications(projectUid: string): Observable<NewsletterPublicationListResponse> {
-    return this.listPublications(projectUid).pipe(
-      expand((page, index) =>
-        page.next_page_token && index < NEWSLETTER_MAX_PUBLICATION_PAGES - 1 ? this.listPublications(projectUid, { page_token: page.next_page_token }) : EMPTY
-      ),
-      reduce<NewsletterPublicationListResponse, NewsletterPublicationListResponse>(
-        (acc, page) => ({ publications: [...acc.publications, ...page.publications] }),
-        { publications: [] }
-      )
-    );
+    return defer(() => {
+      const seenTokens = new Set<string>();
+      return this.listPublications(projectUid).pipe(
+        expand((page) => {
+          const token = page.next_page_token;
+          if (!token || seenTokens.has(token)) {
+            return EMPTY;
+          }
+          seenTokens.add(token);
+          return this.listPublications(projectUid, { page_token: token });
+        }),
+        reduce<NewsletterPublicationListResponse, NewsletterPublicationListResponse>(
+          (acc, page) => ({ publications: [...acc.publications, ...page.publications] }),
+          { publications: [] }
+        )
+      );
+    });
   }
 
   public getPublication(projectUid: string, publicationUid: string): Observable<NewsletterPublication> {

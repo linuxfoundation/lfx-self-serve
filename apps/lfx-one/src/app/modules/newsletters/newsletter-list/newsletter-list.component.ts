@@ -4,7 +4,7 @@
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
@@ -71,22 +71,8 @@ export class NewsletterListComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
-  // === Tab options ===
-  protected readonly statusTabOptions: FilterPillOption[] = [
-    { id: 'draft', label: 'Drafts' },
-    { id: 'scheduled', label: 'Scheduled' },
-    { id: 'sent', label: 'Sent' },
-    { id: 'optout', label: 'Opt-out' },
-  ];
-
   // === Writable Signals ===
   protected readonly statusTab = signal<NewsletterStatusTabId>('draft');
-  // Read once from the route snapshot (mirrors `statusTab`). The `:pubId` editions
-  // route is only ever entered fresh from the publication list — there is no
-  // publication-to-publication navigation that would reuse this component instance
-  // — so a snapshot read is sufficient. If in-place pub switching is ever added,
-  // drive this from `route.paramMap` (subscribed) instead.
-  protected readonly publicationId = signal<string | undefined>(this.route.snapshot.paramMap.get('pubId') ?? undefined);
   protected readonly newsletters = signal<NewsletterListItem[]>([]);
   // `status=sending` rows carrying `scheduled_at` — arms in progress. Populated
   // only while `statusTab() === 'scheduled'`; prepended to `newsletters` for
@@ -127,10 +113,39 @@ export class NewsletterListComponent {
   private loadGeneration = 0;
 
   // === Reactive context ===
-  public readonly projectUid: Signal<string> = this.projectContextService.activeContextUid;
+  // Publication id from the `:pubId` route param, when this instance is showing
+  // one publication's editions rather than the flat list. Subscribed via
+  // `toSignal`, not a one-time snapshot: Angular reuses this component instance
+  // across navigations that change only route params, so a snapshot would go
+  // stale navigating between two publications' editions (e.g. a deep link opened
+  // while this page is already showing a different publication) and keep
+  // querying the first one. Drives `initLoadOnContextOrTabAndPublication` below.
+  protected readonly publicationId: Signal<string | undefined> = toSignal(this.route.paramMap.pipe(map((p) => p.get('pubId') ?? undefined)), {
+    initialValue: this.route.snapshot.paramMap.get('pubId') ?? undefined,
+  });
+  // The `:pubId` editions route carries `:projectUid` alongside it (see
+  // newsletters.routes.ts) so a deep link resolves the publication's own project
+  // even next to a stale or different active-context cookie. The flat `list`
+  // route has no projectUid segment, so it falls back to the active context —
+  // same fallback pattern as newsletter-manage.component.ts's routeProjectUid.
+  private readonly routeProjectUid: Signal<string | null> = toSignal(this.route.paramMap.pipe(map((p) => p.get('projectUid'))), {
+    initialValue: this.route.snapshot.paramMap.get('projectUid'),
+  });
+  public readonly projectUid: Signal<string> = computed(() => this.routeProjectUid() || this.projectContextService.activeContextUid());
   protected readonly canLoadMore: Signal<boolean> = computed(() => !!this.nextPageToken() && !this.loading() && !this.loadingMore() && !!this.projectUid());
   protected readonly hasNewsletters: Signal<boolean> = computed(() => this.newsletters().length > 0 || this.armingNewsletters().length > 0);
   protected readonly hasOptOuts: Signal<boolean> = computed(() => this.optOuts().length > 0);
+  // Opt-outs are project-wide — listOptOuts(uid) has no publication scope — so
+  // the tab doesn't belong on a single publication's editions page. Showing it
+  // there would let a per-publication view read and mutate a project-wide list.
+  protected readonly statusTabOptions: Signal<FilterPillOption[]> = computed(() => {
+    const base: FilterPillOption[] = [
+      { id: 'draft', label: 'Drafts' },
+      { id: 'scheduled', label: 'Scheduled' },
+      { id: 'sent', label: 'Sent' },
+    ];
+    return this.publicationId() ? base : [...base, { id: 'optout', label: 'Opt-out' }];
+  });
   // Per-tab empty-state copy, keyed by tab id — avoids nesting ternaries in the template
   // (repo convention) for what's otherwise a flat lookup with no other tab-specific branching.
   protected readonly emptyStateCopy: Signal<{ title: string; subtitle: string }> = computed(() => {
@@ -151,14 +166,18 @@ export class NewsletterListComponent {
 
   public constructor() {
     const tabFromQuery = this.route.snapshot.queryParamMap.get('tab');
-    if (tabFromQuery === 'sent' || tabFromQuery === 'draft' || tabFromQuery === 'optout' || tabFromQuery === 'scheduled') {
+    // A `?tab=optout` deep link into a publication-scoped page must not select
+    // the hidden tab — statusTabOptions() omits it there, and the load branch
+    // below assumes optout only runs unscoped.
+    const optoutAllowed = !this.route.snapshot.paramMap.get('pubId');
+    if (tabFromQuery === 'sent' || tabFromQuery === 'draft' || tabFromQuery === 'scheduled' || (tabFromQuery === 'optout' && optoutAllowed)) {
       this.statusTab.set(tabFromQuery);
     }
     this.initLoadOnContextOrTabAndPublication();
   }
 
   protected onStatusTabChange(tab: string): void {
-    if (tab === 'draft' || tab === 'sent' || tab === 'optout' || tab === 'scheduled') {
+    if (tab === 'draft' || tab === 'sent' || tab === 'scheduled' || (tab === 'optout' && !this.publicationId())) {
       this.statusTab.set(tab);
     }
   }
@@ -366,6 +385,17 @@ export class NewsletterListComponent {
           }
           this.loading.set(true);
           if (status === 'optout') {
+            // Opt-outs are project-wide — listOptOuts(uid) has no publication
+            // scope. statusTabOptions() already hides the tab on a publication-
+            // scoped page, and the tab-selection guards in the constructor and
+            // onStatusTabChange keep `status` from becoming 'optout' there;
+            // this is the belt-and-suspenders check on the actual fetch, so a
+            // publication page can never read or mutate the project-wide list
+            // even if a future caller sets statusTab directly.
+            if (pubId) {
+              this.loading.set(false);
+              return EMPTY;
+            }
             return this.newsletterService.listOptOuts(uid).pipe(
               map((response): NewsletterListLoadResult => ({ kind: 'optout', response })),
               catchError((err: HttpErrorResponse) => {

@@ -47,7 +47,18 @@ export class NewsletterPublicationListComponent {
   }
 
   protected goToPublicationEditions(publication: NewsletterPublication): void {
-    this.router.navigate([publication.id], { relativeTo: this.route });
+    // projectUid travels in the URL alongside the publication id, and
+    // 'editions' disambiguates the route from the shareable reader permalink —
+    // see newsletters.routes.ts.
+    this.router.navigate([this.projectUid(), publication.id, 'editions'], { relativeTo: this.route });
+  }
+
+  // No dedicated publication-create UI exists yet (the publication create/manage
+  // flow is the LFXV2-2582 follow-up — see newsletter.service.ts). Route the
+  // empty-state CTA to the existing edition composer instead of a dead end;
+  // the edition lands unfiled, which is a valid resting state.
+  protected goToCreate(): void {
+    this.router.navigate(['create'], { relativeTo: this.route });
   }
 
   private initLoadOnContext(): void {
