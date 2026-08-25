@@ -224,7 +224,8 @@ describe('GroupSeatHoldersDrawerComponent', () => {
   // which resets seatHolders() to null — so this retry path was already covered by the plain
   // `?? seatCount()` fallback even before the loading() guard existed. It's kept as a regression
   // test for the retry flow itself (error clears, correct count reappears), not as coverage for
-  // the loading() guard specifically — see the next test for the scenario that actually needs it.
+  // the loading() guard specifically — see "keeps the new row seatCount in the header while an
+  // org-switch refetch is in flight..." below for the scenario that actually needs it.
   it('recovers cleanly on retry after a failure: error clears, count comes back', async () => {
     const impl = vi
       .fn()
@@ -247,11 +248,14 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('1 seat');
   });
 
-  // The scenario the loading() guard actually protects: the drawer stays OPEN across an org
-  // switch (visible never goes false, so seatHolders() never resets to null). The cache rebuilds
-  // for the new orgUid and a real refetch starts, but toSignal keeps emitting the previous org's
-  // array until the new fetch resolves — without the loading() guard, displayedCount would read
-  // the stale previous-org row count instead of the new row's seatCount().
+  // Defensive coverage, not a currently-reachable path: org-groups.component.ts closes this
+  // drawer on every org switch (its orgUid$ subscription), so today a trigger change shouldn't
+  // arrive with the drawer still open. IF one ever did, the cache would rebuild for the new
+  // orgUid and start a real refetch, but toSignal keeps emitting the *previous* org's array until
+  // that fetch resolves — without the loading() guard, displayedCount would read the stale
+  // previous-org row count instead of the new row's seatCount(). Awaits stability twice: the
+  // orgUid write has to propagate through toObservable's effect before the switchMap/loading()
+  // write lands, and asserting after only one flush was observed to occasionally race ahead of it.
   it('keeps the new row seatCount in the header while an org-switch refetch is in flight, not the previous org roster length', async () => {
     const impl = vi
       .fn()
@@ -274,7 +278,13 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     fixture.componentRef.setInput('orgUid', 'org-2');
     await fixture.whenStable();
     fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
 
+    // The spinner is the deterministic signal that the refetch actually started (loading() true)
+    // before checking the header text it gates — the header assertion alone previously proved
+    // vulnerable to running ahead of that write.
+    expect(document.querySelector('.fa-spinner-third')).toBeTruthy();
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('9 seats');
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).not.toContain('3 seats');
   });
