@@ -24,6 +24,7 @@ import {
   MICROSOFT_MAX_GEO_TARGETS,
   MICROSOFT_MAX_KEYWORDS,
   MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
+  MICROSOFT_NEW_KEYWORD_MATCH_TYPE,
   MICROSOFT_MIN_CPC_BID,
   META_OBJECTIVE_LABELS,
   META_SELECTABLE_OBJECTIVES,
@@ -1191,9 +1192,8 @@ export class ImplementationTabComponent implements OnInit {
    *
    * Blank input is ignored rather than added — an empty chip would be dropped by
    * `microsoftEffectiveKeywords` anyway, so adding one would show the operator a keyword the
-   * request will not carry. New keywords default to `Phrase`, the middle of Microsoft's three
-   * match types: `Broad` can spend on loosely related queries and `Exact` can starve a new campaign
-   * of volume, so the default is wrong in neither direction and the operator can change it.
+   * request will not carry. New keywords start at `MICROSOFT_NEW_KEYWORD_MATCH_TYPE`; see that
+   * constant for why, and for why the duplicate check below has to be scoped to it.
    *
    * The BOOLEAN is what lets the caller keep the operator's text on a rejection. Every `return
    * false` below is a refusal, and clearing the box unconditionally discarded the very text the
@@ -1214,11 +1214,20 @@ export class ImplementationTabComponent implements OnInit {
     // trimmed one, matching upstream's pre-trim check — a leading or trailing control char must be
     // caught too, and trimming only strips whitespace.
     if (MICROSOFT_CONTROL_CHAR_RE.test(text)) return false;
-    // Case-insensitive de-dupe: Microsoft treats keyword text case-insensitively, so two chips
-    // differing only in case would be one keyword upstream and the list would overstate coverage.
-    const exists = this.microsoftKeywords().some((k) => k.text.trim().toLowerCase() === trimmed.toLowerCase());
+    // De-duped by (matchType, case-folded text), matching the client's `validateKeywords`:
+    // Microsoft treats keyword text case-insensitively, so two chips differing only in case would
+    // be one keyword upstream and the list would overstate coverage — but the SAME text under a
+    // DIFFERENT match type is a genuinely distinct keyword that upstream accepts.
+    //
+    // Text alone was too strict in a way the operator could not work around. New rows are added at
+    // `Phrase` and the match type is only changeable AFTER the row exists, so a seeded or restored
+    // `kubernetes/Exact` made `kubernetes/Phrase` unreachable: the add was refused before its
+    // match type could be changed, and refusing at the door gave no way to get there.
+    const exists = this.microsoftKeywords().some(
+      (k) => k.matchType === MICROSOFT_NEW_KEYWORD_MATCH_TYPE && k.text.trim().toLowerCase() === trimmed.toLowerCase()
+    );
     if (exists) return false;
-    this.microsoftKeywords.update((keywords) => [...keywords, { text: trimmed, matchType: 'Phrase' }]);
+    this.microsoftKeywords.update((keywords) => [...keywords, { text: trimmed, matchType: MICROSOFT_NEW_KEYWORD_MATCH_TYPE }]);
     this.emitDraft();
     return true;
   }

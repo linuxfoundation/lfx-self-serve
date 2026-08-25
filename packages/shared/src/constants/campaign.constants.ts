@@ -578,6 +578,20 @@ export const MICROSOFT_MAX_KEYWORD_TEXT_LENGTH = 100;
 export const MICROSOFT_MAX_GEO_TARGETS = 30;
 
 /**
+ * The match type a newly added keyword starts at.
+ *
+ * `Phrase` is the middle of Microsoft's three: `Broad` can spend on loosely related queries and
+ * `Exact` can starve a new campaign of volume, so the default is wrong in neither direction and
+ * the operator can change it on the row afterwards.
+ *
+ * Named rather than inlined because the add-time duplicate check has to agree with it. Uniqueness
+ * is `(matchType, case-folded text)` upstream, so the check can only refuse a new row against
+ * EXISTING rows at the match type the new row will actually carry — if the two drift apart, the
+ * check either refuses a keyword upstream accepts or admits one it rejects.
+ */
+export const MICROSOFT_NEW_KEYWORD_MATCH_TYPE = 'Phrase' as const;
+
+/**
  * Upper bound on Microsoft's DAILY budget (`internal/platform/microsoft/campaign.go:59`,
  * `maxBudget`), rejected during dispatch and therefore a dead job rather than a refused request —
  * the same reasoning as `REDDIT_MAX_BUDGET_USD`, which caps the sibling platform for the same

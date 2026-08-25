@@ -1092,6 +1092,38 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['microsoftKeywordDraftTooLong']()).toBe(true);
   });
 
+  /**
+   * Uniqueness is `(matchType, case-folded text)`, matching the client's `validateKeywords`
+   * (`internal/platform/microsoft/targeting.go`, key `matchType + "\x00" + strings.ToLower(text)`).
+   *
+   * A text-ONLY check rejected configurations campaign-service accepts, and the operator had no
+   * way around it: new rows are added at `MICROSOFT_NEW_KEYWORD_MATCH_TYPE` and the match type is
+   * only changeable AFTER the row exists, so a seeded or restored `kubernetes/Exact` made
+   * `kubernetes/Phrase` permanently unreachable — the add was refused before its match type could
+   * be changed.
+   *
+   * The case fold must SURVIVE the change: same text, same match type, different casing is still
+   * one keyword upstream, and admitting it would overstate coverage.
+   */
+  it('scopes the duplicate check to the match type the new row will carry', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+
+    // Seeded at Exact — the match type a new row does NOT get.
+    c['microsoftKeywords'].set([{ text: 'kubernetes', matchType: 'Exact' }]);
+    expect(c['addMicrosoftKeyword']('kubernetes')).toBe(true);
+    expect(c['microsoftKeywords']()).toEqual([
+      { text: 'kubernetes', matchType: 'Exact' },
+      { text: 'kubernetes', matchType: 'Phrase' },
+    ]);
+
+    // Now the Phrase row exists, so the same text at Phrase IS a duplicate — including a case
+    // variant, which is one keyword upstream.
+    expect(c['addMicrosoftKeyword']('kubernetes')).toBe(false);
+    expect(c['addMicrosoftKeyword']('KUBERNETES')).toBe(false);
+    expect(c['microsoftKeywords']().length).toBe(2);
+  });
+
   it('clears the box once a keyword is actually added', async () => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);

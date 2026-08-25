@@ -634,7 +634,7 @@
               Search Keywords ({{ microsoftEffectiveKeywords().length }}/{{ microsoftMaxKeywords }})
             </label>
             <div class="flex flex-col gap-2">
-              @for (keyword of microsoftKeywords(); track keyword.text; let i = $index) {
+              @for (keyword of microsoftKeywords(); track $index; let i = $index) {
                 <div class="flex items-center gap-2" [attr.data-testid]="'implementation-microsoft-keyword-' + i">
                   <span class="flex-1 truncate rounded-md bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700">{{ keyword.text }}</span>
                   <select
