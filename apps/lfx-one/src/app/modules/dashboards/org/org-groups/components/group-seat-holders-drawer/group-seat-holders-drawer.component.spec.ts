@@ -791,4 +791,62 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(text()).toContain('Unknown member');
     expect(text()).toContain('—');
   });
+
+  // PrimeNG's p-drawer sets role="complementary" on its panel and doesn't manage focus at all —
+  // no autofocus on open, no restore on close. These pin the fix layered on top: dialog semantics
+  // via [pt], and focus movement via (onShow)/(onHide). document.activeElement, not a class token
+  // or a testid's mere presence, is the only thing that actually proves focus moved.
+  describe('focus management', () => {
+    function dialogPanel(): Element | null {
+      return document.querySelector('[role="dialog"]');
+    }
+
+    function closeButton(): HTMLElement | null {
+      return document.querySelector('[data-testid="group-seat-holders-drawer-close"]');
+    }
+
+    it('marks the panel as a labelled modal dialog', async () => {
+      await setup(vi.fn().mockReturnValue(of(response([]))));
+
+      await open('org-1', 'c-1');
+
+      const panel = dialogPanel();
+      expect(panel).toBeTruthy();
+      expect(panel?.getAttribute('aria-modal')).toBe('true');
+      expect(panel?.getAttribute('aria-labelledby')).toBe('group-seat-holders-drawer-title');
+    });
+
+    it('moves focus into the panel on open, away from the element that triggered it', async () => {
+      await setup(vi.fn().mockReturnValue(of(response([]))));
+      const trigger = document.createElement('button');
+      document.body.appendChild(trigger);
+      trigger.focus();
+      expect(document.activeElement).toBe(trigger);
+
+      await open('org-1', 'c-1');
+
+      const title = document.querySelector('[data-testid="group-seat-holders-drawer-title"]');
+      expect(document.activeElement).toBe(title);
+      expect(document.activeElement).not.toBe(trigger);
+
+      document.body.removeChild(trigger);
+    });
+
+    it('restores focus to the triggering element when the close button is activated', async () => {
+      await setup(vi.fn().mockReturnValue(of(response([]))));
+      const trigger = document.createElement('button');
+      document.body.appendChild(trigger);
+      trigger.focus();
+
+      await open('org-1', 'c-1');
+      expect(document.activeElement).not.toBe(trigger);
+
+      closeButton()!.click();
+      await fixture.whenStable();
+
+      expect(document.activeElement).toBe(trigger);
+
+      document.body.removeChild(trigger);
+    });
+  });
 });

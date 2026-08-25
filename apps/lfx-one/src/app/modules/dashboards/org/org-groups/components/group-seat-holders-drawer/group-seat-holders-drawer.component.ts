@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, model, signal, type Signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, ElementRef, inject, input, model, PLATFORM_ID, signal, viewChild, type Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
@@ -20,6 +21,7 @@ import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.c
 })
 export class GroupSeatHoldersDrawerComponent {
   private readonly committeeMembersService = inject(CommitteeMembersService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   public readonly visible = model<boolean>(false);
   public readonly orgUid = input<string>('');
@@ -29,6 +31,12 @@ export class GroupSeatHoldersDrawerComponent {
   protected readonly loading = signal(false);
   protected readonly error = signal(false);
   private readonly retryTick = signal(0);
+
+  // The drawer's real panel is PrimeNG-managed and moved to document.body (appendTo: 'body'), so
+  // it isn't reachable as a child of this component's own host element — this is a template ref
+  // into our own #header ng-template (which PrimeNG embeds into that panel), not a DOM query.
+  private readonly titleRef = viewChild<ElementRef<HTMLHeadingElement>>('titleRef');
+  private previouslyFocusedElement: HTMLElement | null = null;
 
   // getCommitteeMembers(orgUid) always drains the org's FULL, non-truncated committee roster —
   // there's no server-side committeeUid filter (committee-service's seats endpoint doesn't offer
@@ -69,6 +77,26 @@ export class GroupSeatHoldersDrawerComponent {
 
   protected retry(): void {
     this.retryTick.update((n) => n + 1);
+  }
+
+  // PrimeNG's p-drawer doesn't move focus into the panel on open or restore it on close — it only
+  // traps Tab/Shift+Tab once focus is already inside (pFocusTrap, applied unconditionally on its
+  // container). Captures the triggering element before moving focus in, so it can be restored on
+  // (onHide) — which fires for Escape and the close button, not for an externally-driven close
+  // (e.g. `visible.set(false)` on an org switch), where "restore focus to the trigger" wouldn't
+  // mean anything since the org, and likely the trigger itself, has changed.
+  protected onDrawerShow(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    this.previouslyFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    this.titleRef()?.nativeElement.focus();
+  }
+
+  protected onDrawerHide(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    if (this.previouslyFocusedElement?.isConnected) {
+      this.previouslyFocusedElement.focus();
+    }
+    this.previouslyFocusedElement = null;
   }
 
   private initSeatHolderVms(): Signal<CommitteeMemberSeatHolderVm[]> {

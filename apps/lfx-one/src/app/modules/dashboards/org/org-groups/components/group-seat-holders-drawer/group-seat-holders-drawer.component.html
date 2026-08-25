@@ -5,6 +5,13 @@
   [(visible)]="visible"
   position="right"
   [modal]="true"
+  [ariaCloseLabel]="'Close panel'"
+  [pt]="{
+    root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'group-seat-holders-drawer-title' },
+    pcCloseButton: { root: { 'data-testid': 'group-seat-holders-drawer-close' } },
+  }"
+  (onShow)="onDrawerShow()"
+  (onHide)="onDrawerHide()"
   styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full"
   data-testid="group-seat-holders-drawer">
   <ng-template #header>
@@ -13,7 +20,10 @@
         <i class="fa-light fa-user-check text-lg" aria-hidden="true"></i>
       </div>
       <div class="flex flex-col gap-0.5 min-w-0">
-        <h2 class="text-base font-semibold text-gray-900 break-words" data-testid="group-seat-holders-drawer-title">
+        <!-- tabindex="-1": not in Tab order, but focusable via onDrawerShow() moving focus here on
+             open — it's also the element aria-labelledby points at, so a screen reader announces
+             the group name immediately on focus, the way a dialog title normally would. -->
+        <h2 #titleRef tabindex="-1" class="text-base font-semibold text-gray-900 break-words" data-testid="group-seat-holders-drawer-title">
           {{ groupName() }}
         </h2>
         <p class="text-sm text-gray-500 truncate" data-testid="group-seat-holders-drawer-subtitle">
