@@ -363,7 +363,9 @@ export class ImplementationTabComponent implements OnInit {
    * The keyword box's in-progress text, held so the over-length warning can render live.
    *
    * NOT part of the draft: it is transient input, not a configured value, and a half-typed word
-   * surviving a tab switch would be surprising rather than helpful. `addMicrosoftKeyword` clears it.
+   * surviving a tab switch would be surprising rather than helpful. Cleared by
+   * `onMicrosoftKeywordAdd` only when the keyword is actually ADDED, so a refused entry keeps the
+   * operator's text and the warning describing it.
    */
   protected readonly microsoftKeywordDraft = signal('');
   protected readonly microsoftGeoTargets = signal<string[]>([]);
@@ -1170,21 +1172,31 @@ export class ImplementationTabComponent implements OnInit {
    * loosely related queries and `Exact` can starve a new campaign of volume, so the default is the
    * one that is wrong in neither direction. The operator can change it per keyword.
    */
-  protected addMicrosoftKeyword(text: string): void {
+  /**
+   * Add one keyword, reporting whether it was actually added.
+   *
+   * The BOOLEAN is what lets the caller keep the operator's text on a rejection. Every `return`
+   * below is a refusal, and clearing the box unconditionally discarded the very text the
+   * over-length warning was asking them to shorten — the field is bound to `(change)`, so simply
+   * blurring it wiped the input and the warning with it. It also silently ate a duplicate or an
+   * at-cap entry, leaving no trace of what the operator typed.
+   */
+  protected addMicrosoftKeyword(text: string): boolean {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed) return false;
     // Refused at the door rather than accepted and rejected later: the client caps the list at 60
     // and each term at 100 RUNES, and because dispatch is async a violation would surface as a
     // failed job. Counted with the spread, matching the client's rune count — `.length` counts
     // UTF-16 units and would reject a valid CJK or emoji keyword the client accepts.
-    if (this.microsoftKeywords().length >= MICROSOFT_MAX_KEYWORDS) return;
-    if ([...trimmed].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH) return;
+    if (this.microsoftKeywords().length >= MICROSOFT_MAX_KEYWORDS) return false;
+    if ([...trimmed].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH) return false;
     // Case-insensitive de-dupe: Microsoft treats keyword text case-insensitively, so two chips
     // differing only in case would be one keyword upstream and the list would overstate coverage.
     const exists = this.microsoftKeywords().some((k) => k.text.trim().toLowerCase() === trimmed.toLowerCase());
-    if (exists) return;
+    if (exists) return false;
     this.microsoftKeywords.update((keywords) => [...keywords, { text: trimmed, matchType: 'Phrase' }]);
     this.emitDraft();
+    return true;
   }
 
   protected onMicrosoftKeywordDraftInput(event: Event): void {
@@ -1195,9 +1207,12 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onMicrosoftKeywordAdd(event: Event): void {
     const input = event.target as HTMLInputElement;
-    this.addMicrosoftKeyword(input.value);
-    input.value = '';
-    this.microsoftKeywordDraft.set('');
+    // Cleared ONLY on success. On a refusal the text stays put so the operator can edit it — and
+    // the live warning stays visible rather than vanishing along with the value it described.
+    if (this.addMicrosoftKeyword(input.value)) {
+      input.value = '';
+      this.microsoftKeywordDraft.set('');
+    }
   }
 
   protected removeMicrosoftKeyword(index: number): void {

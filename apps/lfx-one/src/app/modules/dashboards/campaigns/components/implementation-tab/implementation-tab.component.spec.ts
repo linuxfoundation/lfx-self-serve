@@ -1064,6 +1064,51 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['microsoftKeywordDraftTooLong']()).toBe(true);
   });
 
+  /**
+   * Regression: the add handler is bound to `(change)` as well as Enter, so simply BLURRING the
+   * box ran it. Clearing unconditionally discarded the over-length text the warning was asking the
+   * operator to shorten — and took the warning with it. Driven through the DOM event rather than
+   * by calling the handler, because the `(change)`-on-blur path is the one that made it reachable.
+   */
+  it('keeps a refused keyword in the box instead of wiping it on blur', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('[data-testid="implementation-microsoft-keyword-add"]');
+    expect(input).not.toBeNull();
+
+    const tooLong = 'k'.repeat(101);
+    input.value = tooLong;
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    // Not added, and NOT discarded — the operator can still shorten what they typed.
+    expect(c['microsoftKeywords']()).toEqual([]);
+    expect(input.value).toBe(tooLong);
+    expect(c['microsoftKeywordDraft']()).toBe(tooLong);
+    expect(c['microsoftKeywordDraftTooLong']()).toBe(true);
+  });
+
+  it('clears the box once a keyword is actually added', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('[data-testid="implementation-microsoft-keyword-add"]');
+    input.value = 'service mesh';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(c['microsoftKeywords']().some((k: { text: string }) => k.text === 'service mesh')).toBe(true);
+    expect(input.value).toBe('');
+    expect(c['microsoftKeywordDraft']()).toBe('');
+  });
+
   it('refuses to add a geo target past the cap', async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftGeoTargets'].set(Array.from({ length: 30 }, (_, i) => `G${i}`));
