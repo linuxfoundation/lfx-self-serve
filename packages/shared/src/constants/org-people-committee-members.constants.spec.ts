@@ -89,7 +89,7 @@ describe('noneRankFor', () => {
   // The actual regression this guards: without it, a "None"-less list would resolve via
   // `findIndex`'s -1, which — used as a rank boundary — goes negative and ranks every unlisted
   // status ahead of every listed one, including "Voting Rep". The list-length fallback keeps
-  // unlisted statuses tied at the bottom instead.
+  // unlisted statuses sorted below every listed one instead.
   it('falls back to the list length, not -1, when the list has no "None" entry', () => {
     expect(noneRankFor(['Voting Rep', 'Observer'])).toBe(2);
     expect(noneRankFor([])).toBe(0);

@@ -46,10 +46,10 @@ export function votingStatusPillClass(status: string | null | undefined): string
  *  priority) — the boundary `votingStatusRank` ranks against. Exported (not inlined into a module
  *  constant) so a "None"-less list — the case this guards — is directly testable; production code
  *  only ever calls it with `VOTING_STATUS_PRIORITY`. If "None" is missing, `findIndex` returns -1;
- *  falling back to the list's length instead means an unlisted voting status ties at the bottom
- *  (worse than every listed status) rather than the -1 case, which would go negative and invert
- *  the whole ordering — every unlisted voting status would then rank *ahead of* "Voting Rep"
- *  (rank -1.5 vs 0) instead of behind it. */
+ *  falling back to the list's length instead keeps unlisted statuses sorted below every listed
+ *  status rather than the -1 case, which would go negative and invert the whole ordering — every
+ *  unlisted voting status would then rank *ahead of* "Voting Rep" (rank -1.5 vs 0) instead of
+ *  behind it. */
 export function noneRankFor(priority: readonly string[]): number {
   const index = priority.findIndex((p) => p.toLowerCase() === 'none');
   return index === -1 ? priority.length : index;
