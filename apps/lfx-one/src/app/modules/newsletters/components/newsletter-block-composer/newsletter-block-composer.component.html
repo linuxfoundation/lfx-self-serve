@@ -148,7 +148,7 @@
                       <!-- Keyboard nesting: move this leaf INTO an adjacent container
                        (the drag-into-container gesture is pointer-only). Shown only
                        when a permitted target exists, so the button never no-ops. -->
-                      @if (nestTarget($index); as target) {
+                      @if (nestTargets().get(block.id); as target) {
                         <button
                           type="button"
                           class="flex h-7 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
@@ -377,6 +377,11 @@
                 </div>
               }
               @for (block of blocks(); track trackById($index, block)) {
+                <!-- A CONTAINER wrapper is NOT itself interactive: it nests child
+                 blocks that are each role="button" (nesting focusable button-role
+                 elements is invalid and breaks assistive tech). Its children and
+                 the fully-keyboard Outline provide selection + reorder; the wrapper
+                 keeps only pointer click. Leaf blocks stay keyboard-focusable. -->
                 <div
                   class="group/block relative cursor-pointer rounded-md transition-shadow"
                   [class.ring-2]="selectedBlockId() === block.id"
@@ -387,10 +392,10 @@
                   (click)="selectBlock(block.id)"
                   (keydown.enter)="activateBlockFromKeyboard($event, block.id)"
                   (keydown.space)="activateBlockFromKeyboard($event, block.id)"
-                  role="button"
-                  tabindex="0"
+                  [attr.role]="block.isContainer ? null : 'button'"
+                  [attr.tabindex]="block.isContainer ? null : 0"
                   [attr.data-testid]="'newsletter-composer-block-' + block.block_type"
-                  [attr.aria-pressed]="selectedBlockId() === block.id">
+                  [attr.aria-pressed]="block.isContainer ? null : selectedBlockId() === block.id">
                   <!-- Drag-handle chip (browser-only). Label + duplicate / delete /
                  rich-text controls live on the floating dark toolbar for the
                  SELECTED block, so this chip carries only the grip — the one

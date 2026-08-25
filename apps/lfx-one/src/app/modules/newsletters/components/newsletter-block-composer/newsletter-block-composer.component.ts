@@ -293,6 +293,21 @@ export class NewsletterBlockComposerComponent implements OnInit {
   protected readonly containerChromes: Signal<Map<string, { shellClass: string; shellStyle: string; before: SafeHtml; after: SafeHtml }>> =
     this.initContainerChromes();
 
+  // The keyboard nest-into-container target for each top-level leaf, keyed by
+  // block id (absent when the leaf has no accepting adjacent container). Computed
+  // so the template reads a map instead of calling a method that scans siblings
+  // + checks the allowlist on every change-detection pass. Drives the Outline
+  // "nest" button's visibility and the move it performs.
+  protected readonly nestTargets: Signal<Map<string, NewsletterComposerBlock>> = computed(() => {
+    const blocks = this.blocks();
+    const map = new Map<string, NewsletterComposerBlock>();
+    blocks.forEach((block, index) => {
+      const target = this.resolveNestTarget(blocks, index);
+      if (target) map.set(block.id, target);
+    });
+    return map;
+  });
+
   // Per-block outer-spacing inline styles, keyed by block id — precomputed so the
   // template reads a map (`blockSpacingStyles().get(id)`) instead of calling a
   // function per change-detection pass.
@@ -470,9 +485,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
    * No-op unless `nestTarget` resolves a permitted container.
    */
   protected moveBlockIntoContainer(index: number): void {
-    const target = this.nestTarget(index);
-    if (!target) return;
     const blocks = this.blocks();
+    const target = this.resolveNestTarget(blocks, index);
+    if (!target) return;
     const block = blocks[index];
     const next = blocks.filter((_, i) => i !== index);
     const targetIndex = next.findIndex((b) => b.id === target.id);
@@ -480,29 +495,6 @@ export class NewsletterBlockComposerComponent implements OnInit {
     next[targetIndex] = { ...target, children: [...(target.children ?? []), block] };
     this.blocks.set(next);
     this.emit();
-  }
-
-  /**
-   * The container a top-level leaf at `index` may be nested into via keyboard, or
-   * null. Prefers the previous top-level sibling when it's a container, else the
-   * next; returns null for a container block or when the container's allowlist
-   * rejects the type. Drives both `moveBlockIntoContainer` and the button's
-   * visibility (so the control never shows when the move would no-op).
-   */
-  protected nestTarget(index: number): NewsletterComposerBlock | null {
-    const blocks = this.blocks();
-    const block = blocks[index];
-    if (!block || block.isContainer) return null;
-    let target: NewsletterComposerBlock | null = null;
-    const prev = blocks[index - 1];
-    const next = blocks[index + 1];
-    if (prev?.isContainer) {
-      target = prev;
-    } else if (next?.isContainer) {
-      target = next;
-    }
-    if (!target || !this.childAllowedInContainer(target, block.block_type)) return null;
-    return target;
   }
 
   /** Constrain the preview to a desktop or mobile email width. */
@@ -958,6 +950,14 @@ export class NewsletterBlockComposerComponent implements OnInit {
    * list is absent or empty, any (non-container) block is allowed. Containers
    * never nest — that single-level rule is enforced separately at the call sites.
    */
+  /**
+   * Whether a container accepts a child block type. `allowed_block_types` is an
+   * OPTIONAL manifest field: the current newsletter-service manifest does not
+   * emit it, so today this resolves to allow-all (correct for the single AAIF
+   * container, which accepts any brick). The gate is honored when a future
+   * manifest supplies the allowlist — an empty/absent list means "any non-container
+   * leaf", a populated list restricts to its members.
+   */
   private childAllowedInContainer(parent: NewsletterComposerBlock, childType: string): boolean {
     const allowed = this.manifestService.getBlock(parent.block_type)?.allowed_block_types;
     if (!allowed || allowed.length === 0) return true;
@@ -1088,6 +1088,24 @@ export class NewsletterBlockComposerComponent implements OnInit {
     moveItemInArray(next, from, to);
     this.blocks.set(next);
     this.emit();
+  }
+
+  /**
+   * The container the top-level leaf at `index` may nest into, or null. Prefers
+   * the previous top-level sibling when it's an ACCEPTING container, else the
+   * next accepting one; null for a container block or when neither adjacent
+   * container accepts the type. Checking the allowlist per candidate (not just
+   * "is a container") keeps parity with the pointer path, where a leaf between a
+   * rejecting and an accepting container can still target the accepting one.
+   */
+  private resolveNestTarget(blocks: NewsletterComposerBlock[], index: number): NewsletterComposerBlock | null {
+    const block = blocks[index];
+    if (!block || block.isContainer) return null;
+    const prev = blocks[index - 1];
+    if (prev?.isContainer && this.childAllowedInContainer(prev, block.block_type)) return prev;
+    const next = blocks[index + 1];
+    if (next?.isContainer && this.childAllowedInContainer(next, block.block_type)) return next;
+    return null;
   }
 
   /** Reorder a child within its container, clamping to the child list bounds. */

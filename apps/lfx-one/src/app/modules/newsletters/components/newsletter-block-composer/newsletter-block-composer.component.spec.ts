@@ -109,18 +109,32 @@ describe('NewsletterBlockComposerComponent — Outline keyboard nesting', () => 
     expect(ids(api().blocks()[0].children ?? [])).toEqual(['a', 'x']);
   });
 
-  it('nestTarget is null for a container and when no adjacent container exists', () => {
+  const nestTargets = () => (component as unknown as { nestTargets(): Map<string, NewsletterComposerBlock> }).nestTargets();
+
+  it('has no nest target for a container or a leaf with no adjacent container', () => {
     api().blocks.set([container('c1', []), leaf('x'), leaf('y')]);
     // c1 is a container — never a nest source.
-    expect(api()['nestTarget'](0)).toBeNull();
-    // y (index 2) has only a leaf before it and nothing after — no target.
-    expect(api()['nestTarget'](2)).toBeNull();
+    expect(nestTargets().get('c1')).toBeUndefined();
+    // y has only a leaf before it and nothing after — no target.
+    expect(nestTargets().get('y')).toBeUndefined();
+    // x sits next to the c1 container — it does have one.
+    expect(nestTargets().get('x')).toBe(api().blocks()[0]);
   });
 
-  it('nestTarget respects the container allowlist', () => {
+  it('has no nest target when the container allowlist rejects the type', () => {
     getBlock.mockReturnValue({ allowed_block_types: ['image'] });
     api().blocks.set([container('c1', []), leaf('x', 'text')]);
     // 'text' is not in the container's allowlist, so no nest target.
-    expect(api()['nestTarget'](1)).toBeNull();
+    expect(nestTargets().get('x')).toBeUndefined();
+  });
+
+  it('falls through a REJECTING previous container to an accepting next one', () => {
+    // c1 (block_type aaif_community) rejects 'text'; c2 accepts anything.
+    getBlock.mockImplementation((blockType: string) => (blockType === 'aaif_community' ? { allowed_block_types: ['image'] } : undefined));
+    const c2 = container('c2', []);
+    c2.block_type = 'open_container';
+    api().blocks.set([container('c1', []), leaf('x', 'text'), c2]);
+    // A pointer user could drop x into c2; the keyboard control must reach it too.
+    expect(nestTargets().get('x')).toBe(c2);
   });
 });
