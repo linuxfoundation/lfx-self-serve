@@ -741,8 +741,8 @@ describe('GroupSeatHoldersDrawerComponent', () => {
   // tap only clears `loading` on a real fetch emission — the missing-identifier branch emits
   // `of(null)` without going through that fetch pipeline at all, so it has to clear the flag
   // itself. Otherwise a drawer left `loading` by a mid-fetch close (previous test) that reopens
-  // with a since-cleared identifier would render a permanent spinner instead of the blank
-  // placeholder this branch intends.
+  // with a since-cleared identifier would render a permanent spinner instead of falling through
+  // to the empty state (what a null `seatHolders` actually renders here).
   it('clears a loading flag left by a mid-fetch close if the drawer reopens with a missing identifier', async () => {
     await setup(vi.fn().mockReturnValue(NEVER));
 
@@ -762,8 +762,11 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     fixture.componentRef.setInput('committeeUid', '');
     fixture.componentRef.setInput('visible', true);
     await fixture.whenStable();
+    fixture.detectChanges();
 
     expect(instance.loading()).toBe(false);
+    // The DOM-visible half of the same claim: no permanent spinner, not the internal flag alone.
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-loading"]')).toBeNull();
   });
 
   it('renders a member with no name and no email as "Unknown member", not a blank row', async () => {

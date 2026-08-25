@@ -123,7 +123,9 @@ export class GroupSeatHoldersDrawerComponent {
             // Unlike the !visible branch above, this one does emit — so it must clear loading/error
             // itself. `tap` only clears `loading` on a real fetch emission (see below), so without
             // this a drawer closed mid-fetch and then reopened with a still-missing identifier would
-            // render a permanent spinner instead of the blank placeholder this branch intends.
+            // render a permanent spinner instead of falling through to the empty state, which is
+            // what a null `seatHolders` actually renders here (`displayedCount` is 0, not null — the
+            // `loading`/`error`-gated blank placeholder is a different state than this one).
             this.error.set(false);
             this.loading.set(false);
             return of(null);
