@@ -77,8 +77,8 @@ describe('GroupSeatHoldersDrawerComponent', () => {
   }
 
   // Normalized + exact, not a substring `.toContain` — the wording is singular/plural sensitive
-  // ("1 seat assignment" vs "1 seat assignments"), and a substring check on the singular form
-  // stays green even if the code always renders the plural.
+  // ("1 seat holder" vs "1 seat holders"), and a substring check on the singular form stays green
+  // even if the code always renders the plural.
   function subtitleText(): string {
     return (document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent ?? '').replace(/\s+/g, ' ').trim();
   }
@@ -188,20 +188,17 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeNull();
   });
 
-  // seatCount() (the row's org_seat_count, distinct PEOPLE, deduped by email server-side) and this
-  // list (one row per SEAT/role assignment) can genuinely disagree — a person holding two roles on
-  // the committee is one of the cases. The header must show the real, loaded count once settled,
-  // not the row's count — worded "seat assignments", not "seat holders", since that's the unit
-  // this branch actually counts (see the displayedCount comment and the template's error()/else
-  // split).
-  it('shows the loaded row count as "seat assignments" once settled, even when it differs from the row seatCount', async () => {
+  // seatCount() (the row's org_seat_count) and seatHolders().length (this list) are both
+  // best-effort counts and can genuinely disagree — see the displayedCount comment. The header
+  // must show the real, loaded count once settled, not the row's precomputed one.
+  it('shows the loaded row count once settled, even when it differs from the row seatCount', async () => {
     await setup(
       vi.fn().mockReturnValue(of(response([assignment({ seatId: 's-1', committeeUid: 'c-1' }), assignment({ seatId: 's-2', committeeUid: 'c-1' })])))
     );
 
     await open('org-1', 'c-1', 'Storage Working Group', 1);
 
-    expect(subtitleText()).toBe('2 seat assignments');
+    expect(subtitleText()).toBe('2 seat holders');
   });
 
   // The header shows a plain "Seat holders" placeholder while loading, not a borrowed seatCount()
@@ -223,9 +220,8 @@ describe('GroupSeatHoldersDrawerComponent', () => {
   // A failed fetch resolves seatHolders() to [] (see the outer catchError), not null — the
   // error() branch is the one place seatCount() IS shown post-load, since there's no real list at
   // all in that state for it to later disagree with (contrast: loading() shows a blank
-  // placeholder, because there the real list is still coming). "Seat holders" is the accurate
-  // noun here (unlike the loaded-list case above) because seatCount() genuinely counts people.
-  it('shows the row seatCount as "seat holders" on a failed fetch, not 0', async () => {
+  // placeholder, because there the real list is still coming).
+  it('shows the row seatCount in the header on a failed fetch, not 0', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await setup(vi.fn().mockReturnValue(throwError(() => new Error('boom'))));
 
@@ -235,7 +231,19 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(subtitleText()).toBe('7 seat holders');
   });
 
-  it('recovers cleanly on retry after a failure: error clears, real "seat assignments" count comes back', async () => {
+  // Exercises the singular form on the error branch specifically — the loaded branch's singular
+  // form is covered separately below, and the two branches read different signals
+  // (seatCount() vs seatHolders().length), so one covering the other's singular case isn't implied.
+  it('uses the singular "seat holder" on the error branch too, not just the loaded branch', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await setup(vi.fn().mockReturnValue(throwError(() => new Error('boom'))));
+
+    await open('org-1', 'c-1', 'Storage Working Group', 1);
+
+    expect(subtitleText()).toBe('1 seat holder');
+  });
+
+  it('recovers cleanly on retry after a failure: error clears, real count comes back', async () => {
     const impl = vi
       .fn()
       .mockReturnValueOnce(throwError(() => new Error('boom')))
@@ -254,7 +262,7 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     fixture.detectChanges();
 
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeNull();
-    expect(subtitleText()).toBe('1 seat assignment');
+    expect(subtitleText()).toBe('1 seat holder');
   });
 
   // Defensive coverage, not a currently-reachable path: org-groups.component.ts closes this
@@ -281,7 +289,7 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     await setup(impl);
 
     await open('org-1', 'c-1', 'Storage Working Group', 3);
-    expect(subtitleText()).toBe('3 seat assignments');
+    expect(subtitleText()).toBe('3 seat holders');
 
     fixture.componentRef.setInput('orgUid', 'org-2');
     await fixture.whenStable();

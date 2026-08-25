@@ -17,17 +17,8 @@
         <p class="text-sm text-gray-500 truncate" data-testid="group-seat-holders-drawer-subtitle">
           @if (displayedCount() === null) {
             Seat holders
-          } @else if (error()) {
-            <!-- error(): displayedCount() is seatCount() (org_seat_count) — genuinely distinct
-                 people, so "seat holders" is the accurate noun here. See the else branch for why
-                 the loaded case uses a different one. -->
-            {{ displayedCount() }} {{ displayedCount() === 1 ? 'seat holder' : 'seat holders' }}
           } @else {
-            <!-- Loaded: displayedCount() is seatHolders().length — one row per SEAT/role
-                 assignment, not one per person (see GroupSeatHoldersDrawerComponent.displayedCount)
-                 — so "seat assignments" is the accurate noun; "seat holders" would misdescribe a
-                 person holding two roles as two seat holders. -->
-            {{ displayedCount() }} {{ displayedCount() === 1 ? 'seat assignment' : 'seat assignments' }}
+            {{ displayedCount() }} {{ displayedCount() === 1 ? 'seat holder' : 'seat holders' }}
           }
         </p>
         <a

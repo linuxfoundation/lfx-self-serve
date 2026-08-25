@@ -41,18 +41,13 @@ export class GroupSeatHoldersDrawerComponent {
 
   private readonly seatHolders: Signal<CommitteeMemberAssignment[] | null> = this.initSeatHolders();
 
-  // seatCount() (the row's org_seat_count) and this drawer's list count genuinely DIFFERENT
-  // things: org_seat_count is distinct PEOPLE, deduped by email server-side (see
-  // apps/lfx-one/src/server/services/org-lens-groups.service.ts's seenEmails/org_seat_count —
-  // NOT the client-side org-lens-groups.service.ts under app/shared/services, which is a thin
-  // HTTP wrapper with no dedup logic), while seatHolders() is one row per SEAT/role assignment —
-  // a person holding two roles on this committee, or two blank-email seats, makes them disagree
-  // for real, not just "not loaded yet". The template branches its wording on which case this is,
-  // not just on the number, so the label always matches the actual unit: "N seat holders" only
-  // for the error-state seatCount() (genuinely distinct people), "N seat assignments" once loaded
-  // for real (this list, one row per role — "seat holders" would misdescribe a person who holds
-  // two roles as two seat holders), and a bare "Seat holders" placeholder while loading (no number
-  // at all, so there's nothing to mislabel).
+  // Number for the "N seat holders" header. Best-effort, not a strict person count in either
+  // branch: seatCount() (org_seat_count) collapses blank-email seats together server-side (see
+  // apps/lfx-one/src/server/services/org-lens-groups.service.ts's seenEmails), and
+  // seatHolders().length (one row per seat/role assignment) counts a person with two roles here
+  // as two. Shown null while loading — renders as a bare "Seat holders" placeholder rather than
+  // borrowing seatCount() as a stand-in that could visibly change once the real list arrives —
+  // and as seatCount() on error, since there's no real list at all in that state to fall back to.
   protected readonly displayedCount: Signal<number | null> = computed(() => {
     if (this.loading()) return null;
     if (this.error()) return this.seatCount();
