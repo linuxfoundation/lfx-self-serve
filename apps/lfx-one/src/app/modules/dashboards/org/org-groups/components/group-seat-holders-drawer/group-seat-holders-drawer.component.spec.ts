@@ -281,10 +281,10 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    // The spinner is the deterministic signal that the refetch actually started (loading() true)
-    // before checking the header text it gates — the header assertion alone previously proved
-    // vulnerable to running ahead of that write.
-    expect(document.querySelector('.fa-spinner-third')).toBeTruthy();
+    // The loading testid is the deterministic signal that the refetch actually started
+    // (loading() true) before checking the header text it gates — the header assertion alone
+    // previously proved vulnerable to running ahead of that write.
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-loading"]')).toBeTruthy();
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('9 seats');
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).not.toContain('3 seats');
   });
