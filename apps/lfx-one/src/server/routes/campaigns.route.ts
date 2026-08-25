@@ -4,15 +4,26 @@
 import { Router } from 'express';
 
 import { CampaignController } from '../controllers/campaign.controller';
+import { requireCampaignManager } from '../middleware/require-marketing-access.middleware';
 
 const router = Router();
 const campaignController = new CampaignController();
+
+// Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
+// no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
+// server flag is off — this is an intentional tightening of the prior (fully open) behavior, not
+// a preserved no-op: with the flag off, a previously-unauthenticated-relative-to-Campaigns caller
+// now gets a 403 unless they hold the ED persona. The "kill switch" restores the FGA-off baseline
+// (ED-only), not the pre-PR baseline (no auth at all) — reverting to the latter would reopen the
+// hole this route.use() closes.
+router.use(requireCampaignManager);
 
 router.post('/brief/generate', (req, res, next) => campaignController.generateBrief(req, res, next));
 router.post('/brief/refine', (req, res, next) => campaignController.refineBrief(req, res, next));
 router.post('/brief/persist', (req, res, next) => campaignController.persistBrief(req, res, next));
 router.get('/brief', (req, res, next) => campaignController.loadBrief(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
+router.get('/list', (req, res, next) => campaignController.listBriefCampaigns(req, res, next));
 router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(req, res, next));
 // The email channel's template picker. Registered before `/hubspot/utm` only for reading order —
 // the paths do not overlap.

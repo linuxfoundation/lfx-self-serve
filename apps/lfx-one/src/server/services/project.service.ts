@@ -142,6 +142,7 @@ import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, Resolved
 import {
   computeIsFoundation,
   getDefaultMarketingImpactMonth,
+  mapV1BandToV2,
   normalizeToUrl,
   nullifyEmptyStrings,
   resolvePeriodRange,
@@ -150,6 +151,7 @@ import {
 import { Request } from 'express';
 import FormData from 'form-data';
 
+import { QUERY_SERVICE_PAGE_SIZE } from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
@@ -165,13 +167,13 @@ import { SnowflakeService } from './snowflake.service';
 /** Valid LifecycleStage values used to guard the Snowflake LIFECYCLE_STAGE string. Hoisted to module scope so the Set isn't re-created on every row mapping. */
 const VALID_LIFECYCLE_STAGES: ReadonlySet<LifecycleStage> = new Set(Object.values(LifecycleStage));
 
-/** Valid (lowercased) health-score categories used to guard the Snowflake HEALTH_SCORE_CATEGORY string. Derived from the shared runtime list so the server and UI cannot drift. */
-const VALID_HEALTH_SCORE_CATEGORIES: ReadonlySet<FoundationHealthScore> = new Set(PROJECT_HEALTH_SCORE_CATEGORIES);
+/** Valid (lowercased) health-score categories used to guard the Snowflake HEALTH_SCORE_CATEGORY string. Derived from the shared runtime list, plus legacy v1 band names (IN-1219 may still emit these until the v2 dbt models are live), so the server and UI cannot drift. */
+const VALID_HEALTH_SCORE_CATEGORIES: ReadonlySet<string> = new Set([...PROJECT_HEALTH_SCORE_CATEGORIES, 'stable', 'unsteady']);
 
-/** Lowercase + validate the upstream HEALTH_SCORE_CATEGORY; null when absent or unrecognized. */
+/** Lowercase + validate the upstream HEALTH_SCORE_CATEGORY, mapping legacy v1 band names (stable/unsteady) to their v2 equivalents; null when absent or unrecognized. */
 function normalizeHealthScoreCategory(raw: string | null): FoundationHealthScore | null {
-  const category = raw?.toLowerCase() as FoundationHealthScore | undefined;
-  return category && VALID_HEALTH_SCORE_CATEGORIES.has(category) ? category : null;
+  const category = raw?.toLowerCase();
+  return category && VALID_HEALTH_SCORE_CATEGORIES.has(category) ? (mapV1BandToV2(category) as FoundationHealthScore) : null;
 }
 
 /** Upstream response shape for project folders (POST response) */
@@ -309,6 +311,9 @@ export class ProjectService {
     const params = {
       ...query,
       type: 'project',
+      // Overrides any caller-supplied page_size — the query service's 50-result default turns
+      // a large org's project list into a long sequential page scan (GH-1735).
+      page_size: QUERY_SERVICE_PAGE_SIZE,
     };
 
     const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
@@ -524,26 +529,7 @@ export class ProjectService {
       batches.push(idArray.slice(i, i + BATCH_SIZE));
     }
 
-    const batchResults = await Promise.all(
-      batches.map((batch) =>
-        fetchAllQueryResources<Project>(
-          req,
-          (pageToken) =>
-            this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-              type: 'project',
-              filters_or: batch.map((uid) => `uid:${uid}`),
-              ...(pageToken && { page_token: pageToken }),
-            }),
-          { failOnPartial: true }
-        ).catch((error) => {
-          logger.warning(req, 'get_projects_by_ids', 'Batched project fetch failed for batch, skipping', {
-            batch_size: batch.length,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return [] as Project[];
-        })
-      )
-    );
+    const batchResults = await Promise.all(batches.map((batch) => this.fetchProjectBatchByIds(req, batch)));
 
     // ROOT is an administrative pseudo-project — never surface it even if a caller accidentally passes its UID.
     const byUid = new Map<string, Project>();
@@ -1902,13 +1888,15 @@ export class ProjectService {
 
     // Fold any category outside the 5 scored values into `unscored` to mirror the detail
     // endpoint's normalizeHealthScoreCategory (→ null → Unscored), so chart and table agree.
+    // Accept both v1 and v2 band names; map v2 names (fair/concerning) to v1-keyed buckets.
     result.rows.forEach((row) => {
       const category = row.HEALTH_SCORE_CATEGORY.toLowerCase();
-      if (category === 'excellent') distribution.excellent = row.PROJECT_COUNT;
-      else if (category === 'healthy') distribution.healthy = row.PROJECT_COUNT;
-      else if (category === 'stable') distribution.stable = row.PROJECT_COUNT;
-      else if (category === 'unsteady') distribution.unsteady = row.PROJECT_COUNT;
-      else if (category === 'critical') distribution.critical = row.PROJECT_COUNT;
+      const normalizedCategory = mapV1BandToV2(category);
+      if (normalizedCategory === 'excellent') distribution.excellent += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'healthy') distribution.healthy += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'fair') distribution.stable += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'concerning') distribution.unsteady += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'critical') distribution.critical += row.PROJECT_COUNT;
       else distribution.unscored += row.PROJECT_COUNT;
     });
 
@@ -6820,7 +6808,7 @@ export class ProjectService {
         project_name: project?.name || (item as any).project_name || '',
         project_slug: project?.slug || (item as any).project_slug || '',
         // Leave is_foundation absent (not false) when the lookup fails — consumers like
-        // getMeetingEditCommands treat undefined as "tier unknown" and fall back safely,
+        // getEntityCommands treat undefined as "tier unknown" and fall back safely,
         // whereas a coerced false would mislabel a foundation-owned entity as project-owned.
         // Mirrors the meeting-detail enrichment's fail-soft contract.
         is_foundation: project ? computeIsFoundation(project) : ((item as any).is_foundation ?? undefined),
@@ -7442,6 +7430,46 @@ export class ProjectService {
   }
 
   /**
+   * Fetches one bounded UID batch and preserves the existing fail-soft behavior.
+   * Only fully successful paginated responses are checked for omitted UIDs.
+   */
+  private async fetchProjectBatchByIds(req: Request, batch: string[]): Promise<Project[]> {
+    try {
+      const projects = await fetchAllQueryResources<Project>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project',
+            filters_or: batch.map((uid) => `uid:${uid}`),
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      );
+      this.warnOnMissingProjectUids(req, batch, projects);
+      return projects;
+    } catch (error) {
+      logger.warning(req, 'get_projects_by_ids', 'Batched project fetch failed for batch, skipping', {
+        batch_size: batch.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Emits one bounded warning containing only requested UIDs absent from a successful batch response.
+   */
+  private warnOnMissingProjectUids(req: Request, requestedUids: string[], projects: Project[]): void {
+    const returnedUids = new Set(projects.map((project) => project?.uid).filter((uid): uid is string => !!uid));
+    const missingUids = requestedUids.filter((uid) => !returnedUids.has(uid));
+    if (missingUids.length === 0) return;
+
+    logger.warning(req, 'get_projects_by_ids', 'Project batch response omitted requested UIDs', {
+      missing_uids: missingUids,
+    });
+  }
+
+  /**
    * Enrich an event with paid-ad + email campaign detail. Neither PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
    * nor EMAIL_CAMPAIGN_PERFORMANCE carries an EVENT_ID, so both are matched to the event by name
    * (fuzzy substring on CAMPAIGN_NAME / MARKETING_EMAIL_NAME). Each side degrades to an empty array on
@@ -7744,11 +7772,12 @@ export class ProjectService {
         unscored: 0,
       };
       const category = row.HEALTH_SCORE_CATEGORY.toLowerCase();
-      if (category === 'excellent') existing.excellent = row.PROJECT_COUNT;
-      else if (category === 'healthy') existing.healthy = row.PROJECT_COUNT;
-      else if (category === 'stable') existing.stable = row.PROJECT_COUNT;
-      else if (category === 'unsteady') existing.unsteady = row.PROJECT_COUNT;
-      else if (category === 'critical') existing.critical = row.PROJECT_COUNT;
+      const normalizedCategory = mapV1BandToV2(category);
+      if (normalizedCategory === 'excellent') existing.excellent += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'healthy') existing.healthy += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'fair') existing.stable += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'concerning') existing.unsteady += row.PROJECT_COUNT;
+      else if (normalizedCategory === 'critical') existing.critical += row.PROJECT_COUNT;
       // Fold 'unscored' and any unexpected category into `unscored` to match the
       // detail endpoint's normalizeHealthScoreCategory (→ null → Unscored in the drawer).
       else existing.unscored += row.PROJECT_COUNT;

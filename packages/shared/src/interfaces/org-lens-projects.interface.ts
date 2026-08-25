@@ -5,7 +5,7 @@
 export type InfluenceBand = 'leading' | 'contributing' | 'participating' | 'silent' | 'non-lf';
 
 /** LFX Insights project health classification — the 5 bands of the Insights project Health Score component, plus `unavailable` when no score exists. */
-export type HealthScore = 'excellent' | 'healthy' | 'stable' | 'unsteady' | 'critical' | 'unavailable';
+export type HealthScore = 'excellent' | 'healthy' | 'fair' | 'concerning' | 'critical' | 'unavailable';
 
 /** Direction of a one-year influence trend, used for color-coding the sparkline + delta. */
 export type InfluenceTrendDirection = 'up' | 'down' | 'flat';
@@ -256,7 +256,8 @@ export interface OrgLensProjectRow {
   TREND_DIRECTION: string | null;
   COMBINED_SCORE_SERIES: unknown;
   DBT_RUN_AT: string | Date | null;
-  HEALTH_OVERALL_SCORE: number | null;
+  HEALTH_OVERALL_SCORE_V2: number | null;
+  HEALTH_SCORE_CATEGORY_V2: string | null;
   HEALTH_CONTRIBUTOR_PERCENTAGE: number | null;
   HEALTH_POPULARITY_PERCENTAGE: number | null;
   HEALTH_DEVELOPMENT_PERCENTAGE: number | null;

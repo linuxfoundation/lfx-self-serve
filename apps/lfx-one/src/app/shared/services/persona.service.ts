@@ -47,8 +47,30 @@ export class PersonaService {
   public readonly isRootWriter: WritableSignal<boolean> = signal<boolean>(false);
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona */
   public readonly isLFStaff: WritableSignal<boolean> = signal<boolean>(false);
+  /** Root- or project-scoped `marketing_auditor` FGA grant (project scope applies when the request carries `?project=`) (LFXV2-2235/LFXV2-2236). Always false while `ServerFeatureFlag.MarketingOpsFga` is off. */
+  public readonly isMarketingAuditor: WritableSignal<boolean> = signal<boolean>(false);
+  /** Root- or project-scoped `campaign_manager` FGA grant. Same flag caveat as {@link isMarketingAuditor}. */
+  public readonly isCampaignManager: WritableSignal<boolean> = signal<boolean>(false);
+  /**
+   * The project slug the most recent *project-scoped* {@link refreshEnrichedPersonas} call verified
+   * `isMarketingAuditor`/`isCampaignManager` against — `null` when the grant was confirmed root-scoped
+   * (no `projectSlug` argument) or not confirmed at all. Callers that need to know which specific
+   * foundation a marketing-only grant applies to (as opposed to `projectSelection`, which tracks
+   * unrelated general navigation state) should read this instead (LFXV2-2235 review findings on
+   * project-context.service.ts: neither a stale `projectSelection` nor a hardcoded TLF fallback
+   * reliably identifies the verified project).
+   */
+  public readonly marketingGrantSlug: WritableSignal<string | null> = signal<string | null>(null);
   /** True for EDs and LF Staff — the audience for Foundation Health, Marketing Overview, and Social Listening */
   public readonly canViewExecutiveDashboards: Signal<boolean>;
+  /**
+   * Monotonic counter guarding {@link refreshEnrichedPersonas} against out-of-order responses.
+   * Concurrent probes (route guard + sidebar-nav, or a rapid foundation switch) can resolve in a
+   * different order than they were issued — only the response from the most recently *issued*
+   * call is allowed to write the marketing grant signals, so a slow reply for a stale foundation
+   * can't overwrite the grant for the foundation currently on screen.
+   */
+  private latestGrantProbeId = 0;
 
   public constructor() {
     const stored = this.loadFromCookie();
@@ -91,17 +113,27 @@ export class PersonaService {
    * No-ops after the first successful fetch unless `force=true` — callers can trigger this on every
    * consumer init without causing redundant network traffic.
    */
-  public refreshEnrichedPersonas(force: boolean = false): Observable<PersonaApiResponse | null> {
-    if (this.enrichedPersonasLoaded() && !force) {
+  public refreshEnrichedPersonas(force: boolean = false, projectSlug?: string): Observable<PersonaApiResponse | null> {
+    // A project-scoped grant call must not be skipped by the "already loaded" cache — a prior
+    // fetch (root-scoped or for a different project) doesn't tell us about `projectSlug`.
+    if (this.enrichedPersonasLoaded() && !force && !projectSlug) {
       return of(null);
     }
-    return this.http.get<PersonaApiResponse>('/api/user/personas?enriched=true').pipe(
+    const probeId = ++this.latestGrantProbeId;
+    const url = projectSlug ? `/api/user/personas?enriched=true&project=${encodeURIComponent(projectSlug)}` : '/api/user/personas?enriched=true';
+    return this.http.get<PersonaApiResponse>(url).pipe(
       take(1),
       catchError(() => of(null)),
       tap((response) => {
-        this.applyPersonaResponse(response);
+        this.applyPersonaResponse(response, probeId);
         if (response && !response.error) {
           this.enrichedPersonasLoaded.set(true);
+          // Record which project this specific probe verified the grant against. A root-scoped
+          // call (no projectSlug) leaves this untouched — a ROOT grant isn't tied to one project.
+          // Guarded by probeId for the same reason as the grant signals themselves — see applyPersonaResponse.
+          if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager) && probeId === this.latestGrantProbeId) {
+            this.marketingGrantSlug.set(projectSlug);
+          }
         }
       })
     );
@@ -115,12 +147,15 @@ export class PersonaService {
         catchError(() => of(null))
       )
       .subscribe((response) => {
-        // If enriched resolved first, preserve its project metadata instead of clobbering with the sparse payload.
+        // If enriched resolved first, preserve its project metadata and FGA grants instead of
+        // clobbering them with the sparse bootstrap payload (which never carries these fields).
         if (this.enrichedPersonasLoaded() && response && !response.error) {
           this.applyPersonaResponse({
             ...response,
             projects: this.detectedProjects(),
             personaProjects: this.personaProjects(),
+            isMarketingAuditor: this.isMarketingAuditor(),
+            isCampaignManager: this.isCampaignManager(),
           });
           return;
         }
@@ -128,15 +163,15 @@ export class PersonaService {
       });
   }
 
-  private applyPersonaResponse(response: PersonaApiResponse | null): void {
+  private applyPersonaResponse(response: PersonaApiResponse | null, probeId?: number): void {
     if (!response || response.error) {
-      console.warn('[PersonaService] Persona API returned error or empty response, using fallback:', {
+      // Preserve last-known-good grants on a failed/errored refetch — a transient network or
+      // upstream failure must not silently revoke access that was already confirmed.
+      console.warn('[PersonaService] Persona API returned error or empty response, keeping last-known-good state:', {
         error: response?.error,
         currentPersona: this.currentPersona(),
         allPersonas: this.allPersonas(),
       });
-      this.isRootWriter.set(false);
-      this.isLFStaff.set(false);
       this.personaLoaded.set(true);
       return;
     }
@@ -146,6 +181,13 @@ export class PersonaService {
     this.detectedProjects.set(response.projects);
     this.isRootWriter.set(response.isRootWriter ?? false);
     this.isLFStaff.set(response.isLFStaff ?? false);
+    // Only apply grant fields from the most recently *issued* refreshEnrichedPersonas call — a
+    // slower response for a foundation the user has already navigated away from must not clobber
+    // the grant a newer, faster-resolving probe already wrote for the current foundation.
+    if (probeId === undefined || probeId === this.latestGrantProbeId) {
+      this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
+      this.isCampaignManager.set(response.isCampaignManager ?? false);
+    }
 
     if (response.personas.length > 0) {
       const current = this.currentPersona();

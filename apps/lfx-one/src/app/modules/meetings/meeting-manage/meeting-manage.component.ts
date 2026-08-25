@@ -25,7 +25,7 @@ import {
   TOTAL_STEPS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
-import { MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
+import { CancelOnCommitteeRemoval, MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
 import { EntityWithProject, ProjectContext } from '@lfx-one/shared/interfaces';
 import {
   BatchRegistrantOperationResponse,
@@ -49,10 +49,11 @@ import {
   formatTo12HourInTimezone,
   generateRecurrenceObject,
   getDefaultStartDateTime,
-  getMeetingEditCommands,
+  getEntityCommands,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
+  normalizeMeetingApiVotingStatuses,
   resolveMeetingOwner,
   sanitizeMeetingCommittees,
 } from '@lfx-one/shared/utils';
@@ -93,7 +94,7 @@ import { MeetingResourcesSummaryComponent } from '../components/meeting-resource
 import { MeetingTypeSelectionComponent } from '../components/meeting-type-selection/meeting-type-selection.component';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 import { applyEntityProjectContext, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
-import { hasMeetingWriteAccess, resolveMeetingWriteSlug } from '@shared/utils/write-access.util';
+import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '@shared/utils/write-access.util';
 
 @Component({
   selector: 'lfx-meeting-manage',
@@ -597,6 +598,10 @@ export class MeetingManageComponent {
       ai_summary_enabled: formValue.zoom_ai_enabled || false,
       require_ai_summary_approval: formValue.zoom_ai_enabled ? formValue.require_ai_summary_approval || false : false,
       artifact_visibility: formValue.recording_enabled || formValue.zoom_ai_enabled ? formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY : null,
+      cancel_on_committee_removal:
+        formValue.visibility === MeetingVisibility.PUBLIC && formValue.committees?.length
+          ? formValue.cancel_on_committee_removal || CancelOnCommitteeRemoval.INHERIT
+          : CancelOnCommitteeRemoval.INHERIT,
       auto_email_reminder_enabled: formValue.auto_email_reminder_enabled || false,
       // Total whole minutes before start, clamped to the upstream 120-1440 range. Omitted when disabled:
       // ITX resets the stored time to 0 whenever enabled is explicitly false, so no time value is needed.
@@ -611,7 +616,12 @@ export class MeetingManageComponent {
         : undefined,
       recurrence: recurrenceObject,
       platform: formValue.platform || DEFAULT_MEETING_TOOL,
-      committees: sanitizeMeetingCommittees(formValue.committees),
+      // Canonicalize stored voting statuses at the save boundary: the form hydrates committees
+      // verbatim, so a legacy row would otherwise resubmit display values ('Voting Rep') on an unrelated edit (GH-1796).
+      committees: sanitizeMeetingCommittees(formValue.committees).map((committee) => ({
+        ...committee,
+        allowed_voting_statuses: normalizeMeetingApiVotingStatuses(committee.allowed_voting_statuses),
+      })),
       ...this.prepareOwnerData(formValue),
     };
   }
@@ -738,10 +748,7 @@ export class MeetingManageComponent {
         }
         // Canonicalize on the created meeting's project tier — the create flow already resolved it
         // (projectQueryParamGuard effectiveKind → isFoundationContext), so no extra fetch is needed.
-        const editCommands = getMeetingEditCommands({
-          id: meetingId,
-          is_foundation: this.projectContextService.isFoundationContext(),
-        });
+        const editCommands = getEntityCommands('meetings', meetingId, this.projectContextService.isFoundationContext(), 'edit');
         this.router.navigate(editCommands ?? ['/meetings', meetingId, 'edit'], { queryParams: editQueryParams });
       } else {
         // Fallback to meetings list if no meeting ID
@@ -883,7 +890,7 @@ export class MeetingManageComponent {
             }
             // Mirror writerGuard's resolution order; the active-context fallback covers a meeting
             // carrying neither slug nor uid (the manage component owns that error path).
-            return resolveMeetingWriteSlug(meeting, this.projectContextService.activeContext()?.slug ?? null);
+            return resolveEntityWriteSlug(meeting, this.projectContextService.activeContext()?.slug ?? null);
           })
         )
       : toObservable(this.projectContextService.activeContext).pipe(map((ctx) => ctx?.slug ?? null));
@@ -1138,6 +1145,7 @@ export class MeetingManageComponent {
       zoom_ai_enabled: meeting.ai_summary_enabled || false,
       require_ai_summary_approval: meeting.require_ai_summary_approval ?? false,
       artifact_visibility: meeting.artifact_visibility ?? DEFAULT_ARTIFACT_VISIBILITY,
+      cancel_on_committee_removal: meeting.cancel_on_committee_removal ?? CancelOnCommitteeRemoval.INHERIT,
       auto_email_reminder_enabled: meeting.auto_email_reminder_enabled ?? false,
       reminderHours: reminderHours,
       reminderMinutes: reminderTotalMinutes % 60,
@@ -1327,6 +1335,7 @@ export class MeetingManageComponent {
         zoom_ai_enabled: new FormControl(false),
         require_ai_summary_approval: new FormControl(false),
         artifact_visibility: new FormControl(DEFAULT_ARTIFACT_VISIBILITY),
+        cancel_on_committee_removal: new FormControl(CancelOnCommitteeRemoval.INHERIT),
         auto_email_reminder_enabled: new FormControl(false),
         reminderHours: new FormControl({ value: DEFAULT_EMAIL_REMINDER_HOURS, disabled: true }, [
           Validators.required,

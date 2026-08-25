@@ -16,8 +16,8 @@
  *   S4  Foundation lens — board-member without canWrite hides Newsletters
  *   S5  Project lens — contributor without canWrite hides Newsletters
  *   S6  Project lens — contributor with canWrite sees Newsletters
- *   S7  Route guard — executiveDirectorGuard redirects non-ED to /foundation/overview
- *   S8  Route guard — executiveDirectorGuard passes for ED persona
+ *   S7  Route guard — dashboardAccessGuard/marketingImpactAccessGuard/campaignAccessGuard redirect non-ED to /foundation/overview
+ *   S8  Route guard — dashboardAccessGuard/marketingImpactAccessGuard/campaignAccessGuard pass for ED persona
  *   S9  Route guard — writerGuard redirects contributor without write access
  *   S10 Route guard — writerGuard passes for ED via synchronous fast path
  *   S11 Settings page — view-only banner shown to non-writer
@@ -441,7 +441,7 @@ test.describe('S5b: Project lens — standard items visible to all project users
 
 // ─── S7–S10: Route guards ──────────────────────────────────────────────────────
 
-test.describe('S7: Route guard — executiveDirectorGuard redirects non-ED', () => {
+test.describe('S7: Route guard — non-ED redirected from ED-only routes', () => {
   test('board-member navigating to /foundation/health-metrics is redirected to /foundation/overview', async ({ page }) => {
     await stubPersona(page, ['board-member']);
     await stubNavLensItems(page, 'foundation');
@@ -454,7 +454,7 @@ test.describe('S7: Route guard — executiveDirectorGuard redirects non-ED', () 
     await page.goto(`/foundation/health-metrics?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
-    // executiveDirectorGuard redirects to /foundation/overview
+    // dashboardAccessGuard redirects to /foundation/overview
     await expect(page, 'persona=board-member should be redirected away from /foundation/health-metrics').toHaveURL(/\/foundation\/overview/, {
       timeout: ELEMENT_TIMEOUT,
     });
@@ -495,7 +495,7 @@ test.describe('S7: Route guard — executiveDirectorGuard redirects non-ED', () 
   });
 });
 
-test.describe('S8: Route guard — executiveDirectorGuard passes for ED persona', () => {
+test.describe('S8: Route guard — ED persona passes on ED-only routes', () => {
   test('ED navigating to /foundation/health-metrics is NOT redirected', async ({ page }) => {
     await stubPersona(page, ['executive-director']);
     await stubNavLensItems(page, 'foundation');

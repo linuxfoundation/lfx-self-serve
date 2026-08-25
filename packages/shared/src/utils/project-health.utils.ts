@@ -1,12 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FoundationHealthScoreDistributionResponse } from '../interfaces';
-
-export type HealthScoreDistribution = Pick<FoundationHealthScoreDistributionResponse, 'excellent' | 'healthy' | 'stable' | 'unsteady' | 'critical'>;
+export type HealthScoreDistribution = Record<'excellent' | 'healthy' | 'fair' | 'concerning' | 'critical', number>;
 
 export function computeScoredCount(d: HealthScoreDistribution): number {
-  return d.excellent + d.healthy + d.stable + d.unsteady + d.critical;
+  return d.excellent + d.healthy + d.fair + d.concerning + d.critical;
 }
 
 export function computeHealthyOrBetterCount(d: Pick<HealthScoreDistribution, 'excellent' | 'healthy'>): number {

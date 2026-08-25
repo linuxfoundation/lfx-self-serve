@@ -15,6 +15,7 @@ import { MY_CLAS_M2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import type {
   ClaGroupOption,
   ClaGroupSearchResponse,
+  ClaManagerList,
   GithubAccountOptions,
   MyClaAgreement,
   MyClasResponse,
@@ -28,7 +29,7 @@ import { MyClasService } from '@services/my-clas.service';
 import { UserService } from '@services/user.service';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { Observable, of, Subject, throwError } from 'rxjs';
+import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ClaGroupSelectComponent } from './cla-group-select.component';
@@ -47,12 +48,16 @@ describe('ProfileClasComponent', () => {
   });
 
   let fixture: ComponentFixture<ProfileClasComponent>;
+  /** The list's own manager flags come from the row, so this stays uncalled unless the dialog opens. */
+  let getClaManagersSpy: ReturnType<typeof vi.fn>;
 
   async function render(agreements: MyClaAgreement[], options: { m2Enabled?: boolean } = {}): Promise<void> {
     const response: MyClasResponse = {
       agreements,
       identity: { matchedUserIds: agreements.length > 0 ? 1 : 0, unmatched: agreements.length === 0, githubLinked: true },
     };
+    const getClaManagers = vi.fn((id: string) => of<ClaManagerList>({ signatureId: id, managers: [], resultCount: 0 }));
+    getClaManagersSpy = getClaManagers;
 
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
@@ -60,7 +65,7 @@ describe('ProfileClasComponent', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: MyClasService, useValue: { getMyClas: () => of(response), getPdfUrl: vi.fn() } },
+        { provide: MyClasService, useValue: { getMyClas: () => of(response), getPdfUrl: vi.fn(), getClaManagers } },
         // Stubbed rather than real: the Sign CLA action reads impersonating(), and the real
         // service would drag HttpClient into a TestBed that has no reason to make requests.
         { provide: UserService, useValue: { impersonating: signal(false) } },
@@ -240,12 +245,81 @@ describe('ProfileClasComponent', () => {
     expect(menuItems('s-attn').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request approval', 'Request Removal', 'Contact CLA Manager']);
   });
 
+  it('offers Manage in CCLA Console last on a manager-flagged row', async () => {
+    await render([
+      agreement({
+        id: 's-ecla',
+        kind: 'ECLA',
+        pdfAvailable: false,
+        companyName: 'Acme',
+        claGroupId: 'g-anuket-005',
+        claManager: true,
+        foundationSfid: 'a09P000000DsCE5IAN',
+      }),
+    ]);
+
+    const items = menuItems('s-ecla');
+    expect(items.map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Manage in CCLA Console']);
+
+    // PrimeNG's menu renders no `rel`, so the item opens through `command` to keep noopener/noreferrer.
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    items.at(-1)?.command?.({} as never);
+    expect(open).toHaveBeenCalledWith('https://lfx.dev.platform.linuxfoundation.org/foundation/a09P000000DsCE5IAN/cla', '_blank', 'noopener,noreferrer');
+    open.mockRestore();
+  });
+
+  it('hides Manage in CCLA Console on ICLA, on a missing CLA group id, and when the row is not manager-flagged', async () => {
+    await render([agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true, claGroupId: 'g-anuket-005', claManager: true })]);
+    expect(menuItems('s-icla').map((item) => item.label)).toEqual(['Download PDF']);
+
+    await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claManager: true })]);
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
+
+    await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005', claManager: false })]);
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
+  });
+
+  it('reads manager status off the row rather than spending a managers GET per ECLA', async () => {
+    await render([
+      agreement({ id: 's-1', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-1', claManager: true, foundationSfid: 'found-1' }),
+      agreement({ id: 's-2', kind: 'ECLA', pdfAvailable: false, companyName: 'Globex', claGroupId: 'g-2', claManager: true, foundationSfid: 'found-2' }),
+    ]);
+
+    // Both items are on the first paint — nothing is awaited, so no row can lag another.
+    expect(menuItems('s-1').map((item) => item.label)).toContain('Manage in CCLA Console');
+    expect(menuItems('s-2').map((item) => item.label)).toContain('Manage in CCLA Console');
+    expect(getClaManagersSpy).not.toHaveBeenCalled();
+  });
+
   it('keeps a stable menu model across change detection so the popup can open on the first click', async () => {
     await render([agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true })]);
 
     const first = menuItems('s-icla');
     fixture.detectChanges();
     expect(menuItems('s-icla')).toBe(first);
+  });
+
+  it('closes other row menus when opening a kebab', async () => {
+    await render([
+      agreement({ id: 's-a', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' }),
+      agreement({ id: 's-b', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' }),
+    ]);
+
+    const menuA = rowMenu('s-a');
+    const menuB = rowMenu('s-b');
+    if (!menuA || !menuB) {
+      throw new Error('expected both row menus');
+    }
+
+    const hideA = vi.spyOn(menuA, 'hide');
+    const hideB = vi.spyOn(menuB, 'hide');
+    const component = fixture.componentInstance as unknown as {
+      toggleRowMenu: (event: Event, menu: MenuComponent) => void;
+    };
+    component.toggleRowMenu(new MouseEvent('click'), menuB);
+
+    expect(hideA).toHaveBeenCalled();
+    expect(hideB).not.toHaveBeenCalled();
   });
 
   it('does not render a placeholder Invalidate item', async () => {
@@ -439,6 +513,8 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
       prepare?: () => Observable<PrepareSignResponse>;
       closesWith?: ClaGroupOption | null;
       accountClosesWith?: string | null;
+      dismissGroup?: 'close' | 'destroy' | 'hold';
+      dismissAccount?: 'close' | 'destroy' | 'hold';
     } = {}
   ): Promise<ComponentFixture<ProfileClasComponent>> {
     location = { href: HOME };
@@ -453,9 +529,9 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     open = vi.fn((component: unknown) => {
       opened.push(component);
       if (component === GithubAccountSelectComponent) {
-        return { onClose: of('accountClosesWith' in options ? options.accountClosesWith : '12345') };
+        return dialogEvents('accountClosesWith' in options ? options.accountClosesWith : '12345', options.dismissAccount ?? 'close');
       }
-      return { onClose: of('closesWith' in options ? options.closesWith : CLA_GROUP) };
+      return dialogEvents('closesWith' in options ? options.closesWith : CLA_GROUP, options.dismissGroup ?? 'close');
     });
 
     TestBed.configureTestingModule({
@@ -495,6 +571,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
             getGithubAccounts,
             prepareSign,
             buildSignUrlFor,
+            getClaManagers: vi.fn((id: string) => of({ signatureId: id, managers: [], resultCount: 0 })),
           },
         },
       ],
@@ -523,6 +600,20 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
   /** Rejects the prepare the way the BFF surfaces an upstream refusal: a status and a message. */
   function refusedWith(status: number, message: string): () => Observable<PrepareSignResponse> {
     return () => throwError(() => ({ status, error: { error: message, code: status === 403 ? 'FORBIDDEN' : 'UPSTREAM_ERROR' } }));
+  }
+
+  function dialogEvents(closeValue: unknown, dismiss: 'close' | 'destroy' | 'hold'): { onClose: Observable<unknown>; onDestroy: Observable<unknown> } {
+    if (dismiss === 'hold') {
+      return { onClose: EMPTY, onDestroy: EMPTY };
+    }
+    if (dismiss === 'destroy') {
+      return { onClose: EMPTY, onDestroy: of(undefined) };
+    }
+    return { onClose: of(closeValue), onDestroy: of(undefined) };
+  }
+
+  function isStarting(fixture: ComponentFixture<ProfileClasComponent>): boolean {
+    return (fixture.componentInstance as any).starting();
   }
 
   beforeEach(() => {
@@ -571,6 +662,34 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     expect(getGithubAccounts).not.toHaveBeenCalled();
     expect(prepareSign).not.toHaveBeenCalled();
     expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('releases Sign CLA when the project picker is destroyed without onClose (header X)', async () => {
+    const fixture = await setup({ dismissGroup: 'destroy' });
+
+    await sign(fixture);
+    await Promise.resolve();
+
+    expect(getGithubAccounts).not.toHaveBeenCalled();
+    expect(prepareSign).not.toHaveBeenCalled();
+    expect(isStarting(fixture)).toBe(false);
+
+    await sign(fixture);
+    await Promise.resolve();
+    expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(2);
+  });
+
+  it('does not spin Sign CLA while the project picker is still open', async () => {
+    const fixture = await setup({ dismissGroup: 'hold' });
+
+    await sign(fixture);
+
+    expect(isStarting(fixture)).toBe(false);
+    expect(getGithubAccounts).not.toHaveBeenCalled();
+
+    await sign(fixture);
+    expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(1);
   });
 
   // --- Cardinality (FR-002) -------------------------------------------------
@@ -648,6 +767,35 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
 
     expect(prepareSign).not.toHaveBeenCalled();
     expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('releases Sign CLA when the account picker is destroyed without onClose (header X)', async () => {
+    const fixture = await setup({ dismissAccount: 'destroy' });
+
+    await sign(fixture);
+    await Promise.resolve();
+
+    expect(prepareSign).not.toHaveBeenCalled();
+    expect(isStarting(fixture)).toBe(false);
+    expect(location.href).toBe(HOME);
+
+    await sign(fixture);
+    await Promise.resolve();
+    expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(2);
+  });
+
+  it('does not spin Sign CLA while the account picker is still open', async () => {
+    const fixture = await setup({ dismissAccount: 'hold' });
+
+    await sign(fixture);
+
+    expect(opened).toContain(GithubAccountSelectComponent);
+    expect(isStarting(fixture)).toBe(false);
+    expect(prepareSign).not.toHaveBeenCalled();
+
+    await sign(fixture);
+    expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(1);
   });
 
   // --- Where the hand-off address comes from (FR-004, FR-006) ---------------

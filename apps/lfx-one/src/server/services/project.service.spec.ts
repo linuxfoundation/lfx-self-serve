@@ -9,11 +9,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // vitest config, so every runtime (non-type-only) import needs a stub. `ProjectService`'s
 // constructor also builds `NatsService`/`SnowflakeService`/`ETagService`; the Snowflake-backed
 // suites below use only the `execute` mock, while the others stay trivial.
-const { proxyRequest, addAccessToResources, checkAccess, execute } = vi.hoisted(() => ({
+const { proxyRequest, addAccessToResources, checkAccess, execute, warning } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
   checkAccess: vi.fn(),
   execute: vi.fn(),
+  warning: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
@@ -81,7 +82,7 @@ vi.mock('./nats.service', () => ({ NatsService: class {} }));
 vi.mock('./etag.service', () => ({ ETagService: class {} }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
 vi.mock('./logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning, debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
 
 import type { Request } from 'express';
@@ -209,6 +210,39 @@ describe('ProjectService — create picker methods', () => {
       proxyRequest.mockRejectedValueOnce(new Error('upstream unavailable'));
 
       await expect(service.getWriterSummary(req)).rejects.toThrow('upstream unavailable');
+    });
+  });
+
+  describe('getProjects', () => {
+    it('requests QUERY_SERVICE_PAGE_SIZE, overriding any caller-supplied page_size', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }]));
+      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+
+      await service.getProjects(req, { page_size: 10 });
+
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', page_size: 500 });
+    });
+
+    it('follows page_token across pages and returns the accumulated projects', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next-token'));
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'b', slug: 'b' }]));
+      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+
+      const result = await service.getProjects(req);
+
+      expect(result.map((p) => p.uid).sort()).toEqual(['a', 'b']);
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ page_token: 'next-token' });
+    });
+
+    it('excludes the ROOT pseudo-project before the access check', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root', slug: 'root' }]));
+      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+
+      const result = await service.getProjects(req);
+
+      expect(result).toEqual([]);
+      expect(addAccessToResources).toHaveBeenCalledWith(req, [], 'project');
     });
   });
 
@@ -1038,5 +1072,54 @@ describe('ProjectService — a failed OPTIONAL email breakdown is flagged, not s
     const result = await service.getEmailCtr('tlf', undefined, EMAIL_CTR_PERIOD);
 
     expect(result.breakdownUnavailable).toBe(true);
+  });
+});
+
+describe('ProjectService — getProjectsByIds', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    warning.mockReset();
+    service = new ProjectService();
+  });
+
+  it('warns once with only UIDs omitted from a successful batch', async () => {
+    proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'resolved', slug: 'resolved' }]));
+
+    const result = await service.getProjectsByIds(req, ['resolved', 'missing']);
+
+    expect([...result.keys()]).toEqual(['resolved']);
+    expect(warning).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledWith(req, 'get_projects_by_ids', 'Project batch response omitted requested UIDs', {
+      missing_uids: ['missing'],
+    });
+  });
+
+  it('does not warn when every requested UID resolves', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      pageOf([
+        { uid: 'one', slug: 'one' },
+        { uid: 'two', slug: 'two' },
+      ])
+    );
+
+    const result = await service.getProjectsByIds(req, ['one', 'two']);
+
+    expect([...result.keys()]).toEqual(['one', 'two']);
+    expect(warning).not.toHaveBeenCalled();
+  });
+
+  it('preserves the failed-batch warning and empty-map fallback', async () => {
+    proxyRequest.mockRejectedValueOnce(new Error('query failed'));
+
+    const result = await service.getProjectsByIds(req, ['one', 'two']);
+
+    expect(result.size).toBe(0);
+    expect(warning).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledWith(req, 'get_projects_by_ids', 'Batched project fetch failed for batch, skipping', {
+      batch_size: 2,
+      error: 'query failed',
+    });
   });
 });

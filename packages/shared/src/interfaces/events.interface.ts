@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MY_EVENT_STATUS } from '../constants/events.constants';
+import type { MY_EVENT_STATUS } from '../constants/events.constants';
 
-import { OffsetPaginatedResponse } from './api.interface';
+import type { OffsetPaginatedResponse } from './api.interface';
 
 /**
  * The set of valid status filter values for foundation events.
@@ -78,6 +78,11 @@ export interface MyEventRow {
   /** Null when the user has not registered for this event */
   NET_REVENUE: number | null;
   IS_PAST_EVENT: boolean;
+  /**
+   * Origin of the event record (e.g. 'backfill' for CSV-imported historical attendance).
+   * Null when the upstream row carries no source. See EVENT_SOURCE_BACKFILL.
+   */
+  EVENT_SOURCE: string | null;
   EVENT_URL: string | null;
   EVENT_REGISTRATION_URL: string | null;
   /** Null when the user has not registered for this event */

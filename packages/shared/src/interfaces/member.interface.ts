@@ -132,6 +132,21 @@ export interface CreateCommitteeMemberOptions {
 }
 
 /**
+ * Voting-status option for the member form select
+ * @description Legacy values excluded from MEMBER_FORM_VOTING_STATUSES (e.g. None) are
+ * appended as disabled display-only options during edit so the select renders the
+ * member's current status instead of an empty placeholder
+ */
+export interface MemberFormVotingStatusOption {
+  /** Display label */
+  label: string;
+  /** Voting status value */
+  value: CommitteeMemberVotingStatus;
+  /** Display-only: rendered for legacy values but not selectable */
+  disabled?: boolean;
+}
+
+/**
  * Raw form values from the member form dialog
  * @description Typed shape of the FormGroup.getRawValue() output in MemberFormComponent
  */

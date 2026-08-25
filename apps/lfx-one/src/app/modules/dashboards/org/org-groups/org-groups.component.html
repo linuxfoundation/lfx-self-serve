@@ -85,6 +85,45 @@
             ariaLabel="Filter by type"
             dataTest="org-groups-type-filter" />
         </div>
+        <!-- pTooltip lives on this wrapper, not the button: a disabled element is removed from the
+             tab order, so a keyboard user could never focus the button to see a tooltip bound to
+             it directly. tabindex + role="note" + aria-label (only while the tooltip has content)
+             give screen-reader users the same explanation a mouse hover gets — mirrors the
+             public-group badge in modules/committees/components/my-groups-card-grid/
+             my-groups-card-grid.component.html (same tabindex="0" + role="note" + aria-label
+             triplet, on a non-focusable host). A sighted keyboard-only user (no screen reader)
+             still gets no visual explanation: deliberately NOT tooltipEvent="both" — PrimeNG
+             resolves its focus target via `querySelector('.p-component')` inside this host, which
+             finds the inner (disabled, unfocusable) <p-button> root rather than this wrapper (the
+             element tabindex="0" actually puts in the tab order), so that listener would never
+             fire. -->
+        <div
+          class="flex items-center gap-2"
+          [pTooltip]="hasNoRowsToExport() ? noRowsToExportLabel : undefined"
+          tooltipPosition="top"
+          [attr.role]="hasNoRowsToExport() ? 'note' : null"
+          [attr.tabindex]="hasNoRowsToExport() ? '0' : null"
+          [attr.aria-label]="hasNoRowsToExport() ? noRowsToExportLabel : null"
+          data-testid="org-groups-export-csv-wrapper">
+          <lfx-button
+            label="Export to CSV"
+            icon="fa-light fa-file-arrow-down"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            [disabled]="hasNoRowsToExport()"
+            (onClick)="exportCsv()"
+            data-testid="org-groups-export-csv" />
+        </div>
+        <!-- Always-visible fallback for the tooltip: closes the gap for a sighted keyboard-only
+             user (no screen reader), who would otherwise get no explanation at all — see the
+             comment above for why the tooltip itself can't be made to show on keyboard focus.
+             aria-hidden because the wrapper's aria-label already carries this to screen readers;
+             without it, a screen reader landing on the wrapper's role="note" region could read the
+             explanation twice. -->
+        @if (hasNoRowsToExport()) {
+          <span class="text-xs text-gray-500" aria-hidden="true" data-testid="org-groups-export-csv-hint">{{ noRowsToExportLabel }}</span>
+        }
       </div>
     }
 
