@@ -893,6 +893,15 @@ export class OptimizationTabComponent implements OnInit {
     // Clear the previous foundation's optimization data too — otherwise it stays on screen,
     // attributed to the new foundation, until the new fetch resolves (mirrors
     // `monitoring-tab.component.ts`'s `loadForActiveFoundation`).
+    //
+    // Also cancel any in-flight per-platform monitor fetch for the OLD foundation — clearing the
+    // signal above isn't enough on its own. If the new foundation has no accounts for a platform,
+    // `fetchLinkedInOptimization`/etc never runs again to replace the subscription, so a late
+    // response from the old foundation's request would otherwise land after the clear and put
+    // that foundation's data back on screen under the new one.
+    this.linkedInSub?.unsubscribe();
+    this.redditSub?.unsubscribe();
+    this.metaSub?.unsubscribe();
     this.linkedInData.set(null);
     this.redditData.set(null);
     this.metaData.set(null);

@@ -423,6 +423,15 @@ export class MonitoringTabComponent implements OnInit {
     this.selectedLinkedInAccountKey.set('');
     this.selectedRedditAccountKey.set('');
     this.selectedMetaAccountKey.set('');
+
+    // Also cancel any in-flight per-platform monitor fetch for the OLD foundation — clearing the
+    // signal below isn't enough on its own. If the new foundation has no accounts for a platform,
+    // `fetchLinkedInData`/etc never runs again to replace the subscription, so a late response
+    // from the old foundation's request would otherwise land after the clear and put that
+    // foundation's data back on screen under the new one.
+    this.linkedInSub?.unsubscribe();
+    this.redditSub?.unsubscribe();
+    this.metaSub?.unsubscribe();
     this.linkedInData.set(null);
     this.redditData.set(null);
     this.metaData.set(null);
