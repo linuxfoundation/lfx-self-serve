@@ -1511,7 +1511,10 @@ export class CampaignController {
    * naming the range (`microsoftCpcBidValid`), so an operator using the form is told; this arm
    * protects the endpoint from a caller that is not the form.
    * A blank `timeZone` is the same non-answer as an absent one: the client substitutes its
-   * default, so the key is dropped rather than sent empty.
+   * default, so the key is dropped rather than sent empty. Type-checked with `typeof` rather than
+   * optional chaining, which guards a NULLISH receiver but not a wrong-TYPED one — `timeZone: 123`
+   * from a direct caller would reach `.trim()` and answer a malformed body with a 500 instead of
+   * the controlled refusal, exactly as the keyword and geo fields above already prevent.
    */
   private buildMicrosoftConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
     if (!body?.microsoftConfig) return null;
@@ -1582,7 +1585,7 @@ export class CampaignController {
       keywords: cleanKeywords.map((k) => ({ text: k.text.trim(), matchType: k.matchType })),
       geoTargets: cleanGeoTargets,
       ...(Number.isFinite(cpcBid) && (cpcBid as number) >= MICROSOFT_MIN_CPC_BID && (cpcBid as number) <= MICROSOFT_MAX_CPC_BID ? { cpcBid } : {}),
-      ...(timeZone?.trim() ? { timeZone: timeZone.trim() } : {}),
+      ...(typeof timeZone === 'string' && timeZone.trim() ? { timeZone: timeZone.trim() } : {}),
     };
   }
 

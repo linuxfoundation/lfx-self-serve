@@ -915,6 +915,20 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(envelopeFor(createCampaigns)).not.toHaveProperty('microsoftConfig');
   });
 
+  /**
+   * Optional chaining guards a NULLISH receiver, not a wrong-TYPED one — `(123)?.trim()` still
+   * throws. A direct caller sending `timeZone: 123` therefore answered with a 500 rather than the
+   * controlled path. The rest of the config is valid, so this asserts the create still SUCCEEDS
+   * with the key simply omitted: a bad optional field must not sink an otherwise good campaign.
+   */
+  it('omits a wrong-typed timeZone instead of throwing', async () => {
+    await createWithMicrosoft({ timeZone: 123 });
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('timeZone');
+    expect(sent['budget']).toBe(300);
+  });
+
   it('uppercases geo codes so a lowercase entry still dispatches', async () => {
     await createWithMicrosoft({ geoTargets: ['us', ' jp '] });
 

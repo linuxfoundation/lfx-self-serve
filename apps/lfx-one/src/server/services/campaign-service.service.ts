@@ -171,12 +171,16 @@ export function isCampaignServiceJobId(jobId: string): boolean {
  * An unmapped platform is REFUSED, not waved through.
  *
  * The first version returned true for anything unmapped, reasoning that this should not police the
- * platform list. That was wrong for the same reason the LinkedIn-strategy guard was: `twitter-ads`
- * and `microsoft-ads` are `disabled: true` in `CAMPAIGN_PLATFORMS`, but that is a CLIENT guarantee,
- * and the upstream `CampaignCreateInput` accepts all three of twitter/microsoft/hubspot. This
- * service builds no `twitterConfig` or `microsoftConfig`, so waving those through queued a job
- * whose dispatcher reads an absent key as a zero value — exactly the defect the mapped platforms
- * are protected from.
+ * platform list. That was wrong for the same reason the LinkedIn-strategy guard was: a platform can
+ * be `disabled: true` in `CAMPAIGN_PLATFORMS`, but that is a CLIENT guarantee, and the upstream
+ * `CampaignCreateInput` accepts twitter/microsoft/hubspot regardless. Waving an unmapped platform
+ * through queued a job whose dispatcher reads an absent key as a zero value — exactly the defect
+ * the mapped platforms are protected from.
+ *
+ * `twitter-ads` is the remaining example: nothing builds a `twitterConfig`, so it is refused here.
+ * `microsoft-ads` was one too until LFXV2-3312 added `buildMicrosoftConfig` and mapped it below —
+ * which is the order this guard enforces, and why the roster is stated as a rule rather than a
+ * list that goes stale the next time a platform is enabled.
  *
  * `hubspot` joined the map when `buildHubSpotConfig` landed (LFXV2-3256), which is the order this
  * guard is designed to enforce: map a platform only once something builds its config. Note that a
