@@ -39,12 +39,10 @@ vi.mock('@lfx-one/shared/constants', () => ({
   // actual numeric thresholds — not the arbitrary values a bare stub would produce.
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH: 3,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES: 40,
-  // Real value (8, matching foundation-projects.constants.ts): discoverSubFoundations uses this
-  // to size its sibling worker pool via Math.min(), so it must be a real positive number.
-  FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY: 8,
-  // Real value (8, matching foundation-projects.constants.ts): getFoundationProjectsDetailGrouped
-  // uses this to size its worker pool via Math.min(), so it must be a real positive number.
+  // Real values (8, matching foundation-projects.constants.ts): the detail-fetch and sibling-traversal
+  // worker pools both size via Math.min() against these, so they must be real positive numbers.
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY: 8,
+  FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY: 8,
 }));
 vi.mock('@lfx-one/shared/enums', () => ({
   // Real enum, not a stub: discoverSubFoundations compares `child.stage !== ProjectStage.Active` at
