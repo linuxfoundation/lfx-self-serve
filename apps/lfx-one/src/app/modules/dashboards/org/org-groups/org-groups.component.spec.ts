@@ -155,10 +155,11 @@ function seatHoldersDrawerState(fixture: ComponentFixture<OrgGroupsComponent>): 
 }
 
 /** Row seat-count testid doubles as the drawer trigger — see org-groups.component.html. */
-function clickSeatHoldersTrigger(fixture: ComponentFixture<OrgGroupsComponent>, uid: string): void {
+async function clickSeatHoldersTrigger(fixture: ComponentFixture<OrgGroupsComponent>, uid: string): Promise<void> {
   const el = fixture.nativeElement.querySelector(`[data-testid="org-groups-item-seats-${uid}"]`) as HTMLButtonElement | null;
   if (!el) throw new Error(`no seat-holders trigger rendered for ${uid}`);
   el.click();
+  await fixture.whenStable();
   fixture.detectChanges();
 }
 
@@ -480,7 +481,7 @@ describe('OrgGroupsComponent', () => {
   it('closes the seat-holders drawer and clears the selected group when the selected org switches', async () => {
     const { fixture, selectedAccount } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
 
-    clickSeatHoldersTrigger(fixture, 'g1');
+    await clickSeatHoldersTrigger(fixture, 'g1');
     expect(seatHoldersDrawerState(fixture)).toEqual({ visible: true, selectedGroupUid: 'g1' });
 
     selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', accountSlug: 'vendor-corp', membershipTier: '', uid: 'org-uid-2' });

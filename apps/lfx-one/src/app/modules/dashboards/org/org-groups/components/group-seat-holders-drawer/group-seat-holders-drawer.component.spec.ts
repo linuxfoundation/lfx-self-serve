@@ -219,4 +219,29 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeTruthy();
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('7 seats');
   });
+
+  // The retry itself resolves seatHolders() to [] too (loading resets error() but the stale []
+  // from the failed attempt is still what's there until the retry settles) — displayedCount must
+  // stay pinned to seatCount() through that window as well, not just the error state itself.
+  it('keeps the pre-loaded seatCount in the header while a post-failure retry is still in flight', async () => {
+    const impl = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new Error('boom')))
+      .mockReturnValueOnce(NEVER);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await setup(impl);
+
+    await open('org-1', 'c-1', 'Storage Working Group', 7);
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeTruthy();
+
+    fixture.componentRef.setInput('visible', false);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeNull();
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('7 seats');
+  });
 });
