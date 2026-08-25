@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
+import { ALLOWED_ORG_LOGO_MIME_TYPES, HTTP_HEADERS, ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import {
   MemberServiceB2bOrgResponse,
   MemberServiceB2bOrgUpdateBody,
@@ -146,6 +146,124 @@ export class OrgIdentityController {
   }
 
   /**
+   * LFXV2-3288 — `POST /api/orgs/uid/:uid/logo`. BFF proxy leg to member-service's
+   * `POST /b2b_orgs/{uid}/logo` (LFXV2-2016): forwards the browser's raw upload using the caller's
+   * own access token (never M2M) and reuses the already-buffered request body (no streaming) — the
+   * settled transport contract from the object-storage skill (PR #67). Member-service owns the S3
+   * write + Salesforce `Logo_URL__c` patch; this BFF does not touch object storage directly.
+   *
+   * The *request* body is a pass-through; the **response is not**. member-service's
+   * `MemberServiceB2bOrgResponse` is remapped through `toCanonicalRecord` into the BFF's
+   * `OrgCanonicalRecord` contract (`logo_url` → `logoUrl`, `primary_domain` → `primaryDomain`,
+   * `number_of_employees` → `numberOfEmployees`, …, with `uid`/`accountId` both anchored to
+   * `sfid ?? uid`). Upstream response headers are deliberately dropped rather than forwarded:
+   * the ETag fetched below is an *internal* concurrency token for the If-Match precondition, not a
+   * cache validator for the browser, so re-emitting it would invite a client to send an
+   * `If-None-Match` this endpoint does not honour. The response is sent `Cache-Control: no-store`.
+   */
+  public async uploadLogo(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'upload_org_logo', {
+      // Client-controlled and unbounded until the checks below run — cap them so a crafted header can't bloat the log line.
+      content_type: this.truncateForLog(req.headers['content-type']),
+      content_length: this.truncateForLog(req.headers['content-length']),
+    });
+
+    try {
+      const uid = req.params['uid'];
+      this.assertNonEmpty(uid, 'uid', 'upload_org_logo', req.path);
+      if (!ORG_ACCOUNT_ID_PATTERN.test(uid)) {
+        throw ServiceValidationError.forField('uid', 'Invalid organization identifier', {
+          operation: 'upload_org_logo',
+          service: 'org_identity_controller',
+          path: req.path,
+        });
+      }
+
+      const rawContentType = req.headers['content-type'];
+      const contentType = (Array.isArray(rawContentType) ? rawContentType[0] : rawContentType || '').split(';')[0].trim();
+      if (!(ALLOWED_ORG_LOGO_MIME_TYPES as readonly string[]).includes(contentType)) {
+        throw ServiceValidationError.forField('content-type', `Unsupported logo content type: ${contentType || 'unknown'}`, {
+          operation: 'upload_org_logo',
+          service: 'org_identity_controller',
+          path: req.path,
+        });
+      }
+
+      const buffer: unknown = req.body;
+      // `Array.isArray` is redundant against `Buffer.isBuffer` at runtime; it is kept because CodeQL's
+      // js/type-confusion only clears the express body once the array shape is excluded explicitly.
+      if (Array.isArray(buffer) || !Buffer.isBuffer(buffer) || buffer.length === 0) {
+        throw ServiceValidationError.forField('body', 'Request body must contain logo image data', {
+          operation: 'upload_org_logo',
+          service: 'org_identity_controller',
+          path: req.path,
+        });
+      }
+
+      // member-service's upload-b2b-org-logo requires If-Match (unlike the sibling org-update
+      // endpoint) so it can detect a concurrent write before it repoints Logo_URL__c — fetch a
+      // fresh ETag immediately beforehand so this request always carries a current one.
+      const { headers: orgHeaders } = await this.microserviceProxy.proxyRequestWithResponse<MemberServiceB2bOrgResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        `/b2b_orgs/${encodeURIComponent(uid)}`,
+        'GET'
+      );
+      const ifMatch = orgHeaders[HTTP_HEADERS.ETAG.toLowerCase()] || orgHeaders[HTTP_HEADERS.ETAG];
+      if (!ifMatch) {
+        // Forwarding an absent ETag would stringify to the literal "undefined", which satisfies
+        // member-service's Required("if_match") and then fails the Salesforce compare — surfacing
+        // as a 409 "updated elsewhere" the user can never clear by refreshing. Fail closed instead,
+        // matching ETagService.fetchWithETag's ETAG_MISSING handling.
+        logger.warning(req, 'upload_org_logo', 'ETag header absent from the pre-upload fetch', { uid, available_headers: Object.keys(orgHeaders) });
+        res.status(502).json({ error: 'Unable to upload logo. Please try again.' });
+        return;
+      }
+
+      const raw = await this.microserviceProxy.proxyRequest<MemberServiceB2bOrgResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        `/b2b_orgs/${encodeURIComponent(uid)}/logo`,
+        'POST',
+        undefined,
+        buffer,
+        { [HTTP_HEADERS.CONTENT_TYPE]: contentType, [HTTP_HEADERS.IF_MATCH]: ifMatch }
+      );
+
+      const response = this.toCanonicalRecord(raw);
+
+      logger.success(req, 'upload_org_logo', startTime, { uid, logo_url: response.logoUrl });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      if (error instanceof ServiceValidationError) {
+        next(error);
+        return;
+      }
+      if (error instanceof MicroserviceError && error.statusCode === 403) {
+        logger.warning(req, 'upload_org_logo', 'Upstream rejected with 403', { err: error });
+        res.status(403).json({ error: 'You no longer have permission to edit this organization.' });
+        return;
+      }
+      if (error instanceof MicroserviceError && error.statusCode === 404) {
+        res.status(404).json({ error: 'Organization not found' });
+        return;
+      }
+      if (error instanceof MicroserviceError && error.statusCode === 412) {
+        logger.warning(req, 'upload_org_logo', 'Upstream rejected with 412 (org changed since the pre-upload fetch)', { err: error });
+        res.status(409).json({ error: 'This organization was updated elsewhere. Refresh the page and try again.' });
+        return;
+      }
+      if (error instanceof MicroserviceError && (error.statusCode >= 500 || error.statusCode === 408)) {
+        logger.warning(req, 'upload_org_logo', 'Upstream failure', { err: error, upstream_status: error.statusCode });
+        res.status(502).json({ error: 'Unable to upload logo. Please try again.' });
+        return;
+      }
+      next(error);
+    }
+  }
+
+  /**
    * Spec 023/002 — `GET /api/orgs/uid/:uid/addresses`. The route uid is the org account id (18-char SFID); queries the Snowflake platinum table directly, maps SHIPPING→primaryAddress and BILLING→billingAddress. Returns 200 with nulls for lookup/data failures; validation errors still propagate.
    *
    * Access model: auth-gated, NOT org-membership-gated. Any authenticated LFX user can fetch any org's addresses by uid — deliberately matching the canonical-record route (`GET /api/orgs/uid/:uid`), since org profile/address data is treated as non-secret among authenticated LFX users. Do not add an FGA grant check here without a product decision.
@@ -208,6 +326,12 @@ export class OrgIdentityController {
       });
     }
     return uid;
+  }
+
+  private truncateForLog(value: string | string[] | undefined, max = 128): string | undefined {
+    const raw = Array.isArray(value) ? value[0] : value;
+    if (raw === undefined) return undefined;
+    return raw.length > max ? `${raw.slice(0, max)}…` : raw;
   }
 
   private assertNonEmpty(value: string | undefined, field: string, operation: string, path: string): asserts value is string {
