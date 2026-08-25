@@ -569,11 +569,15 @@ export class OrgLensProjectsService {
   }
 
   private hasHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE' | 'HEALTH_OVERALL_SCORE_V2'>): boolean {
-    return (row.HEALTH_OVERALL_SCORE ?? row.HEALTH_OVERALL_SCORE_V2) !== null && (row.HEALTH_OVERALL_SCORE ?? row.HEALTH_OVERALL_SCORE_V2) !== undefined;
+    return (row.HEALTH_OVERALL_SCORE ?? row.HEALTH_OVERALL_SCORE_V2) != null;
   }
 
-  private mapHealthScore(row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE' | 'HEALTH_SCORE_CATEGORY_V2'>): Exclude<HealthScore, 'unavailable'> {
-    return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) ?? classifyHealthScore(row.HEALTH_OVERALL_SCORE ?? 0);
+  private mapHealthScore(
+    row: Pick<OrgLensProjectRow, 'HEALTH_OVERALL_SCORE' | 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>
+  ): Exclude<HealthScore, 'unavailable'> {
+    // Falls back to whichever raw score is present (v1, else v2) rather than defaulting to 0, so a row with an
+    // unrecognized v2 category and no v1 score doesn't get silently misclassified as critical.
+    return normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) ?? classifyHealthScore(row.HEALTH_OVERALL_SCORE ?? row.HEALTH_OVERALL_SCORE_V2 ?? 0);
   }
 
   private mapHealthMetrics(row: OrgLensProjectRow): OrgLensProject['healthMetrics'] {
