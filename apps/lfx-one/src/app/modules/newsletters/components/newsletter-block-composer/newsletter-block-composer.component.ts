@@ -284,6 +284,15 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // Fields-panel edit (which patches block.content) re-renders that block.
   protected readonly renderedBlocks: Signal<Map<string, SafeHtml>> = this.initRenderedBlocks();
 
+  // Per-container split chrome, keyed by container block id: the outermost card
+  // element's class/style plus the trusted `before`/`after` HTML on either side
+  // of its `<slot>`. The template binds `shellClass`/`shellStyle` onto a REAL
+  // host element and mounts the live child drop list between `before` and
+  // `after`, so nested blocks sit inside the card border (a single innerHTML
+  // string auto-closes and would push them outside — see renderContainerChrome).
+  protected readonly containerChromes: Signal<Map<string, { shellClass: string; shellStyle: string; before: SafeHtml; after: SafeHtml }>> =
+    this.initContainerChromes();
+
   // Per-block outer-spacing inline styles, keyed by block id — precomputed so the
   // template reads a map (`blockSpacingStyles().get(id)`) instead of calling a
   // function per change-detection pass.
@@ -683,11 +692,12 @@ export class NewsletterBlockComposerComponent implements OnInit {
       };
 
       for (const block of this.blocks()) {
-        // Container blocks render their chrome WITHOUT slot content — the live
-        // child drop-list in the template hosts the (independently rendered)
-        // children, so the slot is left empty to avoid double-rendering.
-        const children = block.isContainer ? [] : this.toLayoutChildren(block);
-        renderInto(block, () => this.renderer.renderBlock(templateOf(block.block_type), block.content, children, templateOf, true));
+        // Container blocks are rendered via `containerChromes()` (the chrome is
+        // split around its <slot> so the live child drop list mounts INSIDE the
+        // card); only their independently-rendered children belong here.
+        if (!block.isContainer) {
+          renderInto(block, () => this.renderer.renderBlock(templateOf(block.block_type), block.content, this.toLayoutChildren(block), templateOf, true));
+        }
         for (const child of block.children ?? []) {
           renderInto(child, () => this.renderer.renderBlock(templateOf(child.block_type), child.content, [], templateOf, true));
         }
@@ -695,6 +705,34 @@ export class NewsletterBlockComposerComponent implements OnInit {
       // Drop cache entries for blocks no longer on the canvas.
       for (const id of Array.from(this.renderCache.keys())) {
         if (!map.has(id)) this.renderCache.delete(id);
+      }
+      return map;
+    });
+  }
+
+  /**
+   * Render each container block's chrome split around its `<slot>` so the live
+   * child drop list can mount inside the card (see
+   * `NewsletterRendererService.renderContainerChrome` for why the card host must
+   * be a real element, not an innerHTML string). `before`/`after` carry the same
+   * trust boundary as `renderedBlocks` — the authenticated author's own
+   * newsletter, rendered to the allowlisted inert subset — so they are
+   * `bypassSecurityTrustHtml`'d the same way.
+   */
+  private initContainerChromes(): Signal<Map<string, { shellClass: string; shellStyle: string; before: SafeHtml; after: SafeHtml }>> {
+    return computed(() => {
+      const map = new Map<string, { shellClass: string; shellStyle: string; before: SafeHtml; after: SafeHtml }>();
+      if (!this.manifest()) return map;
+      const templateOf = (blockType: string): string | undefined => this.manifestService.getBlock(blockType)?.template;
+      for (const block of this.blocks()) {
+        if (!block.isContainer) continue;
+        const chrome = this.renderer.renderContainerChrome(templateOf(block.block_type), block.content, templateOf, true);
+        map.set(block.id, {
+          shellClass: chrome.shellClass,
+          shellStyle: chrome.shellStyle,
+          before: this.sanitizer.bypassSecurityTrustHtml(chrome.before),
+          after: this.sanitizer.bypassSecurityTrustHtml(chrome.after),
+        });
       }
       return map;
     });

@@ -368,64 +368,81 @@
                     </div>
                   }
 
-                  <!-- Rendered email HTML for this block. `data-nl-block` lets the
-                 inline-editing effect + toolbar locate this block's region. -->
-                  <div
-                    [innerHTML]="renderedBlocks().get(block.id)"
-                    [attr.data-nl-block]="block.id"
-                    [attr.data-testid]="'newsletter-composer-rendered-' + block.block_type"></div>
-
-                  <!-- Container child drop list (single-level nesting). Kept as a live
-                 drop zone so blocks can still be dragged in / reordered; each
-                 child renders visually inside it. -->
+                  <!-- Rendered block region. `data-nl-block` lets the inline-editing
+                 effect + toolbar locate the block's region. A container renders
+                 its card as a REAL host element (shellClass/shellStyle) with the
+                 live child drop list mounted between the card's before/after
+                 chrome, so nested blocks sit INSIDE the card border; a static
+                 innerHTML string auto-closes and would push them outside. -->
                   @if (block.isContainer) {
+                    @let chrome = containerChromes().get(block.id);
                     <div
-                      class="mx-3 mb-3 flex min-h-16 flex-col gap-2 rounded-md border border-dashed border-violet-200 bg-violet-50/30 p-2"
-                      cdkDropList
-                      [id]="containerDropLists().get(block.id)?.listId ?? ''"
-                      [cdkDropListData]="block.children ?? []"
-                      [cdkDropListConnectedTo]="containerDropLists().get(block.id)?.connectedTo ?? []"
-                      (cdkDropListDropped)="onChildDrop(block.id, $event)"
-                      [attr.data-testid]="'newsletter-composer-container-' + block.block_type">
-                      @for (child of block.children ?? []; track trackById($index, child)) {
-                        <!-- No [style]="blockSpacingStyles()...": the upstream render
+                      [class]="chrome?.shellClass ?? ''"
+                      [style]="chrome?.shellStyle ?? ''"
+                      [attr.data-nl-block]="block.id"
+                      [attr.data-testid]="'newsletter-composer-rendered-' + block.block_type">
+                      @if (chrome?.before) {
+                        <div [innerHTML]="chrome?.before"></div>
+                      }
+                      <!-- Live child drop zone (single-level nesting): stands in for the
+                     card template's <slot> so blocks can still be dragged in /
+                     reordered; each child renders inside it. -->
+                      <div
+                        class="mx-3 mb-3 flex min-h-16 flex-col gap-2 rounded-md border border-dashed border-violet-200 bg-violet-50/30 p-2"
+                        cdkDropList
+                        [id]="containerDropLists().get(block.id)?.listId ?? ''"
+                        [cdkDropListData]="block.children ?? []"
+                        [cdkDropListConnectedTo]="containerDropLists().get(block.id)?.connectedTo ?? []"
+                        (cdkDropListDropped)="onChildDrop(block.id, $event)"
+                        [attr.data-testid]="'newsletter-composer-container-' + block.block_type">
+                        @for (child of block.children ?? []; track trackById($index, child)) {
+                          <!-- No [style]="blockSpacingStyles()...": the upstream render
                              applies _spacing_* only to top-level blocks, so a child
                              must not show outer spacing in the canvas (the Fields
                              panel also hides child spacing controls). -->
-                        <div
-                          class="group/child relative cursor-pointer rounded transition-shadow"
-                          [class.ring-2]="selectedBlockId() === child.id"
-                          [class.ring-blue-500]="selectedBlockId() === child.id"
-                          cdkDrag
-                          [cdkDragData]="child"
-                          (click)="selectBlock(child.id); $event.stopPropagation()"
-                          (keydown.enter)="activateBlockFromKeyboard($event, child.id, true)"
-                          (keydown.space)="activateBlockFromKeyboard($event, child.id, true)"
-                          role="button"
-                          tabindex="0"
-                          [attr.data-testid]="'newsletter-composer-child-' + child.block_type"
-                          [attr.aria-pressed]="selectedBlockId() === child.id">
-                          @if (isBrowser()) {
-                            <div
-                              class="absolute -top-3 right-2 z-10 flex items-center rounded-md border border-gray-200 bg-white px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity group-hover/child:opacity-100"
-                              [class.!opacity-100]="selectedBlockId() === child.id">
-                              <i
-                                cdkDragHandle
-                                class="fa-light fa-grip-vertical cursor-grab px-1.5 py-0.5 text-gray-400 active:cursor-grabbing"
-                                aria-label="Drag to reorder"
-                                [attr.data-testid]="'newsletter-composer-drag-child-' + child.block_type"
-                                (click)="$event.stopPropagation()"></i>
-                            </div>
-                          }
                           <div
-                            [innerHTML]="renderedBlocks().get(child.id)"
-                            [attr.data-nl-block]="child.id"
-                            [attr.data-testid]="'newsletter-composer-rendered-child-' + child.block_type"></div>
-                        </div>
-                      } @empty {
-                        <p class="text-xs text-gray-400">Drag blocks here to nest them.</p>
+                            class="group/child relative cursor-pointer rounded transition-shadow"
+                            [class.ring-2]="selectedBlockId() === child.id"
+                            [class.ring-blue-500]="selectedBlockId() === child.id"
+                            cdkDrag
+                            [cdkDragData]="child"
+                            (click)="selectBlock(child.id); $event.stopPropagation()"
+                            (keydown.enter)="activateBlockFromKeyboard($event, child.id, true)"
+                            (keydown.space)="activateBlockFromKeyboard($event, child.id, true)"
+                            role="button"
+                            tabindex="0"
+                            [attr.data-testid]="'newsletter-composer-child-' + child.block_type"
+                            [attr.aria-pressed]="selectedBlockId() === child.id">
+                            @if (isBrowser()) {
+                              <div
+                                class="absolute -top-3 right-2 z-10 flex items-center rounded-md border border-gray-200 bg-white px-0.5 py-0.5 opacity-0 shadow-sm transition-opacity group-hover/child:opacity-100"
+                                [class.!opacity-100]="selectedBlockId() === child.id">
+                                <i
+                                  cdkDragHandle
+                                  class="fa-light fa-grip-vertical cursor-grab px-1.5 py-0.5 text-gray-400 active:cursor-grabbing"
+                                  aria-label="Drag to reorder"
+                                  [attr.data-testid]="'newsletter-composer-drag-child-' + child.block_type"
+                                  (click)="$event.stopPropagation()"></i>
+                              </div>
+                            }
+                            <div
+                              [innerHTML]="renderedBlocks().get(child.id)"
+                              [attr.data-nl-block]="child.id"
+                              [attr.data-testid]="'newsletter-composer-rendered-child-' + child.block_type"></div>
+                          </div>
+                        } @empty {
+                          <p class="text-xs text-gray-400">Drag blocks here to nest them.</p>
+                        }
+                      </div>
+                      @if (chrome?.after) {
+                        <div [innerHTML]="chrome?.after"></div>
                       }
                     </div>
+                  } @else {
+                    <div
+                      [innerHTML]="renderedBlocks().get(block.id)"
+                      [attr.data-nl-block]="block.id"
+                      [attr.data-testid]="'newsletter-composer-rendered-' + block.block_type"></div>
                   }
                 </div>
               } @empty {

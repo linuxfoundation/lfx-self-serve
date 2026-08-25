@@ -121,6 +121,24 @@ describe('NewsletterRendererService (browser)', () => {
     expect(one).toContain('Only');
     expect(one).not.toContain('sep-rule');
   });
+
+  it('splits a container card around its <slot> into shell + before/after', () => {
+    // The <slot> is nested inside the bordered card. The chrome must return the
+    // card element's own class/style (so the composer hosts a REAL card element)
+    // and the leaf content BEFORE the slot, with the slot itself removed.
+    const template =
+      '<section class="card" style="border:1px solid #131313"><div style="padding:10px"><text>AAIF COMMUNITY</text><slot name="children"></slot></div></section>';
+    const chrome = service.renderContainerChrome(template, {});
+
+    expect(chrome.shellClass).toContain('nl-card');
+    expect(chrome.shellStyle).toContain('border:1px solid #131313');
+    expect(chrome.before).toContain('AAIF COMMUNITY');
+    // The slot placeholder must not leak into either fragment.
+    expect(chrome.before).not.toContain('slot');
+    expect(chrome.after).not.toContain('slot');
+    // The card's box style stays on the shell, not duplicated into the content.
+    expect(chrome.before).not.toContain('#131313');
+  });
 });
 
 /**
