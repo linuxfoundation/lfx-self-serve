@@ -1284,6 +1284,9 @@ export class CampaignController {
     const metaConfig = this.buildMetaConfig(body);
     if (metaConfig) envelope['metaConfig'] = metaConfig;
 
+    const microsoftConfig = this.buildMicrosoftConfig(body);
+    if (microsoftConfig) envelope['microsoftConfig'] = microsoftConfig;
+
     const hubspotConfig = this.buildHubSpotConfig(body);
     if (hubspotConfig) envelope['hubspotConfig'] = hubspotConfig;
 
@@ -1452,6 +1455,66 @@ export class CampaignController {
 
     const { budgetUsd, ...rest } = body.metaConfig;
     return { ...rest, budget: budgetUsd };
+  }
+
+  /**
+   * Microsoft's config, translated from `microsoftConfig` on the legacy request.
+   *
+   * Like Meta, the budget key is renamed — the request says `budgetUsd`, the dispatcher reads
+   * `budget` — and the SAME known gap applies (LFXV2-3251): the rename does not convert the
+   * denomination, and `microsoft.go` states the budget is "whole units of the ad ACCOUNT's
+   * currency (NOT USD — the client does NO FX conversion)", applied as the DAILY budget.
+   *
+   * Unlike Meta, this builder REFUSES rather than merely translating, because Microsoft has two
+   * inputs whose absence upstream is silent rather than an error. Returning null marks the
+   * platform UNCONFIGURED and `hasPlatformConfig` refuses the whole create with a named reason,
+   * which is the difference between an operator learning now and learning at launch:
+   *
+   * - A non-finite or non-positive `budget` is rejected by the client DURING dispatch. Because
+   *   `CreateCampaigns` is asynchronous that surfaces as a pre-create job failure — a job the
+   *   user must go and read — rather than as a refusal of the request they just made.
+   * - Zero keywords creates a campaign that "can NEVER SERVE", and `ToggleStatus` then refuses to
+   *   activate it locally with `ErrCampaignNotProvisioned`, without ever calling Microsoft.
+   * - Zero geo targets creates a campaign Microsoft serves EVERYWHERE once enabled.
+   *
+   * The UI blocks all three before submit (see `canSubmit`); this is the second gate, and it is
+   * not redundant. The UI guard protects the operator using the form, this one protects the
+   * endpoint — the request is reachable without the form, and `unmarshalPlatformConfig` upstream
+   * reads an absent config key as a ZERO VALUE rather than an error.
+   *
+   * `cpcBid` and `timeZone` are forwarded only when they carry meaning. An omitted or zero
+   * `cpcBid` means unset, and Microsoft then applies the account-currency minimum — a documented,
+   * serve-capable floor — so sending an explicit 0 would claim a bid the account does not have.
+   * A blank `timeZone` is the same non-answer as an absent one: the client substitutes its
+   * default, so the key is dropped rather than sent empty.
+   */
+  private buildMicrosoftConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    if (!body?.microsoftConfig) return null;
+
+    const { budgetUsd, cpcBid, timeZone, keywords, geoTargets, ...rest } = body.microsoftConfig;
+
+    // Finite AND positive. `Number.isFinite` rejects NaN and both infinities; the client applies
+    // the same test during dispatch, so failing here reports it as a refusal instead of a job
+    // failure the user has to go looking for.
+    if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) return null;
+
+    // Non-empty AFTER trimming: a whitespace-only term is not a keyword Microsoft can match a
+    // query against, so counting it would let a blank row satisfy the "at least one" rule and
+    // produce the unservable campaign this guard exists to prevent.
+    const cleanKeywords = (keywords ?? []).filter((k) => k?.text?.trim());
+    if (cleanKeywords.length === 0) return null;
+
+    const cleanGeoTargets = (geoTargets ?? []).map((g) => g?.trim()).filter((g): g is string => !!g);
+    if (cleanGeoTargets.length === 0) return null;
+
+    return {
+      ...rest,
+      budget: budgetUsd,
+      keywords: cleanKeywords.map((k) => ({ text: k.text.trim(), matchType: k.matchType })),
+      geoTargets: cleanGeoTargets,
+      ...(Number.isFinite(cpcBid) && (cpcBid as number) > 0 ? { cpcBid } : {}),
+      ...(timeZone?.trim() ? { timeZone: timeZone.trim() } : {}),
+    };
   }
 
   /**

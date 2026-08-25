@@ -744,6 +744,87 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
+   * LFXV2-3312. These assert the WIRE PAYLOAD — `envelopeFor` reads the fifth argument actually
+   * handed to `createCampaigns` — rather than the request object, because a shape-only assertion
+   * on the request would pass against a broken mapping. `unmarshalPlatformConfig` upstream reads a
+   * missing key as a ZERO VALUE rather than an error, so a wrong key name is silent.
+   */
+  const microsoftConfig = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    eventName: 'KubeCon',
+    eventSlug: 'kubecon',
+    registrationUrl: 'https://example.com',
+    budgetUsd: 300,
+    startDate: '2026-01-01',
+    endDate: '2026-02-01',
+    geoTargets: ['US'],
+    keywords: [{ text: 'kubernetes', matchType: 'Exact' }],
+    ...overrides,
+  });
+
+  const createWithMicrosoft = async (overrides: Record<string, unknown> = {}): Promise<void> => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+    await controller.createCampaign(
+      buildReq({ platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig(overrides) }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+  };
+
+  it('renames Microsoft budgetUsd to the budget key the dispatcher reads', async () => {
+    await createWithMicrosoft();
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    expect(sent['budget']).toBe(300);
+    expect(sent).not.toHaveProperty('budgetUsd');
+    expect(sent['keywords']).toEqual([{ text: 'kubernetes', matchType: 'Exact' }]);
+    expect(sent['geoTargets']).toEqual(['US']);
+  });
+
+  it('omits cpcBid and timeZone when unset, leaving Microsoft its serve-capable defaults', async () => {
+    // An explicit 0 would claim a bid the account does not have; omitted means Microsoft applies
+    // the account-currency minimum. A blank timeZone is the same non-answer as an absent one.
+    await createWithMicrosoft({ cpcBid: 0, timeZone: '   ' });
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('cpcBid');
+    expect(sent).not.toHaveProperty('timeZone');
+  });
+
+  it('forwards cpcBid and timeZone when they carry meaning', async () => {
+    await createWithMicrosoft({ cpcBid: 2.5, timeZone: 'PacificTimeUSCanadaTijuana' });
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    expect(sent['cpcBid']).toBe(2.5);
+    expect(sent['timeZone']).toBe('PacificTimeUSCanadaTijuana');
+  });
+
+  /**
+   * Each arm below refuses the CREATE rather than building a config, and the reason differs per
+   * field — which is why they are asserted separately rather than as one "invalid input" case.
+   * `hasPlatformConfig` turns the null into a named refusal; without it the campaign is created
+   * and the failure surfaces at launch (keywords) or as uncontrolled spend (geo).
+   */
+  it.each([
+    ['zero keywords, which would create a campaign that can never serve', { keywords: [] }],
+    ['whitespace-only keywords, which are not terms Microsoft can match', { keywords: [{ text: '   ', matchType: 'Exact' }] }],
+    ['zero geo targets, which would serve everywhere once enabled', { geoTargets: [] }],
+    ['whitespace-only geo targets', { geoTargets: ['  '] }],
+    ['a non-positive budget the client rejects mid-dispatch', { budgetUsd: 0 }],
+    ['a NaN budget', { budgetUsd: Number.NaN }],
+    ['an infinite budget', { budgetUsd: Number.POSITIVE_INFINITY }],
+  ])('refuses a Microsoft create with %s', async (_case, overrides) => {
+    await createWithMicrosoft(overrides);
+
+    // The envelope carries NO microsoftConfig, which is what makes the platform "unconfigured".
+    // `hasPlatformConfig` then refuses the whole create in campaign-service.service (see its
+    // `unconfigured` guard) rather than dispatching a zero-value config. That refusal is asserted
+    // where it lives — the legacy fall-through is deliberately NOT asserted here, because these
+    // cases run with the cutover dark, where reaching the legacy path is correct behaviour.
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('microsoftConfig');
+  });
+
+  /**
    * LFXV2-3256. The envelope key and field names are a CONTRACT with
    * `internal/dispatch/hubspot.go:47-56` — the dispatcher reads `hubspotConfig.sourceEmailId`, and
    * `unmarshalPlatformConfig` treats a missing key as a zero value rather than an error. A typo on
@@ -1276,12 +1357,30 @@ describe('CampaignController.updateCampaignStatus', () => {
   // CAMPAIGN_SERVICE_STATUS_PLATFORMS left all 77 tests green, silently admitting microsoft-ads
   // and twitter-ads. The filter is the entire subject of that constant's doc block, so nothing
   // pinned the one thing it claims to do — this is the test that makes the claim binding.
-  it.each([['microsoft-ads'], ['twitter-ads']])('refuses %s, which this app does not offer', async (platform) => {
+  //
+  // Narrowed to twitter-ads by LFXV2-3312, which ENABLED Microsoft: the set is derived from
+  // `!p.disabled`, so dropping that flag in the shared constant admits microsoft-ads here by
+  // design. X stays disabled for a capability reason rather than a plumbing one, so it remains
+  // the subject — and the mutation this test was born from still fails, because admitting X is
+  // still wrong. The companion case below asserts the other half: that Microsoft is now ALLOWED,
+  // so a future re-disabling cannot pass silently either.
+  it.each([['twitter-ads']])('refuses %s, which this app does not offer', async (platform) => {
     await controller.updateCampaignStatus(statusReq(UUID, { platform, status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
 
     expect(toggleCampaignStatus).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
     expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('allows a Microsoft status toggle now that the channel is enabled', async () => {
+    // The other half of the narrowed allowlist spec above: CAMPAIGN_SERVICE_STATUS_PLATFORMS is
+    // DERIVED from `!p.disabled`, so re-adding `disabled: true` to the shared constant would make
+    // pause unreachable for a channel the UI offers. This fails if that happens.
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, status: 'paused', version: 2, etag: '2' });
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'microsoft-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(toggleCampaignStatus).toHaveBeenCalledTimes(1);
   });
 
   // Also found by mutation: dropping `.trim()` left these green. A whitespace-only etag then
@@ -1312,8 +1411,13 @@ describe('CampaignController.updateCampaignStatus', () => {
   // after the toggle returns, and by then the ad platform has already moved, so this is observed
   // and logged rather than refused. The response still reports the row's platform, so the caller
   // is not told their label was accepted.
+  //
+  // The example row platform is `twitter-ads` rather than `microsoft-ads` as of LFXV2-3312:
+  // Microsoft is now an OFFERED platform, so using it here would assert the warning on a row this
+  // app does offer and the test would be checking the opposite of its own name. X is still
+  // disabled, so it remains a true example of the case this guard describes.
   it('logs when the toggled row is a platform this app does not offer', async () => {
-    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'microsoft-ads', status: 'paused', version: 2, etag: '2' });
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'twitter-ads', status: 'paused', version: 2, etag: '2' });
 
     await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
 
@@ -1321,9 +1425,9 @@ describe('CampaignController.updateCampaignStatus', () => {
       expect.anything(),
       'campaign_status_update',
       expect.stringContaining('does not offer'),
-      expect.objectContaining({ requestedPlatform: 'google-ads', rowPlatform: 'microsoft-ads' })
+      expect.objectContaining({ requestedPlatform: 'google-ads', rowPlatform: 'twitter-ads' })
     );
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'microsoft-ads' }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'twitter-ads' }));
   });
 
   it('does not log the platform warning for an offered platform', async () => {

@@ -556,6 +556,149 @@
         </div>
       }
 
+      <!-- Microsoft Ads Section (LFXV2-3312) -->
+      @if (showMicrosoftSection()) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="implementation-microsoft-section">
+          <div class="mb-4 flex items-center gap-2">
+            <i class="fa-brands fa-microsoft text-blue-600" aria-hidden="true"></i>
+            <h3 class="text-sm font-semibold text-gray-900">Microsoft Ads</h3>
+          </div>
+
+          <!-- Budget + CPC bid -->
+          <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="microsoft-budget">Daily Budget</label>
+              <input
+                id="microsoft-budget"
+                type="number"
+                [value]="microsoftBudgetUsd()"
+                (input)="onMicrosoftBudgetInput($event)"
+                min="1"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-microsoft-budget" />
+              <!--
+                "account currency", not "USD": the client does NO FX conversion (LFXV2-3251), so
+                the number is spent in whatever currency the ad account is denominated in. Saying
+                USD here would be a claim this app cannot keep.
+              -->
+              <span class="text-xs text-gray-400">Whole units of the ad account's currency, charged daily.</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="microsoft-cpc-bid">Max CPC Bid (optional)</label>
+              <input
+                id="microsoft-cpc-bid"
+                type="number"
+                [value]="microsoftCpcBid()"
+                (input)="onMicrosoftCpcBidInput($event)"
+                min="0"
+                step="0.01"
+                placeholder="Account minimum"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-microsoft-cpc-bid" />
+              <span class="text-xs text-gray-400">Leave blank to use the account-currency minimum.</span>
+            </div>
+          </div>
+
+          <!-- Keywords -->
+          <div class="mb-4">
+            <label class="mb-2 block text-xs font-medium text-gray-700" for="microsoft-keyword-add">Search Keywords</label>
+            <div class="flex flex-col gap-2">
+              @for (keyword of microsoftKeywords(); track keyword.text; let i = $index) {
+                <div class="flex items-center gap-2" [attr.data-testid]="'implementation-microsoft-keyword-' + i">
+                  <span class="flex-1 truncate rounded-md bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700">{{ keyword.text }}</span>
+                  <select
+                    [value]="keyword.matchType"
+                    (change)="onMicrosoftKeywordMatchTypeChange(i, $event)"
+                    class="rounded-md border border-gray-300 px-2 py-1.5 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    [attr.aria-label]="'Match type for ' + keyword.text"
+                    [attr.data-testid]="'implementation-microsoft-keyword-match-' + i">
+                    <option value="Exact">Exact</option>
+                    <option value="Phrase">Phrase</option>
+                    <option value="Broad">Broad</option>
+                  </select>
+                  <button
+                    type="button"
+                    (click)="removeMicrosoftKeyword(i)"
+                    class="text-blue-400 hover:text-blue-600"
+                    [attr.aria-label]="'Remove ' + keyword.text"
+                    [attr.data-testid]="'implementation-microsoft-keyword-remove-' + i">
+                    <i class="fa-light fa-xmark text-xs" aria-hidden="true"></i>
+                  </button>
+                </div>
+              }
+              <input
+                id="microsoft-keyword-add"
+                type="text"
+                placeholder="+ Add keyword"
+                (change)="onMicrosoftKeywordAdd($event)"
+                (keydown.enter)="onMicrosoftKeywordAdd($event); $event.preventDefault()"
+                class="rounded-md border border-dashed border-blue-300 bg-white px-3 py-1.5 text-xs text-blue-600 placeholder:text-blue-400"
+                data-testid="implementation-microsoft-keyword-add" />
+            </div>
+            <!--
+              Names the CONSEQUENCE rather than saying "required". Without keywords Microsoft
+              creates the campaign and it can never serve — and ToggleStatus then refuses to
+              activate it — so an operator told only "required" would not know that submitting
+              anyway produces a campaign that silently never runs.
+            -->
+            @if (microsoftEffectiveKeywords().length === 0) {
+              <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-microsoft-keyword-none">
+                Add at least one keyword — without keywords the campaign is created but can never serve, and it cannot be activated.
+              </p>
+            }
+          </div>
+
+          <!-- Geo Targets -->
+          <div>
+            <label class="mb-2 block text-xs font-medium text-gray-700" for="microsoft-geo-add">Geo Targets</label>
+            <div class="flex flex-wrap items-center gap-2">
+              @for (geo of microsoftGeoTargets(); track geo; let i = $index) {
+                <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                  {{ geo }}
+                  <button
+                    type="button"
+                    (click)="removeMicrosoftGeoTarget(i)"
+                    class="ml-0.5 text-blue-400 hover:text-blue-600"
+                    [attr.aria-label]="'Remove ' + geo"
+                    [attr.data-testid]="'implementation-microsoft-geo-remove-' + geo">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </span>
+              }
+              <!--
+                Free text, like Meta's, and for the same reason: these are ISO-2 country codes
+                rather than a fixed URN set a dropdown could enumerate. Microsoft resolves each
+                code to a LocationId at create time and fails BEFORE creating anything, so an
+                unresolvable code is reported rather than silently dropped — which is why there is
+                no local eligibility list here to drift from Microsoft's own.
+              -->
+              <input
+                id="microsoft-geo-add"
+                type="text"
+                placeholder="+ ISO code"
+                (change)="onMicrosoftGeoTargetAdd($event)"
+                (keydown.enter)="onMicrosoftGeoTargetAdd($event); $event.preventDefault()"
+                class="w-24 rounded-md border border-dashed border-blue-300 bg-white px-2 py-1 text-xs uppercase text-blue-600 placeholder:normal-case placeholder:text-blue-400"
+                data-testid="implementation-microsoft-geo-add" />
+            </div>
+            <!--
+              Two distinct states, and the difference matters to the operator. Chips cleared but a
+              country code still set is SAFE — the request falls back to it, and the line names the
+              country so it is not an invisible default. Nothing usable at all is the hazard.
+            -->
+            @if (microsoftGeoTargets().length === 0) {
+              @if (microsoftEffectiveGeoTargets().length > 0) {
+                <span class="mt-2 block text-xs text-gray-400">No geo targets selected — defaults to {{ microsoftEffectiveGeoTargets().join(', ') }}</span>
+              } @else {
+                <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-microsoft-geo-none">
+                  Add at least one geo target — with none, Microsoft serves the campaign in every country once it is enabled.
+                </p>
+              }
+            }
+          </div>
+        </div>
+      }
+
       <!-- Reddit Ads Section -->
       @if (showRedditSection()) {
         <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="implementation-reddit-section">

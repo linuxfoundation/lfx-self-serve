@@ -967,6 +967,114 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
   });
 
   /**
+   * LFXV2-3312, the Microsoft equivalent of the Meta case above and asserted the same way: what
+   * the REMOUNTED component would SUBMIT, not that the draft object carries the fields. The two
+   * ARRAYS are the ones most likely to be missed — they need a draft field, an `emitDraft()` in
+   * their handler AND an `applyDraft` restore arm, and losing either of them is silent.
+   */
+  it('carries the user Microsoft edits through a destroy/remount and into the request', async () => {
+    let draft: Record<string, any> | null = null;
+    component()['draftChange'].subscribe((d: Record<string, any>) => (draft = d));
+
+    component()['addMicrosoftGeoTarget']('jp');
+    component()['addMicrosoftKeyword']('service mesh');
+    component()['microsoftBudgetUsd'].set(1234);
+    component()['microsoftCpcBid'].set('2.5');
+    component()['emitDraft']();
+    await fixture.whenStable();
+
+    expect(draft).not.toBeNull();
+    const draftSlug = (draft as unknown as Record<string, any>)['eventSlug'];
+
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    restored.componentRef.setInput('draft', draft);
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: draftSlug, registrationUrl: 'https://events.example.com/kubecon-eu-2026' },
+      selectedPlatforms: ['microsoft-ads'],
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+
+    const c = restored.componentInstance as unknown as Record<string, any>;
+    c['campaignForm'].controls['startDate'].setValue('2026-09-01');
+    c['campaignForm'].controls['endDate'].setValue('2026-09-30');
+    await restored.whenStable();
+
+    createCampaign.mockClear();
+    c['submit']();
+    await restored.whenStable();
+
+    expect(createCampaign).toHaveBeenCalled();
+    const microsoftConfig = createCampaign.mock.calls[0][0].microsoftConfig;
+    expect(microsoftConfig['geoTargets']).toContain('JP');
+    expect(microsoftConfig['keywords']).toContainEqual({ text: 'service mesh', matchType: 'Phrase' });
+    expect(microsoftConfig['budgetUsd']).toBe(1234);
+    expect(microsoftConfig['cpcBid']).toBe(2.5);
+  });
+
+  /**
+   * `NaN < 1` is FALSE, so a bare comparison would let a NaN budget through to a client that
+   * rejects it mid-dispatch — surfacing as a dead job rather than a blocked button. Pinned
+   * separately from the zero case because only the `Number.isFinite` half catches it.
+   */
+  it.each([
+    ['NaN', Number.NaN],
+    ['zero', 0],
+    ['negative', -5],
+  ])('blocks a Microsoft submit on a %s budget', async (_label, budget) => {
+    const c = component() as unknown as Record<string, any>;
+    // The guards are scoped to a Microsoft selection, so the platform must be selected or the
+    // assertion would pass for the wrong reason — the arms would simply never be evaluated.
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftKeywords'].set([{ text: 'kubernetes', matchType: 'Exact' }]);
+    c['microsoftGeoTargets'].set(['US']);
+    await fixture.whenStable();
+
+    // Everything else valid, so only the budget can be what blocks it. Asserted first so a
+    // failure below cannot be mistaken for an unrelated invalid field.
+    c['microsoftBudgetUsd'].set(100);
+    await fixture.whenStable();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['microsoftBudgetUsd'].set(budget);
+    await fixture.whenStable();
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The empty-array case, which the `!== undefined` restore exists for and a truthiness check
+   * would break. Clearing every keyword is a DELIBERATE act the operator took; refilling it from
+   * the brief on remount would hand back a campaign they had emptied, and `canSubmit` would then
+   * pass on values they never re-chose.
+   */
+  it('treats a cleared Microsoft keyword list as a real value rather than refilling it', async () => {
+    let draft: Record<string, any> | null = null;
+    component()['draftChange'].subscribe((d: Record<string, any>) => (draft = d));
+
+    component()['microsoftKeywords'].set([]);
+    component()['emitDraft']();
+    await fixture.whenStable();
+
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    restored.componentRef.setInput('draft', draft);
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: (draft as unknown as Record<string, any>)['eventSlug'] },
+      keywords: [{ term: 'kubernetes', matchType: 'Exact', intentLevel: 'High', notes: '' }],
+      selectedPlatforms: ['microsoft-ads'],
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+
+    const c = restored.componentInstance as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    await restored.whenStable();
+
+    expect(c['microsoftEffectiveKeywords']()).toEqual([]);
+    // And the submit is blocked, naming the reason this matters rather than only the state.
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
    * A draft persisted BEFORE these fields shipped carries none of them. Absence must mean "keep
    * what the brief seeded", never "the user chose the defaults" — otherwise an old draft silently
    * downgrades a Conversions campaign to traffic on the next tab switch. `undefined` is what

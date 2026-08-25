@@ -485,6 +485,33 @@ export interface CampaignImplementationDraft {
    * new binding rather than one that writes the signal and calls `emitDraft` by hand.
    */
   redditBudgetUsd?: number;
+  /**
+   * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
+   * and the optional CPC bid.
+   *
+   * `microsoftKeywords` and `microsoftGeoTargets` are ARRAYS carried here, which is the exception
+   * to the "brief-derived arrays are deliberately absent" rule stated above — and the exception is
+   * principled rather than convenient. That rule rests on those arrays having a SINGLE writer
+   * (`populateFromBrief`), so a draft could only ever replay the brief's own seed back over
+   * itself. These two have a real editor: the template binds add/remove handlers for both, so an
+   * operator genuinely mutates them and the value exists nowhere but this component.
+   *
+   * That editability is also why losing them is not merely untidy. Microsoft is the platform
+   * where an empty list is a SILENT failure rather than a validation error upstream: with no
+   * keywords the campaign can never serve and cannot be activated, and with no geo targets
+   * Microsoft serves it everywhere. A tab switch that reverted either would hand the operator a
+   * campaign that looks configured and is not.
+   *
+   * OPTIONAL for the same reason as the Meta block: a draft persisted before this shipped has
+   * none of them, and absent means "keep the seeded values" — never "the user cleared them". A
+   * present-but-empty array is what records a deliberate clear, and `canSubmit` blocks on exactly
+   * that rather than silently refilling it from the brief.
+   */
+  microsoftBudgetUsd?: number;
+  microsoftGeoTargets?: string[];
+  microsoftKeywords?: MicrosoftKeyword[];
+  /** Empty string records "unset", which is the serve-capable default — see `cpcBid`. */
+  microsoftCpcBid?: string;
 }
 
 /**
@@ -755,6 +782,73 @@ export interface MetaCampaignCreateResult {
 }
 
 // ---------------------------------------------------------------------------
+// Microsoft Ads — Campaign Creation
+// ---------------------------------------------------------------------------
+
+/**
+ * One positive Search keyword attached to the created ad group.
+ *
+ * `matchType` reuses the SAME PascalCase vocabulary as `CampaignKeyword.matchType`
+ * ('Exact' | 'Phrase' | 'Broad') rather than Google's SCREAMING_CASE, matching
+ * `microsoftKeywordConfig` upstream (`internal/dispatch/microsoft.go`). That is what lets the
+ * brief's generated keywords feed this config without a translation step.
+ */
+export interface MicrosoftKeyword {
+  text: string;
+  matchType: CampaignKeyword['matchType'];
+}
+
+/**
+ * Microsoft's per-platform config, typed to the FIVE fields `microsoftConfig` actually reads
+ * (`internal/dispatch/microsoft.go:57-83`).
+ *
+ * Two of the five are load-bearing in the dispatcher's own words, and both failures are silent
+ * at create time — which is why the UI blocks the submit rather than letting the campaign be
+ * created and discovered broken later:
+ *
+ * - `keywords` — "Left empty, the campaign is created but can NEVER SERVE, and ToggleStatus
+ *   refuses to activate it". Activation returns `ErrCampaignNotProvisioned` LOCALLY, without
+ *   calling Microsoft, so the operator only finds out at launch.
+ * - `geoTargets` — "Left EMPTY … Microsoft serves it EVERYWHERE once enabled". Uncontrolled
+ *   spend, the same hazard Meta's section already guards.
+ *
+ * `budgetUsd` carries the legacy request's name here and is renamed to the `budget` key the
+ * dispatcher reads by `buildMicrosoftConfig` — the same translation `buildMetaConfig` performs,
+ * and for the same reason: passing it through unchanged leaves `budget` at its zero value, which
+ * the client rejects during dispatch.
+ *
+ * KNOWN GAP (LFXV2-3251, shared with Google Ads and Meta): the budget is whole units of the ad
+ * ACCOUNT's currency with no FX conversion, and it is a DAILY budget with no lifetime
+ * alternative — unlike Meta and LinkedIn, which is why there is no `lifetimeBudget` here.
+ */
+export interface MicrosoftCampaignCreateRequest {
+  eventName: string;
+  eventSlug: string;
+  registrationUrl: string;
+  hsToken?: string;
+  /** Daily budget, whole units of the account currency. Must be finite and > 0. */
+  budgetUsd: number;
+  startDate: string;
+  endDate: string;
+  /** ISO 3166-1 alpha-2 codes. REQUIRED, >= 1 — see the interface note on uncontrolled spend. */
+  geoTargets: string[];
+  /** REQUIRED, >= 1 — see the interface note on unservable campaigns. */
+  keywords: MicrosoftKeyword[];
+  project?: string;
+  /**
+   * OPTIONAL ad-group max cost-per-click, whole units of the account currency. Omitted or zero
+   * means unset, and Microsoft then applies the account-currency minimum — a documented,
+   * serve-capable floor, so omitting it is safe.
+   */
+  cpcBid?: number;
+  /**
+   * OPTIONAL Microsoft `Campaign.TimeZone` enum value. Microsoft marks it deprecated but still
+   * requires it on Add; the client supplies its default when empty.
+   */
+  timeZone?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Meta Ads Monitoring
 // ---------------------------------------------------------------------------
 
@@ -879,6 +973,7 @@ export interface CampaignCreateRequest {
   linkedInConfig?: LinkedInCampaignCreateRequest;
   redditConfig?: RedditCampaignCreateRequest;
   metaConfig?: MetaCampaignCreateRequest;
+  microsoftConfig?: MicrosoftCampaignCreateRequest;
   hubspotConfig?: HubSpotCampaignCreateRequest;
 }
 

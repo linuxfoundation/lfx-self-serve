@@ -47,6 +47,7 @@ import type {
   MetaAdVariant,
   MetaObjective,
   MetaPlacement,
+  MicrosoftKeyword,
   RedditAdVariant,
 } from '@lfx-one/shared/interfaces';
 
@@ -333,6 +334,23 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditKeywords = signal<string[]>([]);
   protected readonly redditGeoTargets = signal<string[]>([]);
   protected readonly redditBudgetUsd = signal(500);
+  /**
+   * Microsoft's four editable inputs (LFXV2-3312). Signal-backed like the Meta and Reddit blocks,
+   * so `campaignForm.valueChanges` never sees them and each handler must `emitDraft()` by hand.
+   *
+   * `microsoftKeywords` seeds from the brief but is genuinely EDITABLE here, unlike Reddit's
+   * read-only recommendation lists — with none the campaign can never serve, so the operator must
+   * be able to fix an empty or bad list rather than only look at it.
+   *
+   * `microsoftCpcBid` is a STRING, not a number: '' is the meaningful "unset" the numeric type
+   * cannot express, and unset is the serve-capable default (Microsoft applies the account-currency
+   * minimum). A `number` signal would make an untouched field read 0, which `buildMicrosoftConfig`
+   * drops anyway — but only after the UI had shown the operator a bid of zero they never set.
+   */
+  protected readonly microsoftGeoTargets = signal<string[]>([]);
+  protected readonly microsoftKeywords = signal<MicrosoftKeyword[]>([]);
+  protected readonly microsoftBudgetUsd = signal(500);
+  protected readonly microsoftCpcBid = signal('');
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
@@ -489,6 +507,57 @@ export class ImplementationTabComponent implements OnInit {
 
   protected readonly showMetaSection = computed(() => this.selectedPlatforms().includes('meta-ads'));
 
+  protected readonly showMicrosoftSection = computed(() => this.selectedPlatforms().includes('microsoft-ads'));
+
+  /**
+   * The geo list a Microsoft create would ACTUALLY send — one value for the preview and `submit()`,
+   * on the same rule as `metaEffectiveGeoTargets`, so the screen cannot claim one target while the
+   * request buys another.
+   *
+   * NO eligibility filter, and that difference from Meta is deliberate rather than an omission.
+   * Meta has a client-side ineligible set because Meta refuses those codes at the ad set, AFTER
+   * the campaign POST. Microsoft resolves every ISO-2 code against its own geographical-locations
+   * file at create time and fails BEFORE anything is created, so an unresolvable code costs a
+   * clear upstream error rather than a half-built campaign. Duplicating that resolution here would
+   * be a second list that could only drift from Microsoft's own.
+   *
+   * Empty is a real answer: it means nothing usable was supplied, and `canSubmit` blocks on it
+   * rather than letting Microsoft serve the campaign EVERYWHERE.
+   */
+  protected readonly microsoftEffectiveGeoTargets = computed<string[]>(() => {
+    const chips = normalizeGeoTargets(this.microsoftGeoTargets());
+    if (chips.length > 0) return chips;
+    return normalizeGeoTargets([this.countryCodeValue()]);
+  });
+
+  /**
+   * The keywords a Microsoft create would ACTUALLY send.
+   *
+   * Blank-text entries are dropped rather than counted: a whitespace-only term is not something
+   * Microsoft can match a query against, so letting one satisfy the "at least one" rule would
+   * produce exactly the unservable campaign the guard exists to prevent. The server applies the
+   * same filter — see `buildMicrosoftConfig` — so both doors agree.
+   */
+  protected readonly microsoftEffectiveKeywords = computed<MicrosoftKeyword[]>(() =>
+    this.microsoftKeywords()
+      .filter((k) => k.text?.trim())
+      .map((k) => ({ text: k.text.trim(), matchType: k.matchType }))
+  );
+
+  /**
+   * The CPC bid the request will carry, or null for "unset".
+   *
+   * Anything non-numeric or non-positive reads as unset rather than as an error, because unset is
+   * a valid, documented, serve-capable state — Microsoft applies the account-currency minimum. So
+   * a half-typed value degrades to the safe default instead of blocking the submit.
+   */
+  protected readonly microsoftEffectiveCpcBid = computed<number | null>(() => {
+    const raw = this.microsoftCpcBid().trim();
+    if (raw === '') return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  });
+
   /** Whether the pixel field applies at all — only `conversions` carries a promoted pixel object. */
   protected readonly metaRequiresPixel = computed(() => this.metaObjective() === 'conversions');
 
@@ -551,7 +620,8 @@ export class ImplementationTabComponent implements OnInit {
     const linkedInSelected = platforms.includes('linkedin-ads');
     const redditSelected = platforms.includes('reddit-ads');
     const metaSelected = platforms.includes('meta-ads');
-    if (!googleSelected && !linkedInSelected && !redditSelected && !metaSelected) return false;
+    const microsoftSelected = platforms.includes('microsoft-ads');
+    if (!googleSelected && !linkedInSelected && !redditSelected && !metaSelected && !microsoftSelected) return false;
 
     const form = this.campaignForm.controls;
     const sharedFieldsValid = !!form.eventName.value?.trim() && !!form.registrationUrl.value?.trim() && !!form.startDate.value && !!form.endDate.value;
@@ -597,6 +667,26 @@ export class ImplementationTabComponent implements OnInit {
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
     if (metaSelected && !this.metaHasPlacement()) return false;
     if (metaSelected && !this.metaPixelValid()) return false;
+
+    // Microsoft's three blocking conditions (LFXV2-3312). Each is a SILENT failure upstream rather
+    // than a refusal, which is why they are caught here — the operator would otherwise learn at
+    // launch, or not at all:
+    //
+    //   - budget: the client rejects a non-positive value mid-dispatch, and because creation is
+    //     async that surfaces as a dead job rather than an error on this request.
+    //   - keywords: "the campaign is created but can NEVER SERVE, and ToggleStatus refuses to
+    //     activate it" — the create SUCCEEDS, so nothing fails until someone tries to launch.
+    //   - geo: "Microsoft serves it EVERYWHERE once enabled" — uncontrolled spend, and the create
+    //     succeeds just the same.
+    //
+    // `cpcBid` is deliberately NOT a gate: unset is a documented serve-capable default.
+    // `Number.isFinite` rather than only `< 1`, because `NaN < 1` is FALSE — a NaN budget would
+    // pass a bare comparison and reach the client, which rejects it mid-dispatch as a dead job.
+    // `onMicrosoftBudgetInput`'s `|| 0` happens to prevent that today, but that is the handler's
+    // incidental behaviour rather than this guard's, and the guard is what `canSubmit` promises.
+    if (microsoftSelected && (!Number.isFinite(this.microsoftBudgetUsd()) || this.microsoftBudgetUsd() < 1)) return false;
+    if (microsoftSelected && this.microsoftEffectiveKeywords().length === 0) return false;
+    if (microsoftSelected && this.microsoftEffectiveGeoTargets().length === 0) return false;
 
     // Blocked while a brief save is in flight, because the create needs the id that save produces.
     //
@@ -952,6 +1042,80 @@ export class ImplementationTabComponent implements OnInit {
     input.value = '';
   }
 
+  // Microsoft handlers (LFXV2-3312). Every one emits, on the rule the Meta handlers state: these
+  // signals are invisible to `campaignForm.valueChanges`, so a mutation that does not call
+  // `emitDraft` never reaches the parent and the edit dies at the next tab switch.
+  protected onMicrosoftBudgetInput(event: Event): void {
+    this.microsoftBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+    this.emitDraft();
+  }
+
+  protected onMicrosoftCpcBidInput(event: Event): void {
+    this.microsoftCpcBid.set((event.target as HTMLInputElement).value);
+    this.emitDraft();
+  }
+
+  /**
+   * Add one Microsoft geo target, normalised through the shared `normalizeGeoTargets` — the whole
+   * list, not just the new code, so a brief-seeded list is normalised on first add too and a `us`
+   * from the brief collapses with a typed `US`.
+   *
+   * No eligibility filter, for the reason given on `microsoftEffectiveGeoTargets`: Microsoft
+   * resolves codes at create time and fails before creating anything.
+   */
+  protected addMicrosoftGeoTarget(code: string): void {
+    this.microsoftGeoTargets.update((targets) => normalizeGeoTargets([...targets, code]));
+    this.emitDraft();
+  }
+
+  protected onMicrosoftGeoTargetAdd(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.addMicrosoftGeoTarget(input.value);
+    input.value = '';
+  }
+
+  protected removeMicrosoftGeoTarget(index: number): void {
+    this.microsoftGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Add one keyword. Blank input is ignored rather than added — an empty chip would be dropped by
+   * `microsoftEffectiveKeywords` anyway, so adding one would show the operator a keyword the
+   * request will not carry.
+   *
+   * Defaults to `Phrase`, the middle of Microsoft's three match types: `Broad` can spend on
+   * loosely related queries and `Exact` can starve a new campaign of volume, so the default is the
+   * one that is wrong in neither direction. The operator can change it per keyword.
+   */
+  protected addMicrosoftKeyword(text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    // Case-insensitive de-dupe: Microsoft treats keyword text case-insensitively, so two chips
+    // differing only in case would be one keyword upstream and the list would overstate coverage.
+    const exists = this.microsoftKeywords().some((k) => k.text.trim().toLowerCase() === trimmed.toLowerCase());
+    if (exists) return;
+    this.microsoftKeywords.update((keywords) => [...keywords, { text: trimmed, matchType: 'Phrase' }]);
+    this.emitDraft();
+  }
+
+  protected onMicrosoftKeywordAdd(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.addMicrosoftKeyword(input.value);
+    input.value = '';
+  }
+
+  protected removeMicrosoftKeyword(index: number): void {
+    this.microsoftKeywords.update((keywords) => keywords.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  protected onMicrosoftKeywordMatchTypeChange(index: number, event: Event): void {
+    const matchType = (event.target as HTMLSelectElement).value as MicrosoftKeyword['matchType'];
+    this.microsoftKeywords.update((keywords) => keywords.map((k, i) => (i === index ? { ...k, matchType } : k)));
+    this.emitDraft();
+  }
+
   protected submit(): void {
     if (!this.canSubmit()) return;
 
@@ -1050,6 +1214,27 @@ export class ImplementationTabComponent implements OnInit {
               // would be a field the service ignores — and one a reader of the payload would
               // reasonably take as meaningful. Trimmed to match the upstream trim.
               ...(this.metaRequiresPixel() ? { pixelId: this.metaPixelId().trim() } : {}),
+              project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+            },
+          }
+        : {}),
+      ...(platforms.includes('microsoft-ads')
+        ? {
+            microsoftConfig: {
+              eventName: form.eventName,
+              eventSlug: slug,
+              registrationUrl: form.registrationUrl,
+              hsToken: this.briefHsToken() ?? undefined,
+              budgetUsd: this.microsoftBudgetUsd(),
+              startDate: form.startDate,
+              endDate: form.endDate,
+              // The SAME computeds the section renders and `canSubmit` gates on, so the screen,
+              // the guard and the request cannot disagree — see `microsoftEffectiveGeoTargets`.
+              geoTargets: this.microsoftEffectiveGeoTargets(),
+              keywords: this.microsoftEffectiveKeywords(),
+              // Sent only when set. An explicit 0 would claim a bid the account does not have,
+              // whereas omitting it lets Microsoft apply the account-currency minimum.
+              ...(this.microsoftEffectiveCpcBid() !== null ? { cpcBid: this.microsoftEffectiveCpcBid() as number } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
             },
           }
@@ -1288,6 +1473,23 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.redditBudgetUsd !== undefined) {
       this.redditBudgetUsd.set(draft.redditBudgetUsd);
     }
+
+    // Microsoft (LFXV2-3312), on the same present-only rule. The arrays restore on `!== undefined`
+    // rather than on truthiness, which is the whole point: an EMPTY list is a deliberate clear the
+    // operator made, and `canSubmit` blocks on exactly that. Restoring on truthiness would silently
+    // refill it from the brief's seed and hand back a campaign the operator had emptied.
+    if (draft.microsoftBudgetUsd !== undefined) {
+      this.microsoftBudgetUsd.set(draft.microsoftBudgetUsd);
+    }
+    if (draft.microsoftGeoTargets !== undefined) {
+      this.microsoftGeoTargets.set([...draft.microsoftGeoTargets]);
+    }
+    if (draft.microsoftKeywords !== undefined) {
+      this.microsoftKeywords.set(draft.microsoftKeywords.map((k) => ({ ...k })));
+    }
+    if (draft.microsoftCpcBid !== undefined) {
+      this.microsoftCpcBid.set(draft.microsoftCpcBid);
+    }
   }
 
   /**
@@ -1353,6 +1555,14 @@ export class ImplementationTabComponent implements OnInit {
       metaGeoTargets: [...this.metaGeoTargets()],
       metaBudgetUsd: this.metaBudgetUsd(),
       metaLifetimeBudget: this.metaLifetimeBudget(),
+      // Microsoft's four (LFXV2-3312), snapshotted rather than referenced for the same reason as
+      // the Meta block: the parent must hold a value, not a live view of a signal this component
+      // is about to destroy. The two ARRAYS are carried because they have a real editor here —
+      // see the field docs on `CampaignImplementationDraft`.
+      microsoftBudgetUsd: this.microsoftBudgetUsd(),
+      microsoftGeoTargets: [...this.microsoftGeoTargets()],
+      microsoftKeywords: this.microsoftKeywords().map((k) => ({ ...k })),
+      microsoftCpcBid: this.microsoftCpcBid(),
       // The remaining signal-backed values, on the same terms as the Meta block above: snapshotted
       // rather than referenced, and named explicitly rather than spread.
       //
@@ -1510,6 +1720,26 @@ export class ImplementationTabComponent implements OnInit {
     }
 
     this.briefKeywords.set(brief.keywords);
+
+    // Microsoft's seed (LFXV2-3312). The brief's own keywords feed it DIRECTLY, with no
+    // translation: `CampaignKeyword.matchType` is already the PascalCase vocabulary
+    // `microsoftKeywordConfig` takes ('Exact' | 'Phrase' | 'Broad'), unlike Google Ads, which
+    // needs the SCREAMING_CASE rename. `term` becomes `text` — that is the only remapping.
+    //
+    // Seeded rather than left empty because an empty list BLOCKS the submit here (no keywords
+    // means a campaign that can never serve), so shipping the section empty would make Microsoft
+    // look broken on first render. The operator edits from a working starting point.
+    this.microsoftKeywords.set((brief.keywords ?? []).filter((k) => k.term?.trim()).map((k) => ({ text: k.term.trim(), matchType: k.matchType })));
+    // Geo chips are left EMPTY here rather than seeded from the country code.
+    //
+    // `countryCodeValue` must not be read in this method: `populateFromBrief` runs inside the
+    // TRACKED `briefData` effect, and that signal is a `toSignal` over `campaignForm.valueChanges`.
+    // Reading it makes the seed's own `patchValue` a dependency of the effect performing the seed,
+    // which re-enters continuously — the spec suite hung before running a single test.
+    //
+    // Nothing is lost by leaving it empty: `microsoftEffectiveGeoTargets` already falls back to
+    // the country code, so the request still carries a target, and the template renders that
+    // fallback explicitly ("defaults to XX") rather than leaving it invisible.
     this.briefHsToken.set(brief.hsUtm);
     this.briefDriveFolderUrl.set(brief.driveFolderUrl);
   }
