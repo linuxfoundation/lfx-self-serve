@@ -4,7 +4,6 @@ description: Subscribe, unsubscribe, and manage mailing lists for your Linux Fou
 audience: [all]
 product_area: Mailing Lists
 tags: [mailing-lists, email, subscribe, groups, communication]
-last_generated: 2026-05-22
 last_updated: 2026-05-23
 intercom_collection: Mailing Lists
 ---

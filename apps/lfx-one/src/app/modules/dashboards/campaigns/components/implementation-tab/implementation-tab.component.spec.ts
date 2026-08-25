@@ -587,6 +587,24 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     return createCampaign.mock.calls[0][0].metaConfig;
   }
 
+  /** Mount a fresh component with a persisted draft naming `objective`, as a tab revisit would. */
+  async function restoredWithObjective(objective: string): Promise<ComponentFixture<ImplementationTabComponent>> {
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    restored.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      metaObjective: objective,
+      headlines: [''],
+      descriptions: [''],
+    });
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/k' },
+      selectedPlatforms: ['meta-ads'],
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+    return restored;
+  }
+
   async function selectObjective(value: string): Promise<void> {
     const select = require<HTMLSelectElement>('implementation-meta-objective');
     select.value = value;
@@ -633,11 +651,100 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
 
   // === Objective ===
 
-  it('renders every objective the shared labels define', () => {
+  /**
+   * Asserted as a LITERAL list. The previous version compared against
+   * `Object.keys(META_OBJECTIVE_LABELS)`, which agreed with whatever that map contained and so
+   * could never have caught an objective appearing or disappearing from the picker.
+   */
+  it('renders exactly the selectable objectives, in order', () => {
     const select = require<HTMLSelectElement>('implementation-meta-objective');
     const rendered = Array.from(select.options).map((o) => o.value);
 
-    expect(rendered).toEqual(Object.keys(META_OBJECTIVE_LABELS));
+    expect(rendered).toEqual(['awareness', 'traffic', 'engagement', 'conversions']);
+  });
+
+  /**
+   * `leads` dispatches as a website-traffic campaign (see `META_OBJECTIVE_PARAMS.leads`), so
+   * offering it would label a traffic campaign "Leads". Hidden until LFXV2-2665 builds
+   * instant-form support.
+   */
+  it('does not offer leads', () => {
+    const select = require<HTMLSelectElement>('implementation-meta-objective');
+    const rendered = Array.from(select.options).map((o) => o.value);
+
+    expect(rendered).not.toContain('leads');
+  });
+
+  /** The label stays defined even though the option is gone — the server names campaigns from it. */
+  it('keeps a label for the hidden leads objective', () => {
+    expect(META_OBJECTIVE_LABELS['leads']).toBe('Leads');
+  });
+
+  /**
+   * A draft persisted before `leads` was hidden restores an objective with no matching
+   * `<option>`. Driven through the REAL draft input rather than by setting the signal directly:
+   * a signal-only test leaves `applyDraft` unexercised, and a coercion added there — mapping the
+   * unrenderable value onto the first option — silently discards the user's stored objective
+   * while passing. That mutation survived until this test went through the draft path.
+   *
+   * `leads` must survive to the wire, where `META_OBJECTIVE_PARAMS` dispatches it as the
+   * website-traffic campaign it has always been.
+   */
+  it('restores leads from a persisted draft', async () => {
+    const restored = await restoredWithObjective('leads');
+    const c = restored.componentInstance as unknown as Record<string, any>;
+
+    expect(c['metaObjective']()).toBe('leads');
+  });
+
+  /**
+   * The DOM half, which the signal assertion above cannot cover — and the symptom is worse than
+   * an empty field. The template selects per-`<option>` via `[selected]`, so a restored `leads`
+   * with no matching option does not blank the control: Angular applies the binding while the
+   * option does not yet exist, and the browser falls back to index 0. Before the disabled legacy
+   * option existed this field displayed `awareness` — the FIRST selectable objective — a
+   * confidently wrong value the operator could submit without ever noticing, while the signal
+   * still held `leads`. Reverting the fix makes this test report exactly that: `expected
+   * 'awareness' to be 'leads'`.
+   *
+   * Asserting `selectedIndex`, the value and the visible label is what binds the fix; a test that
+   * stopped at the signal passed while the screen showed a different campaign than the wire sent.
+   */
+  it('shows the restored leads objective in the select rather than displaying the first selectable one', async () => {
+    const restored = await restoredWithObjective('leads');
+    const select = restored.nativeElement.querySelector('[data-testid="implementation-meta-objective"]') as HTMLSelectElement;
+
+    expect(select.selectedIndex).toBeGreaterThanOrEqual(0);
+    expect(select.value).toBe('leads');
+    expect(select.options[select.selectedIndex].text).toContain('Leads');
+  });
+
+  /** Visible, but NOT newly choosable — the whole point of hiding it. */
+  it('renders the restored leads objective as disabled', async () => {
+    const restored = await restoredWithObjective('leads');
+    const select = restored.nativeElement.querySelector('[data-testid="implementation-meta-objective"]') as HTMLSelectElement;
+    const leadsOption = Array.from(select.options).find((o) => o.value === 'leads');
+
+    expect(leadsOption?.disabled).toBe(true);
+  });
+
+  /** A restore affordance, not a permanent fifth option — it must not appear for a normal draft. */
+  it('does not render the legacy option when the objective is selectable', async () => {
+    const restored = await restoredWithObjective('engagement');
+    const select = restored.nativeElement.querySelector('[data-testid="implementation-meta-objective"]') as HTMLSelectElement;
+
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['awareness', 'traffic', 'engagement', 'conversions']);
+  });
+
+  /**
+   * The other half of the same restore: an objective the picker CAN render must still round-trip,
+   * so the assertion above cannot be satisfied by a restore path that ignores the draft entirely.
+   */
+  it('restores a selectable objective from a persisted draft', async () => {
+    const restored = await restoredWithObjective('engagement');
+    const c = restored.componentInstance as unknown as Record<string, any>;
+
+    expect(c['metaObjective']()).toBe('engagement');
   });
 
   /**
@@ -2115,5 +2222,390 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     expect(sent).toBe(displayed.accountId);
     // And specifically not the revoked id the draft carried.
     expect(sent).not.toBe('urn:li:sponsoredAccount:revoked-999');
+  });
+});
+
+/**
+ * The remaining signal-backed values, carried across the destroy/remount the parent's
+ * `@switch`/`@case` performs on every tab visit (LFXV2-3230, and LFXV2-3315 for the Reddit
+ * budget it names).
+ *
+ * Every test here asserts what the REMOUNTED component would SUBMIT, not that the emitted draft
+ * object grew a key. A field added to `emitDraft` but never restored in `applyDraft` still loses
+ * the user's edit, and a shape assertion on the draft passes throughout that failure — so the
+ * round trip is the only assertion that means anything.
+ *
+ * Each edited value is deliberately DIFFERENT from both the component default and the brief's
+ * recommendation. Reddit's brief seed is the trap: the component re-runs `populateFromBrief` on
+ * every mount, so asserting the brief's own numbers back would pass with the restore deleted.
+ */
+describe('ImplementationTabComponent per-platform draft round-trip', () => {
+  const EVENT_SLUG = 'kubecon-eu-2026';
+
+  let createCampaign: ReturnType<typeof vi.fn>;
+
+  /**
+   * A brief that seeds all three platforms, so every assertion below has a re-stamped value to
+   * beat. Without the seed a restored value and an unrestored default can look identical.
+   */
+  const brief = (): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: EVENT_SLUG, countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['linkedin-ads', 'reddit-ads', 'meta-ads'],
+      structuredCopy: { google_search: { headlines: ['Attend KubeCon'], descriptions: ['Join us in September'] } },
+      linkedInCopy: {
+        variants: [{ headline: 'Brief headline', introText: 'Brief intro', destinationUrl: 'https://example.com/brief' }],
+        recommendedGeoTargets: [{ urn: 'urn:li:geo:103644278', label: 'United States' }],
+        recommendedTargetingProfile: 'cloud-native',
+        // `populateFromBrief` reads `strategy.budgetRecommendation.lifetimeBudgetUsd` and, when it
+        // is a finite number, seeds BOTH `linkedInBudgetUsd` and `linkedInLifetimeBudget` (true).
+        // 7300/true is deliberately neither component default (500/false), which is what lets the
+        // omitted-fields test below distinguish "the brief's seed survived" from "the restore
+        // re-stamped the defaults". Without this seed that test asserts 500/false — the very
+        // values a defaulting implementation would write — and so cannot fail.
+        strategy: {
+          budgetRecommendation: { dailyBudgetUsd: 250, lifetimeBudgetUsd: 7300, rationale: 'Brief recommendation' },
+        },
+      },
+      redditCopy: {
+        variants: [{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }],
+        recommendedSubreddits: ['briefsub'],
+        recommendedInterests: ['brief-interest'],
+        recommendedKeywords: ['brief-keyword'],
+        recommendedGeos: ['US'],
+      },
+      metaCopy: {
+        variants: [{ primaryText: 'Brief primary', headline: 'Brief meta headline', description: 'Brief description' }],
+        recommendedGeos: ['US'],
+      },
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  /**
+   * Only the members these tests drive; the component's own members stay protected.
+   *
+   * The brief-derived arrays are typed READ-ONLY on purpose. They have no editor in the template,
+   * so a test that writes one is manufacturing a state no user can reach — which is how the
+   * removed round-trip tests came to assert the draft agreeing with itself. They are read here
+   * only to check the BRIEF re-seeds them. `emitDraft` is absent for the same reason: calling it
+   * by hand fakes the emission a real handler is supposed to make.
+   */
+  interface Internals {
+    campaignForm: { controls: Record<string, { setValue(v: unknown): void; value: unknown }> };
+    selectedPlatforms: { set(v: string[]): void };
+    linkedInVariants: () => unknown[];
+    linkedInBudgetUsd: () => number;
+    linkedInLifetimeBudget: () => boolean;
+    redditSubreddits: () => string[];
+    redditInterests: () => string[];
+    redditKeywords: () => string[];
+    redditGeoTargets: () => string[];
+    redditVariants: () => unknown[];
+    redditBudgetUsd: () => number;
+    metaVariants: () => unknown[];
+    submit(): void;
+  }
+  const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
+
+  /**
+   * Mount as the parent does, carrying ONLY the previous mount's emitted draft — which is all
+   * that survives the component's teardown in production.
+   */
+  async function mount(draft: CampaignImplementationDraft | null): Promise<{
+    fixture: ComponentFixture<ImplementationTabComponent>;
+    latest: () => CampaignImplementationDraft | null;
+  }> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    let captured: CampaignImplementationDraft | null = null;
+    f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    if (draft) f.componentRef.setInput('draft', draft);
+    f.componentRef.setInput('briefData', brief());
+    f.detectChanges();
+    await f.whenStable();
+    return { fixture: f, latest: () => captured };
+  }
+
+  /** Fill the non-platform fields `canSubmit` requires, so `submit()` reaches the service. */
+  function makeSubmittable(f: ComponentFixture<ImplementationTabComponent>): void {
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+  }
+
+  /**
+   * Drive the REAL template bindings rather than the signals or any `set*` convenience method.
+   *
+   * This is the whole point of these three. The template binds `(input)`/`(change)` to
+   * `onLinkedInBudgetInput` and `onLinkedInLifetimeBudgetChange`; a test driving a `set*` helper
+   * instead stays green while `emitDraft()` is missing from the LIVE handler, leaving the
+   * production regression path uncovered. That trap already cost this file once — see the note at
+   * the removed `setLinkedInAccount`, which only a test ever called.
+   */
+  function typeRedditBudget(f: ComponentFixture<ImplementationTabComponent>, value: number): void {
+    const input = f.nativeElement.querySelector('[data-testid="implementation-reddit-budget"]') as HTMLInputElement;
+    input.value = String(value);
+    input.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
+
+  function typeLinkedInBudget(f: ComponentFixture<ImplementationTabComponent>, value: number): void {
+    const input = f.nativeElement.querySelector('[data-testid="implementation-linkedin-budget"]') as HTMLInputElement;
+    input.value = String(value);
+    input.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
+
+  /** The lifetime-budget checkbox carries no testid; it is the checkbox beside the budget input. */
+  function toggleLinkedInLifetimeBudget(f: ComponentFixture<ImplementationTabComponent>, checked: boolean): void {
+    const budget = f.nativeElement.querySelector('[data-testid="implementation-linkedin-budget"]') as HTMLInputElement;
+    const box = budget.closest('.grid')?.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    box.checked = checked;
+    box.dispatchEvent(new Event('change'));
+    f.detectChanges();
+  }
+
+  /** The config the remounted component would dispatch for one platform. */
+  function sentConfig(key: string): Record<string, unknown> {
+    expect(createCampaign).toHaveBeenCalled();
+    return createCampaign.mock.calls[0][0][key] as Record<string, unknown>;
+  }
+
+  beforeEach(async () => {
+    createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            createCampaign,
+            getLinkedInAccounts: () => of([{ accountId: 'urn:li:sponsoredAccount:1', name: 'LF Account', status: 'ACTIVE' }]),
+          },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  // === Reddit: the budget, the platform's one bound control ===
+
+  /**
+   * The budget is the one Reddit control the template binds, and so the only Reddit value the
+   * draft carries. Driven through the real `(input)` binding: a test calling `redditBudgetUsd.set`
+   * directly would stay green with the handler's `emitDraft()` removed, since it never exercises
+   * the emission path a live edit takes.
+   *
+   * 750 is neither the component's 500 default nor anything the brief carries, so the assertion
+   * cannot be satisfied by a re-stamp.
+   */
+  it('carries the reddit budget through a tab round-trip and into the request', async () => {
+    const first = await mount(null);
+    typeRedditBudget(first.fixture, 750);
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.redditBudgetUsd).toBe(750);
+
+    const second = await mount(draft);
+    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(second.fixture);
+    second.fixture.detectChanges();
+    at(second.fixture).submit();
+
+    expect(at(second.fixture).redditBudgetUsd()).toBe(750);
+    expect(sentConfig('redditConfig')['budgetUsd']).toBe(750);
+  });
+
+  // === LinkedIn: the budget pair ===
+
+  /**
+   * Driven through the template's own `(input)` and `(change)` bindings. The budget pair's loss
+   * is measured in money — a silent revert puts the campaign back to $500 daily, a spend decision
+   * the operator did not make and the form does not show them re-making.
+   */
+  it('carries the linkedin budget pair through a tab round-trip and into the request', async () => {
+    const first = await mount(null);
+    typeLinkedInBudget(first.fixture, 2500);
+    // FALSE, against the brief seed's `true`: a restore arm that silently re-stamped the seed
+    // would still satisfy an assertion of `true`.
+    toggleLinkedInLifetimeBudget(first.fixture, false);
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.linkedInBudgetUsd).toBe(2500);
+    expect(draft?.linkedInLifetimeBudget).toBe(false);
+
+    const second = await mount(draft);
+    const c = at(second.fixture);
+    c.selectedPlatforms.set(['linkedin-ads']);
+    makeSubmittable(second.fixture);
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    second.fixture.detectChanges();
+    c.submit();
+
+    expect(c.linkedInBudgetUsd()).toBe(2500);
+    expect(c.linkedInLifetimeBudget()).toBe(false);
+    const config = sentConfig('linkedInConfig');
+    expect(config['budgetUsd']).toBe(2500);
+    expect(config['lifetimeBudget']).toBe(false);
+  });
+
+  // === Handler emission, which naming the field in `emitDraft` does not give you ===
+
+  /**
+   * These three handlers mutate signals `campaignForm.valueChanges` cannot see, so without their
+   * own `emitDraft()` call the parent never learns the edit — and the field is lost despite being
+   * named in the emit.
+   *
+   * The regression protection is that these drive the REAL bindings and nothing else: each
+   * dispatches a genuine `input`/`change` event at the template's own control and then reads the
+   * draft the component emitted of its own accord. `Internals` deliberately exposes no
+   * `emitDraft`, so no test here can supply the emission the handler is supposed to make.
+   *
+   * That property is the whole point, because its absence is what let the defect hide: the
+   * earlier versions of these tests drove `set*` helpers the template never called, and stayed
+   * green with `emitDraft()` deleted from either live LinkedIn handler. Driving the binding is
+   * what makes that mutation fail, so a `set*`-style shortcut must not come back.
+   */
+  it('emits the draft when the reddit budget handler runs', async () => {
+    const first = await mount(null);
+    typeRedditBudget(first.fixture, 640);
+
+    expect(first.latest()?.redditBudgetUsd).toBe(640);
+  });
+
+  it('emits the draft when the linkedin budget handler runs', async () => {
+    const first = await mount(null);
+    typeLinkedInBudget(first.fixture, 1750);
+
+    expect(first.latest()?.linkedInBudgetUsd).toBe(1750);
+  });
+
+  it('emits the draft when the linkedin lifetime-budget handler runs', async () => {
+    const first = await mount(null);
+    // Toggled to FALSE, away from the brief seed's `true`. Asserting `true` here would match the
+    // seed the mount already produced, so dropping `emitDraft()` from the live handler would keep
+    // this green — the mutation this test exists to catch.
+    toggleLinkedInLifetimeBudget(first.fixture, false);
+
+    expect(first.latest()?.linkedInLifetimeBudget).toBe(false);
+  });
+
+  /**
+   * An older draft carries none of the budget fields, and absence must mean "keep what the brief
+   * seeded" rather than "the user chose the defaults" — the same rule the Meta block follows.
+   *
+   * Without it, a draft persisted before this shipped would wipe a Reddit campaign's budget on the
+   * next tab switch, which would be a strictly worse bug than the one being fixed.
+   *
+   * The LinkedIn pair is what gives this test teeth, and it only does so because `brief()` seeds
+   * `strategy.budgetRecommendation.lifetimeBudgetUsd`. The remount therefore starts at 7300/true,
+   * NOT at the component's 500/false, so an `applyDraft` that wrote the defaults over an omitted
+   * legacy field — the exact regression this guards — lands on 500/false and fails here. Asserting
+   * the defaults back, as an earlier revision did, agreed with that broken implementation: fixture
+   * and code shared the 500/false assumption, so the test passed either way while a real brief
+   * carrying a non-default lifetime budget would be silently downgraded (LFXV2-3230 review).
+   *
+   * Reddit has no brief-seeded budget to beat, so its 500 is the component default by nature; it
+   * is asserted to pin that an omitted field is not turned into some OTHER value.
+   */
+  it('leaves the platform values seeded when an older draft omits them', async () => {
+    const first = await mount(null);
+    const legacy = { ...(first.latest() as CampaignImplementationDraft) } as Record<string, unknown>;
+    for (const key of ['redditBudgetUsd', 'linkedInBudgetUsd', 'linkedInLifetimeBudget']) {
+      delete legacy[key];
+    }
+    first.fixture.destroy();
+
+    // Guard the guard: if the brief ever stops seeding a non-default pair, the assertions below
+    // silently go back to agreeing with the defaults, and this test stops being able to fail.
+    expect(legacy['linkedInBudgetUsd']).toBeUndefined();
+    expect(legacy['linkedInLifetimeBudget']).toBeUndefined();
+
+    const second = await mount(legacy as unknown as CampaignImplementationDraft);
+    const c = at(second.fixture);
+
+    expect(c.redditBudgetUsd()).toBe(500);
+    expect(c.linkedInBudgetUsd()).toBe(7300);
+    expect(c.linkedInLifetimeBudget()).toBe(true);
+  });
+
+  /**
+   * The brief-derived arrays are re-seeded from the brief on every mount, which is WHY the draft
+   * does not carry them (LFXV2-3230 review). This is the test that keeps that justification
+   * honest: if `populateFromBrief` ever stopped re-seeding one of them, dropping it from the draft
+   * would become a real loss and this goes red.
+   *
+   * Mounting with a draft present is the point — it proves the restore leaves them alone rather
+   * than overwriting the fresh seed with a stale copy, which is what carrying them used to do.
+   *
+   * All SEVEN excluded arrays are asserted, and the count is the point: `emitDraft`'s note names
+   * seven, and an earlier revision checked six. `redditVariants` was the omission, so dropping it
+   * from the brief seed stayed green under a docblock claiming every array was covered.
+   */
+  it('re-seeds the brief-derived arrays from the brief on remount rather than from the draft', async () => {
+    const first = await mount(null);
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const second = await mount(draft);
+    const c = at(second.fixture);
+
+    expect(c.redditSubreddits()).toEqual(['briefsub']);
+    expect(c.redditInterests()).toEqual(['brief-interest']);
+    expect(c.redditKeywords()).toEqual(['brief-keyword']);
+    expect(c.redditGeoTargets()).toEqual(['US']);
+    expect(c.redditVariants()).toEqual([{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }]);
+    expect(c.linkedInVariants()).toEqual([{ headline: 'Brief headline', introText: 'Brief intro', destinationUrl: 'https://example.com/brief' }]);
+    expect(c.metaVariants()).toEqual([{ primaryText: 'Brief primary', headline: 'Brief meta headline', description: 'Brief description' }]);
+  });
+
+  /**
+   * A draft written by an OLDER build still carries the arrays. The restore must IGNORE them, not
+   * replay them over the brief's fresh seed — that stale-copy replay is the concrete harm the
+   * `!== undefined` arms were doing, since an empty array is `undefined`-negative and wins.
+   *
+   * Every array the stale draft supplies is also asserted on the remount. `redditVariants: []` was
+   * supplied here without ever being read back, so a restore arm replaying it would have wiped the
+   * brief's variants while this test stayed green (LFXV2-3230 review).
+   */
+  it('ignores brief-derived arrays left in a draft by an older build', async () => {
+    const first = await mount(null);
+    const stale = {
+      ...(first.latest() as CampaignImplementationDraft),
+      redditSubreddits: [],
+      redditInterests: ['stale-interest'],
+      redditKeywords: [],
+      redditGeoTargets: ['ZZ'],
+      redditVariants: [],
+      linkedInVariants: [],
+      metaVariants: [],
+    } as unknown as CampaignImplementationDraft;
+    first.fixture.destroy();
+
+    const second = await mount(stale);
+    const c = at(second.fixture);
+
+    // The brief's values, not the draft's — and emphatically not the empty lists.
+    expect(c.redditSubreddits()).toEqual(['briefsub']);
+    expect(c.redditInterests()).toEqual(['brief-interest']);
+    expect(c.redditKeywords()).toEqual(['brief-keyword']);
+    expect(c.redditGeoTargets()).toEqual(['US']);
+    // Asserted by VALUE, not by length: the stale draft supplies `redditVariants: []`, so a
+    // length check alone would pass on a replay of any non-empty list, and the seventh array was
+    // supplied here but never checked at all until LFXV2-3230 review.
+    expect(c.redditVariants()).toEqual([{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }]);
+    expect(c.linkedInVariants()).toHaveLength(1);
+    expect(c.metaVariants()).toHaveLength(1);
   });
 });

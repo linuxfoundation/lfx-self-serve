@@ -21,6 +21,10 @@
  *   kind-appropriate label/icon; meeting/vote/members chips click through (meeting-join route /
  *   vote drawer / Members tab); mailing-list and unrecognized-kind chips render unlinked (no
  *   click target)
+ * - Sources disclosure & dedupe (LFXV2-3335): the row collapses behind a click-to-expand
+ *   "Sources (N)" toggle once raw source_refs count exceeds the collapse threshold; refs
+ *   sharing the same (kind, label) collapse into one count-badged chip that expands into
+ *   its individually-clickable, ordinally-labeled instances
  *
  * Architecture notes (mirrors repo convention):
  * - API mocking is per-spec via `page.route()` (see org-membership-documentation.spec.ts
@@ -44,7 +48,7 @@
  */
 
 import { expect, Page, Route, test } from '@playwright/test';
-import { WEEKLY_BRIEF_ERROR_REASON } from '@lfx-one/shared/constants';
+import { WEEKLY_BRIEF_ERROR_REASON, WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, PollStatus } from '@lfx-one/shared/enums';
 import {
   Committee,
@@ -99,14 +103,16 @@ const USED_THROTTLE_AFTER_GENERATE: WeeklyBriefThrottle = {
 };
 
 // Covers every kind lfx-v2-committee-service's group_weekly_brief_generator.go actually
-// emits today (meeting, mailing-list, vote, members), the "doc" kind documented only as a
-// Goa design example (never emitted, mapped defensively anyway), and an unrecognized kind —
-// the open-string fallback a future upstream value must not break.
+// emits today (meeting, mailing-list, vote, members) and an unrecognized kind — the
+// open-string fallback a future upstream value must not break. Exactly 5 refs, all with
+// distinct (kind, label) pairs — at WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD, so this fixture
+// renders flat with no disclosure toggle and no dedupe grouping (see the dedicated "Sources
+// disclosure & dedupe (LFXV2-3335)" describe block below for the >threshold / grouped case,
+// including "doc" kind coverage via BRIEF_WITH_MANY_SOURCES).
 const BRIEF_WITH_SOURCES: WeeklyBrief = {
   ...GENERATED_BRIEF,
   source_refs: [
     { id: 'src-meeting-1', kind: 'meeting', title: 'Weekly Sync' },
-    { id: 'src-doc-1', kind: 'doc', title: 'Charter.pdf' },
     { id: 'src-ml-1', kind: 'mailing-list', title: 'tsc-discuss' },
     { id: 'src-vote-1', kind: 'vote', title: 'Q1 Budget' },
     // Upstream always sets this exact title for "members" — asserted verbatim below rather
@@ -115,6 +121,13 @@ const BRIEF_WITH_SOURCES: WeeklyBrief = {
     { id: 'src-unknown-1', kind: 'some_future_kind' },
   ],
 };
+// Fails loudly at collection time, not with an opaque "element not found" from every test
+// using this fixture, if WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD ever changes.
+if (BRIEF_WITH_SOURCES.source_refs.length !== WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD) {
+  throw new Error(
+    `BRIEF_WITH_SOURCES must have exactly WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD (${WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD}) source_refs to stay at the flat-render threshold — update this fixture (add/remove a distinct-label ref) to match.`
+  );
+}
 
 // Two distinct vote refs — for the concurrent-click race test only (PR #1363 review: Copilot,
 // Cursor Bugbot, and a human reviewer all independently caught that a single in-flight boolean
@@ -126,6 +139,29 @@ const BRIEF_WITH_TWO_VOTES: WeeklyBrief = {
     { id: 'src-vote-2', kind: 'vote', title: 'Q2 Budget' },
   ],
 };
+
+// Duplicate-label meeting refs (recurring-meeting instances) alongside distinct-kind refs —
+// 7 total, over WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD — covering both halves of LFXV2-3335:
+// the disclosure gating the row above the threshold, and same-(kind, label) refs collapsing
+// into one count-badged, ordinally-labeled group. Also the only fixture covering "doc" — moved
+// here from BRIEF_WITH_SOURCES so that fixture could stay exactly at the collapse threshold.
+const BRIEF_WITH_MANY_SOURCES: WeeklyBrief = {
+  ...GENERATED_BRIEF,
+  source_refs: [
+    { id: 'src-tc-1', kind: 'meeting', title: 'AAIF Technical Committee Meeting' },
+    { id: 'src-tc-2', kind: 'meeting', title: 'AAIF Technical Committee Meeting' },
+    { id: 'src-tc-3', kind: 'meeting', title: 'AAIF Technical Committee Meeting' },
+    { id: 'src-vote-1', kind: 'vote', title: 'Q1 Budget' },
+    { id: 'src-members-1', kind: 'members', title: 'Member roster changes' },
+    { id: 'src-ml-1', kind: 'mailing-list', title: 'tsc-discuss' },
+    { id: 'src-doc-1', kind: 'doc', title: 'Charter.pdf' },
+  ],
+};
+if (BRIEF_WITH_MANY_SOURCES.source_refs.length <= WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD) {
+  throw new Error(
+    `BRIEF_WITH_MANY_SOURCES must have more than WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD (${WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD}) source_refs to exercise the disclosure — update this fixture to match.`
+  );
+}
 
 function buildCommitteeFixture(overrides: Partial<Committee> = {}): Committee {
   return {
@@ -554,7 +590,6 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     await expect(sources).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await expect(sources.getByTestId('weekly-brief-card-source-chip-src-meeting-1')).toContainText('Weekly Sync');
-    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-doc-1')).toContainText('Charter.pdf');
     await expect(sources.getByTestId('weekly-brief-card-source-chip-src-ml-1')).toContainText('tsc-discuss');
     await expect(sources.getByTestId('weekly-brief-card-source-chip-src-vote-1')).toContainText('Q1 Budget');
     // Upstream always sets this exact title for a "members" ref — never the "Members" default.
@@ -866,6 +901,65 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     // committee-view's activeTab flips locally (no route change) — the Members tab's own
     // panel rendering is the observable proof, not a URL change.
     await expect(page.getByTestId('members-tab-bar')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+});
+
+test.describe('WG Weekly Brief card — Sources disclosure & dedupe (LFXV2-3335)', () => {
+  test('collapses behind a disclosure toggle above the threshold, and expanding reveals deduped, sectioned, group-expandable chips', async ({ page }) => {
+    await mockCommitteeShell(page);
+    await mockCurrentBrief(page, { brief: BRIEF_WITH_MANY_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    const sources = page.getByTestId('weekly-brief-card-sources');
+    await expect(sources).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    // Raw refs > the threshold — collapsed behind the disclosure, no chips visible yet.
+    const toggle = page.getByTestId('weekly-brief-card-sources-toggle');
+    await expect(toggle).toContainText(`Sources (${BRIEF_WITH_MANY_SOURCES.source_refs.length})`);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-vote-1')).toHaveCount(0);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    // Three same-(kind, label) meeting refs collapse into one count-badged group chip, not
+    // three individual chips.
+    const groupToggle = sources.getByTestId('weekly-brief-card-source-group-toggle-src-tc-1');
+    await expect(groupToggle).toBeVisible();
+    await expect(groupToggle).toContainText('AAIF Technical Committee Meeting (3)');
+    await expect(groupToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-tc-2')).toHaveCount(0);
+
+    // Distinct-kind refs render as individual chips immediately — no grouping needed.
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-vote-1')).toContainText('Q1 Budget');
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-members-1')).toContainText('Member roster changes');
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-ml-1')).toContainText('tsc-discuss');
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-doc-1')).toContainText('Charter.pdf');
+
+    await groupToggle.click();
+    await expect(groupToggle).toHaveAttribute('aria-expanded', 'true');
+
+    // Expanding the group reveals each instance, ordinally labeled, individually clickable.
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-tc-1')).toContainText('AAIF Technical Committee Meeting #1');
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-tc-2')).toContainText('AAIF Technical Committee Meeting #2');
+    await expect(sources.getByTestId('weekly-brief-card-source-chip-src-tc-3')).toContainText('AAIF Technical Committee Meeting #3');
+
+    // Same meeting-join mocking as the flat-row test above — proves a specific expanded
+    // instance still deep-links to its own ref id, not the group's.
+    await page.route('**/public/api/meetings/**', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) });
+        return;
+      }
+      await route.fallback();
+    });
+    const meetingRequest = page.waitForRequest((req) => req.method() === 'GET' && /\/public\/api\/meetings\/(past\/)?src-tc-2(\?|$)/.test(req.url()), {
+      timeout: DATA_LOAD_TIMEOUT,
+    });
+    await sources.getByTestId('weekly-brief-card-source-chip-src-tc-2').click();
+    await meetingRequest;
   });
 });
 

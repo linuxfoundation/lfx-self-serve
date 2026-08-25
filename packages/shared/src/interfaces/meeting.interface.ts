@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { MEETING_ALLOWED_VOTING_STATUSES } from '../constants/committees.constants';
 import type { PAST_MEETING_SORT } from '../constants/meeting.constants';
-import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
+import type { ArtifactVisibility, CancelOnCommitteeRemoval, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
 import type { TagSeverity } from './components.interface';
 
 // ============================================================================
@@ -120,6 +121,9 @@ export interface ImportantLinkFormValue {
  * @description Basic committee information for meeting association
  */
 
+/** Voting-status values accepted by the meeting API for committee associations */
+export type MeetingAllowedVotingStatus = (typeof MEETING_ALLOWED_VOTING_STATUSES)[number];
+
 /**
  * Committee payload for meeting API requests
  * @description Committee structure used in create/update meeting requests
@@ -127,8 +131,8 @@ export interface ImportantLinkFormValue {
 export interface MeetingCommittee {
   /** Unique identifier for the committee */
   uid: string;
-  /** Allowed voting statuses for committee members */
-  allowed_voting_statuses?: string[];
+  /** Allowed voting statuses for committee members (meeting API snake_case vocabulary) */
+  allowed_voting_statuses?: MeetingAllowedVotingStatus[];
   /** Committee name */
   name?: string;
 }
@@ -293,6 +297,8 @@ export interface Meeting {
   show_meeting_attendees?: boolean | null;
   /** Who can access meeting artifacts (recordings, transcripts, AI summaries) */
   artifact_visibility: ArtifactVisibility | null;
+  /** Per-meeting override for cancelling registration on committee removal; "inherit" defers to the project default */
+  cancel_on_committee_removal: CancelOnCommitteeRemoval | null;
   /** Minutes before meeting registrants can join */
   early_join_time_minutes?: number;
   /** Array of organizer usernames */
@@ -441,6 +447,7 @@ export interface CreateMeetingRequest {
   youtube_upload_enabled?: boolean; // YouTube upload integration
   show_meeting_attendees?: boolean; // Show meeting attendees on meeting details page
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
+  cancel_on_committee_removal?: CancelOnCommitteeRemoval; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
   owner?: MeetingOwnerInput; // Meeting owner; omit to default to the creator
@@ -471,6 +478,7 @@ export interface UpdateMeetingRequest {
   youtube_upload_enabled?: boolean | null; // YouTube upload integration
   show_meeting_attendees?: boolean | null; // Show meeting attendees on meeting details page
   artifact_visibility?: ArtifactVisibility | null; // Who can access meeting artifacts
+  cancel_on_committee_removal?: CancelOnCommitteeRemoval | null; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
   owner?: MeetingOwnerInput; // Meeting owner; omit to preserve the stored owner (cannot be unset)

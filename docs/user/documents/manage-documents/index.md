@@ -4,7 +4,6 @@ description: How to browse and manage project documents in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Documents
 tags: [documents, manage, browse]
-last_generated: 2026-05-22
 last_updated: 2026-05-22
 intercom_collection: Documents
 ---

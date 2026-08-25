@@ -233,6 +233,39 @@ describe('ProjectService — create picker methods', () => {
     });
   });
 
+  describe('getProjects', () => {
+    it('requests QUERY_SERVICE_PAGE_SIZE, overriding any caller-supplied page_size', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }]));
+      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+
+      await service.getProjects(req, { page_size: 10 });
+
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', page_size: 500 });
+    });
+
+    it('follows page_token across pages and returns the accumulated projects', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next-token'));
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'b', slug: 'b' }]));
+      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+
+      const result = await service.getProjects(req);
+
+      expect(result.map((p) => p.uid).sort()).toEqual(['a', 'b']);
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ page_token: 'next-token' });
+    });
+
+    it('excludes the ROOT pseudo-project before the access check', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root', slug: 'root' }]));
+      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+
+      const result = await service.getProjects(req);
+
+      expect(result).toEqual([]);
+      expect(addAccessToResources).toHaveBeenCalledWith(req, [], 'project');
+    });
+  });
+
   describe('getChildProjects', () => {
     it('queries parent=project:<uid> and filters to writer-permitted children', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'child-1', slug: 'child-1' }]));

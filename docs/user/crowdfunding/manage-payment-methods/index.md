@@ -4,7 +4,6 @@ description: How to add and remove saved payment methods for crowdfunding donati
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, payment methods, add, delete, credit card]
-last_generated: 2026-06-16
 last_updated: 2026-06-29
 intercom_collection: Crowdfunding
 ---

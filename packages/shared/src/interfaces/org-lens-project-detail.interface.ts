@@ -32,7 +32,7 @@ export interface InfluenceCardVm {
 }
 
 /** LFX Insights project health classification — the 5 bands of the Insights project Health Score component; drives the hero badge color token. */
-export type OrgLensProjectHealth = 'excellent' | 'healthy' | 'stable' | 'unsteady' | 'critical';
+export type OrgLensProjectHealth = 'excellent' | 'healthy' | 'fair' | 'concerning' | 'critical';
 
 /**
  * Precomputed org-influence tier, read straight through from the warehouse level column.

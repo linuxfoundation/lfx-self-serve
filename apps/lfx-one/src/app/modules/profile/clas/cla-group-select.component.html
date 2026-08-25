@@ -1,0 +1,164 @@
+<!--
+Copyright The Linux Foundation and each contributor to LFX.
+SPDX-License-Identifier: MIT
+-->
+
+<div class="flex flex-col" data-testid="cla-group-select-dialog">
+  <p class="mb-4 text-sm text-slate-600">Choose the project, CLA group, or repository source (GitHub, GitLab, or Gerrit), for which you want to sign a CLA.</p>
+
+  <!--
+    The results list is in flow, not an absolutely positioned overlay: inside a DynamicDialog an
+    overlay contributes no height, so the dialog stays short and its content box crops the list.
+  -->
+  <div (focusin)="onFocus()" (keydown)="onKeydown($event)">
+    <lfx-input-text
+      [form]="searchForm"
+      control="query"
+      type="text"
+      size="small"
+      icon="fa-light fa-magnifying-glass"
+      placeholder="Search projects, CLA groups, repo sources, or paste a repo link…"
+      autocomplete="off"
+      styleClass="w-full"
+      data-testid="cla-group-select-search" />
+
+    @if (resultsOpen()) {
+      <div
+        id="cla-group-select-results"
+        role="listbox"
+        aria-label="Matching projects"
+        [attr.aria-activedescendant]="highlightedIndex() >= 0 ? 'cla-group-option-' + options()[highlightedIndex()]?.claGroupId : null"
+        class="mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg"
+        data-testid="cla-group-select-results">
+        @if (error()) {
+          <div role="alert" class="flex items-center justify-between gap-3 px-4 py-3 text-sm text-slate-600" data-testid="cla-group-select-error">
+            <span>Couldn't load projects.</span>
+            <lfx-button label="Retry" size="small" [text]="true" icon="fa-light fa-arrow-rotate-left" (onClick)="retry()" />
+          </div>
+        } @else if (queryBand() === 'empty') {
+          <div class="px-4 py-3 text-sm text-slate-500" data-testid="cla-group-select-empty">
+            Search for a project, CLA group, repo source, or paste a repo link.
+          </div>
+        } @else if (queryBand() === 'short') {
+          <div class="px-4 py-3 text-sm text-slate-500" data-testid="cla-group-select-keep-typing">Keep typing — searching starts at three characters.</div>
+        } @else if (loading() && options().length === 0) {
+          <div class="flex items-center gap-2 px-4 py-3 text-sm text-slate-500" data-testid="cla-group-select-loading">
+            <i class="fa-light fa-spinner-third fa-spin"></i>
+            Searching…
+          </div>
+        } @else if (!loading() && options().length === 0) {
+          <div class="px-4 py-3 text-sm text-slate-500" data-testid="cla-group-select-no-match">
+            No matching projects, CLA groups, repo sources, or repo links.
+          </div>
+        } @else {
+          <!--
+            Results stay on screen while the next search runs. A cold producer search is a
+            five-table scan bounded at 15 seconds, so swapping the list for a spinner on every
+            keystroke past the third would flash the modal empty for that whole window.
+          -->
+          @if (loading()) {
+            <div class="flex items-center gap-2 border-b border-slate-100 px-4 py-2 text-xs text-slate-500" data-testid="cla-group-select-pending">
+              <i class="fa-light fa-spinner-third fa-spin"></i>
+              Searching…
+            </div>
+          }
+          @for (option of options(); track option.claGroupId; let index = $index) {
+            <div class="border-b border-slate-100 last:border-b-0">
+              <div
+                role="option"
+                [id]="'cla-group-option-' + option.claGroupId"
+                [attr.aria-selected]="selected()?.claGroupId === option.claGroupId"
+                class="cursor-pointer px-4 py-2.5 text-left hover:bg-slate-50"
+                [class.bg-slate-50]="highlightedIndex() === index"
+                [attr.data-testid]="'cla-group-select-' + option.claGroupId"
+                (click)="onSelect(option)">
+                <span class="block truncate text-sm font-medium text-slate-900">{{ option.primaryName }}</span>
+                @if (option.secondaryName; as secondary) {
+                  <span class="block truncate text-xs text-slate-500">{{ secondary }}</span>
+                }
+
+                @if (option.matchTypeLabels.length) {
+                  <span class="mt-1 flex flex-wrap gap-1" data-testid="cla-group-select-match-types">
+                    @for (label of option.matchTypeLabels; track label) {
+                      <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[0.65rem] font-medium text-slate-600">{{ label }}</span>
+                    }
+                  </span>
+                }
+
+                @if (option.matchedRepositoryName) {
+                  <span class="mt-1 flex items-center gap-1.5 text-xs text-slate-500" data-testid="cla-group-select-matched-repo">
+                    <i class="fa-light fa-code-branch text-slate-400"></i>
+                    <span class="truncate">{{ option.matchedRepositoryName }}</span>
+                  </span>
+                }
+
+                @if (option.orgViews.length === 1) {
+                  @let org = option.orgViews[0];
+                  <span class="mt-1 flex items-center gap-1.5 text-xs text-slate-500" data-testid="cla-group-select-org">
+                    <i [class]="org.sourceIcon + ' text-slate-400'"></i>
+                    <span class="truncate">{{ org.name }}</span>
+                    <span class="text-slate-400">{{ org.sourceLabel }}</span>
+                  </span>
+                }
+              </div>
+
+              @if (option.orgViews.length > 1) {
+                <button
+                  type="button"
+                  class="flex w-full cursor-pointer items-center gap-1.5 px-4 pb-2.5 text-left text-xs text-slate-500 hover:text-slate-700"
+                  [attr.aria-expanded]="option.expanded"
+                  [attr.data-testid]="'cla-group-select-orgs-toggle-' + option.claGroupId"
+                  (click)="toggleOrgs($event, option)">
+                  <i class="fa-light" [class.fa-chevron-right]="!option.expanded" [class.fa-chevron-down]="option.expanded"></i>
+                  {{ option.orgViews.length }} linked orgs
+                </button>
+
+                @if (option.expanded) {
+                  <ul class="px-4 pb-2.5 pl-9" [attr.data-testid]="'cla-group-select-orgs-' + option.claGroupId">
+                    @for (org of option.orgViews; track org.source + '/' + org.name) {
+                      <li class="flex items-center gap-1.5 py-0.5 text-xs text-slate-500">
+                        <i [class]="org.sourceIcon + ' text-slate-400'"></i>
+                        <span class="truncate">{{ org.name }}</span>
+                        <span class="text-slate-400">{{ org.sourceLabel }}</span>
+                      </li>
+                    }
+                  </ul>
+                }
+              }
+            </div>
+          }
+
+          @if (truncated()) {
+            <!-- Below the list, not instead of it: these results are real, there are just more. -->
+            <div class="border-t border-slate-100 px-4 py-2 text-xs text-slate-500" data-testid="cla-group-select-truncated">
+              More projects matched than we can show. Narrow the search to see the rest.
+            </div>
+          }
+        }
+      </div>
+    }
+  </div>
+
+  @if (selected(); as selection) {
+    <div class="mt-4 flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3" data-testid="cla-group-select-summary">
+      <i class="fa-light fa-diagram-project text-slate-400"></i>
+      <div class="min-w-0 flex-1">
+        <div class="truncate text-sm font-medium text-slate-900">{{ selection.primaryName }}</div>
+        @if (selection.secondaryName; as secondary) {
+          <div class="truncate text-xs text-slate-500">{{ secondary }}</div>
+        }
+      </div>
+    </div>
+  }
+
+  <div class="mt-4 flex justify-end gap-2.5">
+    <lfx-button label="Cancel" [text]="true" (onClick)="onCancel()" data-testid="cla-group-select-cancel" />
+    <lfx-button
+      label="Continue to sign"
+      icon="fa-light fa-arrow-right"
+      iconPos="right"
+      [disabled]="!selected()"
+      (onClick)="onContinue()"
+      data-testid="cla-group-select-continue" />
+  </div>
+</div>

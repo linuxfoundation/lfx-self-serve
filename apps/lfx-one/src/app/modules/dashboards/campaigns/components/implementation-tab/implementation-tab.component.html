@@ -389,12 +389,26 @@
               <label class="text-xs font-medium text-gray-700" for="meta-objective">Objective</label>
               <select
                 id="meta-objective"
-                [value]="metaObjective()"
                 (change)="onMetaObjectiveChange($event)"
                 class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 data-testid="implementation-meta-objective">
                 @for (objective of metaObjectiveOptions; track objective) {
-                  <option [value]="objective">{{ metaObjectiveLabels[objective] }}</option>
+                  <option [value]="objective" [selected]="objective === metaObjective()">{{ metaObjectiveLabels[objective] }}</option>
+                }
+                <!--
+                  A draft persisted before an objective was hidden restores a value with no
+                  matching option. Without this the select shows the FIRST option instead — a
+                  confidently wrong objective — and the next touch of the control writes that
+                  wrong value over the stored one. Rendered disabled so it shows what the
+                  campaign IS without letting anyone newly choose it.
+
+                  `[selected]` on each option, not `[value]` on the select: the select's value
+                  binding is applied while this `@if` option does not yet exist, so it cannot
+                  select it and silently falls back to index 0. `metaObjectiveLabels` is total
+                  over `MetaObjective`, so this can never print `undefined`.
+                -->
+                @if (metaObjectiveIsUnavailable()) {
+                  <option [value]="metaObjective()" [selected]="true" disabled>{{ metaObjectiveLabels[metaObjective()] }} (no longer available)</option>
                 }
               </select>
             </div>

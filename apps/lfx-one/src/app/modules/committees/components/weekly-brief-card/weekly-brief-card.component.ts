@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
@@ -12,11 +12,14 @@ import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { WeeklyBriefArchiveDrawerComponent } from '../weekly-brief-archive-drawer/weekly-brief-archive-drawer.component';
+import { SourceChipContextDirective } from './source-chip-context.directive';
 import {
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_MAX_POLL_ATTEMPTS,
   WEEKLY_BRIEF_POLL_INTERVAL_MS,
   WEEKLY_BRIEF_SHAREABLE_STATES,
+  WEEKLY_BRIEF_SOURCE_SECTIONS,
+  WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD,
   WEEKLY_BRIEF_TERMINAL_STATES,
   WEEKLY_BRIEF_TEXT_MAX_LENGTH,
   WG_WEEKLY_BRIEF_SLACK_FLAG,
@@ -31,6 +34,7 @@ import {
   WeeklyBriefRating,
   WeeklyBriefSourceChip,
   WeeklyBriefSourceChipAction,
+  WeeklyBriefSourceChipSection,
   WeeklyBriefThrottle,
 } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel, mapWeeklyBriefSourceRefsToChips } from '@lfx-one/shared/utils';
@@ -73,6 +77,8 @@ import {
     ConfirmDialogModule,
     TagComponent,
     WeeklyBriefArchiveDrawerComponent,
+    NgTemplateOutlet,
+    SourceChipContextDirective,
   ],
   templateUrl: './weekly-brief-card.component.html',
   styleUrl: './weekly-brief-card.component.scss',
@@ -117,6 +123,10 @@ export class WeeklyBriefCardComponent {
   // produce a save the BFF is guaranteed to reject.
   protected readonly briefTextMaxLength = WEEKLY_BRIEF_TEXT_MAX_LENGTH;
 
+  // Template-bound constant (LFXV2-3335) — templates can't reference a bare imported
+  // constant, so this is re-exposed as a class field for the collapse-threshold comparison.
+  protected readonly sourcesCollapseThreshold = WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD;
+
   // Reactive form for the editor textarea — `lfx-textarea` requires a FormGroup + control name.
   public readonly editForm = new FormGroup({
     briefText: new FormControl('', { nonNullable: true }),
@@ -144,6 +154,12 @@ export class WeeklyBriefCardComponent {
   // empty drawer (LFXV2-3046: hide the affordance when no past briefs exist).
   public readonly archiveVisible = signal(false);
   public readonly hasArchiveBriefs = signal(false);
+
+  // Sources row disclosure state (LFXV2-3335). Level 1: whether the whole row is expanded
+  // past the collapse threshold. Level 2: which individual group chips (keyed by chip id)
+  // have their collapsed instances expanded.
+  public readonly sourcesExpanded = signal(false);
+  public readonly expandedSourceGroups = signal<Set<string>>(new Set());
 
   // Written by both the initial-load pipeline and the post-generate poll (see
   // initBriefResponseSubscription / pollUntilTerminal) — a plain signal rather than
@@ -196,6 +212,17 @@ export class WeeklyBriefCardComponent {
   // brief has no source_refs, which the template uses to skip rendering the row/header
   // entirely.
   public readonly sourceChips: Signal<WeeklyBriefSourceChip[]> = computed(() => mapWeeklyBriefSourceRefsToChips(this.renderableBrief()?.source_refs ?? []));
+
+  // Raw source_refs count, duplicates included — NOT the deduped sourceChips() length. Drives
+  // both the collapse threshold comparison and the "Sources (N)" disclosure header (LFXV2-3335).
+  // `?? []` before `.length`, not `?.source_refs.length ?? 0`, matches the sourceChips computed
+  // above's guard: a brief response missing source_refs must not throw through this computed.
+  public readonly sourceRefCount: Signal<number> = computed(() => (this.renderableBrief()?.source_refs ?? []).length);
+
+  // sourceChips() grouped into fixed-order kind-sections for the expanded disclosure view
+  // (LFXV2-3335) — precomputed here rather than re-derived in the template (frontend-checklist
+  // §4). See initSourceChipSections for the "Other" catch-all rationale.
+  public readonly sourceChipSections: Signal<WeeklyBriefSourceChipSection[]> = this.initSourceChipSections();
 
   // "no_sources" is the only error_reason meaningful to the UI today (LFXV2-3000) —
   // a committee with zero activity in the lookback window, not a genuine generation
@@ -532,7 +559,42 @@ export class WeeklyBriefCardComponent {
     }
   }
 
+  // Level-1 Sources row disclosure (LFXV2-3335).
+  public onToggleSources(): void {
+    this.sourcesExpanded.update((expanded) => !expanded);
+  }
+
+  // Level-2 per-group disclosure, keyed by the group chip's id (LFXV2-3335). Copies into a
+  // new Set rather than mutating in place so the signal's change detection fires.
+  public onToggleSourceGroup(chipId: string): void {
+    this.expandedSourceGroups.update((expanded) => {
+      const next = new Set(expanded);
+      if (next.has(chipId)) {
+        next.delete(chipId);
+      } else {
+        next.add(chipId);
+      }
+      return next;
+    });
+  }
+
   // Private initializer functions
+  // Groups sourceChips() into the fixed-order kind-sections defined by WEEKLY_BRIEF_SOURCE_SECTIONS
+  // (LFXV2-3335), appending a trailing "Other" section for any chip whose kind isn't one of the
+  // known ones — kind is an open string (see WeeklyBriefSourceRef's doc comment), so without this
+  // catch-all an unrecognized future kind would silently vanish from the expanded view while
+  // still counted in sourceRefCount(), contradicting mapWeeklyBriefSourceRefsToChips's "renders
+  // unlinked instead of breaking" contract. A section with no chips is omitted entirely.
+  private initSourceChipSections(): Signal<WeeklyBriefSourceChipSection[]> {
+    return computed(() => {
+      const chips = this.sourceChips();
+      const known = new Set(WEEKLY_BRIEF_SOURCE_SECTIONS.map((section) => section.kind));
+      const sections = WEEKLY_BRIEF_SOURCE_SECTIONS.map(({ kind, label }) => ({ kind, label, chips: chips.filter((chip) => chip.kind === kind) }));
+      sections.push({ kind: 'other', label: 'Other', chips: chips.filter((chip) => !known.has(chip.kind)) });
+      return sections.filter((section) => section.chips.length > 0);
+    });
+  }
+
   private initBriefResponseSubscription(): void {
     const committeeUid$ = this.committee$.pipe(
       filter((c): c is Committee => !!c?.uid),
@@ -562,6 +624,11 @@ export class WeeklyBriefCardComponent {
       // Reset archive state when navigating between committees.
       this.hasArchiveBriefs.set(false);
       this.archiveVisible.set(false);
+      // Reset Sources disclosure state (LFXV2-3335) — a stale expanded row/group from the
+      // previous committee must not bleed onto the new one, same rationale as every other
+      // reset in this block.
+      this.sourcesExpanded.set(false);
+      this.expandedSourceGroups.set(new Set());
     });
 
     // Archive preflight — fires once per committee as soon as the uid is known,

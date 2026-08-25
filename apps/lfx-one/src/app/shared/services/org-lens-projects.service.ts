@@ -3,8 +3,15 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import type { OrgLensProjectSearchResponse, OrgLensProjectsResponse, OrgProjectsWorkspace, OrgProjectsWorkspacesResponse } from '@lfx-one/shared/interfaces';
-import { Observable } from 'rxjs';
+import type {
+  HealthScore,
+  OrgLensProjectSearchResponse,
+  OrgLensProjectsResponse,
+  OrgProjectsWorkspace,
+  OrgProjectsWorkspacesResponse,
+} from '@lfx-one/shared/interfaces';
+import { mapV1BandToV2 } from '@lfx-one/shared/utils';
+import { map, Observable } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -17,7 +24,13 @@ export class OrgLensProjectsService {
     if (slugs.length) {
       params = params.set('slugs', slugs.join(','));
     }
-    return this.http.get<OrgLensProjectsResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/projects`, { params });
+    return this.http.get<OrgLensProjectsResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/projects`, { params }).pipe(
+      // Normalizes legacy v1 band names (stable/unsteady) a rolling-deploy old BFF may still emit, so the frontend never sees them.
+      map((response) => ({
+        ...response,
+        projects: response.projects.map((project) => ({ ...project, health: mapV1BandToV2(project.health) as HealthScore })),
+      }))
+    );
   }
 
   public searchProjects(orgUid: string, query: string, excludeSlugs: readonly string[] = []): Observable<OrgLensProjectSearchResponse> {

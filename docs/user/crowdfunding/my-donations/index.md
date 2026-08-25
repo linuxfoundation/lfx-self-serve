@@ -4,7 +4,6 @@ description: View your donation history, manage payment methods, and manage recu
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, donations, recurring, payment methods, history]
-last_generated: 2026-06-16
 last_updated: 2026-06-16
 intercom_collection: Crowdfunding
 ---
