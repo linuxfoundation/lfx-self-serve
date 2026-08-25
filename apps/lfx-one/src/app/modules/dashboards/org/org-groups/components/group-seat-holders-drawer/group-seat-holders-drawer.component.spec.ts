@@ -6,7 +6,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
 import type { CommitteeMemberAssignment, CommitteeMemberPerson, OrgPeopleCommitteeMembersResponse } from '@lfx-one/shared/interfaces';
-import { NEVER, of, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GroupSeatHoldersDrawerComponent } from './group-seat-holders-drawer.component';
@@ -128,18 +128,29 @@ describe('GroupSeatHoldersDrawerComponent', () => {
       vi
         .fn()
         .mockReturnValue(
-          of(response([assignment({ committeeUid: 'c-1' }), assignment({ seatId: 's-2', committeeUid: 'c-2', person: person({ email: 'john@example.org' }) })]))
+          of(
+            response([
+              assignment({ committeeUid: 'c-1', person: person({ fullName: 'Jane Doe' }) }),
+              assignment({ seatId: 's-2', committeeUid: 'c-2', person: person({ email: 'john@example.org', fullName: 'John Smith' }) }),
+            ])
+          )
         )
     );
 
     await open('org-1', 'c-1');
     expect(getCommitteeMembers).toHaveBeenCalledTimes(1);
+    expect(text()).toContain('Jane Doe');
+    expect(text()).not.toContain('John Smith');
 
     fixture.componentRef.setInput('committeeUid', 'c-2');
     await fixture.whenStable();
     fixture.detectChanges();
 
+    // No second fetch, but the cached roster still gets re-filtered to the new committee — proves
+    // the cache-reuse path actually serves the right rows, not just that it skips the HTTP call.
     expect(getCommitteeMembers).toHaveBeenCalledTimes(1);
+    expect(text()).toContain('John Smith');
+    expect(text()).not.toContain('Jane Doe');
   });
 
   it('refetches when the org changes, so a switched-to org never renders the previous org roster', async () => {
@@ -160,6 +171,48 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(getCommitteeMembers).toHaveBeenCalledTimes(2);
     expect(text()).toContain('Org Two Person');
     expect(text()).not.toContain('Org One Person');
+  });
+
+  // shareReplay(1)'s default refCount:false keeps org-1's underlying fetch subscribed even after
+  // switchMap moves on to org-2 — so a slow org-1 failure can still land after the switch. Its
+  // catchError guard (`if (this.cache?.orgUid === orgUid)`) must recognize it's stale and leave
+  // org-2's cache entry alone; without the guard this would null out the org-2 entry currently in
+  // `this.cache`, forcing an unnecessary refetch on the next open.
+  it("does not let a stale, since-superseded org's fetch failure clobber the current org's cache", async () => {
+    const orgOneSubject = new Subject<OrgPeopleCommitteeMembersResponse>();
+    const orgTwoSubject = new Subject<OrgPeopleCommitteeMembersResponse>();
+    const impl = vi.fn((orgUid: string) => (orgUid === 'org-1' ? orgOneSubject.asObservable() : orgTwoSubject.asObservable()));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await setup(impl as unknown as ReturnType<typeof vi.fn>);
+
+    await open('org-1', 'c-1');
+    expect(impl).toHaveBeenCalledTimes(1);
+
+    fixture.componentRef.setInput('orgUid', 'org-2');
+    await fixture.whenStable();
+    expect(impl).toHaveBeenCalledTimes(2);
+
+    // Org-1's now-orphaned fetch fails after the switch away from it.
+    orgOneSubject.error(new Error('stale org-1 failure'));
+    await fixture.whenStable();
+
+    orgTwoSubject.next(response([assignment({ committeeUid: 'c-1', person: person({ fullName: 'Org Two Person' }) })]));
+    orgTwoSubject.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(text()).toContain('Org Two Person');
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeNull();
+
+    // Close and reopen for the same (org-2) committee — a third call would mean the stale org-1
+    // failure wrongly nulled org-2's cache entry.
+    fixture.componentRef.setInput('visible', false);
+    await fixture.whenStable();
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(impl).toHaveBeenCalledTimes(2);
   });
 
   it('renders the empty state when no assignment matches the committee', async () => {
@@ -223,6 +276,38 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(impl).toHaveBeenCalledTimes(2);
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeNull();
     expect(subtitleText()).toBe('1 seat holder');
+  });
+
+  it('stays in the error state across a retry that also fails, and a later retry can still recover', async () => {
+    const impl = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new Error('first failure')))
+      .mockReturnValueOnce(throwError(() => new Error('second failure')))
+      .mockReturnValueOnce(of(response([assignment({ committeeUid: 'c-1' })])));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await setup(impl);
+
+    await open('org-1', 'c-1');
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeTruthy();
+    expect(statusMessage()).toBe('Unable to load seat holders.');
+
+    let retryButton = document.querySelector('[data-testid="group-seat-holders-drawer-retry"]') as HTMLButtonElement | null;
+    retryButton!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(impl).toHaveBeenCalledTimes(2);
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeTruthy();
+    expect(statusMessage()).toBe('Unable to load seat holders.');
+
+    // A third retry succeeds — the error -> error transition didn't leave the pipeline stuck.
+    retryButton = document.querySelector('[data-testid="group-seat-holders-drawer-retry"]') as HTMLButtonElement | null;
+    retryButton!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(impl).toHaveBeenCalledTimes(3);
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeNull();
   });
 
   // The single persistent role="status" region is the only signal a screen-reader user gets that
@@ -316,6 +401,24 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(names).toHaveLength(1);
     expect(names[0]).toContain('Jane Doe');
     expect(names[0]).toContain('Chair, Member');
+  });
+
+  it('sorts the joined role label alphabetically, independent of upstream seat order', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          response([
+            // Deliberately reversed alphabetical order — the merged label must not just mirror it.
+            assignment({ seatId: 's-1', committeeUid: 'c-1', role: 'Vice Chair' }),
+            assignment({ seatId: 's-2', committeeUid: 'c-1', role: 'Alternate', memberUid: 'seat-2' }),
+          ])
+        )
+      )
+    );
+
+    await open('org-1', 'c-1');
+
+    expect(rowNames()[0]).toContain('Alternate, Vice Chair');
   });
 
   // Which of a merged person's two seats "wins" for the voting-status pill must not depend on
@@ -538,6 +641,42 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     // previously proved vulnerable to running ahead of that write.
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-loading"]')).toBeTruthy();
     expect(subtitleText()).toBe('Seat holders');
+  });
+
+  // p-drawer keeps the panel mounted through its leave animation — real-world, the roster and
+  // header must survive that window rather than flash to "0 seat holders" (and announce it as
+  // such) while the panel is still sliding out. This test's harness runs noop animations, under
+  // which *ngIf unmounts the panel content synchronously — so the DOM itself can't be used to
+  // observe the race here; it asserts on the underlying signal state that feeds that content
+  // instead (protected fields read directly, the way the DOM would see them if still mounted).
+  it('keeps the loaded roster and count signals intact when the drawer closes, instead of clearing to zero', async () => {
+    await setup(
+      vi
+        .fn()
+        .mockReturnValue(
+          of(
+            response([
+              assignment({ seatId: 's-1', committeeUid: 'c-1', person: person({ fullName: 'Person One' }) }),
+              assignment({ seatId: 's-2', committeeUid: 'c-1', person: person({ email: 'two@example.org', fullName: 'Person Two' }) }),
+            ])
+          )
+        )
+    );
+
+    await open('org-1', 'c-1');
+    const instance = fixture.componentInstance as unknown as {
+      displayedCount: () => number | null;
+      seatHolderVms: () => unknown[];
+      statusMessage: () => string;
+    };
+    expect(instance.displayedCount()).toBe(2);
+
+    fixture.componentRef.setInput('visible', false);
+    await fixture.whenStable();
+
+    expect(instance.displayedCount()).toBe(2);
+    expect(instance.seatHolderVms()).toHaveLength(2);
+    expect(instance.statusMessage()).toBe('2 seat holders loaded.');
   });
 
   it('renders a member with no name and no email as "Unknown member", not a blank row', async () => {

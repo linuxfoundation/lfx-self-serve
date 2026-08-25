@@ -8,7 +8,7 @@ import { CommitteeMembersService } from '@modules/dashboards/org/org-people/serv
 import { votingStatusPillClass, votingStatusRank } from '@lfx-one/shared/constants';
 import type { CommitteeMemberAssignment, CommitteeMemberSeatHolderVm } from '@lfx-one/shared/interfaces';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, finalize, map, of, shareReplay, switchMap, throwError, type Observable } from 'rxjs';
+import { catchError, EMPTY, finalize, map, of, shareReplay, switchMap, throwError, type Observable } from 'rxjs';
 
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 
@@ -95,7 +95,13 @@ export class GroupSeatHoldersDrawerComponent {
         }
       }
       return Array.from(byPerson.values())
-        .map(({ assignment, roles }) => ({ ...assignment, role: roles.join(', '), votingStatusPillClass: votingStatusPillClass(assignment.votingStatus) }))
+        .map(({ assignment, roles }) => ({
+          ...assignment,
+          // Sorted so the label can't flip between loads based on upstream seat ordering — the
+          // same determinism the voting-status pill above already gets from votingStatusRank.
+          role: [...roles].sort((a, b) => a.localeCompare(b)).join(', '),
+          votingStatusPillClass: votingStatusPillClass(assignment.votingStatus),
+        }))
         .sort((a, b) => (a.person.fullName || a.person.email).localeCompare(b.person.fullName || b.person.email));
     });
   }
@@ -108,7 +114,12 @@ export class GroupSeatHoldersDrawerComponent {
     return toSignal(
       trigger$.pipe(
         switchMap(({ visible, orgUid, committeeUid }) => {
-          if (!visible || !orgUid || !committeeUid) return of(null);
+          // p-drawer keeps the panel mounted through its ~150ms leave animation — emitting null
+          // the instant `visible` flips false would replace the roster with the empty state (and
+          // the live region with a false "0 seat holders" announcement) while the panel is still
+          // sliding out. EMPTY leaves the last-loaded state as-is; the next real open re-fetches.
+          if (!visible) return EMPTY;
+          if (!orgUid || !committeeUid) return of(null);
           this.error.set(false);
           this.loading.set(true);
 

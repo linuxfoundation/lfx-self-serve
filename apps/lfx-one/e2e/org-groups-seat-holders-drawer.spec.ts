@@ -75,7 +75,13 @@ test.describe('Org Groups — seat holders drawer (GH-1780)', () => {
     // earlier one for a matching request, so this replaces the fixture roster for this test only.
     await stubCommitteeMembers(page, { orgUid: MOCK_ACCOUNT_ID, assignments: [], stats: { individualCount: 0, committeeCount: 0, foundationsCovered: 0 } });
 
+    // Waits on the actual request, not just the resulting DOM — a broken orgUid/committeeUid
+    // binding that never issues the request would render this same empty state (seatHolderVms
+    // defaults to []), so asserting the DOM alone wouldn't catch that regression.
+    const responsePromise = page.waitForResponse(/\/api\/orgs\/[^/]+\/lens\/people\/committee-members$/);
     await page.getByTestId(`org-groups-item-seats-${GROUP_UID}`).click();
+    const response = await responsePromise;
+    expect(response.status()).toBe(200);
 
     await expect(page.getByTestId('group-seat-holders-drawer-empty')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });

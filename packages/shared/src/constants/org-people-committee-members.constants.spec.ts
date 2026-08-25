@@ -96,7 +96,9 @@ describe('noneRankFor', () => {
   });
 
   it('resolves the real VOTING_STATUS_PRIORITY to "None"\'s actual index (sanity: "None" is present)', () => {
-    expect(noneRankFor(VOTING_STATUS_PRIORITY)).toBe(VOTING_STATUS_PRIORITY.findIndex((p) => p.toLowerCase() === 'none'));
+    // A concrete literal, not `VOTING_STATUS_PRIORITY.findIndex(...)` re-run — that would mirror
+    // noneRankFor's own implementation and pass even if both regressed identically.
+    expect(noneRankFor(VOTING_STATUS_PRIORITY)).toBe(4);
     expect(noneRankFor(VOTING_STATUS_PRIORITY)).not.toBe(VOTING_STATUS_PRIORITY.length);
   });
 });
