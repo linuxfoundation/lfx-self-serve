@@ -14,15 +14,18 @@
  * Prerequisites:
  * - Dev server running on the Playwright baseURL
  * - User authenticated with the `org-lens-enabled` flag on and an organization selected
- * - The leaderboard row score-breakdown drawer tests additionally need `org-lens-private-release`
- *   toggled ON (LFXV2-2934 follow-up) — they self-skip at runtime if the drawer doesn't open
+ * - The leaderboard row score-breakdown drawer tests pin `org-lens-private-release` ON via the same
+ *   `stubFeatureFlags` localStorage override used by the ROI specs (LFXV2-2934 follow-up, GH-1798) —
+ *   no LaunchDarkly targeting needed for those; a separate test covers the flag-off behavior
  *
  * Data semantics (v1): the page is served from live Snowflake platinum via the BFF. `k8s` is the real
  * catalog slug for the Kubernetes project (the earlier `kubernetes` was only the removed demo-fixture
  * key); a slug with no catalog row for the selected org returns null → the not-found panel.
  */
 
+import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, test } from '@playwright/test';
+import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const DETAIL_URL = '/org/projects/k8s';
 const DETAIL_URL_BOGUS = '/org/projects/totally-bogus-project';
@@ -315,21 +318,10 @@ test.describe('Org Project Detail — leaderboards', () => {
 
 test.describe('Org Project Detail — leaderboard row score-breakdown drawer', () => {
   test.beforeEach(async ({ page }) => {
+    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: true });
     await page.goto(`${DETAIL_URL}?tab=pd-leaderboards`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('project-detail-leaderboard-technical-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('project-detail-leaderboard-ecosystem-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-
-    const probeRow = page.locator('[data-testid="project-detail-leaderboard-technical"] tbody tr').first();
-    await probeRow.click();
-    const drawerOpened = await page
-      .getByTestId('org-leaderboard-detail-title')
-      .isVisible({ timeout: 3_000 })
-      .catch(() => false);
-    if (!drawerOpened) {
-      test.skip(true, 'org-lens-private-release flag appears off — leaderboard drawer does not open');
-    }
-    await page.keyboard.press('Escape');
-    await expect(page.getByTestId('org-leaderboard-detail-title')).toBeHidden();
   });
 
   // Category/points data behind this drawer is DEMO data pending a real Snowflake-backed source
@@ -368,6 +360,20 @@ test.describe('Org Project Detail — leaderboard row score-breakdown drawer', (
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('org-leaderboard-detail-title')).toBeHidden();
     await expect(page.getByTestId('project-detail-page')).toBeVisible();
+  });
+});
+
+test.describe('Org Project Detail — leaderboard row score-breakdown drawer (flag OFF)', () => {
+  test('clicking a leaderboard row does not open the drawer when org-lens-private-release is OFF', async ({ page }) => {
+    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
+    await page.goto(`${DETAIL_URL}?tab=pd-leaderboards`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('project-detail-leaderboard-technical-table')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const firstRow = page.locator('[data-testid="project-detail-leaderboard-technical"] tbody tr').first();
+    await expect(firstRow).not.toHaveAttribute('tabindex', '0');
+    await firstRow.click();
+
+    await expect(page.getByTestId('org-leaderboard-detail-title')).toHaveCount(0);
   });
 });
 
