@@ -32,6 +32,7 @@ interface Rendered {
   fixture: ComponentFixture<OrgGroupsComponent>;
   navigate: ReturnType<typeof vi.fn>;
   selectedAccount: WritableSignal<Account>;
+  personDrawerClose: ReturnType<typeof vi.fn>;
 }
 
 // <lfx-person-detail-drawer /> (GH-1780 follow-up — stacked on the seat-holders drawer) is
@@ -98,11 +99,15 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
   }).compileComponents();
 
   const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true) as unknown as ReturnType<typeof vi.fn>;
+  // The same stub instance the providers array above registers via useValue — retrieved through DI
+  // rather than kept from a local variable, so this stays correct even if the provider registration
+  // above is ever refactored.
+  const personDrawerClose = (TestBed.inject(PersonDetailDrawerService) as unknown as ReturnType<typeof personDrawerStub>).close;
 
   const fixture = TestBed.createComponent(OrgGroupsComponent);
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, navigate, selectedAccount };
+  return { fixture, navigate, selectedAccount, personDrawerClose };
 }
 
 function emptyGroupsResponse(): OrgLensGroupsResponse {
@@ -515,6 +520,22 @@ describe('OrgGroupsComponent', () => {
     await flushFilterChange(fixture);
 
     expect(seatHoldersDrawerState(fixture)).toEqual({ visible: false, selectedGroupUid: null });
+  });
+
+  // PersonDetailDrawerService is root-scoped (LFXV2-2195) and keeps its own _activeContext across an
+  // org switch on its own — closing only the seat-holders drawer (the test above) leaves the stacked
+  // person-detail drawer, if it was open, still visibly showing the previous org's person and
+  // pre-supplied governance seats after the switch. Doesn't open the stacked drawer for real (that
+  // path is covered by group-seat-holders-drawer.component.spec.ts) — asserts only that the org-switch
+  // subscription calls close() unconditionally, which is what the fix actually does regardless of
+  // whether that drawer happened to be open.
+  it('closes the stacked person-detail drawer too when the selected org switches', async () => {
+    const { fixture, selectedAccount, personDrawerClose } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', accountSlug: 'vendor-corp', membershipTier: '', uid: 'org-uid-2' });
+    await flushFilterChange(fixture);
+
+    expect(personDrawerClose).toHaveBeenCalledTimes(1);
   });
 
   // WCAG 2.5.3 Label in Name: the trigger's only visible text is the seat count, so its accessible

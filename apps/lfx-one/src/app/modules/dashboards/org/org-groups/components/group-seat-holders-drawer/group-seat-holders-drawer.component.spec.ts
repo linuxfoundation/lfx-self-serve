@@ -183,9 +183,10 @@ describe('GroupSeatHoldersDrawerComponent', () => {
 
   // shareReplay(1)'s default refCount:false keeps org-1's underlying fetch subscribed even after
   // switchMap moves on to org-2 — so a slow org-1 failure can still land after the switch. Its
-  // catchError guard (`if (this.cache?.orgUid === orgUid)`) must recognize it's stale and leave
-  // org-2's cache entry alone; without the guard this would null out the org-2 entry currently in
-  // `this.cache`, forcing an unnecessary refetch on the next open.
+  // catchError guard (`if (this.cache === entry)`, cache-entry identity — not orgUid, which an
+  // A→B→A sequence would defeat) must recognize it's stale and leave org-2's cache entry alone;
+  // without the guard this would null out the org-2 entry currently in `this.cache`, forcing an
+  // unnecessary refetch on the next open.
   it("does not let a stale, since-superseded org's fetch failure clobber the current org's cache", async () => {
     const orgOneSubject = new Subject<OrgPeopleCommitteeMembersResponse>();
     const orgTwoSubject = new Subject<OrgPeopleCommitteeMembersResponse>();

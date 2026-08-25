@@ -32,6 +32,7 @@ import { OrgLensGroupsService } from '@services/org-lens-groups.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 
 import { GroupSeatHoldersDrawerComponent } from './components/group-seat-holders-drawer/group-seat-holders-drawer.component';
 
@@ -58,6 +59,7 @@ export class OrgGroupsComponent {
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
   private readonly groupsService = inject(OrgLensGroupsService);
+  private readonly personDetailDrawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -179,13 +181,17 @@ export class OrgGroupsComponent {
     // A filter value from the previous org (e.g. its foundation slug) would almost never match the
     // next org's roster. `skip(1)` so the URL-seeded initial filter survives first load — only an
     // actual org switch clears it, mirroring committee-members' resetAllState() on orgUid$.
-    // Also closes the seat-holders drawer: OrgGroupsComponent isn't destroyed on an org switch, so
-    // a drawer left open would otherwise keep the previous org's selectedGroup (and, via its own
+    // Also closes both drawers: OrgGroupsComponent isn't destroyed on an org switch, so a seat-holders
+    // drawer left open would otherwise keep the previous org's selectedGroup (and, via its own
     // orgUid-keyed cache, would just show the new org's roster filtered by the old org's committeeUid).
+    // The stacked person-detail drawer needs its own close() call — it's root-scoped (LFXV2-2195) and
+    // keeps its _activeContext across org switches on its own, so a switch made while it's open would
+    // otherwise leave it visibly showing the previous org's person and pre-supplied governance seats.
     this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => {
       this.clearFilters();
       this.seatHoldersDrawerVisible.set(false);
       this.selectedGroup.set(null);
+      this.personDetailDrawer.close();
     });
   }
 
