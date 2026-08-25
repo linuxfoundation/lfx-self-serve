@@ -24,6 +24,19 @@ export interface EasyClaMyCla {
   projectName?: string;
   /** Project (or foundation) logo URL — omitted when there is none or it could not be resolved. */
   projectLogo?: string;
+  /**
+   * Salesforce project id the CLA Group maps to — omitted on a foundation-level group
+   * and when the mapping is unresolved.
+   */
+  projectSFID?: string;
+  /** Salesforce foundation id — omitted when unresolved. */
+  foundationSFID?: string;
+  /**
+   * True when the resolved user is a CLA manager of the employer's CCLA for this CLA Group.
+   * Upstream declares it always-present and always false on ICLA rows; optional here so an
+   * older producer that omits it reads as not-a-manager.
+   */
+  claManager?: boolean;
   /** Employer company name — ECLA only. */
   companyName?: string;
   /** Employer signing-entity name — ECLA only. */
@@ -172,7 +185,6 @@ export interface EasyClaMyClaManagerList {
   projectName?: string;
   companyID?: string;
   companyName?: string;
-  claManager?: boolean;
   managers?: EasyClaMyClaManager[];
   resultCount?: number;
 }
