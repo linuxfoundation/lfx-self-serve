@@ -5,17 +5,26 @@ import { Location } from '@angular/common';
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
-import { SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
+import { MARKETING_OPS_FGA_ENABLED_FLAG, SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { ProjectContext } from '@lfx-one/shared/interfaces';
 import { isBoardScopedPersona, isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { catchError, combineLatest, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, filter, map, of, startWith, switchMap } from 'rxjs';
 
 import { CookieRegistryService } from './cookie-registry.service';
+import { FeatureFlagService } from './feature-flag.service';
 import { LensService } from './lens.service';
 import { PersonaService } from './persona.service';
 import { ProjectService } from './project.service';
 import { UserService } from './user.service';
+
+/**
+ * The Linux Foundation's own project slug — same literal already used as the default foundation
+ * fallback in marketing-overview.component.ts and email-ctr-drawer.component.ts. Marketing-only
+ * grant holders (no ED/board persona) have no cookie-restored foundation to fall back on, so this
+ * seeds one deterministically rather than leaving them on a context-less dashboard.
+ */
+const MARKETING_ONLY_DEFAULT_FOUNDATION_SLUG = 'tlf';
 
 @Injectable({
   providedIn: 'root',
@@ -23,12 +32,20 @@ import { UserService } from './user.service';
 export class ProjectContextService {
   private readonly cookieService = inject(SsrCookieService);
   private readonly cookieRegistry = inject(CookieRegistryService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly lensService = inject(LensService);
   private readonly location = inject(Location);
   private readonly personaService = inject(PersonaService);
   private readonly projectService = inject(ProjectService);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
+
+  private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
+
+  /** Same gating expression as dashboard.component.ts's `foundationDashboardType` and lens.service.ts's `initLensGrantInputs()`. */
+  private readonly hasMarketingOnlyGrant: Signal<boolean> = computed(
+    () => this.isMarketingOpsFgaEnabled() && (this.personaService.isMarketingAuditor() || this.personaService.isCampaignManager())
+  );
 
   private readonly foundationStorageKey = SELECTED_FOUNDATION_COOKIE_KEY;
   private readonly projectStorageKey = SELECTED_PROJECT_COOKIE_KEY;
@@ -74,6 +91,21 @@ export class ProjectContextService {
     // Restore the prior selection so the active context survives a refresh regardless of lens.
     this.foundationSelection.set(this.loadFromCookie(this.foundationStorageKey));
     this.projectSelection.set(this.loadFromCookie(this.projectStorageKey));
+
+    // Marketing-only grant holders (no ED/board persona) have no cookie-restored foundation to
+    // fall back on — seed one so they land on a real foundation dashboard instead of a
+    // context-less one. Re-checked on every `hasMarketingOnlyGrant` emission (persona/flag data
+    // arrives post-hydration) but only acts while no foundation has been set by cookie restore
+    // or an explicit selection made since.
+    toObservable(this.hasMarketingOnlyGrant)
+      .pipe(
+        filter((hasGrant) => hasGrant && !this.foundationSelection()),
+        switchMap(() => this.projectService.getProject(MARKETING_ONLY_DEFAULT_FOUNDATION_SLUG)),
+        filter((project): project is NonNullable<typeof project> => !!project && !this.foundationSelection())
+      )
+      .subscribe((project) => {
+        this.setFoundation({ uid: project.uid, name: project.name, slug: project.slug, logoUrl: project.logo_url }, false);
+      });
   }
 
   // The URL sync runs outside the same-context early return: a stale `?project=` left by a prior
