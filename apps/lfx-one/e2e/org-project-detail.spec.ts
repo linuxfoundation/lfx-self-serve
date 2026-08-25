@@ -371,6 +371,7 @@ test.describe('Org Project Detail — leaderboard row score-breakdown drawer (fl
 
     const firstRow = page.locator('[data-testid="project-detail-leaderboard-technical"] tbody tr').first();
     await expect(firstRow).not.toHaveAttribute('tabindex', '0');
+    await expect(firstRow).not.toHaveClass(/cursor-pointer/);
     await firstRow.click();
 
     await expect(page.getByTestId('org-leaderboard-detail-title')).toHaveCount(0);

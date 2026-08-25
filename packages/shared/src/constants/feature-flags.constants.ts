@@ -43,6 +43,8 @@ export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
  * person-detail-drawer company emails (GH-1655) and the leaderboard row score-breakdown drawer
  * (LFXV2-2934). Remove each gate as its real-data backend lands; retire this flag once both are
  * unguarded.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`; gates no endpoint.
  */
 export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
 

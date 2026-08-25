@@ -5,7 +5,7 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
-import { Account } from '@lfx-one/shared/interfaces';
+import { Account, BoardDisplayRow } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
@@ -28,6 +28,18 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer flag gating', 
   let featureEnabled: WritableSignal<boolean>;
 
   const ACCOUNT: Account = { accountId: 'acc-1', accountName: 'Test Org', uid: 'acc-1' } as Account;
+
+  const makeRow = (overrides: Partial<BoardDisplayRow> = {}): BoardDisplayRow => ({
+    rank: 1,
+    orgName: 'Acme',
+    orgLogoUrl: '',
+    initials: 'AC',
+    activityLabel: '',
+    bandLabel: '',
+    bandSeverity: 'secondary',
+    isViewingOrg: false,
+    ...overrides,
+  });
 
   beforeEach(async () => {
     featureEnabled = signal(true);
@@ -80,7 +92,7 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer flag gating', 
   });
 
   it('closes the drawer when the flag flips off while it is open', async () => {
-    component['openLeaderboardDetail']('technical', { orgName: 'Acme', isViewingOrg: false } as never);
+    component['openLeaderboardDetail']('technical', makeRow());
     expect(component['leaderboardDetailOpen']()).toBe(true);
 
     featureEnabled.set(false);
@@ -90,7 +102,7 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer flag gating', 
   });
 
   it('leaves the drawer open while the flag stays on', async () => {
-    component['openLeaderboardDetail']('technical', { orgName: 'Acme', isViewingOrg: false } as never);
+    component['openLeaderboardDetail']('technical', makeRow());
     await fixture.whenStable();
 
     expect(component['leaderboardDetailOpen']()).toBe(true);

@@ -467,7 +467,7 @@ export class OrgProjectDetailComponent {
     if (!visible) this.closeCardDetail();
   }
 
-  /** Opens the leaderboard row score-breakdown drawer for the clicked technical/ecosystem row. No-op in activity mode — the breakdown is influence-score only. */
+  /** Opens the leaderboard row score-breakdown drawer for the clicked technical/ecosystem row. No-op in activity mode or while `org-lens-private-release` is off (GH-1798) — the breakdown is influence-score only. */
   protected openLeaderboardDetail(dimension: LeaderboardDimension, row: BoardDisplayRow): void {
     if (this.isActivityMode() || !this.leaderboardDetailFeatureEnabled()) return;
     this.leaderboardDetailDimension.set(dimension);
