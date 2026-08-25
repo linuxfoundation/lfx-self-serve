@@ -11,6 +11,26 @@ export function isUuid(value: string): boolean {
 }
 
 /**
+ * Trims a route param / query param value and returns it only if it's a
+ * valid UUID per {@link isUuid} — otherwise `undefined`. Meant for gating an
+ * identifier pulled off the URL before it reaches an API payload or filter
+ * that would otherwise 400 on a malformed value with no in-app recovery;
+ * gating degrades a bad value to "absent" instead.
+ *
+ * `isUuid` (and therefore this) accepts only the canonical hyphenated form —
+ * narrower than many backend UUID parsers (e.g. Go's `uuid.Parse`, which also
+ * accepts `urn:uuid:`-prefixed, brace-wrapped, and unhyphenated forms). Safe
+ * wherever every producer of the value already emits the canonical form (an
+ * app-internal link built from a UUID field), since this then only narrows a
+ * value that was already malformed by the app's own conventions — never one
+ * a permissive backend parser would have accepted.
+ */
+export function toValidUuid(raw: string | null | undefined): string | undefined {
+  const trimmed = raw?.trim();
+  return trimmed && isUuid(trimmed) ? trimmed : undefined;
+}
+
+/**
  * Converts arbitrary label text into a kebab-case, testid-safe slug (lowercase,
  * alphanumerics only, words joined by single hyphens).
  * @param text - The label text to slugify

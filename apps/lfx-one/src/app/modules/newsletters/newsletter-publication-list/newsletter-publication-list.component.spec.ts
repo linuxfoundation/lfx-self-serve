@@ -17,6 +17,7 @@ import { ProjectContextService } from '@services/project-context.service';
 function makePublication(overrides: Partial<NewsletterPublication> = {}): NewsletterPublication {
   return {
     id: 'pub-1',
+    project_uid: 'proj-1',
     name: 'Weekly Digest',
     slug: 'weekly-digest',
     is_default: false,
@@ -104,14 +105,16 @@ describe('NewsletterPublicationListComponent', () => {
     expect(component['publications']()).toEqual([]);
   });
 
-  it("navigates to a publication's editions, carrying projectUid alongside the publication id", async () => {
-    await setup('proj-1');
+  it("navigates to a publication's editions, carrying the publication's own project_uid alongside the publication id", async () => {
+    // Active context deliberately differs from the publication's own project_uid:
+    // the navigation must use the latter, not fall back to ambient context.
+    await setup('active-proj');
     vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [] }));
     await create();
 
-    component['goToPublicationEditions'](makePublication({ id: 'pub-42' }));
+    component['goToPublicationEditions'](makePublication({ id: 'pub-42', project_uid: 'owning-proj' }));
 
-    expect(router.navigate).toHaveBeenCalledWith(['proj-1', 'pub-42', 'editions'], expect.objectContaining({ relativeTo: expect.anything() }));
+    expect(router.navigate).toHaveBeenCalledWith(['owning-proj', 'pub-42', 'editions'], expect.objectContaining({ relativeTo: expect.anything() }));
   });
 
   it('routes the empty-state create CTA to the edition composer', async () => {

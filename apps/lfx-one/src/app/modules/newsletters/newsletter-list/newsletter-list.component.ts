@@ -29,7 +29,7 @@ import {
   formatTo12HourInTimezone,
   getTimezoneUtcOffsetString,
   getUserTimezone,
-  isUuid,
+  toValidUuid,
 } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -122,8 +122,18 @@ export class NewsletterListComponent {
   // stale navigating between two publications' editions (e.g. a deep link opened
   // while this page is already showing a different publication) and keep
   // querying the first one. Drives `initLoadOnContextOrTabAndPublication` below.
-  protected readonly publicationId: Signal<string | undefined> = toSignal(this.route.paramMap.pipe(map((p) => p.get('pubId') ?? undefined)), {
-    initialValue: this.route.snapshot.paramMap.get('pubId') ?? undefined,
+  // Gated with the shared toValidUuid: an unvalidated :pubId flows straight
+  // into the publication_id list filter and (via goToCreate) into the create
+  // payload, both of which upstream 400s on a malformed value — gating here
+  // degrades a bad segment to the unfiltered list / unfiled create instead of
+  // a hard failure. Deliberately NOT the same treatment as routeProjectUid
+  // below: an unvalidated :projectUid path segment is left ungated there,
+  // since upstream reads project_uid as an opaque filter with no format
+  // validation of its own (a malformed one just yields an empty result), so
+  // degrading it here would substitute a *different* project's data instead
+  // of the intended fail-safe of showing none.
+  protected readonly publicationId: Signal<string | undefined> = toSignal(this.route.paramMap.pipe(map((p) => toValidUuid(p.get('pubId')))), {
+    initialValue: toValidUuid(this.route.snapshot.paramMap.get('pubId')),
   });
   // The `:pubId` editions route carries `:projectUid` alongside it (see
   // newsletters.routes.ts) so a deep link resolves the publication's own project
@@ -145,15 +155,12 @@ export class NewsletterListComponent {
   // otherwise always a slug everywhere else it's produced in this app;
   // goToList/goToCreate are the exception that write a UID (see their own
   // comments), so only a UID-shaped value is used directly here — a slug
-  // falls through to activeContextUid() instead, same isUuid gating as
-  // newsletter-manage.component.ts's queryProjectUid.
+  // falls through to activeContextUid() instead, same shared toValidUuid
+  // gating as newsletter-manage.component.ts's queryProjectUid.
   private readonly routeProjectRef: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((p) => p.get('project'))), {
     initialValue: this.route.snapshot.queryParamMap.get('project'),
   });
-  private readonly routeProjectRefUid: Signal<string | null> = computed(() => {
-    const ref = this.routeProjectRef();
-    return ref && isUuid(ref) ? ref : null;
-  });
+  private readonly routeProjectRefUid: Signal<string | null> = computed(() => toValidUuid(this.routeProjectRef()) ?? null);
   public readonly projectUid: Signal<string> = computed(
     () => this.routeProjectUid() || this.routeProjectRefUid() || this.projectContextService.activeContextUid()
   );
@@ -193,8 +200,14 @@ export class NewsletterListComponent {
     const tabFromQuery = this.route.snapshot.queryParamMap.get('tab');
     // A `?tab=optout` deep link into a publication-scoped page must not select
     // the hidden tab — statusTabOptions() omits it there, and the load branch
-    // below assumes optout only runs unscoped.
-    const optoutAllowed = !this.route.snapshot.paramMap.get('pubId');
+    // below assumes optout only runs unscoped. Reads publicationId() (the
+    // isUuid()-gated signal), not the raw :pubId param: a malformed segment
+    // already makes the page behave unscoped everywhere else (statusTabOptions,
+    // onStatusTabChange, the fetch guard), so this must agree rather than
+    // independently treat any non-empty segment as "scoped" — that mismatch
+    // would gate a deep-linked ?tab=optout shut while every other check on the
+    // same malformed URL renders and permits it.
+    const optoutAllowed = !this.publicationId();
     if (tabFromQuery === 'sent' || tabFromQuery === 'draft' || tabFromQuery === 'scheduled' || (tabFromQuery === 'optout' && optoutAllowed)) {
       this.statusTab.set(tabFromQuery);
     }

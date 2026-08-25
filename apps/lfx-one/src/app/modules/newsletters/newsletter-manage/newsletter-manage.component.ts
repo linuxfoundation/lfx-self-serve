@@ -37,9 +37,9 @@ import {
   formatTo12HourInTimezone,
   getTimezoneUtcOffsetString,
   getUserTimezone,
-  isUuid,
   isValidEmail,
   stripHtml,
+  toValidUuid,
 } from '@lfx-one/shared/utils';
 import { newsletterScheduleWindowValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
@@ -128,15 +128,18 @@ export class NewsletterManageComponent {
   // form content, and this reused composer's still-open editing session
   // would need to reset together for that, which is a pre-existing gap this
   // change doesn't introduce and doesn't attempt to close.
-  // `?.trim() || null` rather than `?? null`: ParamMap.get() returns ''
-  // (not null) for a bare `?publication=`, and `??` only coalesces null and
-  // undefined, so an empty value would survive into the create payload. The
-  // service rejects a supplied-but-empty publication_id with a 400 rather than
-  // treating it as absent, so that would fail the save outright.
-  private readonly composePublicationId: Signal<string | undefined> = toSignal(
-    this.route.queryParamMap.pipe(map((p) => p.get('publication')?.trim() || undefined)),
-    { initialValue: this.route.snapshot.queryParamMap.get('publication')?.trim() || undefined }
-  );
+  // Resolved through the shared toValidUuid (trims, then requires isUuid() —
+  // see its own doc comment for the upstream-uuid.Parse narrowing note), for
+  // the same reason queryProjectUid below is gated: both a bare
+  // `?publication=` (empty after trim) and a malformed value (hand-edited
+  // URL, stale link) would otherwise reach the create payload as something
+  // other than a clean UUID, and upstream rejects either with a hard 400 on
+  // every save attempt, with no in-app recovery. Gating collapses both cases
+  // to undefined — the unfiled state, which the composer already treats as
+  // valid — instead of a hard failure.
+  private readonly composePublicationId: Signal<string | undefined> = toSignal(this.route.queryParamMap.pipe(map((p) => toValidUuid(p.get('publication')))), {
+    initialValue: toValidUuid(this.route.snapshot.queryParamMap.get('publication')),
+  });
 
   // === Forms ===
   // Form control names stay camelCase (Angular convention). API payloads
@@ -234,17 +237,14 @@ export class NewsletterManageComponent {
   // navigation carrying a UID. Angular reuses the component instance across that
   // navigation (same routeConfig; only a query param changed), so a snapshot read
   // would keep serving the first UID forever — silently ignoring the dialog's
-  // project pick. A reactive read picks up the change; isUuid() below still
-  // rejects the dialog's slug and falls through to activeContextUid(), which the
-  // dialog updates via its own setContext() before navigating, so that path
-  // resolves correctly either way.
+  // project pick. A reactive read picks up the change; the shared toValidUuid
+  // below still rejects the dialog's slug and falls through to
+  // activeContextUid(), which the dialog updates via its own setContext()
+  // before navigating, so that path resolves correctly either way.
   private readonly queryProjectRef: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((p) => p.get('project')?.trim() || null)), {
     initialValue: this.route.snapshot.queryParamMap.get('project')?.trim() || null,
   });
-  private readonly queryProjectUid: Signal<string | null> = computed(() => {
-    const ref = this.queryProjectRef();
-    return ref && isUuid(ref) ? ref : null;
-  });
+  private readonly queryProjectUid: Signal<string | null> = computed(() => toValidUuid(this.queryProjectRef()) ?? null);
   public readonly projectUid: Signal<string> = computed(
     () => this.routeProjectUid() || this.queryProjectUid() || this.projectContextService.activeContextUid()
   );

@@ -47,10 +47,14 @@ export class NewsletterPublicationListComponent {
   }
 
   protected goToPublicationEditions(publication: NewsletterPublication): void {
-    // projectUid travels in the URL alongside the publication id, and
-    // 'editions' disambiguates the route from the shareable reader permalink —
-    // see newsletters.routes.ts.
-    this.router.navigate([this.projectUid(), publication.id, 'editions'], { relativeTo: this.route });
+    // The publication's own project_uid travels in the URL, not this.projectUid()
+    // (ambient active context) — the whole point of carrying projectUid in the
+    // editions route (see newsletters.routes.ts) is that a deep link resolves
+    // the publication's own project even beside a stale/different active
+    // context; sourcing it from activeContextUid() here would silently defeat
+    // that for the one navigation that creates these links in the first place.
+    // 'editions' disambiguates the route from the shareable reader permalink.
+    this.router.navigate([publication.project_uid, publication.id, 'editions'], { relativeTo: this.route });
   }
 
   // No dedicated publication-create UI exists yet (the publication create/manage

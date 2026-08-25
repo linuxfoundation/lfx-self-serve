@@ -3,7 +3,7 @@
 
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router, RouterStateSnapshot } from '@angular/router';
-import { isUuid } from '@lfx-one/shared/utils';
+import { isUuid, toValidUuid } from '@lfx-one/shared/utils';
 import { map } from 'rxjs';
 
 import { PersonaService } from '../services/persona.service';
@@ -84,17 +84,16 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
   // projectRef rather than "slug" for a value that's a UID from either of
   // the first two sources.
   //
-  // route.paramMap.get('projectUid') is isUuid()-gated here too, matching
-  // projectUidFromUrl's own gating: Angular decodes a %2F inside a path
-  // segment before it reaches paramMap, so an unvalidated value here could
-  // carry an embedded "/" through to getProject's unencoded
+  // route.paramMap.get('projectUid') is gated with the shared toValidUuid
+  // here too, matching projectUidFromUrl's own gating: Angular decodes a %2F
+  // inside a path segment before it reaches paramMap, so an unvalidated value
+  // here could carry an embedded "/" through to getProject's unencoded
   // `/api/projects/${slugOrUid}` request path. The route's own :projectUid
   // segment is expected to always be a UUID already — this only rejects a
   // malformed one rather than forwarding it, falling through to the
   // remaining sources instead.
-  const routeProjectUid = route.paramMap.get('projectUid');
   const projectRef =
-    (routeProjectUid && isUuid(routeProjectUid) ? routeProjectUid : null) ??
+    toValidUuid(route.paramMap.get('projectUid')) ??
     projectUidFromUrl(state.url) ??
     route.queryParamMap.get('project') ??
     projectContextService.activeContext()?.slug ??

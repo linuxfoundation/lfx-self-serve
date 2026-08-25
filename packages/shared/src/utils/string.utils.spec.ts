@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { capCodePointEdit, codePointLength, slugify, splitIntoParagraphs } from './string.utils';
+import { capCodePointEdit, codePointLength, slugify, splitIntoParagraphs, toValidUuid } from './string.utils';
 
 describe('codePointLength', () => {
   it('counts ASCII the same as String.length', () => {
@@ -123,5 +123,45 @@ describe('splitIntoParagraphs', () => {
   it('returns an empty array for empty or whitespace-only input', () => {
     expect(splitIntoParagraphs('')).toEqual([]);
     expect(splitIntoParagraphs('  \n\n  ')).toEqual([]);
+  });
+});
+
+describe('toValidUuid', () => {
+  const UUID = '11111111-1111-1111-1111-111111111111';
+
+  it('returns the value unchanged when it is a canonical UUID', () => {
+    expect(toValidUuid(UUID)).toBe(UUID);
+  });
+
+  it('trims surrounding whitespace before validating', () => {
+    expect(toValidUuid(`  ${UUID}  `)).toBe(UUID);
+  });
+
+  it('returns undefined for null', () => {
+    expect(toValidUuid(null)).toBeUndefined();
+  });
+
+  it('returns undefined for undefined', () => {
+    expect(toValidUuid(undefined)).toBeUndefined();
+  });
+
+  it('returns undefined for an empty string', () => {
+    expect(toValidUuid('')).toBeUndefined();
+  });
+
+  it('returns undefined for a whitespace-only string', () => {
+    expect(toValidUuid('   ')).toBeUndefined();
+  });
+
+  it('returns undefined for a non-UUID string', () => {
+    expect(toValidUuid('not-a-uuid')).toBeUndefined();
+  });
+
+  it('returns undefined for a non-canonical form uuid.Parse would accept (urn: prefix)', () => {
+    expect(toValidUuid(`urn:uuid:${UUID}`)).toBeUndefined();
+  });
+
+  it('is case-insensitive, matching isUuid', () => {
+    expect(toValidUuid(UUID.toUpperCase())).toBe(UUID.toUpperCase());
   });
 });
