@@ -84,6 +84,7 @@
         [pTooltip]="'Limit of ' + savedViewLimit() + ' reached. Remove a view to save a new one.'"
         [tooltipDisabled]="!atSavedViewLimit()"
         tooltipPosition="top"
+        (keydown.escape)="close.emit()"
         (click)="saveCurrentViewRequested.emit()"
         data-testid="views-dropdown-save-current">
         <i class="fa-light fa-plus"></i>

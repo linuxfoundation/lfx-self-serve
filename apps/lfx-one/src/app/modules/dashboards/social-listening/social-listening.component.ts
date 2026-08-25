@@ -902,25 +902,12 @@ export class SocialListeningComponent {
     return this.initFoundationOptions((foundationSlug) => this.socialListeningService.getMentionsProjects({ foundationSlug }));
   }
 
-  /** Languages option fetch (3017): deferred until the Filters button is first hovered/focused/opened. */
+  /** Languages option fetch (3017): lazy like the other filter options, and scoped like keywords/tags so the dropdown and the invalid-language reset track the actual feed scope. */
   private initLanguagesState(): Signal<LoadableState<string[]>> {
-    return toSignal(
-      toObservable(computed(() => ({ foundationSlug: this.foundationSlug(), period: this.selectedPeriod(), opened: this.filtersOpenedOnce() }))).pipe(
-        debounceTime(0), // Coalesce synchronous signal changes (foundation switch + scope reset) into one fetch
-        filter((t) => !!t.foundationSlug && !!t.period && t.opened),
-        switchMap((t) =>
-          this.socialListeningService.getMentionsLanguages({ foundationSlug: t.foundationSlug, period: t.period }).pipe(
-            map((data): LoadableState<string[]> => ({ loading: false, error: null, data })),
-            catchError(() => of<LoadableState<string[]>>({ loading: false, error: 'Failed to load options', data: [] })),
-            startWith<LoadableState<string[]>>({ loading: true, error: null, data: [] })
-          )
-        )
-      ),
-      { initialValue: { loading: false, error: null, data: [] } }
-    );
+    return this.initScopedOptionsState((req) => this.socialListeningService.getMentionsLanguages(req));
   }
 
-  /** Keywords/tags option fetches (3017): like languages, but also refetch when the platform/sub-project scope changes. */
+  /** Scoped option fetches (3017): lazy on the Filters button, refetch when the platform/sub-project scope changes. */
   private initScopedOptionsState<T>(fetchFn: (req: SocialListeningScopedOptionsRequest) => Observable<T[]>): Signal<LoadableState<T[]>> {
     return toSignal(
       toObservable(
