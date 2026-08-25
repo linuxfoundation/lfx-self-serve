@@ -28,11 +28,17 @@ const projectService = new ProjectService();
  * (`marketing_auditor`) routes. LFXV2-2235.
  *
  * While `ServerFeatureFlag.MarketingOpsFga` is OFF (the default), this delegates to
- * `requireExecutiveDirector`. For `analytics.route.ts` routes that were already gated by
- * `requireExecutiveDirector` this preserves prior behavior exactly. For `campaigns.route.ts`
- * routes that previously had **no** authorization middleware, flag-off is an intentional
- * tightening: those routes now 403 any non-ED caller rather than admitting everyone. The kill
- * switch restores the ED-only baseline, not the pre-PR open baseline. When
+ * `requireExecutiveDirector`. Only three `analytics.route.ts` routes (`events-overview-summary`,
+ * `event-roster`, `event-detail`) were already gated by `requireExecutiveDirector` before this
+ * change, so flag-off preserves their prior behavior exactly. Every other route this middleware
+ * now covers — the rest of `analytics.route.ts` (`email-ctr`, `social-reach`,
+ * `keyword-performance`, `social-media`, `social-media/monthly`, `event-growth`, `brand-reach`,
+ * `brand-health`, `revenue-impact`, `marketing-attribution`) and all of `campaigns.route.ts` —
+ * previously had **no** authorization middleware. For those, flag-off is an intentional
+ * tightening: they now 403 any non-ED caller rather than admitting everyone. The kill switch
+ * restores the ED-only baseline, not the pre-PR open baseline. This tightening is covered by the
+ * flag-off describe block in this middleware's spec, which is route-agnostic and applies
+ * identically here and in `campaigns.route.ts`. When
  * the flag is ON: root-writer bypasses unconditionally; ED bypasses only for foundations it
  * actually holds the persona for (same scoping `requireExecutiveDirector` applies, checked
  * against `personaProjects`) — an ED out of scope for the requested slug is not hard-denied, it

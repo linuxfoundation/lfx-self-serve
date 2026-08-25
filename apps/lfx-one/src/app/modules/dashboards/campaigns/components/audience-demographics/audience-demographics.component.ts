@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, effect, inject, input, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import type { Subscription } from 'rxjs';
 import { CampaignService } from '@services/campaign.service';
 
@@ -36,13 +36,15 @@ export class AudienceDemographicsComponent {
   protected readonly deviceBuckets = computed(() => this.data()?.device ?? []);
   protected readonly pulledAt = computed(() => this.data()?.pulledAt ?? '');
 
+  private readonly refreshInputs = computed(() => ({ days: this.days(), projectSlug: this.projectSlug() }));
+
   public constructor() {
-    effect(() => {
-      const days = this.days();
-      // touch projectSlug() to register the reactive dependency; refresh() re-reads it
-      this.projectSlug();
-      this.refresh(days);
-    });
+    // toObservable + subscribe per frontend-checklist §5 ("No effect() — use toObservable() with
+    // RxJS pipes instead") — mirrors the pattern already used for foundation-switch refetches in
+    // the sibling campaign tabs (e.g. monitoring-tab.component.ts).
+    toObservable(this.refreshInputs)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(({ days }) => this.refresh(days));
   }
 
   // === Protected Methods ===
