@@ -114,18 +114,12 @@ export class GroupSeatHoldersDrawerComponent {
     return toSignal(
       trigger$.pipe(
         switchMap(({ visible, orgUid, committeeUid }) => {
-          // p-drawer keeps the panel mounted through its ~150ms leave animation — emitting null
-          // the instant `visible` flips false would replace the roster with the empty state (and
-          // the live region with a false "0 seat holders" announcement) while the panel is still
-          // sliding out. EMPTY leaves the last-loaded state as-is; the next real open re-fetches.
+          // Keeps the last-loaded state on screen through p-drawer's leave animation instead of
+          // flashing to an empty result and a false "0 seat holders" announcement.
           if (!visible) return EMPTY;
           if (!orgUid || !committeeUid) {
-            // Unlike the !visible branch above, this one does emit — so it must clear loading/error
-            // itself. `tap` only clears `loading` on a real fetch emission (see below), so without
-            // this a drawer closed mid-fetch and then reopened with a still-missing identifier would
-            // render a permanent spinner instead of falling through to the empty state — a null
-            // `seatHolders` makes `seatHolderVms()` `[]`, which is the template's `length === 0`
-            // branch, a different state than the `loading`/`error`-gated blank header placeholder.
+            // Emits (unlike !visible above), so it resets loading/error itself — tap below only
+            // clears loading on a real fetch emission, which this branch never reaches.
             this.error.set(false);
             this.loading.set(false);
             return of(null);
@@ -160,12 +154,8 @@ export class GroupSeatHoldersDrawerComponent {
               this.error.set(true);
               return of([] as CommitteeMemberAssignment[]);
             }),
-            // tap, not finalize: finalize also fires on unsubscribe (switchMap tearing this down
-            // because the drawer closed mid-fetch), which would clear `loading` — with nothing yet
-            // in `seatHolders`, that renders the empty state and a false "0 seat holders"
-            // announcement during the very close animation the EMPTY guard above exists to protect.
-            // tap only runs on an actual emission (the map above, or catchError's fallback), so a
-            // closed-mid-fetch drawer keeps showing its spinner state until a real result arrives.
+            // tap, not finalize — finalize also fires on unsubscribe (a mid-fetch close), which
+            // would clear `loading` before any real result exists, defeating the EMPTY guard above.
             tap(() => this.loading.set(false))
           );
         })

@@ -293,12 +293,9 @@
                     [attr.data-testid]="'org-groups-item-class-chip-' + group.uid" />
                 </div>
 
-                <!-- Seat-holders drawer trigger. Sits inside the pointer-events-none content wrapper
-                     above, so it needs the same pointer-events-auto relative z-10 treatment as the
-                     foundation link (see the row's stretched-link comment) to be independently
-                     clickable/tabbable without firing the row's /groups/:uid link. Its own
-                     aria-label keeps it distinguishable from both the row's ariaLabel and the
-                     foundation link's projectAriaLabel. -->
+                <!-- Seat-holders drawer trigger — needs the same pointer-events-auto/relative/z-10
+                     treatment as the foundation link (see the row's stretched-link comment) to stay
+                     independently clickable without firing the row's /groups/:uid link. -->
                 <button
                   type="button"
                   class="pointer-events-auto relative z-10 flex shrink-0 items-center gap-1 rounded text-sm text-gray-600 transition-colors hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"

@@ -86,7 +86,7 @@ describe('GroupSeatHoldersDrawerComponent', () => {
   }
 
   function rowNames(): string[] {
-    return Array.from(document.querySelectorAll('[data-testid="group-seat-holders-list"] li')).map((li) => li.textContent?.trim() ?? '');
+    return Array.from(document.querySelectorAll('[data-testid^="group-seat-holder-"]')).map((li) => li.textContent?.trim() ?? '');
   }
 
   function statusMessage(): string | null {
