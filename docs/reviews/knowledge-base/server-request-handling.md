@@ -34,17 +34,17 @@ Patterns where new backend routes are mounted without the right auth middleware,
 
 ---
 
-## `server-request-handling/new-api-route-no-auth-middleware` — Critical
+## `server-request-handling/new-route-unintended-public-exposure` — Critical
 
-**Pattern:** a new `/api/<X>` route prefix is mounted in `server.ts` (via `app.use('/api/<X>', router)`) but no `authMiddleware` is applied — either at the prefix mount point or inside the router itself. Anyone hitting the endpoint without a session can access it.
+**Pattern:** a new server route is reachable anonymously when it should require a session, because of how the route is _classified_ — not because a middleware call is missing. Auth is applied by a **single global `authMiddleware`** mounted once in `server.ts`, and `DEFAULT_ROUTE_CONFIG` in `auth.middleware.ts` classifies each request by prefix/pattern, with anything unmatched falling through to `defaultAuth: 'required'`. So a bare new `app.use('/api/<X>', router)` is already required-auth by default; the exposure comes from a route landing in the optional/public lane instead.
 
-**Detect:** in `server.ts`, find each `app.use('/api/<prefix>', router)` line. Verify that either (a) `authMiddleware` is applied immediately before the route mount (e.g., `app.use('/api/<prefix>', authMiddleware, router)`), or (b) the router itself applies `authMiddleware` at the top via `router.use(authMiddleware)`. If neither, fail — the route is unauthenticated.
+**Detect:** for each added or changed route, resolve its **effective path** and its **resulting auth classification** against `DEFAULT_ROUTE_CONFIG`. Flag it Critical when a sensitive route becomes anonymously reachable through any of: (a) a new `DEFAULT_ROUTE_CONFIG` entry with `auth: 'optional'`/`'public'`; (b) a new `/public/api/*` (or other public-prefix) mount in `server.ts`; or (c) a new or changed handler added to a router **already mounted** under an existing optional/public prefix (any `public-*.route.ts` under `/public/api`, or an SSR path matching an existing optional pattern), which inherits that classification with no config or mount change. Do **not** flag a normal new `/api/*` mount for lacking an inline `authMiddleware` — the global mount already covers it, and demanding `app.use('/api/<prefix>', authMiddleware, router)` or `router.use(authMiddleware)` is a false positive in this codebase.
 
-**Empirical citation:** PR #706 `apps/lfx-one/src/server/controllers/org-lens-foundations.controller.ts:63` — Copilot — "`getFoundationsAndProjects` performs no AuthN/AuthZ check before querying for an arbitrary `accountId` — the route is mounted in `server.ts` without any visible auth middleware on this prefix in the diff."
+**Empirical citation:** PR #706 `apps/lfx-one/src/server/controllers/org-lens-foundations.controller.ts:63` — Copilot — "`getFoundationsAndProjects` performs no AuthN/AuthZ check before querying for an arbitrary `accountId`." The durable lesson is the missing **authorization** (the caller is not checked against the `accountId` they query) together with public-lane classification; it is not that an `/api/*` prefix needs its own middleware call.
 
-**Failure message:** New `/api/*` route is mounted without auth middleware — unauthenticated access possible.
+**Failure message:** New route is anonymously reachable via public/optional classification — unintended unauthenticated access.
 
-**Fix:** apply `authMiddleware` to the prefix in `server.ts` (e.g., `app.use('/api/org-lens', authMiddleware, orgLensRouter)`), OR if intentional, mount under `/public/api/` and add a comment explaining the public exposure.
+**Fix:** if the exposure is unintentional, keep the route in the default `required` lane (do not add a `/public/api` mount or an `optional`/`public` `DEFAULT_ROUTE_CONFIG` entry for it). If public access is intentional, mount it under `/public/api/` (or add the explicit `DEFAULT_ROUTE_CONFIG` entry) **and** document why, and ensure the handler still enforces any per-user authorization it needs on the data it returns.
 
 ---
 
