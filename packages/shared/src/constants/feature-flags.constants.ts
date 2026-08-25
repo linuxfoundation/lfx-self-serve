@@ -39,6 +39,14 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
 
 /**
+ * Gates Org Lens UI that currently renders demo/placeholder data pending a real backend source —
+ * person-detail-drawer company emails (GH-1655) and the leaderboard row score-breakdown drawer
+ * (LFXV2-2934). Remove each gate as its real-data backend lands; retire this flag once both are
+ * unguarded.
+ */
+export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
+
+/**
  * Dark-launch gate for FGA-based (`marketing_auditor` / `campaign_manager`) Marketing Impact and
  * Campaigns access (LFXV2-2235/LFXV2-2236). Default false: the reverted PR #1112 caused a total
  * lockout for all users when these guards shipped without a kill switch (see the LFXV2-2231
