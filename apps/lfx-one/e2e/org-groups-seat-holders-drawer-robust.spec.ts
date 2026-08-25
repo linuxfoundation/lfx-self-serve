@@ -75,7 +75,9 @@ test.describe('Org Groups — seat holders drawer data-testid contract (GH-1780)
   });
 
   test('the loading/empty/error state testids are mutually exclusive once the drawer settles', async ({ page }) => {
+    await expect(page.getByTestId('group-seat-holders-drawer-loading')).toHaveCount(0);
     await expect(page.getByTestId('group-seat-holders-drawer-empty')).toHaveCount(0);
     await expect(page.getByTestId('group-seat-holders-drawer-error')).toHaveCount(0);
+    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible();
   });
 });

@@ -181,8 +181,11 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeNull();
   });
 
-  it('shows the loaded row count in the header, not the possibly-stale seatCount input', async () => {
-    // Deliberately mismatched: seatCount() (deduped-by-person) says 1, but two seat rows match.
+  // seatCount() (the row's org_seat_count, distinct PEOPLE, deduped by email server-side) and this
+  // list (one row per SEAT/role assignment) can genuinely disagree — a person holding two roles on
+  // the committee is one of the cases. The header must show the real, loaded count once settled,
+  // not the row's count.
+  it('shows the loaded row count in the header once settled, even when it differs from the row seatCount', async () => {
     await setup(
       vi.fn().mockReturnValue(of(response([assignment({ seatId: 's-1', committeeUid: 'c-1' }), assignment({ seatId: 's-2', committeeUid: 'c-1' })])))
     );
@@ -192,9 +195,10 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('2 seats');
   });
 
-  it('renders the pre-loaded seatCount in the header before the fetch resolves', async () => {
-    // NEVER: the fetch stays pending, so seatHolders() stays null and displayedCount() must fall
-    // back to the row's precomputed seatCount() rather than reading 0 while still loading.
+  // The header shows a plain "Seat holders" placeholder while loading, not a borrowed seatCount()
+  // — seatCount() counts a different thing (see above), so using it as a loading placeholder would
+  // risk visibly flipping to a different, correct number once the real list arrives.
+  it('shows a blank "Seat holders" placeholder while the fetch is pending, not the row seatCount', async () => {
     await setup(vi.fn().mockReturnValue(NEVER));
 
     fixture.componentRef.setInput('orgUid', 'org-1');
@@ -204,13 +208,16 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('7 seats');
+    const subtitle = document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent ?? '';
+    expect(subtitle).toContain('Seat holders');
+    expect(subtitle).not.toContain('7');
   });
 
-  // A failed fetch resolves seatHolders() to [] (see the outer catchError), not null — without
-  // excluding the error() branch from displayedCount's fallback, the header would read "0 seats"
-  // instead of the row's already-known count right next to the "Unable to load" panel.
-  it('keeps the pre-loaded seatCount in the header on a failed fetch, not 0', async () => {
+  // A failed fetch resolves seatHolders() to [] (see the outer catchError), not null — the
+  // error() branch is the one place seatCount() IS shown post-load, since there's no real list at
+  // all in that state for it to later disagree with (contrast: loading() shows a blank
+  // placeholder, because there the real list is still coming).
+  it('shows the row seatCount in the header on a failed fetch, not 0', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await setup(vi.fn().mockReturnValue(throwError(() => new Error('boom'))));
 
@@ -220,13 +227,7 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('7 seats');
   });
 
-  // Closing the drawer (visible: false) routes through the `!visible` branch of initSeatHolders,
-  // which resets seatHolders() to null — so this retry path was already covered by the plain
-  // `?? seatCount()` fallback even before the loading() guard existed. It's kept as a regression
-  // test for the retry flow itself (error clears, correct count reappears), not as coverage for
-  // the loading() guard specifically — see "keeps the new row seatCount in the header while an
-  // org-switch refetch is in flight..." below for the scenario that actually needs it.
-  it('recovers cleanly on retry after a failure: error clears, count comes back', async () => {
+  it('recovers cleanly on retry after a failure: error clears, real count comes back', async () => {
     const impl = vi
       .fn()
       .mockReturnValueOnce(throwError(() => new Error('boom')))
@@ -250,13 +251,13 @@ describe('GroupSeatHoldersDrawerComponent', () => {
 
   // Defensive coverage, not a currently-reachable path: org-groups.component.ts closes this
   // drawer on every org switch (its orgUid$ subscription), so today a trigger change shouldn't
-  // arrive with the drawer still open. IF one ever did, the cache would rebuild for the new
-  // orgUid and start a real refetch, but toSignal keeps emitting the *previous* org's array until
-  // that fetch resolves — without the loading() guard, displayedCount would read the stale
-  // previous-org row count instead of the new row's seatCount(). Awaits stability twice: the
-  // orgUid write has to propagate through toObservable's effect before the switchMap/loading()
-  // write lands, and asserting after only one flush was observed to occasionally race ahead of it.
-  it('keeps the new row seatCount in the header while an org-switch refetch is in flight, not the previous org roster length', async () => {
+  // arrive with the drawer still open. IF one ever did, the cache would rebuild for the new orgUid
+  // and start a real refetch — this proves the header falls back to the blank placeholder rather
+  // than leaking the previous org's stale row count while that refetch is in flight. Awaits
+  // stability twice: the orgUid write has to propagate through toObservable's effect before the
+  // switchMap/loading() write lands, and asserting after only one flush was observed to
+  // occasionally race ahead of it.
+  it('shows the blank placeholder, not the previous org roster length, while an org-switch refetch is in flight', async () => {
     const impl = vi
       .fn()
       .mockReturnValueOnce(
@@ -274,7 +275,6 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     await open('org-1', 'c-1', 'Storage Working Group', 3);
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('3 seats');
 
-    fixture.componentRef.setInput('seatCount', 9);
     fixture.componentRef.setInput('orgUid', 'org-2');
     await fixture.whenStable();
     fixture.detectChanges();
@@ -285,7 +285,28 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     // (loading() true) before checking the header text it gates — the header assertion alone
     // previously proved vulnerable to running ahead of that write.
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-loading"]')).toBeTruthy();
-    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('9 seats');
-    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).not.toContain('3 seats');
+    const subtitle = document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent ?? '';
+    expect(subtitle).toContain('Seat holders');
+    expect(subtitle).not.toContain('3');
+  });
+
+  it('renders a member with no name and no email as "Unknown member", not a blank row', async () => {
+    await setup(
+      vi.fn().mockReturnValue(
+        of(
+          response([
+            assignment({
+              role: '',
+              person: { email: '', firstName: '', lastName: '', fullName: '', jobTitle: null, initials: '' },
+            }),
+          ])
+        )
+      )
+    );
+
+    await open('org-1', 'c-1');
+
+    expect(text()).toContain('Unknown member');
+    expect(text()).toContain('—');
   });
 });

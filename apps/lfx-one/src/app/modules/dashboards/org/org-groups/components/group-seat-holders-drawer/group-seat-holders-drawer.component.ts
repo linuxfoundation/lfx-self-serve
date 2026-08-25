@@ -41,23 +41,20 @@ export class GroupSeatHoldersDrawerComponent {
 
   private readonly seatHolders: Signal<CommitteeMemberAssignment[] | null> = this.initSeatHolders();
 
-  // Filtered-list length once loaded, falling back to the row's precomputed seatCount() before
-  // that — keeps the header in sync with the rendered rows (each row is one seat/assignment, same
-  // unit the header counts) instead of drifting from a separately-sourced number. loading() and
-  // error() each bypass that fallback for a different reason:
-  //  - loading(): defensive. org-groups.component.ts closes this drawer on every org switch
-  //    (see its orgUid$ subscription), so today a trigger change should never arrive with the
-  //    drawer still open. If one ever did — an org switch while visible stays true — toSignal
-  //    would keep emitting the *previous* org's array until the new fetch resolves (see the cache
-  //    rebuild below), and without this guard the header would show that stale count under the
-  //    new org's name. (A committeeUid-only change replays synchronously from the cached
-  //    shareReplay and never observably hits this window; closing the drawer resets seatHolders()
-  //    to null via the `!visible` branch below, which the ?? fallback already handles on its own.)
-  //  - error(): the outer catchError resolves seatHolders() to [] (not null), which would
-  //    otherwise read "0 seats" next to the error panel instead of the row's already-known count.
-  protected readonly displayedCount: Signal<number> = computed(() =>
-    this.loading() || this.error() ? this.seatCount() : (this.seatHolders()?.length ?? this.seatCount())
-  );
+  // seatCount() (the row's org_seat_count) and this drawer's list count genuinely DIFFERENT
+  // things: org_seat_count is distinct PEOPLE, deduped by email server-side (see
+  // org-lens-groups.service.ts), while seatHolders() is one row per SEAT/role assignment — a
+  // person holding two roles on this committee, or two blank-email seats, makes them disagree for
+  // real, not just "not loaded yet". So the header shows null (renders as a plain "Seat holders"
+  // placeholder, no number) while loading, rather than borrowing seatCount() as a stand-in that
+  // would visibly flip to a different, correct number once the real list arrives. seatCount() is
+  // used only in the error state, as the best available number when there's no real list at all to
+  // compare it against — and there's no later "settle" moment there for it to disagree with.
+  protected readonly displayedCount: Signal<number | null> = computed(() => {
+    if (this.loading()) return null;
+    if (this.error()) return this.seatCount();
+    return this.seatHolders()?.length ?? null;
+  });
 
   // Precomputes the voting-status pill class per row so the template stays a flat binding
   // (no function call on every change-detection pass).
