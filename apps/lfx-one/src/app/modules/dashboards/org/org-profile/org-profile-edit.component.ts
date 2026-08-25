@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, ElementRef, EventEmitter, inject, input, OnInit, Output, signal, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, inject, input, OnInit, output, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
@@ -53,13 +53,13 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 })
 export class OrgProfileEditComponent implements OnInit {
   /** Emitted on successful save — parent applies the new record and exits edit mode. */
-  @Output() public readonly saved = new EventEmitter<OrgCanonicalRecord>();
+  public readonly saved = output<OrgCanonicalRecord>();
 
   /** Emitted on cancel — parent exits edit mode and discards changes. */
-  @Output() public readonly cancelled = new EventEmitter<void>();
+  public readonly cancelled = output<void>();
 
   /** Emitted after a successful logo upload — parent patches its cached record without exiting edit mode (logo saves immediately, independent of the form's Save/Cancel). */
-  @Output() public readonly logoUpdated = new EventEmitter<OrgCanonicalRecord>();
+  public readonly logoUpdated = output<OrgCanonicalRecord>();
 
   private readonly fb = inject(FormBuilder);
   private readonly orgProfileService = inject(OrgProfileService);
@@ -75,6 +75,8 @@ export class OrgProfileEditComponent implements OnInit {
   protected industryOptions: string[] = INDUSTRY_OPTIONS;
   protected sectorOptions: string[] = SECTOR_OPTIONS;
   protected readonly descriptionMaxLength = ORG_DESCRIPTION_MAX_LENGTH;
+  /** Drives the file input's `accept` from the same allow-list the validator and BFF parser use. */
+  protected readonly allowedLogoAccept = ALLOWED_ORG_LOGO_MIME_TYPES.join(',');
 
   protected readonly saving = signal(false);
 
@@ -195,7 +197,7 @@ export class OrgProfileEditComponent implements OnInit {
     const file = input.files?.[0];
     // Clear the input so re-selecting the same file (e.g. after a rejected upload) still fires change.
     input.value = '';
-    if (!this.isOrgLensUploadLogoEnabled()) return;
+    if (this.busy() || !this.isOrgLensUploadLogoEnabled()) return;
     if (file) this.handleLogoFile(file);
   }
 

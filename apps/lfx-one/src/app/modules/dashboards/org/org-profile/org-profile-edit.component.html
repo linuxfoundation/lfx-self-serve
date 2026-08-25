@@ -63,7 +63,7 @@
         <input
           #logoInput
           type="file"
-          accept="image/png,image/jpeg,image/svg+xml"
+          [attr.accept]="allowedLogoAccept"
           class="hidden"
           [disabled]="busy()"
           (change)="onLogoFileSelected($event)"

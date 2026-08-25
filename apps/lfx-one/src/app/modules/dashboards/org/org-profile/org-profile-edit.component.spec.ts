@@ -122,6 +122,29 @@ describe('OrgProfileEditComponent — logo upload', () => {
     expect(input.value).toBe('');
   });
 
+  /**
+   * PR #1583 review — the input's `[disabled]="busy()"` stops real users, but a change event queued
+   * from a picker opened before Save (non-modal on some platforms) or a synthetic dispatch would
+   * otherwise start a second concurrent upload, whose loser surfaces as a 409 the user cannot clear.
+   * Keeps all three mutation entry points guarded identically.
+   */
+  it('ignores a file selected while another mutation is already in flight', async () => {
+    selectFile(pngFile());
+    await fixture.whenStable();
+    expect(uploadLogoMock).toHaveBeenCalledTimes(1);
+
+    selectFile(pngFile());
+    await fixture.whenStable();
+    expect(uploadLogoMock).toHaveBeenCalledTimes(1);
+
+    uploadLogo$.next({ ...record, logoUrl: 'https://cdn.example.com/logo.png?v=2' });
+    await fixture.whenStable();
+
+    selectFile(pngFile());
+    await fixture.whenStable();
+    expect(uploadLogoMock).toHaveBeenCalledTimes(2);
+  });
+
   it('uploads a valid file, updates logoUrl, and emits logoUpdated on success', async () => {
     const emitted: OrgCanonicalRecord[] = [];
     fixture.componentInstance.logoUpdated.subscribe((updated) => emitted.push(updated));
