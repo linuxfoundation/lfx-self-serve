@@ -1532,25 +1532,47 @@ export class CampaignController {
     // `.filter` and `geoTargets: [123]` reaches `.trim`, answering a malformed request with a 500
     // instead of the controlled "unconfigured" refusal. A wrong TYPE is the same non-answer as a
     // missing value and takes the same exit.
-    const cleanKeywords = (Array.isArray(keywords) ? keywords : []).filter(
-      (k): k is MicrosoftKeyword => typeof k?.text === 'string' && k.text.trim() !== '' && MICROSOFT_MATCH_TYPES.has(k.matchType)
+    if (!Array.isArray(keywords)) return null;
+    // REJECT-ALL, not filter-and-continue. Upstream `validateKeywords` returns an error on the
+    // first bad entry rather than dropping it, and matching that is a correctness requirement
+    // rather than tidiness: filtering here meant a request carrying one good keyword and one
+    // `Fuzzy` keyword dispatched a campaign targeting HALF what the operator asked for, and
+    // reported success. `resolveGeoTargets` states the same rule for geo — "returning the partial
+    // set would create a campaign targeted at some-but-not-all of the requested countries while
+    // reporting success, and a caller cannot tell that from a full result."
+    //
+    // Control characters are ALSO refused upstream (any `unicode.IsControl` rune, checked
+    // pre-trim) and would otherwise reach POST /Keywords verbatim, to be rejected only after the
+    // campaign, ad group and ad exist. Checked pre-trim here for the same reason.
+    const keywordsValid = keywords.every(
+      (k) =>
+        typeof k?.text === 'string' &&
+        k.text.trim() !== '' &&
+        [...k.text.trim()].length <= MICROSOFT_MAX_KEYWORD_TEXT_LENGTH &&
+        // eslint-disable-next-line no-control-regex
+        !/[\u0000-\u001F\u007F]/.test(k.text) &&
+        MICROSOFT_MATCH_TYPES.has(k.matchType)
     );
+    if (!keywordsValid) return null;
+    const cleanKeywords = keywords as MicrosoftKeyword[];
     if (cleanKeywords.length === 0) return null;
-    // The upper bounds are refusals, not truncations. Silently dropping the 61st keyword would
-    // dispatch a campaign targeting less than the operator asked for, with nothing saying so.
-    // Length is measured in RUNES via the spread, matching the client's `utf8.RuneCountInString` —
-    // `.length` counts UTF-16 units, so an emoji or an astral-plane character would count double
-    // here and reject a keyword the client accepts.
+    // The count cap is a refusal, not a truncation — dropping the 61st keyword would dispatch a
+    // campaign targeting less than the operator asked for, the same harm as the filtering above.
+    // Per-keyword LENGTH is checked in the `every` above, in RUNES via the spread, matching the
+    // client's `utf8.RuneCountInString`; `.length` counts UTF-16 units and would count an emoji
+    // double, rejecting a keyword the client accepts.
     if (cleanKeywords.length > MICROSOFT_MAX_KEYWORDS) return null;
-    if (cleanKeywords.some((k) => [...k.text.trim()].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH)) return null;
 
-    // Uppercased and shape-checked against ISO 3166-1 alpha-2 before dispatch. The client resolves
-    // each code against Microsoft's own geographical-locations file and fails the create if one
-    // cannot be resolved — a non-ISO code would therefore be an async job failure. Membership of
-    // the assigned-country set stays the client's call; this only refuses what cannot be a code.
-    const cleanGeoTargets = (Array.isArray(geoTargets) ? geoTargets : [])
-      .map((g) => (typeof g === 'string' ? g.trim().toUpperCase() : ''))
-      .filter((g): g is string => META_GEO_CODE_PATTERN.test(g));
+    // Same REJECT-ALL rule as the keywords above, and upstream says why in `resolveGeoTargets`:
+    // it "FAILS CLOSED. Every code must resolve; the first that does not aborts". Filtering here
+    // turned `['US', 'USA']` into a US-only campaign that reported success — less targeting than
+    // the operator asked for, with nothing saying so.
+    //
+    // Shape only: whether a well-formed code is an ASSIGNED country stays the client's call, since
+    // it resolves each against Microsoft's own locations file. This refuses what cannot be a code.
+    if (!Array.isArray(geoTargets)) return null;
+    const cleanGeoTargets = geoTargets.map((g) => (typeof g === 'string' ? g.trim().toUpperCase() : ''));
+    if (!cleanGeoTargets.every((g) => META_GEO_CODE_PATTERN.test(g))) return null;
     if (cleanGeoTargets.length === 0) return null;
     if (cleanGeoTargets.length > MICROSOFT_MAX_GEO_TARGETS) return null;
 

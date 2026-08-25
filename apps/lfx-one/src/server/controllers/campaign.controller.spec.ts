@@ -859,6 +859,62 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(forwarded.some((e) => (e as { constructor?: { name?: string } })?.constructor?.name === 'TypeError')).toBe(false);
   });
 
+  /**
+   * REJECT-ALL, not filter-and-continue. Upstream errors on the FIRST bad entry
+   * (`validateKeywords`, `validateGeoTargets`), and `resolveGeoTargets` states why: "returning the
+   * partial set would create a campaign targeted at some-but-not-all of the requested countries
+   * while reporting success, and a caller cannot tell that from a full result."
+   *
+   * Each case pairs a VALID entry with an invalid one, so a filtering implementation would build a
+   * config from the survivor and pass a mere "was it refused" assertion.
+   */
+  it.each([
+    [
+      'an unsupported match type beside a valid keyword',
+      {
+        keywords: [
+          { text: 'kubernetes', matchType: 'Exact' },
+          { text: 'mesh', matchType: 'Fuzzy' },
+        ],
+      },
+    ],
+    [
+      'a control character beside a valid keyword',
+      {
+        keywords: [
+          { text: 'kubernetes', matchType: 'Exact' },
+          { text: 'me\tsh', matchType: 'Exact' },
+        ],
+      },
+    ],
+    [
+      'an over-length keyword beside a valid one',
+      {
+        keywords: [
+          { text: 'kubernetes', matchType: 'Exact' },
+          { text: 'k'.repeat(101), matchType: 'Exact' },
+        ],
+      },
+    ],
+    [
+      'a blank keyword beside a valid one',
+      {
+        keywords: [
+          { text: 'kubernetes', matchType: 'Exact' },
+          { text: '   ', matchType: 'Exact' },
+        ],
+      },
+    ],
+    ['a non-ISO code beside a valid geo', { geoTargets: ['US', 'USA'] }],
+    ['a blank code beside a valid geo', { geoTargets: ['US', '  '] }],
+  ])('refuses the WHOLE Microsoft config for %s rather than dropping the bad entry', async (_label, overrides) => {
+    await createWithMicrosoft(overrides);
+
+    // Not "a config with one keyword" — no config at all. A filtering implementation would have
+    // dispatched the valid survivor and reported success.
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('microsoftConfig');
+  });
+
   it('uppercases geo codes so a lowercase entry still dispatches', async () => {
     await createWithMicrosoft({ geoTargets: ['us', ' jp '] });
 

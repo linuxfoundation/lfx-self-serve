@@ -589,10 +589,17 @@ export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
  * The match types Microsoft's `Keyword.MatchType` accepts, in the PascalCase vocabulary the client
  * canonicalises (`canonicalMatchType`) — deliberately not Google's SCREAMING_CASE.
  *
- * Typed as `CampaignKeyword['matchType']` so the set and the union cannot drift: adding a member to
- * the union without listing it here is a compile error rather than a silently rejected keyword.
+ * DERIVED from a `Record` keyed by the union rather than written as a `Set` literal, and the
+ * difference is the whole point: `ReadonlySet<CampaignKeyword['matchType']>` only checks that the
+ * values listed BELONG to the union, so adding a member to the union and forgetting it here would
+ * compile silently and reject a keyword Microsoft accepts. A `Record<Union, true>` is exhaustive —
+ * omitting a member is a compile error — so the union stays the single source of truth.
  */
-export const MICROSOFT_MATCH_TYPES: ReadonlySet<CampaignKeyword['matchType']> = new Set<CampaignKeyword['matchType']>(['Exact', 'Phrase', 'Broad']);
+const MICROSOFT_MATCH_TYPE_MAP: Record<CampaignKeyword['matchType'], true> = { Exact: true, Phrase: true, Broad: true };
+
+export const MICROSOFT_MATCH_TYPES: ReadonlySet<CampaignKeyword['matchType']> = new Set(
+  Object.keys(MICROSOFT_MATCH_TYPE_MAP) as CampaignKeyword['matchType'][]
+);
 
 export const MICROSOFT_MAX_BUDGET = 1_000_000_000;
 

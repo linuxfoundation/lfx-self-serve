@@ -583,6 +583,26 @@ export class ImplementationTabComponent implements OnInit {
     return parsed;
   });
 
+  /** Rune length of the in-progress keyword — `[...s].length`, never `.length`. */
+  protected readonly microsoftKeywordDraftLength = computed(() => [...this.microsoftKeywordDraft().trim()].length);
+
+  protected readonly microsoftKeywordDraftTooLong = computed(() => this.microsoftKeywordDraftLength() > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH);
+
+  /**
+   * Whether the keyword and geo lists are within the bounds the Microsoft client enforces before
+   * its first create call. See the constants for the verified upstream values.
+   *
+   * Reads the EFFECTIVE lists, so blank-text keywords and whitespace geos are excluded from the
+   * counts exactly as the dispatched payload excludes them — counting the raw signals would block
+   * a form whose actual request is within bounds.
+   */
+  protected readonly microsoftBoundsValid = computed<boolean>(() => {
+    const keywords = this.microsoftEffectiveKeywords();
+    if (keywords.length > MICROSOFT_MAX_KEYWORDS) return false;
+    if (keywords.some((k) => [...k.text].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH)) return false;
+    return this.microsoftEffectiveGeoTargets().length <= MICROSOFT_MAX_GEO_TARGETS;
+  });
+
   /**
    * Whether the CPC bid box holds something dispatchable.
    *
@@ -599,26 +619,6 @@ export class ImplementationTabComponent implements OnInit {
    * bid", and treating `1001` as unset would dispatch a campaign at the account minimum while the
    * form still displayed 1001 — a silent substitution of a spend decision the operator did make.
    */
-  /**
-   * Whether the keyword and geo lists are within the bounds the Microsoft client enforces before
-   * its first create call. See the constants for the verified upstream values.
-   *
-   * Reads the EFFECTIVE lists, so blank-text keywords and whitespace geos are excluded from the
-   * counts exactly as the dispatched payload excludes them — counting the raw signals would block
-   * a form whose actual request is within bounds.
-   */
-  /** Rune length of the in-progress keyword — `[...s].length`, never `.length`. */
-  protected readonly microsoftKeywordDraftLength = computed(() => [...this.microsoftKeywordDraft().trim()].length);
-
-  protected readonly microsoftKeywordDraftTooLong = computed(() => this.microsoftKeywordDraftLength() > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH);
-
-  protected readonly microsoftBoundsValid = computed<boolean>(() => {
-    const keywords = this.microsoftEffectiveKeywords();
-    if (keywords.length > MICROSOFT_MAX_KEYWORDS) return false;
-    if (keywords.some((k) => [...k.text].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH)) return false;
-    return this.microsoftEffectiveGeoTargets().length <= MICROSOFT_MAX_GEO_TARGETS;
-  });
-
   protected readonly microsoftCpcBidValid = computed<boolean>(() => {
     const raw = this.microsoftCpcBid().trim();
     if (raw === '') return true;
