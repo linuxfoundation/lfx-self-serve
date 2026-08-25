@@ -51,6 +51,16 @@ export class PersonaService {
   public readonly isMarketingAuditor: WritableSignal<boolean> = signal<boolean>(false);
   /** Root- or project-scoped `campaign_manager` FGA grant. Same flag caveat as {@link isMarketingAuditor}. */
   public readonly isCampaignManager: WritableSignal<boolean> = signal<boolean>(false);
+  /**
+   * The project slug the most recent *project-scoped* {@link refreshEnrichedPersonas} call verified
+   * `isMarketingAuditor`/`isCampaignManager` against — `null` when the grant was confirmed root-scoped
+   * (no `projectSlug` argument) or not confirmed at all. Callers that need to know which specific
+   * foundation a marketing-only grant applies to (as opposed to `projectSelection`, which tracks
+   * unrelated general navigation state) should read this instead (LFXV2-2235 review findings on
+   * project-context.service.ts: neither a stale `projectSelection` nor a hardcoded TLF fallback
+   * reliably identifies the verified project).
+   */
+  public readonly marketingGrantSlug: WritableSignal<string | null> = signal<string | null>(null);
   /** True for EDs and LF Staff — the audience for Foundation Health, Marketing Overview, and Social Listening */
   public readonly canViewExecutiveDashboards: Signal<boolean>;
 
@@ -109,6 +119,11 @@ export class PersonaService {
         this.applyPersonaResponse(response);
         if (response && !response.error) {
           this.enrichedPersonasLoaded.set(true);
+          // Record which project this specific probe verified the grant against. A root-scoped
+          // call (no projectSlug) leaves this untouched — a ROOT grant isn't tied to one project.
+          if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager)) {
+            this.marketingGrantSlug.set(projectSlug);
+          }
         }
       })
     );

@@ -98,17 +98,18 @@ export class ProjectContextService {
     // arrives post-hydration) but only acts while no foundation has been set by cookie restore
     // or an explicit selection made since.
     //
-    // When the grant was confirmed via sidebar-nav.service.ts's `marketingPersonaSlug` scoped
-    // probe, it re-checks `personaService.isMarketingAuditor`/`isCampaignManager` against
-    // exactly `selectedProject()?.slug` — so at the instant this emission fires true via that
-    // path, `projectSelection` already holds the specific slug the grant was verified against.
-    // Prefer it over the hardcoded TLF default, which is only correct for a ROOT-scoped grant
-    // (LFXV2-2235 review finding: seeding TLF unconditionally can land a project-scoped-only
-    // grant holder on a foundation they aren't authorized for).
+    // `personaService.marketingGrantSlug()` — not `projectSelection()`, which serves unrelated
+    // general navigation and can be stale or unrelated to the grant — holds the exact project a
+    // *project-scoped* probe (sidebar-nav.service.ts's `marketingPersonaSlug`, or a route guard)
+    // most recently verified the grant against, or `null` for a ROOT-scoped grant with no single
+    // project to seed. Fall back to TLF only in the `null` case (LFXV2-2235 review findings on
+    // project-context.service.ts: a stale `projectSelection` can seed an unrelated/unauthorized
+    // foundation, and unconditionally seeding TLF can trigger a re-probe that legitimately
+    // overwrites an already-confirmed project-scoped grant with TLF's unrelated `false` result).
     toObservable(this.hasMarketingOnlyGrant)
       .pipe(
         filter((hasGrant) => hasGrant && !this.foundationSelection()),
-        switchMap(() => this.projectService.getProject(this.projectSelection()?.slug || MARKETING_ONLY_DEFAULT_FOUNDATION_SLUG, false)),
+        switchMap(() => this.projectService.getProject(this.personaService.marketingGrantSlug() || MARKETING_ONLY_DEFAULT_FOUNDATION_SLUG, false)),
         filter((project): project is NonNullable<typeof project> => !!project && !this.foundationSelection())
       )
       .subscribe((project) => {
