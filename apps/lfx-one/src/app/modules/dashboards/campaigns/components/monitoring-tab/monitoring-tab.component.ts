@@ -423,6 +423,15 @@ export class MonitoringTabComponent implements OnInit {
     this.selectedLinkedInAccountKey.set('');
     this.selectedRedditAccountKey.set('');
     this.selectedMetaAccountKey.set('');
+    // Also drop the previous foundation's account CATALOGS, not just the selection — otherwise the
+    // dropdowns keep offering the old foundation's accounts for the whole in-flight window (or
+    // forever, if the refetch below fails), and a pick there pairs the NEW foundation's project
+    // with an account from ANOTHER foundation. Mirrors `implementation-tab.component.ts`'s
+    // `loadLinkedInAccounts`, which clears its own catalog at the start of its reload for the same
+    // reason.
+    this.linkedInAccountOptions.set([]);
+    this.redditAccountOptions.set([]);
+    this.metaAccountOptions.set([]);
 
     // Also cancel any in-flight per-platform monitor fetch for the OLD foundation — clearing the
     // signal below isn't enough on its own. If the new foundation has no accounts for a platform,

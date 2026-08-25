@@ -226,4 +226,49 @@ describe('PersonaDetectionService', () => {
       expect(response.isMarketingAuditor).toBe(true);
     });
   });
+
+  describe('getPersonas — marketingRelations dedup and skip', () => {
+    function personaEnv(): void {
+      natsRequest.mockImplementation((subject: string) => {
+        if (subject.includes('personas')) {
+          return Promise.resolve({ data: JSON.stringify({ projects: [] }) });
+        }
+        return Promise.resolve({ data: 'uid-root' });
+      });
+    }
+
+    it('dedupes the slug -> uid lookup across both marketing checks when marketingRelations is `both`', async () => {
+      personaEnv();
+      // Both ROOT checks (`marketing_ops`, `marketing_auditor`) fail, forcing checkMarketingAuditorAccess
+      // AND checkCampaignManagerAccess to each fall through to the project-scoped lookup via
+      // resolveProjectSlug — the path that exercises projectSlugRequestCache.
+      checkSingleAccess.mockImplementation((_req: Request, args: { id: string; access: string }) => {
+        if (args.id === 'uid-root') return Promise.resolve(false);
+        return Promise.resolve(args.id === 'uid-project' && (args.access === 'marketing_auditor' || args.access === 'campaign_manager'));
+      });
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
+
+      const response = await service.getPersonas(req, 'some-project', 'both');
+
+      expect(response.isMarketingAuditor).toBe(true);
+      expect(response.isCampaignManager).toBe(true);
+      // A regression dropping projectSlugRequestCache would call getProjectIdBySlug twice here.
+      expect(getProjectIdBySlug).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips both marketing FGA round trips when marketingRelations is `none`', async () => {
+      personaEnv();
+      checkSingleAccess.mockResolvedValue(true);
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
+
+      const response = await service.getPersonas(req, 'some-project', 'none');
+
+      expect(response.isMarketingAuditor).toBe(false);
+      expect(response.isCampaignManager).toBe(false);
+      expect(getProjectIdBySlug).not.toHaveBeenCalled();
+      expect(checkSingleAccess).not.toHaveBeenCalledWith(req, expect.objectContaining({ access: 'marketing_auditor' }));
+      expect(checkSingleAccess).not.toHaveBeenCalledWith(req, expect.objectContaining({ access: 'marketing_ops' }));
+      expect(checkSingleAccess).not.toHaveBeenCalledWith(req, expect.objectContaining({ access: 'campaign_manager' }));
+    });
+  });
 });
