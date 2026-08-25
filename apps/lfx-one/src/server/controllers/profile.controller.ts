@@ -626,14 +626,19 @@ export class ProfileController {
       const v1Token = req.apiGatewayToken;
 
       if (!v1Token) {
-        // The token is also absent after a transient audience-token exchange failure (the auth
-        // middleware continues without it), not only when the environment lacks the config —
-        // so the copy stays neutral and retryable rather than diagnosing a misconfiguration.
-        res.status(503).json({
-          error: 'v1_token_unavailable',
-          message: 'Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.',
-        });
-        return;
+        // Also absent after a transient audience-token exchange failure (auth middleware continues
+        // without it), so the copy stays neutral; next() lets apiErrorHandler close the operation.
+        return next(
+          new MicroserviceError(
+            'Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.',
+            503,
+            'SERVICE_UNAVAILABLE',
+            {
+              operation: 'get_meeting_invite_email',
+              service: 'profile_controller',
+            }
+          )
+        );
       }
 
       const preference = await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token);
@@ -687,14 +692,19 @@ export class ProfileController {
       const v1Token = req.apiGatewayToken;
 
       if (!v1Token) {
-        // The token is also absent after a transient audience-token exchange failure (the auth
-        // middleware continues without it), not only when the environment lacks the config —
-        // so the copy stays neutral and retryable rather than diagnosing a misconfiguration.
-        res.status(503).json({
-          error: 'v1_token_unavailable',
-          message: 'Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.',
-        });
-        return;
+        // Also absent after a transient audience-token exchange failure (auth middleware continues
+        // without it), so the copy stays neutral; next() lets apiErrorHandler close the operation.
+        return next(
+          new MicroserviceError(
+            'Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.',
+            503,
+            'SERVICE_UNAVAILABLE',
+            {
+              operation: 'set_meeting_invite_email',
+              service: 'profile_controller',
+            }
+          )
+        );
       }
 
       const result = await this.meetingPreferenceService.setMeetingInviteEmail(req, v1Token, emailAddress);
