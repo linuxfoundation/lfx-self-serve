@@ -280,6 +280,10 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
     await page.getByTestId('org-contributions-committer-demo-aramirez-20260513').click();
     await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('person-detail-drawer-header')).toContainText('Ana Ramirez');
+    // The header renders synchronously from click context, before the async person-detail fetch
+    // resolves — wait for the fetch's loading skeleton to clear so the email assertions below reflect
+    // settled state, not a fetch that merely hasn't started rendering the email yet.
+    await expect(page.getByTestId('person-detail-drawer-loading')).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
 
     await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
     await expect(page.getByTestId('person-detail-drawer-email-unavailable')).toHaveCount(0);

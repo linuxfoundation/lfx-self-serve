@@ -3,7 +3,10 @@
 
 /** People → Board tab E2E (read + filter/expand/sort). Deterministic via route mocks. Inverted-filter sibling of org-people-committee-tab.spec.ts. */
 
+import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
+
+import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const PEOPLE_BOARD_URL = '/org/people?tab=board';
 const DATA_LOAD_TIMEOUT = 30_000;
@@ -341,5 +344,24 @@ test.describe('Org People → Board tab', () => {
     // The name click stopped propagation, so the row did not also expand.
     await expect(page.getByTestId(`org-people-board-expanded-${JORDAN_EMAIL}`)).toHaveCount(0);
     expect(personDetailCalls).toBe(0);
+  });
+
+  // Board rows have no personKey, so the drawer's only email source is the company-emails POST —
+  // forcing that lookup to fail makes `emailError` genuinely true, so asserting the fallback stays
+  // hidden actually proves the org-lens-private-release gate (not just an untriggered condition).
+  test('company email unavailable fallback stays hidden when org-lens-private-release is OFF', async ({ page }) => {
+    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
+    await stubAccountContext(page);
+    await stubBoardMembers(page);
+    await page.route('**/api/orgs/*/lens/people/company-emails', (route) => route.fulfill({ status: 500, body: 'boom' }));
+
+    await gotoBoardTab(page);
+    const emailLookup = page.waitForResponse((response) => response.url().includes('/lens/people/company-emails'));
+    await page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}-name`).click();
+    await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await emailLookup;
+
+    await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
+    await expect(page.getByTestId('person-detail-drawer-email-unavailable')).toHaveCount(0);
   });
 });
