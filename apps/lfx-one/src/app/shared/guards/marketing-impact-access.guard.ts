@@ -87,7 +87,9 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
           // Decide from this call's own response, not the shared signal — see the override branch
           // above for why (LFXV2-2235 Cursor finding: probe race can deny valid grants).
           const isMarketingAuditor = response ? (response.isMarketingAuditor ?? false) : personaService.isMarketingAuditor();
-          const allowed = marketingOpsFgaEnabled ? personaService.canViewExecutiveDashboards() || isMarketingAuditor : personaService.canViewExecutiveDashboards();
+          const allowed = marketingOpsFgaEnabled
+            ? personaService.canViewExecutiveDashboards() || isMarketingAuditor
+            : personaService.canViewExecutiveDashboards();
           if (allowed) {
             return true;
           }

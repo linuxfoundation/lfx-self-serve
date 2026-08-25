@@ -165,7 +165,7 @@ describe('marketingImpactAccessGuard', () => {
     expect(refreshEnrichedPersonas).toHaveBeenCalledWith(false, undefined);
   });
 
-  it('allows a marketing auditor based on this call\'s own response even if a newer probe elsewhere already overwrote the shared signal back to false (LFXV2-2235 probe-race regression)', async () => {
+  it("allows a marketing auditor based on this call's own response even if a newer probe elsewhere already overwrote the shared signal back to false (LFXV2-2235 probe-race regression)", async () => {
     getFlagOverride.mockReturnValue(true);
     // Simulate PersonaService.applyPersonaResponse discarding this response's write because a
     // newer probeId (from e.g. sidebar-nav) was issued before it resolved — the shared signal
