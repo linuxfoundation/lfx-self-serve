@@ -9,11 +9,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // vitest config, so every runtime (non-type-only) import needs a stub. `ProjectService`'s
 // constructor also builds `NatsService`/`SnowflakeService`/`ETagService`; the Snowflake-backed
 // suites below use only the `execute` mock, while the others stay trivial.
-const { proxyRequest, addAccessToResources, checkAccess, execute } = vi.hoisted(() => ({
+const { proxyRequest, addAccessToResources, checkAccess, execute, warning } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
   checkAccess: vi.fn(),
   execute: vi.fn(),
+  warning: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/constants', () => ({
@@ -38,6 +39,9 @@ vi.mock('@lfx-one/shared/constants', () => ({
   // actual numeric thresholds — not the arbitrary values a bare stub would produce.
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH: 3,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES: 40,
+  // Real value (8, matching foundation-projects.constants.ts): discoverSubFoundations uses this
+  // to size its sibling worker pool via Math.min(), so it must be a real positive number.
+  FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY: 8,
   // Real value (8, matching foundation-projects.constants.ts): getFoundationProjectsDetailGrouped
   // uses this to size its worker pool via Math.min(), so it must be a real positive number.
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY: 8,
@@ -102,7 +106,7 @@ vi.mock('./nats.service', () => ({ NatsService: class {} }));
 vi.mock('./etag.service', () => ({ ETagService: class {} }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
 vi.mock('./logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning, debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
 
 import type { Request } from 'express';
@@ -1304,5 +1308,54 @@ describe('ProjectService — discoverSubFoundations', () => {
     const result = await (service as any).discoverSubFoundations(req, 'root-uid');
 
     expect(result.map((r: { slug: string }) => r.slug)).toEqual(['n1-slug', 'n2-slug']);
+  });
+});
+
+describe('ProjectService — getProjectsByIds', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    warning.mockReset();
+    service = new ProjectService();
+  });
+
+  it('warns once with only UIDs omitted from a successful batch', async () => {
+    proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'resolved', slug: 'resolved' }]));
+
+    const result = await service.getProjectsByIds(req, ['resolved', 'missing']);
+
+    expect([...result.keys()]).toEqual(['resolved']);
+    expect(warning).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledWith(req, 'get_projects_by_ids', 'Project batch response omitted requested UIDs', {
+      missing_uids: ['missing'],
+    });
+  });
+
+  it('does not warn when every requested UID resolves', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      pageOf([
+        { uid: 'one', slug: 'one' },
+        { uid: 'two', slug: 'two' },
+      ])
+    );
+
+    const result = await service.getProjectsByIds(req, ['one', 'two']);
+
+    expect([...result.keys()]).toEqual(['one', 'two']);
+    expect(warning).not.toHaveBeenCalled();
+  });
+
+  it('preserves the failed-batch warning and empty-map fallback', async () => {
+    proxyRequest.mockRejectedValueOnce(new Error('query failed'));
+
+    const result = await service.getProjectsByIds(req, ['one', 'two']);
+
+    expect(result.size).toBe(0);
+    expect(warning).toHaveBeenCalledOnce();
+    expect(warning).toHaveBeenCalledWith(req, 'get_projects_by_ids', 'Batched project fetch failed for batch, skipping', {
+      batch_size: 2,
+      error: 'query failed',
+    });
   });
 });
