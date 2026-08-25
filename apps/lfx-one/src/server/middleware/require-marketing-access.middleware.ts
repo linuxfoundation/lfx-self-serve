@@ -27,8 +27,12 @@ const projectService = new ProjectService();
  * Marketing-ops FGA authorization for the Campaigns (`campaign_manager`) and marketing analytics
  * (`marketing_auditor`) routes. LFXV2-2235.
  *
- * While `ServerFeatureFlag.MarketingOpsFga` is OFF (the default), this delegates unchanged to
- * `requireExecutiveDirector` — the ED-only gate LFXV2-3294 already shipped on these routes. When
+ * While `ServerFeatureFlag.MarketingOpsFga` is OFF (the default), this delegates to
+ * `requireExecutiveDirector`. For `analytics.route.ts` routes that were already gated by
+ * `requireExecutiveDirector` this preserves prior behavior exactly. For `campaigns.route.ts`
+ * routes that previously had **no** authorization middleware, flag-off is an intentional
+ * tightening: those routes now 403 any non-ED caller rather than admitting everyone. The kill
+ * switch restores the ED-only baseline, not the pre-PR open baseline. When
  * the flag is ON: root-writer bypasses unconditionally; ED bypasses only for foundations it
  * actually holds the persona for (same scoping `requireExecutiveDirector` applies, checked
  * against `personaProjects`) — an ED out of scope for the requested slug is not hard-denied, it

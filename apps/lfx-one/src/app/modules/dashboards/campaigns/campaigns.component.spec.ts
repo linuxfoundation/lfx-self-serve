@@ -22,6 +22,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
+import { PersonaService } from '@services/persona.service';
 import { HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
@@ -100,7 +101,14 @@ describe('CampaignsComponent brief persistence', () => {
     persistBrief = vi.fn();
     vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persistBrief);
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     await fixture.whenStable();
+  });
+
+  it('renders a no-access state for a contributor without a campaign_manager FGA grant', async () => {
+    TestBed.inject(PersonaService).currentPersona.set('contributor');
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-no-access"]')).not.toBeNull();
   });
 
   it('switches to the Implementation tab before the save resolves', async () => {
@@ -1402,6 +1410,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     fixture.detectChanges();
   });
 
@@ -1763,6 +1772,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     fixture.detectChanges();
   });
 
@@ -2022,6 +2032,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
   });
@@ -2489,6 +2500,7 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
   });

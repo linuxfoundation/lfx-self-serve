@@ -217,8 +217,11 @@ export enum ServerFeatureFlag {
   /**
    * Gates FGA-based (`marketing_auditor` / `campaign_manager`) authorization on the marketing
    * analytics routes (`analytics.route.ts`) and campaigns routes (`campaigns.route.ts`).
-   * OFF keeps the `executive_director`-only gate shipped by LFXV2-3294 byte-for-byte — every
-   * request from a non-ED marketing user is denied, same as today.
+   * OFF establishes an `executive_director`-only baseline: analytics routes that were already
+   * gated by LFXV2-3294 preserve their prior behavior exactly, while campaigns routes that
+   * previously had no authorization middleware are intentionally tightened to ED-only. Every
+   * non-ED request is denied when the flag is off, but this is not a no-op rollback for
+   * campaigns — it is a new, stricter default. Operators should expect this tightening.
    *
    * Deliberately independent from any client-side OpenFeature flag: the Web SDK never runs
    * server-side, so without this, a direct API caller with a `marketing_auditor` or

@@ -323,7 +323,10 @@ reviewed chart commit — a values override is invisible to review, a chart chan
 | `environment.LFX_MARKETING_OPS_FGA_ENABLED` | Gates FGA-based `marketing_auditor` / `campaign_manager` authorization on the marketing routes | No       | off     |
 
 Same accepted-values and default-deny rules as the campaign-service cutover flags above. OFF (the
-default) keeps the `executive_director`-only gate shipped by LFXV2-3294 byte-for-byte. ON adds a
+default) establishes an `executive_director`-only baseline: analytics routes already gated by
+LFXV2-3294 preserve their prior behavior, while campaigns routes that previously had no
+authorization middleware are intentionally tightened to ED-only. Deploying with the default value
+still tightens authorization for campaigns — this is not a no-op rollback. ON adds a
 root-writer bypass plus a root- or project-scoped `marketing_auditor` / `campaign_manager` FGA
 grant as additional ways to pass — it never removes the existing ED path. LF Staff are not part
 of what this flag adds: their bypass, where it exists at all, is wired per-endpoint (only the

@@ -43,7 +43,6 @@ import {
 } from '@lfx-one/shared/constants';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
-import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { skip, take, type Subscription } from 'rxjs';
 
@@ -55,7 +54,6 @@ import { skip, take, type Subscription } from 'rxjs';
 })
 export class OptimizationTabComponent implements OnInit {
   private readonly campaignService = inject(CampaignService);
-  private readonly projectContextService = inject(ProjectContextService);
   private readonly destroyRef = inject(DestroyRef);
   // Provided at app root and rendered by `app.component`, OUTSIDE the `@switch` that owns this
   // tab. That is what makes it the right surface for a toggle outcome: the request now outlives
@@ -461,7 +459,7 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly actionInProgress = signal<Record<string, boolean>>({});
   protected readonly actionResults = signal<Record<string, { success: boolean; message: string }>>({});
 
-  protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
+  protected readonly activeFoundationSlug = computed(() => this.projectSlug());
 
   public constructor() {
     // Runs in the component's injection context, which is what `toObservable` requires and what

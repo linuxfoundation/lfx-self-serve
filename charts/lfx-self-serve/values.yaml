@@ -486,8 +486,11 @@ environment:
   # analytics routes (analytics.route.ts) and campaigns routes (campaigns.route.ts). Same
   # accepted values and same default-deny as the campaign-service flags above.
   #
-  # OFF (the default) keeps the executive_director-only gate shipped by LFXV2-3294
-  # byte-for-byte — every request from a non-ED marketing user is denied, same as today. ON
+  # OFF (the default) establishes an executive_director-only baseline. Analytics routes
+  # already gated by LFXV2-3294 preserve their prior behavior exactly; campaigns routes
+  # that previously had no authorization middleware are intentionally tightened to ED-only.
+  # Deploying with the default value still tightens authorization for campaigns — every
+  # non-ED caller that was previously admitted is now denied. ON
   # additionally admits a root-writer bypass plus a caller with an actual root- or
   # project-scoped marketing_auditor / campaign_manager FGA grant. LF Staff are NOT part of
   # what this flag adds: their bypass, where it exists at all, is wired per-endpoint
@@ -502,8 +505,9 @@ environment:
   # OFF by default is a hard requirement, not a convenience default. The reverted PR #1112
   # caused a TOTAL LOCKOUT for all users when its UI guards shipped without a kill switch
   # (LFXV2-2231 gap-analysis G2). This flag exists so a bad rollout can be reverted with an
-  # env var, not a revert PR — flip it back to unset/off and the pre-existing ED-only gate is
-  # restored exactly, with no code path that can deny every user at once.
+  # env var, not a revert PR — flip it back to unset/off and the ED-only baseline is
+  # restored (analytics routes to their pre-PR state; campaigns to the new ED-only default
+  # introduced by this PR, not the pre-PR open state), with no code path that can deny every user at once.
   #
   # It is NOT a live switch — same rollout caveat as every flag on this page: the chart
   # injects this as a container environment variable, so flipping it edits the Deployment pod
