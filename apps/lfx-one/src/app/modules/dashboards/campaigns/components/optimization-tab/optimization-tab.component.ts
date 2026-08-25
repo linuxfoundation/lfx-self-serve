@@ -468,58 +468,17 @@ export class OptimizationTabComponent implements OnInit {
     // lets `takeUntilDestroyed()` bind this component's `DestroyRef` without retaining the
     // subscription by hand. Deliberately not `ngOnInit` — `toObservable` would throw there.
     this.initConflictClearOnRefresh();
+
+    // skip(1) drops the emission toObservable fires immediately on subscribe — ngOnInit already
+    // runs the initial load, so only later foundation switches should reach
+    // loadForActiveFoundation() again.
+    toObservable(this.activeFoundationSlug)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => this.loadForActiveFoundation());
   }
 
   public ngOnInit(): void {
-    this.fetchData();
-    this.campaignService
-      .getLinkedInAccounts(this.activeFoundationSlug())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (accounts) => {
-          this.linkedInAccountOptions.set(accounts);
-          if (accounts.length > 0) {
-            this.selectedLinkedInAccountKey.set(accounts[0].accountId);
-            this.fetchLinkedInOptimization();
-          }
-        },
-        error: (err: unknown) => {
-          const httpErr = err as { error?: { message?: string }; message?: string };
-          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn accounts');
-        },
-      });
-    this.campaignService
-      .getRedditAccounts(this.activeFoundationSlug())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (accounts) => {
-          this.redditAccountOptions.set(accounts);
-          if (accounts.length > 0) {
-            this.selectedRedditAccountKey.set(accounts[0].key);
-            this.fetchRedditOptimization();
-          }
-        },
-        error: (err: unknown) => {
-          const httpErr = err as { error?: { message?: string }; message?: string };
-          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit accounts');
-        },
-      });
-    this.campaignService
-      .getMetaAccounts(this.activeFoundationSlug())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (accounts) => {
-          this.metaAccountOptions.set(accounts);
-          if (accounts.length > 0) {
-            this.selectedMetaAccountKey.set(accounts[0].key);
-            this.fetchMetaOptimization();
-          }
-        },
-        error: (err: unknown) => {
-          const httpErr = err as { error?: { message?: string }; message?: string };
-          this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta accounts');
-        },
-      });
+    this.loadForActiveFoundation();
   }
 
   /**
@@ -923,6 +882,64 @@ export class OptimizationTabComponent implements OnInit {
             for (const key of keys) updated[key] = { success: false, message: msg };
             return updated;
           });
+        },
+      });
+  }
+
+  private loadForActiveFoundation(): void {
+    // Stale account selections belong to the previous foundation — drop them so the
+    // "pick first account" logic below re-runs for the new foundation's accounts.
+    this.selectedLinkedInAccountKey.set('');
+    this.selectedRedditAccountKey.set('');
+    this.selectedMetaAccountKey.set('');
+
+    this.fetchData();
+    this.campaignService
+      .getLinkedInAccounts(this.activeFoundationSlug())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.linkedInAccountOptions.set(accounts);
+          if (accounts.length > 0) {
+            this.selectedLinkedInAccountKey.set(accounts[0].accountId);
+            this.fetchLinkedInOptimization();
+          }
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn accounts');
+        },
+      });
+    this.campaignService
+      .getRedditAccounts(this.activeFoundationSlug())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.redditAccountOptions.set(accounts);
+          if (accounts.length > 0) {
+            this.selectedRedditAccountKey.set(accounts[0].key);
+            this.fetchRedditOptimization();
+          }
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit accounts');
+        },
+      });
+    this.campaignService
+      .getMetaAccounts(this.activeFoundationSlug())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.metaAccountOptions.set(accounts);
+          if (accounts.length > 0) {
+            this.selectedMetaAccountKey.set(accounts[0].key);
+            this.fetchMetaOptimization();
+          }
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta accounts');
         },
       });
   }

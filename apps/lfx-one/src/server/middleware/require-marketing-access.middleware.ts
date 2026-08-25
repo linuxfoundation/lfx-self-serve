@@ -52,9 +52,12 @@ function createMarketingAccessMiddleware(
 ) {
   return async function requireMarketingAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      // Only the single relation this middleware instance cares about is needed here — the other
-      // relation's ROOT-scoped FGA check would otherwise be computed and discarded unread.
-      const result = await personaDetectionService.getPersonas(req, undefined, access);
+      // No marketing relation needed here — this call only wants isLFStaff/isRootWriter/personas
+      // for the fast paths below. Requesting `access` would run the ROOT FGA probe unconditionally,
+      // ahead of and independent of those fast paths, coupling their latency to FGA even for
+      // callers a bypass would otherwise satisfy immediately. The actual relation check happens
+      // later via checkRootMarketingAuditor/checkRootCampaignManager, once no bypass has applied.
+      const result = await personaDetectionService.getPersonas(req, undefined, 'none');
 
       // LF Staff bypass (if enabled) works regardless of flag state — no need to evaluate ED/FGA paths
       if (options.allowLfStaff && result.isLFStaff) {

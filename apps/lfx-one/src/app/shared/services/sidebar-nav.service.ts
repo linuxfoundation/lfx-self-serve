@@ -268,7 +268,20 @@ export class SidebarNavService {
         if (!this.isMarketingOpsFgaEnabled() || !this.userService.authenticated()) {
           return '';
         }
-        return this.projectContextService.selectedFoundation()?.slug ?? this.projectContextService.selectedProject()?.slug ?? '';
+        const foundationSlug = this.projectContextService.selectedFoundation()?.slug;
+        if (foundationSlug) {
+          return foundationSlug;
+        }
+        // Only fall back to selectedProject while no marketing grant is confirmed yet. Once
+        // isMarketingAuditor/isCampaignManager is true, a later selectedProject change with no
+        // explicit selectedFoundation must not re-probe that unrelated project slug — a `false`
+        // result there would overwrite (not merge with) the already-confirmed foundation-scoped
+        // grant (LFXV2-2235 review finding: "project slug clears marketing grant"). A genuine
+        // foundation switch still re-verifies via the selectedFoundation branch above.
+        if (this.personaService.isMarketingAuditor() || this.personaService.isCampaignManager()) {
+          return '';
+        }
+        return this.projectContextService.selectedProject()?.slug ?? '';
       })
     ).pipe(
       switchMap((slug) => {

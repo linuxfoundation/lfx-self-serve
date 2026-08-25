@@ -47,9 +47,9 @@ export class PersonaService {
   public readonly isRootWriter: WritableSignal<boolean> = signal<boolean>(false);
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona */
   public readonly isLFStaff: WritableSignal<boolean> = signal<boolean>(false);
-  /** Root-scoped `marketing_auditor` FGA grant (LFXV2-2235/LFXV2-2236). Always false while `ServerFeatureFlag.MarketingOpsFga` is off. */
+  /** Root- or project-scoped `marketing_auditor` FGA grant (project scope applies when the request carries `?project=`) (LFXV2-2235/LFXV2-2236). Always false while `ServerFeatureFlag.MarketingOpsFga` is off. */
   public readonly isMarketingAuditor: WritableSignal<boolean> = signal<boolean>(false);
-  /** Root-scoped `campaign_manager` FGA grant. Same flag caveat as {@link isMarketingAuditor}. */
+  /** Root- or project-scoped `campaign_manager` FGA grant. Same flag caveat as {@link isMarketingAuditor}. */
   public readonly isCampaignManager: WritableSignal<boolean> = signal<boolean>(false);
   /** True for EDs and LF Staff — the audience for Foundation Health, Marketing Overview, and Social Listening */
   public readonly canViewExecutiveDashboards: Signal<boolean>;

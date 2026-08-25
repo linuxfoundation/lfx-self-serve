@@ -48,6 +48,9 @@ export class PersonaDetectionService {
   private readonly lfStaffRequestCache = new WeakMap<Request, Promise<boolean>>();
   private readonly rootMarketingAuditorRequestCache = new WeakMap<Request, Promise<boolean>>();
   private readonly rootCampaignManagerRequestCache = new WeakMap<Request, Promise<boolean>>();
+  // Dedupes the projectSlug -> uid NATS lookup within a single request — checkMarketingAuditorAccess
+  // and checkCampaignManagerAccess both resolve the same slug in the same getPersonas Promise.all.
+  private readonly projectSlugRequestCache = new WeakMap<Request, Map<string, Promise<{ uid: string; exists: boolean }>>>();
   private rootProjectUidCache: { uid: string | null; expiresAt: number } | null = null;
 
   public constructor() {
@@ -220,13 +223,28 @@ export class PersonaDetectionService {
     if (!projectSlug) return false;
 
     try {
-      const { uid, exists } = await this.projectService.getProjectIdBySlug(req, projectSlug);
+      const { uid, exists } = await this.resolveProjectSlug(req, projectSlug);
       if (!exists) return false;
       return await this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: uid, access });
     } catch (error) {
       logger.warning(req, operation, `Project ${access} check failed, assuming no access`, { err: error, projectSlug });
       return false;
     }
+  }
+
+  private resolveProjectSlug(req: Request, projectSlug: string): Promise<{ uid: string; exists: boolean }> {
+    let cache = this.projectSlugRequestCache.get(req);
+    if (!cache) {
+      cache = new Map();
+      this.projectSlugRequestCache.set(req, cache);
+    }
+
+    const cached = cache.get(projectSlug);
+    if (cached) return cached;
+
+    const promise = this.projectService.getProjectIdBySlug(req, projectSlug);
+    cache.set(projectSlug, promise);
+    return promise;
   }
 
   private async checkRootAccess(

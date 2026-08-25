@@ -3,8 +3,8 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import type { Subscription } from 'rxjs';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { skip, type Subscription } from 'rxjs';
 import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName, PLATFORM_BRAND_COLORS } from '@lfx-one/shared/constants';
 import { formatPercent } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
@@ -135,62 +135,18 @@ export class MonitoringTabComponent implements OnInit {
 
   protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
 
+  public constructor() {
+    // toObservable + skip(1) per frontend-checklist §5 ("No effect() — use toObservable() with
+    // RxJS pipes instead"). skip(1) drops the emission toObservable fires immediately on
+    // subscribe — ngOnInit already runs the initial load, so only later foundation switches
+    // should reach loadForActiveFoundation().
+    toObservable(this.activeFoundationSlug)
+      .pipe(skip(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.loadForActiveFoundation());
+  }
+
   public ngOnInit(): void {
-    this.fetchData();
-    this.campaignService
-      .getLinkedInAccounts(this.activeFoundationSlug())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (accounts) => {
-          this.linkedInAccountOptions.set(accounts);
-          if (accounts.length > 0 && !this.selectedLinkedInAccountKey()) {
-            this.selectedLinkedInAccountKey.set(accounts[0].accountId);
-            if (this.selectedPlatform() === 'linkedin') {
-              this.fetchLinkedInData();
-            }
-          }
-        },
-        error: (err: unknown) => {
-          const httpErr = err as { error?: { message?: string }; message?: string };
-          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn accounts');
-        },
-      });
-    this.campaignService
-      .getRedditAccounts(this.activeFoundationSlug())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (accounts) => {
-          this.redditAccountOptions.set(accounts);
-          if (accounts.length > 0 && !this.selectedRedditAccountKey()) {
-            this.selectedRedditAccountKey.set(accounts[0].key);
-            if (this.selectedPlatform() === 'reddit') {
-              this.fetchRedditData();
-            }
-          }
-        },
-        error: (err: unknown) => {
-          const httpErr = err as { error?: { message?: string }; message?: string };
-          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit accounts');
-        },
-      });
-    this.campaignService
-      .getMetaAccounts(this.activeFoundationSlug())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (accounts) => {
-          this.metaAccountOptions.set(accounts);
-          if (accounts.length > 0 && !this.selectedMetaAccountKey()) {
-            this.selectedMetaAccountKey.set(accounts[0].key);
-            if (this.selectedPlatform() === 'meta') {
-              this.fetchMetaData();
-            }
-          }
-        },
-        error: (err: unknown) => {
-          const httpErr = err as { error?: { message?: string }; message?: string };
-          this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta accounts');
-        },
-      });
+    this.loadForActiveFoundation();
   }
 
   protected setDateRange(days: DateRangeOption): void {
@@ -459,5 +415,72 @@ export class MonitoringTabComponent implements OnInit {
 
   protected formatPct(value: number): string {
     return `${formatPercent(value)}%`;
+  }
+
+  private loadForActiveFoundation(): void {
+    // Stale account selections belong to the previous foundation — drop them so the
+    // "pick first account" logic below re-runs for the new foundation's accounts.
+    this.selectedLinkedInAccountKey.set('');
+    this.selectedRedditAccountKey.set('');
+    this.selectedMetaAccountKey.set('');
+    this.linkedInData.set(null);
+    this.redditData.set(null);
+    this.metaData.set(null);
+
+    this.fetchData();
+    this.campaignService
+      .getLinkedInAccounts(this.activeFoundationSlug())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.linkedInAccountOptions.set(accounts);
+          if (accounts.length > 0 && !this.selectedLinkedInAccountKey()) {
+            this.selectedLinkedInAccountKey.set(accounts[0].accountId);
+            if (this.selectedPlatform() === 'linkedin') {
+              this.fetchLinkedInData();
+            }
+          }
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.linkedInError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load LinkedIn accounts');
+        },
+      });
+    this.campaignService
+      .getRedditAccounts(this.activeFoundationSlug())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.redditAccountOptions.set(accounts);
+          if (accounts.length > 0 && !this.selectedRedditAccountKey()) {
+            this.selectedRedditAccountKey.set(accounts[0].key);
+            if (this.selectedPlatform() === 'reddit') {
+              this.fetchRedditData();
+            }
+          }
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.redditError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Reddit accounts');
+        },
+      });
+    this.campaignService
+      .getMetaAccounts(this.activeFoundationSlug())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          this.metaAccountOptions.set(accounts);
+          if (accounts.length > 0 && !this.selectedMetaAccountKey()) {
+            this.selectedMetaAccountKey.set(accounts[0].key);
+            if (this.selectedPlatform() === 'meta') {
+              this.fetchMetaData();
+            }
+          }
+        },
+        error: (err: unknown) => {
+          const httpErr = err as { error?: { message?: string }; message?: string };
+          this.metaError.set(httpErr?.error?.message || httpErr?.message || 'Failed to load Meta accounts');
+        },
+      });
   }
 }

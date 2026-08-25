@@ -39,6 +39,7 @@ export class AudienceDemographicsComponent {
   public constructor() {
     effect(() => {
       const days = this.days();
+      // touch projectSlug() to register the reactive dependency; refresh() re-reads it
       this.projectSlug();
       this.refresh(days);
     });
