@@ -152,8 +152,16 @@ export interface SocialListeningFilterParams {
   tags?: string[];
   authors?: string[];
   search?: string;
-  /** Reserved for the deferred bookmarked-mentions filter (follow-up ticket). */
+  /** Bookmark mode: restrict to these mention IDs (feed + count only — analytics and option queries omit it). */
   mentionIds?: string[];
+  /** Unread view: apply the per-user read-state exclusion (feed + count only — analytics and option queries omit these). */
+  unreadOnly?: boolean;
+  /** Read-state overrides: explicit reads newer than the cutoff. */
+  readIds?: string[];
+  /** Read-state overrides: explicit unreads at or before the cutoff. */
+  unreadIds?: string[];
+  /** Mark-all-as-read cutoff: mentions at or before it are read unless in `unreadIds`. */
+  readBeforeTs?: string;
 }
 
 export interface SocialListeningPaginationParams {
@@ -170,8 +178,8 @@ export interface SocialListeningTagsParams extends SocialListeningCountParams {
   limit?: number;
 }
 
-/** Author options cascade off every other filter, but must not filter by themselves. */
-export type SocialListeningAuthorsParams = Omit<SocialListeningCountParams, 'authors' | 'mentionIds'>;
+/** Author options cascade off every other filter, but must not filter by themselves — nor by per-user bookmark/read state. */
+export type SocialListeningAuthorsParams = Omit<SocialListeningCountParams, 'authors' | 'mentionIds' | 'unreadOnly' | 'readIds' | 'unreadIds' | 'readBeforeTs'>;
 
 /** Languages / keywords / tags option queries: scoped by range, optionally narrowed by platform + sub-project. */
 export interface SocialListeningScopedOptionsParams extends SocialListeningScopeParams {
@@ -206,6 +214,11 @@ export interface MentionFilters {
   search?: string;
   /** Bookmark mode: restrict to these mention IDs (feed + count only — the page strips it before analytics). */
   mentionIds?: string[];
+  /** Unread view: server-side read-state exclusion (feed + count only — the page strips these before analytics). */
+  unreadOnly?: boolean;
+  readIds?: string[];
+  unreadIds?: string[];
+  readBeforeTs?: string;
 }
 
 export interface SocialListeningFeedRequest extends MentionFilters {

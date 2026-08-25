@@ -7,6 +7,7 @@ import {
   MENTION_FILTER_MAX_VALUES,
   MENTION_IDS_MAX_VALUES,
   MENTION_MAX_FEED_OFFSET,
+  MENTION_READ_IDS_MAX_VALUES,
   MENTION_TOP_TAGS_LIMIT,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
@@ -589,6 +590,34 @@ export class SocialListeningService {
         // An explicitly empty id list means "nothing selected", not "no filter".
         clauses.push('1 = 0');
         markers.push('mentionIds=empty');
+      }
+    }
+
+    // Unread view: `isReadInState` negated — a mention is unread iff it is not explicitly read AND
+    // (no mark-all cutoff exists OR it is newer than the cutoff OR explicitly marked unread).
+    // With a null cutoff the cutoff clause drops out: every non-readIds mention is already unread.
+    if (filters.unreadOnly) {
+      markers.push('unreadOnly');
+      // Ids match verbatim (they are opaque Snowflake keys), so they sort but never lowercase.
+      const readIds = this.capValues(req, filters.readIds, MENTION_READ_IDS_MAX_VALUES).sort();
+      if (readIds.length > 0) {
+        clauses.push(`${col('_KEY')} NOT IN (${this.placeholders(readIds.length)})`);
+        binds.push(...readIds);
+        markers.push('readIds', ...readIds);
+      }
+
+      if (filters.readBeforeTs) {
+        const unreadIds = this.capValues(req, filters.unreadIds, MENTION_READ_IDS_MAX_VALUES).sort();
+        const cutoffClause = `${col('MENTION_TS')} > TO_TIMESTAMP_NTZ(?)`;
+        if (unreadIds.length > 0) {
+          clauses.push(`(${cutoffClause} OR ${col('_KEY')} IN (${this.placeholders(unreadIds.length)}))`);
+          binds.push(filters.readBeforeTs, ...unreadIds);
+          markers.push('readBeforeTs', filters.readBeforeTs, 'unreadIds', ...unreadIds);
+        } else {
+          clauses.push(cutoffClause);
+          binds.push(filters.readBeforeTs);
+          markers.push('readBeforeTs', filters.readBeforeTs);
+        }
       }
     }
 

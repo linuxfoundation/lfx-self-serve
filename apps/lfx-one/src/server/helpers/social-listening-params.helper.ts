@@ -6,6 +6,7 @@ import {
   MENTION_HAS_TITLE_OPTIONS,
   MENTION_IDS_MAX_VALUES,
   MENTION_MAX_FEED_OFFSET,
+  MENTION_READ_IDS_MAX_VALUES,
   MENTION_RELEVANCE_OPTIONS,
   MENTION_SENTIMENT_OPTIONS,
   MENTION_SERVER_WINDOW_SIZE,
@@ -85,19 +86,30 @@ export function parseSocialListeningFilters(req: Request, operation: string): So
     ...parseSocialListeningAuthorFilters(req, operation),
     authors: parseArrayParam(req, 'authors', MENTION_FILTER_MAX_VALUES, operation),
     mentionIds: parseArrayParam(req, 'mentionIds', MENTION_IDS_MAX_VALUES, operation),
+    // Unread view: the client's persisted read state as a server-side exclusion predicate.
+    unreadOnly: getStringQueryParam(req, 'unreadOnly') === 'true' || undefined,
+    readIds: parseArrayParam(req, 'readIds', MENTION_READ_IDS_MAX_VALUES, operation),
+    unreadIds: parseArrayParam(req, 'unreadIds', MENTION_READ_IDS_MAX_VALUES, operation),
+    readBeforeTs: parseTextParam(req, 'readBeforeTs', FILTER_VALUE_MAX_LENGTH, operation),
   };
 }
 
-/** Analytics filters — omits `mentionIds`: bookmark mode is all-time, analytics stays windowed (the page strips it too). */
-export function parseSocialListeningAnalyticsFilters(req: Request, operation: string): Omit<SocialListeningFilterParams, 'mentionIds'> {
+/** Analytics filters — omits `mentionIds` and the unread read-state params: bookmarks are all-time and read state is per-user view state, analytics stays windowed and read-blind (the page strips them too). */
+export function parseSocialListeningAnalyticsFilters(
+  req: Request,
+  operation: string
+): Omit<SocialListeningFilterParams, 'mentionIds' | 'unreadOnly' | 'readIds' | 'unreadIds' | 'readBeforeTs'> {
   return {
     ...parseSocialListeningAuthorFilters(req, operation),
     authors: parseArrayParam(req, 'authors', MENTION_FILTER_MAX_VALUES, operation),
   };
 }
 
-/** The filter subset the author-option query cascades off — omits `authors`/`mentionIds` so a multiselect never filters its own option list. */
-export function parseSocialListeningAuthorFilters(req: Request, operation: string): Omit<SocialListeningFilterParams, 'authors' | 'mentionIds'> {
+/** The filter subset the author-option query cascades off — omits `authors`/`mentionIds` and the unread read-state params so a multiselect never filters its own option list and author options stay read-state-blind. */
+export function parseSocialListeningAuthorFilters(
+  req: Request,
+  operation: string
+): Omit<SocialListeningFilterParams, 'authors' | 'mentionIds' | 'unreadOnly' | 'readIds' | 'unreadIds' | 'readBeforeTs'> {
   return {
     sentiment: parseEnumParam(req, 'sentiment', VALID_SENTIMENTS, operation),
     relevance: parseEnumParam(req, 'relevance', VALID_RELEVANCES, operation),

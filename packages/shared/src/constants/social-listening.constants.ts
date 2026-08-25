@@ -106,6 +106,9 @@ export const MENTION_IDS_MAX_VALUES = 500;
 /** Cap per read-state ID array (`readIds`/`unreadIds`) — same value as the bookmark cap, distinct semantic: cutoff overrides, not a query bound. */
 export const MAX_READ_IDS = 500;
 
+/** Transport cap for the unread filter's read-state ID arrays at the HTTP boundary — matches `MAX_READ_IDS` so a valid persisted doc is never truncated in flight. */
+export const MENTION_READ_IDS_MAX_VALUES = 500;
+
 /** Saved-view cap per user+foundation (LFXV2-3002 Block 3, PCC parity) — bounds the preference doc payload and the dropdown. */
 export const MAX_SAVED_FILTERS_PER_PROJECT = 50;
 

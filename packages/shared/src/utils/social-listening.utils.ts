@@ -107,6 +107,8 @@ export function buildMentionFilters(opts: {
   hasTitle?: string;
   search?: string;
   mentionIds?: string[];
+  /** Unread view: the page's read-state snapshot — translated into the unread request fragment (feed + count only). */
+  unread?: ReadStateData;
 }): MentionFilters {
   const isActive = (v?: string): boolean => !!v && v !== 'all';
   const filters: MentionFilters = {};
@@ -123,8 +125,23 @@ export function buildMentionFilters(opts: {
   if (opts.search) filters.search = opts.search;
   // Bookmark mode: non-empty only — an empty set means "no bookmarks", which the page turns into a null request instead.
   if (opts.mentionIds && opts.mentionIds.length > 0) filters.mentionIds = opts.mentionIds;
+  // Unread mode: the read-state snapshot rides the feed/count requests so the server filters period-wide.
+  if (opts.unread) Object.assign(filters, buildUnreadFilterFragment(opts.unread));
 
   return filters;
+}
+
+/**
+ * Translates a read-state snapshot into the unread request fragment (feed + count only — the page strips it
+ * before analytics): `unreadOnly` always set, empty ID arrays and a null cutoff omitted so the request
+ * stays minimal and the server's cache discriminator stays stable.
+ */
+export function buildUnreadFilterFragment(state: ReadStateData): Pick<MentionFilters, 'unreadOnly' | 'readIds' | 'unreadIds' | 'readBeforeTs'> {
+  const fragment: Pick<MentionFilters, 'unreadOnly' | 'readIds' | 'unreadIds' | 'readBeforeTs'> = { unreadOnly: true };
+  if (state.readIds.length > 0) fragment.readIds = state.readIds;
+  if (state.unreadIds.length > 0) fragment.unreadIds = state.unreadIds;
+  if (state.readBeforeTs) fragment.readBeforeTs = state.readBeforeTs;
+  return fragment;
 }
 
 export function mapSubProjectsToOptions(projects: SocialListeningSubProject[]): SocialListeningOption[] {
