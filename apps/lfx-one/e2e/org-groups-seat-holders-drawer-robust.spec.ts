@@ -93,7 +93,10 @@ test.describe('Org Groups — seat holders drawer data-testid contract (GH-1780)
     await expect(button).toBeVisible();
     expect(await button.evaluate((el) => el.tagName)).toBe('BUTTON');
 
-    const ids = await collectSeatTestIds(page);
-    expect(ids).not.toContain(`seat-holder-person-${SEAT_TRANSPORT_1}`);
+    // Asserts the button's own testid, not collectSeatTestIds()'s output — that helper only ever
+    // locates on the 'group-seat-holder-' prefix, so anything it returns starts with that prefix by
+    // construction and could never demonstrate the no-shared-stem invariant either way.
+    const buttonTestId = await button.getAttribute('data-testid');
+    expect(buttonTestId?.startsWith('group-seat-holder-')).toBe(false);
   });
 });
