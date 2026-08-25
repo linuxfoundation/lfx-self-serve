@@ -18,7 +18,7 @@ import type {
   LinkedInTargetingProfileConfig,
 } from '@lfx-one/shared/interfaces';
 
-import { LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
+import { CAMPAIGN_PACING_THRESHOLDS, LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
 
 import type { Request } from 'express';
 
@@ -1010,11 +1010,15 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
     const hasBudget = totalBudget > 0 || dailyBudget > 0;
     let pacingLabel: LinkedInPacingLabel = 'normal';
     if (hasBudget) {
-      if (pacingPct < 40) {
+      // Bands come from the shared constants rather than LinkedIn-local literals: the pacing bar
+      // in `PacingClassPipe` colours the same campaign off CAMPAIGN_PACING_THRESHOLDS, so local
+      // numbers here made the label and the bar disagree (e.g. 45% read "underspending" red in
+      // the bar but "normal" in the label).
+      if (pacingPct < CAMPAIGN_PACING_THRESHOLDS.underspending) {
         pacingLabel = 'underspending';
-      } else if (pacingPct < 90) {
+      } else if (pacingPct < CAMPAIGN_PACING_THRESHOLDS.normal) {
         pacingLabel = 'normal';
-      } else if (pacingPct < 105) {
+      } else if (pacingPct < CAMPAIGN_PACING_THRESHOLDS.constrained) {
         pacingLabel = 'constrained';
       } else {
         pacingLabel = 'overspending';
@@ -1056,7 +1060,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
       actionItems.push({
         priority: 'HIGH',
         campaignName: c.campaignName,
-        issue: 'Underspending — pacing below 40%',
+        issue: `Underspending — pacing below ${CAMPAIGN_PACING_THRESHOLDS.underspending}%`,
         action: 'Check targeting breadth, bid strategy, or budget floor',
       });
     }
@@ -1064,7 +1068,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
       actionItems.push({
         priority: 'MED',
         campaignName: c.campaignName,
-        issue: 'Budget constrained — pacing above 90%',
+        issue: `Budget constrained — pacing above ${CAMPAIGN_PACING_THRESHOLDS.normal}%`,
         action: 'Consider increasing budget if event is in peak registration period',
       });
     }
