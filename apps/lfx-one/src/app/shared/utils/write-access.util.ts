@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EntityWithProject, Project } from '@lfx-one/shared/interfaces';
+import type { EntityWithProject, Project } from '@lfx-one/shared/interfaces';
 
 // Single definition of the meetings write predicate: when writerGuard and the two reactive
 // access signals each carried their own copy, drift denied or evicted meeting coordinators.

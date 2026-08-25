@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 import { COMMITTEE_WRITE_FEATURES } from '@lfx-one/shared/constants';
-import { EntityWithProject } from '@lfx-one/shared/interfaces';
+import type { EntityWithProject } from '@lfx-one/shared/interfaces';
 import { HttpErrorResponse } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
