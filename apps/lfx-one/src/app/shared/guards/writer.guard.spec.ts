@@ -135,4 +135,32 @@ describe('writerGuard', () => {
     expect(getMeetingDetail).not.toHaveBeenCalled();
     expect(getProject).toHaveBeenCalledWith(STALE_SLUG, false, { meetingCoordinator: false });
   });
+
+  it('fails closed when an entity-scoped route has no registered entity probe', async () => {
+    // entityScopedSlug with no usable probe is a route misconfiguration — fail closed (redirect,
+    // no downstream authorization probe) rather than fall back to the possibly stale context.
+    const result = await runGuard(meetingRoute({ writeFeature: 'newsletters', entityScopedSlug: true }));
+
+    expect(router.parseUrl).toHaveBeenCalledWith('/project/overview');
+    expect(result).toEqual({ redirect: '/project/overview' });
+    expect(getMeetingDetail).not.toHaveBeenCalled();
+    expect(getProject).not.toHaveBeenCalled();
+    expect(getCommittee).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when an entity-scoped route has no :id param', async () => {
+    const route = {
+      queryParamMap: convertToParamMap({}),
+      paramMap: convertToParamMap({}),
+      data: { writeFeature: 'meetings', entityScopedSlug: true },
+      parent: null,
+    } as unknown as ActivatedRouteSnapshot;
+
+    const result = await runGuard(route);
+
+    expect(router.parseUrl).toHaveBeenCalledWith('/project/overview');
+    expect(result).toEqual({ redirect: '/project/overview' });
+    expect(getMeetingDetail).not.toHaveBeenCalled();
+    expect(getProject).not.toHaveBeenCalled();
+  });
 });

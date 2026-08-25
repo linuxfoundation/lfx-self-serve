@@ -49,7 +49,7 @@ import {
   formatTo12HourInTimezone,
   generateRecurrenceObject,
   getDefaultStartDateTime,
-  getMeetingEditCommands,
+  getEntityCommands,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
@@ -94,7 +94,7 @@ import { MeetingResourcesSummaryComponent } from '../components/meeting-resource
 import { MeetingTypeSelectionComponent } from '../components/meeting-type-selection/meeting-type-selection.component';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 import { applyEntityProjectContext, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
-import { hasMeetingWriteAccess, resolveMeetingWriteSlug } from '@shared/utils/write-access.util';
+import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '@shared/utils/write-access.util';
 
 @Component({
   selector: 'lfx-meeting-manage',
@@ -748,10 +748,7 @@ export class MeetingManageComponent {
         }
         // Canonicalize on the created meeting's project tier — the create flow already resolved it
         // (projectQueryParamGuard effectiveKind → isFoundationContext), so no extra fetch is needed.
-        const editCommands = getMeetingEditCommands({
-          id: meetingId,
-          is_foundation: this.projectContextService.isFoundationContext(),
-        });
+        const editCommands = getEntityCommands('meetings', meetingId, this.projectContextService.isFoundationContext(), 'edit');
         this.router.navigate(editCommands ?? ['/meetings', meetingId, 'edit'], { queryParams: editQueryParams });
       } else {
         // Fallback to meetings list if no meeting ID
@@ -893,7 +890,7 @@ export class MeetingManageComponent {
             }
             // Mirror writerGuard's resolution order; the active-context fallback covers a meeting
             // carrying neither slug nor uid (the manage component owns that error path).
-            return resolveMeetingWriteSlug(meeting, this.projectContextService.activeContext()?.slug ?? null);
+            return resolveEntityWriteSlug(meeting, this.projectContextService.activeContext()?.slug ?? null);
           })
         )
       : toObservable(this.projectContextService.activeContext).pipe(map((ctx) => ctx?.slug ?? null));
