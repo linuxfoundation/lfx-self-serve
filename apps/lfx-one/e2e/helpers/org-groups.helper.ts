@@ -56,14 +56,15 @@ export function groupsResponse() {
   };
 }
 
-export function skipWhenAuthMissing(page: Page): void {
-  try {
-    const { hostname } = new URL(page.url());
-    if (hostname === 'auth0.com' || hostname.endsWith('.auth0.com')) {
-      test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
-    }
-  } catch {
-    // Malformed URL — let the test run and surface a useful failure.
+// Gated on env vars rather than on URL sniffing so genuine auth-flow regressions (expired
+// storageState, broken Auth0 login helper) still fail loudly when creds ARE configured —
+// URL-based detection silently turned those into green skips instead. Matches the pattern in
+// groups-view-toggle.spec.ts.
+const AUTH_CREDS_PRESENT = !!process.env.TEST_USERNAME && !!process.env.TEST_PASSWORD;
+
+export function skipWhenAuthMissing(): void {
+  if (!AUTH_CREDS_PRESENT) {
+    test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
   }
 }
 
@@ -190,12 +191,12 @@ export async function stubCommitteeMembers(page: Page, response: unknown = commi
 }
 
 export async function gotoGroups(page: Page): Promise<void> {
+  skipWhenAuthMissing();
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
+  await expect(page).not.toHaveURL(/auth0\.com/);
   await page.reload({ waitUntil: 'domcontentloaded' });
 
   await page.goto(GROUPS_URL, { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
   await expect(page).not.toHaveURL(/auth0\.com/);
 
   if (!page.url().includes('/org/groups')) {

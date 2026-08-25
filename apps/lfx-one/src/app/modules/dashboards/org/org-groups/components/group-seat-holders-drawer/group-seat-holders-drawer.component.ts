@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, ElementRef, inject, input, model, PLATFORM_ID, signal, viewChild, type Signal } from '@angular/core';
+import {
+  afterNextRender,
+  type AfterRenderRef,
+  Component,
+  computed,
+  ElementRef,
+  inject,
+  input,
+  Injector,
+  model,
+  PLATFORM_ID,
+  signal,
+  viewChild,
+  type Signal,
+} from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
@@ -22,6 +36,7 @@ import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.c
 export class GroupSeatHoldersDrawerComponent {
   private readonly committeeMembersService = inject(CommitteeMembersService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly injector = inject(Injector);
 
   public readonly visible = model<boolean>(false);
   public readonly orgUid = input<string>('');
@@ -37,6 +52,12 @@ export class GroupSeatHoldersDrawerComponent {
   // into our own #header ng-template (which PrimeNG embeds into that panel), not a DOM query.
   private readonly titleRef = viewChild<ElementRef<HTMLHeadingElement>>('titleRef');
   private previouslyFocusedElement: HTMLElement | null = null;
+
+  // Gates the live region's real text (see statusMessage()'s comment and the template) — starts
+  // false on every open so the freshly-mounted node's first paint is empty, then flips true after
+  // the next render so the real text arrives as a mutation on an already-painted node.
+  protected readonly contentRevealed = signal(false);
+  private revealRef: AfterRenderRef | null = null;
 
   // getCommitteeMembers(orgUid) always drains the org's FULL, non-truncated committee roster —
   // there's no server-side committeeUid filter (committee-service's seats endpoint doesn't offer
@@ -63,14 +84,15 @@ export class GroupSeatHoldersDrawerComponent {
   // spinner or an error message. The real, deduped-by-person row count otherwise.
   protected readonly displayedCount: Signal<number | null> = computed(() => (this.loading() || this.error() ? null : this.seatHolderVms().length));
 
-  // Text for the persistent sr-only live region (see the template, mounted as a sibling of
-  // <p-drawer> so it outlives every open/close and every internal @if branch — including while
-  // `visible` is false during the close animation, matching seatHolderVms/displayedCount's own
-  // "preserve last state through close" behavior above, not just the drawer's visible content).
-  // Covers all three state transitions, including the ones a "Try again" click can cause (failure
-  // -> success, or failure -> failure again) — the button the user activated is removed from the
-  // DOM either way, and the visible content between a repeat error and a fresh one looks identical
-  // without reading it.
+  // Text for the sr-only live region (see the template). Lives inside <p-drawer>'s content
+  // deliberately, not hoisted out — the panel is aria-modal="true", and AT is specified to treat
+  // content outside an open modal's subtree as unreachable, so a sibling region would be
+  // unreliable in a different way than the problem it would fix. Being inside means this node is
+  // destroyed and recreated on every open (see contentRevealed's comment for how that's handled).
+  // Once revealed, covers all three state transitions, including the ones a "Try again" click can
+  // cause (failure -> success, or failure -> failure again) — the button the user activated is
+  // removed from the DOM either way, and the visible content between a repeat error and a fresh
+  // one looks identical without reading it.
   protected readonly statusMessage: Signal<string> = computed(() => {
     if (this.loading()) return 'Loading seat holders…';
     if (this.error()) return 'Unable to load seat holders.';
@@ -92,10 +114,16 @@ export class GroupSeatHoldersDrawerComponent {
     if (!isPlatformBrowser(this.platformId)) return;
     this.previouslyFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     this.titleRef()?.nativeElement.focus();
+
+    this.contentRevealed.set(false);
+    this.revealRef?.destroy();
+    this.revealRef = afterNextRender(() => this.contentRevealed.set(true), { injector: this.injector });
   }
 
   protected onDrawerHide(): void {
     if (!isPlatformBrowser(this.platformId)) return;
+    this.revealRef?.destroy();
+    this.revealRef = null;
     if (this.previouslyFocusedElement?.isConnected) {
       this.previouslyFocusedElement.focus();
     }

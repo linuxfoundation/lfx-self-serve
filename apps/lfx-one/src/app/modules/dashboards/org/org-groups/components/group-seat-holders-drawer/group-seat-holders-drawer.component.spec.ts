@@ -823,6 +823,22 @@ describe('GroupSeatHoldersDrawerComponent', () => {
       expect(labelElement?.textContent?.trim()).toBe('Storage Working Group');
     });
 
+    // AT is specified to treat content outside an open aria-modal dialog's subtree as
+    // unreachable — a live region placed as a *sibling* of the dialog (however well-intentioned,
+    // e.g. to survive being torn down on close) would be unreliable for exactly the announcements
+    // it exists to make. Pins that the region stays inside, structurally, not just that its text
+    // is eventually correct.
+    it('keeps the live status region inside the dialog panel, not as a sibling of it', async () => {
+      await setup(vi.fn().mockReturnValue(of(response([]))));
+
+      await open('org-1', 'c-1');
+
+      const panel = dialogPanel();
+      const status = document.querySelector('[data-testid="group-seat-holders-drawer-status"]');
+      expect(status).toBeTruthy();
+      expect(panel?.contains(status)).toBe(true);
+    });
+
     it('moves focus into the panel on open, away from the element that triggered it', async () => {
       await setup(vi.fn().mockReturnValue(of(response([]))));
       const trigger = document.createElement('button');

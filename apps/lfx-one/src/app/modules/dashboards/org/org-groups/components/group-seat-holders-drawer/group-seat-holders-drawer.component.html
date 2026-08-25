@@ -1,14 +1,6 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Outside <p-drawer> deliberately: p-drawer's own content is *ngIf'd on `visible`, so a node
-     inside it is destroyed and recreated fresh on every open — a freshly-inserted node's initial
-     text is generally not reliably announced by screen readers, only later mutations to an
-     already-present node are. This node survives across opens (and across closes — see
-     statusMessage()'s own comment), so even the very first "Loading seat holders…" is a mutation
-     on a node that was already there, not content set once at insertion time. -->
-<p class="sr-only" role="status" aria-live="polite" data-testid="group-seat-holders-drawer-status">{{ statusMessage() }}</p>
-
 <p-drawer
   [(visible)]="visible"
   position="right"
@@ -61,6 +53,16 @@
       </div>
     </div>
   </ng-template>
+
+  <!-- Inside <p-drawer>, deliberately not hoisted out: the panel is aria-modal="true" (via [pt]
+       above), and content outside a modal's subtree is unreliable for AT to reach while it's open
+       — a sibling live region would be announced inconsistently at best. Staying inside means this
+       node IS destroyed and recreated on every open, so its first render can't carry the real
+       status text (a freshly-inserted node's initial text is generally not announced, only later
+       mutations to an already-present node are) — contentRevealed starts false so the node mounts
+       empty, then flips true one tick after onDrawerShow() so the real text arrives as a genuine
+       mutation instead. -->
+  <p class="sr-only" role="status" aria-live="polite" data-testid="group-seat-holders-drawer-status">{{ contentRevealed() ? statusMessage() : '' }}</p>
 
   <div class="flex flex-col gap-4 h-full">
     @if (loading()) {
