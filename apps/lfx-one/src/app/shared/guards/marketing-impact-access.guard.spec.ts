@@ -187,4 +187,16 @@ describe('marketingImpactAccessGuard', () => {
     expect(result).toBe(true);
     expect(isMarketingAuditor()).toBe(false);
   });
+
+  it("allows a marketing auditor based on this call's own response under the production provider-ready branch too, even if a newer probe elsewhere already overwrote the shared signal back to false (LFXV2-2235 probe-race regression)", async () => {
+    getBooleanFlag.mockReturnValue(signal(true));
+    // Same probe-race scenario as the local-override regression test above, but exercised through
+    // the providerReady/getBooleanFlag branch, which has its own separate map() implementation.
+    refreshEnrichedPersonas.mockReturnValue(of({ isMarketingAuditor: true }));
+
+    const result = await runGuard();
+
+    expect(result).toBe(true);
+    expect(isMarketingAuditor()).toBe(false);
+  });
 });
