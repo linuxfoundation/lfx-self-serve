@@ -42,15 +42,21 @@ export function votingStatusPillClass(status: string | null | undefined): string
   return isVotingStatus(status) ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-slate-50 text-slate-600';
 }
 
+/** Rank of "None" within `VOTING_STATUS_PRIORITY` — the boundary `votingStatusRank` ranks against. */
+const NONE_RANK = VOTING_STATUS_PRIORITY.findIndex((p) => p.toLowerCase() === 'none');
+
 /** Ranks a voting status by `VOTING_STATUS_PRIORITY` (lower = higher priority — "Voting Rep" is 0)
  *  for picking the best of several seats/statuses for one person — see
  *  `multi-persona-dashboard.component.ts`'s `pickByPriority` for the sibling usage this mirrors.
- *  A status outside the list still counts as voting per `isVotingStatus` — ranked worse than every
- *  named status but better than "None", not `Infinity`, so it can't lose a tie-break to an
- *  explicitly non-voting seat. Blank/falsy is `Infinity` (always loses). */
+ *  A status outside the list still counts as voting per `isVotingStatus` — ranked just above
+ *  `NONE_RANK` (not `Infinity`), so it can't lose a tie-break to an explicitly non-voting seat.
+ *  A non-blank, non-listed status that `isVotingStatus` rejects (e.g. "Non-voting", which isn't
+ *  itself in the priority list) ties with "None" at `NONE_RANK` rather than ranking arbitrarily
+ *  far below it. Blank/falsy is `Infinity` (always loses, including to "Non-voting"/"None"). */
 export function votingStatusRank(status: string | null | undefined): number {
   const s = (status ?? '').trim().toLowerCase();
+  if (!s) return Infinity;
   const index = VOTING_STATUS_PRIORITY.findIndex((p) => p.toLowerCase() === s);
   if (index !== -1) return index;
-  return isVotingStatus(status) ? VOTING_STATUS_PRIORITY.length - 0.5 : Infinity;
+  return isVotingStatus(status) ? NONE_RANK - 0.5 : NONE_RANK;
 }

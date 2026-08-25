@@ -410,6 +410,26 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(text()).not.toContain('Emeritus');
   });
 
+  it('prefers an unrecognized-but-voting status over an explicit "None" seat when merging', async () => {
+    await setup(
+      vi
+        .fn()
+        .mockReturnValue(
+          of(
+            response([
+              assignment({ seatId: 's-1', committeeUid: 'c-1', role: 'Member', votingStatus: 'None' }),
+              assignment({ seatId: 's-2', committeeUid: 'c-1', role: 'Delegate', votingStatus: 'Proxy Rep', memberUid: 'seat-2' }),
+            ])
+          )
+        )
+    );
+
+    await open('org-1', 'c-1');
+
+    expect(text()).toContain('Proxy Rep');
+    expect(text()).not.toContain('None');
+  });
+
   // The server dedupes org_seat_count on a trimmed, lowercased email — two seats for the same
   // person differing only in casing/whitespace must merge here too, or the header count would
   // overcount relative to the row's own badge for this case.
