@@ -536,6 +536,7 @@ export class CommitteeManageComponent {
       is_audit_enabled: committee.is_audit_enabled,
       public: committee.public,
       display_name: committee.display_name,
+      chat_channel: committee.chat_channel ?? null,
       sso_group_enabled: committee.sso_group_enabled,
       sso_group_name: committee.sso_group_name,
       website: committee.website,
@@ -558,6 +559,11 @@ export class CommitteeManageComponent {
       website: new FormControl('', [Validators.pattern(/^https?:\/\/.+\..+/)]),
 
       // Step 3: Settings
+      // chat_channel is bound by the settings step's Chat Channel card (shared with
+      // committee-settings-tab, whose form declares it) — without the control here the
+      // formControlName setup dereferences null and the field silently drops out of the
+      // create/update payload (GH-1566 review).
+      chat_channel: new FormControl(null),
       business_email_required: new FormControl(false),
       enable_voting: new FormControl(false),
       is_audit_enabled: new FormControl(false),
