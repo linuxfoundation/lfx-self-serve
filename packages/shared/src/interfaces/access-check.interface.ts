@@ -52,4 +52,5 @@ export type AccessCheckAccessType =
   | 'host'
   | 'member'
   | 'marketing_auditor'
-  | 'campaign_manager';
+  | 'campaign_manager'
+  | 'marketing_ops';

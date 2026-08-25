@@ -195,11 +195,16 @@ export class PersonaDetectionService {
   }
 
   /**
-   * Checks whether the current user holds `campaign_manager` on the tenant ROOT project. See
-   * {@link checkRootMarketingAuditor} — same cascade rationale, different relation.
+   * Checks whether the current user holds `marketing_ops` on the tenant ROOT project — NOT
+   * `campaign_manager` itself. Unlike `marketing_auditor`, `campaign_manager` does not cascade
+   * from parent (per the model: `campaign_manager: executive_director or marketing_ops`, with no
+   * `campaign_manager from parent` disjunct). Only the `marketing_ops` half cascades, so a ROOT
+   * `executive_director` grant must NOT be treated as campaign_manager on every descendant
+   * project — only a ROOT `marketing_ops` grant may be. An ED-only-on-ROOT caller falls through
+   * to {@link checkCampaignManagerAccess}'s per-project check instead.
    */
   public async checkRootCampaignManager(req: Request): Promise<boolean> {
-    return this.checkRootAccess(req, this.rootCampaignManagerRequestCache, 'campaign_manager', 'check_root_campaign_manager');
+    return this.checkRootAccess(req, this.rootCampaignManagerRequestCache, 'marketing_ops', 'check_root_campaign_manager');
   }
 
   /** ROOT grant OR a grant scoped to `projectSlug` (when given). Mirrors `requireMarketingAccess`. */
@@ -208,7 +213,11 @@ export class PersonaDetectionService {
     return this.checkProjectAccess(req, projectSlug, 'marketing_auditor', 'check_project_marketing_auditor');
   }
 
-  /** ROOT grant OR a grant scoped to `projectSlug` (when given). Mirrors `requireMarketingAccess`. */
+  /**
+   * A cascading ROOT `marketing_ops` grant OR a `campaign_manager` grant scoped to `projectSlug`
+   * (when given) — the latter also catches a project-scoped `executive_director`, which does not
+   * cascade and so cannot be resolved via the ROOT short-circuit. Mirrors `requireMarketingAccess`.
+   */
   private async checkCampaignManagerAccess(req: Request, projectSlug?: string): Promise<boolean> {
     if (await this.checkRootCampaignManager(req)) return true;
     return this.checkProjectAccess(req, projectSlug, 'campaign_manager', 'check_project_campaign_manager');
@@ -250,7 +259,7 @@ export class PersonaDetectionService {
   private async checkRootAccess(
     req: Request,
     cache: WeakMap<Request, Promise<boolean>>,
-    access: 'marketing_auditor' | 'campaign_manager',
+    access: 'marketing_auditor' | 'campaign_manager' | 'marketing_ops',
     operation: string
   ): Promise<boolean> {
     const cached = cache.get(req);
