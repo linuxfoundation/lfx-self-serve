@@ -20,7 +20,7 @@ import type {
   OrgLensProjectTrendSeries,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
-import { buildInsightsUrl, classifyHealthScore } from '@lfx-one/shared/utils';
+import { buildInsightsUrl, classifyHealthScore, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { escapeSqlLikePattern } from '../helpers/validation.helper';
@@ -35,6 +35,8 @@ interface HeroRow {
   IS_LF_PROJECT: boolean | null;
   DESCRIPTION: string | null;
   HEALTH_OVERALL_SCORE: number | null;
+  HEALTH_OVERALL_SCORE_V2: number | null;
+  HEALTH_SCORE_CATEGORY_V2: string | null;
   SOFTWARE_VALUE: number | null;
   FIRST_COMMIT_TS: Date | string | null;
 }
@@ -741,7 +743,8 @@ export class OrgLensProjectDetailService {
     const result = await this.snowflakeService.execute<HeroRow>(
       `
         SELECT PROJECT_NAME, PROJECT_SLUG, PROJECT_LOGO_URL, FOUNDATION_NAME, IS_LF_PROJECT,
-               DESCRIPTION, HEALTH_OVERALL_SCORE, SOFTWARE_VALUE, FIRST_COMMIT_TS
+               DESCRIPTION, HEALTH_OVERALL_SCORE, HEALTH_OVERALL_SCORE_V2, HEALTH_SCORE_CATEGORY_V2,
+               SOFTWARE_VALUE, FIRST_COMMIT_TS
         FROM ${this.projectsTable()}
         WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
         LIMIT 1
@@ -1521,12 +1524,15 @@ export class OrgLensProjectDetailService {
       lfxInsightsUrl: buildInsightsUrl(`/project/${slug}`),
       firstCommit: toIsoDate(row.FIRST_COMMIT_TS),
       softwareValueUsd: row.SOFTWARE_VALUE ?? null,
-      health: this.mapHealth(row.HEALTH_OVERALL_SCORE),
+      health: this.mapHealth(row),
       foundationLabel,
     };
   }
 
-  private mapHealth(score: number | null): OrgLensProjectHealth | null {
+  private mapHealth(row: Pick<HeroRow, 'HEALTH_OVERALL_SCORE' | 'HEALTH_SCORE_CATEGORY_V2'>): OrgLensProjectHealth | null {
+    const v2 = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
+    if (v2) return v2;
+    const score = row.HEALTH_OVERALL_SCORE;
     if (score === null || score === undefined) return null;
     return classifyHealthScore(score);
   }
