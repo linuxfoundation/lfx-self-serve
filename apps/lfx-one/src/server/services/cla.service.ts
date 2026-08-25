@@ -345,6 +345,10 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
     // empty strings to undefined so the Project cell falls back to claGroupName / the icon.
     projectName: cla.projectName || undefined,
     projectLogo: cla.projectLogo || undefined,
+    projectSfid: cla.projectSFID?.trim() || undefined,
+    foundationSfid: cla.foundationSFID?.trim() || undefined,
+    claGroupId: cla.claGroupID?.trim() || undefined,
+    claManager: cla.claManager === true,
     companyName: !isIcla ? cla.signingEntityName || cla.companyName || undefined : undefined,
     signedOn: cla.signedOn ?? '',
     signedVia: asSignedVia(cla.signedVia),

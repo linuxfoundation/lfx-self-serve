@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, viewChildren } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { ECLA_COVERED_DOWNLOAD_LABEL, MY_CLAS_M2_ENABLED_FLAG } from '@lfx-one/shared/constants';
@@ -27,6 +27,7 @@ import { UserService } from '@services/user.service';
 import { ClaGroupSelectComponent } from './cla-group-select.component';
 import { buildContactClaManagerMenuItems } from './contact-cla-manager-menu';
 import { GithubAccountSelectComponent } from './github-account-select.component';
+import { buildManageInCclaConsoleMenuItems } from './manage-ccla-console-menu';
 
 /**
  * "CLAs" Profile tab (Me lens). Lists every signed agreement (ICLA + ECLA)
@@ -79,6 +80,8 @@ export class ProfileClasComponent {
 
   private readonly signDialogOpen = signal(false);
 
+  private readonly rowMenus = viewChildren(MenuComponent);
+
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
 
   private readonly state = this.initState();
@@ -112,7 +115,15 @@ export class ProfileClasComponent {
   }
 
   protected toggleRowMenu(event: Event, menu: MenuComponent): void {
+    // Each row owns its own popup overlay. The click is stopped so the kebab
+    // does not close immediately, which also means PrimeNG never sees a document
+    // click that would hide the previous overlay.
     event.stopPropagation();
+    for (const other of this.rowMenus()) {
+      if (other !== menu) {
+        other.hide();
+      }
+    }
     menu.toggle(event);
   }
 
@@ -420,6 +431,7 @@ export class ProfileClasComponent {
           disabled: true,
         },
         ...buildContactClaManagerMenuItems(agreement, this.dialogService),
+        ...buildManageInCclaConsoleMenuItems(agreement),
       ];
     }
     return [];
