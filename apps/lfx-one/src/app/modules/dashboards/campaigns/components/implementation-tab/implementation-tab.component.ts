@@ -3,7 +3,7 @@
 
 import { SlicePipe } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -27,7 +27,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { map, startWith, Subscription, take } from 'rxjs';
+import { map, skip, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -356,6 +356,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaPixelId = signal('');
 
   // === Computed Signals ===
+  protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
   protected readonly showGoogleSection = computed(() => this.selectedPlatforms().includes('google-ads'));
   protected readonly showLinkedInSection = computed(() => this.selectedPlatforms().includes('linkedin-ads'));
   protected readonly showRedditSection = computed(() => this.selectedPlatforms().includes('reddit-ads'));
@@ -745,56 +746,16 @@ export class ImplementationTabComponent implements OnInit {
       if (this.seeding) return;
       this.emitDraft();
     });
+
+    // skip(1) drops the emission toObservable fires immediately on subscribe — ngOnInit already
+    // runs the initial load, so only later foundation switches should refetch the ad-account list.
+    toObservable(this.activeFoundationSlug)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => this.loadLinkedInAccounts());
   }
 
   public ngOnInit(): void {
-    this.linkedInAccountsLoading.set(true);
-    this.campaignService
-      .getLinkedInAccounts()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (accounts) => {
-          this.linkedInAccounts.set(accounts);
-          // Keep the restored selection only if this catalog still CONTAINS it; otherwise fall
-          // back to the first account.
-          //
-          // A blank-only check was enough until this commit and is not any more. Persisting the id
-          // (LFXV2-3230) makes a STALE one reachable for the first time: the list is refetched on
-          // every mount and an account can be revoked or lose permission between them. A stale id
-          // then splits the page in two — `selectedLinkedInAccount` resolves the label and
-          // org/status line through `accounts.find(...) ?? accounts[0]`, and the `<select>` cannot
-          // render an unmatched value either, so both show the FIRST account, while `submit()`
-          // sends `linkedInAccountId()` verbatim. The operator reads one account and spends money
-          // on another, with nothing on screen to say so.
-          //
-          // That fallback pre-dates this change but was unreachable while the id was not carried
-          // on the draft, which is why closing it belongs here rather than in a follow-up.
-          //
-          // Correcting silently rather than prompting: the operator never chose this state, the
-          // first account is what every other surface is already showing, and the alternative is a
-          // modal on a path that is noisy enough. Membership also subsumes the first-visit case —
-          // '' is never in the list.
-          //
-          // Writes through the form rather than a signal, since that is where the value now lives.
-          // `emitEvent` is left ON deliberately — this assignment CHANGES what `submit()` would
-          // send, so the parent's draft has to learn about it; suppressing the event would leave
-          // the draft carrying a value the form and the request no longer agree with.
-          // An EMPTY catalog is a real answer, not a skip. `loadLinkedInConfig` falls back to
-          // `accounts: []` when the LinkedIn config is absent or malformed, so a successful
-          // response can carry nothing — and a restored id would then survive with no account to
-          // match it, dispatching a stale value while the selector shows an empty list. Clearing
-          // is the honest result, and `canSubmit`'s membership gate then BLOCKS the create rather
-          // than letting it reach LinkedIn: an empty catalog contains no id, including ''. The
-          // operator sees Create disabled with an empty account list, which is the true state.
-          if (!accounts.some((a) => a.accountId === this.linkedInAccountId())) {
-            this.campaignForm.controls.linkedInAccountId.setValue(accounts[0]?.accountId ?? '');
-          }
-          this.linkedInAccountsLoading.set(false);
-        },
-        error: () => {
-          this.linkedInAccountsLoading.set(false);
-        },
-      });
+    this.loadLinkedInAccounts();
   }
 
   // === Public Methods ===
@@ -1165,6 +1126,75 @@ export class ImplementationTabComponent implements OnInit {
    */
   private acceptedMetaGeos(codes: readonly string[]): string[] {
     return normalizeGeoTargets(codes).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
+  }
+
+  private loadLinkedInAccounts(): void {
+    // Stamp the slug this request was made for — a foundation switch fires a new request before
+    // the previous one resolves, and `takeUntilDestroyed` alone doesn't cancel it (the component
+    // survives the switch, per `activeFoundationSlug`). Without this, a slower response for the
+    // OLD foundation can arrive after a faster one for the new foundation and silently overwrite
+    // it with the wrong account catalog.
+    const requestedSlug = this.activeFoundationSlug();
+    // Drop the previous foundation's catalog before firing the new request — otherwise
+    // `canSubmit`'s membership check keeps passing against the OLD foundation's accounts for the
+    // whole in-flight window, and a Create during that window would dispatch the NEW foundation's
+    // project with the OLD foundation's LinkedIn account id. Sibling tabs clear selection/data at
+    // the start of their own `loadForActiveFoundation` for the same reason (see
+    // `monitoring-tab.component.ts`).
+    this.linkedInAccounts.set([]);
+    this.linkedInAccountsLoading.set(true);
+    this.campaignService
+      .getLinkedInAccounts(requestedSlug)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          if (requestedSlug !== this.activeFoundationSlug()) {
+            return;
+          }
+          this.linkedInAccounts.set(accounts);
+          // Keep the restored selection only if this catalog still CONTAINS it; otherwise fall
+          // back to the first account.
+          //
+          // A blank-only check was enough until this commit and is not any more. Persisting the id
+          // (LFXV2-3230) makes a STALE one reachable for the first time: the list is refetched on
+          // every mount and an account can be revoked or lose permission between them. A stale id
+          // then splits the page in two — `selectedLinkedInAccount` resolves the label and
+          // org/status line through `accounts.find(...) ?? accounts[0]`, and the `<select>` cannot
+          // render an unmatched value either, so both show the FIRST account, while `submit()`
+          // sends `linkedInAccountId()` verbatim. The operator reads one account and spends money
+          // on another, with nothing on screen to say so.
+          //
+          // That fallback pre-dates this change but was unreachable while the id was not carried
+          // on the draft, which is why closing it belongs here rather than in a follow-up.
+          //
+          // Correcting silently rather than prompting: the operator never chose this state, the
+          // first account is what every other surface is already showing, and the alternative is a
+          // modal on a path that is noisy enough. Membership also subsumes the first-visit case —
+          // '' is never in the list.
+          //
+          // Writes through the form rather than a signal, since that is where the value now lives.
+          // `emitEvent` is left ON deliberately — this assignment CHANGES what `submit()` would
+          // send, so the parent's draft has to learn about it; suppressing the event would leave
+          // the draft carrying a value the form and the request no longer agree with.
+          // An EMPTY catalog is a real answer, not a skip. `loadLinkedInConfig` falls back to
+          // `accounts: []` when the LinkedIn config is absent or malformed, so a successful
+          // response can carry nothing — and a restored id would then survive with no account to
+          // match it, dispatching a stale value while the selector shows an empty list. Clearing
+          // is the honest result, and `canSubmit`'s membership gate then BLOCKS the create rather
+          // than letting it reach LinkedIn: an empty catalog contains no id, including ''. The
+          // operator sees Create disabled with an empty account list, which is the true state.
+          if (!accounts.some((a) => a.accountId === this.linkedInAccountId())) {
+            this.campaignForm.controls.linkedInAccountId.setValue(accounts[0]?.accountId ?? '');
+          }
+          this.linkedInAccountsLoading.set(false);
+        },
+        error: () => {
+          if (requestedSlug !== this.activeFoundationSlug()) {
+            return;
+          }
+          this.linkedInAccountsLoading.set(false);
+        },
+      });
   }
 
   private applyDraft(): void {
