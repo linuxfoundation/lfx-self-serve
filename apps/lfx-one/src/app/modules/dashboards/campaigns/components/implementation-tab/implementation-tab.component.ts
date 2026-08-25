@@ -17,6 +17,9 @@ import {
   META_MESSENGER_INBOX_RETIRED_REASON,
   META_NUMERIC_ID_PATTERN,
   MICROSOFT_MAX_CPC_BID,
+  MICROSOFT_MAX_GEO_TARGETS,
+  MICROSOFT_MAX_KEYWORDS,
+  MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
   MICROSOFT_MIN_CPC_BID,
   META_OBJECTIVE_LABELS,
   META_SELECTABLE_OBJECTIVES,
@@ -349,6 +352,9 @@ export class ImplementationTabComponent implements OnInit {
    * minimum). A `number` signal would make an untouched field read 0, which `buildMicrosoftConfig`
    * drops anyway — but only after the UI had shown the operator a bid of zero they never set.
    */
+  protected readonly microsoftMaxKeywords = MICROSOFT_MAX_KEYWORDS;
+  protected readonly microsoftMaxKeywordTextLength = MICROSOFT_MAX_KEYWORD_TEXT_LENGTH;
+  protected readonly microsoftMaxGeoTargets = MICROSOFT_MAX_GEO_TARGETS;
   protected readonly microsoftMinCpcBid = MICROSOFT_MIN_CPC_BID;
   protected readonly microsoftMaxCpcBid = MICROSOFT_MAX_CPC_BID;
   protected readonly microsoftGeoTargets = signal<string[]>([]);
@@ -582,6 +588,21 @@ export class ImplementationTabComponent implements OnInit {
    * bid", and treating `1001` as unset would dispatch a campaign at the account minimum while the
    * form still displayed 1001 — a silent substitution of a spend decision the operator did make.
    */
+  /**
+   * Whether the keyword and geo lists are within the bounds the Microsoft client enforces before
+   * its first create call. See the constants for the verified upstream values.
+   *
+   * Reads the EFFECTIVE lists, so blank-text keywords and whitespace geos are excluded from the
+   * counts exactly as the dispatched payload excludes them — counting the raw signals would block
+   * a form whose actual request is within bounds.
+   */
+  protected readonly microsoftBoundsValid = computed<boolean>(() => {
+    const keywords = this.microsoftEffectiveKeywords();
+    if (keywords.length > MICROSOFT_MAX_KEYWORDS) return false;
+    if (keywords.some((k) => [...k.text].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH)) return false;
+    return this.microsoftEffectiveGeoTargets().length <= MICROSOFT_MAX_GEO_TARGETS;
+  });
+
   protected readonly microsoftCpcBidValid = computed<boolean>(() => {
     const raw = this.microsoftCpcBid().trim();
     if (raw === '') return true;
@@ -719,6 +740,11 @@ export class ImplementationTabComponent implements OnInit {
     if (microsoftSelected && this.microsoftEffectiveKeywords().length === 0) return false;
     if (microsoftSelected && this.microsoftEffectiveGeoTargets().length === 0) return false;
     if (microsoftSelected && !this.microsoftCpcBidValid()) return false;
+    // Backstop for a state the add handlers cannot produce but a RESTORED DRAFT can: a draft
+    // written before these caps existed carries whatever list it had, and `applyDraft` replays it
+    // verbatim by design (an emptied list must stay emptied). Without this the form would look
+    // valid and the BFF would refuse it.
+    if (microsoftSelected && !this.microsoftBoundsValid()) return false;
 
     // Blocked while a brief save is in flight, because the create needs the id that save produces.
     //
@@ -1096,6 +1122,8 @@ export class ImplementationTabComponent implements OnInit {
    * resolves codes at create time and fails before creating anything.
    */
   protected addMicrosoftGeoTarget(code: string): void {
+    // Same door-refusal as the keyword cap — the client bounds geo targets at 30.
+    if (this.microsoftGeoTargets().length >= MICROSOFT_MAX_GEO_TARGETS) return;
     this.microsoftGeoTargets.update((targets) => normalizeGeoTargets([...targets, code]));
     this.emitDraft();
   }
@@ -1123,6 +1151,12 @@ export class ImplementationTabComponent implements OnInit {
   protected addMicrosoftKeyword(text: string): void {
     const trimmed = text.trim();
     if (!trimmed) return;
+    // Refused at the door rather than accepted and rejected later: the client caps the list at 60
+    // and each term at 100 RUNES, and because dispatch is async a violation would surface as a
+    // failed job. Counted with the spread, matching the client's rune count — `.length` counts
+    // UTF-16 units and would reject a valid CJK or emoji keyword the client accepts.
+    if (this.microsoftKeywords().length >= MICROSOFT_MAX_KEYWORDS) return;
+    if ([...trimmed].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH) return;
     // Case-insensitive de-dupe: Microsoft treats keyword text case-insensitively, so two chips
     // differing only in case would be one keyword upstream and the list would overstate coverage.
     const exists = this.microsoftKeywords().some((k) => k.text.trim().toLowerCase() === trimmed.toLowerCase());

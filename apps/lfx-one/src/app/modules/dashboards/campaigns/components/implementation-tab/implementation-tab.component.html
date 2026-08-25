@@ -615,7 +615,9 @@
 
           <!-- Keywords -->
           <div class="mb-4">
-            <label class="mb-2 block text-xs font-medium text-gray-700" for="microsoft-keyword-add">Search Keywords</label>
+            <label class="mb-2 block text-xs font-medium text-gray-700" for="microsoft-keyword-add">
+              Search Keywords ({{ microsoftEffectiveKeywords().length }}/{{ microsoftMaxKeywords }})
+            </label>
             <div class="flex flex-col gap-2">
               @for (keyword of microsoftKeywords(); track keyword.text; let i = $index) {
                 <div class="flex items-center gap-2" [attr.data-testid]="'implementation-microsoft-keyword-' + i">
@@ -640,14 +642,27 @@
                   </button>
                 </div>
               }
-              <input
-                id="microsoft-keyword-add"
-                type="text"
-                placeholder="+ Add keyword"
-                (change)="onMicrosoftKeywordAdd($event)"
-                (keydown.enter)="onMicrosoftKeywordAdd($event); $event.preventDefault()"
-                class="rounded-md border border-dashed border-blue-300 bg-white px-3 py-1.5 text-xs text-blue-600 placeholder:text-blue-400"
-                data-testid="implementation-microsoft-keyword-add" />
+              <!--
+                Hidden rather than disabled once the cap is reached: a disabled box invites the
+                operator to keep typing into something inert. `maxlength` is safe here (unlike the
+                geo box, where trimming happens after) because the add handler trims and then
+                re-checks the rune count anyway.
+              -->
+              @if (microsoftEffectiveKeywords().length < microsoftMaxKeywords) {
+                <input
+                  id="microsoft-keyword-add"
+                  type="text"
+                  placeholder="+ Add keyword"
+                  [attr.maxlength]="microsoftMaxKeywordTextLength"
+                  (change)="onMicrosoftKeywordAdd($event)"
+                  (keydown.enter)="onMicrosoftKeywordAdd($event); $event.preventDefault()"
+                  class="rounded-md border border-dashed border-blue-300 bg-white px-3 py-1.5 text-xs text-blue-600 placeholder:text-blue-400"
+                  data-testid="implementation-microsoft-keyword-add" />
+              } @else {
+                <span class="text-xs text-gray-400" data-testid="implementation-microsoft-keyword-full">
+                  Maximum of {{ microsoftMaxKeywords }} keywords reached — remove one to add another.
+                </span>
+              }
             </div>
             <!--
               Names the CONSEQUENCE rather than saying "required". Without keywords Microsoft
@@ -664,7 +679,9 @@
 
           <!-- Geo Targets -->
           <div>
-            <label class="mb-2 block text-xs font-medium text-gray-700" for="microsoft-geo-add">Geo Targets</label>
+            <label class="mb-2 block text-xs font-medium text-gray-700" for="microsoft-geo-add">
+              Geo Targets ({{ microsoftGeoTargets().length }}/{{ microsoftMaxGeoTargets }})
+            </label>
             <div class="flex flex-wrap items-center gap-2">
               @for (geo of microsoftGeoTargets(); track geo; let i = $index) {
                 <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
@@ -686,14 +703,22 @@
                 unresolvable code is reported rather than silently dropped — which is why there is
                 no local eligibility list here to drift from Microsoft's own.
               -->
-              <input
-                id="microsoft-geo-add"
-                type="text"
-                placeholder="+ ISO code"
-                (change)="onMicrosoftGeoTargetAdd($event)"
-                (keydown.enter)="onMicrosoftGeoTargetAdd($event); $event.preventDefault()"
-                class="w-24 rounded-md border border-dashed border-blue-300 bg-white px-2 py-1 text-xs uppercase text-blue-600 placeholder:normal-case placeholder:text-blue-400"
-                data-testid="implementation-microsoft-geo-add" />
+              @if (microsoftGeoTargets().length < microsoftMaxGeoTargets) {
+                <!-- No maxlength: normalizeGeoTargets trims BEFORE it validates, so a browser-side
+                     cap would clip padded input into something the ISO-2 pattern then rejects. -->
+                <input
+                  id="microsoft-geo-add"
+                  type="text"
+                  placeholder="+ ISO code"
+                  (change)="onMicrosoftGeoTargetAdd($event)"
+                  (keydown.enter)="onMicrosoftGeoTargetAdd($event); $event.preventDefault()"
+                  class="w-24 rounded-md border border-dashed border-blue-300 bg-white px-2 py-1 text-xs uppercase text-blue-600 placeholder:normal-case placeholder:text-blue-400"
+                  data-testid="implementation-microsoft-geo-add" />
+              } @else {
+                <span class="text-xs text-gray-400" data-testid="implementation-microsoft-geo-full">
+                  Maximum of {{ microsoftMaxGeoTargets }} geo targets reached.
+                </span>
+              }
             </div>
             <!--
               Two distinct states, and the difference matters to the operator. Chips cleared but a

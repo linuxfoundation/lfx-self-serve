@@ -571,6 +571,24 @@ export const META_MESSENGER_INBOX_RETIRED_REASON = 'Removed by Meta in November 
  *
  * Shared rather than duplicated per layer so the UI guard and `buildMicrosoftConfig` cannot drift.
  */
+/**
+ * Input bounds the Microsoft client enforces BEFORE its first create call, mirrored here so the
+ * form and the BFF refuse synchronously instead of enqueuing a job that cannot succeed.
+ *
+ * Verified against `origin/main` of campaign-service:
+ * - `maxKeywords = 60` (`internal/platform/microsoft/targeting.go:86`)
+ * - `maxKeywordTextRunes = 100` (`targeting.go:75`) — measured in RUNES, matching Microsoft's
+ *   character-based limit; a byte count would reject a valid CJK keyword.
+ * - `maxGeoTargets = 30` (`internal/platform/microsoft/geo.go:109`)
+ *
+ * Each is a hard error upstream, and because `CreateCampaigns` is asynchronous that error is a
+ * FAILED JOB the operator has to go and read rather than a refusal of the request they made — the
+ * same class as the CPC bid range below.
+ */
+export const MICROSOFT_MAX_KEYWORDS = 60;
+export const MICROSOFT_MAX_KEYWORD_TEXT_LENGTH = 100;
+export const MICROSOFT_MAX_GEO_TARGETS = 30;
+
 export const MICROSOFT_MIN_CPC_BID = 0.01;
 export const MICROSOFT_MAX_CPC_BID = 1000;
 

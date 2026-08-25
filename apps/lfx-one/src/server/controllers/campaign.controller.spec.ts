@@ -817,6 +817,43 @@ describe('CampaignController.createCampaign cutover', () => {
     expect((envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>)['cpcBid']).toBe(cpcBid);
   });
 
+  /**
+   * The client refuses these BEFORE its first create call (`targeting.go:183`, `:195`,
+   * `geo.go:243`), so an over-cap list is an async dead job rather than a refusal of the request.
+   * Refused whole rather than TRUNCATED: silently dropping the 61st keyword would dispatch a
+   * campaign targeting less than the operator asked for, with nothing saying so.
+   */
+  it.each([
+    ['more than 60 keywords', { keywords: Array.from({ length: 61 }, (_, i) => ({ text: `kw-${i}`, matchType: 'Exact' })) }],
+    ['a keyword longer than 100 characters', { keywords: [{ text: 'k'.repeat(101), matchType: 'Exact' }] }],
+    ['more than 30 geo targets', { geoTargets: Array.from({ length: 31 }, (_, i) => `G${i}`) }],
+  ])('refuses a Microsoft create with %s', async (_label, overrides) => {
+    await createWithMicrosoft(overrides);
+
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('microsoftConfig');
+  });
+
+  it.each([
+    ['exactly 60 keywords', { keywords: Array.from({ length: 60 }, (_, i) => ({ text: `kw-${i}`, matchType: 'Exact' })) }],
+    ['a keyword of exactly 100 characters', { keywords: [{ text: 'k'.repeat(100), matchType: 'Exact' }] }],
+    ['exactly 30 geo targets', { geoTargets: Array.from({ length: 30 }, (_, i) => `G${i}`) }],
+  ])('accepts a Microsoft create with %s, which is at the limit', async (_label, overrides) => {
+    await createWithMicrosoft(overrides);
+
+    expect(envelopeFor(createCampaigns)).toHaveProperty('microsoftConfig');
+  });
+
+  /**
+   * Rune-counted, matching the client's `utf8.RuneCountInString`. `.length` counts UTF-16 units,
+   * so 60 astral-plane characters would measure 120 and be refused here while the client accepts
+   * them — rejecting a keyword that is actually valid.
+   */
+  it('measures keyword length in runes, not UTF-16 units', async () => {
+    await createWithMicrosoft({ keywords: [{ text: '\u{1F600}'.repeat(60), matchType: 'Exact' }] });
+
+    expect(envelopeFor(createCampaigns)).toHaveProperty('microsoftConfig');
+  });
+
   it('forwards cpcBid and timeZone when they carry meaning', async () => {
     await createWithMicrosoft({ cpcBid: 2.5, timeZone: 'PacificTimeUSCanadaTijuana' });
 

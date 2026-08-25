@@ -21,6 +21,9 @@ import {
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_PLATFORMS,
   MICROSOFT_MAX_CPC_BID,
+  MICROSOFT_MAX_GEO_TARGETS,
+  MICROSOFT_MAX_KEYWORDS,
+  MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
   MICROSOFT_MIN_CPC_BID,
   VALID_CAMPAIGN_TOGGLE_STATUSES,
 } from '@lfx-one/shared/constants';
@@ -1521,9 +1524,17 @@ export class CampaignController {
     // produce the unservable campaign this guard exists to prevent.
     const cleanKeywords = (keywords ?? []).filter((k) => k?.text?.trim());
     if (cleanKeywords.length === 0) return null;
+    // The upper bounds are refusals, not truncations. Silently dropping the 61st keyword would
+    // dispatch a campaign targeting less than the operator asked for, with nothing saying so.
+    // Length is measured in RUNES via the spread, matching the client's `utf8.RuneCountInString` —
+    // `.length` counts UTF-16 units, so an emoji or an astral-plane character would count double
+    // here and reject a keyword the client accepts.
+    if (cleanKeywords.length > MICROSOFT_MAX_KEYWORDS) return null;
+    if (cleanKeywords.some((k) => [...k.text.trim()].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH)) return null;
 
     const cleanGeoTargets = (geoTargets ?? []).map((g) => g?.trim()).filter((g): g is string => !!g);
     if (cleanGeoTargets.length === 0) return null;
+    if (cleanGeoTargets.length > MICROSOFT_MAX_GEO_TARGETS) return null;
 
     return {
       ...rest,

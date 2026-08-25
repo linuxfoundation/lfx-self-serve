@@ -1013,6 +1013,55 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
   });
 
   /**
+   * The add handlers refuse at the door, so the over-cap state is unreachable through the UI —
+   * asserted by DRIVING the handler rather than writing the signal, because a test that sets the
+   * signal directly would pass against a handler that does no checking at all.
+   */
+  it('refuses to add a keyword past the cap, or one longer than the limit', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['microsoftKeywords'].set(Array.from({ length: 60 }, (_, i) => ({ text: `kw-${i}`, matchType: 'Exact' })));
+    await fixture.whenStable();
+
+    c['addMicrosoftKeyword']('one-too-many');
+    expect(c['microsoftKeywords']().length).toBe(60);
+    expect(c['microsoftKeywords']().some((k: { text: string }) => k.text === 'one-too-many')).toBe(false);
+
+    c['microsoftKeywords'].set([]);
+    c['addMicrosoftKeyword']('k'.repeat(101));
+    expect(c['microsoftKeywords']()).toEqual([]);
+
+    // The boundary itself is accepted — an off-by-one here would silently cost a keyword.
+    c['addMicrosoftKeyword']('k'.repeat(100));
+    expect(c['microsoftKeywords']().length).toBe(1);
+  });
+
+  it('refuses to add a geo target past the cap', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['microsoftGeoTargets'].set(Array.from({ length: 30 }, (_, i) => `G${i}`));
+    await fixture.whenStable();
+
+    c['addMicrosoftGeoTarget']('JP');
+    expect(c['microsoftGeoTargets']().length).toBe(30);
+  });
+
+  /**
+   * A RESTORED DRAFT can carry an over-cap list the add handlers never saw — a draft written
+   * before these caps existed, replayed verbatim by `applyDraft` (which must replay verbatim, so
+   * an emptied list stays emptied). Without the backstop the form looks valid and the BFF refuses.
+   */
+  it('blocks submit when a restored draft carries an over-cap Microsoft list', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftBudgetUsd'].set(100);
+    c['microsoftGeoTargets'].set(['US']);
+    c['microsoftKeywords'].set(Array.from({ length: 61 }, (_, i) => ({ text: `kw-${i}`, matchType: 'Exact' })));
+    await fixture.whenStable();
+
+    expect(c['microsoftBoundsValid']()).toBe(false);
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
    * Microsoft refuses a supplied CpcBid outside [0.01, 1000] during dispatch, which surfaces as a
    * failed job rather than an error on the click. BLANK stays valid — unset means Microsoft applies
    * the account-currency minimum, a documented serve-capable floor — so an untouched box must not
