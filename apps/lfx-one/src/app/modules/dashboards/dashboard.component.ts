@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { afterNextRender, Component, computed, DestroyRef, inject, signal } from '@angular/core';
+import { MARKETING_OPS_FGA_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { isBoardScopedPersona } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
@@ -39,7 +41,9 @@ export class DashboardComponent {
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
   private readonly navigationService = inject(NavigationService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
 
   protected readonly activeLens = this.lensService.activeLens;
   protected readonly personaLoaded = this.personaService.personaLoaded;
@@ -51,12 +55,14 @@ export class DashboardComponent {
     return this.personaService.allPersonas().length > 1;
   });
 
-  // Returns 'executive-director' for LF Staff too — they share the ED dashboard route.
-  // ExecutiveDirectorDashboardComponent gates its ED-only sections (Pending Actions, Org Involvement,
-  // My Meetings, sidebar) behind currentPersona() === 'executive-director', so LF Staff see only
-  // Foundation Health and Marketing Overview.
+  // Returns 'executive-director' for LF Staff and marketing-only grant holders too — they share the
+  // ED dashboard route. ExecutiveDirectorDashboardComponent gates its ED-only sections (Pending Actions,
+  // Org Involvement, My Meetings, sidebar) behind currentPersona() === 'executive-director', so both
+  // audiences see only Foundation Health and Marketing Overview here; Marketing Impact/Campaigns access
+  // is granted separately via marketing-impact-access.guard.ts and the campaigns/analytics routes.
   protected readonly foundationDashboardType = computed(() => {
-    if (this.personaService.canViewExecutiveDashboards()) {
+    const hasMarketingGrant = this.isMarketingOpsFgaEnabled() && (this.personaService.isMarketingAuditor() || this.personaService.isCampaignManager());
+    if (this.personaService.canViewExecutiveDashboards() || hasMarketingGrant) {
       return 'executive-director';
     }
     const persona = this.personaService.currentPersona();
