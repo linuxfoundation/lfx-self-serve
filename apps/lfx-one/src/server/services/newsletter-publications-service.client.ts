@@ -26,7 +26,7 @@ export class NewsletterPublicationsServiceClient {
     return this.microserviceProxy.proxyRequest<NewsletterPublication>(
       req,
       'LFX_V2_SERVICE',
-      `/projects/${projectUid}/newsletter-publications`,
+      `/projects/${encodeURIComponent(projectUid)}/newsletter-publications`,
       'POST',
       undefined,
       payload
@@ -48,7 +48,7 @@ export class NewsletterPublicationsServiceClient {
     return this.microserviceProxy.proxyRequest<NewsletterPublicationListResponse>(
       req,
       'LFX_V2_SERVICE',
-      `/projects/${projectUid}/newsletter-publications`,
+      `/projects/${encodeURIComponent(projectUid)}/newsletter-publications`,
       'GET',
       Object.keys(query).length ? query : undefined
     );
@@ -58,7 +58,7 @@ export class NewsletterPublicationsServiceClient {
     return this.microserviceProxy.proxyRequest<NewsletterPublication>(
       req,
       'LFX_V2_SERVICE',
-      `/projects/${projectUid}/newsletter-publications/${publicationUid}`,
+      `/projects/${encodeURIComponent(projectUid)}/newsletter-publications/${encodeURIComponent(publicationUid)}`,
       'GET'
     );
   }
@@ -73,7 +73,7 @@ export class NewsletterPublicationsServiceClient {
     return this.microserviceProxy.proxyRequest<NewsletterPublication>(
       req,
       'LFX_V2_SERVICE',
-      `/projects/${projectUid}/newsletter-publications/${publicationUid}`,
+      `/projects/${encodeURIComponent(projectUid)}/newsletter-publications/${encodeURIComponent(publicationUid)}`,
       'PUT',
       undefined,
       payload,
