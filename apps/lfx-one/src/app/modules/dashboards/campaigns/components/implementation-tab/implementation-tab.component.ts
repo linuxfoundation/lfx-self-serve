@@ -1135,6 +1135,13 @@ export class ImplementationTabComponent implements OnInit {
     // OLD foundation can arrive after a faster one for the new foundation and silently overwrite
     // it with the wrong account catalog.
     const requestedSlug = this.activeFoundationSlug();
+    // Drop the previous foundation's catalog before firing the new request — otherwise
+    // `canSubmit`'s membership check keeps passing against the OLD foundation's accounts for the
+    // whole in-flight window, and a Create during that window would dispatch the NEW foundation's
+    // project with the OLD foundation's LinkedIn account id. Sibling tabs clear selection/data at
+    // the start of their own `loadForActiveFoundation` for the same reason (see
+    // `monitoring-tab.component.ts`).
+    this.linkedInAccounts.set([]);
     this.linkedInAccountsLoading.set(true);
     this.campaignService
       .getLinkedInAccounts(requestedSlug)
