@@ -151,7 +151,7 @@
               [loading]="loading()"
               [bookmarkedIds]="bookmarkedIds()"
               [readMentionIds]="readMentionIds()"
-              [hideTotal]="selectedReadFilter() === 'unread'"
+              [unreadView]="selectedReadFilter() === 'unread'"
               (bookmarkToggled)="onBookmarkToggled($event)"
               (readToggled)="onReadToggled($event)"
               (markAllRead)="onMarkAllAsRead()"

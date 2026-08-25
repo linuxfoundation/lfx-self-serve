@@ -6,7 +6,7 @@
   <div class="flex items-center justify-between">
     <div class="flex items-center gap-3">
       <h2 class="text-xs font-bold tracking-wide text-gray-500">LATEST MENTIONS</h2>
-      @if (!loading() && totalMentions() > 0 && mentions().length > 0 && !hideTotal()) {
+      @if (!loading() && totalMentions() > 0 && mentions().length > 0) {
         <span class="text-xs text-gray-400" data-testid="mentions-list-count"
           >{{ first() + 1 }}–{{ first() + mentions().length }} of {{ totalMentions() }}</span
         >
@@ -47,7 +47,7 @@
     [first]="first()"
     [totalRecords]="paginatorTotalRecords()"
     [rowsPerPageOptions]="rowsPerPageOptions()"
-    [showCurrentPageReport]="!hideTotal()"
+    [showCurrentPageReport]="true"
     currentPageReportTemplate="Showing {first} to {last} of {totalRecords} mentions"
     [alwaysShowPaginator]="totalMentions() > 0 || countError()"
     [skeletonColumns]="1"
@@ -114,11 +114,11 @@
               ctaIcon="fa-light fa-arrow-rotate-left"
               (ctaClick)="retry.emit()"
               data-testid="mentions-list-window-error" />
-          } @else if (hideTotal()) {
+          } @else if (unreadView()) {
             <lfx-empty-state
               icon="fa-light fa-circle-check"
               title="You're all caught up"
-              subtitle="No unread mentions in the loaded window."
+              subtitle="No unread mentions in this period."
               data-testid="mentions-list-all-read-state" />
           } @else {
             <lfx-empty-state

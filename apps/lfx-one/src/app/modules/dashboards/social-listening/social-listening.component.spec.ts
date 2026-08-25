@@ -172,6 +172,7 @@ describe('SocialListeningComponent', () => {
           },
         },
         { provide: Router, useValue: { navigate } },
+        // Injected by the component but provided app-wide in production — the blanked template override drops it here.
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: ProjectContextService, useValue: { selectedFoundation: foundationSignal, selectedFoundationSfid: foundationSfid } },
         { provide: UserService, useValue: { user: userSignal } },
@@ -524,48 +525,97 @@ describe('SocialListeningComponent', () => {
       expect(setReadContext).toHaveBeenLastCalledWith({ userId: 'u1', projectId: '001ABC0000XYZDEFAAA' });
     });
 
-    it('filters the loaded window client-side in unread mode and recomputes totalRecords', async () => {
-      // Window 0 holds m0–m99; the first five read leaves 95 unread.
-      readState.set(readStateWith({ readIds: ['m0', 'm1', 'm2', 'm3', 'm4'] }));
+    it('sends the read-state snapshot as server filter params when entering unread mode', async () => {
+      readState.set(readStateWith({ readIds: ['m0', 'm1'], readBeforeTs: '2026-08-01 12:00:00' }));
       const feedCallCount = getMentionsFeed.mock.calls.length;
       const countCallCount = getMentionsCount.mock.calls.length;
 
       fixture.componentInstance.selectedReadFilter.set('unread');
       await settle();
 
-      expect(fixture.componentInstance.totalRecords()).toBe(95);
-      expect(mentionIds()).toHaveLength(20);
-      expect(mentionIds()[0]).toBe('m5');
-      // No refetch — the unread view is a client-side filter over the cached window.
-      expect(getMentionsFeed).toHaveBeenCalledTimes(feedCallCount);
-      expect(getMentionsCount).toHaveBeenCalledTimes(countCallCount);
+      // Entering unread mode re-queries both pipelines — the server now applies the read-state exclusion period-wide.
+      expect(getMentionsFeed.mock.calls.length).toBeGreaterThan(feedCallCount);
+      expect(getMentionsCount.mock.calls.length).toBeGreaterThan(countCallCount);
+      expect(feedCalls().at(-1)).toMatchObject({ unreadOnly: true, readIds: ['m0', 'm1'], readBeforeTs: '2026-08-01 12:00:00' });
+      // Empty override arrays are dropped from the request, and the paginator total is the server's count.
+      expect(feedCalls().at(-1)?.unreadIds).toBeUndefined();
+      expect(fixture.componentInstance.totalRecords()).toBe(1000);
       expect(currentParams['read']).toBe('unread');
     });
 
-    it('returns empty unread views while the read state loads (no unread flash)', async () => {
+    it('holds the unread feed while the read state loads — skeleton shows, no empty-doc fetch', async () => {
       readState.set(readStateWith({}, true));
+      const feedCallCount = getMentionsFeed.mock.calls.length;
+      const countCallCount = getMentionsCount.mock.calls.length;
+
       fixture.componentInstance.selectedReadFilter.set('unread');
       await settle();
 
+      // The loading gate covers the stale cached window; the null-guard blocks any unread fetch.
+      expect(fixture.componentInstance.loading()).toBe(true);
       expect(fixture.componentInstance.totalRecords()).toBe(0);
-      expect(fixture.componentInstance.mentions()).toEqual([]);
-      expect(fixture.componentInstance.readMentionIds().size).toBe(0);
+      expect(getMentionsFeed).toHaveBeenCalledTimes(feedCallCount);
+      expect(getMentionsCount).toHaveBeenCalledTimes(countCallCount);
+      expect(feedCalls().every((req) => req.unreadOnly === undefined)).toBe(true);
     });
 
-    it('clamps the page when marking all as read shrinks the unread total', async () => {
+    it('re-queries unread from page 1 when mark-all-as-read refreshes the snapshot', async () => {
       fixture.componentInstance.selectedReadFilter.set('unread');
       await settle();
-      // 100 unread rows in window 0 → 5 pages of 20.
       fixture.componentInstance.onPageChange({ page: 4, rows: 20 });
       await settle();
       expect(fixture.componentInstance.currentPage()).toBe(4);
 
-      // Mark-all covers every loaded row (all stamped 2026-08-01T00:00:00Z).
-      readState.set(readStateWith({ readBeforeTs: '2026-08-01 23:59:59' }));
+      // Unread mode narrows the feed, so mark-all first resolves the foundation-global newest via a limit-1 fetch…
+      readState.set(readStateWith({ readBeforeTs: '2026-08-01T00:00:00Z' }));
+      fixture.componentInstance.onMarkAllAsRead();
       await settle();
 
-      expect(fixture.componentInstance.totalRecords()).toBe(0);
+      expect(markAllAsRead).toHaveBeenCalledWith('2026-08-01T00:00:00Z');
+      // …then the refreshed snapshot re-queries with the new cutoff, restarting at page 1.
       expect(fixture.componentInstance.currentPage()).toBe(0);
+      expect(feedCalls().at(-1)).toMatchObject({ unreadOnly: true, readBeforeTs: '2026-08-01T00:00:00Z' });
+    });
+
+    it('restyles a toggled row in place — no refetch, no reshuffle, no total change', async () => {
+      readState.set(readStateWith({ readBeforeTs: '2026-08-01 12:00:00' }));
+      fixture.componentInstance.selectedReadFilter.set('unread');
+      await settle();
+      const feedCallCount = getMentionsFeed.mock.calls.length;
+      const countCallCount = getMentionsCount.mock.calls.length;
+      const pageBefore = mentionIds();
+
+      // The service owns the write; the harness mirrors the persisted doc change.
+      readState.set(readStateWith({ readBeforeTs: '2026-08-01 12:00:00', readIds: ['m3'] }));
+      await settle();
+
+      expect(getMentionsFeed).toHaveBeenCalledTimes(feedCallCount);
+      expect(getMentionsCount).toHaveBeenCalledTimes(countCallCount);
+      expect(mentionIds()).toEqual(pageBefore);
+      expect(fixture.componentInstance.readMentionIds().has('m3')).toBe(true);
+    });
+
+    it('strips the unread params from the analytics filters', async () => {
+      readState.set(readStateWith({ readIds: ['m7'], readBeforeTs: '2026-08-01 12:00:00' }));
+      fixture.componentInstance.selectedReadFilter.set('unread');
+      await settle();
+
+      expect(fixture.componentInstance.currentFilters()).toMatchObject({ unreadOnly: true, readIds: ['m7'], readBeforeTs: '2026-08-01 12:00:00' });
+      const analytics = fixture.componentInstance.analyticsFilters();
+      expect(analytics.unreadOnly).toBeUndefined();
+      expect(analytics.readIds).toBeUndefined();
+      expect(analytics.unreadIds).toBeUndefined();
+      expect(analytics.readBeforeTs).toBeUndefined();
+    });
+
+    it('shows the read-state error and holds the unread feed when the read state fails to load', async () => {
+      readState.set({ ...readStateWith(), error: 'boom' });
+      fixture.componentInstance.selectedReadFilter.set('unread');
+      await settle();
+
+      // The template swaps the list for the error banner, and no request carries the unread params.
+      expect(fixture.componentInstance.readStateError()).toBe(true);
+      expect(feedCalls().every((req) => req.unreadOnly === undefined)).toBe(true);
     });
 
     it('derives the mark-all cutoff from the newest loaded MENTION_TS, skipping null timestamps', async () => {
@@ -637,7 +687,8 @@ describe('SocialListeningComponent', () => {
       expect(markAllAsRead).toHaveBeenCalledWith('2026-08-01T00:00:00Z');
     });
 
-    it('resets the page on read-filter change without clearing the window cache or refetching', async () => {
+    it('resets the page and re-queries with the snapshot params on read-filter change', async () => {
+      readState.set(readStateWith({ readIds: ['m7'] }));
       fixture.componentInstance.onPageChange({ page: 4, rows: 20 });
       await settle();
       expect(fixture.componentInstance.currentPage()).toBe(4);
@@ -648,21 +699,27 @@ describe('SocialListeningComponent', () => {
       await settle();
 
       expect(fixture.componentInstance.currentPage()).toBe(0);
+      // The window cache went cold and refilled — the server now filters, so cached unfiltered windows no longer apply.
       expect(cachedWindows()).toEqual([0]);
-      expect(getMentionsFeed).toHaveBeenCalledTimes(feedCallCount);
+      expect(getMentionsFeed.mock.calls.length).toBeGreaterThan(feedCallCount);
+      expect(feedCalls().at(-1)).toMatchObject({ unreadOnly: true, readIds: ['m7'] });
     });
 
-    it('leaves the feed and count request fingerprints unchanged across read-filter flips', async () => {
-      const feedFingerprint = feedCalls().map((req) => JSON.stringify(req));
+    it('adds the unread params on entry and drops them on exit', async () => {
+      readState.set(readStateWith({ readIds: ['m7'] }));
+      const unfilteredFingerprint = JSON.stringify(feedCalls().at(-1));
       const countCallCount = getMentionsCount.mock.calls.length;
 
       fixture.componentInstance.selectedReadFilter.set('unread');
       await settle();
+
+      expect(feedCalls().at(-1)).toMatchObject({ unreadOnly: true, readIds: ['m7'] });
+      expect(getMentionsCount.mock.calls.length).toBeGreaterThan(countCallCount);
+
       fixture.componentInstance.selectedReadFilter.set('all');
       await settle();
 
-      expect(feedCalls().map((req) => JSON.stringify(req))).toEqual(feedFingerprint);
-      expect(getMentionsCount).toHaveBeenCalledTimes(countCallCount);
+      expect(JSON.stringify(feedCalls().at(-1))).toEqual(unfilteredFingerprint);
     });
 
     it('keeps the read filter across a foundation switch while the read state reloads per foundation', async () => {
