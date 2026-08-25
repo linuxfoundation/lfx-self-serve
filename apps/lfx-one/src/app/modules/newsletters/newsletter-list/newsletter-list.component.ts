@@ -189,10 +189,17 @@ export class NewsletterListComponent {
   // belong to the publication the user opened. Unfiled is a valid state (the
   // weekly brief creates editions that way), which is exactly why this has to
   // be passed explicitly rather than inferred.
+  //
+  // Anchored at `route.parent` (the module mount) rather than `['..']`. A single
+  // `..` pops one URL segment, which is only correct on the one-segment `list`
+  // route. On the three-segment `:projectUid/:pubId/editions` route it resolves
+  // to `<mount>/:projectUid/:pubId/create`, which matches no route at all, so
+  // the button would do nothing. Same anchoring as goToList in
+  // newsletter-manage.component.ts and goBack in newsletter-analytics.component.ts.
   protected goToCreate(): void {
     const pubId = this.publicationId();
-    this.router.navigate(['..', 'create'], {
-      relativeTo: this.route,
+    this.router.navigate(['create'], {
+      relativeTo: this.route.parent,
       queryParams: pubId ? { publication: pubId } : {},
     });
   }
@@ -207,8 +214,11 @@ export class NewsletterListComponent {
     }
     const target = this.statusTab() === 'sent' ? 'analytics' : 'edit';
     // Carry the newsletter's own project_uid in the URL instead of relying on
-    // ambient context — see newsletters.routes.ts for the rationale.
-    this.router.navigate(['..', item.project_uid, item.id, target], { relativeTo: this.route });
+    // ambient context — see newsletters.routes.ts for the rationale. Anchored at
+    // route.parent for the same reason as goToCreate above: `['..']` pops a
+    // single segment, so from the three-segment editions route it would build
+    // `<mount>/:projectUid/:pubId/<project>/<id>/edit`.
+    this.router.navigate([item.project_uid, item.id, target], { relativeTo: this.route.parent });
   }
 
   protected openPreview(item: NewsletterListItem, event: Event): void {
