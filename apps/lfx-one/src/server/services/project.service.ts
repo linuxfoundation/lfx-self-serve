@@ -2010,12 +2010,17 @@ export class ProjectService {
     logger.debug(req, 'get_foundation_projects_detail_grouped', 'Fetching grouped project detail', { foundation_slug: foundationSlug });
 
     const rootProject = await this.getProjectBySlug(req, foundationSlug, false);
-    const subFoundations = await this.discoverSubFoundations(req, rootProject.uid);
 
+    // Start the recursive traversal and the root Snowflake query together — neither depends on
+    // the other's result, so running them concurrently saves one Snowflake round trip.
     // The root query is not allowed to degrade gracefully like a sub-foundation branch can: a
     // failed root means no reliable root group to anchor the frontend's grouping fallback, so
-    // let it throw and propagate to the caller instead of returning an incomplete 200 (GH-1607 review).
-    const rootDetail = await this.getFoundationProjectsDetail(rootProject.slug);
+    // Promise.all propagates a root-query rejection instead of returning an incomplete 200
+    // (GH-1607 review).
+    const [subFoundations, rootDetail] = await Promise.all([
+      this.discoverSubFoundations(req, rootProject.uid),
+      this.getFoundationProjectsDetail(rootProject.slug),
+    ]);
 
     // Fan out through a bounded worker pool rather than firing all N sub-foundation queries at
     // once: a wide foundation can have up to FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES of them,
