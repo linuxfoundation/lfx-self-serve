@@ -1582,8 +1582,18 @@ export class CampaignController {
     // turned `['US', 'USA']` into a US-only campaign that reported success — less targeting than
     // the operator asked for, with nothing saying so.
     //
-    // Shape only: whether a well-formed code is an ASSIGNED country stays the client's call, since
-    // it resolves each against Microsoft's own locations file. This refuses what cannot be a code.
+    // SHAPE ONLY, deliberately. Whether a well-formed code is one Microsoft targets stays the
+    // client's call: it validates against Microsoft's own country table and REFUSES THE CREATE
+    // before anything is created, so an unknown code costs a clear upstream error rather than a
+    // half-built campaign.
+    //
+    // Not tightened to this app's `ASSIGNED_COUNTRY_CODES`, and the reason is measured rather than
+    // assumed: that list and Microsoft's genuinely diverge — `AN` is in Microsoft's table and not
+    // in ours, and 23 codes (`CU`, `IR`, `KP`, `SY`, ...) are in ours and not Microsoft's. Gating
+    // here on our list would SILENTLY DROP a code Microsoft accepts, which is the same
+    // wrong-market defect `normalizeMicrosoftGeoTargets` exists to prevent. The cost of shape-only
+    // is that a syntactically valid but unsupported code (`ZZ`) reaches upstream and fails the job
+    // by name; the cost of the alternative is a campaign quietly targeting somewhere else.
     if (!Array.isArray(geoTargets)) return null;
     const cleanGeoTargets = geoTargets.map((g) => (typeof g === 'string' ? g.trim().toUpperCase() : ''));
     if (!cleanGeoTargets.every((g) => META_GEO_CODE_PATTERN.test(g))) return null;

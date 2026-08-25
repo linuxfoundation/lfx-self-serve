@@ -504,8 +504,17 @@ export interface CampaignImplementationDraft {
    *
    * OPTIONAL for the same reason as the Meta block: a draft persisted before this shipped has
    * none of them, and absent means "keep the seeded values" — never "the user cleared them". A
-   * present-but-empty array is what records a deliberate clear, and `canSubmit` blocks on exactly
-   * that rather than silently refilling it from the brief.
+   * present-but-empty array records a deliberate clear, and `applyDraft` replays it verbatim
+   * rather than refilling from the brief.
+   *
+   * The two arrays then DIVERGE on what an empty list means at submit time, which is worth stating
+   * because they look symmetric:
+   *
+   * - `microsoftKeywords` empty BLOCKS the submit. There is no fallback — a campaign with no
+   *   keywords can never serve.
+   * - `microsoftGeoTargets` empty does NOT block on its own: `microsoftEffectiveGeoTargets` falls
+   *   back to the form's country code, and the section renders that fallback explicitly. Submit is
+   *   blocked only when that fallback is empty too, i.e. nothing usable was supplied anywhere.
    */
   microsoftBudgetUsd?: number;
   microsoftGeoTargets?: string[];

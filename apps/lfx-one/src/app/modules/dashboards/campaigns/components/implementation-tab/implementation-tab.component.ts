@@ -572,9 +572,14 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The CPC bid the request will carry, or null for "unset".
    *
-   * Anything non-numeric or non-positive reads as unset rather than as an error, because unset is
-   * a valid, documented, serve-capable state — Microsoft applies the account-currency minimum. So
-   * a half-typed value degrades to the safe default instead of blocking the submit.
+   * BLANK means unset, which is a valid, documented, serve-capable state — Microsoft applies the
+   * account-currency minimum.
+   *
+   * A non-blank value that is unparseable or out of range returns null HERE, but that does NOT mean
+   * "send the default": `microsoftCpcBidValid` blocks the submit for exactly that state, so the
+   * operator is told rather than quietly given a bid other than the one the box shows. An earlier
+   * version of this comment said such input "degrades to the safe default", which described the
+   * behaviour before that guard existed and would now read as licence to remove it.
    */
   protected readonly microsoftEffectiveCpcBid = computed<number | null>(() => {
     const raw = this.microsoftCpcBid().trim();
@@ -600,6 +605,13 @@ export class ImplementationTabComponent implements OnInit {
    * counts exactly as the dispatched payload excludes them — counting the raw signals would block
    * a form whose actual request is within bounds.
    */
+  /**
+   * The effective geo list as a display string. A computed rather than `.join()` in the template:
+   * `docs/reviews/frontend-checklist.md` permits signal reads, computeds and pipes in bindings but
+   * not logic-bearing calls, which re-run on every change-detection pass.
+   */
+  protected readonly microsoftEffectiveGeoLabel = computed(() => this.microsoftEffectiveGeoTargets().join(', '));
+
   protected readonly microsoftBoundsValid = computed<boolean>(() => {
     const keywords = this.microsoftEffectiveKeywords();
     if (keywords.length > MICROSOFT_MAX_KEYWORDS) return false;
@@ -1168,19 +1180,16 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Add one keyword. Blank input is ignored rather than added — an empty chip would be dropped by
-   * `microsoftEffectiveKeywords` anyway, so adding one would show the operator a keyword the
-   * request will not carry.
-   *
-   * Defaults to `Phrase`, the middle of Microsoft's three match types: `Broad` can spend on
-   * loosely related queries and `Exact` can starve a new campaign of volume, so the default is the
-   * one that is wrong in neither direction. The operator can change it per keyword.
-   */
-  /**
    * Add one keyword, reporting whether it was actually added.
    *
-   * The BOOLEAN is what lets the caller keep the operator's text on a rejection. Every `return`
-   * below is a refusal, and clearing the box unconditionally discarded the very text the
+   * Blank input is ignored rather than added — an empty chip would be dropped by
+   * `microsoftEffectiveKeywords` anyway, so adding one would show the operator a keyword the
+   * request will not carry. New keywords default to `Phrase`, the middle of Microsoft's three
+   * match types: `Broad` can spend on loosely related queries and `Exact` can starve a new campaign
+   * of volume, so the default is wrong in neither direction and the operator can change it.
+   *
+   * The BOOLEAN is what lets the caller keep the operator's text on a rejection. Every `return
+   * false` below is a refusal, and clearing the box unconditionally discarded the very text the
    * over-length warning was asking them to shorten — the field is bound to `(change)`, so simply
    * blurring it wiped the input and the warning with it. It also silently ate a duplicate or an
    * at-cap entry, leaving no trace of what the operator typed.

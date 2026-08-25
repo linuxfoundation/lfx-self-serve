@@ -573,6 +573,10 @@ export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
  * FAILED JOB the operator has to go and read rather than a refusal of the request they made — the
  * same class as the CPC bid range below.
  */
+export const MICROSOFT_MAX_KEYWORDS = 60;
+export const MICROSOFT_MAX_KEYWORD_TEXT_LENGTH = 100;
+export const MICROSOFT_MAX_GEO_TARGETS = 30;
+
 /**
  * Upper bound on Microsoft's DAILY budget (`internal/platform/microsoft/campaign.go:59`,
  * `maxBudget`), rejected during dispatch and therefore a dead job rather than a refused request —
@@ -585,16 +589,8 @@ export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
  * plan any of these channels can execute meaningfully, and diverging from the house floor for
  * Microsoft alone would be a surprise rather than a feature.
  */
-/**
- * The match types Microsoft's `Keyword.MatchType` accepts, in the PascalCase vocabulary the client
- * canonicalises (`canonicalMatchType`) — deliberately not Google's SCREAMING_CASE.
- *
- * DERIVED from a `Record` keyed by the union rather than written as a `Set` literal, and the
- * difference is the whole point: `ReadonlySet<CampaignKeyword['matchType']>` only checks that the
- * values listed BELONG to the union, so adding a member to the union and forgetting it here would
- * compile silently and reject a keyword Microsoft accepts. A `Record<Union, true>` is exhaustive —
- * omitting a member is a compile error — so the union stays the single source of truth.
- */
+export const MICROSOFT_MAX_BUDGET = 1_000_000_000;
+
 /**
  * Control characters Microsoft's `Keyword.Text` rejects, mirroring Go's `unicode.IsControl`
  * (`internal/platform/microsoft/targeting.go` checks every keyword with it, PRE-trim).
@@ -610,13 +606,18 @@ export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
 // eslint-disable-next-line no-control-regex
 export const MICROSOFT_CONTROL_CHAR_RE = /[\u0000-\u001F\u007F-\u009F]/;
 
+/**
+ * The match types Microsoft's `Keyword.MatchType` accepts, in the PascalCase vocabulary the client
+ * canonicalises (`canonicalMatchType`) — deliberately not Google's SCREAMING_CASE.
+ *
+ * DERIVED from a `Record` keyed by the union rather than written as a `Set` literal, and the
+ * difference is the whole point: `ReadonlySet<CampaignKeyword['matchType']>` only checks that the
+ * values listed BELONG to the union, so adding a member to the union and forgetting it here would
+ * compile silently and reject a keyword Microsoft accepts. A `Record<Union, true>` is exhaustive —
+ * omitting a member is a compile error — so the union stays the single source of truth.
+ */
 const MICROSOFT_MATCH_TYPE_MAP: Record<CampaignKeyword['matchType'], true> = { Exact: true, Phrase: true, Broad: true };
 
-/**
- * Lower-cased lookup keys, derived from the exhaustive map above. NOT exported: a set whose members
- * are `'exact'` while the wire vocabulary is `'Exact'` is a trap for any other caller. The
- * `isMicrosoftMatchType` predicate below is the public surface.
- */
 const MICROSOFT_MATCH_TYPE_KEYS: ReadonlySet<string> = new Set(Object.keys(MICROSOFT_MATCH_TYPE_MAP).map((k) => k.toLowerCase()));
 
 /**
@@ -648,15 +649,21 @@ export function canonicalMicrosoftMatchType(value: unknown): CampaignKeyword['ma
   return match ?? null;
 }
 
+/**
+ * Is `value` a match type Microsoft accepts?
+ *
+ * CASE-INSENSITIVE and trimming, mirroring the client's `canonicalMatchType`, which does
+ * `strings.ToLower(strings.TrimSpace(in))`. An exact-case `Set.has` was stricter than upstream and
+ * refused `EXACT` or ` exact ` — rejecting a request the service would have accepted, and reporting
+ * the platform as unconfigured rather than naming the real problem.
+ *
+ * The ORIGINAL value is still forwarded on the wire: upstream canonicalises it anyway, so rewriting
+ * it there would be a second normalisation that could only drift. Use `canonicalMicrosoftMatchType`
+ * when the PascalCase form is needed for DISPLAY.
+ */
 export function isMicrosoftMatchType(value: unknown): boolean {
   return typeof value === 'string' && MICROSOFT_MATCH_TYPE_KEYS.has(value.trim().toLowerCase());
 }
-
-export const MICROSOFT_MAX_BUDGET = 1_000_000_000;
-
-export const MICROSOFT_MAX_KEYWORDS = 60;
-export const MICROSOFT_MAX_KEYWORD_TEXT_LENGTH = 100;
-export const MICROSOFT_MAX_GEO_TARGETS = 30;
 
 /**
  * The inclusive bounds Microsoft's ad-group `CpcBid` must fall within when one is SUPPLIED

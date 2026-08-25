@@ -754,7 +754,7 @@
             -->
             @if (microsoftGeoTargets().length === 0) {
               @if (microsoftEffectiveGeoTargets().length > 0) {
-                <span class="mt-2 block text-xs text-gray-400">No geo targets selected — defaults to {{ microsoftEffectiveGeoTargets().join(', ') }}</span>
+                <span class="mt-2 block text-xs text-gray-400">No geo targets selected — defaults to {{ microsoftEffectiveGeoLabel() }}</span>
               } @else {
                 <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-microsoft-geo-none">
                   Add at least one geo target — with none, Microsoft serves the campaign in every country once it is enabled.
