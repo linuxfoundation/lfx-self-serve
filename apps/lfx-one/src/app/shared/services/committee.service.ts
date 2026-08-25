@@ -29,7 +29,8 @@ import {
   PaginatedResponse,
   QueryServiceCountResponse,
 } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
+import { COMMITTEE_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
+import { catchError, map, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -38,6 +39,7 @@ export class CommitteeService {
   public committee: WritableSignal<Committee | null> = signal(null);
 
   private readonly http = inject(HttpClient);
+  private readonly committeeDetailCache = new Map<string, { observable: Observable<Committee>; cachedAt: number }>();
 
   public getCommittees(params?: HttpParams): Observable<Committee[]> {
     return this.http.get<Committee[]>('/api/committees', { params }).pipe(catchError(() => of([])));
@@ -110,16 +112,41 @@ export class CommitteeService {
   }
 
   public getCommittee(id: string): Observable<Committee> {
-    return this.http.get<Committee>(`/api/committees/${id}`).pipe(
-      catchError((error) => {
-        return throwError(() => error);
-      }),
-      tap((committee) => this.committee.set(committee ?? null))
+    return this.getCommitteeDetail(id).pipe(tap((committee) => this.committee.set(committee ?? null)));
+  }
+
+  /**
+   * Committee-detail fetch with a short-TTL shared cache: the writerGuard slug
+   * resolution and CommitteeManageComponent's initializeCommittee both need the same payload
+   * within one navigation — sharing the request avoids paying the detail endpoint's fan-out
+   * (settings, membership, access, inherited-permission, mailing-list, project-metadata
+   * enrichment) twice on every edit-page load. Probe-friendly: no `committee` signal
+   * side-effect. Entries evict on error and on write (updateCommittee/updateCommitteePermissions/
+   * deleteCommittee). Pass `skipCache` to force a fresh fetch when a caller needs enrichment that
+   * a cached payload may predate. `skipCache` replaces the cache entry with the new `request$`
+   * rather than invalidating — callers already subscribed to the prior `shareReplay(1)`
+   * observable continue to completion with the old payload, so racing `skipCache` callers can
+   * still observe a stale result. Mirrors MeetingService.getMeetingDetail.
+   */
+  public getCommitteeDetail(id: string, options?: { skipCache?: boolean }): Observable<Committee> {
+    const cached = this.committeeDetailCache.get(id);
+    if (!options?.skipCache && cached && Date.now() - cached.cachedAt < COMMITTEE_DETAIL_CACHE_TTL_MS) {
+      return cached.observable;
+    }
+    if (cached) {
+      this.committeeDetailCache.delete(id);
+    }
+    const request$ = this.http.get<Committee>(`/api/committees/${id}`).pipe(
+      tap({ error: () => this.committeeDetailCache.delete(id) }),
+      shareReplay(1)
     );
+    this.pruneExpiredCommitteeDetailCache();
+    this.committeeDetailCache.set(id, { observable: request$, cachedAt: Date.now() });
+    return request$;
   }
 
   public deleteCommittee(id: string): Observable<void> {
-    return this.http.delete<void>(`/api/committees/${id}`).pipe(take(1));
+    return this.http.delete<void>(`/api/committees/${id}`).pipe(take(1), tap(() => this.committeeDetailCache.delete(id)));
   }
 
   public createCommittee(committee: Partial<Committee>): Observable<Committee> {
@@ -130,17 +157,21 @@ export class CommitteeService {
   // one PUT still accepts it alongside base fields in a single merged payload; the BFF routes it
   // to the settings sub-resource internally (committee.service.ts's updateCommittee).
   public updateCommittee(id: string, committee: CommitteeUpdateData & Pick<CommitteeSettingsData, 'chat_webhook_url'>): Observable<Committee> {
-    return this.http.put<Committee>(`/api/committees/${id}`, committee).pipe(take(1));
+    return this.http.put<Committee>(`/api/committees/${id}`, committee).pipe(take(1), tap(() => this.committeeDetailCache.delete(id)));
   }
 
   /** Updates the writers and auditors permission lists for a committee. */
   public updateCommitteePermissions(committeeId: string, writers: CommitteeUser[], auditors: CommitteeUser[]): Observable<Committee> {
-    return this.http.put<Committee>(`/api/committees/${committeeId}`, { writers, auditors }).pipe(take(1));
+    return this.http.put<Committee>(`/api/committees/${committeeId}`, { writers, auditors }).pipe(take(1), tap(() => this.committeeDetailCache.delete(committeeId)));
   }
 
-  /** Fetches a committee by ID without updating shared service state. */
+  /**
+   * Fetches a committee by ID without updating shared service state. Shares the short-TTL
+   * detail cache via {@link getCommitteeDetail} so tap-free probes (writerGuard, committee
+   * sub-pages, meeting-manage's committee check) don't duplicate an in-flight detail fetch.
+   */
   public fetchCommittee(id: string): Observable<Committee> {
-    return this.http.get<Committee>(`/api/committees/${id}`).pipe(take(1));
+    return this.getCommitteeDetail(id);
   }
 
   // ── Sub-groups (children) ─────────────────────────────────────────────────
@@ -148,6 +179,15 @@ export class CommitteeService {
   /** Fetches child committees (sub-groups) of a parent committee */
   public getChildCommittees(parentUid: string): Observable<Committee[]> {
     return this.http.get<Committee[]>(`/api/committees/${parentUid}/children`).pipe(catchError(() => of([])));
+  }
+
+  private pruneExpiredCommitteeDetailCache(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.committeeDetailCache) {
+      if (now - entry.cachedAt >= COMMITTEE_DETAIL_CACHE_TTL_MS) {
+        this.committeeDetailCache.delete(key);
+      }
+    }
   }
 
   // Committee Members methods

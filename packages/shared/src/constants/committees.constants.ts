@@ -668,6 +668,13 @@ export const OTHER_GROUPS_LABEL = 'Other Groups';
 export const GROUPS_CARD_GRID_PAGE_SIZE = 12;
 
 /**
+ * Short TTL for the committee-detail cache — just long enough for the writerGuard
+ * project probe and CommitteeManageComponent's immediate refetch to share one request, without
+ * serving stale data across edits (write paths evict explicitly). Mirrors MEETING_DETAIL_CACHE_TTL_MS.
+ */
+export const COMMITTEE_DETAIL_CACHE_TTL_MS = 10 * 1000;
+
+/**
  * Icon-tile tints for the Groups dashboard engagement stat cards (LFXV2-1711). A dedicated constant
  * rather than reusing `ORG_MEETINGS_KPI_ICON_CLASS`'s coincidentally-identical values: this package's
  * classes aren't scanned by `apps/lfx-one/tailwind.config.js`'s `content` glob, so they must be
