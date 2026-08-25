@@ -380,24 +380,6 @@ export interface Meeting {
 }
 
 /**
- * Registrant counts for a meeting, resolved via `/query/resources/count` instead of paging the
- * full registrant roster.
- * @description Returned by the lazy `GET /api/meetings/:uid/registrant-counts` endpoint (GH-1731)
- * so the join page can render immediately without waiting on a roster fetch. `exhaustive: false`
- * means the committee/individual split (or the total itself) is unreliable — callers should treat
- * the counts as a lower bound / fall back to a roster-derived count where one is already available,
- * and must never treat a `false` value as "zero registrants".
- */
-export interface MeetingRegistrantCounts {
-  /** Count of non-committee registrants. */
-  individual_registrants_count: number;
-  /** Count of committee-affiliated registrants. */
-  committee_members_count: number;
-  /** False when any underlying count call degraded (rejected sub-count, or `has_more` on either query). */
-  exhaustive: boolean;
-}
-
-/**
  * Meeting occurrence entity with meeting details
  * @description Represents a specific occurrence of a recurring meeting
  */

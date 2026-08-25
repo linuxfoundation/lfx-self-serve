@@ -31,14 +31,6 @@ export const MEETING_PASSWORD_HEADER = 'x-meeting-password';
 export const QUERY_SERVICE_FILTERS_OR_BATCH_SIZE = 100;
 
 /**
- * Maximum `page_size` accepted by the query-service `/query/resources` action.
- * @description Upstream contract limit (lfx-v2-query-service `design/types.go`: min 1, max 1000,
- * default 50). Pass this for callers that page-walk `fetchAllQueryResources` and want the fewest
- * possible round trips — a single page covers any result set up to this size.
- */
-export const QUERY_SERVICE_MAX_PAGE_SIZE = 1000;
-
-/**
  * NATS configuration constants
  * @description Configuration for NATS messaging system used for inter-service communication
  * @readonly

@@ -19,7 +19,6 @@ import {
   MeetingJoinURL,
   MeetingRecurrence,
   MeetingRegistrant,
-  MeetingRegistrantCounts,
   MeetingRsvp,
   PaginatedResponse,
   PastMeeting,
@@ -176,78 +175,6 @@ export class MeetingService {
     const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', params);
 
     return count;
-  }
-
-  /**
-   * Fetches registrant counts (individual vs. committee) for a meeting without paging the full
-   * registrant roster, via two parallel `/query/resources/count` calls (GH-1731).
-   *
-   * `v1_meeting_registrant` documents are FGA-private, so a count call carries no useful result
-   * for a principal lacking `viewer` on the meeting — it silently returns 0. Callers must pass
-   * `m2mToken` (mirroring the identity the roster fetch would have used) rather than rely on the
-   * caller's own bearer token.
-   *
-   * Never returns a fabricated `0/0` on total failure — a rejected total count propagates so the
-   * caller can decide how to degrade, instead of rendering a wrong "no registrants" state.
-   */
-  public async getMeetingRegistrantCounts(req: Request, meetingUid: string, m2mToken?: string): Promise<MeetingRegistrantCounts> {
-    logger.debug(req, 'get_meeting_registrant_counts', 'Fetching meeting registrant counts', { meeting_id: meetingUid });
-
-    const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
-    const baseParams: Record<string, any> = {
-      type: 'v1_meeting_registrant',
-      parent: `meeting:${meetingUid}`,
-    };
-
-    const totalPromise = this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(
-      req,
-      'LFX_V2_SERVICE',
-      '/query/resources/count',
-      'GET',
-      baseParams,
-      undefined,
-      headers
-    );
-
-    const [totalResult, committeeResult] = await Promise.allSettled([
-      totalPromise,
-      this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources/count',
-        'GET',
-        { ...baseParams, filters: ['type:committee'] },
-        undefined,
-        headers
-      ),
-    ]);
-
-    if (totalResult.status === 'rejected') {
-      logger.warning(req, 'get_meeting_registrant_counts', 'Failed to fetch total registrant count', {
-        meeting_id: meetingUid,
-        err: totalResult.reason,
-      });
-      throw totalResult.reason;
-    }
-
-    const total = totalResult.value;
-
-    if (committeeResult.status === 'rejected') {
-      logger.warning(req, 'get_meeting_registrant_counts', 'Failed to fetch committee registrant count, returning total only', {
-        meeting_id: meetingUid,
-        err: committeeResult.reason,
-      });
-      return { individual_registrants_count: total.count, committee_members_count: 0, exhaustive: false };
-    }
-
-    const committee = committeeResult.value;
-    const exhaustive = !total.has_more && !committee.has_more;
-
-    return {
-      individual_registrants_count: total.count - committee.count,
-      committee_members_count: committee.count,
-      exhaustive,
-    };
   }
 
   /**

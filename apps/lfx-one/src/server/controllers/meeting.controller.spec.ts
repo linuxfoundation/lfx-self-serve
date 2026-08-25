@@ -85,7 +85,6 @@ vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { MeetingController } from './meeting.controller';
 
 function buildReq(query: Record<string, string> = {}): any {
@@ -228,75 +227,5 @@ describe('MeetingController.getMeetingById host-key gating', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.host_key).toBeUndefined();
     expect(payload.can_view_host_key).toBe(false);
-  });
-});
-
-describe('MeetingController.getMeetingRegistrantCounts', () => {
-  let controller: MeetingController;
-
-  const M2M_TOKEN = 'm2m-token';
-  const DENIED_COUNTS = { individual_registrants_count: 0, committee_members_count: 0, exhaustive: false };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    controller = new MeetingController();
-    (generateM2MToken as ReturnType<typeof vi.fn>).mockResolvedValue(M2M_TOKEN);
-    (getEffectiveEmail as ReturnType<typeof vi.fn>).mockReturnValue('user@example.com');
-    (getEffectiveUsername as ReturnType<typeof vi.fn>).mockReturnValue('username1');
-  });
-
-  it('returns zeroed, non-exhaustive counts and never calls the count service when the caller is neither registrant nor organizer', async () => {
-    accessCheckSvc.checkSingleAccess.mockResolvedValue(false);
-    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
-    const res = buildRes();
-    const next = vi.fn();
-
-    await controller.getMeetingRegistrantCounts(buildReq({}), res, next);
-
-    expect(res.json).toHaveBeenCalledWith(DENIED_COUNTS);
-    expect(meetingSvc.getMeetingRegistrantCounts).not.toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it('delegates to the count service, carrying the M2M token, once the caller is confirmed a registrant', async () => {
-    accessCheckSvc.checkSingleAccess.mockResolvedValue(false);
-    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ uid: 'r1', email: 'user@example.com' }]);
-    const counts = { individual_registrants_count: 7, committee_members_count: 3, exhaustive: true };
-    meetingSvc.getMeetingRegistrantCounts.mockResolvedValue(counts);
-    const res = buildRes();
-    const next = vi.fn();
-
-    await controller.getMeetingRegistrantCounts(buildReq({}), res, next);
-
-    expect(meetingSvc.getMeetingRegistrantCounts).toHaveBeenCalledWith(expect.anything(), MEETING_UID, M2M_TOKEN);
-    expect(res.json).toHaveBeenCalledWith(counts);
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it('delegates to the count service when the caller is the organizer, even without a matching registrant record', async () => {
-    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
-    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
-    meetingSvc.getMeetingRegistrantCounts.mockResolvedValue({ individual_registrants_count: 1, committee_members_count: 0, exhaustive: true });
-    const res = buildRes();
-    const next = vi.fn();
-
-    await controller.getMeetingRegistrantCounts(buildReq({}), res, next);
-
-    expect(meetingSvc.getMeetingRegistrantCounts).toHaveBeenCalled();
-    expect(res.json).not.toHaveBeenCalledWith(DENIED_COUNTS);
-  });
-
-  it('propagates a rejection from the count service via next, without responding', async () => {
-    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
-    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
-    const error = new Error('query service down');
-    meetingSvc.getMeetingRegistrantCounts.mockRejectedValue(error);
-    const res = buildRes();
-    const next = vi.fn();
-
-    await controller.getMeetingRegistrantCounts(buildReq({}), res, next);
-
-    expect(next).toHaveBeenCalledWith(error);
-    expect(res.json).not.toHaveBeenCalled();
   });
 });

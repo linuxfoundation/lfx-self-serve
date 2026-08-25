@@ -36,9 +36,6 @@ router.get('/:uid/registrants', (req, res, next) => meetingController.getMeeting
 // GET /meetings/:uid/my-meeting-registrants - get registrants if user is a registrant or organizer (access-controlled)
 router.get('/:uid/my-meeting-registrants', (req, res, next) => meetingController.getMyMeetingRegistrants(req, res, next));
 
-// GET /meetings/:uid/registrant-counts - lazily resolve registrant counts without paging the full roster (GH-1731)
-router.get('/:uid/registrant-counts', (req, res, next) => meetingController.getMeetingRegistrantCounts(req, res, next));
-
 // POST /meetings/:uid/registrants - add registrants (handles single or multiple)
 router.post('/:uid/registrants', (req, res, next) => meetingController.addMeetingRegistrants(req, res, next));
 

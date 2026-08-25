@@ -498,8 +498,8 @@ describe('PublicMeetingController.getMeetingById organizer privacy (LFXV2-2802)'
     expect(payload.meeting.owner).toEqual(owner);
   });
 
-  // GH-1731: registrant counts moved off this hot path to the lazy /registrant-counts endpoint —
-  // the roster read here existed only to derive two integers.
+  // GH-1731: registrant counts removed from this hot path — the roster read here existed only to
+  // derive two integers with no remaining consumer.
   it('issues zero registrant-roster queries and carries no registrant count fields on the response', async () => {
     const { req, res, next } = buildReqRes(true);
 
