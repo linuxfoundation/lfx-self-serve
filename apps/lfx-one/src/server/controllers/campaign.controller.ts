@@ -20,6 +20,7 @@ import type {
 import {
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_PLATFORMS,
+  MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
   MICROSOFT_MAX_GEO_TARGETS,
   MICROSOFT_MAX_KEYWORDS,
@@ -1517,7 +1518,7 @@ export class CampaignController {
     // Finite AND positive. `Number.isFinite` rejects NaN and both infinities; the client applies
     // the same test during dispatch, so failing here reports it as a refusal instead of a job
     // failure the user has to go looking for.
-    if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) return null;
+    if (!Number.isFinite(budgetUsd) || budgetUsd <= 0 || budgetUsd > MICROSOFT_MAX_BUDGET) return null;
 
     // Non-empty AFTER trimming: a whitespace-only term is not a keyword Microsoft can match a
     // query against, so counting it would let a blank row satisfy the "at least one" rule and

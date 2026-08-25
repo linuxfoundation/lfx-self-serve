@@ -16,6 +16,7 @@ import {
   META_DEFAULT_PLACEMENTS,
   META_MESSENGER_INBOX_RETIRED_REASON,
   META_NUMERIC_ID_PATTERN,
+  MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
   MICROSOFT_MAX_GEO_TARGETS,
   MICROSOFT_MAX_KEYWORDS,
@@ -352,6 +353,7 @@ export class ImplementationTabComponent implements OnInit {
    * minimum). A `number` signal would make an untouched field read 0, which `buildMicrosoftConfig`
    * drops anyway — but only after the UI had shown the operator a bid of zero they never set.
    */
+  protected readonly microsoftMaxBudget = MICROSOFT_MAX_BUDGET;
   protected readonly microsoftMaxKeywords = MICROSOFT_MAX_KEYWORDS;
   protected readonly microsoftMaxKeywordTextLength = MICROSOFT_MAX_KEYWORD_TEXT_LENGTH;
   protected readonly microsoftMaxGeoTargets = MICROSOFT_MAX_GEO_TARGETS;
@@ -736,7 +738,15 @@ export class ImplementationTabComponent implements OnInit {
     // pass a bare comparison and reach the client, which rejects it mid-dispatch as a dead job.
     // `onMicrosoftBudgetInput`'s `|| 0` happens to prevent that today, but that is the handler's
     // incidental behaviour rather than this guard's, and the guard is what `canSubmit` promises.
-    if (microsoftSelected && (!Number.isFinite(this.microsoftBudgetUsd()) || this.microsoftBudgetUsd() < 1)) return false;
+    //
+    // The upper bound mirrors `redditBudgetIsUsable`: the client caps the daily budget at
+    // `MICROSOFT_MAX_BUDGET` and rejects anything larger DURING dispatch, so an unguarded
+    // over-cap value is a dead job rather than a refused request.
+    //
+    // The floor of 1 is this app's, and it is deliberately stricter than the client's `> 0` —
+    // Meta, LinkedIn and Reddit all gate the same way and every budget input declares `min="1"`.
+    if (microsoftSelected && (!Number.isFinite(this.microsoftBudgetUsd()) || this.microsoftBudgetUsd() < 1 || this.microsoftBudgetUsd() > MICROSOFT_MAX_BUDGET))
+      return false;
     if (microsoftSelected && this.microsoftEffectiveKeywords().length === 0) return false;
     if (microsoftSelected && this.microsoftEffectiveGeoTargets().length === 0) return false;
     if (microsoftSelected && !this.microsoftCpcBidValid()) return false;

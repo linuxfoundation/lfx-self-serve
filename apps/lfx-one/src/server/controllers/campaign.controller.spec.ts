@@ -876,6 +876,8 @@ describe('CampaignController.createCampaign cutover', () => {
     ['a non-positive budget the client rejects mid-dispatch', { budgetUsd: 0 }],
     ['a NaN budget', { budgetUsd: Number.NaN }],
     ['an infinite budget', { budgetUsd: Number.POSITIVE_INFINITY }],
+    // The client caps the DAILY budget and rejects anything larger during dispatch.
+    ['a budget over the maximum', { budgetUsd: 1_000_000_001 }],
   ])('refuses a Microsoft create with %s', async (_case, overrides) => {
     await createWithMicrosoft(overrides);
 

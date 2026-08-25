@@ -1109,6 +1109,8 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     ['NaN', Number.NaN],
     ['zero', 0],
     ['negative', -5],
+    // Mirrors redditBudgetIsUsable — over the client's cap is a dead job, not a refused request.
+    ['over the maximum', 1_000_000_001],
   ])('blocks a Microsoft submit on a %s budget', async (_label, budget) => {
     const c = component() as unknown as Record<string, any>;
     // The guards are scoped to a Microsoft selection, so the platform must be selected or the

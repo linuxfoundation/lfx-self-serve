@@ -556,6 +556,40 @@ export const META_PLACEMENT_LABELS: Readonly<Record<keyof MetaPlacement, string>
 export const META_MESSENGER_INBOX_RETIRED_REASON = 'Removed by Meta in November 2025';
 
 /** Meta object ids (Pixel, Page) are numeric strings; mirrors campaign-service's `numericIDRE`. */
+export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
+
+/**
+ * Input bounds the Microsoft client enforces BEFORE its first create call, mirrored here so the
+ * form and the BFF refuse synchronously instead of enqueuing a job that cannot succeed.
+ *
+ * Verified against `origin/main` of campaign-service:
+ * - `maxKeywords = 60` (`internal/platform/microsoft/targeting.go:86`)
+ * - `maxKeywordTextRunes = 100` (`targeting.go:75`) — measured in RUNES, matching Microsoft's
+ *   character-based limit; a byte count would reject a valid CJK keyword.
+ * - `maxGeoTargets = 30` (`internal/platform/microsoft/geo.go:109`)
+ *
+ * Each is a hard error upstream, and because `CreateCampaigns` is asynchronous that error is a
+ * FAILED JOB the operator has to go and read rather than a refusal of the request they made — the
+ * same class as the CPC bid range below.
+ */
+/**
+ * Upper bound on Microsoft's DAILY budget (`internal/platform/microsoft/campaign.go:59`,
+ * `maxBudget`), rejected during dispatch and therefore a dead job rather than a refused request —
+ * the same reasoning as `REDDIT_MAX_BUDGET_USD`, which caps the sibling platform for the same
+ * class of reason.
+ *
+ * The LOWER bound is deliberately not a constant. This app's floor is 1 across every paid
+ * platform (Meta, LinkedIn and Reddit all gate on `< 1`, and all five budget inputs declare
+ * `min="1"`), which is STRICTER than the client's `> 0`. A sub-unit daily budget is not a spend
+ * plan any of these channels can execute meaningfully, and diverging from the house floor for
+ * Microsoft alone would be a surprise rather than a feature.
+ */
+export const MICROSOFT_MAX_BUDGET = 1_000_000_000;
+
+export const MICROSOFT_MAX_KEYWORDS = 60;
+export const MICROSOFT_MAX_KEYWORD_TEXT_LENGTH = 100;
+export const MICROSOFT_MAX_GEO_TARGETS = 30;
+
 /**
  * The inclusive bounds Microsoft's ad-group `CpcBid` must fall within when one is SUPPLIED
  * (`internal/platform/microsoft/targeting.go:116-117`, `minCpcBid`/`maxCpcBid`).
@@ -571,28 +605,8 @@ export const META_MESSENGER_INBOX_RETIRED_REASON = 'Removed by Meta in November 
  *
  * Shared rather than duplicated per layer so the UI guard and `buildMicrosoftConfig` cannot drift.
  */
-/**
- * Input bounds the Microsoft client enforces BEFORE its first create call, mirrored here so the
- * form and the BFF refuse synchronously instead of enqueuing a job that cannot succeed.
- *
- * Verified against `origin/main` of campaign-service:
- * - `maxKeywords = 60` (`internal/platform/microsoft/targeting.go:86`)
- * - `maxKeywordTextRunes = 100` (`targeting.go:75`) — measured in RUNES, matching Microsoft's
- *   character-based limit; a byte count would reject a valid CJK keyword.
- * - `maxGeoTargets = 30` (`internal/platform/microsoft/geo.go:109`)
- *
- * Each is a hard error upstream, and because `CreateCampaigns` is asynchronous that error is a
- * FAILED JOB the operator has to go and read rather than a refusal of the request they made — the
- * same class as the CPC bid range below.
- */
-export const MICROSOFT_MAX_KEYWORDS = 60;
-export const MICROSOFT_MAX_KEYWORD_TEXT_LENGTH = 100;
-export const MICROSOFT_MAX_GEO_TARGETS = 30;
-
 export const MICROSOFT_MIN_CPC_BID = 0.01;
 export const MICROSOFT_MAX_CPC_BID = 1000;
-
-export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
 
 /** ISO 3166-1 alpha-2 shape for a Meta geo target, after normalisation. */
 export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
