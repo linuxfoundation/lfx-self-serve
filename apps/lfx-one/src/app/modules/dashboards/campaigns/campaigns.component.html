@@ -2,49 +2,58 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-6 p-6" data-testid="campaigns-page">
-  <!-- Header -->
-  <div class="flex flex-col gap-3">
-    <h1 class="sr-only">{{ activeProgramTypeConfig().breadcrumbLabel }} — {{ activeDeliveryTypeConfig().breadcrumbLabel }}</h1>
-    <!-- Breadcrumb: Campaigns > {program} > {delivery type} -->
-    <nav class="flex items-center gap-2 text-sm" aria-label="Breadcrumb" data-testid="campaigns-breadcrumb">
-      <span class="text-gray-400">Campaigns</span>
-      <i class="fa-solid fa-chevron-right text-[10px] text-gray-300" aria-hidden="true"></i>
-      <span class="text-gray-400">{{ activeProgramTypeConfig().breadcrumbLabel }}</span>
-      <i class="fa-solid fa-chevron-right text-[10px] text-gray-300" aria-hidden="true"></i>
-      <span class="font-semibold text-gray-900" aria-current="page">{{ activeDeliveryTypeConfig().breadcrumbLabel }}</span>
-    </nav>
-
-    <!-- Program & Delivery-Type Selectors -->
-    <div class="flex items-center gap-3" data-testid="campaigns-selectors">
-      <lfx-select
-        [form]="selectorForm"
-        control="programType"
-        [options]="programTypeOptions"
-        optionLabel="label"
-        optionValue="id"
-        size="small"
-        ariaLabel="Campaign program type"
-        data-testid="campaigns-program-select" />
-      <lfx-select
-        [form]="selectorForm"
-        control="deliveryType"
-        [options]="deliveryTypeOptions"
-        optionLabel="label"
-        optionValue="id"
-        optionDisabled="disabled"
-        size="small"
-        ariaLabel="Campaign delivery type"
-        data-testid="campaigns-delivery-select" />
+  @if (!hasCampaignAccess()) {
+    <!-- Reactive re-check of campaignAccessGuard's one-time decision — a foundation switch via
+         Location.replaceState never re-runs the guard (see `hasCampaignAccess` on the component),
+         so this renders instead of leaving a previously-granted foundation's campaigns on screen
+         under one the operator may no longer hold campaign_manager for. -->
+    <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-12" data-testid="campaigns-no-access">
+      <p class="text-sm text-gray-500">You don't have access to campaigns for this foundation.</p>
     </div>
-  </div>
+  } @else {
+    <!-- Header -->
+    <div class="flex flex-col gap-3">
+      <h1 class="sr-only">{{ activeProgramTypeConfig().breadcrumbLabel }} — {{ activeDeliveryTypeConfig().breadcrumbLabel }}</h1>
+      <!-- Breadcrumb: Campaigns > {program} > {delivery type} -->
+      <nav class="flex items-center gap-2 text-sm" aria-label="Breadcrumb" data-testid="campaigns-breadcrumb">
+        <span class="text-gray-400">Campaigns</span>
+        <i class="fa-solid fa-chevron-right text-[10px] text-gray-300" aria-hidden="true"></i>
+        <span class="text-gray-400">{{ activeProgramTypeConfig().breadcrumbLabel }}</span>
+        <i class="fa-solid fa-chevron-right text-[10px] text-gray-300" aria-hidden="true"></i>
+        <span class="font-semibold text-gray-900" aria-current="page">{{ activeDeliveryTypeConfig().breadcrumbLabel }}</span>
+      </nav>
 
-  <hr class="border-gray-200" />
+      <!-- Program & Delivery-Type Selectors -->
+      <div class="flex items-center gap-3" data-testid="campaigns-selectors">
+        <lfx-select
+          [form]="selectorForm"
+          control="programType"
+          [options]="programTypeOptions"
+          optionLabel="label"
+          optionValue="id"
+          size="small"
+          ariaLabel="Campaign program type"
+          data-testid="campaigns-program-select" />
+        <lfx-select
+          [form]="selectorForm"
+          control="deliveryType"
+          [options]="deliveryTypeOptions"
+          optionLabel="label"
+          optionValue="id"
+          optionDisabled="disabled"
+          size="small"
+          ariaLabel="Campaign delivery type"
+          data-testid="campaigns-delivery-select" />
+      </div>
+    </div>
 
-  <!-- Email container. Mounted and visibility-toggled for the same reason the paid one below
+    <hr class="border-gray-200" />
+
+    <!-- Email container. Mounted and visibility-toggled for the same reason the paid one below
        is: PlanningTabComponent owns its brief/URL/copy state locally, so a structural @if would
        destroy an in-progress email brief on every round-trip to Paid Marketing. -->
-  <div class="flex flex-col gap-6" [style.display]="isEmail() ? null : 'none'" data-testid="campaigns-email">
-    <!-- Tab Navigation. Bound to emailTabs — a per-container constant, so this list cannot
+    <div class="flex flex-col gap-6" [style.display]="isEmail() ? null : 'none'" data-testid="campaigns-email">
+      <!-- Tab Navigation. Bound to emailTabs — a per-container constant, so this list cannot
          change when the OTHER container becomes active.
 
          `aria-controls` is set only on the SELECTED tab, deliberately. The NON-PLANNING panels
@@ -60,30 +69,30 @@
          id is always resolvable and the condition is not load-bearing for that one tab. The
          binding stays uniform across the tablist anyway — a per-tab special case would be more
          code to say the same thing, and the lazy panels still need it. -->
-    <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Email campaign tabs" data-testid="campaigns-email-tab-nav">
-      @for (tab of emailTabs; track tab.id; let i = $index) {
-        <button
-          type="button"
-          role="tab"
-          [attr.aria-selected]="selectedEmailTab() === tab.id"
-          [attr.aria-controls]="selectedEmailTab() === tab.id ? 'email-panel-' + tab.id : null"
-          [attr.id]="'email-tab-' + tab.id"
-          [attr.tabindex]="selectedEmailTab() === tab.id ? 0 : -1"
-          (click)="selectTab(tab.id, 'email')"
-          (keydown)="onTabKeydown($event, i, 'email')"
-          [class]="
-            selectedEmailTab() === tab.id
-              ? 'flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm'
-              : 'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700'
-          "
-          [attr.data-testid]="'campaigns-email-' + tab.id + '-tab'">
-          <i [class]="tab.icon" aria-hidden="true"></i>
-          {{ tab.label }}
-        </button>
-      }
-    </div>
+      <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Email campaign tabs" data-testid="campaigns-email-tab-nav">
+        @for (tab of emailTabs; track tab.id; let i = $index) {
+          <button
+            type="button"
+            role="tab"
+            [attr.aria-selected]="selectedEmailTab() === tab.id"
+            [attr.aria-controls]="selectedEmailTab() === tab.id ? 'email-panel-' + tab.id : null"
+            [attr.id]="'email-tab-' + tab.id"
+            [attr.tabindex]="selectedEmailTab() === tab.id ? 0 : -1"
+            (click)="selectTab(tab.id, 'email')"
+            (keydown)="onTabKeydown($event, i, 'email')"
+            [class]="
+              selectedEmailTab() === tab.id
+                ? 'flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm'
+                : 'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700'
+            "
+            [attr.data-testid]="'campaigns-email-' + tab.id + '-tab'">
+            <i [class]="tab.icon" aria-hidden="true"></i>
+            {{ tab.label }}
+          </button>
+        }
+      </div>
 
-    <!-- Planning stays MOUNTED and visibility-toggled, exactly as on the paid side below and for
+      <!-- Planning stays MOUNTED and visibility-toggled, exactly as on the paid side below and for
          the same reason (LFXV2-3202): PlanningTabComponent holds its brief state locally, so a
          structural @switch destroyed an in-progress brief on every trip to another tab.
 
@@ -91,13 +100,13 @@
          they are static placeholders with no component, no ngOnInit and no local state, so
          eager-mounting them would cost nothing. They stay switched so both containers keep the
          same structure and the paid side's carve-out is not re-litigated one container over. -->
-    <div
-      role="tabpanel"
-      id="email-panel-planning"
-      aria-labelledby="email-tab-planning"
-      [style.display]="selectedEmailTab() === 'planning' ? null : 'none'"
-      data-testid="campaigns-email-planning-panel">
-      <!--
+      <div
+        role="tabpanel"
+        id="email-panel-planning"
+        aria-labelledby="email-tab-planning"
+        [style.display]="selectedEmailTab() === 'planning' ? null : 'none'"
+        data-testid="campaigns-email-planning-panel">
+        <!--
             LFXV2-3201 settled the question this comment used to pose: ONE planner, moded by
             `deliveryType`, rather than two components. The two types share the expensive halves —
             the event URL, the scrape, the goal/audience/value-prop form, the SSE generation
@@ -123,9 +132,9 @@
             then `onEmailProceedToImplementation` stores the brief for EXISTENCE only; the panel
             does not read the payload.
           -->
-      <!-- Keyed on the program type for the same reason the paid side is: the component
+        <!-- Keyed on the program type for the same reason the paid side is: the component
                holds its brief state locally and does not reset on input change. -->
-      <!--
+        <!--
             TWO planning-tab instances are in the DOM at once, because both delivery containers are
             visibility-toggled rather than swapped with `@if` (destroying either would wipe an
             in-progress brief). Since LFXV2-3202 that is true REGARDLESS of the selected tab as
@@ -151,16 +160,16 @@
             those selectors under the host anyway rather than relying on that, since which cards
             each mode renders is exactly the thing this ticket changes.
           -->
-      @for (program of [selectedProgramType()]; track program) {
-        <lfx-planning-tab
-          [programTypeConfig]="activeProgramTypeConfig()"
-          deliveryType="email"
-          (proceedToImplementation)="onEmailProceedToImplementation($event)"
-          data-testid="campaigns-email-planning-tab" />
-      }
-    </div>
+        @for (program of [selectedProgramType()]; track program) {
+          <lfx-planning-tab
+            [programTypeConfig]="activeProgramTypeConfig()"
+            deliveryType="email"
+            (proceedToImplementation)="onEmailProceedToImplementation($event)"
+            data-testid="campaigns-email-planning-tab" />
+        }
+      </div>
 
-    <!--
+      <!--
       Template-search status, mounted OUTSIDE the @switch below.
 
       An aria-live element inserted with its text already present is not reliably announced — the
@@ -175,12 +184,12 @@
       It stays in the DOM on the other email tabs, which is harmless: the computed reads signals
       that are only written by a search, so it is empty unless one is running or has answered.
     -->
-    <div role="status" aria-live="polite" class="sr-only" data-testid="campaigns-email-templates-live">{{ emailTemplatesAnnouncement() }}</div>
+      <div role="status" aria-live="polite" class="sr-only" data-testid="campaigns-email-templates-live">{{ emailTemplatesAnnouncement() }}</div>
 
-    @switch (selectedEmailTab()) {
-      @case ('implementation') {
-        <div role="tabpanel" id="email-panel-implementation" aria-labelledby="email-tab-implementation" data-testid="campaigns-email-implementation-panel">
-          <!--
+      @switch (selectedEmailTab()) {
+        @case ('implementation') {
+          <div role="tabpanel" id="email-panel-implementation" aria-labelledby="email-tab-implementation" data-testid="campaigns-email-implementation-panel">
+            <!--
             The template picker. Staging an email CLONES one of the project's HubSpot marketing
             emails, and `sourceEmailId` has no default, so a chosen template is REQUIRED before a
             send can be staged.
@@ -196,66 +205,66 @@
             Four states, kept distinct because collapsing any pair states something false:
             channel not connected, search failed, searched-and-empty, and results.
           -->
-          <div class="flex flex-col gap-4" data-testid="campaigns-email-implementation">
-            <div class="flex flex-col gap-1">
-              <h2 class="text-base font-semibold text-gray-900">Choose a template to clone</h2>
-              <p class="text-sm text-gray-500">The send is created as a clone of one of your HubSpot marketing emails.</p>
-            </div>
+            <div class="flex flex-col gap-4" data-testid="campaigns-email-implementation">
+              <div class="flex flex-col gap-1">
+                <h2 class="text-base font-semibold text-gray-900">Choose a template to clone</h2>
+                <p class="text-sm text-gray-500">The send is created as a clone of one of your HubSpot marketing emails.</p>
+              </div>
 
-            <div class="flex items-center gap-2">
-              <input
-                type="search"
-                [value]="emailTemplateQuery()"
-                (input)="onEmailTemplateQueryInput($any($event.target).value)"
-                (keyup.enter)="onEmailTemplateSearchSubmit()"
-                placeholder="Search by name or subject"
-                aria-label="Search HubSpot marketing emails"
-                class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
-                data-testid="campaigns-email-template-search" />
-              <button
-                type="button"
-                (click)="onEmailTemplateSearchSubmit()"
-                [disabled]="emailTemplatesLoading()"
-                class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                data-testid="campaigns-email-template-search-button">
-                Search
-              </button>
-            </div>
+              <div class="flex items-center gap-2">
+                <input
+                  type="search"
+                  [value]="emailTemplateQuery()"
+                  (input)="onEmailTemplateQueryInput($any($event.target).value)"
+                  (keyup.enter)="onEmailTemplateSearchSubmit()"
+                  placeholder="Search by name or subject"
+                  aria-label="Search HubSpot marketing emails"
+                  class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  data-testid="campaigns-email-template-search" />
+                <button
+                  type="button"
+                  (click)="onEmailTemplateSearchSubmit()"
+                  [disabled]="emailTemplatesLoading()"
+                  class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  data-testid="campaigns-email-template-search-button">
+                  Search
+                </button>
+              </div>
 
-            @if (emailTemplatesLoading()) {
-              <p class="text-sm text-gray-500" data-testid="campaigns-email-templates-loading">
-                <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
-                Loading templates…
-              </p>
-            } @else if (emailChannelEnabled() === false) {
-              <!-- Not an error: the steady state wherever HubSpot is not connected. -->
-              <p class="text-sm text-gray-500" data-testid="campaigns-email-not-connected">{{ emailNotConnectedMessage() }}</p>
-            } @else if (emailTemplatesError(); as message) {
-              <p class="text-sm text-red-600" role="alert" data-testid="campaigns-email-templates-error">{{ message }}</p>
-            } @else if (emailTemplates(); as templates) {
-              @if (templates.length === 0) {
-                <!--
+              @if (emailTemplatesLoading()) {
+                <p class="text-sm text-gray-500" data-testid="campaigns-email-templates-loading">
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                  Loading templates…
+                </p>
+              } @else if (emailChannelEnabled() === false) {
+                <!-- Not an error: the steady state wherever HubSpot is not connected. -->
+                <p class="text-sm text-gray-500" data-testid="campaigns-email-not-connected">{{ emailNotConnectedMessage() }}</p>
+              } @else if (emailTemplatesError(); as message) {
+                <p class="text-sm text-red-600" role="alert" data-testid="campaigns-email-templates-error">{{ message }}</p>
+              } @else if (emailTemplates(); as templates) {
+                @if (templates.length === 0) {
+                  <!--
                   Only reachable when the search SUCCEEDED. The copy names the query so it reads as
                   a statement about the search rather than about the portal.
                 -->
-                <p class="text-sm text-gray-500" data-testid="campaigns-email-templates-empty">
-                  @if (emailTemplateSubmittedQuery()) {
-                    No templates match “{{ emailTemplateSubmittedQuery() }}”.
-                  } @else {
-                    This portal has no marketing emails yet.
-                  }
-                </p>
-              } @else {
-                @if (emailTemplatesTruncated()) {
-                  <!--
+                  <p class="text-sm text-gray-500" data-testid="campaigns-email-templates-empty">
+                    @if (emailTemplateSubmittedQuery()) {
+                      No templates match “{{ emailTemplateSubmittedQuery() }}”.
+                    } @else {
+                      This portal has no marketing emails yet.
+                    }
+                  </p>
+                } @else {
+                  @if (emailTemplatesTruncated()) {
+                    <!--
                     Only ever set for an EMPTY query, where a complete listing and a truncated
                     first screen are indistinguishable. Telling someone to narrow an already
                     exhaustive search would send them hunting for a template that does not exist.
                   -->
-                  <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-truncated">This may be a partial list. Search to narrow it.</p>
-                }
-                @if (emailTemplatesRenderCapped()) {
-                  <!--
+                    <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-truncated">This may be a partial list. Search to narrow it.</p>
+                  }
+                  @if (emailTemplatesRenderCapped()) {
+                    <!--
                     Stated as FACT, unlike the `possiblyTruncated` banner above, which hedges
                     because a capped 500 and a complete 500 are indistinguishable on the wire.
                     Both numbers here were measured on the list in hand before it was sliced.
@@ -263,25 +272,25 @@
                     Both can show at once: an unfiltered search can be cut upstream at 500 and
                     cut again here at the render limit.
                   -->
-                  <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-render-capped">{{ emailTemplatesRenderCapMessage() }}</p>
-                }
-                <ul class="flex flex-col gap-2" data-testid="campaigns-email-template-list">
-                  @for (template of emailTemplatesRendered(); track template.id) {
-                    <li>
-                      <button
-                        type="button"
-                        (click)="onSelectEmailTemplate(template.id)"
-                        [attr.aria-pressed]="selectedEmailTemplateId() === template.id"
-                        [attr.aria-label]="template | hubspotTemplateLabel"
-                        [class]="
-                          selectedEmailTemplateId() === template.id
-                            ? 'flex w-full flex-col gap-0.5 rounded-md border border-blue-500 bg-blue-50 px-3 py-2 text-left'
-                            : 'flex w-full flex-col gap-0.5 rounded-md border border-gray-200 px-3 py-2 text-left hover:bg-gray-50'
-                        "
-                        [attr.data-testid]="'campaigns-email-template-' + template.id">
-                        <span class="flex w-full items-center gap-2">
-                          <span class="min-w-0 flex-1 text-sm font-medium text-gray-900">{{ template.name || template.subject || template.id }}</span>
-                          <!--
+                    <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-render-capped">{{ emailTemplatesRenderCapMessage() }}</p>
+                  }
+                  <ul class="flex flex-col gap-2" data-testid="campaigns-email-template-list">
+                    @for (template of emailTemplatesRendered(); track template.id) {
+                      <li>
+                        <button
+                          type="button"
+                          (click)="onSelectEmailTemplate(template.id)"
+                          [attr.aria-pressed]="selectedEmailTemplateId() === template.id"
+                          [attr.aria-label]="template | hubspotTemplateLabel"
+                          [class]="
+                            selectedEmailTemplateId() === template.id
+                              ? 'flex w-full flex-col gap-0.5 rounded-md border border-blue-500 bg-blue-50 px-3 py-2 text-left'
+                              : 'flex w-full flex-col gap-0.5 rounded-md border border-gray-200 px-3 py-2 text-left hover:bg-gray-50'
+                          "
+                          [attr.data-testid]="'campaigns-email-template-' + template.id">
+                          <span class="flex w-full items-center gap-2">
+                            <span class="min-w-0 flex-1 text-sm font-medium text-gray-900">{{ template.name || template.subject || template.id }}</span>
+                            <!--
                             The non-colour half of the selected state (WCAG 1.4.1): the border and
                             background above are colour ONLY, so a colour-blind user, or anyone on
                             a low-contrast display, had nothing to go on. Same treatment as
@@ -292,41 +301,41 @@
                             aria-pressed on the button already tells assistive tech the state, so
                             the label would otherwise be announced twice.
                           -->
-                          <i
-                            class="fa-light fa-check shrink-0 text-blue-500 transition-opacity"
-                            [class.opacity-100]="selectedEmailTemplateId() === template.id"
-                            [class.opacity-0]="selectedEmailTemplateId() !== template.id"
-                            [attr.aria-hidden]="selectedEmailTemplateId() !== template.id"
-                            [attr.aria-label]="selectedEmailTemplateId() === template.id ? 'Selected' : null"></i>
-                        </span>
-                        <span class="text-xs text-gray-500">
-                          <!--
+                            <i
+                              class="fa-light fa-check shrink-0 text-blue-500 transition-opacity"
+                              [class.opacity-100]="selectedEmailTemplateId() === template.id"
+                              [class.opacity-0]="selectedEmailTemplateId() !== template.id"
+                              [attr.aria-hidden]="selectedEmailTemplateId() !== template.id"
+                              [attr.aria-label]="selectedEmailTemplateId() === template.id ? 'Selected' : null"></i>
+                          </span>
+                          <span class="text-xs text-gray-500">
+                            <!--
                             Only when it is not ALREADY the primary label above. With no `name`,
                             the primary falls through to `subject`, and rendering it again here
                             printed the same string twice on one row.
                           -->
-                          @if (template.subject && template.name) {
-                            {{ template.subject }}
-                          }
-                          @if (template.state) {
-                            · {{ template.state }}
-                          }
-                          @if (template.updatedAt | hubspotUpdatedAt; as updated) {
-                            · Updated {{ updated }}
-                          }
-                        </span>
-                      </button>
-                    </li>
-                  }
-                </ul>
+                            @if (template.subject && template.name) {
+                              {{ template.subject }}
+                            }
+                            @if (template.state) {
+                              · {{ template.state }}
+                            }
+                            @if (template.updatedAt | hubspotUpdatedAt; as updated) {
+                              · Updated {{ updated }}
+                            }
+                          </span>
+                        </button>
+                      </li>
+                    }
+                  </ul>
+                }
               }
-            }
+            </div>
           </div>
-        </div>
-      }
-      @case ('insights') {
-        <div role="tabpanel" id="email-panel-insights" aria-labelledby="email-tab-insights" data-testid="campaigns-email-insights-panel">
-          <!--
+        }
+        @case ('insights') {
+          <div role="tabpanel" id="email-panel-insights" aria-labelledby="email-tab-insights" data-testid="campaigns-email-insights-panel">
+            <!--
             Deliberately NOT <lfx-monitoring-tab>. That component is paid-ads only: its
             `PlatformType` union is 'google' | 'linkedin' | 'reddit' | 'meta', it defaults to
             'google', and it contains no reference to HubSpot or email at all. Rendering it here
@@ -337,55 +346,55 @@
             The email metrics read exists in campaign-service (LFXV2-3058), so this needs a
             reader of its own rather than a reuse.
           -->
-          <div
-            class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-16 text-center"
-            data-testid="campaigns-email-insights-pending">
-            <i class="fa-light fa-chart-mixed text-3xl text-gray-400" aria-hidden="true"></i>
-            <h2 class="text-base font-semibold text-gray-900">Email performance is not shown here yet</h2>
-            <p class="max-w-md text-sm text-gray-500">
-              Opens, clicks and sends come back from HubSpot once an email has been staged and sent. This view reports on paid ad platforms today, so it is not
-              wired to the email channel.
-            </p>
+            <div
+              class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-16 text-center"
+              data-testid="campaigns-email-insights-pending">
+              <i class="fa-light fa-chart-mixed text-3xl text-gray-400" aria-hidden="true"></i>
+              <h2 class="text-base font-semibold text-gray-900">Email performance is not shown here yet</h2>
+              <p class="max-w-md text-sm text-gray-500">
+                Opens, clicks and sends come back from HubSpot once an email has been staged and sent. This view reports on paid ad platforms today, so it is
+                not wired to the email channel.
+              </p>
+            </div>
           </div>
-        </div>
+        }
       }
-    }
-  </div>
-  <!-- Paid-marketing content stays MOUNTED (visibility-toggled, not a structural @if)
+    </div>
+    <!-- Paid-marketing content stays MOUNTED (visibility-toggled, not a structural @if)
        while the Email container above shows. PlanningTabComponent owns the brief form +
        generation state locally, so destroying this subtree on an Email round-trip would
        silently wipe the user's in-progress brief — hiding it keeps the instance alive.
        Uses an inline [style.display] rather than [hidden]: the `flex` utility sets
        display:flex, which overrides Preflight's `[hidden]{display:none}` in the cascade,
        so [hidden] alone would leave both views rendered. An inline style always wins. -->
-  <div class="flex flex-col gap-6" [style.display]="!isEmail() ? null : 'none'" data-testid="campaigns-paid-marketing">
-    <!-- Tab Navigation -->
-    <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Campaign tabs" data-testid="campaigns-tab-nav">
-      @for (tab of tabs; track tab.id; let i = $index) {
-        <button
-          type="button"
-          role="tab"
-          [attr.aria-selected]="selectedTab() === tab.id"
-          [attr.aria-controls]="selectedTab() === tab.id ? 'panel-' + tab.id : null"
-          [attr.id]="'tab-' + tab.id"
-          [attr.tabindex]="selectedTab() === tab.id ? 0 : -1"
-          (click)="selectTab(tab.id, 'paid-marketing')"
-          (keydown)="onTabKeydown($event, i, 'paid-marketing')"
-          [class]="
-            selectedTab() === tab.id
-              ? 'flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm'
-              : 'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700'
-          "
-          [attr.data-testid]="'campaigns-' + tab.id + '-tab'">
-          <i [class]="tab.icon" aria-hidden="true"></i>
-          {{ tab.label }}
-        </button>
-      }
-    </div>
+    <div class="flex flex-col gap-6" [style.display]="!isEmail() ? null : 'none'" data-testid="campaigns-paid-marketing">
+      <!-- Tab Navigation -->
+      <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Campaign tabs" data-testid="campaigns-tab-nav">
+        @for (tab of tabs; track tab.id; let i = $index) {
+          <button
+            type="button"
+            role="tab"
+            [attr.aria-selected]="selectedTab() === tab.id"
+            [attr.aria-controls]="selectedTab() === tab.id ? 'panel-' + tab.id : null"
+            [attr.id]="'tab-' + tab.id"
+            [attr.tabindex]="selectedTab() === tab.id ? 0 : -1"
+            (click)="selectTab(tab.id, 'paid-marketing')"
+            (keydown)="onTabKeydown($event, i, 'paid-marketing')"
+            [class]="
+              selectedTab() === tab.id
+                ? 'flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 shadow-sm'
+                : 'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700'
+            "
+            [attr.data-testid]="'campaigns-' + tab.id + '-tab'">
+            <i [class]="tab.icon" aria-hidden="true"></i>
+            {{ tab.label }}
+          </button>
+        }
+      </div>
 
-    <!-- Tab Content -->
+      <!-- Tab Content -->
 
-    <!-- Planning stays MOUNTED and visibility-toggled, for the same reason the delivery-type
+      <!-- Planning stays MOUNTED and visibility-toggled, for the same reason the delivery-type
          containers above are: PlanningTabComponent owns its brief/URL/copy/refinement state
          locally, so a structural @switch destroyed an in-progress brief every time the user
          looked at another tab (LFXV2-3202). A brief is a slow, non-deterministic AI generation,
@@ -409,29 +418,29 @@
          Implementation's fields are re-derived from that brief immediately. If the edit loss
          proves to matter, the fix is to lift Implementation's form state up to this component
          rather than to mount it eagerly — that keeps the network cost off page load. -->
-    <div
-      role="tabpanel"
-      id="panel-planning"
-      aria-labelledby="tab-planning"
-      [style.display]="selectedTab() === 'planning' ? null : 'none'"
-      data-testid="campaigns-planning-panel">
-      <!-- Keyed on the program type so a program change (Events <-> Education)
+      <div
+        role="tabpanel"
+        id="panel-planning"
+        aria-labelledby="tab-planning"
+        [style.display]="selectedTab() === 'planning' ? null : 'none'"
+        data-testid="campaigns-planning-panel">
+        <!-- Keyed on the program type so a program change (Events <-> Education)
            recreates PlanningTabComponent — it owns its brief/URL/copy/refinement
            state locally and does not reset on input change, so without a fresh
            instance a stale Events brief could show under Education. -->
-      @for (program of [selectedProgramType()]; track program) {
-        <lfx-planning-tab
-          [programTypeConfig]="activeProgramTypeConfig()"
-          (proceedToImplementation)="onProceedToImplementation($event)"
-          (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.approved)"
-          data-testid="campaigns-planning-tab" />
-      }
-    </div>
+        @for (program of [selectedProgramType()]; track program) {
+          <lfx-planning-tab
+            [programTypeConfig]="activeProgramTypeConfig()"
+            (proceedToImplementation)="onProceedToImplementation($event)"
+            (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.approved)"
+            data-testid="campaigns-planning-tab" />
+        }
+      </div>
 
-    @switch (selectedTab()) {
-      @case ('implementation') {
-        <div role="tabpanel" id="panel-implementation" aria-labelledby="tab-implementation" data-testid="campaigns-implementation-panel">
-          <!-- `draft`/`draftChange` keep the user's edits alive across this panel's teardown
+      @switch (selectedTab()) {
+        @case ('implementation') {
+          <div role="tabpanel" id="panel-implementation" aria-labelledby="tab-implementation" data-testid="campaigns-implementation-panel">
+            <!-- `draft`/`draftChange` keep the user's edits alive across this panel's teardown
                (LFXV2-3229). The panel stays inside the @switch on purpose — the component
                resolves the LinkedIn ad-account list in ngOnInit, so mounting it eagerly would issue that
                request on every page load for a tab many users never open. Lifting the edits is
@@ -442,33 +451,34 @@
                that response lands, and a spinner everywhere it is dark would be wrong), so the
                banner cannot answer "is a save running". A create issued in that window carries an
                empty brief id and is terminally refused. -->
-          <lfx-implementation-tab
-            [briefData]="briefOutput()"
-            [briefPersistence]="briefPersistence()"
-            [briefSaveInFlight]="briefSaveInFlight()"
-            [draft]="implementationDraft()"
-            (draftChange)="implementationDraft.set($event)"
-            data-testid="campaigns-implementation-tab" />
-        </div>
+            <lfx-implementation-tab
+              [briefData]="briefOutput()"
+              [briefPersistence]="briefPersistence()"
+              [briefSaveInFlight]="briefSaveInFlight()"
+              [draft]="implementationDraft()"
+              (draftChange)="implementationDraft.set($event)"
+              data-testid="campaigns-implementation-tab" />
+          </div>
+        }
+        @case ('insights') {
+          <div role="tabpanel" id="panel-insights" aria-labelledby="tab-insights" data-testid="campaigns-insights-panel">
+            <lfx-monitoring-tab data-testid="campaigns-insights-tab" />
+          </div>
+        }
+        @case ('optimization') {
+          <div role="tabpanel" id="panel-optimization" aria-labelledby="tab-optimization" data-testid="campaigns-optimization-panel">
+            <lfx-optimization-tab
+              data-testid="campaigns-optimization-tab"
+              [briefCampaigns]="briefCampaigns()"
+              [campaignsPossiblyStale]="briefCampaignsStale()"
+              [campaignsUnavailable]="briefCampaignsUnavailable()"
+              [statusToggleEnabled]="briefCampaignsToggleEnabled()"
+              (retryCampaigns)="retryBriefCampaigns()"
+              [projectSlug]="activeFoundationSlug()"
+              [briefId]="briefPersistence().briefId ?? ''" />
+          </div>
+        }
       }
-      @case ('insights') {
-        <div role="tabpanel" id="panel-insights" aria-labelledby="tab-insights" data-testid="campaigns-insights-panel">
-          <lfx-monitoring-tab data-testid="campaigns-insights-tab" />
-        </div>
-      }
-      @case ('optimization') {
-        <div role="tabpanel" id="panel-optimization" aria-labelledby="tab-optimization" data-testid="campaigns-optimization-panel">
-          <lfx-optimization-tab
-            data-testid="campaigns-optimization-tab"
-            [briefCampaigns]="briefCampaigns()"
-            [campaignsPossiblyStale]="briefCampaignsStale()"
-            [campaignsUnavailable]="briefCampaignsUnavailable()"
-            [statusToggleEnabled]="briefCampaignsToggleEnabled()"
-            (retryCampaigns)="retryBriefCampaigns()"
-            [projectSlug]="activeFoundationSlug()"
-            [briefId]="briefPersistence().briefId ?? ''" />
-        </div>
-      }
-    }
-  </div>
+    </div>
+  }
 </div>

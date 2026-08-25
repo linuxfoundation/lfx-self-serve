@@ -13,7 +13,7 @@ import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid
 import { TableComponent } from '@components/table/table.component';
 import {
   DEFAULT_FOUNDATION_PROJECT_ROW_VIEW,
-  DEFAULT_FOUNDATION_PROJECTS_DETAIL,
+  DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED,
   FOUNDATION_PROJECT_COUNT_FETCH_CONCURRENCY,
   PRESENCE_PILL_IDS,
   UUID_REGEX,
@@ -26,15 +26,16 @@ import { MailingListService } from '@services/mailing-list.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { TooltipModule } from 'primeng/tooltip';
-import { bufferTime, catchError, combineLatest, filter, finalize, from, map, mergeMap, Observable, of, scan, startWith, switchMap } from 'rxjs';
+import { bufferTime, catchError, combineLatest, filter, finalize, from, map, mergeMap, Observable, of, scan, startWith, switchMap, toArray } from 'rxjs';
 
 import type {
   FilterPillOption,
   FoundationProjectRowView,
-  FoundationProjectsDetailResponse,
+  FoundationProjectsDetailGroupedResponse,
   PresencePill,
   PresenceState,
   ProjectCounts,
+  ProjectTableGroup,
   ProjectTableRow,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
@@ -73,17 +74,30 @@ export class FoundationProjectsComponent {
   // === Computed/toSignal Signals ===
   protected readonly foundationSlug: Signal<string> = computed(() => this.projectContextService.selectedFoundation()?.slug ?? '');
   protected readonly foundationName: Signal<string> = computed(() => this.projectContextService.selectedFoundation()?.name ?? 'The Linux Foundation');
-  private readonly rawData: Signal<FoundationProjectsDetailResponse> = this.initRawData();
+  private readonly rawData: Signal<FoundationProjectsDetailGroupedResponse> = this.initRawData();
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
-  protected readonly allProjects: Signal<ProjectTableRow[]> = computed(() => this.rawData().projects);
+  // Flattened across every group (root foundation + discovered sub-foundations) so the existing
+  // filter/count/pill logic below operates on one list, unaware of grouping (GH-1607).
+  protected readonly allProjects: Signal<ProjectTableRow[]> = computed(() => this.rawData().groups.flatMap((group) => group.projects));
   protected readonly totalProjects: Signal<number> = computed(() => this.allProjects().length);
   protected readonly summaryCards: Signal<StatCardItem[]> = this.initSummaryCards();
   protected readonly filteredProjects: Signal<ProjectTableRow[]> = this.initFilteredProjects();
+  // Re-groups the already-filtered flat list back into per-foundation sections for template
+  // rendering, preserving the group order returned by the backend (root foundation first).
+  protected readonly groupedFilteredProjects: Signal<ProjectTableGroup[]> = this.initGroupedFilteredProjects();
+  // Single round of per-group `getProjects` calls backing both `subProjectUidBySlug`
+  // and `failedSubProjectGroupSlugs` below — computed once so a group's fetch outcome
+  // (success or failure) is only ever requested once (GH-1676).
+  private readonly subProjectDiscovery: Signal<{ slugToUid: Map<string, string>; failedGroupSlugs: Set<string> }> = this.initSubProjectDiscovery();
   // Canonical project-service UIDs keyed by slug, resolved once per foundation change.
   // Shared between initProjectCounts (upstream count filter) and navigateToProject
   // (lens context uid) so we never fall back to the ambiguous Snowflake PROJECT_ID
   // when the correct project-service UID is already on hand.
-  private readonly subProjectUidBySlug: Signal<Map<string, string>> = this.initSubProjectUidBySlug();
+  private readonly subProjectUidBySlug: Signal<Map<string, string>> = computed(() => this.subProjectDiscovery().slugToUid);
+  // Group foundation slugs whose sub-project UID lookup failed outright — rows under
+  // these groups can never resolve a uid, so their presence indicators must show a
+  // distinct "unavailable" state instead of being stuck on "Loading" forever (GH-1676).
+  private readonly failedSubProjectGroupSlugs: Signal<Set<string>> = computed(() => this.subProjectDiscovery().failedGroupSlugs);
   protected readonly projectCounts: Signal<Map<string, ProjectCounts>> = this.initProjectCounts();
   protected readonly pillOptions: Signal<FilterPillOption[]> = this.initPillOptions();
   // Per-row display data — lens-ready flag + pre-formatted tooltip / sr-only
@@ -113,7 +127,7 @@ export class FoundationProjectsComponent {
   }
 
   // === Private Initializers ===
-  private initRawData(): Signal<FoundationProjectsDetailResponse> {
+  private initRawData(): Signal<FoundationProjectsDetailGroupedResponse> {
     return toSignal(
       toObservable(this.foundationSlug).pipe(
         switchMap((slug) => {
@@ -128,28 +142,28 @@ export class FoundationProjectsComponent {
           // rawData after the UI switched to the "no foundation selected" state.
           if (!slug) {
             this.loading.set(false);
-            return of(DEFAULT_FOUNDATION_PROJECTS_DETAIL);
+            return of(DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED);
           }
           // Set loading inside switchMap so that on rapid slug changes the order is:
           // old inner's `finalize(false)` (switchMap cancels it) → new inner's `loading.set(true)`.
           // Putting `loading.set(true)` in an outer `tap` would make the ordering
           // implementation-dependent when new slugs arrive while a request is in flight.
           this.loading.set(true);
-          // Error handling lives in AnalyticsService.getFoundationProjectsDetail,
-          // which returns `{ projects: [], totalCount: 0 }` on failure and evicts
-          // the failed slug from its cache. No component-level catchError needed.
+          // Error handling lives in AnalyticsService.getFoundationProjectsDetailGrouped,
+          // which returns the empty-groups default on failure and evicts the failed slug
+          // from its cache. No component-level catchError needed.
           // `startWith(DEFAULT)` clears rawData immediately on slug change,
           // symmetric with `subProjectUidBySlug`'s own startWith. Without it,
           // `initProjectCounts`'s combineLatest could briefly pair the NEW
           // slug→uid map with the OLD projects list and fire count fetches
           // against the wrong data.
-          return this.analyticsService.getFoundationProjectsDetail(slug).pipe(
-            startWith(DEFAULT_FOUNDATION_PROJECTS_DETAIL),
+          return this.analyticsService.getFoundationProjectsDetailGrouped(slug).pipe(
+            startWith(DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED),
             finalize(() => this.loading.set(false))
           );
         })
       ),
-      { initialValue: DEFAULT_FOUNDATION_PROJECTS_DETAIL }
+      { initialValue: DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED }
     );
   }
 
@@ -207,41 +221,95 @@ export class FoundationProjectsComponent {
     });
   }
 
-  // Resolve slug → project-service UID for every sub-project of the current foundation.
-  // Snowflake's PROJECT_ID is foundation-specific and may be a Salesforce ID rather
-  // than the canonical project-service UUID used by committee/mailing-list tagging,
-  // so we fetch the sub-projects once per foundation change and build an authoritative
-  // slug→uid map. Used by both initProjectCounts (filter the count queries) and
-  // navigateToProject (set the correct lens context UID).
+  // Re-groups the already-filtered flat list by `groupFoundationSlug`, preserving the group
+  // order (and names) from `rawData()` so a group with zero matching rows after filtering
+  // still renders as an empty section rather than disappearing (GH-1607).
+  private initGroupedFilteredProjects(): Signal<ProjectTableGroup[]> {
+    return computed(() => {
+      const groupOrder = this.rawData().groups;
+      // The grouped endpoint always stamps groupFoundationSlug on every row, but fall back to the
+      // root group rather than an unmatched key — an unmatched key would silently drop the row
+      // from every rendered group instead of just mis-grouping it under the root foundation.
+      const rootSlug = groupOrder[0]?.foundationSlug ?? '';
+      const filtered = this.filteredProjects();
+      const bySlug = new Map<string, ProjectTableRow[]>();
+      for (const project of filtered) {
+        const slug = project.groupFoundationSlug ?? rootSlug;
+        const existing = bySlug.get(slug);
+        if (existing) {
+          existing.push(project);
+        } else {
+          bySlug.set(slug, [project]);
+        }
+      }
+      return groupOrder.map((group) => ({
+        foundationSlug: group.foundationSlug,
+        foundationName: group.foundationName,
+        projects: bySlug.get(group.foundationSlug) ?? [],
+      }));
+    });
+  }
+
+  // Resolve slug → project-service UID for every sub-project across the current foundation AND
+  // every discovered sub-foundation (GH-1607). Snowflake's PROJECT_ID is foundation-specific and
+  // may be a Salesforce ID rather than the canonical project-service UUID used by committee/
+  // mailing-list tagging, so we fetch each group's sub-projects once per foundation change and
+  // build an authoritative slug→uid map. Used by both initProjectCounts (filter the count
+  // queries) and navigateToProject (set the correct lens context UID).
   // `startWith(new Map())` inside the inner switchMap clears the map immediately when
   // a new slug arrives so a stale mapping from the previous foundation can't leak
   // through if slugs overlap across foundations.
-  private initSubProjectUidBySlug(): Signal<Map<string, string>> {
+  private initSubProjectDiscovery(): Signal<{ slugToUid: Map<string, string>; failedGroupSlugs: Set<string> }> {
+    const empty = { slugToUid: new Map<string, string>(), failedGroupSlugs: new Set<string>() };
     return toSignal(
-      toObservable(this.foundationSlug).pipe(
-        switchMap((slug) => {
-          if (!slug) {
-            return of(new Map<string, string>());
+      toObservable(this.rawData).pipe(
+        switchMap((rawData) => {
+          if (rawData.groups.length === 0) {
+            return of(empty);
           }
-          const foundationUid = this.projectContextService.selectedFoundation()?.uid;
-          if (!foundationUid) {
-            return of(new Map<string, string>());
-          }
-          const params = new HttpParams().set('parent', `project:${foundationUid}`);
-          return this.projectService.getProjects(params).pipe(
-            map((subProjects) => {
+          // Concurrency-capped like initProjectCounts below — an umbrella foundation can
+          // discover dozens of sub-foundation groups (bounded by
+          // FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES on the BFF), so firing one `getProjects`
+          // call per group unbounded could still burst the browser's connection pool and the
+          // BFF's `/api/projects` endpoint at once.
+          return from(rawData.groups).pipe(
+            mergeMap((group) => {
+              const params = new HttpParams().set('parent', `project:${group.foundationUid}`);
+              return this.projectService.getProjects(params).pipe(
+                map((subProjects) => ({ foundationSlug: group.foundationSlug, subProjects, failed: false })),
+                catchError((error) => {
+                  // Logged so the failure isn't silent (review: no-silent-catchError convention).
+                  // Tagged `failed: true` (rather than falling back to an indistinguishable empty
+                  // list) so rows under this group can surface a distinct "unavailable" state
+                  // instead of being stuck on "Loading" forever (GH-1676).
+                  console.error('[FoundationProjectsComponent] Failed to resolve sub-projects for group', {
+                    uid: group.foundationUid,
+                    error,
+                  });
+                  return of({ foundationSlug: group.foundationSlug, subProjects: [], failed: true });
+                })
+              );
+            }, FOUNDATION_PROJECT_COUNT_FETCH_CONCURRENCY),
+            toArray(),
+            map((results) => {
               const slugToUid = new Map<string, string>();
-              for (const sub of subProjects) {
-                if (sub.slug && sub.uid) slugToUid.set(sub.slug, sub.uid);
+              const failedGroupSlugs = new Set<string>();
+              for (const result of results) {
+                if (result.failed) {
+                  failedGroupSlugs.add(result.foundationSlug);
+                  continue;
+                }
+                for (const sub of result.subProjects) {
+                  if (sub.slug && sub.uid) slugToUid.set(sub.slug, sub.uid);
+                }
               }
-              return slugToUid;
+              return { slugToUid, failedGroupSlugs };
             }),
-            startWith(new Map<string, string>()),
-            catchError(() => of(new Map<string, string>()))
+            startWith(empty)
           );
         })
       ),
-      { initialValue: new Map<string, string>() }
+      { initialValue: empty }
     );
   }
 
@@ -371,8 +439,25 @@ export class FoundationProjectsComponent {
       const projects = this.allProjects();
       const counts = this.projectCounts();
       const slugToUid = this.subProjectUidBySlug();
+      const failedGroupSlugs = this.failedSubProjectGroupSlugs();
       const views = new Map<string, FoundationProjectRowView>();
       for (const project of projects) {
+        // A project whose group's sub-project UID lookup failed outright can never
+        // resolve a uid, so initProjectCounts never even requests its counts — it
+        // would otherwise stay "pending" forever. Surface the distinct "unavailable"
+        // state instead (GH-1676).
+        if (project.groupFoundationSlug && failedGroupSlugs.has(project.groupFoundationSlug)) {
+          views.set(project.projectSlug, {
+            lensReady: this.resolveLensReady(project, slugToUid),
+            groupsPresence: 'unavailable',
+            mailingListsPresence: 'unavailable',
+            chatPresence: 'unavailable',
+            groupsText: 'Unavailable',
+            mailingListsText: 'Unavailable',
+            chatText: 'Unavailable',
+          });
+          continue;
+        }
         const row = counts.get(project.projectSlug);
         const committees = row?.committees;
         const mailingLists = row?.mailingLists;

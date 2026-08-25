@@ -14,6 +14,7 @@ import type {
   LinkedInGeoTarget,
   MetaObjective,
   MetaObjectiveParams,
+  SelectableMetaObjective,
   MetaPlacement,
   ParsedCampaignName,
   RedditObjective,
@@ -468,7 +469,20 @@ export const META_DEFAULT_PLACEMENTS: Readonly<MetaPlacement> = {
   messengerInbox: false,
 } as const;
 
-/** Display labels for the Meta campaign objectives, in the order the objective selector renders them. */
+/**
+ * Display labels for the Meta campaign objectives.
+ *
+ * TOTAL over `MetaObjective` — every objective that can reach a display path has a label here,
+ * INCLUDING `leads`. This map is no longer what the selector renders; that is
+ * `META_SELECTABLE_OBJECTIVES` below. The split exists because the two questions are different:
+ * "what may a user choose?" and "what do we call the thing this campaign already is?".
+ *
+ * Keeping `leads` here is load-bearing, not tidiness. Every display path in `meta-ads.service.ts`
+ * — the campaign name, the ad-set name, the progress steps — indexes this map with whatever
+ * objective the REQUEST carries, and a brief or draft persisted before `leads` was hidden still
+ * carries it. Dropping the key would put the literal string `undefined` into a campaign name Meta
+ * then bills against. Described as a shape rather than a list of call sites, which drifts.
+ */
 export const META_OBJECTIVE_LABELS: Readonly<Record<MetaObjective, string>> = {
   awareness: 'Awareness',
   traffic: 'Traffic',
@@ -476,6 +490,40 @@ export const META_OBJECTIVE_LABELS: Readonly<Record<MetaObjective, string>> = {
   leads: 'Leads',
   conversions: 'Conversions',
 } as const;
+
+/**
+ * The objectives a user may actually choose, in the order the objective selector renders them.
+ *
+ * `leads` is DELIBERATELY ABSENT. It dispatches as a website-traffic campaign — see the long
+ * comment on `META_OBJECTIVE_PARAMS.leads` for why that mapping is the safe one and must not
+ * change — so offering it would label a traffic campaign "Leads" and let a user act on a wrong
+ * assumption. Hiding it makes that a question someone asks rather than a mistake they ship.
+ * LFXV2-2665 builds instant-form support and restores the option.
+ *
+ * This is the selector's ONLY source. `leads` stays in `MetaObjective`, in
+ * `META_OBJECTIVE_PARAMS` and in `META_OBJECTIVE_LABELS`, so a persisted `leads` brief still
+ * dispatches — as traffic — and still renders a name.
+ */
+export const META_SELECTABLE_OBJECTIVES = ['awareness', 'traffic', 'engagement', 'conversions'] as const satisfies readonly SelectableMetaObjective[];
+
+/**
+ * Compile-time exhaustiveness: every `SelectableMetaObjective` must appear in the list above.
+ *
+ * The element type alone only stops a WRONG entry; it cannot catch a MISSING one. Without this,
+ * adding an objective to `MetaObjective` compiles cleanly and passes every test while never
+ * appearing in the picker — the two sibling maps are total and hard-fail, so this list would be
+ * the only one that drifts silently.
+ *
+ * Written as an assignment FROM a union of the array's members TO the full union: no cast, no
+ * `Object.fromEntries`. Both defeat the check by widening the type back to something assignable.
+ * A missing objective makes the target union unsatisfied and TypeScript names it.
+ */
+const _assertEverySelectableObjectiveIsListed: (typeof META_SELECTABLE_OBJECTIVES)[number] extends SelectableMetaObjective
+  ? SelectableMetaObjective extends (typeof META_SELECTABLE_OBJECTIVES)[number]
+    ? true
+    : { ERROR: 'META_SELECTABLE_OBJECTIVES is missing an objective'; missing: Exclude<SelectableMetaObjective, (typeof META_SELECTABLE_OBJECTIVES)[number]> }
+  : { ERROR: 'META_SELECTABLE_OBJECTIVES contains a hidden or unknown objective' } = true;
+void _assertEverySelectableObjectiveIsListed;
 
 /**
  * The placements a user may actually toggle.

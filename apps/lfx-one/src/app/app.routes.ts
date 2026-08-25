@@ -7,8 +7,9 @@ import { Routes } from '@angular/router';
 import { authGuard } from './shared/guards/auth.guard';
 import { authenticatedMatchGuard } from './shared/guards/authenticated-match.guard';
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
-import { executiveDirectorGuard } from './shared/guards/executive-director.guard';
+import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
+import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
 import { orgLensRoiEnabledGuard } from './shared/guards/org-lens-roi-enabled.guard';
@@ -46,18 +47,18 @@ export const routes: Routes = [
         canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/health-metrics/health-metrics.component').then((m) => m.HealthMetricsComponent),
       },
-      // Foundation Lens — Campaign Impact page (ED + LF Staff; LF Staff see only the Social Listening tab)
+      // Foundation Lens — Campaign Impact page (ED + LF Staff always; marketing_auditor when marketing-ops-fga-enabled is on — LF Staff still see only the Social Listening tab)
       {
         path: 'foundation/marketing-impact',
         data: { lens: 'foundation' },
-        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
+        canActivate: [marketingImpactAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/marketing-impact/marketing-impact.component').then((m) => m.MarketingImpactComponent),
       },
-      // Foundation Lens — Campaigns page (ED-only)
+      // Foundation Lens — Campaigns page (ED always; campaign_manager when marketing-ops-fga-enabled is on)
       {
         path: 'foundation/campaigns',
         data: { lens: 'foundation' },
-        canActivate: [executiveDirectorGuard, projectQueryParamGuard],
+        canActivate: [campaignAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/campaigns/campaigns.component').then((m) => m.CampaignsComponent),
       },
       // Foundation Lens — Social Listening page (ED + LF Staff)

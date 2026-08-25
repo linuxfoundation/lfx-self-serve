@@ -5,6 +5,7 @@ export * from './avatar.utils';
 export * from './color.utils';
 export * from './date-time.utils';
 export * from './docs.utils';
+export * from './entity-route.utils';
 export * from './file.utils';
 export * from './form.utils';
 export * from './html-utils';

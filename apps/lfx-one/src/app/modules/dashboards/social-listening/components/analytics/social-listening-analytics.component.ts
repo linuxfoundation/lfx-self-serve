@@ -215,7 +215,7 @@ export class SocialListeningAnalyticsComponent {
    * External DOM tooltip shared by the analytics charts — white card instead of the dark canvas
    * default (and no canvas clipping); flips left near the viewport edge and clamps vertically.
    */
-  private buildChartExternalTooltip(): (args: { chart: Chart; tooltip: TooltipModel<'line' | 'bar'> }) => void {
+  private buildChartExternalTooltip(): (args: { chart: Chart; tooltip: TooltipModel<'line'> | TooltipModel<'bar'> }) => void {
     return ({ chart, tooltip }) => {
       const tip = chart.canvas.closest('[data-chart-tooltip-host]')?.querySelector<HTMLElement>('[data-lfx-tip]');
       if (!tip) return;
