@@ -307,6 +307,55 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(text()).not.toContain('Non-voting');
   });
 
+  // isVotingStatus() alone treats "Observer" as voting (same as "Voting Rep"), so a plain
+  // voting/non-voting boolean tie-break would still depend on array order between two seats that
+  // are both "voting" by that measure but read differently to a user. Put Observer first so this
+  // only passes if the merge ranks by status, not by array order.
+  it('prefers a true voting seat over an Observer seat, not just any isVotingStatus() match', async () => {
+    await setup(
+      vi
+        .fn()
+        .mockReturnValue(
+          of(
+            response([
+              assignment({ seatId: 's-1', committeeUid: 'c-1', role: 'Alternate', votingStatus: 'Observer' }),
+              assignment({ seatId: 's-2', committeeUid: 'c-1', role: 'Chair', votingStatus: 'Voting Rep', memberUid: 'seat-2' }),
+            ])
+          )
+        )
+    );
+
+    await open('org-1', 'c-1');
+
+    // Roles always join regardless of merge winner ("Alternate, Chair" is expected here); it's
+    // the voting-status pill specifically that must not be "Observer".
+    expect(text()).toContain('Voting Rep');
+    expect(text()).not.toContain('Observer');
+  });
+
+  // The server dedupes org_seat_count on a trimmed, lowercased email — two seats for the same
+  // person differing only in casing/whitespace must merge here too, or the header count would
+  // overcount relative to the row's own badge for this case.
+  it('merges two seats for the same person whose emails differ only in case or whitespace', async () => {
+    await setup(
+      vi
+        .fn()
+        .mockReturnValue(
+          of(
+            response([
+              assignment({ seatId: 's-1', committeeUid: 'c-1', role: 'Chair', person: person({ email: 'Jane@Example.org  ' }) }),
+              assignment({ seatId: 's-2', committeeUid: 'c-1', role: 'Member', memberUid: 'seat-2', person: person({ email: '  jane@example.org' }) }),
+            ])
+          )
+        )
+    );
+
+    await open('org-1', 'c-1');
+
+    expect(subtitleText()).toBe('1 seat holder');
+    expect(rowNames()).toHaveLength(1);
+  });
+
   // org_seat_count collapses every blank-email seat into one bucket server-side; this drawer
   // deliberately does not mirror that (see the seatHolderVms comment) because merging two
   // unrelated people under one "Unknown member" row would be a worse bug than the resulting

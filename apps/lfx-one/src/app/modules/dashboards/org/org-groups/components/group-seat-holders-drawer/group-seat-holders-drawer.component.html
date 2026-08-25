@@ -35,12 +35,19 @@
     </div>
   </ng-template>
 
-  <!-- aria-live announces the outcome of a "Try again" retry (success -> the list, or another
-       error) to screen-reader users, who otherwise get no signal that anything changed once the
-       button they activated disappears from the DOM. -->
-  <div class="flex flex-col gap-4 h-full" role="status" aria-live="polite">
+  <div class="flex flex-col gap-4 h-full">
     @if (loading()) {
-      <div class="flex items-center justify-center py-16" data-testid="group-seat-holders-drawer-loading">
+      <!-- role="status"/aria-live scoped to this branch only — matches the established pattern in
+           total-members-drawer.component.html — not the whole @if chain: putting it on a shared
+           wrapper would re-announce the entire roster (name, role, voting pill for every row) as
+           one utterance whenever the list finishes loading, which is worse than the silence it
+           would fix. -->
+      <div
+        class="flex items-center justify-center py-16"
+        role="status"
+        aria-live="polite"
+        aria-label="Loading seat holders"
+        data-testid="group-seat-holders-drawer-loading">
         <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
       </div>
     } @else if (error()) {

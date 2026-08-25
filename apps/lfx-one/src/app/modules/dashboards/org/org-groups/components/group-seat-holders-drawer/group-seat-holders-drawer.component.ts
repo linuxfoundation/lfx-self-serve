@@ -12,6 +12,16 @@ import { catchError, finalize, map, of, shareReplay, switchMap, throwError, type
 
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 
+// Ranks a merged row's representative voting status deterministically (not by upstream array
+// order): a true voting status (isVotingStatus) outranks "Observer", which outranks
+// non-voting/blank. "Observer" is a real, distinct value in this domain — isVotingStatus() alone
+// would fold it in with true voting statuses (see org-people/helpers/governance-seats.helper.ts,
+// which preserves the same distinction for a different drawer).
+function votingStatusRank(status: string | null | undefined): number {
+  if ((status ?? '').trim().toLowerCase() === 'observer') return 1;
+  return isVotingStatus(status) ? 2 : 0;
+}
+
 /** Org Lens — Groups list drill-down (GH-1780). Shows the org's seat holders for one committee, without leaving the roster. */
 @Component({
   selector: 'lfx-group-seat-holders-drawer',
@@ -63,7 +73,9 @@ export class GroupSeatHoldersDrawerComponent {
     return computed(() => {
       const byPerson = new Map<string, { assignment: CommitteeMemberAssignment; roles: string[] }>();
       for (const a of this.seatHolders() ?? []) {
-        const key = a.person.email || a.memberUid;
+        // Normalized the same way the server dedupes org_seat_count (trim + lowercase), so two
+        // seats for the same person that differ only in email casing/whitespace still merge.
+        const key = a.person.email.trim().toLowerCase() || a.memberUid;
         const existing = byPerson.get(key);
         if (!existing) {
           byPerson.set(key, { assignment: a, roles: a.role ? [a.role] : [] });
@@ -71,9 +83,9 @@ export class GroupSeatHoldersDrawerComponent {
         }
         if (a.role && !existing.roles.includes(a.role)) existing.roles.push(a.role);
         // The merged row's other fields (voting status, seatId, ...) come from one representative
-        // assignment — prefer a voting one so the pill doesn't depend on upstream array order for
-        // a person holding both a voting and a non-voting seat on this committee.
-        if (!isVotingStatus(existing.assignment.votingStatus) && isVotingStatus(a.votingStatus)) {
+        // assignment — rank by votingStatusRank rather than array order, so the pill can't flip
+        // between loads for a person holding two differently-ranked seats on this committee.
+        if (votingStatusRank(a.votingStatus) > votingStatusRank(existing.assignment.votingStatus)) {
           existing.assignment = a;
         }
       }
