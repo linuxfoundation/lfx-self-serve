@@ -42,12 +42,15 @@ export function votingStatusPillClass(status: string | null | undefined): string
   return isVotingStatus(status) ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-slate-50 text-slate-600';
 }
 
-/** Ranks a voting status by `VOTING_STATUS_PRIORITY` (lower = higher priority — "Voting Rep" is 0);
- *  unrecognized or blank statuses rank last (`Infinity`), so they never displace a recognized one.
- *  The single ranking shared by any "pick the best of several seats/statuses for one person" case —
- *  see `multi-persona-dashboard.component.ts`'s `pickByPriority` for the sibling usage this mirrors. */
+/** Ranks a voting status by `VOTING_STATUS_PRIORITY` (lower = higher priority — "Voting Rep" is 0)
+ *  for picking the best of several seats/statuses for one person — see
+ *  `multi-persona-dashboard.component.ts`'s `pickByPriority` for the sibling usage this mirrors.
+ *  A status outside the list still counts as voting per `isVotingStatus` — ranked worse than every
+ *  named status but better than "None", not `Infinity`, so it can't lose a tie-break to an
+ *  explicitly non-voting seat. Blank/falsy is `Infinity` (always loses). */
 export function votingStatusRank(status: string | null | undefined): number {
   const s = (status ?? '').trim().toLowerCase();
   const index = VOTING_STATUS_PRIORITY.findIndex((p) => p.toLowerCase() === s);
-  return index === -1 ? Infinity : index;
+  if (index !== -1) return index;
+  return isVotingStatus(status) ? VOTING_STATUS_PRIORITY.length - 0.5 : Infinity;
 }

@@ -90,7 +90,7 @@ describe('GroupSeatHoldersDrawerComponent', () => {
   }
 
   function statusMessage(): string | null {
-    return document.querySelector('[role="status"]')?.textContent?.trim() ?? null;
+    return document.querySelector('[data-testid="group-seat-holders-drawer-status"]')?.textContent?.trim() ?? null;
   }
 
   it('does not fetch until the drawer is opened', async () => {
@@ -364,6 +364,50 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     // the voting-status pill specifically that must not be "Observer".
     expect(text()).toContain('Voting Rep');
     expect(text()).not.toContain('Observer');
+  });
+
+  // These two pin the exact pairs the old bespoke 3-tier rank got wrong: it tied Emeritus with
+  // Voting Rep (both mapped to isVotingStatus()=true), and ranked Emeritus ahead of Observer —
+  // the reverse of VOTING_STATUS_PRIORITY. Both tests fail under that old rank and pass only
+  // under the shared VOTING_STATUS_PRIORITY-driven one.
+  it('prefers Voting Rep over Emeritus when merging (not tied, per VOTING_STATUS_PRIORITY)', async () => {
+    await setup(
+      vi
+        .fn()
+        .mockReturnValue(
+          of(
+            response([
+              assignment({ seatId: 's-1', committeeUid: 'c-1', role: 'Past Chair', votingStatus: 'Emeritus' }),
+              assignment({ seatId: 's-2', committeeUid: 'c-1', role: 'Chair', votingStatus: 'Voting Rep', memberUid: 'seat-2' }),
+            ])
+          )
+        )
+    );
+
+    await open('org-1', 'c-1');
+
+    expect(text()).toContain('Voting Rep');
+    expect(text()).not.toContain('Emeritus');
+  });
+
+  it('prefers Observer over Emeritus when merging (Emeritus ranks below Observer, not above)', async () => {
+    await setup(
+      vi
+        .fn()
+        .mockReturnValue(
+          of(
+            response([
+              assignment({ seatId: 's-1', committeeUid: 'c-1', role: 'Past Chair', votingStatus: 'Emeritus' }),
+              assignment({ seatId: 's-2', committeeUid: 'c-1', role: 'Alternate', votingStatus: 'Observer', memberUid: 'seat-2' }),
+            ])
+          )
+        )
+    );
+
+    await open('org-1', 'c-1');
+
+    expect(text()).toContain('Observer');
+    expect(text()).not.toContain('Emeritus');
   });
 
   // The server dedupes org_seat_count on a trimmed, lowercased email — two seats for the same
