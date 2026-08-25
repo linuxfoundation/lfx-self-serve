@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MyClaAgreement } from '../interfaces/cla.interface';
+import type { MyClaAgreement } from '../interfaces/cla.interface';
 import { canContactClaManager, canManageInCclaConsole, canRequestClaApproval, canRequestClaRemoval, cclaConsoleUrl } from './cla-manager-actions.utils';
 
 function agreement(overrides: Partial<MyClaAgreement> = {}): MyClaAgreement {

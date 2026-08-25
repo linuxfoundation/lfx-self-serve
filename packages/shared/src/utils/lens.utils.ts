@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Lens, LensGrantInputs } from '../interfaces/lens.interface';
+import type { Lens, LensGrantInputs } from '../interfaces/lens.interface';
 
 /**
  * The lenses a user is authorised to use, from their persona roles and `writer` grants.
