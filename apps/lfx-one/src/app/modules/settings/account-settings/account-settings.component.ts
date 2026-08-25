@@ -378,9 +378,9 @@ export class AccountSettingsComponent {
       return;
     }
 
-    // Defensive guard: never delete the email selected as the meeting-invitation preference.
-    // The menu already disables this action; this covers any programmatic call path.
-    if (emailsEqual(email.email, this.meetingInviteEmail())) {
+    // Never delete the meeting-invitation address — and never delete anything mid-write, since
+    // meetingInviteEmail() still holds the old selection until the refresh lands.
+    if (this.savingMeetingInvite() || emailsEqual(email.email, this.meetingInviteEmail())) {
       return;
     }
 
@@ -599,15 +599,9 @@ export class AccountSettingsComponent {
           });
         }
         if (email.canDelete) {
-          if (email.isMeetingInvite) {
-            // Blocked: deleting the meeting-invitation email would orphan the meeting-service preference.
-            items.push({
-              label: 'Delete',
-              icon: 'fa-light fa-trash',
-              styleClass: 'text-red-500',
-              disabled: true,
-              title: 'This email is set for meeting invitations. Choose a different meeting-invitation email before deleting it.',
-            });
+          const blockedReason = this.getDeleteBlockedReason(email.isMeetingInvite, savingInvite);
+          if (blockedReason) {
+            items.push({ label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', disabled: true, title: blockedReason });
           } else {
             items.push({ label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', command: () => this.deleteEmail(email) });
           }
@@ -616,6 +610,21 @@ export class AccountSettingsComponent {
       }
       return map;
     });
+  }
+
+  /**
+   * Why deleting is blocked, or null when it's allowed. `isMeetingInvite` still reflects the
+   * previous selection until the refresh lands, so an in-flight write has to block every row —
+   * otherwise the address just picked stays deletable for the whole SET and orphans the preference.
+   */
+  private getDeleteBlockedReason(isMeetingInvite: boolean, savingInvite: boolean): string | null {
+    if (savingInvite) {
+      return 'Updating the meeting-invitation email. Wait for it to finish before deleting an address.';
+    }
+    if (isMeetingInvite) {
+      return 'This email is set for meeting invitations. Choose a different meeting-invitation email before deleting it.';
+    }
+    return null;
   }
 
   private loadDeveloperToken(): void {
