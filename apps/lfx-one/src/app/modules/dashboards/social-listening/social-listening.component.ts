@@ -553,28 +553,6 @@ export class SocialListeningComponent {
     this.mentionBookmarkService.toggleBookmark(mention.id);
   }
 
-  /** Any active feed predicate or a non-default period means the loaded windows (and their newest) are a subset of the foundation feed. */
-  private feedNarrowed(): boolean {
-    return Object.keys(this.currentFilters()).length > 0 || this.selectedPeriod() !== this.defaultPeriod;
-  }
-
-  /** Resolves the foundation-global newest (limit-1 unfiltered fetch; the feed sorts newest-first) and stamps it as the read cutoff. */
-  private async markAllFromUnfilteredNewest(): Promise<void> {
-    const foundationSlug = this.foundationSlug();
-    if (!foundationSlug) return;
-
-    try {
-      const response = await firstValueFrom(this.socialListeningService.getMentionsFeed({ foundationSlug, period: this.defaultPeriod, limit: 1, offset: 0 }));
-      this.mentionReadStateService.markAllAsRead(this.newestTsOf(response.mentions));
-    } catch {
-      this.messageService.add({
-        severity: 'error',
-        summary: 'Mark all as read failed',
-        detail: 'Could not resolve the latest mentions — nothing was marked as read. Please try again.',
-      });
-    }
-  }
-
   /** Card toggle → the read-state service owns the loading gate, the optimistic write, and the toasts. */
   public onReadToggled(mention: Mention): void {
     this.mentionReadStateService.toggleRead(mention.id, mention.timestamp);
@@ -698,6 +676,28 @@ export class SocialListeningComponent {
       search: () => this.searchInput.set(''),
     };
     resetters[id as keyof FilterPredicate]?.();
+  }
+
+  /** Any active feed predicate or a non-default period means the loaded windows (and their newest) are a subset of the foundation feed. */
+  private feedNarrowed(): boolean {
+    return Object.keys(this.currentFilters()).length > 0 || this.selectedPeriod() !== this.defaultPeriod;
+  }
+
+  /** Resolves the foundation-global newest (limit-1 unfiltered fetch; the feed sorts newest-first) and stamps it as the read cutoff. */
+  private async markAllFromUnfilteredNewest(): Promise<void> {
+    const foundationSlug = this.foundationSlug();
+    if (!foundationSlug) return;
+
+    try {
+      const response = await firstValueFrom(this.socialListeningService.getMentionsFeed({ foundationSlug, period: this.defaultPeriod, limit: 1, offset: 0 }));
+      this.mentionReadStateService.markAllAsRead(this.newestTsOf(response.mentions));
+    } catch {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Mark all as read failed',
+        detail: 'Could not resolve the latest mentions — nothing was marked as read. Please try again.',
+      });
+    }
   }
 
   private computeScopeKey(): string | null {
