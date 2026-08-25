@@ -84,7 +84,15 @@ export interface NewsletterRecipientsResponse {
 
 export interface NewsletterTestSendPayload {
   subject: string;
-  body_html: string;
+  /**
+   * The pre-rendered email HTML. Authoritative ONLY on the HTML-only path: when
+   * `body_layout` is present the service recompiles from it and ignores this
+   * field, so a layout test send need not supply it. Optional for that reason —
+   * the server's `validateTestSendPayload` enforces the real contract (exactly
+   * one of `body_layout` / `body_html` must carry the body), which a required
+   * `body_html` would misstate by forcing layout-only clients to pass a dummy.
+   */
+  body_html?: string;
   to_email: string;
   /**
    * @deprecated Ignored by the newsletter-service. `body_layout` is the sole
