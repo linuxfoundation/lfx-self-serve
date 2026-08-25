@@ -64,12 +64,23 @@
       <div class="flex flex-col gap-2" role="list" data-testid="public-project-groups-list">
         @for (group of groupsVm(); track group.uid) {
           @let config = group.classConfig;
-          <a
-            [routerLink]="['/groups', group.uid]"
+          <div
             role="listitem"
-            class="flex items-start gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 sm:items-center"
-            [attr.data-testid]="'public-project-groups-item-' + group.uid"
-            [attr.aria-label]="group.name + ', ' + config.label">
+            class="has-[.peer:hover]:border-blue-200 has-[.peer:hover]:bg-blue-50/30 relative flex items-start gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors sm:items-center"
+            [attr.data-testid]="'public-project-groups-item-' + group.uid">
+            <!-- Whole-row click/focus target ("stretched link"), ported from org-groups.component.html
+                 (#1786): role="listitem" belongs on this non-interactive row div, not on an anchor,
+                 which is why the actual link is this separate absolutely-positioned <a> instead. `peer`
+                 lets the row react to this specific link's hover via has-[.peer:hover]: above. Unlike
+                 org-groups, this row has no second nested link, so no pointer-events-none/z-10 handoff
+                 is needed on the content below — don't drop `peer` in a "clean up unused classes" pass,
+                 it's what drives the row's hover highlight. -->
+            <a
+              [routerLink]="['/groups', group.uid]"
+              class="peer absolute inset-0 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+              [attr.data-testid]="'public-project-groups-row-link-' + group.uid"
+              [attr.aria-label]="group.name + ', ' + config.label"></a>
+
             <!-- Icon -->
             <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" [class]="config.bgColor">
               <i [class]="config.icon + ' ' + config.color + ' text-base'" aria-hidden="true"></i>
@@ -107,7 +118,7 @@
             }
 
             <i class="fa-light fa-chevron-right text-gray-300 text-xs shrink-0" aria-hidden="true"></i>
-          </a>
+          </div>
         }
       </div>
     }

@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { formatIsoDateLabel, timeAgo } from './date-time.utils';
+import { formatIsoDateLabel, localDateStamp, timeAgo } from './date-time.utils';
 
 /**
  * The fallback contract is the whole point of this helper: anything that is not a real
@@ -88,5 +88,30 @@ describe('timeAgo', () => {
   it('returns an empty string for missing or unparseable input', () => {
     expect(timeAgo('')).toBe('');
     expect(timeAgo('not-a-date')).toBe('');
+  });
+});
+
+describe('localDateStamp', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it('stamps the local calendar date, not the UTC date', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    vi.useFakeTimers();
+    // Still Aug 24 in America/Los_Angeles (UTC-7 in August) — this is exactly the case
+    // `toISOString().slice(0, 10)` gets wrong, reporting the UTC date (Aug 25) instead.
+    vi.setSystemTime(new Date('2026-08-25T02:30:00Z'));
+
+    expect(localDateStamp()).toBe('20260824');
+  });
+
+  it('zero-pads single-digit months and days', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-05T20:00:00Z'));
+
+    expect(localDateStamp()).toBe('20260105');
   });
 });

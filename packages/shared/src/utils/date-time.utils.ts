@@ -567,6 +567,18 @@ export function formatShortDate(date: Date): string {
 }
 
 /**
+ * Today's date as `YYYYMMDD` in the caller's local timezone — for stamping CSV/report export
+ * filenames. Deliberately local, not `toISOString()` (which reports the UTC date and stamps
+ * tomorrow's date for any viewer west of UTC exporting in the evening).
+ */
+export function localDateStamp(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}${month}${day}`;
+}
+
+/**
  * Short relative-time label for a future instant ("in 5 min", "in 2 hr", "in
  * 3 days") — the forward-looking counterpart to `formatRelativeTime`, which
  * only reads correctly for past instants (negative diffs there collapse to

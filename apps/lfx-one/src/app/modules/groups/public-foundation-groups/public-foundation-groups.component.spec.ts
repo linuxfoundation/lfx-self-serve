@@ -141,4 +141,48 @@ describe('PublicFoundationGroupsComponent — contrast and responsive row layout
     expect(rowClasses).toContain('items-start');
     expect(rowClasses).toContain('sm:items-center');
   });
+
+  it('exposes the row as a real link, not an anchor carrying role="listitem" (GH-1794)', async () => {
+    // WCAG 4.1.2 regression lock: an explicit role="listitem" on the anchor itself would replace
+    // its implicit link role, dropping the row out of the screen reader links rotor. A class-token
+    // assertion can't catch this — only checking the actual element identity/role can, which is
+    // exactly what the pre-fix markup (role="listitem" directly on the row <a>) would fail.
+    await render({ groups: [group()], total: 1 });
+
+    const row = fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-item-g1"]');
+    expect(row).not.toBeNull();
+    expect(row?.tagName).toBe('DIV');
+    expect(row?.getAttribute('role')).toBe('listitem');
+
+    const link = fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-row-link-g1"]');
+    expect(link).not.toBeNull();
+    expect(link?.tagName).toBe('A');
+    expect(row?.contains(link)).toBe(true);
+    expect(row).not.toBe(link);
+    // No role attribute at all — the element must rely on its implicit link role, which an <a>
+    // only gets once it has an href (otherwise it maps to `generic`), so that's asserted too.
+    expect(link?.getAttribute('role')).toBeNull();
+    expect(link?.getAttribute('href')).toBe('/groups/g1');
+    expect(link?.getAttribute('aria-label')).toBe('WG Identity & Trust, Working Groups');
+  });
+
+  it('row hover highlight keeps its peer / has-[.peer:hover] pair', async () => {
+    // `peer` on the link and `has-[.peer:hover]:` on the row are the two halves of the row's
+    // hover highlight — a comment alone doesn't stop either half from being dropped as an
+    // apparently-unused class, so both are asserted directly rather than just documented. A
+    // separate test from the GH-1794 role/link assertions above, so a dropped `peer` fails with
+    // a diagnostic naming the hover highlight, not the unrelated a11y fix.
+    await render({ groups: [group()], total: 1 });
+
+    const row = fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-item-g1"]');
+    const link = fixture.nativeElement.querySelector('[data-testid="public-foundation-groups-row-link-g1"]');
+    expect(row).not.toBeNull();
+    expect(link).not.toBeNull();
+
+    const linkClasses = (link?.getAttribute('class') ?? '').split(/\s+/);
+    expect(linkClasses).toContain('peer');
+    const rowClasses = (row?.className ?? '').split(/\s+/);
+    expect(rowClasses).toContain('has-[.peer:hover]:border-blue-200');
+    expect(rowClasses).toContain('has-[.peer:hover]:bg-blue-50/30');
+  });
 });

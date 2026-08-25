@@ -4,6 +4,7 @@
 export * from './gateway.constants';
 export * from './meta.constants';
 export * from './public-profile.constants';
+export * from './query-service.constants';
 export * from './reddit.constants';
 export * from './rewards.constants';
 export * from './weekly-brief.constants';

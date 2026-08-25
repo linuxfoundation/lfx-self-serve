@@ -47,7 +47,7 @@ import type {
   OrgProjectsWorkspaceId,
   SortDirection,
 } from '@lfx-one/shared/interfaces';
-import { buildInsightsUrl, downloadCsv } from '@lfx-one/shared/utils';
+import { buildInsightsUrl, downloadCsv, localDateStamp } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogModule } from 'primeng/dialog';
 import { PopoverModule } from 'primeng/popover';
@@ -544,9 +544,8 @@ export class OrgProjectsComponent {
         p.participants.length,
       ];
     });
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const slug = this.response()?.orgSlug ?? 'org';
-    downloadCsv(`org-lens-projects-${slug}-${date}.csv`, [header, ...body]);
+    downloadCsv(`org-lens-projects-${slug}-${localDateStamp()}.csv`, [header, ...body]);
   }
 
   // Signal-strength bars for an influence band: filled count = rank (Leading 4 → Silent 1 → Non-LF 0),
