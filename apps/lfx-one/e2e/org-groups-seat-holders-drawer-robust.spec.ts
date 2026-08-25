@@ -30,8 +30,11 @@ import {
 
 test.setTimeout(120_000);
 
+// `li[...]`, not the bare attribute selector — the per-row person button's testid
+// ('group-seat-holder-person-{seatId}') shares the same prefix as the row's own
+// ('group-seat-holder-{seatId}'), and an unscoped `^=` selector would match both.
 async function collectSeatTestIds(page: Page): Promise<string[]> {
-  const values = await page.locator('[data-testid^="group-seat-holder-"]').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')));
+  const values = await page.locator('li[data-testid^="group-seat-holder-"]').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')));
   return values.filter((v): v is string => v !== null);
 }
 

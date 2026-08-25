@@ -24,6 +24,7 @@ import { catchError, debounceTime, distinctUntilChanged, filter, map, of, skip, 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
@@ -42,6 +43,7 @@ import { GroupSeatHoldersDrawerComponent } from './components/group-seat-holders
     GroupSeatHoldersDrawerComponent,
     InputTextComponent,
     NgTemplateOutlet,
+    PersonDetailDrawerComponent,
     RouterLink,
     SelectComponent,
     SkeletonModule,

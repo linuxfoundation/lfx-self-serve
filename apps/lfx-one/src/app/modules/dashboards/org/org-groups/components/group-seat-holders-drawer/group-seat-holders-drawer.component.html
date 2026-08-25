@@ -56,12 +56,9 @@
 
   <!-- Inside <p-drawer>, deliberately not hoisted out: the panel is aria-modal="true" (via [pt]
        above), and content outside a modal's subtree is unreliable for AT to reach while it's open
-       — a sibling live region would be announced inconsistently at best. Staying inside means this
-       node IS destroyed and recreated on every open, so its first render can't carry the real
-       status text (a freshly-inserted node's initial text is generally not announced, only later
-       mutations to an already-present node are) — contentRevealed (reset false on every close, see
-       its own comment in the .ts) keeps the node's first paint on each open empty, then flips true
-       one tick later so the real text arrives as a genuine mutation instead. -->
+       — a sibling live region would be announced inconsistently at best. That means this node IS
+       destroyed and recreated on every open; contentRevealed (see its own comment in the .ts)
+       handles what that implies for the first paint. -->
   <p class="sr-only" role="status" aria-live="polite" data-testid="group-seat-holders-drawer-status">{{ contentRevealed() ? statusMessage() : '' }}</p>
 
   <div class="flex flex-col gap-4 h-full">
@@ -90,15 +87,38 @@
       <ul class="flex flex-col divide-y divide-gray-100" data-testid="group-seat-holders-list">
         @for (assignment of seatHolderVms(); track assignment.seatId) {
           <li class="flex items-center gap-3 py-3" [attr.data-testid]="'group-seat-holder-' + assignment.seatId">
-            <lfx-person-avatar
-              [avatarUrl]="assignment.person.avatarUrl"
-              [name]="assignment.person.fullName"
-              [initials]="assignment.person.initials"
-              [identity]="assignment.person.email" />
-            <div class="flex flex-col gap-0.5 min-w-0 flex-1">
-              <span class="text-sm font-medium text-gray-900 break-words">
-                {{ assignment.person.fullName || assignment.person.email || 'Unknown member' }}
-              </span>
+            <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+              <!-- Opens the shared person-detail drawer stacked on top (drawer-over-drawer, see
+                   onPersonClick()). Wraps avatar + name only, not the role line or the pill below
+                   — a real <button>, not a div with a click handler, so it's keyboard-reachable and
+                   announces as a button. A row with no usable identity (no name AND no email — the
+                   'Unknown member' fallback) stays plain text: there is nothing to open a drawer on. -->
+              @if (assignment.person.fullName || assignment.person.email) {
+                <button
+                  type="button"
+                  class="flex min-w-0 items-center gap-3 bg-transparent p-0 text-left"
+                  [attr.aria-label]="'View details for ' + (assignment.person.fullName || assignment.person.email)"
+                  [attr.data-testid]="'group-seat-holder-person-' + assignment.seatId"
+                  (click)="onPersonClick(assignment)">
+                  <lfx-person-avatar
+                    [avatarUrl]="assignment.person.avatarUrl"
+                    [name]="assignment.person.fullName"
+                    [initials]="assignment.person.initials"
+                    [identity]="assignment.person.email" />
+                  <span class="text-sm font-medium text-gray-900 break-words hover:underline">
+                    {{ assignment.person.fullName || assignment.person.email }}
+                  </span>
+                </button>
+              } @else {
+                <div class="flex min-w-0 items-center gap-3">
+                  <lfx-person-avatar
+                    [avatarUrl]="assignment.person.avatarUrl"
+                    [name]="assignment.person.fullName"
+                    [initials]="assignment.person.initials"
+                    [identity]="assignment.person.email" />
+                  <span class="text-sm font-medium text-gray-900 break-words">Unknown member</span>
+                </div>
+              }
               <span class="text-xs text-gray-500 break-words">{{ assignment.role || '—' }}</span>
             </div>
             <span class="inline-block rounded-full border px-2 py-0.5 text-xs font-medium flex-shrink-0" [class]="assignment.votingStatusPillClass">

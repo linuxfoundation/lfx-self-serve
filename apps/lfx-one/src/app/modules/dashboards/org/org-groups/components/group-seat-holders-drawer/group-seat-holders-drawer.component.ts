@@ -19,6 +19,7 @@ import {
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
+import { toDrawerGovernanceSeats } from '@modules/dashboards/org/org-people/helpers/governance-seats.helper';
 import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
 import { votingStatusPillClass, votingStatusRank } from '@lfx-one/shared/constants';
 import type { CommitteeMemberAssignment, CommitteeMemberSeatHolderVm } from '@lfx-one/shared/interfaces';
@@ -26,6 +27,7 @@ import { DrawerModule } from 'primeng/drawer';
 import { catchError, EMPTY, map, of, shareReplay, switchMap, tap, throwError, type Observable } from 'rxjs';
 
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 
 /** Org Lens — Groups list drill-down (GH-1780). Shows the org's seat holders for one committee, without leaving the roster. */
 @Component({
@@ -35,6 +37,7 @@ import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.c
 })
 export class GroupSeatHoldersDrawerComponent {
   private readonly committeeMembersService = inject(CommitteeMembersService);
+  private readonly personDetailDrawer = inject(PersonDetailDrawerService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly injector = inject(Injector);
 
@@ -69,6 +72,13 @@ export class GroupSeatHoldersDrawerComponent {
   // by orgUid so an in-place org switch (OrgGroupsComponent isn't destroyed/recreated on switch,
   // see its orgUid$ subscription) rebuilds it instead of replaying the previous org's roster.
   private cache: { orgUid: string; assignments$: Observable<CommitteeMemberAssignment[]> } | null = null;
+
+  // The org's full, unfiltered roster — same array cache.assignments$ resolves to, mirrored into a
+  // signal so onPersonClick() can read it synchronously (a click handler can't await an Observable).
+  // Populated by the same cache-building tap() below, so it's never stale relative to `cache` and
+  // never re-fetches on its own. Used to find a clicked person's seats on every committee they hold,
+  // not just the one whose drawer is open — see onPersonClick()'s comment for why that matters.
+  private readonly fullOrgAssignments = signal<CommitteeMemberAssignment[]>([]);
 
   private readonly seatHolders: Signal<CommitteeMemberAssignment[] | null> = this.initSeatHolders();
 
@@ -105,6 +115,35 @@ export class GroupSeatHoldersDrawerComponent {
 
   protected retry(): void {
     this.retryTick.update((n) => n + 1);
+  }
+
+  // Opens the shared person-detail drawer stacked on top of this one (drawer-over-drawer — proven
+  // by training-employees-drawer, no "close this drawer first" dance needed since [modal]="true"
+  // gives both drawers their own focus trap). Governance seats are the person's FULL org roster,
+  // not just this committee's assignments filtered to committeeUid — a row here is one committee by
+  // construction, but the same person likely holds seats on others, and the drawer's Governance tab
+  // is meant to show all of them, matching what the People page's own opener does for the same
+  // person. fullOrgAssignments (not seatHolders/seatHolderVms, both committeeUid-filtered) is the
+  // one place this component already holds that full list.
+  protected onPersonClick(vm: CommitteeMemberSeatHolderVm): void {
+    const normalizedEmail = (vm.person.email ?? '').trim().toLowerCase();
+    // Mirrors initSeatHolderVms()'s own grouping key: match by email when there is one, otherwise
+    // fall back to this exact seat's memberUid — never bucket two blank-email people together.
+    const seats = this.fullOrgAssignments().filter((a) =>
+      normalizedEmail ? (a.person.email ?? '').trim().toLowerCase() === normalizedEmail : a.memberUid === vm.memberUid
+    );
+    // vm.person.email is the grouping key and can itself be blank — source the real email from
+    // whichever seat actually carries one, mirroring committee-members.component.ts's onPersonClick.
+    const email = seats.find((a) => a.person.email)?.person.email;
+    this.personDetailDrawer.open({
+      name: vm.person.fullName,
+      title: vm.person.jobTitle,
+      initials: vm.person.initials,
+      avatarUrl: vm.person.avatarUrl,
+      defaultTab: 'governance',
+      governanceSeats: toDrawerGovernanceSeats(seats),
+      email,
+    });
   }
 
   // PrimeNG's p-drawer doesn't move focus into the panel on open or restore it on close — it only
@@ -205,6 +244,7 @@ export class GroupSeatHoldersDrawerComponent {
               orgUid,
               assignments$: this.committeeMembersService.getCommitteeMembers(orgUid).pipe(
                 map((response) => response.assignments),
+                tap((assignments) => this.fullOrgAssignments.set(assignments)),
                 catchError((err: unknown) => {
                   // Drop the cache — but only if it's still this orgUid's entry, so a fetch for a
                   // since-switched-to org can't be clobbered by a slower, now-stale failure — so the

@@ -343,4 +343,9 @@
     [orgUid]="orgUid()"
     [committeeUid]="selectedGroup()?.uid ?? ''"
     [groupName]="selectedGroup()?.name ?? ''" />
+
+  <!-- Not rendered by lfx-group-seat-holders-drawer itself — the training precedent mounts the
+       person drawer from the page, not the inner drawer, so it isn't torn down/rebuilt on every
+       seat-holders open/close and there's exactly one instance for the whole page to stack on. -->
+  <lfx-person-detail-drawer />
 </main>

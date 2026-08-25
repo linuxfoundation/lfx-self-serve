@@ -13,6 +13,7 @@ import { OrgLensGroupsService } from '@services/org-lens-groups.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { Tooltip } from 'primeng/tooltip';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -54,6 +55,29 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
       // CommitteeMembersService needs a stub too — otherwise DI resolves the real service, which
       // needs a real HttpClient this testing module never provides.
       { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
+      // <lfx-person-detail-drawer /> (GH-1780 follow-up — stacked on the seat-holders drawer) is
+      // also unconditionally mounted. It reads the service's full signal surface, not just `open`
+      // (see person-detail-drawer.component.ts/.html) — a bare `{ open: vi.fn() }` stub, sufficient
+      // for group-seat-holders-drawer.component.spec.ts's own tests of the click-to-open call, would
+      // leave every other read undefined and throw at render. Kept closed throughout (isOpen false,
+      // activeContext null) — none of this file's tests click a seat-holder row deep enough to open
+      // it; that behavior is covered by group-seat-holders-drawer.component.spec.ts itself.
+      {
+        provide: PersonDetailDrawerService,
+        useValue: {
+          isOpen: signal(false),
+          activeContext: signal(null),
+          activeTab: signal('events'),
+          loading: signal(false),
+          error: signal(false),
+          emailError: signal(false),
+          detail: signal(null),
+          companyEmails: signal([]),
+          open: vi.fn(),
+          close: vi.fn(),
+          setTab: vi.fn(),
+        },
+      },
       // p-drawer's synthetic `@panelState` animation throws NG05105 without this — mirrors
       // event-detail-drawer.component.spec.ts. Needed once a test actually opens the seat-holders
       // drawer (setting seatHoldersDrawerVisible true), not for tests that never do.
@@ -906,6 +930,24 @@ describe('OrgGroupsComponent stat strip', () => {
         { provide: PersonaService, useValue: { personaLoaded: signal(orgLoaded) } },
         { provide: OrgLensGroupsService, useValue: { getGroups: vi.fn(getGroups) } },
         { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
+        // See the top-level render()'s own comment — <lfx-person-detail-drawer /> needs the full
+        // signal surface, not just `open`.
+        {
+          provide: PersonDetailDrawerService,
+          useValue: {
+            isOpen: signal(false),
+            activeContext: signal(null),
+            activeTab: signal('events'),
+            loading: signal(false),
+            error: signal(false),
+            emailError: signal(false),
+            detail: signal(null),
+            companyEmails: signal([]),
+            open: vi.fn(),
+            close: vi.fn(),
+            setTab: vi.fn(),
+          },
+        },
       ],
     }).compileComponents();
 

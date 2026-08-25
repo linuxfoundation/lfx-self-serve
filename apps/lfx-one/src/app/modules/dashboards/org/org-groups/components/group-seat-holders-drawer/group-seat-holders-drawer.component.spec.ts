@@ -5,6 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import type { CommitteeMemberAssignment, CommitteeMemberPerson, OrgPeopleCommitteeMembersResponse } from '@lfx-one/shared/interfaces';
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -42,6 +43,7 @@ function response(assignments: CommitteeMemberAssignment[]): OrgPeopleCommitteeM
 describe('GroupSeatHoldersDrawerComponent', () => {
   let fixture: ComponentFixture<GroupSeatHoldersDrawerComponent>;
   let getCommitteeMembers: ReturnType<typeof vi.fn>;
+  let drawerOpen: ReturnType<typeof vi.fn>;
 
   // p-drawer renders into document.body, not the fixture host, and a previous test's overlay
   // otherwise survives into the next one — mirrors event-detail-drawer.component.spec.ts.
@@ -55,11 +57,17 @@ describe('GroupSeatHoldersDrawerComponent', () => {
 
   async function setup(impl: ReturnType<typeof vi.fn>): Promise<void> {
     getCommitteeMembers = impl;
+    drawerOpen = vi.fn();
 
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [GroupSeatHoldersDrawerComponent],
-      providers: [{ provide: CommitteeMembersService, useValue: { getCommitteeMembers } }, provideNoopAnimations(), provideRouter([])],
+      providers: [
+        { provide: CommitteeMembersService, useValue: { getCommitteeMembers } },
+        { provide: PersonDetailDrawerService, useValue: { open: drawerOpen } },
+        provideNoopAnimations(),
+        provideRouter([]),
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(GroupSeatHoldersDrawerComponent);
@@ -85,8 +93,11 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     return (document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent ?? '').replace(/\s+/g, ' ').trim();
   }
 
+  // `li[...]`, not the bare attribute selector — the per-row person button's testid
+  // ('group-seat-holder-person-{seatId}') shares the same prefix as the row's own
+  // ('group-seat-holder-{seatId}'), and an unscoped `^=` selector would match both.
   function rowNames(): string[] {
-    return Array.from(document.querySelectorAll('[data-testid^="group-seat-holder-"]')).map((li) => li.textContent?.trim() ?? '');
+    return Array.from(document.querySelectorAll('li[data-testid^="group-seat-holder-"]')).map((li) => li.textContent?.trim() ?? '');
   }
 
   function statusMessage(): string | null {
@@ -899,6 +910,105 @@ describe('GroupSeatHoldersDrawerComponent', () => {
       expect(document.activeElement).toBe(trigger);
 
       document.body.removeChild(trigger);
+    });
+  });
+
+  // Stacked person-detail drawer (GH-1780 follow-up) — training-employees-drawer's proven
+  // drawer-over-drawer precedent, adapted for the committee-members opener shape (pre-supplied
+  // governanceSeats, no personKey — these rows carry no warehouse personKey).
+  describe('person-detail drawer stacking', () => {
+    function personButton(seatId: string): HTMLElement | null {
+      return document.querySelector(`[data-testid="group-seat-holder-person-${seatId}"]`);
+    }
+
+    it("calls PersonDetailDrawerService.open once, with defaultTab 'governance' and the person's real email", async () => {
+      await setup(vi.fn().mockReturnValue(of(response([assignment({ seatId: 's-1', person: person({ fullName: 'Jane Doe', email: 'jane@example.org' }) })]))));
+
+      await open('org-1', 'c-1');
+      personButton('s-1')!.click();
+
+      expect(drawerOpen).toHaveBeenCalledTimes(1);
+      expect(drawerOpen).toHaveBeenCalledWith(expect.objectContaining({ name: 'Jane Doe', defaultTab: 'governance', email: 'jane@example.org' }));
+    });
+
+    // The obvious implementation passes only the assignments for the open committee, so the
+    // Governance tab would show a single seat next to the same person showing every seat on the
+    // People page. this.cache.assignments$ (mirrored into fullOrgAssignments) already holds the
+    // org's full, unfiltered roster — the committee filter is applied downstream of it, not to it.
+    it("includes the person's seats from other committees, not just the one whose drawer is open", async () => {
+      await setup(
+        vi.fn().mockReturnValue(
+          of(
+            response([
+              assignment({
+                seatId: 's-1',
+                committeeUid: 'c-1',
+                committeeName: 'Steering Committee',
+                person: person({ fullName: 'Jane Doe', email: 'jane@example.org' }),
+              }),
+              assignment({
+                seatId: 's-2',
+                committeeUid: 'c-2',
+                committeeName: 'Storage Working Group',
+                person: person({ fullName: 'Jane Doe', email: 'jane@example.org' }),
+              }),
+            ])
+          )
+        )
+      );
+
+      await open('org-1', 'c-1');
+      personButton('s-1')!.click();
+
+      const call = drawerOpen.mock.calls[0][0];
+      expect(call.governanceSeats).toHaveLength(2);
+      expect(call.governanceSeats.map((s: { committeeName: string }) => s.committeeName).sort()).toEqual(
+        ['Steering Committee', 'Storage Working Group'].sort()
+      );
+    });
+
+    // Mirrors initSeatHolderVms()'s own grouping key: match by email when there is one, otherwise
+    // fall back to the clicked seat's own memberUid — two different blank-email people must never
+    // be bucketed together just because neither has an email.
+    it('matches a blank-email seat by memberUid, not merging it with a different blank-email person', async () => {
+      await setup(
+        vi
+          .fn()
+          .mockReturnValue(
+            of(
+              response([
+                assignment({ seatId: 's-1', memberUid: 'm-1', person: person({ fullName: 'Alex Kim', email: '' }) }),
+                assignment({ seatId: 's-2', memberUid: 'm-2', person: person({ fullName: 'Sam Lee', email: '' }) }),
+              ])
+            )
+          )
+      );
+
+      await open('org-1', 'c-1');
+      personButton('s-1')!.click();
+
+      const call = drawerOpen.mock.calls[0][0];
+      expect(call.name).toBe('Alex Kim');
+      expect(call.governanceSeats).toHaveLength(1);
+    });
+
+    it("renders no button for an 'Unknown member' row (no name and no email)", async () => {
+      await setup(
+        vi.fn().mockReturnValue(of(response([assignment({ seatId: 's-1', person: person({ fullName: '', email: '', firstName: '', lastName: '' }) })])))
+      );
+
+      await open('org-1', 'c-1');
+
+      expect(personButton('s-1')).toBeNull();
+      expect(document.querySelector('[data-testid="group-seat-holder-s-1"]')?.textContent).toContain('Unknown member');
+    });
+
+    it("exposes a 'View details for {name}' accessible name on the button", async () => {
+      await setup(vi.fn().mockReturnValue(of(response([assignment({ seatId: 's-1', person: person({ fullName: 'Jane Doe' }) })]))));
+
+      await open('org-1', 'c-1');
+
+      expect(personButton('s-1')?.getAttribute('aria-label')).toBe('View details for Jane Doe');
     });
   });
 });
