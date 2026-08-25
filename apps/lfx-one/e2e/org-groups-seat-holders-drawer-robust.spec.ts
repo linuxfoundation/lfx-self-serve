@@ -93,12 +93,11 @@ test.describe('Org Groups — seat holders drawer data-testid contract (GH-1780)
     await expect(button).toBeVisible();
     expect(await button.evaluate((el) => el.tagName)).toBe('BUTTON');
 
-    // Asserts the structural property directly, not a fact about the two hard-coded string literals
-    // used to locate `row`/`button` above (which is trivially true regardless of what the button's
-    // testid actually is — both a prior fixed version of this line and its predecessor were
-    // tautological this same way). `row.locator(...)` matches descendants only, so the row's own
-    // testid doesn't self-match — this fails only if something nested under the row reuses the row's
-    // stem, which is exactly what would make collectSeatTestIds()'s prefix match over-collect it.
+    // `row.locator(...)` matches descendants only, so the row's own testid doesn't self-match — this
+    // fails iff something nested under the row reuses the row's 'group-seat-holder-' stem, which is
+    // what would make collectSeatTestIds()'s prefix match over-collect it. Redundant with the "each
+    // seat row..." test above (its exact-set assertion would also fail on the same regression) —
+    // kept anyway as defense-in-depth that localizes the failure to this one row.
     await expect(row.locator('[data-testid^="group-seat-holder-"]')).toHaveCount(0);
   });
 });
