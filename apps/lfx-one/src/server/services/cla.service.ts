@@ -345,6 +345,9 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
     // empty strings to undefined so the Project cell falls back to claGroupName / the icon.
     projectName: cla.projectName || undefined,
     projectLogo: cla.projectLogo || undefined,
+    projectSfid: cla.projectSFID?.trim() || undefined,
+    foundationSfid: cla.foundationSFID?.trim() || undefined,
+    claGroupId: cla.claGroupID?.trim() || undefined,
     companyName: !isIcla ? cla.signingEntityName || cla.companyName || undefined : undefined,
     signedOn: cla.signedOn ?? '',
     signedVia: asSignedVia(cla.signedVia),
@@ -748,6 +751,7 @@ export class ClaService {
     logger.success(req, 'cla_get_cla_managers', startTime, { manager_count: managers.length });
     return {
       signatureId: result.signatureID?.trim() || signatureId,
+      claManager: result.claManager === true,
       managers,
       resultCount: managers.length,
     };

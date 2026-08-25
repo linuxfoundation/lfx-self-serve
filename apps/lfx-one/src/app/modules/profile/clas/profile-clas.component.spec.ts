@@ -15,6 +15,7 @@ import { MY_CLAS_M2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import type {
   ClaGroupOption,
   ClaGroupSearchResponse,
+  ClaManagerList,
   GithubAccountOptions,
   MyClaAgreement,
   MyClasResponse,
@@ -48,11 +49,18 @@ describe('ProfileClasComponent', () => {
 
   let fixture: ComponentFixture<ProfileClasComponent>;
 
-  async function render(agreements: MyClaAgreement[], options: { m2Enabled?: boolean } = {}): Promise<void> {
+  async function render(
+    agreements: MyClaAgreement[],
+    options: {
+      m2Enabled?: boolean;
+      getClaManagers?: (id: string) => Observable<ClaManagerList>;
+    } = {}
+  ): Promise<void> {
     const response: MyClasResponse = {
       agreements,
       identity: { matchedUserIds: agreements.length > 0 ? 1 : 0, unmatched: agreements.length === 0, githubLinked: true },
     };
+    const getClaManagers = options.getClaManagers ?? ((id: string) => of<ClaManagerList>({ signatureId: id, claManager: false, managers: [], resultCount: 0 }));
 
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
@@ -60,7 +68,7 @@ describe('ProfileClasComponent', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: MyClasService, useValue: { getMyClas: () => of(response), getPdfUrl: vi.fn() } },
+        { provide: MyClasService, useValue: { getMyClas: () => of(response), getPdfUrl: vi.fn(), getClaManagers } },
         // Stubbed rather than real: the Sign CLA action reads impersonating(), and the real
         // service would drag HttpClient into a TestBed that has no reason to make requests.
         { provide: UserService, useValue: { impersonating: signal(false) } },
@@ -240,12 +248,86 @@ describe('ProfileClasComponent', () => {
     expect(menuItems('s-attn').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request approval', 'Request Removal', 'Contact CLA Manager']);
   });
 
+  it('offers Manage in CCLA Console last when the managers GET says this user is a CLA manager', async () => {
+    await render(
+      [agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005', foundationSfid: 'a09P000000DsCE5IAN' })],
+      {
+        getClaManagers: (id) => of({ signatureId: id, claManager: true, managers: [], resultCount: 0 }),
+      }
+    );
+
+    const items = menuItems('s-ecla');
+    expect(items.map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Manage in CCLA Console']);
+
+    // PrimeNG's menu renders no `rel`, so the item opens through `command` to keep noopener/noreferrer.
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    items.at(-1)?.command?.({} as never);
+    expect(open).toHaveBeenCalledWith('https://lfx.dev.platform.linuxfoundation.org/foundation/a09P000000DsCE5IAN/cla', '_blank', 'noopener,noreferrer');
+    open.mockRestore();
+  });
+
+  it('hides Manage in CCLA Console on ICLA, missing CLA group id, and a failed managers GET', async () => {
+    await render([agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true, claGroupId: 'g-anuket-005' })], {
+      getClaManagers: (id) => of({ signatureId: id, claManager: true, managers: [], resultCount: 0 }),
+    });
+    expect(menuItems('s-icla').map((item) => item.label)).toEqual(['Download PDF']);
+
+    await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' })], {
+      getClaManagers: (id) => of({ signatureId: id, claManager: true, managers: [], resultCount: 0 }),
+    });
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
+
+    await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005' })], {
+      getClaManagers: () => throwError(() => new Error('boom')),
+    });
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
+  });
+
+  it('paints Request Removal before the managers GET resolves, then appends Manage in CCLA Console', async () => {
+    const pending = new Subject<ClaManagerList>();
+    await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005' })], {
+      getClaManagers: () => pending.asObservable(),
+    });
+
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
+
+    pending.next({ signatureId: 's-ecla', claManager: true, managers: [], resultCount: 0 });
+    pending.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Manage in CCLA Console']);
+  });
+
   it('keeps a stable menu model across change detection so the popup can open on the first click', async () => {
     await render([agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true })]);
 
     const first = menuItems('s-icla');
     fixture.detectChanges();
     expect(menuItems('s-icla')).toBe(first);
+  });
+
+  it('closes other row menus when opening a kebab', async () => {
+    await render([
+      agreement({ id: 's-a', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' }),
+      agreement({ id: 's-b', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' }),
+    ]);
+
+    const menuA = rowMenu('s-a');
+    const menuB = rowMenu('s-b');
+    if (!menuA || !menuB) {
+      throw new Error('expected both row menus');
+    }
+
+    const hideA = vi.spyOn(menuA, 'hide');
+    const hideB = vi.spyOn(menuB, 'hide');
+    const component = fixture.componentInstance as unknown as {
+      toggleRowMenu: (event: Event, menu: MenuComponent) => void;
+    };
+    component.toggleRowMenu(new MouseEvent('click'), menuB);
+
+    expect(hideA).toHaveBeenCalled();
+    expect(hideB).not.toHaveBeenCalled();
   });
 
   it('does not render a placeholder Invalidate item', async () => {
@@ -497,6 +579,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
             getGithubAccounts,
             prepareSign,
             buildSignUrlFor,
+            getClaManagers: vi.fn((id: string) => of({ signatureId: id, claManager: false, managers: [], resultCount: 0 })),
           },
         },
       ],

@@ -246,7 +246,7 @@ describe('collectClaEmails', () => {
 describe('toMyClaAgreement', () => {
   it('maps an ICLA, trusting upstream valid=true ⇒ status valid, pdfAvailable', () => {
     const a = toMyClaAgreement(icla({ documentMajorVersion: 2, documentMinorVersion: 1 }));
-    expect(a).toMatchObject({ id: 's-icla', kind: 'ICLA', pdfAvailable: true, status: 'valid', documentVersion: '2.1' });
+    expect(a).toMatchObject({ id: 's-icla', kind: 'ICLA', pdfAvailable: true, status: 'valid', documentVersion: '2.1', claGroupId: 'cg-1' });
   });
 
   it('copies status and statusReason from the producer', () => {
@@ -271,6 +271,20 @@ describe('toMyClaAgreement', () => {
     const revoked = toMyClaAgreement(ecla({ status: 'revoked', approved: true, valid: false }));
 
     expect(revoked.status).toBe('revoked');
+  });
+
+  it('pins claGroupId from the producer and omits a blank value', () => {
+    expect(toMyClaAgreement(ecla()).claGroupId).toBe('cg-2');
+    expect(toMyClaAgreement(ecla({ claGroupID: '  ' })).claGroupId).toBeUndefined();
+    expect(toMyClaAgreement(ecla({ claGroupID: undefined })).claGroupId).toBeUndefined();
+  });
+
+  it('pins projectSfid and foundationSfid from the producer and omits blanks', () => {
+    const row = toMyClaAgreement(ecla({ projectSFID: 'proj-sfid-1', foundationSFID: 'found-parent' }));
+    expect(row.projectSfid).toBe('proj-sfid-1');
+    expect(row.foundationSfid).toBe('found-parent');
+    expect(toMyClaAgreement(ecla({ projectSFID: '  ', foundationSFID: '  ' })).projectSfid).toBeUndefined();
+    expect(toMyClaAgreement(ecla()).foundationSfid).toBeUndefined();
   });
 
   it('copies signedVia and signedAs from the producer', () => {
@@ -1201,12 +1215,21 @@ describe('ClaService.getClaManagers', () => {
 
     expect(list).toEqual({
       signatureId: MANAGER_SIG,
+      claManager: false,
       managers: [{ lfUsername: 'jdoe', name: 'Jane Doe', email: 'j@example.org' }],
       resultCount: 1,
     });
     const calledUrl = gatewayFetch.mock.calls[0][1] as string;
     expect(calledUrl).toContain(`/v4/my-clas/${MANAGER_SIG}/cla-managers?`);
     expect(calledUrl).toContain('lfUsername=alice');
+  });
+
+  it('passes claManager through as a boolean, false when omitted', async () => {
+    gatewayFetch.mockResolvedValueOnce({ signatureID: MANAGER_SIG, claManager: true, managers: [], resultCount: 0 });
+    expect((await new ClaService().getClaManagers(req, MANAGER_SIG, identity))?.claManager).toBe(true);
+
+    gatewayFetch.mockResolvedValueOnce({ signatureID: MANAGER_SIG, managers: [], resultCount: 0 });
+    expect((await new ClaService().getClaManagers(req, MANAGER_SIG, identity))?.claManager).toBe(false);
   });
 
   it('returns null on a 404 rather than an empty manager list', async () => {

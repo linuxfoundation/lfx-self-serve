@@ -27,7 +27,7 @@ describe('ContactClaManagerComponent', () => {
 
   async function setup(
     mode: ClaManagerRequestMode,
-    list: ClaManagerList | 'error' = { signatureId: SIG, managers: [JANE, ALEX], resultCount: 2 }
+    list: ClaManagerList | 'error' = { signatureId: SIG, claManager: false, managers: [JANE, ALEX], resultCount: 2 }
   ): Promise<void> {
     TestBed.resetTestingModule();
     close = vi.fn();
@@ -153,7 +153,7 @@ describe('ContactClaManagerComponent', () => {
   });
 
   it('shows support copy and no Send when no managers resolve', async () => {
-    await setup('removal', { signatureId: SIG, managers: [], resultCount: 0 });
+    await setup('removal', { signatureId: SIG, claManager: false, managers: [], resultCount: 0 });
 
     expect(query('contact-cla-manager-empty')?.textContent).toContain('No CLA manager is currently reachable');
     expect(query('contact-cla-manager-send')).toBeNull();

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, viewChildren } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { ECLA_COVERED_DOWNLOAD_LABEL, MY_CLAS_M2_ENABLED_FLAG } from '@lfx-one/shared/constants';
@@ -11,7 +11,7 @@ import { claStatusLabel, claStatusSeverity, downloadFromUrl, isMyClasEmpty, sign
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
-import { BehaviorSubject, catchError, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, forkJoin, map, of, switchMap, take, tap } from 'rxjs';
 
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -27,6 +27,7 @@ import { UserService } from '@services/user.service';
 import { ClaGroupSelectComponent } from './cla-group-select.component';
 import { buildContactClaManagerMenuItems } from './contact-cla-manager-menu';
 import { GithubAccountSelectComponent } from './github-account-select.component';
+import { buildManageInCclaConsoleMenuItems } from './manage-ccla-console-menu';
 
 /**
  * "CLAs" Profile tab (Me lens). Lists every signed agreement (ICLA + ECLA)
@@ -79,6 +80,14 @@ export class ProfileClasComponent {
 
   private readonly signDialogOpen = signal(false);
 
+  /**
+   * Whether the signed-in user is a CLA manager for each non-Revoked ECLA (#1575).
+   * Filled after first paint from the existing managers GET; a missing key is not-a-manager.
+   */
+  private readonly claManagerById = signal<ReadonlyMap<string, boolean>>(new Map());
+  private managerPrefetchGen = 0;
+  private readonly rowMenus = viewChildren(MenuComponent);
+
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
 
   private readonly state = this.initState();
@@ -112,7 +121,15 @@ export class ProfileClasComponent {
   }
 
   protected toggleRowMenu(event: Event, menu: MenuComponent): void {
+    // Each row owns its own popup overlay. The click is stopped so the kebab
+    // does not close immediately, which also means PrimeNG never sees a document
+    // click that would hide the previous overlay.
     event.stopPropagation();
+    for (const other of this.rowMenus()) {
+      if (other !== menu) {
+        other.hide();
+      }
+    }
     menu.toggle(event);
   }
 
@@ -420,9 +437,39 @@ export class ProfileClasComponent {
           disabled: true,
         },
         ...buildContactClaManagerMenuItems(agreement, this.dialogService),
+        ...buildManageInCclaConsoleMenuItems(agreement, this.claManagerById().get(agreement.id) === true),
       ];
     }
     return [];
+  }
+
+  /**
+   * After the list first-paints, ask the existing managers GET whether this user is a CLA
+   * manager for each non-Revoked ECLA. A miss or error is not-a-manager — the rest of the
+   * kebab still works. Generation-guarded so a refresh cannot apply a stale batch.
+   */
+  private prefetchClaManagerFlags(agreements: MyClaAgreement[]): void {
+    const gen = ++this.managerPrefetchGen;
+    const ids = agreements.filter((row) => row.kind === 'ECLA' && row.status !== 'revoked').map((row) => row.id);
+    if (ids.length === 0) {
+      this.claManagerById.set(new Map());
+      return;
+    }
+    forkJoin(
+      ids.map((id) =>
+        this.myClasService.getClaManagers(id).pipe(
+          map((list) => [id, list.claManager === true] as const),
+          catchError(() => of([id, false] as const))
+        )
+      )
+    )
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((pairs) => {
+        if (gen !== this.managerPrefetchGen) {
+          return;
+        }
+        this.claManagerById.set(new Map(pairs));
+      });
   }
 
   private initState(): Signal<MyClasState> {
@@ -437,8 +484,12 @@ export class ProfileClasComponent {
           }
 
           return this.myClasService.getMyClas().pipe(
+            tap((data) => this.prefetchClaManagerFlags(data.agreements)),
             switchMap((data) => of<MyClasState>({ data, error: false, loaded: true })),
-            catchError(() => of<MyClasState>({ data: null, error: true, loaded: true }))
+            catchError(() => {
+              this.claManagerById.set(new Map());
+              return of<MyClasState>({ data: null, error: true, loaded: true });
+            })
           );
         })
       ),

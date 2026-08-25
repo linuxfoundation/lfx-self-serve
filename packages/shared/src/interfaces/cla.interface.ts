@@ -58,6 +58,23 @@ export interface MyClaAgreement {
   projectName?: string;
   /** Project (or foundation) logo URL, when upstream resolved one. Undefined ⇒ show the fallback icon. */
   projectLogo?: string;
+  /**
+   * Salesforce project id the CLA Group maps to (producer `projectSFID`). Omitted on a
+   * foundation-level group and when the mapping is unresolved. With `foundationSfid` this
+   * builds `/foundation/{foundationSfid}/project/{projectSfid}/cla`.
+   */
+  projectSfid?: string;
+  /**
+   * Salesforce foundation id (producer `foundationSFID`). A foundation-level group uses
+   * `/foundation/{foundationSfid}/cla`. Omitted when unresolved.
+   */
+  foundationSfid?: string;
+  /**
+   * CLA group UUID the agreement was signed against (producer `claGroupID`).
+   * Omitted when upstream sent none. Used to gate the CCLA Console item (#1575);
+   * display still uses `claGroupName`.
+   */
+  claGroupId?: string;
   /** Employer company name — present for ECLA only. */
   companyName?: string;
   /** ISO date the agreement was signed. */
@@ -281,6 +298,8 @@ export interface ClaManager {
 /** Response for `GET /api/me/clas/:signatureId/cla-managers`. */
 export interface ClaManagerList {
   signatureId: string;
+  /** True when the signed-in user is a CLA manager for this ECLA's company + CLA group. */
+  claManager: boolean;
   /** Empty when no CLA manager is currently reachable. */
   managers: ClaManager[];
   resultCount: number;

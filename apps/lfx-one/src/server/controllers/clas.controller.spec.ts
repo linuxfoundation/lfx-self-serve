@@ -373,6 +373,7 @@ describe('ClasController.prepareSign', () => {
 const SIGNATURE_ID = '3fee6d72-0c80-4145-99c2-fb382b3a93fb';
 const managerList = {
   signatureId: SIGNATURE_ID,
+  claManager: false,
   managers: [{ lfUsername: 'jdoe', name: 'Jane Doe' }],
   resultCount: 1,
 };
