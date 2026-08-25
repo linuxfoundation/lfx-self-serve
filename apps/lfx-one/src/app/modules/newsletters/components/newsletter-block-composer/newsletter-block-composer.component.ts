@@ -421,7 +421,7 @@ export class NewsletterBlockComposerComponent implements OnInit {
   /**
    * Keyboard-accessible reorder for the Outline: the drag handle is pointer-only,
    * so these move a top-level block up/down one position for keyboard users.
-   * (Container nesting via keyboard remains a follow-up.)
+   * (Container children get their own keyboard controls below.)
    */
   protected moveBlockUp(index: number): void {
     this.moveTopLevelBlock(index, index - 1);
@@ -429,6 +429,80 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
   protected moveBlockDown(index: number): void {
     this.moveTopLevelBlock(index, index + 1);
+  }
+
+  /**
+   * Keyboard-accessible container operations for the Outline (the CDK drag
+   * handles are pointer-only). These give keyboard users the same nested-layout
+   * control the pointer path offers: reorder a child within its container,
+   * unnest a child to the top level, and nest a top-level leaf into an adjacent
+   * container.
+   */
+  protected moveChildUp(parentId: string, index: number): void {
+    this.moveChild(parentId, index, index - 1);
+  }
+
+  protected moveChildDown(parentId: string, index: number): void {
+    this.moveChild(parentId, index, index + 1);
+  }
+
+  /**
+   * Unnest a child to the top level, placed directly AFTER its parent container
+   * (the position a pointer user would most likely drop it).
+   */
+  protected moveChildOut(parentId: string, childId: string): void {
+    const blocks = this.blocks();
+    const parentIndex = blocks.findIndex((block) => block.id === parentId);
+    if (parentIndex === -1) return;
+    const parent = blocks[parentIndex];
+    const child = (parent.children ?? []).find((c) => c.id === childId);
+    if (!child) return;
+    const next = [...blocks];
+    next[parentIndex] = { ...parent, children: (parent.children ?? []).filter((c) => c.id !== childId) };
+    next.splice(parentIndex + 1, 0, child);
+    this.blocks.set(next);
+    this.emit();
+  }
+
+  /**
+   * Nest a top-level leaf into an adjacent container (keyboard parity for the
+   * drag-into-container gesture), appending it to that container's children.
+   * No-op unless `nestTarget` resolves a permitted container.
+   */
+  protected moveBlockIntoContainer(index: number): void {
+    const target = this.nestTarget(index);
+    if (!target) return;
+    const blocks = this.blocks();
+    const block = blocks[index];
+    const next = blocks.filter((_, i) => i !== index);
+    const targetIndex = next.findIndex((b) => b.id === target.id);
+    if (targetIndex === -1) return;
+    next[targetIndex] = { ...target, children: [...(target.children ?? []), block] };
+    this.blocks.set(next);
+    this.emit();
+  }
+
+  /**
+   * The container a top-level leaf at `index` may be nested into via keyboard, or
+   * null. Prefers the previous top-level sibling when it's a container, else the
+   * next; returns null for a container block or when the container's allowlist
+   * rejects the type. Drives both `moveBlockIntoContainer` and the button's
+   * visibility (so the control never shows when the move would no-op).
+   */
+  protected nestTarget(index: number): NewsletterComposerBlock | null {
+    const blocks = this.blocks();
+    const block = blocks[index];
+    if (!block || block.isContainer) return null;
+    let target: NewsletterComposerBlock | null = null;
+    const prev = blocks[index - 1];
+    const next = blocks[index + 1];
+    if (prev?.isContainer) {
+      target = prev;
+    } else if (next?.isContainer) {
+      target = next;
+    }
+    if (!target || !this.childAllowedInContainer(target, block.block_type)) return null;
+    return target;
   }
 
   /** Constrain the preview to a desktop or mobile email width. */
@@ -1013,6 +1087,17 @@ export class NewsletterBlockComposerComponent implements OnInit {
     const next = [...blocks];
     moveItemInArray(next, from, to);
     this.blocks.set(next);
+    this.emit();
+  }
+
+  /** Reorder a child within its container, clamping to the child list bounds. */
+  private moveChild(parentId: string, from: number, to: number): void {
+    const parent = this.blocks().find((block) => block.id === parentId);
+    if (!parent) return;
+    const children = [...(parent.children ?? [])];
+    if (to < 0 || to >= children.length || from === to) return;
+    moveItemInArray(children, from, to);
+    this.updateBlock(parentId, { children });
     this.emit();
   }
 
