@@ -1114,7 +1114,7 @@ export class CampaignsComponent {
     this.loadBriefCampaigns();
   }
 
-  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, etag: string | null, approved: boolean): void {
+  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, etag: string | null | undefined, approved: boolean): void {
     // Adopt the brief's OWN program first. The lookup is keyed on `(event_slug, project)` and
     // carries no program type, so an Events brief can be offered while the page sits on
     // Education, and restoring it would leave the selector describing one program while the brief
@@ -1182,7 +1182,13 @@ export class CampaignsComponent {
       // and turning a correct save into an `unowned-brief-exists` refusal. Ownership is keyed by
       // `(project, event)`, so its epoch has to be too.
       this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
-      this.knownBriefIds.set(key, { id: briefId, etag, ...(etag === null ? { absence: 'overwrite' as const } : {}) });
+      // `?? null` rather than a bare `etag`, and `== null` rather than `=== null`, because the
+      // validator originates across an HTTP boundary: an older pod mid-rolling-deploy omits the
+      // field and JSON yields `undefined`. Treating that as "present" would withhold the
+      // overwrite licence and refuse the first save after a restore as `unverified-validator`.
+      // Absence has ONE meaning here regardless of how it is spelled.
+      const validator = etag ?? null;
+      this.knownBriefIds.set(key, { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) });
     }
     this.onProceedToImplementation(brief, true, approved);
   }

@@ -882,7 +882,14 @@ export class PlanningTabComponent implements OnInit {
     // there is no state where an offer exists without the id that authorises replacing its row.
     this.savedBrief.set(result.status === 'loaded' ? result.brief : null);
     this.savedBriefId = result.status === 'loaded' ? result.briefId : null;
-    this.savedBriefEtag = result.status === 'loaded' ? result.etag : null;
+    // `?? null` NORMALISES, it does not merely satisfy the type. `etag` crosses an HTTP
+    // boundary, so the declared `string | null` is a claim about the CURRENT server: during a
+    // rolling deploy an older pod omits the field entirely and JSON yields `undefined`. That
+    // value would then fail the restore path's `etag === null` test, withholding the
+    // overwrite licence a validator-less restore is supposed to get and refusing the first
+    // save after every restore as `unverified-validator` — the main path, broken for the
+    // length of a deploy. Collapse absence to one spelling here, at the boundary.
+    this.savedBriefEtag = result.status === 'loaded' ? (result.etag ?? null) : null;
     this.savedBriefApproved = result.status === 'loaded' && result.approved;
 
     this.savedBriefWarning.set(this.warningFor(result));

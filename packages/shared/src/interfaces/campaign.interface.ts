@@ -520,9 +520,14 @@ export interface CampaignBriefLoadResult {
    * 412 when another writer moved the row since this page loaded it. Re-reading at save time
    * cannot do that -- the find runs inside the save, so its validator always matches.
    *
-   * `null` whenever the read produced no validator, or on any status other than `loaded`. Null
-   * is NOT permission to overwrite: it is an absent validator, and what a caller may do without
-   * one is decided by the `absence` it records alongside, never by the null itself.
+   * Guaranteed `null` on `off` and `none` — nothing was read, so there is no validator to
+   * report. `loaded` and `unreadable` both carry whatever the read observed, which may itself
+   * be `null` when the response had no ETag header. `unreadable` carries one deliberately: the
+   * row exists and was observed, it simply could not be mapped back, so its validator is as
+   * real as a loaded one.
+   *
+   * Null is NOT permission to overwrite: it is an absent validator, and what a caller may do
+   * without one is decided by the `absence` it records alongside, never by the null itself.
    */
   etag: string | null;
   /**

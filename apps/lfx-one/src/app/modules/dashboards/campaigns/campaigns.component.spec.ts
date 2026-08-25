@@ -62,12 +62,18 @@ describe('CampaignsComponent brief persistence', () => {
    * LFXV2-3204 keep asserting exactly the behaviour they were written for. Tests about the
    * carried validator pass one explicitly.
    */
-  function restore(b: CampaignBriefOutput, briefId: string, approved = false, etag: string | null = null): void {
+  function restore(b: CampaignBriefOutput, briefId: string, approved = false, ...etag: (string | null | undefined)[]): void {
+    // A REST parameter, not a default. A TS default fires on `undefined`, so
+    // `restore(b, id, true, undefined)` would silently become `null` — collapsing the
+    // absent-field case into the null case and making the rolling-deploy test pass against
+    // code that mishandles `undefined`. The rest form distinguishes "not passed" (length 0,
+    // legacy callers -> null) from "passed as undefined" (length 1, value preserved).
+    const validator = etag.length === 0 ? null : etag[0];
     (
       fixture.componentInstance as unknown as {
-        onRestoreSavedBrief(b: CampaignBriefOutput, id: string, etag: string | null, approved: boolean): void;
+        onRestoreSavedBrief(b: CampaignBriefOutput, id: string, etag: string | null | undefined, approved: boolean): void;
       }
-    ).onRestoreSavedBrief(b, briefId, etag, approved);
+    ).onRestoreSavedBrief(b, briefId, validator, approved);
   }
 
   function state(): CampaignBriefPersistenceState {
@@ -534,11 +540,32 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
     });
 
-    it('grants no overwrite licence for free when the read produced no validator', async () => {
-      // The absence case, kept as it was. A restore whose read returned no ETag is still a
-      // DECISION — the user saw the content and chose it — so it stays `'overwrite'` rather than
-      // refusing the first save after every such restore. What changed is that this licence is
-      // no longer handed out when a validator IS available.
+    it('treats an ABSENT etag field like a null one, so a rolling deploy cannot block restores', async () => {
+      // `etag` crosses an HTTP boundary, so its declared `string | null` is a claim about the
+      // CURRENT server. Mid-rolling-deploy an older pod omits the field and JSON yields
+      // `undefined` — a value the type system says cannot occur and the wire produces anyway.
+      //
+      // A strict `=== null` test would call that "present", withhold the overwrite licence, and
+      // refuse the first save after every restore as `unverified-validator` for the length of the
+      // deploy. Absence has one meaning regardless of how it is spelled.
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a', true, undefined);
+      await fixture.whenStable();
+
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
+    });
+
+    it('still grants the overwrite licence when the read produced NO validator', async () => {
+      // The absence case, kept as it was — and the name has to say which way it goes, because
+      // the assertion below grants the licence (`allowEtagFallback: true`) rather than
+      // withholding it.
+      //
+      // A restore whose read returned no ETag is still a DECISION — the user saw the content and
+      // chose it — so it stays `'overwrite'` rather than refusing the first save after every such
+      // restore. What changed in LFXV2-3204 is only that the licence is no longer handed out for
+      // free when a validator IS available; the test above pins that half.
       persistBrief.mockReturnValue(NEVER);
       restore(brief, 'restored-a', true, null);
       await fixture.whenStable();

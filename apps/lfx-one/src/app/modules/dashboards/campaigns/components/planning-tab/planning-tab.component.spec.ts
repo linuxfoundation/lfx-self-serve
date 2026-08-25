@@ -284,6 +284,36 @@ describe('PlanningTabComponent brief read-back', () => {
     expect(emitted).toHaveLength(1);
   });
 
+  it('emits a null etag when the load response omitted the field entirely', async () => {
+    // `etag` crosses an HTTP boundary, so the declared `string | null` describes the CURRENT
+    // server. Mid-rolling-deploy an older pod omits the field and JSON yields `undefined` — a
+    // value the type forbids and the wire produces anyway. Normalising it HERE, at the
+    // boundary, gives absence one spelling; otherwise `undefined` reaches the parent, fails its
+    // `=== null` test, withholds the overwrite licence, and refuses the first save after every
+    // restore as `unverified-validator` for the length of the deploy.
+    //
+    // The fixture omits `etag` deliberately and casts, because a well-typed literal cannot
+    // express the shape an older pod actually sends.
+    const emitted: { etag: string | null }[] = [];
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) =>
+        s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true } as unknown as CampaignBriefLoadResult)
+      )
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+    const component = fixture.componentInstance as unknown as {
+      restoreSavedBrief(): void;
+      restoreSavedBriefRequested: { subscribe(fn: (v: { etag: string | null }) => void): void };
+    };
+    component.restoreSavedBriefRequested.subscribe((v) => emitted.push(v));
+
+    component.restoreSavedBrief();
+
+    expect(emitted).toHaveLength(1);
+    // `toBeNull`, not `toBeFalsy` — `undefined` is falsy too, and passing it through is the bug.
+    expect(emitted[0].etag).toBeNull();
+  });
+
   it('keeps the restore offer across Cancel', async () => {
     campaignService.loadBrief.mockReturnValue(
       new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }))
