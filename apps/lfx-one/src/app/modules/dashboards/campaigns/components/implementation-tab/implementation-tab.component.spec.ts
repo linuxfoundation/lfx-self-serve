@@ -2196,6 +2196,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     redditInterests: () => string[];
     redditKeywords: () => string[];
     redditGeoTargets: () => string[];
+    redditVariants: () => unknown[];
     redditBudgetUsd: () => number;
     metaVariants: () => unknown[];
     submit(): void;
@@ -2440,6 +2441,10 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    *
    * Mounting with a draft present is the point — it proves the restore leaves them alone rather
    * than overwriting the fresh seed with a stale copy, which is what carrying them used to do.
+   *
+   * All SEVEN excluded arrays are asserted, and the count is the point: `emitDraft`'s note names
+   * seven, and an earlier revision checked six. `redditVariants` was the omission, so dropping it
+   * from the brief seed stayed green under a docblock claiming every array was covered.
    */
   it('re-seeds the brief-derived arrays from the brief on remount rather than from the draft', async () => {
     const first = await mount(null);
@@ -2453,6 +2458,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(c.redditInterests()).toEqual(['brief-interest']);
     expect(c.redditKeywords()).toEqual(['brief-keyword']);
     expect(c.redditGeoTargets()).toEqual(['US']);
+    expect(c.redditVariants()).toEqual([{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }]);
     expect(c.linkedInVariants()).toEqual([{ headline: 'Brief headline', introText: 'Brief intro', destinationUrl: 'https://example.com/brief' }]);
     expect(c.metaVariants()).toEqual([{ primaryText: 'Brief primary', headline: 'Brief meta headline', description: 'Brief description' }]);
   });
@@ -2461,6 +2467,10 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * A draft written by an OLDER build still carries the arrays. The restore must IGNORE them, not
    * replay them over the brief's fresh seed — that stale-copy replay is the concrete harm the
    * `!== undefined` arms were doing, since an empty array is `undefined`-negative and wins.
+   *
+   * Every array the stale draft supplies is also asserted on the remount. `redditVariants: []` was
+   * supplied here without ever being read back, so a restore arm replaying it would have wiped the
+   * brief's variants while this test stayed green (LFXV2-3230 review).
    */
   it('ignores brief-derived arrays left in a draft by an older build', async () => {
     const first = await mount(null);
@@ -2484,6 +2494,10 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(c.redditInterests()).toEqual(['brief-interest']);
     expect(c.redditKeywords()).toEqual(['brief-keyword']);
     expect(c.redditGeoTargets()).toEqual(['US']);
+    // Asserted by VALUE, not by length: the stale draft supplies `redditVariants: []`, so a
+    // length check alone would pass on a replay of any non-empty list, and the seventh array was
+    // supplied here but never checked at all until LFXV2-3230 review.
+    expect(c.redditVariants()).toEqual([{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }]);
     expect(c.linkedInVariants()).toHaveLength(1);
     expect(c.metaVariants()).toHaveLength(1);
   });
