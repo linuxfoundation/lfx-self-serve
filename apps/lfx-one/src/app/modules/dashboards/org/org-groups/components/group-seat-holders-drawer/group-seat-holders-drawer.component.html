@@ -18,7 +18,14 @@
           @if (displayedCount() === null) {
             Seat holders
           } @else {
-            {{ displayedCount() }} {{ displayedCount() === 1 ? 'seat' : 'seats' }}
+            <!-- "seat holders", not "seats" — the row's own badge already reads "N seats" for a
+                 different number (org_seat_count, distinct people; see displayedCount() above),
+                 and both can be on screen at once. "Seat holders" is this drawer's own established
+                 term (see the empty state and the row's trigger aria-label) so it doesn't collide
+                 with the row's wording while staying accurate for both this and the error-state
+                 count (a genuinely different unit, but "how many people hold a seat" is a
+                 reasonable read of it too). -->
+            {{ displayedCount() }} {{ displayedCount() === 1 ? 'seat holder' : 'seat holders' }}
           }
         </p>
         <a

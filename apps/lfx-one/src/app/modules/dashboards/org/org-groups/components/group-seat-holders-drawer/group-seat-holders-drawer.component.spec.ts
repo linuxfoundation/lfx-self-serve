@@ -192,7 +192,7 @@ describe('GroupSeatHoldersDrawerComponent', () => {
 
     await open('org-1', 'c-1', 'Storage Working Group', 1);
 
-    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('2 seats');
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('2 seat holders');
   });
 
   // The header shows a plain "Seat holders" placeholder while loading, not a borrowed seatCount()
@@ -224,7 +224,7 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     await open('org-1', 'c-1', 'Storage Working Group', 7);
 
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeTruthy();
-    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('7 seats');
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('7 seat holders');
   });
 
   it('recovers cleanly on retry after a failure: error clears, real count comes back', async () => {
@@ -246,7 +246,7 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     fixture.detectChanges();
 
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeNull();
-    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('1 seat');
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('1 seat holder');
   });
 
   // Defensive coverage, not a currently-reachable path: org-groups.component.ts closes this
@@ -273,7 +273,7 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     await setup(impl);
 
     await open('org-1', 'c-1', 'Storage Working Group', 3);
-    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('3 seats');
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('3 seat holders');
 
     fixture.componentRef.setInput('orgUid', 'org-2');
     await fixture.whenStable();

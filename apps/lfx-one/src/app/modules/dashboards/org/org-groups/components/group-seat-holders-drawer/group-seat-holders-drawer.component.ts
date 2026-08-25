@@ -43,13 +43,18 @@ export class GroupSeatHoldersDrawerComponent {
 
   // seatCount() (the row's org_seat_count) and this drawer's list count genuinely DIFFERENT
   // things: org_seat_count is distinct PEOPLE, deduped by email server-side (see
-  // org-lens-groups.service.ts), while seatHolders() is one row per SEAT/role assignment — a
-  // person holding two roles on this committee, or two blank-email seats, makes them disagree for
-  // real, not just "not loaded yet". So the header shows null (renders as a plain "Seat holders"
-  // placeholder, no number) while loading, rather than borrowing seatCount() as a stand-in that
-  // would visibly flip to a different, correct number once the real list arrives. seatCount() is
-  // used only in the error state, as the best available number when there's no real list at all to
-  // compare it against — and there's no later "settle" moment there for it to disagree with.
+  // apps/lfx-one/src/server/services/org-lens-groups.service.ts's seenEmails/org_seat_count —
+  // NOT the client-side org-lens-groups.service.ts under app/shared/services, which is a thin
+  // HTTP wrapper with no dedup logic), while seatHolders() is one row per SEAT/role assignment —
+  // a person holding two roles on this committee, or two blank-email seats, makes them disagree
+  // for real, not just "not loaded yet". Two consequences, handled differently:
+  //  - While loading, the header shows null (renders as a plain "Seat holders" placeholder, no
+  //    number) rather than borrowing seatCount() as a stand-in that would visibly flip to a
+  //    different, correct number once the real list arrives.
+  //  - Once settled, the header can legitimately show a different number than the row's own
+  //    "N seats" badge (both visible on screen at once, drawer over the row) — the template's
+  //    "seat assignments" wording (not "seats") is deliberate, to keep that from reading as the
+  //    same count getting it wrong.
   protected readonly displayedCount: Signal<number | null> = computed(() => {
     if (this.loading()) return null;
     if (this.error()) return this.seatCount();
