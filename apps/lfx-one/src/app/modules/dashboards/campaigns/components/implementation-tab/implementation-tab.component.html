@@ -564,6 +564,20 @@
             <h3 class="text-sm font-semibold text-gray-900">Microsoft Ads</h3>
           </div>
 
+          <!--
+            Stated, not hidden. The flight dates above are NOT applied to Microsoft: `microsoftConfig`
+            carries no scheduling fields (unlike Meta), so the campaign is created with no start or
+            end. It is created PAUSED, so nothing spends until a human enables it — but there is no
+            automatic stop, and an operator who assumed the flight applied would find it still
+            spending after the end date. Naming that is the difference between a known limitation and
+            an unpleasant surprise.
+          -->
+          <p class="mb-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-microsoft-no-flight">
+            <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
+            Microsoft campaigns are created paused and ignore the flight dates above — Microsoft Advertising has no scheduling in this integration yet. Enable
+            and pause the campaign manually in the Optimize tab.
+          </p>
+
           <!-- Budget + CPC bid -->
           <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div class="flex flex-col gap-1">

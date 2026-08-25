@@ -16,6 +16,7 @@ import {
   META_DEFAULT_PLACEMENTS,
   META_MESSENGER_INBOX_RETIRED_REASON,
   META_NUMERIC_ID_PATTERN,
+  isMicrosoftMatchType,
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
@@ -1341,8 +1342,9 @@ export class ImplementationTabComponent implements OnInit {
               registrationUrl: form.registrationUrl,
               hsToken: this.briefHsToken() ?? undefined,
               budgetUsd: this.microsoftBudgetUsd(),
-              startDate: form.startDate,
-              endDate: form.endDate,
+              // No startDate/endDate: `microsoftConfig` declares no scheduling fields, so sending
+              // them put values on the wire that were silently discarded. See the interface note.
+
               // The SAME computeds the section renders and `canSubmit` gates on, so the screen,
               // the guard and the request cannot disagree — see `microsoftEffectiveGeoTargets`.
               geoTargets: this.microsoftEffectiveGeoTargets(),
@@ -1844,7 +1846,30 @@ export class ImplementationTabComponent implements OnInit {
     // Seeded rather than left empty because an empty list BLOCKS the submit here (no keywords
     // means a campaign that can never serve), so shipping the section empty would make Microsoft
     // look broken on first render. The operator edits from a working starting point.
-    this.microsoftKeywords.set((brief.keywords ?? []).filter((k) => k.term?.trim()).map((k) => ({ text: k.term.trim(), matchType: k.matchType })));
+    // Filtered to what the BFF will actually ACCEPT, not merely to non-blank terms.
+    //
+    // `brief.keywords` is compile-time typed but runtime-arbitrary: both brief streams copy the
+    // model's raw `match_type` string through (`campaign-proxy.service.ts:855`), so a generated
+    // `BROAD_MATCH`, an over-length term or one carrying a control character can reach here. Seeding
+    // those left Create ENABLED while `buildMicrosoftConfig` refused the whole config, and the
+    // operator saw "unconfigured" with no indication which row was at fault.
+    //
+    // Dropping them at the seed is the honest fix: the chip list then shows exactly the keywords
+    // that will dispatch, and the operator adds any others through the box, which applies the same
+    // rules. The required-keywords guard still blocks submit if nothing survives.
+    this.microsoftKeywords.set(
+      (brief.keywords ?? [])
+        .filter(
+          (k) =>
+            typeof k?.term === 'string' &&
+            k.term.trim() !== '' &&
+            [...k.term.trim()].length <= MICROSOFT_MAX_KEYWORD_TEXT_LENGTH &&
+            !MICROSOFT_CONTROL_CHAR_RE.test(k.term) &&
+            isMicrosoftMatchType(k.matchType)
+        )
+        .slice(0, MICROSOFT_MAX_KEYWORDS)
+        .map((k) => ({ text: k.term.trim(), matchType: k.matchType }))
+    );
     // Geo chips are left EMPTY here rather than seeded from the country code.
     //
     // `countryCodeValue` must not be read in this method: `populateFromBrief` runs inside the

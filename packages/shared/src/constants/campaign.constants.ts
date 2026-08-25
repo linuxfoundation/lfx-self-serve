@@ -612,9 +612,27 @@ export const MICROSOFT_CONTROL_CHAR_RE = /[\u0000-\u001F\u007F-\u009F]/;
 
 const MICROSOFT_MATCH_TYPE_MAP: Record<CampaignKeyword['matchType'], true> = { Exact: true, Phrase: true, Broad: true };
 
-export const MICROSOFT_MATCH_TYPES: ReadonlySet<CampaignKeyword['matchType']> = new Set(
-  Object.keys(MICROSOFT_MATCH_TYPE_MAP) as CampaignKeyword['matchType'][]
-);
+/**
+ * Lower-cased lookup keys, derived from the exhaustive map above. NOT exported: a set whose members
+ * are `'exact'` while the wire vocabulary is `'Exact'` is a trap for any other caller. The
+ * `isMicrosoftMatchType` predicate below is the public surface.
+ */
+const MICROSOFT_MATCH_TYPE_KEYS: ReadonlySet<string> = new Set(Object.keys(MICROSOFT_MATCH_TYPE_MAP).map((k) => k.toLowerCase()));
+
+/**
+ * Is `value` a match type Microsoft accepts?
+ *
+ * CASE-INSENSITIVE and trimming, mirroring the client's `canonicalMatchType`, which does
+ * `strings.ToLower(strings.TrimSpace(in))`. An exact-case `Set.has` was stricter than upstream and
+ * refused `EXACT` or ` exact ` — rejecting a request the service would have accepted, and reporting
+ * the platform as unconfigured rather than naming the real problem.
+ *
+ * The ORIGINAL value is still forwarded rather than canonicalised here: upstream canonicalises it
+ * anyway, so rewriting it locally would be a second normalisation that could only drift.
+ */
+export function isMicrosoftMatchType(value: unknown): boolean {
+  return typeof value === 'string' && MICROSOFT_MATCH_TYPE_KEYS.has(value.trim().toLowerCase());
+}
 
 export const MICROSOFT_MAX_BUDGET = 1_000_000_000;
 

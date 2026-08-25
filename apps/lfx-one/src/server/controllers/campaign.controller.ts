@@ -16,14 +16,15 @@ import type {
   CampaignStatusUpdateResult,
   CampaignToggleStatus,
   FlushableResponse,
+  MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
 } from '@lfx-one/shared/interfaces';
 import {
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_PLATFORMS,
   META_GEO_CODE_PATTERN,
+  isMicrosoftMatchType,
   MICROSOFT_CONTROL_CHAR_RE,
-  MICROSOFT_MATCH_TYPES,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
   MICROSOFT_MAX_GEO_TARGETS,
@@ -1520,7 +1521,17 @@ export class CampaignController {
   private buildMicrosoftConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
     if (!body?.microsoftConfig) return null;
 
-    const { budgetUsd, cpcBid, timeZone, keywords, geoTargets, ...rest } = body.microsoftConfig;
+    const { budgetUsd, cpcBid, timeZone, keywords, geoTargets, startDate, endDate, ...rest } = body.microsoftConfig as MicrosoftCampaignCreateRequest & {
+      startDate?: string;
+      endDate?: string;
+    };
+    // Dropped, not forwarded. `microsoftConfig` declares NO scheduling fields (unlike `metaConfig`),
+    // so `unmarshalPlatformConfig` would silently discard these — putting keys on the wire that
+    // imply a flight the campaign never gets. Named here rather than left to `...rest` because a
+    // direct caller can still send them: the legacy request shape carries dates for every other
+    // platform, so they arrive by habit.
+    void startDate;
+    void endDate;
 
     // Finite AND positive. `Number.isFinite` rejects NaN and both infinities; the client applies
     // the same test during dispatch, so failing here reports it as a refusal instead of a job
@@ -1554,7 +1565,7 @@ export class CampaignController {
         k.text.trim() !== '' &&
         [...k.text.trim()].length <= MICROSOFT_MAX_KEYWORD_TEXT_LENGTH &&
         !MICROSOFT_CONTROL_CHAR_RE.test(k.text) &&
-        MICROSOFT_MATCH_TYPES.has(k.matchType)
+        isMicrosoftMatchType(k.matchType)
     );
     if (!keywordsValid) return null;
     const cleanKeywords = keywords as MicrosoftKeyword[];

@@ -932,6 +932,32 @@ describe('CampaignController.createCampaign cutover', () => {
    * — verified by running it — so it must still dispatch. Without this case the obvious "widen to
    * U+00FF" fix would look correct while silently refusing a keyword Microsoft accepts.
    */
+  /**
+   * Upstream `canonicalMatchType` does `strings.ToLower(strings.TrimSpace(in))`, so `EXACT` and
+   * ` exact ` are both valid. An exact-case `Set.has` was STRICTER than the service and refused a
+   * request it would have accepted, reporting the platform as unconfigured instead.
+   */
+  it.each([['EXACT'], ['exact'], ['  Exact  '], ['bRoAd']])('accepts the match type %s, which upstream canonicalises', async (matchType) => {
+    await createWithMicrosoft({ keywords: [{ text: 'kubernetes', matchType }] });
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    // Forwarded UNCHANGED — upstream canonicalises, so rewriting it here would be a second
+    // normalisation that could only drift.
+    expect((sent['keywords'] as { matchType: string }[])[0].matchType).toBe(matchType);
+  });
+
+  /**
+   * `microsoftConfig` declares no scheduling fields, so dates on the wire are silently discarded.
+   * Sending them implied a flight the operator never gets.
+   */
+  it('sends no flight dates, which microsoftConfig does not carry', async () => {
+    await createWithMicrosoft();
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('startDate');
+    expect(sent).not.toHaveProperty('endDate');
+  });
+
   it('accepts a non-breaking space, which is not a control character', async () => {
     await createWithMicrosoft({ keywords: [{ text: 'kuber\u00A0netes', matchType: 'Exact' }] });
 
