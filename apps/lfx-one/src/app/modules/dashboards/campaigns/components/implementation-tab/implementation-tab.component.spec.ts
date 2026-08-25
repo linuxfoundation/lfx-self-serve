@@ -1109,6 +1109,26 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['microsoftKeywordDraft']()).toBe('');
   });
 
+  /**
+   * The add handler refuses the same control characters the BFF and the client do, across the FULL
+   * C0/DEL/C1 range — U+0085 is the one an earlier version missed. U+00A0 must still be accepted:
+   * Go reports `IsControl(U+00A0) == false`, so refusing it would block a valid keyword.
+   */
+  it.each([
+    ['a C0 tab', 'kuber\tnetes', false],
+    ['DEL U+007F', 'kuber\u007Fnetes', false],
+    ['C1 NEL U+0085', 'kuber\u0085netes', false],
+    ['C1 APC U+009F', 'kuber\u009Fnetes', false],
+    ['a non-breaking space U+00A0', 'kuber\u00A0netes', true],
+  ])('handles %s in a keyword', async (_label, text, shouldAdd) => {
+    const c = component() as unknown as Record<string, any>;
+    c['microsoftKeywords'].set([]);
+
+    c['addMicrosoftKeyword'](text);
+
+    expect(c['microsoftKeywords']().length).toBe(shouldAdd ? 1 : 0);
+  });
+
   it('refuses to add a geo target past the cap', async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftGeoTargets'].set(Array.from({ length: 30 }, (_, i) => `G${i}`));

@@ -879,7 +879,7 @@ describe('CampaignController.createCampaign cutover', () => {
       },
     ],
     [
-      'a control character beside a valid keyword',
+      'a C0 control character beside a valid keyword',
       {
         keywords: [
           { text: 'kubernetes', matchType: 'Exact' },
@@ -887,6 +887,12 @@ describe('CampaignController.createCampaign cutover', () => {
         ],
       },
     ],
+    // C1 (U+0080-U+009F) is rejected by Go's `unicode.IsControl` too. An earlier version of this
+    // guard stopped at DEL, so U+0085 passed the preflight, was queued, and was refused upstream
+    // only AFTER the campaign hierarchy may have been created — the partial create this prevents.
+    ['a C1 control character (U+0085 NEL)', { keywords: [{ text: 'kuber\u0085netes', matchType: 'Exact' }] }],
+    ['a C1 control character (U+009F APC)', { keywords: [{ text: 'kuber\u009Fnetes', matchType: 'Exact' }] }],
+    ['a DEL character (U+007F)', { keywords: [{ text: 'kuber\u007Fnetes', matchType: 'Exact' }] }],
     [
       'an over-length keyword beside a valid one',
       {
@@ -921,6 +927,17 @@ describe('CampaignController.createCampaign cutover', () => {
    * controlled path. The rest of the config is valid, so this asserts the create still SUCCEEDS
    * with the key simply omitted: a bad optional field must not sink an otherwise good campaign.
    */
+  /**
+   * U+00A0 (NBSP) sits immediately above the C1 range, and Go reports `IsControl(U+00A0) == false`
+   * — verified by running it — so it must still dispatch. Without this case the obvious "widen to
+   * U+00FF" fix would look correct while silently refusing a keyword Microsoft accepts.
+   */
+  it('accepts a non-breaking space, which is not a control character', async () => {
+    await createWithMicrosoft({ keywords: [{ text: 'kuber\u00A0netes', matchType: 'Exact' }] });
+
+    expect(envelopeFor(createCampaigns)).toHaveProperty('microsoftConfig');
+  });
+
   it('omits a wrong-typed timeZone instead of throwing', async () => {
     await createWithMicrosoft({ timeZone: 123 });
 

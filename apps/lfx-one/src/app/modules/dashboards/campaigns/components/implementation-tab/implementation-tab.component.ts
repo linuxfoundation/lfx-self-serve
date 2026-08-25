@@ -16,6 +16,7 @@ import {
   META_DEFAULT_PLACEMENTS,
   META_MESSENGER_INBOX_RETIRED_REASON,
   META_NUMERIC_ID_PATTERN,
+  MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
   MICROSOFT_MAX_GEO_TARGETS,
@@ -1190,6 +1191,10 @@ export class ImplementationTabComponent implements OnInit {
     // UTF-16 units and would reject a valid CJK or emoji keyword the client accepts.
     if (this.microsoftKeywords().length >= MICROSOFT_MAX_KEYWORDS) return false;
     if ([...trimmed].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH) return false;
+    // Same control-character rule the BFF and the client apply. Checked on the RAW text, not the
+    // trimmed one, matching upstream's pre-trim check — a leading or trailing control char must be
+    // caught too, and trimming only strips whitespace.
+    if (MICROSOFT_CONTROL_CHAR_RE.test(text)) return false;
     // Case-insensitive de-dupe: Microsoft treats keyword text case-insensitively, so two chips
     // differing only in case would be one keyword upstream and the list would overstate coverage.
     const exists = this.microsoftKeywords().some((k) => k.text.trim().toLowerCase() === trimmed.toLowerCase());

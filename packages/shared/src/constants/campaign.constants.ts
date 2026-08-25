@@ -595,6 +595,21 @@ export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
  * compile silently and reject a keyword Microsoft accepts. A `Record<Union, true>` is exhaustive —
  * omitting a member is a compile error — so the union stays the single source of truth.
  */
+/**
+ * Control characters Microsoft's `Keyword.Text` rejects, mirroring Go's `unicode.IsControl`
+ * (`internal/platform/microsoft/targeting.go` checks every keyword with it, PRE-trim).
+ *
+ * Covers C0 (U+0000-U+001F), DEL (U+007F) AND C1 (U+0080-U+009F). The C1 half is easy to miss and
+ * was: an earlier version stopped at DEL, so U+0085 (NEL) passed this preflight, was queued, and
+ * was then rejected upstream — after the campaign hierarchy may already have been created, which
+ * is the partial-create this guard exists to prevent.
+ *
+ * U+00A0 (NBSP) is deliberately OUTSIDE the range: Go reports `IsControl(U+00A0) == false`, so
+ * rejecting it here would refuse a keyword Microsoft accepts. Verified by running both.
+ */
+// eslint-disable-next-line no-control-regex
+export const MICROSOFT_CONTROL_CHAR_RE = /[\u0000-\u001F\u007F-\u009F]/;
+
 const MICROSOFT_MATCH_TYPE_MAP: Record<CampaignKeyword['matchType'], true> = { Exact: true, Phrase: true, Broad: true };
 
 export const MICROSOFT_MATCH_TYPES: ReadonlySet<CampaignKeyword['matchType']> = new Set(

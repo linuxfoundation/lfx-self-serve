@@ -22,6 +22,7 @@ import {
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_PLATFORMS,
   META_GEO_CODE_PATTERN,
+  MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_MATCH_TYPES,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
@@ -1552,8 +1553,7 @@ export class CampaignController {
         typeof k?.text === 'string' &&
         k.text.trim() !== '' &&
         [...k.text.trim()].length <= MICROSOFT_MAX_KEYWORD_TEXT_LENGTH &&
-        // eslint-disable-next-line no-control-regex
-        !/[\u0000-\u001F\u007F]/.test(k.text) &&
+        !MICROSOFT_CONTROL_CHAR_RE.test(k.text) &&
         MICROSOFT_MATCH_TYPES.has(k.matchType)
     );
     if (!keywordsValid) return null;
