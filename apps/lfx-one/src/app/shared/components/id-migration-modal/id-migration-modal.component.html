@@ -8,7 +8,7 @@
     <p class="text-xs text-gray-500">What's missing in LFX that's sending you back?</p>
   </div>
 
-  <!-- Reason + optional comment -->
+  <!-- Reason is required (Continue is disabled until one is picked); the comment is optional. -->
   <form [formGroup]="form" class="flex flex-col gap-3">
     <div class="flex flex-col gap-1">
       <label for="id-migration-reason" class="text-sm font-medium text-gray-700">Reason</label>
@@ -55,6 +55,7 @@
     <lfx-button
       label="Continue to Individual Dashboard"
       ariaLabel="Continue to Individual Dashboard (opens in a new tab)"
+      [disabled]="form.invalid"
       icon="fa-light fa-arrow-up-right"
       iconPos="right"
       size="small"

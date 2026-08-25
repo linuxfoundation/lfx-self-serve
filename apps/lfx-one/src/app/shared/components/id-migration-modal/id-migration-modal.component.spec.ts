@@ -16,7 +16,8 @@ import { IdMigrationModalComponent } from './id-migration-modal.component';
 
 /**
  * Pins the analytics contract the migration funnel depends on: "Continue" must emit the
- * CONTINUE action with the selected reason (and only a non-empty comment) before it navigates,
+ * CONTINUE action with the selected reason (required, so every event carries one) and only a
+ * non-empty comment before it navigates,
  * while "Stay here" must stay silent. The dialog ref and RUM service are mocked so the assertions
  * are on the payloads we hand off, not on Datadog or the dialog host. Impersonation suppression is
  * pinned in datadog-rum.service.spec.ts — it is a property of the service, not of this component.
@@ -56,20 +57,25 @@ describe('IdMigrationModalComponent', () => {
     openSpy.mockRestore();
   });
 
-  it('pre-selects no reason so the funnel can tell "answered" from "skipped"', () => {
+  it('pre-selects no reason and holds the form invalid until one is picked', () => {
     expect(formOf(component).get('reason')?.value).toBeNull();
     expect(formOf(component).get('comment')?.value).toBe('');
+    // Continue is bound to form.invalid, so this is what keeps a reason-less CONTINUE off the wire.
+    expect(formOf(component).invalid).toBe(true);
   });
 
-  it('omits an untouched reason from the CONTINUE payload', () => {
+  it('is valid on a reason alone — the comment stays optional', () => {
+    formOf(component).get('reason')?.setValue(ID_MIGRATION_REASONS[0].value);
+
+    expect(formOf(component).valid).toBe(true);
+  });
+
+  it.each(ID_MIGRATION_REASONS.map((r) => r.value))('accepts %s as a reason', (reason) => {
+    formOf(component).get('reason')?.setValue(reason);
+
     component.continueToIndividualDashboard();
 
-    expect(addAction).toHaveBeenCalledWith(ID_MIGRATION_EVENTS.CONTINUE, {
-      funnel: ID_MIGRATION_FUNNEL,
-      source_app: ID_MIGRATION_SOURCE_APP,
-      reason: undefined,
-      comment: undefined,
-    });
+    expect(addAction).toHaveBeenCalledWith(ID_MIGRATION_EVENTS.CONTINUE, expect.objectContaining({ reason }));
   });
 
   it('stayHere closes with false and emits no analytics or navigation', () => {

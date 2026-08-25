@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, inject, PLATFORM_ID } from '@angular/core';
-import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
@@ -37,10 +37,11 @@ export class IdMigrationModalComponent {
   // Spread into a mutable array — lfx-select's `options` input is typed `any[]`, and the source
   // constant is a `readonly` tuple (`as const`, so the reason literals stay usable as a union type).
   protected readonly reasons = [...ID_MIGRATION_REASONS];
-  // No pre-selected reason: defaulting to an option makes "chose it" and "never touched the
-  // field" indistinguishable in the funnel, and inflates whichever option sits first.
+  // Required, but not pre-selected: defaulting to an option would inflate whichever sits first
+  // and make "chose it" indistinguishable from "never touched the field". Continue stays disabled
+  // until a reason is picked, so every CONTINUE event carries one.
   protected readonly form: FormGroup = this.formBuilder.group({
-    reason: [null],
+    reason: [null, Validators.required],
     comment: [''],
   });
 
@@ -51,9 +52,8 @@ export class IdMigrationModalComponent {
     this.rumService.addAction(ID_MIGRATION_EVENTS.CONTINUE, {
       funnel: ID_MIGRATION_FUNNEL,
       source_app: ID_MIGRATION_SOURCE_APP,
-      // Omit an untouched reason and an empty comment so the funnel query can tell "answered"
-      // from "skipped" rather than reading a value the user never supplied.
-      reason: reason ?? undefined,
+      reason,
+      // Omit empty comments so the funnel query can distinguish "left a note" from "didn't".
       comment: trimmedComment || undefined,
     });
 
