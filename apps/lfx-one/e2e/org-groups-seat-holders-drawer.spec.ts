@@ -14,7 +14,16 @@
 
 import { expect, test } from '@playwright/test';
 
-import { GROUP_UID, MOCK_ACCOUNT_ID, SECOND_GROUP_UID, stubAccountContext, stubCommitteeMembers, stubGroups, gotoGroups } from './helpers/org-groups.helper';
+import {
+  DATA_LOAD_TIMEOUT,
+  GROUP_UID,
+  MOCK_ACCOUNT_ID,
+  SECOND_GROUP_UID,
+  stubAccountContext,
+  stubCommitteeMembers,
+  stubGroups,
+  gotoGroups,
+} from './helpers/org-groups.helper';
 
 test.setTimeout(120_000);
 
@@ -29,13 +38,13 @@ test.describe('Org Groups — seat holders drawer (GH-1780)', () => {
   test('clicking the seat count opens the drawer without navigating to the group detail page', async ({ page }) => {
     await page.getByTestId(`org-groups-item-seats-${GROUP_UID}`).click();
 
-    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible();
+    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     expect(page.url()).not.toContain(`/groups/${GROUP_UID}`);
   });
 
   test('the drawer shows only the seat holders for the clicked group', async ({ page }) => {
     await page.getByTestId(`org-groups-item-seats-${GROUP_UID}`).click();
-    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible();
+    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await expect(page.getByTestId('group-seat-holders-drawer')).toContainText('Jane Doe');
     await expect(page.getByTestId('group-seat-holders-drawer')).toContainText('Sam Lee');
@@ -44,7 +53,7 @@ test.describe('Org Groups — seat holders drawer (GH-1780)', () => {
 
   test('the second row opens the drawer scoped to its own committee, not the first row', async ({ page }) => {
     await page.getByTestId(`org-groups-item-seats-${SECOND_GROUP_UID}`).click();
-    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible();
+    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await expect(page.getByTestId('group-seat-holders-drawer')).toContainText('John Smith');
     await expect(page.getByTestId('group-seat-holders-drawer')).not.toContainText('Jane Doe');
@@ -53,7 +62,7 @@ test.describe('Org Groups — seat holders drawer (GH-1780)', () => {
 
   test('the drawer\'s "View group page" link navigates to the public group detail page', async ({ page }) => {
     await page.getByTestId(`org-groups-item-seats-${GROUP_UID}`).click();
-    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible();
+    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('group-seat-holders-drawer-view-group-link').click();
     await page.waitForURL((url) => url.pathname.startsWith(`/groups/${GROUP_UID}`));
@@ -67,6 +76,6 @@ test.describe('Org Groups — seat holders drawer (GH-1780)', () => {
 
     await page.getByTestId(`org-groups-item-seats-${GROUP_UID}`).click();
 
-    await expect(page.getByTestId('group-seat-holders-drawer-empty')).toBeVisible();
+    await expect(page.getByTestId('group-seat-holders-drawer-empty')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 });

@@ -43,11 +43,17 @@ export class GroupSeatHoldersDrawerComponent {
 
   // Filtered-list length once loaded, falling back to the row's precomputed seatCount() before
   // that — keeps the header in sync with the rendered rows (each row is one seat/assignment, same
-  // unit the header counts) instead of drifting from a separately-sourced number. loading()/error()
-  // both bypass that fallback deliberately: a failed fetch (or a retry currently in flight after
-  // one) resolves seatHolders() to [] rather than null (see the outer catchError below), which
-  // would otherwise read "0 seats" next to the spinner or the error panel instead of the row's
-  // already-known count.
+  // unit the header counts) instead of drifting from a separately-sourced number. loading() and
+  // error() each bypass that fallback for a different reason:
+  //  - loading(): a trigger change that keeps the drawer open (an org switch — see the cache
+  //    rebuild below) starts a real refetch, but toSignal keeps emitting the LAST value until the
+  //    new one arrives — seatHolders() briefly holds the *previous* org's array, not null. Without
+  //    this guard the header would show the previous org's seat count under the new org's name.
+  //    (A committeeUid-only change replays synchronously from the cached shareReplay and never
+  //    observably hits this window; closing the drawer resets seatHolders() to null via the
+  //    `!visible` branch below, which the ?? fallback already handles on its own.)
+  //  - error(): the outer catchError resolves seatHolders() to [] (not null), which would
+  //    otherwise read "0 seats" next to the error panel instead of the row's already-known count.
   protected readonly displayedCount: Signal<number> = computed(() =>
     this.loading() || this.error() ? this.seatCount() : (this.seatHolders()?.length ?? this.seatCount())
   );

@@ -7,15 +7,16 @@
  * Companion to `org-groups-seat-holders-drawer.spec.ts`, which owns click-routing/content behavior
  * for the same drawer. This file stays focused on the data-testid contract in isolation, mirroring
  * `org-groups-row-link-robust.spec.ts`'s split for the row itself: a per-seat testid must be
- * uid-scoped — not shared across rows within one committee's roster (first test below), and not
- * reused across drawer opens for a different committee (second test below) — so a component swap
- * that keeps the same visible copy but breaks either scope still fails here even though the
- * content spec would still pass.
+ * uid-scoped — not shared across rows within one committee's roster (see "each seat row within one
+ * committee..." below), and not reused across drawer opens for a different committee (see
+ * "opening a different committee..." below) — so a component swap that keeps the same visible copy
+ * but breaks either scope still fails here even though the content spec would still pass.
  */
 
 import { expect, Page, test } from '@playwright/test';
 
 import {
+  DATA_LOAD_TIMEOUT,
   GROUP_UID,
   SEAT_STORAGE_1,
   SEAT_TRANSPORT_1,
@@ -44,7 +45,7 @@ test.describe('Org Groups — seat holders drawer data-testid contract (GH-1780)
     // Wait for the roster itself, not just the drawer shell — the shell (and its loading spinner)
     // renders before the fetch resolves, so a wait on the shell alone lets every test below run
     // against a still-loading drawer and pass vacuously.
-    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible();
+    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('renders the drawer chrome testids', async ({ page }) => {
@@ -65,7 +66,7 @@ test.describe('Org Groups — seat holders drawer data-testid contract (GH-1780)
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('group-seat-holders-drawer')).toBeHidden();
     await page.getByTestId(`org-groups-item-seats-${SECOND_GROUP_UID}`).click();
-    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible();
+    await expect(page.getByTestId('group-seat-holders-list')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     const secondCommitteeIds = await collectSeatTestIds(page);
 

@@ -220,14 +220,16 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('7 seats');
   });
 
-  // The retry itself resolves seatHolders() to [] too (loading resets error() but the stale []
-  // from the failed attempt is still what's there until the retry settles) — displayedCount must
-  // stay pinned to seatCount() through that window as well, not just the error state itself.
-  it('keeps the pre-loaded seatCount in the header while a post-failure retry is still in flight', async () => {
+  // Closing the drawer (visible: false) routes through the `!visible` branch of initSeatHolders,
+  // which resets seatHolders() to null — so this retry path was already covered by the plain
+  // `?? seatCount()` fallback even before the loading() guard existed. It's kept as a regression
+  // test for the retry flow itself (error clears, correct count reappears), not as coverage for
+  // the loading() guard specifically — see the next test for the scenario that actually needs it.
+  it('recovers cleanly on retry after a failure: error clears, count comes back', async () => {
     const impl = vi
       .fn()
       .mockReturnValueOnce(throwError(() => new Error('boom')))
-      .mockReturnValueOnce(NEVER);
+      .mockReturnValueOnce(of(response([assignment({ committeeUid: 'c-1' })])));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await setup(impl);
 
@@ -242,6 +244,38 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     fixture.detectChanges();
 
     expect(document.querySelector('[data-testid="group-seat-holders-drawer-error"]')).toBeNull();
-    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('7 seats');
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('1 seat');
+  });
+
+  // The scenario the loading() guard actually protects: the drawer stays OPEN across an org
+  // switch (visible never goes false, so seatHolders() never resets to null). The cache rebuilds
+  // for the new orgUid and a real refetch starts, but toSignal keeps emitting the previous org's
+  // array until the new fetch resolves — without the loading() guard, displayedCount would read
+  // the stale previous-org row count instead of the new row's seatCount().
+  it('keeps the new row seatCount in the header while an org-switch refetch is in flight, not the previous org roster length', async () => {
+    const impl = vi
+      .fn()
+      .mockReturnValueOnce(
+        of(
+          response([
+            assignment({ seatId: 's-1', committeeUid: 'c-1' }),
+            assignment({ seatId: 's-2', committeeUid: 'c-1' }),
+            assignment({ seatId: 's-3', committeeUid: 'c-1' }),
+          ])
+        )
+      )
+      .mockReturnValueOnce(NEVER);
+    await setup(impl);
+
+    await open('org-1', 'c-1', 'Storage Working Group', 3);
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('3 seats');
+
+    fixture.componentRef.setInput('seatCount', 9);
+    fixture.componentRef.setInput('orgUid', 'org-2');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).toContain('9 seats');
+    expect(document.querySelector('[data-testid="group-seat-holders-drawer-subtitle"]')?.textContent).not.toContain('3 seats');
   });
 });
