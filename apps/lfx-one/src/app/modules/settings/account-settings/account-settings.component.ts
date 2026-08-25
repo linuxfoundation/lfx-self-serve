@@ -112,6 +112,11 @@ export class AccountSettingsComponent {
   // record upstream). Held in a signal rather than a toast so it can host a "contact support" link.
   public meetingInviteError = signal<string | null>(null);
 
+  // Serializes meeting-invite writes. The upstream SET can take up to 20s
+  // (NATS_CONFIG.MEETING_PREFERENCE_SET_TIMEOUT) — long enough to pick a second row mid-flight and
+  // have two independent PUTs land out of order, leaving the losing address selected.
+  public savingMeetingInvite = signal(false);
+
   public allEmails = computed((): UserEmail[] => {
     const data = this.emailData();
     if (!data) return [];
@@ -327,37 +332,41 @@ export class AccountSettingsComponent {
     // so only a non-reset re-pick of the current override is a no-op.
     const isNoop = isReset ? inviteEmail === null : emailsEqual(email.email, inviteEmail);
 
-    if (!email.verified || isNoop) {
+    if (!email.verified || isNoop || this.savingMeetingInvite()) {
       return;
     }
 
     this.meetingInviteError.set(null);
+    this.savingMeetingInvite.set(true);
 
     const selection = isReset ? MEETING_INVITE_PRIMARY_SENTINEL : email.email;
 
-    this.userService.setMeetingInviteEmail(selection).subscribe({
-      next: () => {
-        this.emailRefresh.next();
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Success',
-          detail: isReset ? 'Meeting invitations will now follow your primary email' : 'Meeting invitation email updated successfully',
-        });
-      },
-      error: (err: HttpErrorResponse) => {
-        // A 400 means the address exists but isn't an active, verified record upstream — retrying
-        // won't help, so surface a persistent banner with a support link instead of a transient toast.
-        if (err.status === 400) {
-          // The server puts the copy under `error` (and `errors[].message`), not `message` —
-          // extractErrorMessage reads both, so the crafted validation text reaches the banner.
-          this.meetingInviteError.set(extractErrorMessage(err, 'This email is not an active, verified address on your account yet.'));
-          return;
-        }
-        // Retryable errors (503 sync_pending/unavailable, etc.) also carry copy under `error`, not
-        // `message` — use extractErrorMessage so the crafted retry guidance reaches the toast.
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(err, 'Failed to update meeting invitation email') });
-      },
-    });
+    this.userService
+      .setMeetingInviteEmail(selection)
+      .pipe(finalize(() => this.savingMeetingInvite.set(false)))
+      .subscribe({
+        next: () => {
+          this.emailRefresh.next();
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: isReset ? 'Meeting invitations will now follow your primary email' : 'Meeting invitation email updated successfully',
+          });
+        },
+        error: (err: HttpErrorResponse) => {
+          // A 400 means the address exists but isn't an active, verified record upstream — retrying
+          // won't help, so surface a persistent banner with a support link instead of a transient toast.
+          if (err.status === 400) {
+            // The server puts the copy under `error` (and `errors[].message`), not `message` —
+            // extractErrorMessage reads both, so the crafted validation text reaches the banner.
+            this.meetingInviteError.set(extractErrorMessage(err, 'This email is not an active, verified address on your account yet.'));
+            return;
+          }
+          // Retryable errors (503 sync_pending/unavailable, etc.) also carry copy under `error`, not
+          // `message` — use extractErrorMessage so the crafted retry guidance reaches the toast.
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(err, 'Failed to update meeting invitation email') });
+        },
+      });
   }
 
   public dismissMeetingInviteError(): void {
@@ -570,6 +579,9 @@ export class AccountSettingsComponent {
   private initMenuItemsMap(): Signal<Map<string, MenuItem[]>> {
     return computed(() => {
       const map = new Map<string, MenuItem[]>();
+      // Disables the action on every row, not just the one clicked — the guard has to cover the
+      // whole set or a second row can still queue a competing write.
+      const savingInvite = this.savingMeetingInvite();
       for (const email of this.emailsWithMetadata()) {
         const items: MenuItem[] = [];
         if (email.canSetPrimary) {
@@ -579,7 +591,12 @@ export class AccountSettingsComponent {
           // On the primary row the action clears the override rather than pinning an address — name it
           // as a reset, since it also shows on a primary row already badged as the current override.
           const label = email.isPrimary ? 'Reset to Default (Primary Email)' : 'Use for Meeting Invitations';
-          items.push({ label, icon: 'fa-light fa-envelope', command: () => this.setMeetingInvite(email) });
+          items.push({
+            label,
+            icon: 'fa-light fa-envelope',
+            disabled: savingInvite,
+            command: () => this.setMeetingInvite(email),
+          });
         }
         if (email.canDelete) {
           if (email.isMeetingInvite) {
