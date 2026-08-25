@@ -132,7 +132,9 @@
                             [rounded]="true"
                             size="small"
                             [disabled]="impersonating()"
-                            [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : 'Email actions'"
+                            [ariaLabel]="
+                              impersonating() ? 'This action is unavailable while impersonating another user' : 'Email actions for ' + emailItem.email
+                            "
                             styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
                             (onClick)="emailMenu.toggle($event)"
                             [attr.data-testid]="'email-menu-' + emailItem.email" />

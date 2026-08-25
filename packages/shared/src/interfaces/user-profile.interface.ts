@@ -55,6 +55,16 @@ export interface MeetingInviteEmail {
   email: string | null;
 }
 
+/**
+ * Email-settings state loaded as one unit. The address list and the meeting-invitation
+ * preference must land together — a partially-loaded pair briefly guards the wrong
+ * address (stale badge, stale delete guard).
+ */
+export interface EmailSettingsState {
+  emails: EmailManagementData | null;
+  invite: MeetingInviteEmail | null;
+}
+
 // Result of setting the preferred meeting-invitation email. `reason` maps a failure to an HTTP status:
 // validation → 4xx; sync_pending (SFDC lag) and unavailable (transport) → 503; upstream → 502.
 // `error` is the raw upstream message, retained for logging (not surfaced to end users).

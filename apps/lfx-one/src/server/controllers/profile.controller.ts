@@ -626,9 +626,12 @@ export class ProfileController {
       const v1Token = req.apiGatewayToken;
 
       if (!v1Token) {
+        // The token is also absent after a transient audience-token exchange failure (the auth
+        // middleware continues without it), not only when the environment lacks the config —
+        // so the copy stays neutral and retryable rather than diagnosing a misconfiguration.
         res.status(503).json({
           error: 'v1_token_unavailable',
-          message: 'Meeting invitation email settings are not available in this environment.',
+          message: 'Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.',
         });
         return;
       }
@@ -649,7 +652,11 @@ export class ProfileController {
    * Body: { email }. Requires the user's v1 API-gateway token.
    */
   public async setMeetingInviteEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const emailAddress = (req.body?.email as string) ?? '';
+    // `req.body.email` is unvalidated client JSON — a non-string (e.g. `{}`) would reach the
+    // string helpers below and throw outside the try block, turning bad input into a 500.
+    // Coercing to '' instead routes it through the field-validation error further down.
+    const rawEmail: unknown = req.body?.email;
+    const emailAddress = typeof rawEmail === 'string' ? rawEmail : '';
     // Selecting the primary row sends the sentinel instead of an address, to clear the override.
     const isReset = isMeetingInvitePrimarySentinel(emailAddress);
     // `email` is PII and `data.email` is not covered by the Pino redact paths — record the shape
@@ -680,9 +687,12 @@ export class ProfileController {
       const v1Token = req.apiGatewayToken;
 
       if (!v1Token) {
+        // The token is also absent after a transient audience-token exchange failure (the auth
+        // middleware continues without it), not only when the environment lacks the config —
+        // so the copy stays neutral and retryable rather than diagnosing a misconfiguration.
         res.status(503).json({
           error: 'v1_token_unavailable',
-          message: 'Meeting invitation email settings are not available in this environment.',
+          message: 'Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.',
         });
         return;
       }

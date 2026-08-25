@@ -19,7 +19,7 @@ import { ActivatedRoute } from '@angular/router';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { clearPendingProfileSave } from '@shared/utils/pending-profile-save.util';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
-import { ChangePasswordRequest, EmailManagementData, MeetingInviteEmail, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
+import { ChangePasswordRequest, EmailManagementData, EmailSettingsState, MeetingInviteEmail, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -27,7 +27,7 @@ import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
-import { BehaviorSubject, catchError, finalize, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, finalize, forkJoin, of, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-account-settings',
@@ -98,11 +98,14 @@ export class AccountSettingsComponent {
   // State signals
   public emailLoading = signal(false);
 
-  // Data signals
-  public emailData: Signal<EmailManagementData | null> = this.initEmailData();
+  // Data signals — the address list and the invite preference load as one unit so the row
+  // guards never read a half-refreshed pair (see initEmailState).
+  private readonly emailState: Signal<EmailSettingsState> = this.initEmailState();
+
+  public emailData: Signal<EmailManagementData | null> = computed(() => this.emailState().emails);
 
   // Preferred meeting-invitation email (meeting-service). Null address = no override (uses primary).
-  public meetingInviteData: Signal<MeetingInviteEmail | null> = this.initMeetingInviteData();
+  public meetingInviteData: Signal<MeetingInviteEmail | null> = computed(() => this.emailState().invite);
   public meetingInviteEmail = computed((): string | null => this.meetingInviteData()?.email ?? null);
 
   // Inline banner for a meeting-invite validation failure (the address isn't an active, verified
@@ -124,16 +127,17 @@ export class AccountSettingsComponent {
       const isPrimary = emailsEqual(email.email, primaryEmail);
       // Explicit selection — drives the badge, which only appears once the user has chosen.
       const isMeetingInvite = emailsEqual(email.email, inviteEmail);
-      // Where invitations actually go today: the override when set, otherwise the primary email.
-      // Offering "Meeting Invitations" on that row would be a no-op, so it's suppressed there.
-      const isEffectiveInvite = inviteEmail ? isMeetingInvite : isPrimary;
+      // The primary row's action is "reset to default", which is meaningful whenever an override
+      // exists — including one pinned to the primary address, since clearing it lets invitations
+      // follow a later primary change. Other rows offer "use this address" until they are the override.
+      const canReset = inviteEmail !== null;
       return {
         ...email,
         isPrimary,
         isMeetingInvite,
         canDelete: this.allEmails().length > 1 && !isPrimary && !!email.user_id,
         canSetPrimary: !isPrimary && email.verified,
-        canSetMeetingInvite: email.verified && !isEffectiveInvite,
+        canSetMeetingInvite: email.verified && (isPrimary ? canReset : !isMeetingInvite),
       };
     });
   });
@@ -314,16 +318,21 @@ export class AccountSettingsComponent {
   }
 
   public setMeetingInvite(email: UserEmail): void {
-    if (!email.verified || emailsEqual(email.email, this.meetingInviteEmail())) {
+    // Picking the primary row means "go back to the default". Sending its literal address would
+    // instead pin an explicit override that stops following a later primary-email change — the
+    // meeting service only clears the override for the sentinel.
+    const inviteEmail = this.meetingInviteEmail();
+    const isReset = emailsEqual(email.email, this.emailData()?.primary_email);
+    // A reset still does work while any override exists, even one pointing at the primary address,
+    // so only a non-reset re-pick of the current override is a no-op.
+    const isNoop = isReset ? inviteEmail === null : emailsEqual(email.email, inviteEmail);
+
+    if (!email.verified || isNoop) {
       return;
     }
 
     this.meetingInviteError.set(null);
 
-    // Picking the primary row means "go back to the default". Sending its literal address would
-    // instead pin an explicit override that stops following a later primary-email change — the
-    // meeting service only clears the override for the sentinel.
-    const isReset = emailsEqual(email.email, this.emailData()?.primary_email);
     const selection = isReset ? MEETING_INVITE_PRIMARY_SENTINEL : email.email;
 
     this.userService.setMeetingInviteEmail(selection).subscribe({
@@ -537,24 +546,25 @@ export class AccountSettingsComponent {
     window.location.href = url;
   }
 
-  private initEmailData(): Signal<EmailManagementData | null> {
+  /**
+   * Loads the address list and the meeting-invitation preference as one unit, behind a single
+   * loading flag. Fetching them independently let the list turn interactive while the preference
+   * was still in flight, so the badge and the delete guard briefly protected the previous
+   * selection — long enough to delete the newly chosen invite address and orphan the preference.
+   */
+  private initEmailState(): Signal<EmailSettingsState> {
     return toSignal(
       this.emailRefresh.pipe(
         switchMap(() => {
           this.emailLoading.set(true);
-          return this.userService.getUserEmails().pipe(
-            catchError(() => of(null)),
-            finalize(() => this.emailLoading.set(false))
-          );
+          return forkJoin({
+            emails: this.userService.getUserEmails().pipe(catchError(() => of(null))),
+            invite: this.userService.getMeetingInviteEmail().pipe(catchError(() => of(null))),
+          }).pipe(finalize(() => this.emailLoading.set(false)));
         })
       ),
-      { initialValue: null }
+      { initialValue: { emails: null, invite: null } }
     );
-  }
-
-  private initMeetingInviteData(): Signal<MeetingInviteEmail | null> {
-    // Reloads in lockstep with the email list so the badge reflects the latest selection.
-    return toSignal(this.emailRefresh.pipe(switchMap(() => this.userService.getMeetingInviteEmail().pipe(catchError(() => of(null))))), { initialValue: null });
   }
 
   private initMenuItemsMap(): Signal<Map<string, MenuItem[]>> {
@@ -566,8 +576,9 @@ export class AccountSettingsComponent {
           items.push({ label: 'Make Primary', icon: 'fa-light fa-star', command: () => this.setPrimary(email) });
         }
         if (email.canSetMeetingInvite) {
-          // On the primary row the action clears the override rather than pinning an address.
-          const label = email.isPrimary ? 'Use for Meeting Invitations (Default)' : 'Meeting Invitations';
+          // On the primary row the action clears the override rather than pinning an address — name it
+          // as a reset, since it also shows on a primary row already badged as the current override.
+          const label = email.isPrimary ? 'Reset to Default (Primary Email)' : 'Meeting Invitations';
           items.push({ label, icon: 'fa-light fa-envelope', command: () => this.setMeetingInvite(email) });
         }
         if (email.canDelete) {
