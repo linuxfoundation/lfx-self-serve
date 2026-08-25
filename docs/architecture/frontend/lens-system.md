@@ -32,7 +32,7 @@ Key behaviors:
 
 - `activeLens` is a **computed signal** — it reads the user's selected lens from a 30-day cookie and clamps it to the set allowed by their persona. If the persisted lens is disallowed, it falls back to `DEFAULT_LENS`.
 - `setLens()` rejects disallowed lenses silently (no throw), so unprivileged callers can't escalate scope.
-- `availableLenses` is driven by role-based access rules: root writers see all four lenses; `foundation` is available when `hasBoardRole || isRootWriter`; `project` is available when `hasProjectRole || isRootWriter`. A user can carry both roles and see both lenses.
+- `availableLenses` is driven by role-based access rules (`deriveAllowedLenses` in `packages/shared/src/utils/lens.utils.ts`): root writers see all four lenses; `foundation` is available when `hasBoardRole || isRootWriter || hasWriterFoundation || hasMarketingGrant`; `project` is available when `hasProjectRole || isRootWriter || hasWriterProject`. `hasMarketingGrant` is true when the `marketing-ops-fga-enabled` flag is on and the user holds `marketing_auditor` or `campaign_manager` on any project — this grants foundation-lens access without a board/root role, scoped in practice to the Marketing Impact and Campaigns pages (see the [Route wiring](#route-wiring) guards below). A user can carry multiple grant sources and see the union of their lenses.
 
 ### Route wiring
 
@@ -42,7 +42,9 @@ Every top-level route under `MainLayoutComponent` that is lens-aware declares it
 // apps/lfx-one/src/app/app.routes.ts (excerpt)
 { path: '',                    pathMatch: 'full', data: { lens: 'me' },        loadComponent: ... },
 { path: 'foundation/overview',                    data: { lens: 'foundation' }, loadComponent: ... },
-{ path: 'foundation/health-metrics',              data: { lens: 'foundation' }, canActivate: [executiveDirectorGuard], loadComponent: ... },
+{ path: 'foundation/health-metrics',              data: { lens: 'foundation' }, canActivate: [dashboardAccessGuard], loadComponent: ... },
+{ path: 'foundation/marketing-impact',            data: { lens: 'foundation' }, canActivate: [marketingImpactAccessGuard], loadComponent: ... },
+{ path: 'foundation/campaigns',                   data: { lens: 'foundation' }, canActivate: [campaignAccessGuard], loadComponent: ... },
 { path: 'project/overview',                       data: { lens: 'project' },    loadComponent: ... },
 { path: 'org',                                     data: { lens: 'org' },        loadComponent: ... },
 ```

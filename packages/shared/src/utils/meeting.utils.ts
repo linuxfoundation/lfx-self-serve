@@ -712,21 +712,6 @@ export function buildMeetingOccurrenceRoute(
 }
 
 /**
- * Builds the canonical Angular router commands for a meeting's edit page, prefixing the path with
- * the MEETING's own project tier (`is_foundation`) rather than the viewer's transient active lens:
- * foundation-owned meetings edit under `/foundation/meetings/{id}/edit`, all other projects under
- * `/project/meetings/{id}/edit`. Returns null when `is_foundation` is absent (unenriched payload)
- * so callers can fall back to the flat `/meetings/{id}/edit` path handled by `lensRedirectGuard`.
- */
-export function getMeetingEditCommands(meeting: Pick<Meeting, 'id' | 'is_foundation'>): string[] | null {
-  if (meeting.is_foundation === undefined) {
-    return null;
-  }
-
-  return ['/', meeting.is_foundation ? 'foundation' : 'project', 'meetings', meeting.id, 'edit'];
-}
-
-/**
  * Sorts past meetings most-recent-first (descending by `scheduled_start_time`, falling back to
  * `start_time` when absent).
  *

@@ -39,6 +39,30 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
 
 /**
+ * Gates Org Lens UI that currently renders demo/placeholder data pending a real backend source —
+ * person-detail-drawer company emails (GH-1655) and the leaderboard row score-breakdown drawer
+ * (LFXV2-2934). Remove each gate as its real-data backend lands; retire this flag once both are
+ * unguarded.
+ */
+export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
+
+/**
+ * Dark-launch gate for FGA-based (`marketing_auditor` / `campaign_manager`) Marketing Impact and
+ * Campaigns access (LFXV2-2235/LFXV2-2236). Default false: the reverted PR #1112 caused a total
+ * lockout for all users when these guards shipped without a kill switch (see the LFXV2-2231
+ * gap-analysis post-mortem). Staged rollout required — do not flip to targeting "all users" in
+ * one step.
+ *
+ * **UI-only** — evaluated through the OpenFeature Web SDK, which never runs server-side, so it
+ * cannot gate an Express handler. The actual authorization on the marketing analytics
+ * (`analytics.route.ts`) and campaigns (`campaigns.route.ts`) routes is gated independently,
+ * server-side, by `ServerFeatureFlag.MarketingOpsFga` (`server-feature-flag.helper.ts`) — an
+ * env-var kill switch that also defaults off. Both must be enabled for the feature to actually
+ * be reachable.
+ */
+export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
+
+/**
  * `localStorage` key holding a `Record<string, boolean>` of locally-forced flag values, read by
  * `FeatureFlagService.getBooleanFlag` in **non-production builds only**.
  *
