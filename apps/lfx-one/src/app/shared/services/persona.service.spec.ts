@@ -72,4 +72,19 @@ describe('PersonaService — per-scope grant probe ordering', () => {
 
     expect(service.isCampaignManager()).toBe(false);
   });
+
+  it('does not let an older, already-superseded probe for foundation A overwrite marketingGrantSlug after a newer probe for foundation B has already resolved (Copilot finding, PR #1835)', () => {
+    // ProjectContextService treats marketingGrantSlug as the single most recently *verified*
+    // foundation (a global-recency concept), unlike isMarketingAuditor/isCampaignManager which
+    // are correctly scoped per foundation. A's probe is issued first, B's second; B resolves
+    // first (legitimately, over the network), then A's stale response resolves after — it must
+    // not clobber the slug B already set.
+    service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+    service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
+
+    http.expectOne((req) => req.url.includes('project=foundation-b')).flush(mockResponse({ isCampaignManager: true }));
+    http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true }));
+
+    expect(service.marketingGrantSlug()).toBe('foundation-b');
+  });
 });

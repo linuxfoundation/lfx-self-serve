@@ -143,10 +143,16 @@ export class PersonaService {
         this.applyPersonaResponse(response, probeId, scopeKey);
         if (response && !response.error) {
           this.enrichedPersonasLoaded.set(true);
-          // Record which project this specific probe verified the grant against. A root-scoped
-          // call (no projectSlug) leaves this untouched — a ROOT grant isn't tied to one project.
-          // Guarded by probeId for the same reason as the grant signals themselves — see applyPersonaResponse.
-          if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager) && probeId === this.latestGrantProbeIdByScope.get(scopeKey)) {
+          // Record which project this specific probe verified the grant against.
+          // `ProjectContextService` reads this as a single global "most recently verified"
+          // foundation (see its constructor comment), not a per-scope value like the grant
+          // booleans above — so this write must be gated on GLOBAL probe recency, not the
+          // per-scope guard. A per-scope guard would let an older, already-superseded probe for
+          // foundation A overwrite the slug after a newer probe for foundation B has already
+          // resolved, even though B represents the more current navigation (Copilot finding on
+          // PR #1835). A root-scoped call (no projectSlug) leaves this untouched — a ROOT grant
+          // isn't tied to one project.
+          if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager) && probeId === this.latestGrantProbeId) {
             this.marketingGrantSlug.set(projectSlug);
           }
         }
