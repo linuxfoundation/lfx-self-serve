@@ -2328,12 +2328,14 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   it('carries the linkedin budget pair through a tab round-trip and into the request', async () => {
     const first = await mount(null);
     typeLinkedInBudget(first.fixture, 2500);
-    toggleLinkedInLifetimeBudget(first.fixture, true);
+    // FALSE, against the brief seed's `true`: a restore arm that silently re-stamped the seed
+    // would still satisfy an assertion of `true`.
+    toggleLinkedInLifetimeBudget(first.fixture, false);
     const draft = first.latest();
     first.fixture.destroy();
 
     expect(draft?.linkedInBudgetUsd).toBe(2500);
-    expect(draft?.linkedInLifetimeBudget).toBe(true);
+    expect(draft?.linkedInLifetimeBudget).toBe(false);
 
     const second = await mount(draft);
     const c = at(second.fixture);
@@ -2344,10 +2346,10 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     c.submit();
 
     expect(c.linkedInBudgetUsd()).toBe(2500);
-    expect(c.linkedInLifetimeBudget()).toBe(true);
+    expect(c.linkedInLifetimeBudget()).toBe(false);
     const config = sentConfig('linkedInConfig');
     expect(config['budgetUsd']).toBe(2500);
-    expect(config['lifetimeBudget']).toBe(true);
+    expect(config['lifetimeBudget']).toBe(false);
   });
 
   // === Handler emission, which naming the field in `emitDraft` does not give you ===
@@ -2383,9 +2385,12 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
 
   it('emits the draft when the linkedin lifetime-budget handler runs', async () => {
     const first = await mount(null);
-    toggleLinkedInLifetimeBudget(first.fixture, true);
+    // Toggled to FALSE, away from the brief seed's `true`. Asserting `true` here would match the
+    // seed the mount already produced, so dropping `emitDraft()` from the live handler would keep
+    // this green — the mutation this test exists to catch.
+    toggleLinkedInLifetimeBudget(first.fixture, false);
 
-    expect(first.latest()?.linkedInLifetimeBudget).toBe(true);
+    expect(first.latest()?.linkedInLifetimeBudget).toBe(false);
   });
 
   /**
