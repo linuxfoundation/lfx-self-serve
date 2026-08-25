@@ -758,6 +758,17 @@ export class CampaignProxyService {
     // no copy keys to request. See `contributesAdCopy` for why skipping beats calling with an empty
     // schema — the failure mode is not a wasted call but a dead-ended brief.
     const someContributesCopy = selectedPlatforms.some(contributesAdCopy);
+    // A copy-less PAID brief still emits `copy_structured`, with an empty object.
+    //
+    // Skipping the stage without this left `structuredCopy` null on the client, and
+    // `submitRefine` returns silently at its own `currentCopy` guard when it is — so Refine did
+    // nothing at all for a Microsoft-only brief, with no message saying why. The empty object is
+    // the honest value: this brief genuinely has no ad copy, and it is distinguishable from
+    // `null`, which means "no brief was generated". Email deliberately keeps `null`, because its
+    // copy comes from a different endpoint entirely.
+    if (!isEmail && !someContributesCopy) {
+      yield { type: 'copy_structured', data: {} };
+    }
     if (!isEmail && someContributesCopy) {
       const platformList = selectedPlatforms.filter(contributesAdCopy).join(', ');
       yield { type: 'status', data: `Generating copy for ${platformList}...` };

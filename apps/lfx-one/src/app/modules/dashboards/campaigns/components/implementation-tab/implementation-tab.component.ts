@@ -359,6 +359,13 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly microsoftMaxGeoTargets = MICROSOFT_MAX_GEO_TARGETS;
   protected readonly microsoftMinCpcBid = MICROSOFT_MIN_CPC_BID;
   protected readonly microsoftMaxCpcBid = MICROSOFT_MAX_CPC_BID;
+  /**
+   * The keyword box's in-progress text, held so the over-length warning can render live.
+   *
+   * NOT part of the draft: it is transient input, not a configured value, and a half-typed word
+   * surviving a tab switch would be surprising rather than helpful. `addMicrosoftKeyword` clears it.
+   */
+  protected readonly microsoftKeywordDraft = signal('');
   protected readonly microsoftGeoTargets = signal<string[]>([]);
   protected readonly microsoftKeywords = signal<MicrosoftKeyword[]>([]);
   protected readonly microsoftBudgetUsd = signal(500);
@@ -598,6 +605,11 @@ export class ImplementationTabComponent implements OnInit {
    * counts exactly as the dispatched payload excludes them — counting the raw signals would block
    * a form whose actual request is within bounds.
    */
+  /** Rune length of the in-progress keyword — `[...s].length`, never `.length`. */
+  protected readonly microsoftKeywordDraftLength = computed(() => [...this.microsoftKeywordDraft().trim()].length);
+
+  protected readonly microsoftKeywordDraftTooLong = computed(() => this.microsoftKeywordDraftLength() > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH);
+
   protected readonly microsoftBoundsValid = computed<boolean>(() => {
     const keywords = this.microsoftEffectiveKeywords();
     if (keywords.length > MICROSOFT_MAX_KEYWORDS) return false;
@@ -1175,10 +1187,17 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  protected onMicrosoftKeywordDraftInput(event: Event): void {
+    // Draft text only — no `emitDraft()`, because this is transient input rather than a
+    // configured value. It reaches the draft when the keyword is ADDED.
+    this.microsoftKeywordDraft.set((event.target as HTMLInputElement).value);
+  }
+
   protected onMicrosoftKeywordAdd(event: Event): void {
     const input = event.target as HTMLInputElement;
     this.addMicrosoftKeyword(input.value);
     input.value = '';
+    this.microsoftKeywordDraft.set('');
   }
 
   protected removeMicrosoftKeyword(index: number): void {

@@ -4,6 +4,7 @@
 import type {
   CampaignDeliveryTypeOption,
   CampaignGoalOption,
+  CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
@@ -584,6 +585,15 @@ export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
  * plan any of these channels can execute meaningfully, and diverging from the house floor for
  * Microsoft alone would be a surprise rather than a feature.
  */
+/**
+ * The match types Microsoft's `Keyword.MatchType` accepts, in the PascalCase vocabulary the client
+ * canonicalises (`canonicalMatchType`) — deliberately not Google's SCREAMING_CASE.
+ *
+ * Typed as `CampaignKeyword['matchType']` so the set and the union cannot drift: adding a member to
+ * the union without listing it here is a compile error rather than a silently rejected keyword.
+ */
+export const MICROSOFT_MATCH_TYPES: ReadonlySet<CampaignKeyword['matchType']> = new Set<CampaignKeyword['matchType']>(['Exact', 'Phrase', 'Broad']);
+
 export const MICROSOFT_MAX_BUDGET = 1_000_000_000;
 
 export const MICROSOFT_MAX_KEYWORDS = 60;

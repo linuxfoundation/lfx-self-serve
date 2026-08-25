@@ -826,17 +826,52 @@ describe('CampaignController.createCampaign cutover', () => {
   it.each([
     ['more than 60 keywords', { keywords: Array.from({ length: 61 }, (_, i) => ({ text: `kw-${i}`, matchType: 'Exact' })) }],
     ['a keyword longer than 100 characters', { keywords: [{ text: 'k'.repeat(101), matchType: 'Exact' }] }],
-    ['more than 30 geo targets', { geoTargets: Array.from({ length: 31 }, (_, i) => `G${i}`) }],
+    [
+      'more than 30 geo targets',
+      { geoTargets: Array.from({ length: 31 }, (_, i) => String.fromCharCode(65 + Math.floor(i / 26)) + String.fromCharCode(65 + (i % 26))) },
+    ],
   ])('refuses a Microsoft create with %s', async (_label, overrides) => {
     await createWithMicrosoft(overrides);
 
     expect(envelopeFor(createCampaigns)).not.toHaveProperty('microsoftConfig');
   });
 
+  /**
+   * This route has NO body validator — `req.body` is asserted, not parsed — so a malformed body
+   * reaches the builder intact. Before these checks `keywords: {}` hit `.filter` and
+   * `geoTargets: [123]` hit `.trim`, answering with a 500 instead of the controlled refusal. Same
+   * reasoning as `buildHubSpotConfig`, which type-checks for exactly this.
+   */
+  it.each([
+    ['a non-array keywords value', { keywords: {} }],
+    ['a non-string keyword text', { keywords: [{ text: 123, matchType: 'Exact' }] }],
+    ['an unsupported match type', { keywords: [{ text: 'kubernetes', matchType: 'BROAD_MATCH' }] }],
+    ['a non-array geoTargets value', { geoTargets: {} }],
+    ['non-string geo entries', { geoTargets: [123] }],
+    ['a non-ISO geo code', { geoTargets: ['USA'] }],
+  ])('refuses a malformed Microsoft %s without throwing', async (_label, overrides) => {
+    await expect(createWithMicrosoft(overrides)).resolves.not.toThrow();
+
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('microsoftConfig');
+    // Not a 500: the refusal is the controlled "unconfigured" path, so nothing reaches `next`
+    // as an unexpected TypeError.
+    const forwarded = vi.mocked(next).mock.calls.flat() as unknown[];
+    expect(forwarded.some((e) => (e as { constructor?: { name?: string } })?.constructor?.name === 'TypeError')).toBe(false);
+  });
+
+  it('uppercases geo codes so a lowercase entry still dispatches', async () => {
+    await createWithMicrosoft({ geoTargets: ['us', ' jp '] });
+
+    expect((envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>)['geoTargets']).toEqual(['US', 'JP']);
+  });
+
   it.each([
     ['exactly 60 keywords', { keywords: Array.from({ length: 60 }, (_, i) => ({ text: `kw-${i}`, matchType: 'Exact' })) }],
     ['a keyword of exactly 100 characters', { keywords: [{ text: 'k'.repeat(100), matchType: 'Exact' }] }],
-    ['exactly 30 geo targets', { geoTargets: Array.from({ length: 30 }, (_, i) => `G${i}`) }],
+    [
+      'exactly 30 geo targets',
+      { geoTargets: Array.from({ length: 30 }, (_, i) => String.fromCharCode(65 + Math.floor(i / 26)) + String.fromCharCode(65 + (i % 26))) },
+    ],
   ])('accepts a Microsoft create with %s, which is at the limit', async (_label, overrides) => {
     await createWithMicrosoft(overrides);
 

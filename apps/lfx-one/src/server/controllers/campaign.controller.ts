@@ -16,10 +16,13 @@ import type {
   CampaignStatusUpdateResult,
   CampaignToggleStatus,
   FlushableResponse,
+  MicrosoftKeyword,
 } from '@lfx-one/shared/interfaces';
 import {
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_PLATFORMS,
+  META_GEO_CODE_PATTERN,
+  MICROSOFT_MATCH_TYPES,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
   MICROSOFT_MAX_GEO_TARGETS,
@@ -1523,7 +1526,15 @@ export class CampaignController {
     // Non-empty AFTER trimming: a whitespace-only term is not a keyword Microsoft can match a
     // query against, so counting it would let a blank row satisfy the "at least one" rule and
     // produce the unservable campaign this guard exists to prevent.
-    const cleanKeywords = (keywords ?? []).filter((k) => k?.text?.trim());
+    // Type-checked at RUNTIME, not just by the `CampaignCreateRequest` cast — the same reasoning
+    // as `buildHubSpotConfig`, and for the same reason: this route has no body validator, so
+    // `req.body` is asserted rather than parsed. Without these checks `keywords: {}` reaches
+    // `.filter` and `geoTargets: [123]` reaches `.trim`, answering a malformed request with a 500
+    // instead of the controlled "unconfigured" refusal. A wrong TYPE is the same non-answer as a
+    // missing value and takes the same exit.
+    const cleanKeywords = (Array.isArray(keywords) ? keywords : []).filter(
+      (k): k is MicrosoftKeyword => typeof k?.text === 'string' && k.text.trim() !== '' && MICROSOFT_MATCH_TYPES.has(k.matchType)
+    );
     if (cleanKeywords.length === 0) return null;
     // The upper bounds are refusals, not truncations. Silently dropping the 61st keyword would
     // dispatch a campaign targeting less than the operator asked for, with nothing saying so.
@@ -1533,7 +1544,13 @@ export class CampaignController {
     if (cleanKeywords.length > MICROSOFT_MAX_KEYWORDS) return null;
     if (cleanKeywords.some((k) => [...k.text.trim()].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH)) return null;
 
-    const cleanGeoTargets = (geoTargets ?? []).map((g) => g?.trim()).filter((g): g is string => !!g);
+    // Uppercased and shape-checked against ISO 3166-1 alpha-2 before dispatch. The client resolves
+    // each code against Microsoft's own geographical-locations file and fails the create if one
+    // cannot be resolved — a non-ISO code would therefore be an async job failure. Membership of
+    // the assigned-country set stays the client's call; this only refuses what cannot be a code.
+    const cleanGeoTargets = (Array.isArray(geoTargets) ? geoTargets : [])
+      .map((g) => (typeof g === 'string' ? g.trim().toUpperCase() : ''))
+      .filter((g): g is string => META_GEO_CODE_PATTERN.test(g));
     if (cleanGeoTargets.length === 0) return null;
     if (cleanGeoTargets.length > MICROSOFT_MAX_GEO_TARGETS) return null;
 

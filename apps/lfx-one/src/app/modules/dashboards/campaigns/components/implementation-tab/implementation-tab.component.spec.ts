@@ -1035,6 +1035,35 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['microsoftKeywords']().length).toBe(1);
   });
 
+  /**
+   * The box carries NO native `maxlength`: it counts UTF-16 units while every guard here counts
+   * runes, so a cap of 100 would stop the field at 50 emoji and make a keyword the BFF accepts
+   * impossible to type. The live counter is what provides the feedback instead.
+   */
+  it('accepts a 100-rune emoji keyword the UTF-16 length would have blocked', async () => {
+    const c = component() as unknown as Record<string, any>;
+    const emoji = '\u{1F600}'.repeat(100);
+    expect(emoji.length).toBe(200); // UTF-16 units — what a native maxlength would have counted
+
+    c['microsoftKeywords'].set([]);
+    c['addMicrosoftKeyword'](emoji);
+
+    expect(c['microsoftKeywords']().length).toBe(1);
+  });
+
+  it('flags an over-length in-progress keyword by rune count', async () => {
+    const c = component() as unknown as Record<string, any>;
+
+    c['microsoftKeywordDraft'].set('\u{1F600}'.repeat(100));
+    await fixture.whenStable();
+    expect(c['microsoftKeywordDraftLength']()).toBe(100);
+    expect(c['microsoftKeywordDraftTooLong']()).toBe(false);
+
+    c['microsoftKeywordDraft'].set('k'.repeat(101));
+    await fixture.whenStable();
+    expect(c['microsoftKeywordDraftTooLong']()).toBe(true);
+  });
+
   it('refuses to add a geo target past the cap', async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftGeoTargets'].set(Array.from({ length: 30 }, (_, i) => `G${i}`));

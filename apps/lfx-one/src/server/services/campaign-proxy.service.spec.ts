@@ -200,6 +200,10 @@ describe('CampaignProxyService email delivery type', () => {
     expect(generatedKeywords()).toBe(true);
     expect(events.some((e) => e.type === 'done')).toBe(true);
     expect(events.some((e) => e.type === 'error')).toBe(false);
+    // Still emits `copy_structured`, with an empty object. Without it the client leaves
+    // `structuredCopy` null and `submitRefine` returns silently at its own guard — Refine would
+    // do nothing for a Microsoft-only brief, with no message explaining why.
+    expect(events.find((e) => e.type === 'copy_structured')?.data).toEqual({});
   });
 
   /** Microsoft alongside a copy-contributing platform must still generate that platform's copy. */

@@ -645,20 +645,32 @@
               }
               <!--
                 Hidden rather than disabled once the cap is reached: a disabled box invites the
-                operator to keep typing into something inert. `maxlength` is safe here (unlike the
-                geo box, where trimming happens after) because the add handler trims and then
-                re-checks the rune count anyway.
+                operator to keep typing into something inert.
+
+                NO native maxlength: it counts UTF-16 CODE UNITS, while the add handler,
+                `microsoftBoundsValid` and `buildMicrosoftConfig` all count RUNES — as Microsoft
+                does. An astral character costs two units, so a cap of 100 stopped the box at 50
+                emoji while every guard downstream accepts 100, making a keyword the BFF would
+                take impossible to type. Same reasoning as the profile bio field, which carries
+                the same comment. The live counter below supplies the feedback instead.
               -->
               @if (microsoftEffectiveKeywords().length < microsoftMaxKeywords) {
                 <input
                   id="microsoft-keyword-add"
                   type="text"
                   placeholder="+ Add keyword"
-                  [attr.maxlength]="microsoftMaxKeywordTextLength"
+                  [value]="microsoftKeywordDraft()"
+                  (input)="onMicrosoftKeywordDraftInput($event)"
                   (change)="onMicrosoftKeywordAdd($event)"
                   (keydown.enter)="onMicrosoftKeywordAdd($event); $event.preventDefault()"
+                  [attr.aria-invalid]="microsoftKeywordDraftTooLong() ? 'true' : null"
                   class="rounded-md border border-dashed border-blue-300 bg-white px-3 py-1.5 text-xs text-blue-600 placeholder:text-blue-400"
                   data-testid="implementation-microsoft-keyword-add" />
+                @if (microsoftKeywordDraftTooLong()) {
+                  <p role="alert" class="text-xs text-red-600" data-testid="implementation-microsoft-keyword-too-long">
+                    Keyword is {{ microsoftKeywordDraftLength() }} characters — Microsoft's limit is {{ microsoftMaxKeywordTextLength }}.
+                  </p>
+                }
               } @else {
                 <span class="text-xs text-gray-400" data-testid="implementation-microsoft-keyword-full">
                   Maximum of {{ microsoftMaxKeywords }} keywords reached — remove one to add another.
