@@ -77,6 +77,34 @@ describe('NewsletterRendererService (browser)', () => {
     const html = service.renderNewsletter('<section><slot name="body"></slot></section>', blocks, templateOf);
     expect(html).toContain('Body copy');
   });
+
+  it('renders an each= loop per item and binds each item as the context', () => {
+    const html = service.renderBlock('<section each="items"><text>{{label}}</text></section>', {
+      items: [{ label: 'Alpha' }, { label: 'Beta' }],
+    });
+    expect(html).toContain('Alpha');
+    expect(html).toContain('Beta');
+  });
+
+  it('does NOT leak a parent-scope field into each= item bindings', () => {
+    // itemContext REPLACES the binding context with the item (matching the
+    // server's itemCtx.content = item), so a parent-scope field must not resolve
+    // inside the loop — otherwise the canvas would render fields the sent email omits.
+    const html = service.renderBlock('<section each="items"><text>{{label}} {{parentOnly}}</text></section>', {
+      items: [{ label: 'Alpha' }],
+      parentOnly: 'PARENT',
+    });
+    expect(html).toContain('Alpha');
+    expect(html).not.toContain('PARENT');
+  });
+
+  it('drops an if=-guarded element when its field is empty (non-edit mode)', () => {
+    const shown = service.renderBlock('<text if="title">Section title</text>', { title: 'Present' });
+    expect(shown).toContain('Section title');
+
+    const hidden = service.renderBlock('<text if="title">Section title</text>', { title: '' });
+    expect(hidden).not.toContain('Section title');
+  });
 });
 
 /**

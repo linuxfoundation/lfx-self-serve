@@ -3,17 +3,24 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { listNewsletters, createNewsletter, updateNewsletter, scheduleNewsletter, cancelScheduleNewsletter } = vi.hoisted(() => ({
+const { listNewsletters, createNewsletter, updateNewsletter, scheduleNewsletter, cancelScheduleNewsletter, testSend, renderPreview } = vi.hoisted(() => ({
   listNewsletters: vi.fn(),
   createNewsletter: vi.fn(),
   updateNewsletter: vi.fn(),
   scheduleNewsletter: vi.fn(),
   cancelScheduleNewsletter: vi.fn(),
+  testSend: vi.fn(),
+  renderPreview: vi.fn(),
 }));
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest
 // config — mock the barrels the controller imports from directly, same as
 // committee.controller.spec.ts / project.controller.spec.ts.
+// The caps here are deliberately far SMALLER than production (real
+// NEWSLETTER_BODY_MAX_LENGTH is 100_000 and NEWSLETTER_BODY_LAYOUT_MAX_LENGTH is
+// 500_000) so the over-cap tests can trip them with a modest fixture. Assertions
+// exercise the code path, not the production threshold — the "exceeds the cap"
+// tests reject against these mocked values, not the real ones.
 vi.mock('@lfx-one/shared/constants', () => ({
   NEWSLETTER_BODY_MAX_LENGTH: 50_000,
   NEWSLETTER_BODY_LAYOUT_MAX_LENGTH: 5_000,
@@ -31,6 +38,8 @@ vi.mock('../services/newsletter.service', () => ({
     public updateNewsletter = updateNewsletter;
     public scheduleNewsletter = scheduleNewsletter;
     public cancelScheduleNewsletter = cancelScheduleNewsletter;
+    public testSend = testSend;
+    public renderPreview = renderPreview;
   },
 }));
 vi.mock('../services/ai.service', () => ({ AiService: class {} }));
@@ -238,7 +247,7 @@ describe('NewsletterController create/update — layout validation', () => {
     expect(createNewsletter).not.toHaveBeenCalled();
   });
 
-  it('rejects a layout whose serialized size exceeds the cap', async () => {
+  it('rejects a layout whose serialized size exceeds the (mocked) cap', async () => {
     const next = vi.fn();
     const blocks = Array.from({ length: 200 }, (_, i) => ({ block_type: 'text', content: { body: `block ${i} with some filler content` } }));
     const payload = { subject: 'Hello', body_layout: { wrapper_key: 'default', blocks }, ed_reply_email: 'ed@example.com', committee_uids: ['committee-1'] };
@@ -248,6 +257,87 @@ describe('NewsletterController create/update — layout validation', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(createNewsletter).not.toHaveBeenCalled();
+  });
+});
+
+describe('NewsletterController.testSend — validateTestSendPayload', () => {
+  const base = { subject: 'Hi', to_email: 'me@example.com', ed_reply_email: 'ed@example.com' };
+  const nonEmptyLayout = { wrapper_key: 'default', blocks: [{ block_type: 'hero', content: {} }] };
+  const run = async (body: any) => {
+    const next = vi.fn();
+    await new NewsletterController().testSend({ params: { projectUid: 'p1' }, body, path: '/x' } as any, buildRes(), next);
+    return next;
+  };
+
+  it('passes a present non-empty layout through to the service', async () => {
+    testSend.mockResolvedValue({ ok: true });
+    const next = await run({ ...base, body_layout: nonEmptyLayout });
+    expect(next).not.toHaveBeenCalled();
+    expect(testSend).toHaveBeenCalled();
+  });
+
+  it('rejects a present but empty layout (would send a wrapper-only email)', async () => {
+    const next = await run({ ...base, body_layout: { wrapper_key: 'default', blocks: [] } });
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(testSend).not.toHaveBeenCalled();
+  });
+
+  it('requires body_html when no layout is present', async () => {
+    const next = await run({ ...base, body_html: '' });
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(testSend).not.toHaveBeenCalled();
+  });
+
+  it('accepts body_html when no layout is present', async () => {
+    testSend.mockResolvedValue({ ok: true });
+    const next = await run({ ...base, body_html: '<p>hi</p>' });
+    expect(next).not.toHaveBeenCalled();
+    expect(testSend).toHaveBeenCalled();
+  });
+
+  it('rejects ed_reply_email only when supplied and invalid', async () => {
+    const supplied = await run({ ...base, body_html: '<p>hi</p>', ed_reply_email: 'notanemail' });
+    expect(supplied.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(testSend).not.toHaveBeenCalled();
+
+    testSend.mockResolvedValue({ ok: true });
+    const omitted = await run({ subject: 'Hi', to_email: 'me@example.com', body_html: '<p>hi</p>' });
+    expect(omitted).not.toHaveBeenCalled();
+    expect(testSend).toHaveBeenCalled();
+  });
+});
+
+describe('NewsletterController.renderPreview — validateRenderPreviewPayload', () => {
+  const run = async (body: any) => {
+    const next = vi.fn();
+    await new NewsletterController().renderPreview({ params: { projectUid: 'p1' }, body, path: '/x' } as any, buildRes(), next);
+    return next;
+  };
+
+  it('passes a valid layout through to the service', async () => {
+    renderPreview.mockResolvedValue({ body_html: '<p>x</p>' });
+    const next = await run({ body_layout: { wrapper_key: 'default', blocks: [{ block_type: 'hero', content: {} }] } });
+    expect(next).not.toHaveBeenCalled();
+    expect(renderPreview).toHaveBeenCalled();
+  });
+
+  it('rejects an absent layout', async () => {
+    const next = await run({});
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(renderPreview).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-object layout', async () => {
+    const next = await run({ body_layout: 'nope' });
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(renderPreview).not.toHaveBeenCalled();
+  });
+
+  it('rejects a serialized layout over the (mocked) cap', async () => {
+    const blocks = Array.from({ length: 200 }, (_, i) => ({ block_type: 'text', content: { body: `block ${i} with filler content` } }));
+    const next = await run({ body_layout: { wrapper_key: 'default', blocks } });
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(renderPreview).not.toHaveBeenCalled();
   });
 });
 
