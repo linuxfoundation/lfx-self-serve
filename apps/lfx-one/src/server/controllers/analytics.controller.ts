@@ -630,6 +630,44 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/foundation-projects-detail-grouped
+   * Get per-project detail rows for the Foundation Projects page, grouped by foundation and every
+   * nested sub-foundation discovered beneath it (GH-1607).
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationProjectsDetailGrouped(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_foundation_projects_detail_grouped');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_projects_detail_grouped',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_foundation_projects_detail_grouped',
+        });
+      }
+
+      const response = await this.projectService.getFoundationProjectsDetailGrouped(req, foundationSlug);
+
+      logger.success(req, 'get_foundation_projects_detail_grouped', startTime, {
+        foundation_slug: foundationSlug,
+        group_count: response.groups.length,
+        total_count: response.totalCount,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/foundation-projects-lifecycle-distribution
    * Get lifecycle stage distribution for the total projects drill-down drawer
    * Query params: foundationSlug (required)
