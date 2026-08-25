@@ -37,22 +37,147 @@
     </div>
 
     @let groupsCount = groupedFilteredProjects().length;
-    @for (group of groupedFilteredProjects(); track group.foundationSlug) {
-      <div class="flex flex-col gap-3" [attr.data-testid]="'foundation-projects-group-' + group.foundationSlug">
-        @if (groupsCount > 1) {
-          <h2 class="text-base font-semibold text-gray-900">{{ group.foundationName }}</h2>
-        }
+    @if (searchQuery().trim() && filteredProjects().length === 0) {
+      <!-- A no-match search renders one empty state regardless of group count — the per-group
+           #emptymessage below would otherwise stack an identical "no match" table per group. -->
+      <div class="flex flex-col items-center gap-2 rounded-lg border border-slate-200 py-12 text-center" data-testid="foundation-projects-search-empty">
+        <i class="fa-light fa-magnifying-glass text-3xl text-gray-400"></i>
+        <p class="text-sm font-medium text-gray-700">No projects match your search</p>
+        <p class="max-w-md text-sm text-gray-500">Try a different term or clear the search to see all projects.</p>
+      </div>
+    } @else {
+      @for (group of groupedFilteredProjects(); track group.foundationSlug) {
+        <div class="flex flex-col gap-3" [attr.data-testid]="'foundation-projects-group-' + group.foundationSlug">
+          @if (groupsCount > 1) {
+            <h2 class="text-base font-semibold text-gray-900">{{ group.foundationName }}</h2>
+          }
 
-        <lfx-table
-          [value]="group.projects"
-          [loading]="loading()"
-          [paginator]="group.projects.length > 10"
-          [rows]="10"
-          [rowsPerPageOptions]="[10, 25, 50]"
-          [showCurrentPageReport]="true"
-          currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-          dataKey="projectSlug"
-          [attr.data-testid]="'foundation-projects-table-' + group.foundationSlug">
+          <lfx-table
+            [value]="group.projects"
+            [loading]="loading()"
+            [paginator]="group.projects.length > 10"
+            [rows]="10"
+            [rowsPerPageOptions]="[10, 25, 50]"
+            [showCurrentPageReport]="true"
+            currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+            dataKey="projectSlug"
+            [attr.data-testid]="'foundation-projects-table-' + group.foundationSlug">
+            <ng-template #header>
+              <tr>
+                <th scope="col">Project Name</th>
+                <th scope="col" class="text-center">Groups</th>
+                <th scope="col" class="text-center">Channels</th>
+                <th scope="col" class="text-right">Maintainers</th>
+                <th scope="col" class="text-right">Stars</th>
+                <th scope="col" class="text-right">Contributors</th>
+                <th scope="col" class="text-right">Commits (90d)</th>
+                <th scope="col" class="text-right"><span class="sr-only">Actions</span></th>
+              </tr>
+            </ng-template>
+
+            <ng-template #body let-project>
+              @let view = projectRowViews().get(project.projectSlug) ?? defaultRowView;
+              <tr [attr.data-testid]="'foundation-projects-row-' + project.projectSlug">
+                <td>
+                  <button
+                    type="button"
+                    class="flex flex-col items-start border-none bg-transparent p-0 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                    [disabled]="!view.lensReady"
+                    [pTooltip]="view.lensReady ? '' : 'Project lens unavailable for this row'"
+                    tooltipPosition="top"
+                    (click)="openProjectLens(project)"
+                    [attr.data-testid]="'foundation-projects-name-' + project.projectSlug">
+                    <span class="lfx-table-name-link text-sm">{{ project.projectName }}</span>
+                    @if (project.lastUpdated) {
+                      <span class="text-xs text-slate-500">Updated {{ project.lastUpdated }}</span>
+                    }
+                  </button>
+                </td>
+                <td class="text-center">
+                  <i
+                    class="fa-light fa-users-rectangle"
+                    [class.text-blue-600]="view.groupsPresence === 'present'"
+                    [class.text-gray-300]="view.groupsPresence === 'absent'"
+                    [class.text-gray-200]="view.groupsPresence === 'pending'"
+                    aria-hidden="true"
+                    [pTooltip]="view.groupsText"
+                    tooltipPosition="top"
+                    [attr.data-testid]="'foundation-projects-groups-' + project.projectSlug"></i>
+                  <span class="sr-only">{{ view.groupsText }}</span>
+                </td>
+                <td class="text-center">
+                  <span class="inline-flex items-center justify-center gap-2">
+                    <i
+                      class="fa-light fa-envelope"
+                      [class.text-blue-600]="view.mailingListsPresence === 'present'"
+                      [class.text-gray-300]="view.mailingListsPresence === 'absent'"
+                      [class.text-gray-200]="view.mailingListsPresence === 'pending'"
+                      aria-hidden="true"
+                      [pTooltip]="view.mailingListsText"
+                      tooltipPosition="top"
+                      [attr.data-testid]="'foundation-projects-mailing-lists-' + project.projectSlug"></i>
+                    <span class="sr-only">{{ view.mailingListsText }}</span>
+                    <i
+                      class="fa-light fa-message"
+                      [class.text-blue-600]="view.chatPresence === 'present'"
+                      [class.text-gray-300]="view.chatPresence === 'absent'"
+                      [class.text-gray-200]="view.chatPresence === 'pending'"
+                      aria-hidden="true"
+                      [pTooltip]="view.chatText"
+                      tooltipPosition="top"
+                      [attr.data-testid]="'foundation-projects-chat-' + project.projectSlug"></i>
+                    <span class="sr-only">{{ view.chatText }}</span>
+                  </span>
+                </td>
+                <td class="text-right text-sm text-gray-700">{{ project.maintainers | number }}</td>
+                <td class="text-right text-sm text-gray-700">{{ project.stars | number }}</td>
+                <td class="text-right text-sm text-gray-700">{{ project.activeContributors | number }}</td>
+                <td class="text-right text-sm text-gray-700">{{ project.commitsLast90Days | number }}</td>
+                <td class="whitespace-nowrap text-right">
+                  <a
+                    [href]="getInsightsUrl(project.projectSlug)"
+                    target="_blank"
+                    rel="noopener"
+                    class="text-sm text-blue-600 hover:underline"
+                    [attr.data-testid]="'foundation-projects-view-link-' + project.projectSlug">
+                    View on Insights <i class="fa-light fa-arrow-up-right-from-square ml-1"></i>
+                  </a>
+                </td>
+              </tr>
+            </ng-template>
+
+            <ng-template #emptymessage>
+              <tr>
+                <td colspan="8" class="p-10 text-center">
+                  @if (searchQuery().trim()) {
+                    <div class="flex flex-col items-center gap-2" data-testid="foundation-projects-search-empty">
+                      <i class="fa-light fa-magnifying-glass text-3xl text-gray-400"></i>
+                      <p class="text-sm font-medium text-gray-700">No projects match your search</p>
+                      <p class="max-w-md text-sm text-gray-500">Try a different term or clear the search to see all projects.</p>
+                    </div>
+                  } @else if (groupsCount > 1) {
+                    <div class="flex flex-col items-center gap-2" data-testid="foundation-projects-empty">
+                      <i class="fa-light fa-eyes text-3xl text-gray-400"></i>
+                      <p class="text-sm font-medium text-gray-700">No project data available</p>
+                      <p class="max-w-md text-sm text-gray-500">No projects are attributed directly to {{ group.foundationName }}.</p>
+                    </div>
+                  } @else {
+                    <div class="flex flex-col items-center gap-2" data-testid="foundation-projects-empty">
+                      <i class="fa-light fa-eyes text-3xl text-gray-400"></i>
+                      <p class="text-sm font-medium text-gray-700">No project data available</p>
+                      <p class="max-w-md text-sm text-gray-500">
+                        Project-level data is only available for sub-foundations. Select a specific sub-foundation from the foundation selector to see project
+                        details.
+                      </p>
+                    </div>
+                  }
+                </td>
+              </tr>
+            </ng-template>
+          </lfx-table>
+        </div>
+      } @empty {
+        <lfx-table [value]="[]" [loading]="loading()" dataKey="projectSlug" data-testid="foundation-projects-table">
           <ng-template #header>
             <tr>
               <th scope="col">Project Name</th>
@@ -65,131 +190,22 @@
               <th scope="col" class="text-right"><span class="sr-only">Actions</span></th>
             </tr>
           </ng-template>
-
-          <ng-template #body let-project>
-            @let view = projectRowViews().get(project.projectSlug) ?? defaultRowView;
-            <tr [attr.data-testid]="'foundation-projects-row-' + project.projectSlug">
-              <td>
-                <button
-                  type="button"
-                  class="flex flex-col items-start border-none bg-transparent p-0 text-left disabled:cursor-not-allowed disabled:opacity-60"
-                  [disabled]="!view.lensReady"
-                  [pTooltip]="view.lensReady ? '' : 'Project lens unavailable for this row'"
-                  tooltipPosition="top"
-                  (click)="openProjectLens(project)"
-                  [attr.data-testid]="'foundation-projects-name-' + project.projectSlug">
-                  <span class="lfx-table-name-link text-sm">{{ project.projectName }}</span>
-                  @if (project.lastUpdated) {
-                    <span class="text-xs text-slate-500">Updated {{ project.lastUpdated }}</span>
-                  }
-                </button>
-              </td>
-              <td class="text-center">
-                <i
-                  class="fa-light fa-users-rectangle"
-                  [class.text-blue-600]="view.groupsPresence === 'present'"
-                  [class.text-gray-300]="view.groupsPresence === 'absent'"
-                  [class.text-gray-200]="view.groupsPresence === 'pending'"
-                  aria-hidden="true"
-                  [pTooltip]="view.groupsText"
-                  tooltipPosition="top"
-                  [attr.data-testid]="'foundation-projects-groups-' + project.projectSlug"></i>
-                <span class="sr-only">{{ view.groupsText }}</span>
-              </td>
-              <td class="text-center">
-                <span class="inline-flex items-center justify-center gap-2">
-                  <i
-                    class="fa-light fa-envelope"
-                    [class.text-blue-600]="view.mailingListsPresence === 'present'"
-                    [class.text-gray-300]="view.mailingListsPresence === 'absent'"
-                    [class.text-gray-200]="view.mailingListsPresence === 'pending'"
-                    aria-hidden="true"
-                    [pTooltip]="view.mailingListsText"
-                    tooltipPosition="top"
-                    [attr.data-testid]="'foundation-projects-mailing-lists-' + project.projectSlug"></i>
-                  <span class="sr-only">{{ view.mailingListsText }}</span>
-                  <i
-                    class="fa-light fa-message"
-                    [class.text-blue-600]="view.chatPresence === 'present'"
-                    [class.text-gray-300]="view.chatPresence === 'absent'"
-                    [class.text-gray-200]="view.chatPresence === 'pending'"
-                    aria-hidden="true"
-                    [pTooltip]="view.chatText"
-                    tooltipPosition="top"
-                    [attr.data-testid]="'foundation-projects-chat-' + project.projectSlug"></i>
-                  <span class="sr-only">{{ view.chatText }}</span>
-                </span>
-              </td>
-              <td class="text-right text-sm text-gray-700">{{ project.maintainers | number }}</td>
-              <td class="text-right text-sm text-gray-700">{{ project.stars | number }}</td>
-              <td class="text-right text-sm text-gray-700">{{ project.activeContributors | number }}</td>
-              <td class="text-right text-sm text-gray-700">{{ project.commitsLast90Days | number }}</td>
-              <td class="whitespace-nowrap text-right">
-                <a
-                  [href]="getInsightsUrl(project.projectSlug)"
-                  target="_blank"
-                  rel="noopener"
-                  class="text-sm text-blue-600 hover:underline"
-                  [attr.data-testid]="'foundation-projects-view-link-' + project.projectSlug">
-                  View on Insights <i class="fa-light fa-arrow-up-right-from-square ml-1"></i>
-                </a>
-              </td>
-            </tr>
-          </ng-template>
-
           <ng-template #emptymessage>
             <tr>
               <td colspan="8" class="p-10 text-center">
-                @if (searchQuery().trim()) {
-                  <div class="flex flex-col items-center gap-2" data-testid="foundation-projects-search-empty">
-                    <i class="fa-light fa-magnifying-glass text-3xl text-gray-400"></i>
-                    <p class="text-sm font-medium text-gray-700">No projects match your search</p>
-                    <p class="max-w-md text-sm text-gray-500">Try a different term or clear the search to see all projects.</p>
-                  </div>
-                } @else {
-                  <div class="flex flex-col items-center gap-2" data-testid="foundation-projects-empty">
-                    <i class="fa-light fa-eyes text-3xl text-gray-400"></i>
-                    <p class="text-sm font-medium text-gray-700">No project data available</p>
-                    <p class="max-w-md text-sm text-gray-500">
-                      Project-level data is only available for sub-foundations. Select a specific sub-foundation from the foundation selector to see project
-                      details.
-                    </p>
-                  </div>
-                }
+                <div class="flex flex-col items-center gap-2" data-testid="foundation-projects-empty">
+                  <i class="fa-light fa-eyes text-3xl text-gray-400"></i>
+                  <p class="text-sm font-medium text-gray-700">No project data available</p>
+                  <p class="max-w-md text-sm text-gray-500">
+                    Project-level data is only available for sub-foundations. Select a specific sub-foundation from the foundation selector to see project
+                    details.
+                  </p>
+                </div>
               </td>
             </tr>
           </ng-template>
         </lfx-table>
-      </div>
-    } @empty {
-      <lfx-table [value]="[]" [loading]="loading()" dataKey="projectSlug" data-testid="foundation-projects-table">
-        <ng-template #header>
-          <tr>
-            <th scope="col">Project Name</th>
-            <th scope="col" class="text-center">Groups</th>
-            <th scope="col" class="text-center">Channels</th>
-            <th scope="col" class="text-right">Maintainers</th>
-            <th scope="col" class="text-right">Stars</th>
-            <th scope="col" class="text-right">Contributors</th>
-            <th scope="col" class="text-right">Commits (90d)</th>
-            <th scope="col" class="text-right"><span class="sr-only">Actions</span></th>
-          </tr>
-        </ng-template>
-        <ng-template #emptymessage>
-          <tr>
-            <td colspan="8" class="p-10 text-center">
-              <div class="flex flex-col items-center gap-2" data-testid="foundation-projects-empty">
-                <i class="fa-light fa-eyes text-3xl text-gray-400"></i>
-                <p class="text-sm font-medium text-gray-700">No project data available</p>
-                <p class="max-w-md text-sm text-gray-500">
-                  Project-level data is only available for sub-foundations. Select a specific sub-foundation from the foundation selector to see project
-                  details.
-                </p>
-              </div>
-            </td>
-          </tr>
-        </ng-template>
-      </lfx-table>
+      }
     }
   }
 </main>

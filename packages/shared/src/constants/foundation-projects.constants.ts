@@ -38,6 +38,16 @@ export const FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH = 3;
 export const FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES = 40;
 
 /**
+ * Max concurrent sibling branches walked at once by {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH}'s
+ * recursive descendant discovery. Sibling sub-foundations under the same parent are independent
+ * `/query/resources` traversals, so they're fanned out through a bounded worker pool sharing the
+ * node budget rather than awaited one at a time — otherwise a wide umbrella foundation approaching
+ * {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES} would serialize dozens of pagination loops
+ * before any Snowflake detail fan-out could start (GH-1676 review).
+ */
+export const FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY = 8;
+
+/**
  * Max concurrent per-slug `FOUNDATION_TOTAL_PROJECTS_DETAIL` Snowflake queries fanned out across
  * a foundation's discovered sub-foundations. A wide foundation can have up to
  * {@link FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES} sub-foundations; firing all of their detail

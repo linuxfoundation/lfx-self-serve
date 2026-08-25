@@ -8,6 +8,7 @@ import {
   EMAIL_CAMPAIGN_LIMIT,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
+  FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY,
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
@@ -2038,7 +2039,7 @@ export class ProjectService {
         } catch (error) {
           logger.warning(req, 'get_foundation_projects_detail_grouped', 'Failed to fetch detail for a sub-foundation, omitting it from the response', {
             foundation_slug: slug,
-            error: error instanceof Error ? error.message : String(error),
+            err: error,
           });
         }
       }
@@ -7584,32 +7585,40 @@ export class ProjectService {
       logger.warning(req, 'discover_sub_foundations', 'Failed to resolve children, stopping traversal at this branch', {
         parent_uid: parentUid,
         depth,
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
       });
       return [] as Project[];
     });
 
+    const eligibleChildren = children.filter(
+      (child) => child.slug !== ROOT_PROJECT_SLUG && computeIsFoundation(child) && child.public && child.stage === ProjectStage.Active
+    );
+
+    // Sibling sub-foundations are independent traversals, so they're fanned out through a bounded
+    // worker pool sharing the `budget` counter rather than awaited one at a time — otherwise a wide
+    // umbrella foundation approaching FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES would serialize
+    // dozens of pagination loops before any Snowflake detail fan-out could start (GH-1676 review).
     const subFoundations: { uid: string; slug: string; name: string }[] = [];
-    for (const child of children) {
-      if (budget.remaining <= 0) {
-        logger.warning(req, 'discover_sub_foundations', 'Hit max discovered sub-foundation count, stopping traversal', {
-          parent_uid: parentUid,
-          depth,
-          max_nodes: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
-        });
-        break;
+    let cursor = 0;
+    const worker = async (): Promise<void> => {
+      while (cursor < eligibleChildren.length) {
+        const child = eligibleChildren[cursor++];
+        if (budget.remaining <= 0) {
+          logger.warning(req, 'discover_sub_foundations', 'Hit max discovered sub-foundation count, stopping traversal', {
+            parent_uid: parentUid,
+            depth,
+            max_nodes: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
+          });
+          break;
+        }
+        subFoundations.push({ uid: child.uid, slug: child.slug, name: child.name });
+        budget.remaining -= 1;
+        const nested = await this.discoverSubFoundations(req, child.uid, depth + 1, budget);
+        subFoundations.push(...nested);
       }
-      if (child.slug === ROOT_PROJECT_SLUG || !computeIsFoundation(child)) {
-        continue;
-      }
-      if (!child.public || child.stage !== ProjectStage.Active) {
-        continue;
-      }
-      subFoundations.push({ uid: child.uid, slug: child.slug, name: child.name });
-      budget.remaining -= 1;
-      const nested = await this.discoverSubFoundations(req, child.uid, depth + 1, budget);
-      subFoundations.push(...nested);
-    }
+    };
+    const poolSize = Math.min(FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY, eligibleChildren.length);
+    await Promise.all(Array.from({ length: poolSize }, () => worker()));
     return subFoundations;
   }
 
