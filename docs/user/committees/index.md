@@ -4,7 +4,6 @@ description: View, create, and manage project committees (groups) in LFX Self Se
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, governance, membership, management]
-last_generated: 2026-05-22
 last_updated: 2026-05-23
 intercom_collection: Committees
 ---

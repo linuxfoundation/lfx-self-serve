@@ -11,8 +11,10 @@ import type {
   OrgLensLeaderboardMetric,
   OrgLensLeaderboardPage,
   OrgLensLeaderboardTimeRange,
+  OrgLensProjectHealth,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
+import { mapV1BandToV2 } from '@lfx-one/shared/utils';
 import { catchError, map, Observable, of, throwError } from 'rxjs';
 
 // Client proxy exposing the Project Detail page as independently-fetched blocks, each on its own per-block BFF endpoint (own request, failure boundary, and retry); only the hero 404 gates the page.
@@ -36,11 +38,15 @@ export class OrgLensProjectDetailService {
     }
     return this.blockGet<OrgLensHeroBlock>(`${this.baseUrl(orgUid, projectSlug)}/hero`, { orgName }).pipe(
       map((block) => {
+        // Normalizes legacy v1 band names (stable/unsteady) a rolling-deploy old BFF may still emit, so the frontend never sees them.
+        const normalized = block
+          ? { ...block, hero: { ...block.hero, health: block.hero.health ? (mapV1BandToV2(block.hero.health) as OrgLensProjectHealth) : null } }
+          : block;
         if (this.heroCache.size >= OrgLensProjectDetailService.maxHeroEntries) {
           this.heroCache.clear();
         }
-        this.heroCache.set(cacheKey, block);
-        return block;
+        this.heroCache.set(cacheKey, normalized);
+        return normalized;
       })
     );
   }

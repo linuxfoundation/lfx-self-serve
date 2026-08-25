@@ -4,7 +4,6 @@ description: Frequently asked questions about LFX badges.
 audience: [all]
 product_area: Badges
 tags: [badges, faq, credentials]
-last_generated: 2026-05-22
 last_updated: 2026-08-17
 intercom_collection: Badges
 ---

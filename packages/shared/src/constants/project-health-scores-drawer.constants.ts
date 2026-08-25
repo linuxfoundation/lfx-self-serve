@@ -9,6 +9,8 @@ export const PROJECT_HEALTH_SCORES_DRAWER_ITEMS_PER_PAGE = 10;
 // Zeroed distribution used as the loading/empty fallback so the drawer chart and
 // the foundation-health card never render a previous foundation's buckets while
 // the new foundation's request is in flight.
+// Note: API response still uses v1 band names (stable/unsteady); those are mapped to v2
+// (fair/concerning) at deserialization time via mapV1DistributionToV2().
 export const DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION: FoundationHealthScoreDistributionResponse = {
   excellent: 0,
   healthy: 0,
@@ -19,7 +21,7 @@ export const DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION: FoundationHealthScore
 };
 
 // Ordered health buckets (low → high), matching the distribution chart's bar order.
-export const PROJECT_HEALTH_SCORE_CATEGORIES: readonly FoundationHealthScore[] = ['critical', 'unsteady', 'stable', 'healthy', 'excellent'];
+export const PROJECT_HEALTH_SCORE_CATEGORIES: readonly FoundationHealthScore[] = ['critical', 'concerning', 'fair', 'healthy', 'excellent'];
 
 // Chart bar order including the additive "unscored" bucket (dbt's COALESCE(..., 'Unscored')
 // row) as a leading bar, so every table row -- scored or not -- maps to a chart bar.
@@ -28,8 +30,8 @@ export const PROJECT_HEALTH_CHART_CATEGORIES: readonly HealthStatusFilterValue[]
 // Display label per health category (table badge + chart axis / tooltip title).
 export const PROJECT_HEALTH_CATEGORY_LABEL: Record<FoundationHealthScore, string> = {
   critical: 'Critical',
-  unsteady: 'Unsteady',
-  stable: 'Stable',
+  concerning: 'Concerning',
+  fair: 'Fair',
   healthy: 'Healthy',
   excellent: 'Excellent',
 };
@@ -39,8 +41,8 @@ export const PROJECT_HEALTH_CATEGORY_LABEL: Record<FoundationHealthScore, string
 // category color across bars and badges.
 export const PROJECT_HEALTH_CATEGORY_BADGE: Record<FoundationHealthScore, { bg: string; text: string }> = {
   critical: { bg: lfxColors.red[100], text: lfxColors.red[700] },
-  unsteady: { bg: lfxColors.amber[100], text: lfxColors.amber[700] },
-  stable: { bg: lfxColors.violet[100], text: lfxColors.violet[700] },
+  concerning: { bg: lfxColors.amber[100], text: lfxColors.amber[700] },
+  fair: { bg: lfxColors.violet[100], text: lfxColors.violet[700] },
   healthy: { bg: lfxColors.blue[100], text: lfxColors.blue[700] },
   excellent: { bg: lfxColors.emerald[100], text: lfxColors.emerald[700] },
 };
@@ -50,8 +52,8 @@ export const PROJECT_HEALTH_CATEGORY_BADGE: Record<FoundationHealthScore, { bg: 
 // distribution chart and the drawer's chart + legend.
 export const PROJECT_HEALTH_CATEGORY_CHART_COLOR: Record<FoundationHealthScore, string> = {
   critical: lfxColors.red[500],
-  unsteady: lfxColors.amber[400],
-  stable: lfxColors.violet[500],
+  concerning: lfxColors.amber[400],
+  fair: lfxColors.violet[500],
   healthy: lfxColors.blue[500],
   excellent: lfxColors.emerald[500],
 };

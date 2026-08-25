@@ -29,8 +29,9 @@ vi.mock('./logger.service', () => ({
   },
 }));
 
-import { CreateBucketCommand, HeadBucketCommand, NotFound, PutObjectCommand } from '@aws-sdk/client-s3';
+import { CreateBucketCommand, HeadBucketCommand, HeadObjectCommand, NotFound, PutObjectCommand } from '@aws-sdk/client-s3';
 
+import { logger } from './logger.service';
 import { ObjectStoreService } from './object-store.service';
 
 const ORIGINAL_ENV = { ...process.env };
@@ -59,6 +60,7 @@ describe('ObjectStoreService', () => {
     delete process.env['CDN_URL_PREFIX'];
     delete process.env['S3_CREATE_MISSING_BUCKET'];
     process.env['S3_BUCKET'] = 'avatars-bucket';
+    process.env['MARKETING_OS_ARTIFACTS_S3_BUCKET'] = 'marketing-os-artifacts-test';
     process.env['AWS_REGION'] = 'us-west-2';
     service = new ObjectStoreService();
   });
@@ -105,6 +107,15 @@ describe('ObjectStoreService', () => {
       await expect(service.ensureBucket()).rejects.toThrow('Forbidden');
       expect(sendMock).toHaveBeenCalledOnce();
     });
+
+    it('logs a readiness failure at ERROR for non-degradable callers (avatar path keeps its severity)', async () => {
+      sendMock.mockRejectedValueOnce(buildForbiddenError());
+
+      await expect(service.ensureBucket()).rejects.toThrow('Forbidden');
+
+      expect(logger.error).toHaveBeenCalledWith(undefined, 'object_store_ensure_bucket', expect.anything(), expect.anything(), expect.anything());
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
   });
 
   describe('readiness', () => {
@@ -116,6 +127,123 @@ describe('ObjectStoreService', () => {
     it('returns false when HeadBucket rejects', async () => {
       sendMock.mockRejectedValueOnce(new Error('down'));
       await expect(service.readiness()).resolves.toBe(false);
+    });
+  });
+
+  describe('purpose-keyed buckets', () => {
+    it('resolves the marketing-os-artifacts bucket from MARKETING_OS_ARTIFACTS_S3_BUCKET', async () => {
+      sendMock.mockResolvedValueOnce({});
+
+      await service.readiness('marketing-os-artifacts');
+
+      expect(sendMock.mock.calls[0][0]).toBeInstanceOf(HeadBucketCommand);
+      expect(sendMock.mock.calls[0][0].input.Bucket).toBe('marketing-os-artifacts-test');
+    });
+
+    it('rejects with no S3 call when the purpose bucket env var is unset', async () => {
+      delete process.env['MARKETING_OS_ARTIFACTS_S3_BUCKET'];
+
+      await expect(service.ensureBucket('marketing-os-artifacts')).rejects.toThrow('MARKETING_OS_ARTIFACTS_S3_BUCKET environment variable is required');
+      expect(sendMock).not.toHaveBeenCalled();
+    });
+
+    it('memoizes ensureBucket per purpose — one purpose failing does not poison the other', async () => {
+      // avatars head succeeds; marketing head 404s without create permission
+      sendMock.mockResolvedValueOnce({}).mockRejectedValueOnce(buildNotFoundError());
+
+      await service.ensureBucket();
+      await expect(service.ensureBucket('marketing-os-artifacts')).rejects.toThrow();
+
+      // avatars stays memoized (no additional call)
+      await service.ensureBucket();
+      expect(sendMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('putObjectIfAbsent', () => {
+    const key = 'brand-kit/testorbit/abc.md';
+    const body = Buffer.from('# doc');
+
+    it('skips the PUT when the object already exists (content-addressed no-op)', async () => {
+      // ensureBucket HeadBucket, then HeadObject exists
+      sendMock.mockResolvedValueOnce({}).mockResolvedValueOnce({});
+
+      const written = await service.putObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private');
+
+      expect(written).toBe(false);
+      expect(sendMock).toHaveBeenCalledTimes(2);
+      expect(sendMock.mock.calls[1][0]).toBeInstanceOf(HeadObjectCommand);
+    });
+
+    it('writes the object with private cache-control into the purpose bucket when absent', async () => {
+      sendMock
+        .mockResolvedValueOnce({}) // ensureBucket HeadBucket
+        .mockRejectedValueOnce(buildNotFoundError()) // HeadObject 404
+        .mockResolvedValueOnce({}); // PutObject
+
+      const written = await service.putObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private');
+
+      expect(written).toBe(true);
+      const putCommand = sendMock.mock.calls[2][0];
+      expect(putCommand).toBeInstanceOf(PutObjectCommand);
+      expect(putCommand.input).toMatchObject({
+        Bucket: 'marketing-os-artifacts-test',
+        Key: key,
+        ContentType: 'text/markdown; charset=utf-8',
+        CacheControl: 'private',
+      });
+    });
+
+    it('rethrows a non-404 HeadObject error instead of treating it as absent, logging WARN — never ERROR (graceful-degradation rule)', async () => {
+      sendMock.mockResolvedValueOnce({}).mockRejectedValueOnce(buildForbiddenError());
+
+      await expect(service.putObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private')).rejects.toThrow(
+        'Forbidden'
+      );
+      expect(sendMock).toHaveBeenCalledTimes(2);
+      // The real failure path must not emit ERROR: the recovering caller owns
+      // severity (Brand Kit degrades at WARN), and unrecovered rethrows are
+      // logged centrally by apiErrorHandler.
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'object_store_put_if_absent',
+        expect.any(String),
+        expect.objectContaining({ purpose: 'marketing-os-artifacts', key, error: 'Forbidden' })
+      );
+    });
+
+    it('logs a bucket-readiness failure at WARN — never ERROR — on this degradable path (graceful-degradation rule)', async () => {
+      // ensureBucket HeadBucket fails with a non-404 (403 / timeout / 5xx class)
+      sendMock.mockRejectedValueOnce(buildForbiddenError());
+
+      await expect(service.putObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private')).rejects.toThrow(
+        'Forbidden'
+      );
+      // A bucket-readiness outage reached via the graceful-degrade persist path must not page:
+      // Brand Kit catches the rejection and degrades at WARN, so no ERROR line is allowed here.
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledWith(
+        undefined,
+        'object_store_ensure_bucket',
+        expect.any(String),
+        expect.objectContaining({ bucket: 'marketing-os-artifacts-test', error: 'Forbidden' })
+      );
+    });
+
+    it('propagates the error when the PUT fails, logging WARN — never ERROR (graceful-degradation rule)', async () => {
+      sendMock.mockResolvedValueOnce({}).mockRejectedValueOnce(buildNotFoundError()).mockRejectedValueOnce(new Error('put failed'));
+
+      await expect(service.putObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private')).rejects.toThrow(
+        'put failed'
+      );
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'object_store_put_if_absent',
+        expect.any(String),
+        expect.objectContaining({ purpose: 'marketing-os-artifacts', key, error: 'put failed' })
+      );
     });
   });
 
