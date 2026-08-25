@@ -13,10 +13,15 @@
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
  * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
+ * - S3's company-email assertions pin `org-lens-private-release` ON via the same
+ *   `stubFeatureFlags` localStorage override used by the ROI specs (GH-1655) — no LaunchDarkly
+ *   targeting needed for this one
  */
 
 import type { OrgAllEmployeeDetail, OrgContributionsResponse } from '@lfx-one/shared/interfaces';
+import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
+import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const CONTRIBUTIONS_URL = '/org/contributions';
 const DATA_LOAD_TIMEOUT = 30_000;
@@ -248,6 +253,7 @@ test.describe('Org Lens Code Contributions — commits tab (S2)', () => {
 
 test.describe('Org Lens Code Contributions — person detail drawer (S3)', () => {
   test('S3: clicking a committer opens the shared person-detail drawer on the Code tab', async ({ page }) => {
+    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: true });
     await gotoContributions(page);
     await waitForContributionsLoaded(page);
 
@@ -259,8 +265,30 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
     await expect(page.getByTestId('person-detail-drawer-tab-code')).toHaveAttribute('aria-selected', 'true');
 
     const emailSection = page.getByTestId('person-detail-drawer-email');
-    await expect(emailSection).toBeVisible();
+    await expect(emailSection).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(emailSection).toContainText('aramirez@acme-corp.example');
     await expect(emailSection).toContainText('aramirez@acme-corp.co.uk.example');
+  });
+
+  test('S3b: company emails and the unavailable fallback stay hidden when org-lens-private-release is OFF', async ({ page }) => {
+    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
+    await gotoContributions(page);
+    await waitForContributionsLoaded(page);
+
+    await switchToCommitsTab(page);
+    await expect(page.getByTestId('org-contributions-commit-demo-aramirez-20260513')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await page.getByTestId('org-contributions-committer-demo-aramirez-20260513').click();
+    await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('person-detail-drawer-header')).toContainText('Ana Ramirez');
+    // The header renders synchronously from click context, before the async person-detail fetch
+    // resolves — wait for the fetch's loading skeleton to clear so the email assertions below reflect
+    // settled state, not a fetch that merely hasn't started rendering the email yet.
+    await expect(page.getByTestId('person-detail-drawer-loading')).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
+    // This personKey path's catchError never sets _emailError, so this assertion can't fail today —
+    // it's a regression guard in case that wiring changes. The non-vacuous flag-off coverage lives in
+    // org-people-board-tab.spec.ts's company-emails-request-never-fires test (no-personKey path).
+    await expect(page.getByTestId('person-detail-drawer-email-unavailable')).toHaveCount(0);
   });
 });

@@ -63,12 +63,15 @@
                 <p class="mt-1 text-sm leading-relaxed text-gray-500">{{ intake.intro }}</p>
               </div>
 
-              @for (field of intake.fields; track field.key) {
+              <!-- One field block per intake field — single-sourced via template outlet. -->
+              <ng-template #fieldTpl let-field>
                 <div class="flex flex-col gap-1.5">
                   <div class="flex items-center gap-2 flex-wrap">
                     <label class="text-sm font-medium text-gray-700" [for]="'mktg-intake-' + field.key">
                       {{ field.question }}
-                      <span class="text-red-600">*</span>
+                      @if (!field.optional) {
+                        <span class="text-red-600">*</span>
+                      }
                     </label>
                     @if (fromLfx()[field.key]) {
                       <span
@@ -96,10 +99,35 @@
                       [placeholder]="field.placeholder ?? ''"
                       [dataTest]="'mktg-intake-' + field.key" />
                   }
+                  @if (field.hint) {
+                    <span class="text-xs text-gray-400">{{ field.hint }}</span>
+                  }
                   @if (field.missingPrefillHint && lfxMissing()[field.key]) {
                     <span class="text-xs text-gray-400">{{ field.missingPrefillHint }}</span>
                   }
                 </div>
+              </ng-template>
+
+              @for (field of intake.fields; track field.key) {
+                <ng-container *ngTemplateOutlet="fieldTpl; context: { $implicit: field }" />
+              }
+
+              <!-- Auto-attached dependency documents (dec-agent-dependency-gating): non-interactive — the stored document is always what is submitted. -->
+              @if (attachmentChips().length > 0) {
+                <div class="flex flex-wrap gap-1.5" data-testid="mktg-agent-run-attachments">
+                  @for (chip of attachmentChips(); track chip.key) {
+                    <span
+                      class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700"
+                      [attr.data-testid]="'mktg-agent-run-attachment-' + chip.key">
+                      <i class="fa-light fa-paperclip" aria-hidden="true"></i>
+                      {{ chip.label }}
+                    </span>
+                  }
+                </div>
+              }
+
+              @if (missingDependencyNote()) {
+                <lfx-message severity="warn" [text]="missingDependencyNote()" data-testid="mktg-agent-run-missing-dependency" />
               }
 
               <div class="flex items-center gap-3 mt-2">
@@ -178,6 +206,33 @@
                 @if (feedbackNote()) {
                   <div class="px-4 py-2 border-b border-gray-100 bg-blue-50 text-xs text-blue-700" data-testid="mktg-agent-run-feedback-note">
                     Incorporates your feedback: “{{ feedbackNote() }}”
+                  </div>
+                }
+
+                @if (derivativeChips().length > 0) {
+                  <div class="flex flex-wrap gap-1.5 px-4 py-2.5 border-b border-gray-100" data-testid="mktg-agent-run-derivatives">
+                    @for (chip of derivativeChips(); track chip.key) {
+                      <button
+                        type="button"
+                        class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium"
+                        [ngClass]="
+                          chip.copied ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'
+                        "
+                        [attr.aria-label]="chip.copied ? chip.label + ' copied to the clipboard' : 'Copy the ' + chip.label + ' to the clipboard'"
+                        [attr.data-testid]="'mktg-agent-run-derivative-' + chip.key"
+                        (click)="onCopyDerivative(chip)">
+                        <!-- Copied state is conveyed by text + icon, never color alone. -->
+                        @if (chip.copied) {
+                          <i class="fa-light fa-check" aria-hidden="true"></i>
+                          Copied
+                        } @else {
+                          <i class="fa-light fa-copy" aria-hidden="true"></i>
+                          {{ chip.label }}
+                        }
+                      </button>
+                    }
+                    <!-- aria-label swaps alone aren't announced — this live region tells screen-reader users the copy succeeded. -->
+                    <span class="sr-only" role="status">{{ copiedAnnouncement() }}</span>
                   </div>
                 }
 

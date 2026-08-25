@@ -243,10 +243,11 @@ export class SidebarNavService {
         if (!slug) {
           return of(false);
         }
-        return this.analyticsService.getFoundationProjectsDetail(slug).pipe(
-          // Use totalCount (response-level aggregate) rather than projects.length
-          // so the sidebar decision is decoupled from how many rows happen to be
-          // included in the `projects` array.
+        // Grouped endpoint (not the flat one) so a foundation whose projects exist only under a
+        // discovered sub-foundation still surfaces the "Projects" nav item (GH-1676 review).
+        return this.analyticsService.getFoundationProjectsDetailGrouped(slug).pipe(
+          // Use totalCount (response-level aggregate) rather than summing group project arrays
+          // so the sidebar decision is decoupled from how many rows happen to be included.
           map((response) => response.totalCount > 0),
           startWith(false)
         );

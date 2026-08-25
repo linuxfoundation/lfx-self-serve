@@ -147,6 +147,8 @@ export function buildInvitationActions(invitations: PendingInvitation[]): Pendin
       inviteUid: invitation.uid,
       committeeUid: invitation.committee_uid,
       inviteGroupName: invitation.committee_name,
+      inviteProjectSlug: invitation.project_slug ?? null,
+      inviteIsFoundation: invitation.is_foundation ?? null,
       inviteOrganization: invitation.organization ?? null,
       inviteRequiresOrganization,
       ...(expiry ? { date: expiry } : {}),

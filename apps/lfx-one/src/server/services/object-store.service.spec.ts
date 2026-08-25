@@ -29,7 +29,15 @@ vi.mock('./logger.service', () => ({
   },
 }));
 
-import { CreateBucketCommand, HeadBucketCommand, HeadObjectCommand, NotFound, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  CreateBucketCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  NotFound,
+  PutObjectCommand,
+} from '@aws-sdk/client-s3';
 
 import { logger } from './logger.service';
 import { ObjectStoreService } from './object-store.service';
@@ -160,7 +168,7 @@ describe('ObjectStoreService', () => {
     });
   });
 
-  describe('putObjectIfAbsent', () => {
+  describe('putContentAddressedObject', () => {
     const key = 'brand-kit/testorbit/abc.md';
     const body = Buffer.from('# doc');
 
@@ -168,11 +176,72 @@ describe('ObjectStoreService', () => {
       // ensureBucket HeadBucket, then HeadObject exists
       sendMock.mockResolvedValueOnce({}).mockResolvedValueOnce({});
 
-      const written = await service.putObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private');
+      const written = await service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private');
 
       expect(written).toBe(false);
       expect(sendMock).toHaveBeenCalledTimes(2);
       expect(sendMock.mock.calls[1][0]).toBeInstanceOf(HeadObjectCommand);
+    });
+
+    it('still skips the PUT when the caller says the stored metadata is not superseded', async () => {
+      sendMock.mockResolvedValueOnce({}).mockResolvedValueOnce({ Metadata: { version: '3' } });
+      const refreshMetadataWhen = vi.fn(() => false);
+
+      const written = await service.putContentAddressedObject(
+        buildReq(),
+        'marketing-os-artifacts',
+        key,
+        body,
+        'text/markdown; charset=utf-8',
+        'private',
+        undefined,
+        {
+          refreshMetadataWhen,
+        }
+      );
+
+      expect(written).toBe(false);
+      // The predicate reads the STORED metadata, so a caller can compare it
+      // against what it is about to write.
+      expect(refreshMetadataWhen).toHaveBeenCalledWith({ version: '3' });
+      expect(sendMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('rewrites the identical bytes with fresh metadata when the caller says the stored metadata is superseded', async () => {
+      sendMock
+        .mockResolvedValueOnce({}) // ensureBucket HeadBucket
+        .mockResolvedValueOnce({ Metadata: { version: '1' } }) // HeadObject exists
+        .mockResolvedValueOnce({}); // PutObject
+
+      const written = await service.putContentAddressedObject(
+        buildReq(),
+        'marketing-os-artifacts',
+        key,
+        body,
+        'text/markdown; charset=utf-8',
+        'private',
+        { version: '2' },
+        {
+          refreshMetadataWhen: (stored) => stored['version'] === '1',
+        }
+      );
+
+      expect(written).toBe(true);
+      const putCommand = sendMock.mock.calls[2][0];
+      expect(putCommand).toBeInstanceOf(PutObjectCommand);
+      expect(putCommand.input.Metadata).toEqual({ version: '2' });
+      // Same key, same bytes — only the sidecar labels (and the store's
+      // last-modified stamp) move forward.
+      expect(putCommand.input.Key).toBe(key);
+    });
+
+    it('treats a missing predicate as the plain content-addressed no-op (no metadata read required)', async () => {
+      sendMock.mockResolvedValueOnce({}).mockResolvedValueOnce({});
+
+      await expect(
+        service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private', { version: '9' })
+      ).resolves.toBe(false);
+      expect(sendMock).toHaveBeenCalledTimes(2);
     });
 
     it('writes the object with private cache-control into the purpose bucket when absent', async () => {
@@ -181,7 +250,7 @@ describe('ObjectStoreService', () => {
         .mockRejectedValueOnce(buildNotFoundError()) // HeadObject 404
         .mockResolvedValueOnce({}); // PutObject
 
-      const written = await service.putObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private');
+      const written = await service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private');
 
       expect(written).toBe(true);
       const putCommand = sendMock.mock.calls[2][0];
@@ -197,9 +266,9 @@ describe('ObjectStoreService', () => {
     it('rethrows a non-404 HeadObject error instead of treating it as absent, logging WARN — never ERROR (graceful-degradation rule)', async () => {
       sendMock.mockResolvedValueOnce({}).mockRejectedValueOnce(buildForbiddenError());
 
-      await expect(service.putObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private')).rejects.toThrow(
-        'Forbidden'
-      );
+      await expect(
+        service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private')
+      ).rejects.toThrow('Forbidden');
       expect(sendMock).toHaveBeenCalledTimes(2);
       // The real failure path must not emit ERROR: the recovering caller owns
       // severity (Brand Kit degrades at WARN), and unrecovered rethrows are
@@ -207,7 +276,7 @@ describe('ObjectStoreService', () => {
       expect(logger.error).not.toHaveBeenCalled();
       expect(logger.warning).toHaveBeenCalledWith(
         expect.anything(),
-        'object_store_put_if_absent',
+        'object_store_put_content_addressed',
         expect.any(String),
         expect.objectContaining({ purpose: 'marketing-os-artifacts', key, error: 'Forbidden' })
       );
@@ -217,9 +286,9 @@ describe('ObjectStoreService', () => {
       // ensureBucket HeadBucket fails with a non-404 (403 / timeout / 5xx class)
       sendMock.mockRejectedValueOnce(buildForbiddenError());
 
-      await expect(service.putObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private')).rejects.toThrow(
-        'Forbidden'
-      );
+      await expect(
+        service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private')
+      ).rejects.toThrow('Forbidden');
       // A bucket-readiness outage reached via the graceful-degrade persist path must not page:
       // Brand Kit catches the rejection and degrades at WARN, so no ERROR line is allowed here.
       expect(logger.error).not.toHaveBeenCalled();
@@ -234,15 +303,114 @@ describe('ObjectStoreService', () => {
     it('propagates the error when the PUT fails, logging WARN — never ERROR (graceful-degradation rule)', async () => {
       sendMock.mockResolvedValueOnce({}).mockRejectedValueOnce(buildNotFoundError()).mockRejectedValueOnce(new Error('put failed'));
 
-      await expect(service.putObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private')).rejects.toThrow(
-        'put failed'
-      );
+      await expect(
+        service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private')
+      ).rejects.toThrow('put failed');
       expect(logger.error).not.toHaveBeenCalled();
       expect(logger.warning).toHaveBeenCalledWith(
         expect.anything(),
-        'object_store_put_if_absent',
+        'object_store_put_content_addressed',
         expect.any(String),
         expect.objectContaining({ purpose: 'marketing-os-artifacts', key, error: 'put failed' })
+      );
+    });
+
+    it('passes caller-provided metadata through to the PUT', async () => {
+      sendMock
+        .mockResolvedValueOnce({}) // ensureBucket HeadBucket
+        .mockRejectedValueOnce(buildNotFoundError()) // HeadObject 404
+        .mockResolvedValueOnce({}); // PutObject
+
+      await service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private', {
+        version: '2',
+        'intake-mode': 'form',
+      });
+
+      const putCommand = sendMock.mock.calls[2][0];
+      expect(putCommand).toBeInstanceOf(PutObjectCommand);
+      expect(putCommand.input.Metadata).toEqual({ version: '2', 'intake-mode': 'form' });
+    });
+  });
+
+  describe('listObjects', () => {
+    it('lists keys and last-modified under the prefix without any ensureBucket call', async () => {
+      sendMock.mockResolvedValueOnce({
+        Contents: [{ Key: 'brand-kit/testorbit/a.md', LastModified: new Date('2026-08-15T00:00:00Z') }, { Key: 'brand-kit/testorbit/b.md' }],
+        IsTruncated: false,
+      });
+
+      const objects = await service.listObjects(buildReq(), 'marketing-os-artifacts', 'brand-kit/testorbit/');
+
+      expect(objects).toEqual([
+        { key: 'brand-kit/testorbit/a.md', lastModified: new Date('2026-08-15T00:00:00Z') },
+        { key: 'brand-kit/testorbit/b.md', lastModified: undefined },
+      ]);
+      // A read never head-checks or creates buckets — one List call only.
+      expect(sendMock).toHaveBeenCalledOnce();
+      const listCommand = sendMock.mock.calls[0][0];
+      expect(listCommand).toBeInstanceOf(ListObjectsV2Command);
+      expect(listCommand.input).toMatchObject({ Bucket: 'marketing-os-artifacts-test', Prefix: 'brand-kit/testorbit/' });
+    });
+
+    it('paginates through truncated pages with the continuation token', async () => {
+      sendMock
+        .mockResolvedValueOnce({ Contents: [{ Key: 'brand-kit/testorbit/a.md' }], IsTruncated: true, NextContinuationToken: 'token-1' })
+        .mockResolvedValueOnce({ Contents: [{ Key: 'brand-kit/testorbit/b.md' }], IsTruncated: false });
+
+      const objects = await service.listObjects(buildReq(), 'marketing-os-artifacts', 'brand-kit/testorbit/');
+
+      expect(objects.map((object) => object.key)).toEqual(['brand-kit/testorbit/a.md', 'brand-kit/testorbit/b.md']);
+      expect(sendMock).toHaveBeenCalledTimes(2);
+      expect(sendMock.mock.calls[1][0].input.ContinuationToken).toBe('token-1');
+    });
+
+    it('rethrows a list failure logging WARN — never ERROR (graceful-degradation rule)', async () => {
+      sendMock.mockRejectedValueOnce(buildForbiddenError());
+
+      await expect(service.listObjects(buildReq(), 'marketing-os-artifacts', 'brand-kit/testorbit/')).rejects.toThrow('Forbidden');
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'object_store_list_objects',
+        expect.any(String),
+        expect.objectContaining({ purpose: 'marketing-os-artifacts', prefix: 'brand-kit/testorbit/', error: 'Forbidden' })
+      );
+    });
+  });
+
+  describe('getObject', () => {
+    const key = 'brand-kit/testorbit/abc.md';
+
+    it('returns the UTF-8 body and user metadata', async () => {
+      sendMock.mockResolvedValueOnce({
+        Body: { transformToString: vi.fn().mockResolvedValue('# doc') },
+        Metadata: { version: '2', 'intake-mode': 'form' },
+      });
+
+      const object = await service.getObject(buildReq(), 'marketing-os-artifacts', key);
+
+      expect(object).toEqual({ body: '# doc', metadata: { version: '2', 'intake-mode': 'form' } });
+      expect(sendMock.mock.calls[0][0]).toBeInstanceOf(GetObjectCommand);
+    });
+
+    it('returns null only on a confirmed missing object (404)', async () => {
+      sendMock.mockRejectedValueOnce(buildNotFoundError());
+
+      await expect(service.getObject(buildReq(), 'marketing-os-artifacts', key)).resolves.toBeNull();
+      expect(logger.warning).not.toHaveBeenCalled();
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('rethrows a non-404 failure (never masks it as absent), logging WARN — never ERROR', async () => {
+      sendMock.mockRejectedValueOnce(buildForbiddenError());
+
+      await expect(service.getObject(buildReq(), 'marketing-os-artifacts', key)).rejects.toThrow('Forbidden');
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'object_store_get_object',
+        expect.any(String),
+        expect.objectContaining({ purpose: 'marketing-os-artifacts', key, error: 'Forbidden' })
       );
     });
   });

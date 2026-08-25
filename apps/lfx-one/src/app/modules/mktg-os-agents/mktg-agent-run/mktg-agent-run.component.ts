@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgClass } from '@angular/common';
+import { isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -16,6 +16,7 @@ import {
   MktgAgent,
   MktgAgentAccent,
   MktgAgentIntake,
+  MktgDependencyDocument,
   MktgIntakePrefillSource,
   MktgRunPhase,
   MktgRunVersion,
@@ -24,9 +25,11 @@ import {
   User,
 } from '@lfx-one/shared/interfaces';
 import { trimmedRequired } from '@lfx-one/shared/validators';
-import { combineLatest, distinctUntilChanged, filter, map, Subscription, switchMap } from 'rxjs';
+import { MessageService } from 'primeng/api';
+import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -39,12 +42,23 @@ import { UserService } from '@services/user.service';
 // shell.
 @Component({
   selector: 'lfx-mktg-agent-run',
-  imports: [NgClass, ReactiveFormsModule, ButtonComponent, InputTextComponent, TextareaComponent, MarkdownRendererComponent, MessageComponent],
+  imports: [
+    NgClass,
+    NgTemplateOutlet,
+    ReactiveFormsModule,
+    ButtonComponent,
+    InputTextComponent,
+    TextareaComponent,
+    MarkdownRendererComponent,
+    MessageComponent,
+  ],
   templateUrl: './mktg-agent-run.component.html',
 })
 export class MktgAgentRunComponent {
   // === Injections ===
+  private readonly dependencyService = inject(MktgDependencyService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
@@ -61,10 +75,14 @@ export class MktgAgentRunComponent {
   private generationSub: Subscription | null = null;
   /** Deferred phase-set timer from completeRun — cleared on destroy so no timer outlives the view. */
   private phaseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Reset timer for the transient "Copied" chip state — cleared on destroy. */
+  private copyTimer: ReturnType<typeof setTimeout> | null = null;
 
   // === Catalog lookups (route param is stable for the component's lifetime) ===
   protected readonly agent: MktgAgent | null = this.resolveAgent();
   protected readonly intake: MktgAgentIntake | null = this.agent ? (MKTG_AGENT_INTAKES[this.agent.id] ?? null) : null;
+  /** Catalog dependency ids of this agent (dec-agent-dependency-gating); empty for independent agents. */
+  private readonly dependencyIds: string[] = this.agent?.dependsOn ?? [];
 
   // === Constants ===
   protected readonly stageLabels = MKTG_RUN_STAGES;
@@ -91,6 +109,16 @@ export class MktgAgentRunComponent {
    * LFX actually has — never restored answers or early typing.
    */
   protected readonly lfxMissing = signal<Record<string, boolean>>({});
+  /**
+   * Resolved stored output per dependency agent id for the active project
+   * (dec-agent-dependency-gating): server-persisted preferred, browser-stored
+   * run fallback. `null` means resolution is still in flight (or hasn't
+   * started); submission stays disabled until every dependency resolves, so a
+   * run can never be submitted without its attachments.
+   */
+  protected readonly dependencyDocs = signal<Record<string, MktgDependencyDocument | null> | null>(null);
+  /** Derivative chip key whose value was just copied — drives the transient "Copied" state. */
+  protected readonly copiedDerivative = signal('');
 
   // === Computed ===
   private readonly intakeValid = toSignal(this.intakeForm.statusChanges.pipe(map((status) => status === 'VALID')), { initialValue: this.intakeForm.valid });
@@ -105,8 +133,42 @@ export class MktgAgentRunComponent {
   protected readonly nextVersion = computed(() => (this.versions().at(-1)?.version ?? 0) + 1);
   protected readonly showVersionChips = computed(() => this.versions().length > 1 && this.phase() !== 'running');
   protected readonly feedbackNote = computed(() => (this.currentVersion()?.feedback ?? '').slice(0, 120));
-  protected readonly submitDisabled = computed(() => !this.intakeValid() || this.phase() === 'running');
-  protected readonly regenerateDisabled = computed(() => !this.feedbackValue().trim() || !this.intakeValid() || this.phase() === 'running');
+  protected readonly submitDisabled = computed(() => !this.intakeValid() || this.phase() === 'running' || !this.dependenciesSatisfied());
+  /**
+   * Non-interactive "Using <project>'s <document> (vN)" chips for the
+   * intake's auto-attached dependency documents (dec-agent-dependency-gating)
+   * — there is no choice UI; the stored document is always what is submitted.
+   */
+  protected readonly attachmentChips: Signal<{ key: string; label: string }[]> = this.initAttachmentChips();
+  /**
+   * Honest note shown when a dependency has no stored output for the active
+   * project (deep-link case — the marketplace card is disabled then). Empty
+   * while dependency resolution is still in flight and when all are met.
+   */
+  protected readonly missingDependencyNote = computed(() => {
+    const names = this.missingDependencyNames();
+    if (names.length === 0) {
+      return '';
+    }
+    return `This agent builds on the project’s ${names.join(' and ')} — generate ${names.length > 1 ? 'them' : 'it'} from the marketplace first.`;
+  });
+  /** Copyable derivative chips for the current version (empty when the agent has none). */
+  protected readonly derivativeChips: Signal<{ key: string; label: string; value: string; copied: boolean }[]> = this.initDerivativeChips();
+  /** Screen-reader copy confirmation for the template's live region — the visible chip flip alone is never announced. */
+  protected readonly copiedAnnouncement = computed(() => {
+    const copied = this.derivativeChips().find((chip) => chip.copied);
+    return copied ? `${copied.label} copied to the clipboard` : '';
+  });
+  /**
+   * Regeneration is a full resubmit, so it gates exactly like the first
+   * submit — including the dependency gate. Without it a "Request changes"
+   * could fire while the project's dependency documents are still resolving
+   * (or gone), flipping the page to `running` only for submit-time resolution
+   * to abort it.
+   */
+  protected readonly regenerateDisabled = computed(
+    () => !this.feedbackValue().trim() || !this.intakeValid() || this.phase() === 'running' || !this.dependenciesSatisfied()
+  );
   protected readonly stages: Signal<{ label: string; state: 'done' | 'active' | 'pending'; labelClass: string }[]> = this.initStages();
   protected readonly sectionChecklist: Signal<{ label: string; present: boolean; iconClass: string; srText: string }[]> = this.initSectionChecklist();
 
@@ -133,12 +195,16 @@ export class MktgAgentRunComponent {
   protected readonly agentTagline: string = this.agent?.tags.join(' · ') ?? '';
 
   public constructor() {
-    // The deferred phase-set timer must not outlive the view (its callback
-    // only writes a signal today, but an unmanaged timer is a foot-gun).
+    // The deferred timers must not outlive the view (their callbacks only
+    // write signals today, but an unmanaged timer is a foot-gun).
     this.destroyRef.onDestroy(() => {
       if (this.phaseTimer !== null) {
         clearTimeout(this.phaseTimer);
         this.phaseTimer = null;
+      }
+      if (this.copyTimer !== null) {
+        clearTimeout(this.copyTimer);
+        this.copyTimer = null;
       }
     });
     // Unknown, coming-soon, or intake-less agents have no run page — back to the grid.
@@ -166,12 +232,19 @@ export class MktgAgentRunComponent {
           switchMap(([context]) => {
             this.resetForContext(context);
             // getProject memoizes per slug and maps errors to null, and
-            // switchMap drops a stale in-flight lookup on project change.
-            return this.projectService.getProject(context.slug, false);
+            // switchMap drops stale in-flight lookups on project change. The
+            // dependency resolution rides the same stream so the attachment
+            // chips / gating always reflect the ACTIVE project's stored
+            // documents (dec-agent-dependency-gating).
+            return combineLatest([
+              this.projectService.getProject(context.slug, false),
+              this.dependencyService.resolveDependencies(context.uid, this.dependencyIds),
+            ]);
           }),
           takeUntilDestroyed(this.destroyRef)
         )
-        .subscribe((project) => {
+        .subscribe(([project, dependencies]) => {
+          this.dependencyDocs.set(dependencies);
           if (!project) {
             return;
           }
@@ -234,6 +307,36 @@ export class MktgAgentRunComponent {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
+  /** Copies a derivative chip's value; the chip flashes "Copied" for a moment. */
+  protected async onCopyDerivative(chip: { key: string; label: string; value: string }): Promise<void> {
+    // SSR guard: navigator/clipboard are browser-only (ssr-safety rule).
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    // Failure must be visible (badge-card clipboard precedent): a silent
+    // return would leave the button looking dead, indistinguishable from a
+    // successful copy that just didn't flash yet.
+    if (!navigator.clipboard?.writeText) {
+      this.messageService.add({ severity: 'error', summary: 'Copy not supported', detail: 'Clipboard access is unavailable in this browser.' });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(chip.value);
+    } catch {
+      // Clipboard permission denied — surface it and leave the chip un-flashed rather than lie.
+      this.messageService.add({ severity: 'error', summary: 'Copy failed', detail: `Unable to copy the ${chip.label} to the clipboard.` });
+      return;
+    }
+    this.copiedDerivative.set(chip.key);
+    if (this.copyTimer !== null) {
+      clearTimeout(this.copyTimer);
+    }
+    this.copyTimer = setTimeout(() => {
+      this.copyTimer = null;
+      this.copiedDerivative.set('');
+    }, 2000);
+  }
+
   // === Private initializers ===
   private initCurrentVersion(): Signal<MktgRunVersion | null> {
     return computed(() => {
@@ -275,6 +378,34 @@ export class MktgAgentRunComponent {
     });
   }
 
+  private initAttachmentChips(): Signal<{ key: string; label: string }[]> {
+    return computed(() => {
+      const docs = this.dependencyDocs();
+      if (!docs) {
+        return [];
+      }
+      const chips: { key: string; label: string }[] = [];
+      for (const attachment of this.intake?.attachments ?? []) {
+        const doc = docs[attachment.sourceAgentId];
+        if (doc) {
+          chips.push({ key: attachment.sourceAgentId, label: `Using ${this.projectName()}’s ${attachment.documentName} (v${doc.version})` });
+        }
+      }
+      return chips;
+    });
+  }
+
+  private initDerivativeChips(): Signal<{ key: string; label: string; value: string; copied: boolean }[]> {
+    return computed(() => {
+      const chips = this.intake?.derivativeChips ?? [];
+      const derivatives = this.currentVersion()?.derivatives ?? {};
+      const copiedKey = this.copiedDerivative();
+      return chips
+        .filter((chip) => !!derivatives[chip.key]?.trim())
+        .map((chip) => ({ key: chip.key, label: chip.label, value: derivatives[chip.key], copied: chip.key === copiedKey }));
+    });
+  }
+
   // === Private helpers ===
   private resolveAgent(): MktgAgent | null {
     const agentId = this.route.snapshot.paramMap.get('agentId') ?? '';
@@ -284,9 +415,71 @@ export class MktgAgentRunComponent {
   private buildIntakeForm(): FormGroup<Record<string, FormControl<string>>> {
     const controls: Record<string, FormControl<string>> = {};
     for (const field of this.intake?.fields ?? []) {
-      controls[field.key] = new FormControl('', { nonNullable: true, validators: [trimmedRequired()] });
+      // Optional fields never carry the required validator.
+      controls[field.key] = new FormControl('', { nonNullable: true, validators: field.optional ? [] : [trimmedRequired()] });
     }
     return new FormGroup(controls);
+  }
+
+  /** Assembles the submitted answers from the form: blank optional fields are omitted. */
+  private buildAnswers(): Record<string, string> {
+    const answers: Record<string, string> = {};
+    for (const field of this.intake?.fields ?? []) {
+      const value = this.intakeForm.controls[field.key].value.trim();
+      if (field.optional && !value) {
+        continue;
+      }
+      answers[field.key] = value;
+    }
+    return answers;
+  }
+
+  /**
+   * Whether every catalog dependency of this agent has resolved stored output
+   * for the active project. Fail-closed while resolution is in flight (the
+   * record is null) — a run must never submit without its attachments.
+   */
+  private dependenciesSatisfied(): boolean {
+    if (this.dependencyIds.length === 0) {
+      return true;
+    }
+    const docs = this.dependencyDocs();
+    if (!docs) {
+      return false;
+    }
+    return this.dependencyIds.every((agentId) => !!docs[agentId]);
+  }
+
+  /** Human names of the unresolved dependencies, once resolution has completed. */
+  private missingDependencyNames(): string[] {
+    const docs = this.dependencyDocs();
+    if (!docs) {
+      return [];
+    }
+    return this.dependencyIds.filter((agentId) => !docs[agentId]).map((agentId) => this.dependencyDocumentName(agentId));
+  }
+
+  /** Display name of a dependency agent's document: its intake's document name, else the catalog agent name, else the id. */
+  private dependencyDocumentName(agentId: string): string {
+    return MKTG_AGENT_INTAKES[agentId]?.documentName ?? MKTG_AGENTS.find((candidate) => candidate.id === agentId)?.name ?? agentId;
+  }
+
+  /**
+   * Overlays the intake's auto-attached dependency documents onto the
+   * submitted answers (dec-agent-dependency-gating): the stored document is
+   * ALWAYS what is submitted — there is no user-facing choice. Null when an
+   * attachment's document is missing (submission must abort).
+   */
+  private applyAttachments(answers: Record<string, string>, docs: Record<string, MktgDependencyDocument | null>): Record<string, string> | null {
+    const attached = { ...answers };
+    for (const attachment of this.intake?.attachments ?? []) {
+      const doc = docs[attachment.sourceAgentId];
+      if (!doc?.document) {
+        return null;
+      }
+      attached[attachment.answerKey] = doc.document;
+    }
+    return attached;
   }
 
   /**
@@ -310,12 +503,19 @@ export class MktgAgentRunComponent {
     this.docExpanded.set(false);
     this.fromLfx.set({});
     this.lfxMissing.set({});
+    this.copiedDerivative.set('');
     this.intakeForm.reset();
     this.feedbackForm.reset();
+    // Dependency documents are per-project — back to "resolving" until the
+    // constructor stream's resolution for the NEW context lands (fail-closed:
+    // submission stays disabled meanwhile).
+    this.dependencyDocs.set(null);
 
     const stored = this.runService.loadRun(context.uid, this.agent.id);
     if (stored) {
       this.run.set(stored);
+      // patchValue ignores keys without a control — answers persisted by the
+      // retired Brand Kit gate UI (e.g. brand_kit_markdown) restore cleanly.
       this.intakeForm.patchValue(stored.answers);
       this.viewVersion.set(stored.versions.at(-1)?.version ?? null);
       if (stored.versions.length > 0) {
@@ -359,7 +559,9 @@ export class MktgAgentRunComponent {
 
   private startGeneration(feedback?: string): void {
     const projectUid = this.projectContext.activeContextUid();
-    if (!this.agent || !this.intake) {
+    const agent = this.agent;
+    const intake = this.intake;
+    if (!agent || !intake) {
       return;
     }
     if (!projectUid) {
@@ -367,10 +569,7 @@ export class MktgAgentRunComponent {
       return;
     }
 
-    const answers: Record<string, string> = {};
-    for (const field of this.intake.fields) {
-      answers[field.key] = this.intakeForm.controls[field.key].value.trim();
-    }
+    const answers = this.buildAnswers();
 
     this.errorText.set('');
     this.docExpanded.set(false);
@@ -379,11 +578,28 @@ export class MktgAgentRunComponent {
 
     // The prior draft's version is NOT sent — the run service derives it from
     // the stored run so the follow-up's version directive always matches the
-    // version its result poll will accept.
+    // version its result poll will accept. Dependency documents are re-resolved
+    // AT SUBMIT TIME (server-persisted preferred, browser fallback) so the
+    // attached document is always the current stored one, then overlaid onto
+    // the answers (dec-agent-dependency-gating).
     this.generationSub?.unsubscribe();
-    this.generationSub = this.runService
-      .generate({ agentId: this.agent.id, projectUid, intake: this.intake, answers, feedback })
-      .pipe(takeUntilDestroyed(this.destroyRef))
+    this.generationSub = this.dependencyService
+      .resolveDependencies(projectUid, this.dependencyIds)
+      .pipe(
+        switchMap((docs) => {
+          this.dependencyDocs.set(docs);
+          const attached = this.applyAttachments(answers, docs);
+          if (!attached) {
+            // The stored dependency disappeared between page load and submit —
+            // surface the honest gate note instead of submitting an invalid run.
+            this.errorText.set(this.missingDependencyNote() || 'A required dependency document is no longer available for this project.');
+            this.phase.set(this.versions().length > 0 ? 'result' : 'form');
+            return EMPTY;
+          }
+          return this.runService.generate({ agentId: agent.id, projectUid, intake, answers: attached, feedback });
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe({
         next: (progress) => {
           if (progress.type === 'submitted') {

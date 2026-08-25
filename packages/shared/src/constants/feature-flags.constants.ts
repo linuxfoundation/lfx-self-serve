@@ -39,6 +39,21 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
 
 /**
+ * Gates Org Lens surfaces still restricted to internal audiences — person-detail-drawer company
+ * emails (GH-1655), the leaderboard row score-breakdown drawer (LFXV2-2934), and the Company Logo
+ * Upload control on the Org Profile edit page (LFXV2-3288). Remove each gate as its real-data
+ * backend lands; retire this flag once all are unguarded.
+ *
+ * For logo upload specifically, default false means a general Org Lens viewer sees the logo preview
+ * but not the upload affordance.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or the
+ * downstream member-service upload endpoint; server-side authorization (writer/admin) remains the
+ * source of truth for whether an upload actually succeeds.
+ */
+export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
+
+/**
  * Dark-launch gate for FGA-based (`marketing_auditor` / `campaign_manager`) Marketing Impact and
  * Campaigns access (LFXV2-2235/LFXV2-2236). Default false: the reverted PR #1112 caused a total
  * lockout for all users when these guards shipped without a kill switch (see the LFXV2-2231

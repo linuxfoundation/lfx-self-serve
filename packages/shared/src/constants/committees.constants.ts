@@ -286,6 +286,14 @@ export const VOTING_STATUSES = [
 const VOTING_STATUSES_WITHOUT_NONE = VOTING_STATUSES.filter(({ value }) => value !== CommitteeMemberVotingStatus.NONE);
 
 /**
+ * Display label for a committee member with no recorded voting status (legacy null).
+ * @description 'None' and 'Observer' are real assignable statuses, so a legacy null must not
+ * render as either — a neutral missing-value label keeps null distinct from a recorded 'None'
+ * and matches the app-wide '—' convention for absent values (GH-1831).
+ */
+export const NO_VOTING_STATUS_LABEL = '—';
+
+/**
  * Voting status options for meeting committee filters.
  * Excludes None — it is not a selectable value in meeting forms but remains
  * a valid member status. None is treated as Observer for filtering purposes.
@@ -676,6 +684,13 @@ export const OTHER_GROUPS_LABEL = 'Other Groups';
 
 /** Cards revealed per "Show more" click on the My Groups card grid — a grid-friendly count (divisible by 1/2/3/4 columns). */
 export const GROUPS_CARD_GRID_PAGE_SIZE = 12;
+
+/**
+ * Short TTL for the committee-detail cache — just long enough for the writerGuard
+ * project probe and CommitteeManageComponent's immediate refetch to share one request, without
+ * serving stale data across edits (write paths evict explicitly). Mirrors MEETING_DETAIL_CACHE_TTL_MS.
+ */
+export const COMMITTEE_DETAIL_CACHE_TTL_MS = 10 * 1000;
 
 /**
  * Icon-tile tints for the Groups dashboard engagement stat cards (LFXV2-1711). A dedicated constant

@@ -36,6 +36,16 @@ interface BaseMktgAgent {
   icon: string;
   /** Tile accent color for the marketplace grid. Defaults to gray when unset. */
   accent?: MktgAgentAccent;
+  /**
+   * Catalog agent ids whose stored output this agent CONSUMES
+   * (dec-agent-dependency-gating). A dependent agent's marketplace card stays
+   * disabled — labeled `Requires <dependency document>` — until every
+   * dependency has stored output for the active project (server-persisted
+   * preferred, browser-stored run fallback), and its intake auto-attaches the
+   * dependency documents at submit time instead of asking for them.
+   * Dependency handling is generic: nothing keys on a specific agent id.
+   */
+  dependsOn?: string[];
 }
 
 /** An agent backed by a live Guild agent: clickable tile, routable chat. */
@@ -68,3 +78,33 @@ export interface ComingSoonMktgAgent extends BaseMktgAgent {
  * routing, so the Guild routing target can never be spoofed from the browser.
  */
 export type MktgAgent = ActiveMktgAgent | ComingSoonMktgAgent;
+
+/**
+ * One rendered marketplace card: a catalog agent plus everything the grid
+ * template needs already decided. The presentation strings are precomputed
+ * here rather than expressed in the template so the card's disabled state and
+ * its accessible name are derived in one place and can never drift.
+ */
+export interface MktgAgentTile {
+  /** The catalog entry this card renders. */
+  agent: MktgAgent;
+  /** Tailwind classes for the icon chip, resolved from the agent's accent. */
+  iconClass: string;
+  /** Tailwind classes for the card's left accent border. */
+  borderClass: string;
+  /** True when the card is inert: `coming-soon`, or missing a dependency. */
+  disabled: boolean;
+  /**
+   * Document names of the dependencies with no stored output for the active
+   * project (dec-agent-dependency-gating). Empty when nothing is missing —
+   * including for `coming-soon` agents, which are disabled for their own
+   * reason and never tagged as dependency-blocked.
+   */
+  missingDependencyNames: string[];
+  /**
+   * Accessible name for the card. Enabled cards announce the action ("Open
+   * X"); disabled cards announce the agent plus WHY it is inert, so a
+   * screen-reader user gets the same reason the visible tags carry.
+   */
+  ariaLabel: string;
+}
