@@ -3,7 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { SLACK_INCOMING_WEBHOOK_URL_PATTERN } from './committees.constants';
+import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { MEMBER_FORM_VOTING_STATUSES, SLACK_INCOMING_WEBHOOK_URL_PATTERN } from './committees.constants';
 
 /**
  * Tests the real, imported constant — not a hand-copied regex literal in a test's own mock, the
@@ -44,5 +45,22 @@ describe('SLACK_INCOMING_WEBHOOK_URL_PATTERN', () => {
     expect(SLACK_INCOMING_WEBHOOK_URL_PATTERN.test('https://hooks.slack.com/')).toBe(false);
     expect(SLACK_INCOMING_WEBHOOK_URL_PATTERN.test('https://hooks.slack.com/services/')).toBe(false);
     expect(SLACK_INCOMING_WEBHOOK_URL_PATTERN.test('https://hooks.slack.com/services/T1/B1/')).toBe(false);
+  });
+});
+
+describe('MEMBER_FORM_VOTING_STATUSES', () => {
+  it('contains exactly the four statuses the committee service accepts', () => {
+    expect(MEMBER_FORM_VOTING_STATUSES.map(({ value }) => value).sort()).toEqual(
+      [
+        CommitteeMemberVotingStatus.VOTING_REP,
+        CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP,
+        CommitteeMemberVotingStatus.OBSERVER,
+        CommitteeMemberVotingStatus.EMERITUS,
+      ].sort()
+    );
+  });
+
+  it('excludes the legacy None status the committee service rejects on voting-enabled committees (LFXV2-2075)', () => {
+    expect(MEMBER_FORM_VOTING_STATUSES.some(({ value }) => value === CommitteeMemberVotingStatus.NONE)).toBe(false);
   });
 });

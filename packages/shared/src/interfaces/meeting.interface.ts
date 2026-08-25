@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { MEETING_ALLOWED_VOTING_STATUSES } from '../constants/committees.constants';
 import type { PAST_MEETING_SORT } from '../constants/meeting.constants';
 import type { ArtifactVisibility, CancelOnCommitteeRemoval, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
 import type { TagSeverity } from './components.interface';
@@ -120,6 +121,9 @@ export interface ImportantLinkFormValue {
  * @description Basic committee information for meeting association
  */
 
+/** Voting-status values accepted by the meeting API for committee associations */
+export type MeetingAllowedVotingStatus = (typeof MEETING_ALLOWED_VOTING_STATUSES)[number];
+
 /**
  * Committee payload for meeting API requests
  * @description Committee structure used in create/update meeting requests
@@ -127,8 +131,8 @@ export interface ImportantLinkFormValue {
 export interface MeetingCommittee {
   /** Unique identifier for the committee */
   uid: string;
-  /** Allowed voting statuses for committee members */
-  allowed_voting_statuses?: string[];
+  /** Allowed voting statuses for committee members (meeting API snake_case vocabulary) */
+  allowed_voting_statuses?: MeetingAllowedVotingStatus[];
   /** Committee name */
   name?: string;
 }

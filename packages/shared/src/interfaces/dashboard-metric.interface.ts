@@ -3,7 +3,7 @@
 
 import type { ChartData, ChartDataset, ChartOptions, ChartType } from 'chart.js';
 
-import { PRESENCE_PILL_IDS } from '../constants/foundation-projects.constants';
+import type { PRESENCE_PILL_IDS } from '../constants/foundation-projects.constants';
 
 /**
  * Chart.js bar dataset that opts into the zero-bar stub plugin (`ZERO_BAR_STUB_PLUGIN`).
@@ -273,6 +273,27 @@ export interface ProjectTableRow {
   lastUpdated: string | null;
   // Newest health-score category from PROJECT_HEALTH_METRICS_LATEST; null when unscored.
   healthScoreCategory: FoundationHealthScore | null;
+  /**
+   * Populated only by the Foundation Projects page's grouped endpoint
+   * (`getFoundationProjectsDetailGrouped`) — the slug/name of the foundation or
+   * sub-foundation this row's Snowflake query was fetched under, so the page can
+   * render sub-foundations as their own section instead of flattening them under
+   * the top-level foundation (GH-1607). Absent for rows from the plain
+   * `getFoundationProjectsDetail` endpoint used by the drawers.
+   */
+  groupFoundationSlug?: string;
+  groupFoundationName?: string;
+}
+
+/**
+ * One rendered section of the Foundation Projects page's table — a foundation or nested
+ * sub-foundation, derived client-side from the already-filtered flat row list by grouping on
+ * `ProjectTableRow.groupFoundationSlug` (GH-1607).
+ */
+export interface ProjectTableGroup {
+  foundationSlug: string;
+  foundationName: string;
+  projects: ProjectTableRow[];
 }
 
 // Health-status filter value for the drawer table; 'unscored' covers null-category rows.
@@ -316,12 +337,14 @@ export interface ProjectCounts {
 export type PresencePill = (typeof PRESENCE_PILL_IDS)[number];
 
 /**
- * Three-state presence marker for an individual indicator (groups, mailing
- * lists, chat) on the foundation projects row. `'pending'` = upstream request
- * still in flight; `'present'` = confirmed non-zero count / truthy flag;
- * `'absent'` = confirmed zero / falsy resolution.
+ * Presence marker for an individual indicator (groups, mailing lists, chat)
+ * on the foundation projects row. `'pending'` = upstream request still in
+ * flight; `'present'` = confirmed non-zero count / truthy flag; `'absent'` =
+ * confirmed zero / falsy resolution; `'unavailable'` = the sub-project UID
+ * lookup for this row's group failed, so no count could even be requested —
+ * distinct from `'pending'` so the row doesn't show "Loading" forever (GH-1676).
  */
-export type PresenceState = 'present' | 'absent' | 'pending';
+export type PresenceState = 'present' | 'absent' | 'pending' | 'unavailable';
 
 /**
  * Pre-computed per-row display data for the foundation projects table.

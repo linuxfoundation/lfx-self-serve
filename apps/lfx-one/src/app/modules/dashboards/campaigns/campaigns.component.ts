@@ -2,23 +2,32 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
-import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS, HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_PROGRAM_TYPES,
+  CAMPAIGN_TABS,
+  HUBSPOT_TEMPLATE_RENDER_LIMIT,
+  MARKETING_OPS_FGA_ENABLED_FLAG,
+} from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
   CampaignImplementationDraft,
   CampaignBriefPersistResult,
   CampaignDeliveryType,
+  CampaignIndexDoc,
   CampaignProgramType,
   CampaignTab,
   CampaignTabOption,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { firstValueFrom, skip, take } from 'rxjs';
 
@@ -49,6 +58,11 @@ export class CampaignsComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly campaignService = inject(CampaignService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly personaService = inject(PersonaService);
+  private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly destroyRef = inject(DestroyRef);
+  /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — see LFXV2-2235/LFXV2-2236. */
+  private readonly marketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
 
   protected readonly tabs = CAMPAIGN_TABS;
   protected readonly programTypes = CAMPAIGN_PROGRAM_TYPES;
@@ -346,7 +360,93 @@ export class CampaignsComponent {
    * generation counter: a `saved` banner naming a brief in one foundation's table must not be
    * left sitting under another one, whether the response landed before the switch or after it.
    */
-  private readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
+  protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
+
+  /**
+   * Reactive re-check of the grant that put this page on screen, mirroring
+   * `marketing-impact.component.ts`'s `hasFullMarketingAccess`.
+   *
+   * `campaignAccessGuard` only runs once, on navigation — it never re-fires for the
+   * `Location.replaceState` foundation switch `activeFoundationSlug` documents. Without this,
+   * a campaign_manager grant scoped to foundation A stays rendering foundation A's campaigns
+   * (as far as this page can tell) after switching to foundation B, where the operator may hold
+   * no grant at all. Reading `isCampaignManager()` here re-evaluates against whatever
+   * `sidebar-nav.service.ts` last resolved for the active foundation, so the template gate
+   * tracks the switch instead of trusting the one-time guard result forever.
+   *
+   * Mirrors `campaign-access.guard.ts`'s SSR fast path (LFXV2-2236): the flag client never
+   * initializes server-side, so `marketingOpsFgaEnabled()` defaults `false` there regardless of
+   * the operator's real grant. Denying before the browser has a chance to resolve the flag would
+   * render `campaigns-no-access` for a legitimate FGA campaign manager on first paint, then flip
+   * to granted post-hydration — the guard already accepted that same window (it defers instead of
+   * denying), so mirroring it here avoids a hydration-mismatching flash the guard's own deferral
+   * doesn't otherwise prevent at the component level.
+   */
+  protected readonly hasCampaignAccess = computed(() => {
+    if (this.personaService.currentPersona() === 'executive-director') {
+      return true;
+    }
+    if (!isPlatformBrowser(this.platformId) || !this.featureFlagService.providerReady()) {
+      return true;
+    }
+    return this.marketingOpsFgaEnabled() && this.personaService.isCampaignManager();
+  });
+
+  /**
+   * The campaigns this brief created, as the platform's index currently reports them.
+   *
+   * Loaded rather than derived, because the create job's per-platform results only exist in the
+   * session that ran it — a reload leaves the page with no handle on the campaigns it just made.
+   * This is what gives the Optimize tab something to name (LFXV2-3099).
+   *
+   * `null` means NOT LOADED, which is deliberately distinct from an empty array. The Optimize tab
+   * renders nothing at all for `null` and an explicit empty state for `[]`, because "we have not
+   * asked yet" and "the brief has no campaigns" want opposite treatment on screen.
+   */
+  protected readonly briefCampaigns = signal<CampaignIndexDoc[] | null>(null);
+
+  /**
+   * Whether an empty `briefCampaigns` may simply not be indexed yet.
+   *
+   * Passed down rather than dropped: indexing is asynchronous, so an empty list moments after a
+   * create means "not visible yet", not "nothing was created". Rendering a bare "no campaigns"
+   * over that window would tell someone their spend does not exist.
+   */
+  protected readonly briefCampaignsStale = signal(false);
+
+  /**
+   * Whether the last campaign-list read FAILED, as opposed to never having run.
+   *
+   * `briefCampaigns` is `null` in both cases, and without this flag those two are the same pixel:
+   * an empty panel. That is the failure-as-absence shape — a Query Service outage rendered as
+   * "nothing here" over campaigns that may be live and spending, with nothing for the operator to
+   * act on. Carried as a separate flag rather than folded into the list, because `null` already
+   * carries a meaning ("not loaded") and overloading it would make absence signal a second thing.
+   */
+  protected readonly briefCampaignsUnavailable = signal(false);
+
+  /**
+   * Whether this DEPLOYMENT can service a pause/resume, as reported by the server with the list.
+   *
+   * Defaults to `false` — the safe direction. The list read is ungated while the toggle route is
+   * flag-gated, so assuming "enabled" until told otherwise is what renders buttons that can only
+   * fail; assuming "disabled" until the server confirms merely withholds a control for one
+   * request. Reset on a foundation switch alongside the rows it describes, because it is a fact
+   * about the response those rows came from.
+   */
+  protected readonly briefCampaignsToggleEnabled = signal(false);
+
+  /**
+   * Generation counter for the campaign-list read — the same mechanism as `emailSearchGeneration`,
+   * reused rather than reinvented.
+   *
+   * A foundation switch does not re-create this component (see `activeFoundationSlug`), so a list
+   * request dispatched for foundation A resolves after the user has moved to B and would write A's
+   * campaigns into B's panel. Clearing the signals on switch cannot stop that on its own: the
+   * response lands afterwards and overwrites the cleared state. Bumping this is what makes the
+   * clears stick — a response whose generation no longer matches writes nothing.
+   */
+  private briefCampaignsGeneration = 0;
 
   /**
    * Whether the server has told us the brief-persistence cutover is on.
@@ -634,6 +734,24 @@ export class CampaignsComponent {
         // previous foundation's slug must not survive into a message rendered under the new one.
         this.emailSearchProjectSlug.set('');
 
+        // The campaign list is per-(foundation, brief) and must not survive a switch either. It
+        // was written only by `loadBriefCampaigns` and cleared by nothing, so Optimize stayed
+        // mounted rendering the PREVIOUS brief's campaigns under the new foundation — with
+        // `projectSlug` already switched and `briefId` cleared to '', which is the address every
+        // row's pause/resume is sent to. Acting on one of those rows would aim a money-affecting
+        // write at a campaign under an address that does not describe it.
+        //
+        // The generation bump is what makes these clears stick, exactly as above: a list request
+        // already in flight for the previous foundation resolves afterwards and would repopulate
+        // the panel under the new one.
+        this.briefCampaignsGeneration++;
+        this.briefCampaigns.set(null);
+        this.briefCampaignsStale.set(false);
+        this.briefCampaignsToggleEnabled.set(false);
+        // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
+        // set would report the previous foundation's outage against a foundation never queried.
+        this.briefCampaignsUnavailable.set(false);
+
         // Reload if the operator is SITTING on the picker. The clears above are correct, but
         // on their own they leave a blank panel in front of someone who never navigated: the
         // entry load lives in `selectTab`, which only runs on a tab transition. Nothing else
@@ -642,6 +760,15 @@ export class CampaignsComponent {
         // renders that answer rather than looping on it.
         if (this.selectedDeliveryType() === 'email' && this.selectedEmailTab() === 'implementation') {
           this.loadEmailTemplatesIfNeverAnswered();
+        }
+
+        // Same reasoning for Optimize, and it is the same bug the picker had: the entry load lives
+        // in `selectTab`, which only runs on a tab transition, so an operator SITTING on Optimize
+        // through a switch would be left with the blank panel the clears above just produced until
+        // they navigated away and back. `loadBriefCampaigns` re-reads its own context and handles
+        // the no-brief case, so it is safe to call unconditionally here.
+        if (this.selectedDeliveryType() === 'paid-marketing' && this.selectedTab() === 'optimization') {
+          this.loadBriefCampaigns();
         }
       });
 
@@ -724,6 +851,13 @@ export class CampaignsComponent {
       return;
     }
     this.selectedTab.set(tab);
+    if (tab === 'optimization') {
+      // Loaded on ENTRY rather than eagerly: the list is only meaningful once someone is looking
+      // at per-campaign controls, and the read costs a query-service round trip. Re-fetched on
+      // every entry rather than cached, because a campaign paused in another tab — or indexed
+      // since the last look — must not render with a stale status the user then acts on.
+      this.loadBriefCampaigns();
+    }
   }
 
   /**
@@ -975,6 +1109,11 @@ export class CampaignsComponent {
     this.selectedEmailTemplateId.set(id);
   }
 
+  /** Retry a failed campaign list — the action the failure state exists to offer. */
+  protected retryBriefCampaigns(): void {
+    this.loadBriefCampaigns();
+  }
+
   protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, approved: boolean): void {
     // Adopt the brief's OWN program first. The lookup is keyed on `(event_slug, project)` and
     // carries no program type, so an Events brief can be offered while the page sits on
@@ -1035,6 +1174,87 @@ export class CampaignsComponent {
       this.knownBriefIds.set(key, { id: briefId, etag: null, absence: 'overwrite' });
     }
     this.onProceedToImplementation(brief, true, approved);
+  }
+
+  /**
+   * Fetch the campaigns this brief created, for the Optimize tab's per-campaign controls.
+   *
+   * A failed read is REPORTED, not swallowed. An earlier revision left `briefCampaigns` at `null`
+   * on failure, reasoning that an error banner would fire on the ordinary empty case too — but
+   * `null` is also what "nothing has been asked yet" means, so a Query Service outage rendered as
+   * a blank panel with no indication and no retry, on campaigns that may still be spending. The
+   * `briefCampaignsUnavailable` flag is what separates the two: `null` + flag is a failure the tab
+   * states and offers a retry for, `null` alone stays "not loaded", and `[]` stays "genuinely
+   * empty". Same failure-as-absence class as the ED drawers' `dataUnavailable`.
+   *
+   * Guarded by a generation counter for the same reason `searchHubSpotEmails` is: the foundation
+   * is switchable while a response is in flight, and a late response would otherwise repopulate
+   * the list under whichever foundation the user has since moved to — campaigns from one
+   * foundation's brief, rendered as another's.
+   */
+  private loadBriefCampaigns(): void {
+    const projectSlug = this.activeFoundationSlug();
+    const briefId = this.briefPersistence().briefId;
+
+    // Bumped BEFORE the early return as well as before the request. The early return is itself a
+    // context change ("this context has no brief"), and leaving the counter alone there would let
+    // a request dispatched under the previous brief land afterwards and still pass `isCurrent()`.
+    const generation = ++this.briefCampaignsGeneration;
+    const isCurrent = (): boolean => generation === this.briefCampaignsGeneration;
+
+    // Cleared on EVERY entry, before dispatch — not only on the early return below.
+    //
+    // The generation counter fixes the LATE response; it does nothing about the window before any
+    // response. `briefId` is reachable from `onRestoreSavedBrief` → `onProceedToImplementation` →
+    // Optimize entry WITHOUT a foundation change, and the foundation-switch effect is the only
+    // other place that clears this state — so within one foundation nothing cleared it at all.
+    // For the whole round trip the tab rendered brief A's rows while the parent bound brief B's
+    // `briefId` beside them, and those rows are CLICKABLE: `campaignRows` derives `action` purely
+    // from the docs, so a toggle in that window sends A's campaignId against B's brief — a
+    // money-affecting write to an address that does not describe it.
+    //
+    // A brief blank panel on re-entry is the accepted cost. The list is re-fetched on every entry
+    // by design (see `selectTab`), so there was never a cached render to preserve; what changes is
+    // that the interim shows "not loaded" instead of the previous answer. Showing another brief's
+    // clickable rows is not a trade worth a flicker.
+    this.briefCampaigns.set(null);
+    this.briefCampaignsStale.set(false);
+    this.briefCampaignsUnavailable.set(false);
+    this.briefCampaignsToggleEnabled.set(false);
+
+    if (projectSlug === '' || briefId === null || briefId === '') {
+      // No brief id means nothing was persisted this session and no restore supplied one, so
+      // there is nothing to list. Left as `null` — not `[]` — so the tab says "not loaded"
+      // instead of asserting the brief has no campaigns. The clear above is what leaves it that
+      // way; this arm only stops here.
+      return;
+    }
+
+    this.campaignService
+      .listBriefCampaigns(projectSlug, briefId)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          if (!isCurrent()) {
+            return;
+          }
+          this.briefCampaigns.set(result.campaigns);
+          this.briefCampaignsStale.set(result.possiblyStale);
+          this.briefCampaignsUnavailable.set(false);
+          this.briefCampaignsToggleEnabled.set(result.statusToggleEnabled);
+        },
+        error: () => {
+          if (!isCurrent()) {
+            return;
+          }
+          // `null` AND the flag. The list must not keep showing rows the read could not confirm,
+          // and the flag is what stops that `null` reading as "not loaded yet".
+          this.briefCampaigns.set(null);
+          this.briefCampaignsStale.set(false);
+          this.briefCampaignsUnavailable.set(true);
+          this.briefCampaignsToggleEnabled.set(false);
+        },
+      });
   }
 
   /**

@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MY_EVENT_STATUS } from '../constants/events.constants';
+import type { MY_EVENT_STATUS } from '../constants/events.constants';
 
-import { OffsetPaginatedResponse } from './api.interface';
+import type { OffsetPaginatedResponse } from './api.interface';
 
 /**
  * The set of valid status filter values for foundation events.

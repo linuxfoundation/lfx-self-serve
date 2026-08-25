@@ -9,10 +9,12 @@ import type {
   CampaignProgramTypeOption,
   CampaignStatus,
   CampaignTabOption,
+  CampaignToggleAction,
   CampaignToggleStatus,
   LinkedInGeoTarget,
   MetaObjective,
   MetaObjectiveParams,
+  SelectableMetaObjective,
   MetaPlacement,
   ParsedCampaignName,
   RedditObjective,
@@ -137,6 +139,254 @@ export const CAMPAIGN_BUDGET_DEFAULTS = {
 
 export const VALID_CAMPAIGN_STATUSES: ReadonlySet<CampaignStatus> = new Set<CampaignStatus>(['enabled', 'paused', 'removed', 'limited', 'draft']);
 
+/**
+ * The indexed campaign statuses that mean "running upstream", and therefore offer PAUSE.
+ *
+ * `created_degraded` belongs here even though it reads like a failure: it records that the
+ * campaign's wiring was never verified, NOT that the campaign is stopped. Such a campaign is live
+ * and spending, campaign-service accepts a pause for it, and it REFUSES a resume with 409. Leaving
+ * it out is therefore the expensive mistake in both directions — the UI would offer the one action
+ * upstream rejects, on exactly the campaign where an operator most needs the pause lever.
+ *
+ * `enabled` is deliberately ABSENT. It is a Google Ads platform-level status word, never a value
+ * campaign-service writes to `campaigns.status` — the service's status vocabulary is the
+ * `CampaignStatus*`/`CampaignRun*` constants in `internal/domain/model/campaign.go`, and the
+ * string `"enabled"` does not appear in that package at all. Listing it here mapped a value the
+ * index never produces onto Pause, which is the fail-OPEN direction this pair exists to avoid: an
+ * unknown status must land on `unavailable`, not on a button. `RESUMABLE_CAMPAIGN_STATUSES` never
+ * listed it, so the two sets now agree about which vocabulary they are speaking.
+ *
+ * Compared case-insensitively against `CampaignIndexDoc.status`, which is a free string sourced
+ * from the index rather than a closed enum.
+ */
+export const RUNNING_CAMPAIGN_STATUSES: ReadonlySet<string> = new Set<string>(['created', 'created_degraded', 'active']);
+
+/**
+ * The statuses campaign-service will accept a RESUME (`ACTIVE`) for.
+ *
+ * Mirrors `model.CampaignStatusToggleable` in lfx-v2-campaign-service, which returns true for
+ * exactly `created`, `active` and `paused` — every other status is refused with a 409. This is the
+ * ALLOW-list half of the pair, and it is deliberately an allow-list rather than the complement of
+ * a deny-list: `campaigns.status` is unconstrained TEXT upstream, so a status this file has never
+ * seen (a typo, an addition, upstream drift) must fail CLOSED — rendered as unavailable — rather
+ * than fail open into a Resume button that is guaranteed to 409.
+ *
+ * `created_degraded` is absent on purpose, and that is not the same statement as
+ * RUNNING_CAMPAIGN_STATUSES including it. The service's exception for that status is PAUSE-ONLY
+ * and lives at its `ToggleCampaignStatus` call site, not in the direction-blind predicate: such a
+ * campaign is spending (so it must offer Pause) and cannot be resumed until it is reconciled (so
+ * it must never offer Resume). The two sets answer different questions and legitimately differ.
+ */
+export const RESUMABLE_CAMPAIGN_STATUSES: ReadonlySet<string> = new Set<string>(['created', 'active', 'paused']);
+
+/**
+ * The wire `status` reduced to something string methods are safe on.
+ *
+ * `status` is typed `string`, but that is a compile-time claim about a shape nothing validates:
+ * the BFF spreads index docs through untouched (`listBriefCampaigns`), so a missing or non-string
+ * status reaches the UI intact. Every consumer that lowercases one needs the same guard, so it
+ * lives here once rather than being re-derived per call site — `campaignToggleAction` had it and
+ * `unavailableReasonFor` did not, which put the crash back one function over.
+ *
+ * `''` is the deliberate result for a non-string: it misses every status set and every key in
+ * `CAMPAIGN_UNAVAILABLE_REASONS`, so callers land on their existing unknown-status arm instead of
+ * gaining a new branch. See [[absence-cannot-carry-new-meaning]] — this is a normalizer, not a
+ * signal that something is wrong.
+ */
+export function normalizeCampaignStatus(status: string): string {
+  return typeof status === 'string' ? status.toLowerCase() : '';
+}
+
+/**
+ * The status each campaign row is in, as the toggle button must present it.
+ *
+ * Three states rather than a boolean, because a boolean can only ever mean "Pause or Resume" and
+ * upstream has a third answer. `pending`, `group_created`, `unconfirmed` and any status not yet
+ * known here are all rejected by `model.CampaignStatusToggleable`, so a two-state UI silently
+ * files them under Resume and offers an action guaranteed to fail with a 409.
+ *
+ * Derived from the two status sets rather than hand-listed, so adding a status upstream cannot
+ * quietly re-expose the doomed button: anything outside both sets lands on `unavailable`.
+ *
+ * `platform` is the second, independent reason to refuse: a campaign on a platform this app does
+ * not offer is unavailable at ANY status, because the BFF rejects the platform before the status
+ * is ever consulted. It is optional so the status-only question remains askable, and an omitted
+ * platform is not read as an unsupported one.
+ */
+export function campaignToggleAction(status: string, platform?: string): CampaignToggleAction {
+  // Platform is checked FIRST and independently of status, because it is the stronger refusal:
+  // a `created` Microsoft row is pausable upstream but not through this app's BFF, so deciding on
+  // status alone would hand it an enabled button whose every click 400s on the platform check.
+  //
+  // An ABSENT platform is not treated as unsupported. `platform` is optional so the status-only
+  // question stays askable, and a row whose platform this UI cannot read must not be silently
+  // demoted to `unavailable` — that would fail closed on a campaign that is probably fine. The
+  // row-building caller always passes it; the BFF remains the enforcing boundary either way.
+  if (platform !== undefined && !TOGGLEABLE_CAMPAIGN_PLATFORMS.has(platform)) {
+    return 'unavailable';
+  }
+  // Total in `status`, matching how the platform check above is already total. `status` is typed
+  // `string`, but that is a compile-time claim about a wire shape nothing validates: the BFF
+  // spreads index docs through untouched (`listBriefCampaigns`), so a missing or non-string
+  // `status` reaches here intact and `.toLowerCase()` would throw a TypeError.
+  //
+  // The blast radius is what makes this worth a guard rather than a cast. The call sits inside the
+  // `campaignRows` computed, so one malformed doc takes out the ENTIRE campaigns section for every
+  // row — and Angular re-throws on each change-detection pass. That is a fail-OPEN blank panel on
+  // campaigns that are live and spending, which is the direction this pair exists to prevent.
+  //
+  // `''` already lands on `unavailable` through the two misses below, so no other arm changes.
+  const normalized = normalizeCampaignStatus(status);
+  if (RUNNING_CAMPAIGN_STATUSES.has(normalized)) {
+    return 'pause';
+  }
+  if (RESUMABLE_CAMPAIGN_STATUSES.has(normalized)) {
+    return 'resume';
+  }
+  return 'unavailable';
+}
+
+/**
+ * Why a row's toggle is disabled, in words the operator can act on.
+ *
+ * Named per status rather than a single "cannot be changed": these cases have genuinely different
+ * remedies. `pending` resolves itself when the dispatch settles; the partial-orphan statuses need
+ * reconciliation before the platform will accept anything; `deleted` is terminal. A generic
+ * message would send someone to look for a problem that is about to disappear on its own.
+ *
+ * Deliberately not enumerated by count here — a doc that says "the three cases" goes stale the
+ * moment a key is added, and the keys below are the list.
+ */
+export const CAMPAIGN_UNAVAILABLE_REASONS: Readonly<Record<string, string>> = {
+  pending: 'Still being created. Pause and resume become available once it finishes.',
+  group_created: 'Only partly created upstream. It needs to be reconciled before it can be paused or resumed.',
+  unconfirmed: 'Its creation outcome is unconfirmed. It needs to be reconciled before it can be paused or resumed.',
+  deleted: 'This campaign has been removed.',
+};
+
+/** Fallback for a status this UI has never seen — see `campaignToggleAction` on failing closed. */
+export const CAMPAIGN_UNAVAILABLE_DEFAULT_REASON = 'This campaign is not in a state that can be paused or resumed.';
+
+/**
+ * The platforms whose campaigns this app can actually toggle.
+ *
+ * DERIVED from `CAMPAIGN_PLATFORMS` rather than hand-listed, and it is the same derivation the
+ * BFF performs for `CAMPAIGN_SERVICE_STATUS_PLATFORMS` (`campaign.controller.ts`) — one shared
+ * rule, so the control the UI offers and the request the server accepts cannot drift apart. A
+ * platform joins by flipping `disabled` in the constant above, which is one edit rather than
+ * three.
+ *
+ * `disabled: true` entries (currently Microsoft and X) have working toggle dispatchers upstream,
+ * so status alone says a `created`/`active` row of theirs is pausable. It is not pausable HERE:
+ * the BFF refuses the platform outright, so the row's Pause button could only ever fail. Status
+ * and platform are therefore two independent reasons a toggle is unavailable, and the row must
+ * consider both.
+ */
+export const TOGGLEABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(CAMPAIGN_PLATFORMS.filter((p) => !p.disabled).map((p) => p.id));
+
+/**
+ * Why a row's toggle is disabled because of its PLATFORM rather than its status.
+ *
+ * Separate from `CAMPAIGN_UNAVAILABLE_REASONS` because the remedy is different in kind: a status
+ * reason describes something that changes on its own or after reconciliation, whereas this one
+ * will not change until the platform ships in this app. Telling an operator to wait would be
+ * false.
+ */
+export const CAMPAIGN_UNAVAILABLE_PLATFORM_REASON = 'Pause and resume are not available for this platform in LFX One yet.';
+
+/**
+ * Why the toggle is disabled when the DEPLOYMENT has not enabled status changes.
+ *
+ * A third kind of reason, and the only one that is about the environment rather than the campaign:
+ * `/list` is ungated while the toggle route refuses every UUID with
+ * `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` unset. Worded as a deployment capability so an
+ * operator escalates to whoever owns the flag instead of hunting for a fault in the campaign.
+ */
+export const CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON = 'Pause and resume are not enabled for this deployment.';
+
+/**
+ * What a toggle refused with 412 tells the operator to do: REFRESH, not retry.
+ *
+ * A 412 means another editor moved this campaign since the list was read, so the validator this
+ * row holds is dead. Retrying replays the same dead validator and earns the same 412 — the fresh
+ * etag is only written on the success arm, so a failed toggle leaves the row falling back to the
+ * one it was read with. "Try again", which is what every failure used to say, therefore names the
+ * one action that provably cannot work here.
+ *
+ * Says nothing about which way the campaign is now pointing, unlike the per-direction copy below.
+ * That is the honest answer: after a concurrent edit this view no longer knows the campaign's
+ * status, and the direction wording is only true when the toggle failed WITHOUT anything moving.
+ */
+export const CAMPAIGN_TOGGLE_CONFLICT_MESSAGE =
+  'Someone else changed this campaign while you were viewing it. Refresh the campaign list to see its current status before trying again.';
+
+/**
+ * Why a toggle failed when the campaign did NOT move — worded per direction.
+ *
+ * The outcome differs by direction and both are about money. A failed pause leaves the campaign
+ * RUNNING; a failed resume leaves it PAUSED. Stating "it has not been paused" after a failed
+ * resume is the exact inversion of the truth: it describes a campaign that is spending when the
+ * campaign is in fact dark.
+ *
+ * Only correct for failures where nothing moved — a transport drop, a 5xx, a refusal upstream.
+ * The 412 case gets `CAMPAIGN_TOGGLE_CONFLICT_MESSAGE` instead, because there the premise of both
+ * sentences ("it is still …") is exactly what stopped being true.
+ *
+ * Keyed on `CampaignToggleAction` minus `'unavailable'`, not on a re-spelled literal union: this
+ * map is only ever read for a DIRECTION that was actually attempted, and `unavailable` never is —
+ * `toggleCampaign` returns before dispatching for it. Deriving the key set with `Exclude` keeps
+ * that relationship checked, so renaming a direction on the type breaks this map instead of
+ * silently leaving it keyed on a word nothing produces.
+ */
+export const CAMPAIGN_TOGGLE_FAILURE_MESSAGES: Readonly<Record<Exclude<CampaignToggleAction, 'unavailable'>, string>> = {
+  pause: 'Could not pause this campaign. It is still running — try again.',
+  resume: 'Could not resume this campaign. It is still paused — try again.',
+};
+
+/**
+ * The button's visible word per action. `unavailable` still names an action — the button is
+ * disabled, not blank.
+ *
+ * Keyed on `CampaignToggleAction` rather than on a re-spelled literal union so this map cannot
+ * drift from the type `campaignToggleAction` returns. A member added to or renamed in the type
+ * fails to compile HERE; the hand-written copy would have kept compiling and produced `undefined`
+ * on the new action at runtime — a blank button on a campaign that is spending.
+ */
+export const CAMPAIGN_TOGGLE_LABELS: Readonly<Record<CampaignToggleAction, string>> = {
+  pause: 'Pause',
+  resume: 'Resume',
+  unavailable: 'Unavailable',
+};
+
+/**
+ * What the toggle is DOING, worded for an assistive-technology announcement, per direction.
+ *
+ * Present progressive because this is announced while the request is out — "Pausing" is a claim
+ * about an attempt in progress, which is exactly what is true at that moment. The completed forms
+ * live in `CAMPAIGN_TOGGLE_DONE_VERBS` and are announced only from a CONFIRMED response.
+ *
+ * Split out of the template because the pending state is now announced from a live region rather
+ * than an `aria-label` swap on the button: a native `disabled` button leaves the focus order, and
+ * screen readers do not reliably announce attribute changes on an unfocused, disabled element.
+ */
+export const CAMPAIGN_TOGGLE_PENDING_VERBS: Readonly<Record<Exclude<CampaignToggleAction, 'unavailable'>, string>> = {
+  pause: 'Pausing',
+  resume: 'Resuming',
+};
+
+/**
+ * What the toggle DID, for the completion announcement.
+ *
+ * Only ever used on a confirmed response arm. The service's reported status is what decides the
+ * wording at the call site — a `created_degraded` campaign is paused upstream while its row status
+ * deliberately does not move, so the announcement must not promise a transition the service
+ * declined to record.
+ */
+export const CAMPAIGN_TOGGLE_DONE_VERBS: Readonly<Record<Exclude<CampaignToggleAction, 'unavailable'>, string>> = {
+  pause: 'Paused',
+  resume: 'Resumed',
+};
+
 export const GADS_STATUS_ENUM: Partial<Record<number, CampaignStatus>> = {
   2: 'enabled',
   3: 'paused',
@@ -219,7 +469,20 @@ export const META_DEFAULT_PLACEMENTS: Readonly<MetaPlacement> = {
   messengerInbox: false,
 } as const;
 
-/** Display labels for the Meta campaign objectives, in the order the objective selector renders them. */
+/**
+ * Display labels for the Meta campaign objectives.
+ *
+ * TOTAL over `MetaObjective` — every objective that can reach a display path has a label here,
+ * INCLUDING `leads`. This map is no longer what the selector renders; that is
+ * `META_SELECTABLE_OBJECTIVES` below. The split exists because the two questions are different:
+ * "what may a user choose?" and "what do we call the thing this campaign already is?".
+ *
+ * Keeping `leads` here is load-bearing, not tidiness. Every display path in `meta-ads.service.ts`
+ * — the campaign name, the ad-set name, the progress steps — indexes this map with whatever
+ * objective the REQUEST carries, and a brief or draft persisted before `leads` was hidden still
+ * carries it. Dropping the key would put the literal string `undefined` into a campaign name Meta
+ * then bills against. Described as a shape rather than a list of call sites, which drifts.
+ */
 export const META_OBJECTIVE_LABELS: Readonly<Record<MetaObjective, string>> = {
   awareness: 'Awareness',
   traffic: 'Traffic',
@@ -227,6 +490,40 @@ export const META_OBJECTIVE_LABELS: Readonly<Record<MetaObjective, string>> = {
   leads: 'Leads',
   conversions: 'Conversions',
 } as const;
+
+/**
+ * The objectives a user may actually choose, in the order the objective selector renders them.
+ *
+ * `leads` is DELIBERATELY ABSENT. It dispatches as a website-traffic campaign — see the long
+ * comment on `META_OBJECTIVE_PARAMS.leads` for why that mapping is the safe one and must not
+ * change — so offering it would label a traffic campaign "Leads" and let a user act on a wrong
+ * assumption. Hiding it makes that a question someone asks rather than a mistake they ship.
+ * LFXV2-2665 builds instant-form support and restores the option.
+ *
+ * This is the selector's ONLY source. `leads` stays in `MetaObjective`, in
+ * `META_OBJECTIVE_PARAMS` and in `META_OBJECTIVE_LABELS`, so a persisted `leads` brief still
+ * dispatches — as traffic — and still renders a name.
+ */
+export const META_SELECTABLE_OBJECTIVES = ['awareness', 'traffic', 'engagement', 'conversions'] as const satisfies readonly SelectableMetaObjective[];
+
+/**
+ * Compile-time exhaustiveness: every `SelectableMetaObjective` must appear in the list above.
+ *
+ * The element type alone only stops a WRONG entry; it cannot catch a MISSING one. Without this,
+ * adding an objective to `MetaObjective` compiles cleanly and passes every test while never
+ * appearing in the picker — the two sibling maps are total and hard-fail, so this list would be
+ * the only one that drifts silently.
+ *
+ * Written as an assignment FROM a union of the array's members TO the full union: no cast, no
+ * `Object.fromEntries`. Both defeat the check by widening the type back to something assignable.
+ * A missing objective makes the target union unsatisfied and TypeScript names it.
+ */
+const _assertEverySelectableObjectiveIsListed: (typeof META_SELECTABLE_OBJECTIVES)[number] extends SelectableMetaObjective
+  ? SelectableMetaObjective extends (typeof META_SELECTABLE_OBJECTIVES)[number]
+    ? true
+    : { ERROR: 'META_SELECTABLE_OBJECTIVES is missing an objective'; missing: Exclude<SelectableMetaObjective, (typeof META_SELECTABLE_OBJECTIVES)[number]> }
+  : { ERROR: 'META_SELECTABLE_OBJECTIVES contains a hidden or unknown objective' } = true;
+void _assertEverySelectableObjectiveIsListed;
 
 /**
  * The placements a user may actually toggle.

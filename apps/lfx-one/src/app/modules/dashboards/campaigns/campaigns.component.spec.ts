@@ -13,6 +13,8 @@ import type {
   CampaignBriefPersistenceState,
   CampaignImplementationDraft,
   CampaignDeliveryType,
+  CampaignIndexDoc,
+  CampaignListResult,
   CampaignProgramType,
   CampaignTab,
   CampaignTabOption,
@@ -20,6 +22,8 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { PersonaService } from '@services/persona.service';
 import { HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
@@ -52,8 +56,12 @@ describe('CampaignsComponent brief persistence', () => {
   }
 
   /** `onRestoreSavedBrief` is protected; the spec drives it as the Planning tab's output would. */
-  function restore(b: CampaignBriefOutput, briefId: string): void {
-    (fixture.componentInstance as unknown as { onRestoreSavedBrief(b: CampaignBriefOutput, id: string): void }).onRestoreSavedBrief(b, briefId);
+  function restore(b: CampaignBriefOutput, briefId: string, approved = false): void {
+    (fixture.componentInstance as unknown as { onRestoreSavedBrief(b: CampaignBriefOutput, id: string, approved: boolean): void }).onRestoreSavedBrief(
+      b,
+      briefId,
+      approved
+    );
   }
 
   function state(): CampaignBriefPersistenceState {
@@ -89,12 +97,30 @@ describe('CampaignsComponent brief persistence', () => {
       // calls a new one. Their requests simply stay pending here, which is the loading state.
       // A router is needed because a child tab renders a RouterLink — stubbing the children
       // instead would stop this spec from proving the handoff really mounts the tab.
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        // `providerReady: signal(true)` so `hasCampaignAccess` evaluates the real persona/flag
+        // check instead of deferring (its SSR/pre-hydration fast path, see campaigns.component.ts)
+        // — every test here runs in the browser and expects an immediate verdict. `getBooleanFlag`
+        // stays `false`, matching the real service's default before a provider ever initializes,
+        // so this changes nothing for the tests that don't care about the flag.
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false), providerReady: signal(true) } },
+      ],
     }).compileComponents();
     persistBrief = vi.fn();
     vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persistBrief);
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     await fixture.whenStable();
+  });
+
+  it('renders a no-access state for a contributor without a campaign_manager FGA grant', async () => {
+    TestBed.inject(PersonaService).currentPersona.set('contributor');
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-no-access"]')).not.toBeNull();
   });
 
   it('switches to the Implementation tab before the save resolves', async () => {
@@ -966,6 +992,237 @@ describe('CampaignsComponent brief persistence', () => {
       await fixture.whenStable();
       expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', 'tlf-1', '"1"', false);
     });
+
+    /**
+     * The campaign list is per-(foundation, brief), and Optimize stays mounted across a switch.
+     *
+     * Same defect class as the email picker's: a signal written by a load and cleared by nothing,
+     * on a component a foundation switch does not re-create. The consequence here is worse than a
+     * stale list — `projectSlug` and `briefId` are the address every row's pause/resume is sent
+     * to, and after a switch those name the NEW context while the rows describe the old one.
+     */
+    describe('the Optimize campaign list', () => {
+      function campaigns(): CampaignIndexDoc[] | null {
+        return (fixture.componentInstance as unknown as { briefCampaigns(): CampaignIndexDoc[] | null }).briefCampaigns();
+      }
+
+      function unavailable(): boolean {
+        return (fixture.componentInstance as unknown as { briefCampaignsUnavailable(): boolean }).briefCampaignsUnavailable();
+      }
+
+      function load(): void {
+        (fixture.componentInstance as unknown as { loadBriefCampaigns(): void }).loadBriefCampaigns();
+      }
+
+      const indexed = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc =>
+        ({
+          id: 'c-1',
+          project_id: 'tlf',
+          brief_id: 'brief-9',
+          platform: 'google-ads',
+          campaign_name: 'KubeCon EU',
+          status: 'created',
+          version: 1,
+          etag: '"1"',
+          ...over,
+        }) as CampaignIndexDoc;
+
+      /**
+       * Enter Optimize the way the tab bar does — `selectTab`, which is what calls
+       * `loadBriefCampaigns` on entry. Driving `loadBriefCampaigns` directly would skip the
+       * transition and, more importantly, never render the panel these assertions read.
+       */
+      function openOptimize(): void {
+        (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('optimization', 'paid-marketing');
+        fixture.detectChanges();
+      }
+
+      /** The Optimize panel's rendered text — what the operator can actually read. */
+      function optimizeText(): string {
+        return (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-optimization-panel"]')?.textContent ?? '';
+      }
+
+      /**
+       * The campaign ids that currently have a LIVE toggle button. The stale-render bug is only
+       * expensive because these exist: each one posts its id against whatever `briefId` the parent
+       * is binding at the time.
+       */
+      function toggleButtonIds(): string[] {
+        return Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid^="optimization-campaign-toggle-"]')).map((el) =>
+          (el.getAttribute('data-testid') ?? '').replace('optimization-campaign-toggle-', '')
+        );
+      }
+
+      /** Put a real brief id on the component so `loadBriefCampaigns` gets past its own guard. */
+      async function withSavedBrief(): Promise<void> {
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'brief-9', etag: '"1"', created: true, approved: true }));
+        proceed();
+        await fixture.whenStable();
+      }
+
+      it('clears the previous brief campaigns when the foundation changes', async () => {
+        const list = vi
+          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
+          .mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true }));
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+        expect(campaigns()).toHaveLength(1);
+
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true }));
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        // Not TLF's campaigns under CNCF: the rows would render against a projectSlug that is
+        // now 'cncf' and a briefId that is now '', which is the address a pause is sent to.
+        expect(campaigns()).not.toEqual([indexed()]);
+      });
+
+      it('drops a campaign list that resolves after the foundation changed', async () => {
+        const late = new Subject<CampaignListResult>();
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(late);
+        await withSavedBrief();
+        load();
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        // The response the switch invalidated. Clearing the signal alone cannot stop this — the
+        // request was already in flight and lands afterwards.
+        late.next({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true });
+        await fixture.whenStable();
+
+        expect(campaigns()).toBeNull();
+      });
+
+      /**
+       * Failure-as-absence. `null` already means "not loaded", so a failed read that also leaves
+       * `null` is indistinguishable from a page nobody has asked anything of — no indication and
+       * no retry, on campaigns that may still be spending.
+       */
+      it('marks a failed read as unavailable rather than leaving it as not-loaded', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+
+        expect(campaigns()).toBeNull();
+        expect(unavailable()).toBe(true);
+      });
+
+      it('does not mark a genuinely empty list as unavailable', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true }));
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+
+        expect(campaigns()).toEqual([]);
+        expect(unavailable()).toBe(false);
+      });
+
+      /**
+       * A BRIEF switch inside ONE foundation. The foundation-switch effect is the only other
+       * clear, so nothing cleared this state on the path a user actually takes to change briefs:
+       * restore a saved brief → proceed → enter Optimize.
+       *
+       * Asserted on the RENDERED tab, not on the signal. `briefCampaigns` being null is a means;
+       * what makes the bug expensive is that the previous brief's rows stay on screen with live
+       * toggle buttons while the parent has already re-bound `briefId` to the new brief — so a
+       * click in that window sends brief A's campaignId to brief B's address. A signal-only
+       * assertion passes even if the template still paints the old rows.
+       */
+      it('stops rendering the previous brief campaigns while the next brief is still loading', async () => {
+        const list = vi
+          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
+          .mockReturnValue(of({ campaigns: [indexed({ campaign_name: 'Brief A campaign' })], possiblyStale: false, statusToggleEnabled: true }));
+        await withSavedBrief();
+        openOptimize();
+        await fixture.whenStable();
+        // The precondition the assertion below depends on: brief A really did render clickable
+        // rows. Without this the test would pass on a tab that never renders anything.
+        expect(optimizeText()).toContain('Brief A campaign');
+        expect(toggleButtonIds()).toEqual(['c-1']);
+
+        // Brief B, same foundation. The response is withheld so the assertion lands INSIDE the
+        // round trip — the window the fix is about.
+        const pending = new Subject<CampaignListResult>();
+        list.mockReturnValue(pending);
+        restore(otherBrief, 'brief-b');
+        await fixture.whenStable();
+        openOptimize();
+        await fixture.whenStable();
+
+        // Brief B's id is already the address on screen; brief A's rows must not be beside it.
+        expect(state().briefId).toBe('brief-b');
+        expect(optimizeText()).not.toContain('Brief A campaign');
+        expect(toggleButtonIds()).toEqual([]);
+        expect(campaigns()).toBeNull();
+
+        // And the new brief's own answer still lands, so the clear is a window, not a wipe.
+        pending.next({ campaigns: [indexed({ id: 'c-2', campaign_name: 'Brief B campaign' })], possiblyStale: false, statusToggleEnabled: true });
+        await fixture.whenStable();
+        expect(optimizeText()).toContain('Brief B campaign');
+        expect(toggleButtonIds()).toEqual(['c-2']);
+      });
+
+      it('clears a previous failure when the foundation changes', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+        expect(unavailable()).toBe(true);
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        // The banner belongs to the read that produced it. Leaving it set would report TLF's
+        // outage against CNCF, which was never queried.
+        expect(unavailable()).toBe(false);
+      });
+
+      /**
+       * `take(1)` satisfies the repo's stated convention (frontend-checklist §6 lists it beside
+       * `takeUntilDestroyed`), so this is not a rule violation — it is a correctness one. `take(1)`
+       * unsubscribes after the FIRST emission, which on a request that never answers is never: the
+       * subscription outlives the component and its handler writes into a destroyed instance.
+       *
+       * Asserted through the subscription's teardown rather than through a signal, because a write
+       * to a destroyed component's signal is not observable from here — the teardown running on
+       * destroy IS the mechanism, and `take(1)` alone does not run it.
+       */
+      it('tears down an unanswered campaign list read when the component is destroyed', async () => {
+        let torndown = false;
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          new Observable<CampaignListResult>(() => {
+            return () => {
+              torndown = true;
+            };
+          })
+        );
+        await withSavedBrief();
+        load();
+        expect(torndown).toBe(false);
+
+        fixture.destroy();
+
+        expect(torndown).toBe(true);
+      });
+
+      it('clears a stale failure when a later read succeeds', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+        expect(unavailable()).toBe(true);
+
+        list.mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true }));
+        load();
+        await fixture.whenStable();
+
+        expect(unavailable()).toBe(false);
+        expect(campaigns()).toHaveLength(1);
+      });
+    });
   });
 
   /**
@@ -1165,6 +1422,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     fixture.detectChanges();
   });
 
@@ -1526,6 +1784,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     fixture.detectChanges();
   });
 
@@ -1785,6 +2044,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
   });
@@ -2252,6 +2512,7 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
   });
@@ -2461,5 +2722,31 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
     expect(root.querySelectorAll('[data-testid="campaigns-email-template-list"] > li').length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
     expect(root.querySelector('[data-testid="campaigns-email-templates-render-capped"]')).toBeNull();
     expect(picker().emailTemplatesAnnouncement()).not.toContain('Showing the first');
+  });
+});
+
+describe('CampaignsComponent when the client flag is on and the user holds a campaign_manager FGA grant', () => {
+  let fgaFixture: ComponentFixture<CampaignsComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CampaignsComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true), providerReady: signal(true) } },
+      ],
+    }).compileComponents();
+    fgaFixture = TestBed.createComponent(CampaignsComponent);
+    const personas = TestBed.inject(PersonaService);
+    personas.currentPersona.set('contributor');
+    personas.isCampaignManager.set(true);
+    fgaFixture.detectChanges();
+  });
+
+  it('admits the contributor without requiring ED persona', () => {
+    expect((fgaFixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-no-access"]')).toBeNull();
   });
 });

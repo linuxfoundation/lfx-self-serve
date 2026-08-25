@@ -13,6 +13,8 @@ export const environment = {
     enrollment: 'https://enrollment.lfx.linuxfoundation.org/',
     // EasyCLA Contributor Console — sign-out target for new ICLAs/ECLAs (M1 read-only links out here).
     contributorConsole: 'https://contributor.easycla.lfx.linuxfoundation.org/',
+    // LFX Corporate CLA Console — My CLAs "Manage in CCLA Console" (#1575).
+    corporateConsole: 'https://organization.lfx.linuxfoundation.org/',
   },
   segment: {
     cdnUrl: 'https://lfx-segment.platform.linuxfoundation.org/latest/lfx-segment-analytics.min.js?ver=1.0.1',

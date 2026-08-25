@@ -14,8 +14,10 @@ import {
   FOCUS_VISIBLE_TABS,
   MARKETING_IMPACT_FOCUS_OPTIONS,
   MARKETING_IMPACT_TABS,
+  MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import { buildMarketingImpactPeriodOptions, getDefaultMarketingImpactPeriod } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { startWith } from 'rxjs';
@@ -57,8 +59,12 @@ export class MarketingImpactComponent {
   // === Services ===
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly fb = inject(FormBuilder);
   private readonly platformId = inject(PLATFORM_ID);
+  protected readonly isBrowser = isPlatformBrowser(this.platformId);
+  /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — see LFXV2-2235/LFXV2-2236. */
+  private readonly marketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
   private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
 
   // === Forms ===
@@ -84,7 +90,9 @@ export class MarketingImpactComponent {
   protected readonly selectedPeriod: Signal<string> = this.initSelectedPeriod();
   protected readonly contextLabel: Signal<string> = this.initContextLabel();
   protected readonly visibleTabs: Signal<MarketingImpactTabOption[]> = this.initVisibleTabs();
-  protected readonly isExecutiveDirector: Signal<boolean> = this.initIsExecutiveDirector();
+  protected readonly hasFullMarketingAccess: Signal<boolean> = this.initHasFullMarketingAccess();
+  /** Gates the Social-Listening-only fallback — must not render for a viewer who is merely not full-access (LFXV2-2236). */
+  protected readonly isLFStaff = computed(() => this.personaService.isLFStaff());
   /** True when the selected Campaign Type has no dashboard content built yet. */
   protected readonly isComingSoon = computed(() => COMING_SOON_FOCUS_PROGRAMS.has(this.selectedFocus()));
   /**
@@ -172,9 +180,14 @@ export class MarketingImpactComponent {
     });
   }
 
-  // Uses currentPersona() not canViewExecutiveDashboards() — LF Staff keep their contributor persona and fall into the !isExecutiveDirector() Social-Listening-only branch.
-  private initIsExecutiveDirector(): Signal<boolean> {
-    return computed(() => this.personaService.currentPersona() === 'executive-director');
+  // Full tabs for ED, and — while marketing-ops-fga-enabled is on — marketing_auditor grants (the
+  // entire purpose of that role). LF Staff deliberately stay on currentPersona(), not
+  // canViewExecutiveDashboards(): they keep their contributor persona and fall into the
+  // Social-Listening-only branch (LFXV2-2236 gap-analysis G4).
+  private initHasFullMarketingAccess(): Signal<boolean> {
+    return computed(
+      () => this.personaService.currentPersona() === 'executive-director' || (this.marketingOpsFgaEnabled() && this.personaService.isMarketingAuditor())
+    );
   }
 
   private initContextLabel(): Signal<string> {
