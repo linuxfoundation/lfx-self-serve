@@ -269,4 +269,19 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
     await expect(emailSection).toContainText('aramirez@acme-corp.example');
     await expect(emailSection).toContainText('aramirez@acme-corp.co.uk.example');
   });
+
+  test('S3b: company emails and the unavailable fallback stay hidden when org-lens-private-release is OFF', async ({ page }) => {
+    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
+    await gotoContributions(page);
+    await waitForContributionsLoaded(page);
+
+    await switchToCommitsTab(page);
+    await expect(page.getByTestId('org-contributions-commit-demo-aramirez-20260513')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await page.getByTestId('org-contributions-committer-demo-aramirez-20260513').click();
+    await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('person-detail-drawer-header')).toContainText('Ana Ramirez');
+
+    await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
+    await expect(page.getByTestId('person-detail-drawer-email-unavailable')).toHaveCount(0);
+  });
 });
