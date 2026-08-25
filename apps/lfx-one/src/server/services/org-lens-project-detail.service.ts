@@ -1532,7 +1532,7 @@ export class OrgLensProjectDetailService {
   private mapHealth(row: Pick<HeroRow, 'HEALTH_OVERALL_SCORE' | 'HEALTH_OVERALL_SCORE_V2' | 'HEALTH_SCORE_CATEGORY_V2'>): OrgLensProjectHealth | null {
     const v2 = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
     if (v2) return v2;
-    const score = row.HEALTH_OVERALL_SCORE ?? row.HEALTH_OVERALL_SCORE_V2;
+    const score = row.HEALTH_OVERALL_SCORE_V2 ?? row.HEALTH_OVERALL_SCORE;
     if (score === null || score === undefined) return null;
     return classifyHealthScore(score);
   }

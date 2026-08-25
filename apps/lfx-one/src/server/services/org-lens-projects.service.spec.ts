@@ -106,6 +106,14 @@ describe('OrgLensProjectsService health score mapping', () => {
     expect(response.projects[0]?.health).toBe('fair');
   });
 
+  it('prefers the raw v2 score over the raw v1 score when the v2 category is unrecognized and both raw scores are present', async () => {
+    mockProjectsRow(projectsRow({ HEALTH_OVERALL_SCORE: 90, HEALTH_OVERALL_SCORE_V2: 50, HEALTH_SCORE_CATEGORY_V2: 'Typo' }));
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects[0]?.health).toBe('fair');
+  });
+
   it('marks health unavailable when neither v1 nor v2 score is present', async () => {
     mockProjectsRow(projectsRow());
 
