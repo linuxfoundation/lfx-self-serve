@@ -104,7 +104,12 @@ export class NewsletterManageComponent {
   // `newsletters/create` path rather than under `newsletters/:pubId`. Read once
   // from the entry snapshot: it is a create-time input, and the edition's
   // publication does not change while the composer is open.
-  private readonly composePublicationId = signal<string | undefined>(this.route.snapshot.queryParamMap.get('publication') ?? undefined);
+  // `|| undefined` after a trim, not `?? undefined`: ParamMap.get() returns ''
+  // (not null) for a bare `?publication=`, and `??` only coalesces null and
+  // undefined, so an empty value would survive into the create payload. The
+  // service rejects a supplied-but-empty publication_id with a 400 rather than
+  // treating it as absent, so that would fail the save outright.
+  private readonly composePublicationId = signal<string | undefined>(this.route.snapshot.queryParamMap.get('publication')?.trim() || undefined);
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
   private readonly newsletterService = inject(NewsletterService);

@@ -144,8 +144,16 @@ export interface NewsletterPublication {
   name: string;
   is_default: boolean;
   wrapper_content: unknown;
-  template_set_id: string | null;
-  view_online_base: string | null;
+  // Upstream emits these as `omitempty` pointers, so a value that is not set
+  // arrives with the key ABSENT — undefined at runtime, never null. Declaring
+  // them required would be a type lie that only bites once something
+  // dereferences them.
+  template_set_id?: string | null;
+  view_online_base?: string | null;
+  /** Which composer this publication's editions open in. Editions inherit it. */
+  editor_type: string;
+  /** Optional per-publication From address the editions inherit. */
+  sender_email?: string | null;
   created_by: string;
   version: number;
   created_at: string;
@@ -157,13 +165,21 @@ export interface CreatePublicationRequest {
   name: string;
   wrapper_content?: unknown;
   template_set_id?: string | null;
+  /** Omitted defaults to the Classic composer upstream. */
+  editor_type?: string;
+  sender_email?: string | null;
   view_online_base?: string | null;
 }
 
 export interface UpdatePublicationRequest {
   name?: string;
   wrapper_content?: unknown;
+  editor_type?: string;
+  // Upstream reads these three as three-state: omit the key to leave the
+  // stored value alone, send null to clear the column, send a string to set
+  // it. `null` is therefore meaningful here and not the same as omitting.
   template_set_id?: string | null;
+  sender_email?: string | null;
   view_online_base?: string | null;
 }
 
