@@ -10,7 +10,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
-import { EmailManagementData, UserEmail } from '@lfx-one/shared/interfaces';
+import { EmailManagementData, EmailSettingsState, UserEmail } from '@lfx-one/shared/interfaces';
 import { emailsEqual } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -18,7 +18,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
-import { BehaviorSubject, catchError, finalize, map, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, finalize, forkJoin, Observable, of, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-profile-email',
@@ -65,11 +65,13 @@ export class ProfileEmailComponent {
   public loading = signal(false);
 
   // Data signals
-  public emailData: Signal<EmailManagementData | null> = this.initializeEmailData();
+  private readonly emailState: Signal<EmailSettingsState> = this.initEmailState();
+
+  public emailData: Signal<EmailManagementData | null> = computed(() => this.emailState().emails);
 
   // Preferred meeting-invitation email (meeting-service). Its address cannot be deleted here —
   // doing so would orphan the meeting-service preference. Null = no override (uses primary).
-  public meetingInviteEmail: Signal<string | null> = this.initMeetingInviteEmail();
+  public meetingInviteEmail: Signal<string | null> = computed(() => this.emailState().invite?.email ?? null);
 
   public allEmails = computed((): UserEmail[] => {
     const data = this.emailData();
@@ -255,33 +257,25 @@ export class ProfileEmailComponent {
   }
 
   // Private methods
-  private initializeEmailData(): Signal<EmailManagementData | null> {
+
+  /**
+   * Loads the address list and the meeting-invitation preference as one unit, behind a single
+   * loading flag. Fetching them independently let the list turn interactive while the preference
+   * was still in flight, so the badge and the delete guard briefly protected the previous
+   * selection — long enough to delete the newly chosen invite address and orphan the preference.
+   */
+  private initEmailState(): Signal<EmailSettingsState> {
     return toSignal(
       this.refresh.pipe(
-        switchMap(() => {
+        switchMap((): Observable<EmailSettingsState> => {
           this.loading.set(true);
-          return this.userService.getUserEmails().pipe(
-            catchError(() => of(null)),
-            finalize(() => this.loading.set(false))
-          );
+          return forkJoin({
+            emails: this.userService.getUserEmails().pipe(catchError(() => of(null))),
+            invite: this.userService.getMeetingInviteEmail(),
+          }).pipe(finalize(() => this.loading.set(false)));
         })
       ),
-      { initialValue: null }
-    );
-  }
-
-  private initMeetingInviteEmail(): Signal<string | null> {
-    // Reloads in lockstep with the email list so the delete guard reflects the latest selection.
-    return toSignal(
-      this.refresh.pipe(
-        switchMap(() =>
-          this.userService.getMeetingInviteEmail().pipe(
-            map((data) => data.email),
-            catchError(() => of(null))
-          )
-        )
-      ),
-      { initialValue: null }
+      { initialValue: { emails: null, invite: null } }
     );
   }
 }

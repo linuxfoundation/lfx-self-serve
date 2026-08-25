@@ -27,7 +27,7 @@ import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
-import { BehaviorSubject, catchError, finalize, forkJoin, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, finalize, forkJoin, Observable, of, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-account-settings',
@@ -555,11 +555,11 @@ export class AccountSettingsComponent {
   private initEmailState(): Signal<EmailSettingsState> {
     return toSignal(
       this.emailRefresh.pipe(
-        switchMap(() => {
+        switchMap((): Observable<EmailSettingsState> => {
           this.emailLoading.set(true);
           return forkJoin({
             emails: this.userService.getUserEmails().pipe(catchError(() => of(null))),
-            invite: this.userService.getMeetingInviteEmail().pipe(catchError(() => of(null))),
+            invite: this.userService.getMeetingInviteEmail(),
           }).pipe(finalize(() => this.emailLoading.set(false)));
         })
       ),
@@ -578,7 +578,7 @@ export class AccountSettingsComponent {
         if (email.canSetMeetingInvite) {
           // On the primary row the action clears the override rather than pinning an address — name it
           // as a reset, since it also shows on a primary row already badged as the current override.
-          const label = email.isPrimary ? 'Reset to Default (Primary Email)' : 'Meeting Invitations';
+          const label = email.isPrimary ? 'Reset to Default (Primary Email)' : 'Use for Meeting Invitations';
           items.push({ label, icon: 'fa-light fa-envelope', command: () => this.setMeetingInvite(email) });
         }
         if (email.canDelete) {

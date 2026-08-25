@@ -23,7 +23,7 @@ import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, map, of, startWith, switchMap, take } from 'rxjs';
+import { catchError, forkJoin, map, of, startWith, switchMap, take } from 'rxjs';
 
 import { AddAccountDialogComponent } from '../components/add-account-dialog/add-account-dialog.component';
 import { ProfileLinuxEmailComponent } from '../linux-email/profile-linux-email.component';
@@ -32,6 +32,8 @@ import { VerifyIdentityDialogComponent } from '../components/verify-identity-dia
 
 interface IdentitiesState {
   identities: EnrichedIdentity[];
+  // Loaded alongside the identities so the Remove guard is never evaluated against a stale value.
+  inviteEmail: string | null;
   loaded: boolean;
 }
 
@@ -80,7 +82,7 @@ export class ProfileIdentitiesComponent implements OnInit {
   public readonly hasUnverified: Signal<boolean> = computed(() => this.unverifiedIdentities().length > 0);
   // Preferred meeting-invitation email (meeting-service). Its identity cannot be removed here — doing so
   // would orphan the meeting-service preference. Null address = no override (uses primary).
-  public readonly meetingInviteEmail: Signal<string | null> = this.initMeetingInviteEmail();
+  public readonly meetingInviteEmail: Signal<string | null> = computed(() => this.identitiesState().inviteEmail);
   public readonly menuItemsMap: Signal<Map<string, MenuItem[]>> = this.initMenuItemsMap();
 
   private readonly identitiesState: Signal<IdentitiesState> = this.initIdentitiesState();
@@ -249,51 +251,40 @@ export class ProfileIdentitiesComponent implements OnInit {
     return identity.provider === 'email' && emailsEqual(identity.identifier, this.meetingInviteEmail());
   }
 
-  private initMeetingInviteEmail(): Signal<string | null> {
-    // Skip the fetch during SSR (see initIdentitiesState for the session-cookie rationale).
-    if (!isPlatformBrowser(this.platformId)) {
-      return signal<string | null>(null);
-    }
-    // Reloads in lockstep with the identity list so the guard reflects the latest selection.
-    return toSignal(
-      this.userService.identitiesRefresh$.pipe(
-        startWith(undefined),
-        switchMap(() =>
-          this.userService.getMeetingInviteEmail().pipe(
-            map((data) => data.email),
-            catchError(() => of(null))
-          )
-        )
-      ),
-      { initialValue: null }
-    );
-  }
-
+  /**
+   * Loads the identity list and the meeting-invitation preference as one unit behind the single
+   * `loaded` flag. Fetching them independently let the kebab menus turn interactive while the
+   * preference was still in flight, so the Remove guard briefly protected the previous selection —
+   * long enough to remove the invite-email identity and orphan the meeting-service preference.
+   */
   private initIdentitiesState(): Signal<IdentitiesState> {
     // Skip the fetch during SSR. The server's HTTP call doesn't carry the user's
     // session cookie reliably, so it tends to fail and renders the load-error
     // banner into the SSR HTML — producing a red-banner flash on hydration
     // before the browser's authenticated fetch resolves.
     if (!isPlatformBrowser(this.platformId)) {
-      return signal({ identities: [] as EnrichedIdentity[], loaded: false });
+      return signal({ identities: [] as EnrichedIdentity[], inviteEmail: null, loaded: false });
     }
     return toSignal(
       this.userService.identitiesRefresh$.pipe(
         startWith(undefined),
         switchMap(() => {
           this.identitiesLoadError.set(false);
-          return this.userService.getIdentities().pipe(
-            catchError(() => {
-              // Any load failure hides the list entirely — a missing Auth0 overlay
-              // would mis-label every CDP identity as "unverified".
-              this.identitiesLoadError.set(true);
-              return of([] as EnrichedIdentity[]);
-            })
-          );
+          return forkJoin({
+            identities: this.userService.getIdentities().pipe(
+              catchError(() => {
+                // Any load failure hides the list entirely — a missing Auth0 overlay
+                // would mis-label every CDP identity as "unverified".
+                this.identitiesLoadError.set(true);
+                return of([] as EnrichedIdentity[]);
+              })
+            ),
+            invite: this.userService.getMeetingInviteEmail(),
+          });
         }),
-        map((identities): IdentitiesState => ({ identities, loaded: true }))
+        map(({ identities, invite }): IdentitiesState => ({ identities, inviteEmail: invite.email, loaded: true }))
       ),
-      { initialValue: { identities: [] as EnrichedIdentity[], loaded: false } }
+      { initialValue: { identities: [] as EnrichedIdentity[], inviteEmail: null, loaded: false } }
     );
   }
 }
