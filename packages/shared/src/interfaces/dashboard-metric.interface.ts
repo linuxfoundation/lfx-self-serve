@@ -337,12 +337,14 @@ export interface ProjectCounts {
 export type PresencePill = (typeof PRESENCE_PILL_IDS)[number];
 
 /**
- * Three-state presence marker for an individual indicator (groups, mailing
- * lists, chat) on the foundation projects row. `'pending'` = upstream request
- * still in flight; `'present'` = confirmed non-zero count / truthy flag;
- * `'absent'` = confirmed zero / falsy resolution.
+ * Presence marker for an individual indicator (groups, mailing lists, chat)
+ * on the foundation projects row. `'pending'` = upstream request still in
+ * flight; `'present'` = confirmed non-zero count / truthy flag; `'absent'` =
+ * confirmed zero / falsy resolution; `'unavailable'` = the sub-project UID
+ * lookup for this row's group failed, so no count could even be requested —
+ * distinct from `'pending'` so the row doesn't show "Loading" forever (GH-1676).
  */
-export type PresenceState = 'present' | 'absent' | 'pending';
+export type PresenceState = 'present' | 'absent' | 'pending' | 'unavailable';
 
 /**
  * Pre-computed per-row display data for the foundation projects table.

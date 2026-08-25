@@ -85,11 +85,19 @@ export class FoundationProjectsComponent {
   // Re-groups the already-filtered flat list back into per-foundation sections for template
   // rendering, preserving the group order returned by the backend (root foundation first).
   protected readonly groupedFilteredProjects: Signal<ProjectTableGroup[]> = this.initGroupedFilteredProjects();
+  // Single round of per-group `getProjects` calls backing both `subProjectUidBySlug`
+  // and `failedSubProjectGroupSlugs` below — computed once so a group's fetch outcome
+  // (success or failure) is only ever requested once (GH-1676).
+  private readonly subProjectDiscovery: Signal<{ slugToUid: Map<string, string>; failedGroupSlugs: Set<string> }> = this.initSubProjectDiscovery();
   // Canonical project-service UIDs keyed by slug, resolved once per foundation change.
   // Shared between initProjectCounts (upstream count filter) and navigateToProject
   // (lens context uid) so we never fall back to the ambiguous Snowflake PROJECT_ID
   // when the correct project-service UID is already on hand.
-  private readonly subProjectUidBySlug: Signal<Map<string, string>> = this.initSubProjectUidBySlug();
+  private readonly subProjectUidBySlug: Signal<Map<string, string>> = computed(() => this.subProjectDiscovery().slugToUid);
+  // Group foundation slugs whose sub-project UID lookup failed outright — rows under
+  // these groups can never resolve a uid, so their presence indicators must show a
+  // distinct "unavailable" state instead of being stuck on "Loading" forever (GH-1676).
+  private readonly failedSubProjectGroupSlugs: Signal<Set<string>> = computed(() => this.subProjectDiscovery().failedGroupSlugs);
   protected readonly projectCounts: Signal<Map<string, ProjectCounts>> = this.initProjectCounts();
   protected readonly pillOptions: Signal<FilterPillOption[]> = this.initPillOptions();
   // Per-row display data — lens-ready flag + pre-formatted tooltip / sr-only
@@ -251,48 +259,57 @@ export class FoundationProjectsComponent {
   // `startWith(new Map())` inside the inner switchMap clears the map immediately when
   // a new slug arrives so a stale mapping from the previous foundation can't leak
   // through if slugs overlap across foundations.
-  private initSubProjectUidBySlug(): Signal<Map<string, string>> {
+  private initSubProjectDiscovery(): Signal<{ slugToUid: Map<string, string>; failedGroupSlugs: Set<string> }> {
+    const empty = { slugToUid: new Map<string, string>(), failedGroupSlugs: new Set<string>() };
     return toSignal(
       toObservable(this.rawData).pipe(
         switchMap((rawData) => {
-          const foundationUids = rawData.groups.map((group) => group.foundationUid);
-          if (foundationUids.length === 0) {
-            return of(new Map<string, string>());
+          if (rawData.groups.length === 0) {
+            return of(empty);
           }
           // Concurrency-capped like initProjectCounts below — an umbrella foundation can
           // discover dozens of sub-foundation groups (bounded by
           // FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES on the BFF), so firing one `getProjects`
           // call per group unbounded could still burst the browser's connection pool and the
           // BFF's `/api/projects` endpoint at once.
-          return from(foundationUids).pipe(
-            mergeMap((uid) => {
-              const params = new HttpParams().set('parent', `project:${uid}`);
+          return from(rawData.groups).pipe(
+            mergeMap((group) => {
+              const params = new HttpParams().set('parent', `project:${group.foundationUid}`);
               return this.projectService.getProjects(params).pipe(
+                map((subProjects) => ({ foundationSlug: group.foundationSlug, subProjects, failed: false })),
                 catchError((error) => {
-                  // A failed fetch here is indistinguishable downstream from a group that
-                  // genuinely has no sub-projects — rows under this group stay on "Loading"
-                  // for groups/mailing lists/chat rather than surfacing an error state. Logged
-                  // so the failure isn't fully silent (review: no-silent-catchError convention).
-                  console.error('[FoundationProjectsComponent] Failed to resolve sub-projects for group', { uid, error });
-                  return of([]);
+                  // Logged so the failure isn't silent (review: no-silent-catchError convention).
+                  // Tagged `failed: true` (rather than falling back to an indistinguishable empty
+                  // list) so rows under this group can surface a distinct "unavailable" state
+                  // instead of being stuck on "Loading" forever (GH-1676).
+                  console.error('[FoundationProjectsComponent] Failed to resolve sub-projects for group', {
+                    uid: group.foundationUid,
+                    error,
+                  });
+                  return of({ foundationSlug: group.foundationSlug, subProjects: [], failed: true });
                 })
               );
             }, FOUNDATION_PROJECT_COUNT_FETCH_CONCURRENCY),
             toArray(),
-            map((subProjectLists) => {
+            map((results) => {
               const slugToUid = new Map<string, string>();
-              for (const subProjects of subProjectLists) {
-                for (const sub of subProjects) {
+              const failedGroupSlugs = new Set<string>();
+              for (const result of results) {
+                if (result.failed) {
+                  failedGroupSlugs.add(result.foundationSlug);
+                  continue;
+                }
+                for (const sub of result.subProjects) {
                   if (sub.slug && sub.uid) slugToUid.set(sub.slug, sub.uid);
                 }
               }
-              return slugToUid;
+              return { slugToUid, failedGroupSlugs };
             }),
-            startWith(new Map<string, string>())
+            startWith(empty)
           );
         })
       ),
-      { initialValue: new Map<string, string>() }
+      { initialValue: empty }
     );
   }
 
@@ -422,8 +439,25 @@ export class FoundationProjectsComponent {
       const projects = this.allProjects();
       const counts = this.projectCounts();
       const slugToUid = this.subProjectUidBySlug();
+      const failedGroupSlugs = this.failedSubProjectGroupSlugs();
       const views = new Map<string, FoundationProjectRowView>();
       for (const project of projects) {
+        // A project whose group's sub-project UID lookup failed outright can never
+        // resolve a uid, so initProjectCounts never even requests its counts — it
+        // would otherwise stay "pending" forever. Surface the distinct "unavailable"
+        // state instead (GH-1676).
+        if (project.groupFoundationSlug && failedGroupSlugs.has(project.groupFoundationSlug)) {
+          views.set(project.projectSlug, {
+            lensReady: this.resolveLensReady(project, slugToUid),
+            groupsPresence: 'unavailable',
+            mailingListsPresence: 'unavailable',
+            chatPresence: 'unavailable',
+            groupsText: 'Unavailable',
+            mailingListsText: 'Unavailable',
+            chatText: 'Unavailable',
+          });
+          continue;
+        }
         const row = counts.get(project.projectSlug);
         const committees = row?.committees;
         const mailingLists = row?.mailingLists;
