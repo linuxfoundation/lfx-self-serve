@@ -53,11 +53,16 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
     const force = override && !personaService.isMarketingAuditor();
     return personaService.refreshEnrichedPersonas(force, override ? projectSlug : undefined).pipe(
       map((response) => {
-        // Decide from this call's own response, not the shared signal — a newer probe issued
-        // elsewhere (e.g. sidebar-nav) can win the "latest" race and block this response from
-        // being written to the signal, even though it's the answer this guard needs (LFXV2-2235
-        // Cursor finding: probe race can deny valid grants).
-        const isMarketingAuditor = response ? (response.isMarketingAuditor ?? false) : personaService.isMarketingAuditor();
+        // Decide the FGA grant from this call's own response, not the shared signal — a newer
+        // probe issued elsewhere (e.g. sidebar-nav) can win the "latest" race and block this
+        // response from being written to the signal, even though it's the answer this guard needs
+        // (LFXV2-2235 Cursor finding: probe race can deny valid grants). An errored-but-non-null
+        // response (HTTP 200 with `response.error` set) isn't authoritative either —
+        // applyPersonaResponse preserves the last-known-good grant in that case, so fall back too.
+        // ED/LF-staff eligibility below still reads the shared `canViewExecutiveDashboards()`
+        // signal directly — `isLFStaff` is written unconditionally, outside the probeId guard, so
+        // it isn't subject to the same race and doesn't need to come from this response.
+        const isMarketingAuditor = response && !response.error ? (response.isMarketingAuditor ?? false) : personaService.isMarketingAuditor();
         const allowed = override ? personaService.canViewExecutiveDashboards() || isMarketingAuditor : personaService.canViewExecutiveDashboards();
         if (allowed) {
           return true;
@@ -84,9 +89,9 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
 
       return personaService.refreshEnrichedPersonas(force, marketingOpsFgaEnabled ? projectSlug : undefined).pipe(
         map((response) => {
-          // Decide from this call's own response, not the shared signal — see the override branch
-          // above for why (LFXV2-2235 Cursor finding: probe race can deny valid grants).
-          const isMarketingAuditor = response ? (response.isMarketingAuditor ?? false) : personaService.isMarketingAuditor();
+          // Decide the FGA grant from this call's own response, not the shared signal — see the
+          // override branch above for why, and for why ED/LF-staff eligibility stays signal-based.
+          const isMarketingAuditor = response && !response.error ? (response.isMarketingAuditor ?? false) : personaService.isMarketingAuditor();
           const allowed = marketingOpsFgaEnabled
             ? personaService.canViewExecutiveDashboards() || isMarketingAuditor
             : personaService.canViewExecutiveDashboards();

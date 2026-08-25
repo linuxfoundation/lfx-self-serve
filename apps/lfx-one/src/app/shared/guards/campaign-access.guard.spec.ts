@@ -148,6 +148,16 @@ describe('campaignAccessGuard', () => {
     expect(result).toBe(true);
   });
 
+  it('allows a previously-confirmed campaign manager when the refetch returns an errored response', async () => {
+    getBooleanFlag.mockReturnValue(signal(true));
+    isCampaignManager.set(true);
+    refreshEnrichedPersonas.mockReturnValue(of({ isCampaignManager: false, error: 'nats_error' }));
+
+    const result = await runGuard();
+
+    expect(result).toBe(true);
+  });
+
   it('forces a refetch unless the caller is already known to be a campaign manager', async () => {
     getFlagOverride.mockReturnValue(true);
     isCampaignManager.set(true);

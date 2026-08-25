@@ -52,8 +52,10 @@ export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot
         // Decide from this call's own response, not the shared signal — a newer probe issued
         // elsewhere (e.g. sidebar-nav) can win the "latest" race and block this response from
         // being written to the signal, even though it's the answer this guard needs (LFXV2-2235
-        // Cursor finding: probe race can deny valid grants).
-        const isCampaignManager = response ? (response.isCampaignManager ?? false) : personaService.isCampaignManager();
+        // Cursor finding: probe race can deny valid grants). An errored-but-non-null response
+        // (HTTP 200 with `response.error` set) isn't authoritative either — applyPersonaResponse
+        // preserves the last-known-good grant in that case, so the guard must fall back too.
+        const isCampaignManager = response && !response.error ? (response.isCampaignManager ?? false) : personaService.isCampaignManager();
         if (personaService.currentPersona() === 'executive-director' || isCampaignManager) {
           return true;
         }
@@ -81,8 +83,9 @@ export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot
       return personaService.refreshEnrichedPersonas(!personaService.isCampaignManager(), projectSlug).pipe(
         map((response) => {
           // Decide from this call's own response, not the shared signal — see the override branch
-          // above for why (LFXV2-2235 Cursor finding: probe race can deny valid grants).
-          const isCampaignManager = response ? (response.isCampaignManager ?? false) : personaService.isCampaignManager();
+          // above for why (LFXV2-2235 Cursor finding: probe race can deny valid grants), and for
+          // why an errored-but-non-null response also falls back to the shared signal.
+          const isCampaignManager = response && !response.error ? (response.isCampaignManager ?? false) : personaService.isCampaignManager();
           // Re-check ED too — applyPersonaResponse can promote currentPersona as a side effect of
           // this refetch, and an ED without an explicit campaign_manager grant must still pass.
           if (personaService.currentPersona() === 'executive-director' || isCampaignManager) {

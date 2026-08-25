@@ -132,6 +132,16 @@ describe('marketingImpactAccessGuard', () => {
     expect(result).toBe(true);
   });
 
+  it('allows a previously-confirmed marketing auditor when the refetch returns an errored response', async () => {
+    getBooleanFlag.mockReturnValue(signal(true));
+    isMarketingAuditor.set(true);
+    refreshEnrichedPersonas.mockReturnValue(of({ isMarketingAuditor: false, error: 'nats_error' }));
+
+    const result = await runGuard();
+
+    expect(result).toBe(true);
+  });
+
   it('redirects once the provider is ready and the flag is off, even without re-probing FGA', async () => {
     getBooleanFlag.mockReturnValue(signal(false));
 
