@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
@@ -9,7 +9,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { Committee, CommitteeMember, MeetingCommittee } from '@lfx-one/shared';
 import { CommitteeMemberVotingStatus, MeetingVisibility } from '@lfx-one/shared/enums';
 import { CANCEL_ON_COMMITTEE_REMOVAL_OPTIONS, COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared/constants';
-import { sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids } from '@lfx-one/shared/utils';
+import { fromMeetingApiVotingStatuses, sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids, toMeetingApiVotingStatuses } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
@@ -29,7 +29,6 @@ export class MeetingCommitteeManagerComponent {
   // Injected services
   private readonly committeeService = inject(CommitteeService);
   private readonly projectContextService = inject(ProjectContextService);
-  private readonly destroyRef = inject(DestroyRef);
 
   // Inputs
   public readonly selectedCommittees: InputSignal<MeetingCommittee[]> = input<MeetingCommittee[]>([]);
@@ -129,7 +128,7 @@ export class MeetingCommitteeManagerComponent {
     const committeeIds = validCommittees.map((c) => c.uid);
     this.selectedCommitteeIds.set(committeeIds);
 
-    // Get voting statuses
+    // Get voting statuses (stored in the meeting API vocabulary)
     const existingVotingStatuses: string[] = [];
     validCommittees.forEach((committee) => {
       if (committee.allowed_voting_statuses) {
@@ -137,7 +136,8 @@ export class MeetingCommitteeManagerComponent {
       }
     });
 
-    const uniqueVotingStatuses = [...new Set(existingVotingStatuses)];
+    // Map API values back to the display vocabulary the multiselect options use
+    const uniqueVotingStatuses = fromMeetingApiVotingStatuses(existingVotingStatuses);
     this.selectedVotingStatuses.set(uniqueVotingStatuses);
 
     this.committeeForm.patchValue(
@@ -208,7 +208,7 @@ export class MeetingCommitteeManagerComponent {
     const committees = this.committeeOptions();
     const ids = sanitizeMeetingCommitteeUids(committeeIds);
     const hasVotingCommittees = committees.some((c) => ids.includes(c.uid) && c.enable_voting);
-    const allowedVotingStatuses = hasVotingCommittees ? selectedVotingStatuses : [];
+    const allowedVotingStatuses = hasVotingCommittees ? toMeetingApiVotingStatuses(selectedVotingStatuses) : [];
 
     const committeeData: MeetingCommittee[] = ids.map((uid) => ({
       uid,
