@@ -155,6 +155,50 @@ describe('CampaignProxyService email delivery type', () => {
     expect(generatedAdCopy()).toBe(false);
   });
 
+  /**
+   * LFXV2-3312. Microsoft became SELECTABLE in the Plan tab when `disabled: true` was dropped from
+   * the shared constant, and the Plan tab sends `selectedPlatforms` straight to this stream — so a
+   * `SUPPORTED_PLATFORMS` that omits it makes the very first step of a Microsoft campaign fail
+   * with "Unsupported platforms". The channel would be offered and unusable.
+   *
+   * Asserted as a REACHED-done rather than only an absent error: an early refusal also emits no
+   * ad copy, so "no error" alone would pass against the bug this pins.
+   */
+  it('accepts microsoft-ads for brief generation, which the Plan tab can now select', async () => {
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['microsoft-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{ type: string; data: unknown }>
+    );
+
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    // Microsoft contributes no copy KEY of its own — its dispatcher auto-composes the ad upstream —
+    // but the keyword generator must still run, because keywords are the one brief-derived input
+    // `microsoftConfig` consumes, and a campaign without them can never serve.
+    expect(generatedKeywords()).toBe(true);
+  });
+
+  /** The contrast: a platform this service genuinely cannot serve is still refused by name. */
+  it('still refuses twitter-ads, which the brief generator does not serve', async () => {
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['twitter-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{ type: string; data: unknown }>
+    );
+
+    const error = events.find((e) => e.type === 'error');
+    expect(error).toBeDefined();
+    expect(String(error?.data)).toContain('twitter-ads');
+    // The message enumerates the live set, so it names microsoft-ads as supported rather than
+    // carrying a stale hand-written list.
+    expect(String(error?.data)).toContain('microsoft-ads');
+  });
+
   it('does not generate ad copy for an email brief, and still completes', async () => {
     const events = await drain(
       service.streamBrief(req, { url: 'https://events.example.com/kubecon-eu-2026', deliveryType: 'email' }, new AbortController().signal) as AsyncGenerator<{

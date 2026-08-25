@@ -41,7 +41,8 @@ const SUPPORTED_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<Campai
  * for it with nothing failing. Every paid platform in that constant has a `ToggleStatus`
  * dispatcher upstream, so the shared list IS the correct source.
  *
- * `disabled: true` entries (currently Microsoft and X) are excluded deliberately. Their
+ * `disabled: true` entries (currently X only — LFXV2-3312 enabled Microsoft) are excluded
+ * deliberately. Their
  * dispatchers exist upstream, but disabling a platform means this app does not offer it, and
  * accepting a toggle for a campaign the UI cannot create is a route to nowhere. They join by
  * flipping the flag in the shared constant — one edit, not two.
@@ -1052,9 +1053,11 @@ export class CampaignController {
     // wrong in both directions. The legacy path is a switch over meta/reddit whose default arm
     // throws, so widening it would turn a clear refusal into a confusing platform error;
     // keeping the campaign-service set at two would refuse Google Ads and LinkedIn, which this app
-    // does offer. Note these are two different counts and must not be conflated: campaign-service
-    // implements SIX toggle dispatchers upstream, while this set is the FOUR non-disabled entries
-    // of CAMPAIGN_PLATFORMS — Microsoft and X are dispatchable but not offered here. HubSpot is in
+    // does offer. Note these are two different sets and must not be conflated: campaign-service
+    // implements a toggle dispatcher for every paid platform upstream, while this set is only the
+    // NON-DISABLED entries of CAMPAIGN_PLATFORMS — a platform can be dispatchable upstream and
+    // still not offered here (X is, today). Deliberately not stated as a count: the roster changes
+    // whenever a `disabled` flag flips, and a number here goes stale silently. HubSpot is in
     // NEITHER set — an email send has no run state to pause.
     //
     // On the campaign-service path this check is a FAST REJECT, not the policy boundary, and the

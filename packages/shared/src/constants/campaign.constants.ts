@@ -276,7 +276,8 @@ export const CAMPAIGN_UNAVAILABLE_DEFAULT_REASON = 'This campaign is not in a st
  * platform joins by flipping `disabled` in the constant above, which is one edit rather than
  * three.
  *
- * `disabled: true` entries (currently Microsoft and X) have working toggle dispatchers upstream,
+ * `disabled: true` entries (currently X only, since LFXV2-3312 enabled Microsoft) have working
+ * toggle dispatchers upstream,
  * so status alone says a `created`/`active` row of theirs is pausable. It is not pausable HERE:
  * the BFF refuses the platform outright, so the row's Pause button could only ever fail. Status
  * and platform are therefore two independent reasons a toggle is unavailable, and the row must
