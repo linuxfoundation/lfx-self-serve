@@ -75,9 +75,10 @@ export class GroupSeatHoldersDrawerComponent {
 
   // The org's full, unfiltered roster — same array cache.assignments$ resolves to, mirrored into a
   // signal so onPersonClick() can read it synchronously (a click handler can't await an Observable).
-  // Populated by the same cache-building tap() below, so it's never stale relative to `cache` and
-  // never re-fetches on its own. Used to find a clicked person's seats on every committee they hold,
-  // not just the one whose drawer is open — see onPersonClick()'s comment for why that matters.
+  // Populated by the same cache-building tap() below, guarded there against a superseded org's
+  // request landing late (see that tap's comment) — never re-fetches on its own. Used to find a
+  // clicked person's seats on every committee they hold, not just the one whose drawer is open — see
+  // onPersonClick()'s comment for why that matters.
   private readonly fullOrgAssignments = signal<CommitteeMemberAssignment[]>([]);
 
   private readonly seatHolders: Signal<CommitteeMemberAssignment[] | null> = this.initSeatHolders();
@@ -201,10 +202,10 @@ export class GroupSeatHoldersDrawerComponent {
           ...assignment,
           // Sorted so the label can't flip between loads based on upstream seat ordering — the
           // same determinism the voting-status pill above already gets from votingStatusRank.
-          role: [...roles].sort((a, b) => a.localeCompare(b)).join(', '),
+          role: [...roles].sort((a, b) => a.localeCompare(b, 'en-US')).join(', '),
           votingStatusPillClass: votingStatusPillClass(assignment.votingStatus),
         }))
-        .sort((a, b) => (a.person.fullName || a.person.email).localeCompare(b.person.fullName || b.person.email));
+        .sort((a, b) => (a.person.fullName || a.person.email).localeCompare(b.person.fullName || b.person.email, 'en-US'));
     });
   }
 
@@ -240,17 +241,26 @@ export class GroupSeatHoldersDrawerComponent {
           this.loading.set(true);
 
           if (!this.cache || this.cache.orgUid !== orgUid) {
-            this.cache = {
+            // Captured by reference so both callbacks below can check they're still the live cache
+            // entry — not just the same orgUid. shareReplay(1)'s default refCount:false keeps a
+            // superseded org's request subscribed even after switchMap moves on, and an orgUid-only
+            // check is defeated by an A→B→A sequence: the first A's in-flight request can still land
+            // after the roster has been rebuilt for a reborn A (same orgUid, a different entry).
+            // Guards the success write here too, not just the error drop below — previously only the
+            // error path was guarded, so a superseded org's roster could silently overwrite
+            // fullOrgAssignments after a fast switch, corrupting onPersonClick()'s governanceSeats for
+            // a person the visible list still attributes to the current org.
+            const entry: NonNullable<typeof this.cache> = {
               orgUid,
               assignments$: this.committeeMembersService.getCommitteeMembers(orgUid).pipe(
                 map((response) => response.assignments),
-                tap((assignments) => this.fullOrgAssignments.set(assignments)),
+                tap((assignments) => {
+                  if (this.cache === entry) this.fullOrgAssignments.set(assignments);
+                }),
                 catchError((err: unknown) => {
-                  // Drop the cache — but only if it's still this orgUid's entry, so a fetch for a
-                  // since-switched-to org can't be clobbered by a slower, now-stale failure — so the
-                  // next drawer open (or Try again click) retries the fetch instead of replaying the
-                  // same error forever.
-                  if (this.cache?.orgUid === orgUid) {
+                  // Retries on the next drawer open (or Try again click) instead of replaying the same
+                  // error forever — but only if this failure is still live; see the entry comment above.
+                  if (this.cache === entry) {
                     this.cache = null;
                   }
                   return throwError(() => err);
@@ -258,6 +268,7 @@ export class GroupSeatHoldersDrawerComponent {
                 shareReplay(1)
               ),
             };
+            this.cache = entry;
           }
 
           return this.cache.assignments$.pipe(

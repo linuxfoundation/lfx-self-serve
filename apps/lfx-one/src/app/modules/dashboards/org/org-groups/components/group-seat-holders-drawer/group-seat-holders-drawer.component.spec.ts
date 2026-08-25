@@ -223,6 +223,49 @@ describe('GroupSeatHoldersDrawerComponent', () => {
     expect(impl).toHaveBeenCalledTimes(2);
   });
 
+  // The success-path counterpart to the failure-guard test above — same race (a superseded org's
+  // shareReplay(1) source, still subscribed under refCount:false, resolves after the switch), but
+  // landing as a SUCCESS instead of an error. Without a cache-entry-identity guard on the success tap
+  // (mirroring the one the catchError branch already had), org-1's late roster would silently
+  // overwrite fullOrgAssignments, corrupting onPersonClick()'s governanceSeats for org-2's person even
+  // though the visible list (a separately-scoped fetch) still correctly shows org-2's roster.
+  it("does not let a stale, since-superseded org's late SUCCESS overwrite the current org's fullOrgAssignments", async () => {
+    const orgOneSubject = new Subject<OrgPeopleCommitteeMembersResponse>();
+    const orgTwoSubject = new Subject<OrgPeopleCommitteeMembersResponse>();
+    const impl = vi.fn((orgUid: string) => (orgUid === 'org-1' ? orgOneSubject.asObservable() : orgTwoSubject.asObservable()));
+    await setup(impl as unknown as ReturnType<typeof vi.fn>);
+
+    await open('org-1', 'c-1');
+    expect(impl).toHaveBeenCalledTimes(1);
+
+    fixture.componentRef.setInput('orgUid', 'org-2');
+    await fixture.whenStable();
+    expect(impl).toHaveBeenCalledTimes(2);
+
+    // Org-2 (the current org) resolves first.
+    orgTwoSubject.next(
+      response([assignment({ seatId: 's-2', committeeUid: 'c-1', person: person({ fullName: 'Org Two Person', email: 'two@example.org' }) })])
+    );
+    orgTwoSubject.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Org-1's now-orphaned fetch resolves late, after the switch away from it.
+    orgOneSubject.next(
+      response([assignment({ seatId: 's-1', committeeUid: 'c-1', person: person({ fullName: 'Org One Person', email: 'one@example.org' }) })])
+    );
+    orgOneSubject.complete();
+    await fixture.whenStable();
+
+    document.querySelector<HTMLElement>('[data-testid^="seat-holder-person-"]')!.click();
+
+    expect(drawerOpen).toHaveBeenCalledTimes(1);
+    const call = drawerOpen.mock.calls[0][0];
+    expect(call.name).toBe('Org Two Person');
+    expect(call.email).toBe('two@example.org');
+    expect(call.governanceSeats).toHaveLength(1);
+  });
+
   it('renders the empty state when no assignment matches the committee', async () => {
     await setup(vi.fn().mockReturnValue(of(response([assignment({ committeeUid: 'other-committee' })]))));
 
