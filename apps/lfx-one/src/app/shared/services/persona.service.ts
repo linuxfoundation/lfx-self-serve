@@ -94,6 +94,20 @@ export class PersonaService {
    * gate drops grant slug").
    */
   private latestAppliedGrantProbeId = 0;
+  /**
+   * Last probeId *issued* for a given scope (`projectSlug`, or `undefined` for root) — used only by
+   * {@link confirmActiveGrant} to tell a genuine cross-scope race (safe to override) apart from a
+   * same-scope race (not safe to override). `latestGrantProbeId`/`latestAppliedGrantProbeId` are
+   * global by design so an unrelated scope's newer probe can never block this scope's write, but
+   * that same bypass let a guard force-apply its own response even after a *later-issued probe for
+   * its own scope* had already applied a more current, different answer — reintroducing the exact
+   * clobber the recency gate exists to prevent, just via a different door (Copilot finding, PR
+   * #1835). Tracking issuance per scope lets {@link confirmActiveGrant} defer only when it's truly
+   * superseded within its own scope.
+   */
+  private readonly latestIssuedGrantProbeIdByScope = new Map<string | undefined, number>();
+  /** Correlates a resolved {@link PersonaApiResponse} back to the probeId that produced it, so {@link confirmActiveGrant} can look up same-scope recency without changing `refreshEnrichedPersonas`'s public `Observable<PersonaApiResponse | null>` contract. */
+  private readonly grantProbeIdByResponse = new WeakMap<object, number>();
 
   public constructor() {
     const stored = this.loadFromCookie();
@@ -143,6 +157,7 @@ export class PersonaService {
       return of(null);
     }
     const probeId = ++this.latestGrantProbeId;
+    this.latestIssuedGrantProbeIdByScope.set(projectSlug, probeId);
     const url = projectSlug ? `/api/user/personas?enriched=true&project=${encodeURIComponent(projectSlug)}` : '/api/user/personas?enriched=true';
     return this.http.get<PersonaApiResponse>(url).pipe(
       take(1),
@@ -150,6 +165,7 @@ export class PersonaService {
       tap((response) => {
         this.applyPersonaResponse(response, probeId);
         if (response && !response.error) {
+          this.grantProbeIdByResponse.set(response, probeId);
           this.enrichedPersonasLoaded.set(true);
           // Record which project this specific probe verified the grant against. Gated on the
           // same global probe-recency check as the grant booleans below, so this and
@@ -177,10 +193,20 @@ export class PersonaService {
    * guard admitting from its own response while the signal lost the recency race left the very
    * page it just admitted to rendering its own no-access state (Copilot findings, PR #1835). A
    * guard resolving for the route about to be on screen is the most authoritative source for
-   * what's true right now, so it must win outright instead of competing with the recency gate.
-   * Callers must only invoke this with an authoritative, non-errored response.
+   * what's true right now, so it must win outright instead of competing with the *global* recency
+   * gate — but only when the race it's overriding is cross-scope. If a *later-issued probe for
+   * this exact scope* (tracked via {@link latestIssuedGrantProbeIdByScope}) has already resolved
+   * and applied a different answer, this response is genuinely stale, not just a victim of the
+   * global/cross-scope gate, and force-applying it would restore exactly the clobber the recency
+   * gate exists to prevent (Copilot finding, PR #1835). Callers must only invoke this with an
+   * authoritative, non-errored response.
    */
   public confirmActiveGrant(response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager'>, projectSlug?: string): void {
+    const probeId = this.grantProbeIdByResponse.get(response);
+    const latestIssuedForScope = this.latestIssuedGrantProbeIdByScope.get(projectSlug);
+    if (probeId !== undefined && latestIssuedForScope !== undefined && probeId < latestIssuedForScope) {
+      return;
+    }
     this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
     this.isCampaignManager.set(response.isCampaignManager ?? false);
     if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager)) {
