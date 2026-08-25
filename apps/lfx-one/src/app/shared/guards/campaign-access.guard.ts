@@ -48,8 +48,13 @@ export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot
     }
     // Override says flag is on; continue to FGA check below.
     return personaService.refreshEnrichedPersonas(!personaService.isCampaignManager(), projectSlug).pipe(
-      map(() => {
-        if (personaService.currentPersona() === 'executive-director' || personaService.isCampaignManager()) {
+      map((response) => {
+        // Decide from this call's own response, not the shared signal — a newer probe issued
+        // elsewhere (e.g. sidebar-nav) can win the "latest" race and block this response from
+        // being written to the signal, even though it's the answer this guard needs (LFXV2-2235
+        // Cursor finding: probe race can deny valid grants).
+        const isCampaignManager = response ? (response.isCampaignManager ?? false) : personaService.isCampaignManager();
+        if (personaService.currentPersona() === 'executive-director' || isCampaignManager) {
           return true;
         }
         return router.createUrlTree(['/foundation/overview'], { queryParams: { project: route.queryParamMap.get('project') } });
@@ -74,10 +79,13 @@ export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot
       // Force a refetch unless we already know the caller is a campaign manager — the "already
       // loaded" cache would otherwise stale-deny someone who gained the grant mid-session.
       return personaService.refreshEnrichedPersonas(!personaService.isCampaignManager(), projectSlug).pipe(
-        map(() => {
+        map((response) => {
+          // Decide from this call's own response, not the shared signal — see the override branch
+          // above for why (LFXV2-2235 Cursor finding: probe race can deny valid grants).
+          const isCampaignManager = response ? (response.isCampaignManager ?? false) : personaService.isCampaignManager();
           // Re-check ED too — applyPersonaResponse can promote currentPersona as a side effect of
           // this refetch, and an ED without an explicit campaign_manager grant must still pass.
-          if (personaService.currentPersona() === 'executive-director' || personaService.isCampaignManager()) {
+          if (personaService.currentPersona() === 'executive-director' || isCampaignManager) {
             return true;
           }
           return router.createUrlTree(['/foundation/overview'], { queryParams: { project: route.queryParamMap.get('project') } });

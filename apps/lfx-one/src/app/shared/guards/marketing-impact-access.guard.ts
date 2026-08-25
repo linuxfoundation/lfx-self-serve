@@ -52,10 +52,13 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
     // Force a refetch unless we already know the caller is a marketing auditor.
     const force = override && !personaService.isMarketingAuditor();
     return personaService.refreshEnrichedPersonas(force, override ? projectSlug : undefined).pipe(
-      map(() => {
-        const allowed = override
-          ? personaService.canViewExecutiveDashboards() || personaService.isMarketingAuditor()
-          : personaService.canViewExecutiveDashboards();
+      map((response) => {
+        // Decide from this call's own response, not the shared signal — a newer probe issued
+        // elsewhere (e.g. sidebar-nav) can win the "latest" race and block this response from
+        // being written to the signal, even though it's the answer this guard needs (LFXV2-2235
+        // Cursor finding: probe race can deny valid grants).
+        const isMarketingAuditor = response ? (response.isMarketingAuditor ?? false) : personaService.isMarketingAuditor();
+        const allowed = override ? personaService.canViewExecutiveDashboards() || isMarketingAuditor : personaService.canViewExecutiveDashboards();
         if (allowed) {
           return true;
         }
@@ -80,10 +83,11 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
       const force = marketingOpsFgaEnabled && !personaService.isMarketingAuditor();
 
       return personaService.refreshEnrichedPersonas(force, marketingOpsFgaEnabled ? projectSlug : undefined).pipe(
-        map(() => {
-          const allowed = marketingOpsFgaEnabled
-            ? personaService.canViewExecutiveDashboards() || personaService.isMarketingAuditor()
-            : personaService.canViewExecutiveDashboards();
+        map((response) => {
+          // Decide from this call's own response, not the shared signal — see the override branch
+          // above for why (LFXV2-2235 Cursor finding: probe race can deny valid grants).
+          const isMarketingAuditor = response ? (response.isMarketingAuditor ?? false) : personaService.isMarketingAuditor();
+          const allowed = marketingOpsFgaEnabled ? personaService.canViewExecutiveDashboards() || isMarketingAuditor : personaService.canViewExecutiveDashboards();
           if (allowed) {
             return true;
           }
