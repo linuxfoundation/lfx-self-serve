@@ -707,12 +707,14 @@ describe('CampaignsComponent brief persistence', () => {
       proceed(brief);
       await fixture.whenStable();
 
-      // `null` ETag alongside a real id: a restore has no load-time validator to carry
-      // (LFXV2-3204), so ownership is proven while the staleness check falls back to the
-      // freshly read one until this session's own save returns a validator.
-      // `true` — a restore is an explicit decision to work from the stored brief, so its absent
+      // `null` ETag alongside a real id: this restore was driven WITHOUT a load-time validator,
+      // which is the case where the read produced no ETag. Ownership is still proven, while the
+      // staleness check falls back to the freshly read validator until this session's own save
+      // returns one. A restore that DOES carry a validator sends it instead and can 412 —
+      // see the LFXV2-3204 tests above.
+      // `true` — a restore is an explicit decision to work from the stored brief, so an absent
       // validator is permission rather than an unknown. Marking it unknown would refuse the first
-      // save after every restore, which is this feature's main path.
+      // save after every validator-less restore, which is this feature's main path.
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
     });
 

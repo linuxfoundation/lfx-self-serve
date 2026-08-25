@@ -379,9 +379,10 @@ export class PlanningTabComponent implements OnInit {
     // same trap the comment in `onUrlInput` already warns about. The next Proceed then created a
     // second row and hit the unowned-brief conflict.
     //
-    // `savedBriefId` is left in step with `savedBrief` by saying nothing about either — the pair
-    // is only ever written together, which is what `restoreSavedBrief`'s both-or-neither guard
-    // depends on.
+    // `savedBriefId` and `savedBriefEtag` are left in step with `savedBrief` by saying nothing
+    // about any of them — the three are only ever written together, which is what
+    // `restoreSavedBrief`'s both-or-neither guard depends on, and what stops a validator
+    // outliving the brief it was read for.
     this.isEditing.set(false);
     this.isRefining.set(false);
     this.isRefineStreaming.set(false);
