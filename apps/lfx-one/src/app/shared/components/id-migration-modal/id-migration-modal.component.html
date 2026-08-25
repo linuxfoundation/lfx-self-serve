@@ -11,11 +11,13 @@
   <!-- Reason is required (Continue is disabled until one is picked); the comment is optional. -->
   <form [formGroup]="form" class="flex flex-col gap-3">
     <div class="flex flex-col gap-1">
-      <label for="id-migration-reason" class="text-sm font-medium text-gray-700">Reason</label>
+      <!-- aria-hidden on the asterisk: [required] below emits aria-required, so SRs would hear it twice. -->
+      <label for="id-migration-reason" class="text-sm font-medium text-gray-700">Reason <span class="text-red-500" aria-hidden="true">*</span></label>
       <lfx-select
         [form]="form"
         control="reason"
         inputId="id-migration-reason"
+        [required]="true"
         [options]="reasons"
         optionLabel="label"
         optionValue="value"
