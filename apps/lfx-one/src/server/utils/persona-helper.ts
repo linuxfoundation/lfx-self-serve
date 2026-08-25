@@ -54,7 +54,8 @@ function resolveFromCookie(req: Request, cookieHeader: string): SsrPersonaResult
 
 async function resolveFromNats(req: Request, res: Response): Promise<SsrPersonaResult> {
   try {
-    const personaResult = await personaDetectionService.getPersonas(req);
+    // 'none' — SSR persona resolution never reads isMarketingAuditor/isCampaignManager.
+    const personaResult = await personaDetectionService.getPersonas(req, undefined, 'none');
 
     const persona = personaResult.personas.length > 0 ? personaResult.personas[0] : DEFAULT_PERSONA;
     const personas = personaResult.personas.length > 0 ? personaResult.personas : [DEFAULT_PERSONA];

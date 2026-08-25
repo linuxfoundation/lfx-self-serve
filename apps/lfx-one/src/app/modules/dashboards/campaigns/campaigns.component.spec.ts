@@ -22,6 +22,8 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { PersonaService } from '@services/persona.service';
 import { HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
@@ -95,12 +97,30 @@ describe('CampaignsComponent brief persistence', () => {
       // calls a new one. Their requests simply stay pending here, which is the loading state.
       // A router is needed because a child tab renders a RouterLink — stubbing the children
       // instead would stop this spec from proving the handoff really mounts the tab.
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        // `providerReady: signal(true)` so `hasCampaignAccess` evaluates the real persona/flag
+        // check instead of deferring (its SSR/pre-hydration fast path, see campaigns.component.ts)
+        // — every test here runs in the browser and expects an immediate verdict. `getBooleanFlag`
+        // stays `false`, matching the real service's default before a provider ever initializes,
+        // so this changes nothing for the tests that don't care about the flag.
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false), providerReady: signal(true) } },
+      ],
     }).compileComponents();
     persistBrief = vi.fn();
     vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persistBrief);
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     await fixture.whenStable();
+  });
+
+  it('renders a no-access state for a contributor without a campaign_manager FGA grant', async () => {
+    TestBed.inject(PersonaService).currentPersona.set('contributor');
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-no-access"]')).not.toBeNull();
   });
 
   it('switches to the Implementation tab before the save resolves', async () => {
@@ -1402,6 +1422,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     fixture.detectChanges();
   });
 
@@ -1763,6 +1784,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     fixture.detectChanges();
   });
 
@@ -2022,6 +2044,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
   });
@@ -2489,6 +2512,7 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
   });
@@ -2698,5 +2722,31 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
     expect(root.querySelectorAll('[data-testid="campaigns-email-template-list"] > li').length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
     expect(root.querySelector('[data-testid="campaigns-email-templates-render-capped"]')).toBeNull();
     expect(picker().emailTemplatesAnnouncement()).not.toContain('Showing the first');
+  });
+});
+
+describe('CampaignsComponent when the client flag is on and the user holds a campaign_manager FGA grant', () => {
+  let fgaFixture: ComponentFixture<CampaignsComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CampaignsComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true), providerReady: signal(true) } },
+      ],
+    }).compileComponents();
+    fgaFixture = TestBed.createComponent(CampaignsComponent);
+    const personas = TestBed.inject(PersonaService);
+    personas.currentPersona.set('contributor');
+    personas.isCampaignManager.set(true);
+    fgaFixture.detectChanges();
+  });
+
+  it('admits the contributor without requiring ED persona', () => {
+    expect((fgaFixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-no-access"]')).toBeNull();
   });
 });
