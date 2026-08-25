@@ -899,9 +899,17 @@ export class OptimizationTabComponent implements OnInit {
     // `fetchLinkedInOptimization`/etc never runs again to replace the subscription, so a late
     // response from the old foundation's request would otherwise land after the clear and put
     // that foundation's data back on screen under the new one.
+    //
+    // The unsubscribe cancels the fetch but also prevents its `next`/`error` handler from ever
+    // firing — those handlers are the only place the loading flag gets cleared. Clear it
+    // explicitly here too, or a foundation with zero accounts for a platform leaves that panel
+    // spinning forever.
     this.linkedInSub?.unsubscribe();
     this.redditSub?.unsubscribe();
     this.metaSub?.unsubscribe();
+    this.linkedInLoading.set(false);
+    this.redditLoading.set(false);
+    this.metaLoading.set(false);
     this.linkedInData.set(null);
     this.redditData.set(null);
     this.metaData.set(null);
