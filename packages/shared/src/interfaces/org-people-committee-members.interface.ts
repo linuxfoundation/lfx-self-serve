@@ -47,11 +47,6 @@ export interface CommitteeMemberAssignment {
   person: CommitteeMemberPerson;
 }
 
-/** A `CommitteeMemberAssignment` decorated for a read-only display list (e.g. the Groups seat-holders drawer) — adds the voting-status pill class so the template stays a flat binding instead of calling a function on every change-detection pass. */
-export interface CommitteeMemberSeatHolderVm extends CommitteeMemberAssignment {
-  votingStatusPillClass: string;
-}
-
 /** Filter-independent stat tiles, computed once at the BFF from the full (unfiltered) roster. */
 export interface CommitteeMemberStats {
   /** Distinct lowercased emails. */

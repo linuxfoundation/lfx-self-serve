@@ -78,4 +78,18 @@ test.describe('Org Groups — seat holders drawer (GH-1780)', () => {
 
     await expect(page.getByTestId('group-seat-holders-drawer-empty')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
+
+  test('shows the error state when the committee-members fetch fails', async ({ page }) => {
+    // Overrides the beforeEach stub with a failing response, not a fixture — stubCommitteeMembers
+    // always fulfills with 200, so a genuine upstream failure needs its own route registration.
+    await page.route(/\/api\/orgs\/[^/]+\/lens\/people\/committee-members$/, (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'internal error' }) });
+    });
+
+    await page.getByTestId(`org-groups-item-seats-${GROUP_UID}`).click();
+
+    await expect(page.getByTestId('group-seat-holders-drawer-error')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('group-seat-holders-drawer-empty')).not.toBeVisible();
+  });
 });
