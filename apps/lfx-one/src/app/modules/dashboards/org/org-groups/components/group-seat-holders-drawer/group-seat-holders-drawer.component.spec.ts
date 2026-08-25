@@ -813,7 +813,14 @@ describe('GroupSeatHoldersDrawerComponent', () => {
       const panel = dialogPanel();
       expect(panel).toBeTruthy();
       expect(panel?.getAttribute('aria-modal')).toBe('true');
-      expect(panel?.getAttribute('aria-labelledby')).toBe('group-seat-holders-drawer-title');
+
+      // Resolves the id, not just matches the attribute string — a dangling aria-labelledby (no
+      // element with that id) leaves the dialog with no accessible name and would pass a check
+      // that only compares the attribute's text.
+      const labelledById = panel?.getAttribute('aria-labelledby') ?? '';
+      const labelElement = document.getElementById(labelledById);
+      expect(labelElement).toBeTruthy();
+      expect(labelElement?.textContent?.trim()).toBe('Storage Working Group');
     });
 
     it('moves focus into the panel on open, away from the element that triggered it', async () => {

@@ -23,7 +23,12 @@
         <!-- tabindex="-1": not in Tab order, but focusable via onDrawerShow() moving focus here on
              open — it's also the element aria-labelledby points at, so a screen reader announces
              the group name immediately on focus, the way a dialog title normally would. -->
-        <h2 #titleRef tabindex="-1" class="text-base font-semibold text-gray-900 break-words" data-testid="group-seat-holders-drawer-title">
+        <h2
+          #titleRef
+          id="group-seat-holders-drawer-title"
+          tabindex="-1"
+          class="text-base font-semibold text-gray-900 break-words"
+          data-testid="group-seat-holders-drawer-title">
           {{ groupName() }}
         </h2>
         <p class="text-sm text-gray-500 truncate" data-testid="group-seat-holders-drawer-subtitle">
