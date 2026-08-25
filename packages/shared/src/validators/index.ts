@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+export * from './committee.validators';
 export * from './date.validators';
 export * from './https-url.validator';
 export * from './linux-alias.validator';

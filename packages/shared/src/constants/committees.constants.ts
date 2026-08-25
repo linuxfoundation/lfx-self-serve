@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { BehavioralClassDisplayConfig, CommitteeCategoryInfo, CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
+import type { BehavioralClassDisplayConfig, CommitteeCategoryInfo, CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
 import type { MeetingAllowedVotingStatus } from '../interfaces/meeting.interface';
 import { lfxColors } from './colors.constants';
 
@@ -282,12 +282,15 @@ export const VOTING_STATUSES = [
   { label: 'None', value: CommitteeMemberVotingStatus.NONE },
 ];
 
+/** VOTING_STATUSES minus the legacy None value — excluded by both surfaces below, for different reasons. */
+const VOTING_STATUSES_WITHOUT_NONE = VOTING_STATUSES.filter(({ value }) => value !== CommitteeMemberVotingStatus.NONE);
+
 /**
  * Voting status options for meeting committee filters.
  * Excludes None — it is not a selectable value in meeting forms but remains
  * a valid member status. None is treated as Observer for filtering purposes.
  */
-export const MEETING_VOTING_STATUSES = VOTING_STATUSES.filter(({ value }) => value !== CommitteeMemberVotingStatus.NONE);
+export const MEETING_VOTING_STATUSES = VOTING_STATUSES_WITHOUT_NONE;
 
 /** Meeting API voting-status vocabulary — snake_case, unlike the committee domain's display strings. */
 export const MEETING_ALLOWED_VOTING_STATUSES = ['voting_rep', 'alt_voting_rep', 'observer', 'emeritus', 'none'] as const;
@@ -309,6 +312,13 @@ export const MEETING_TO_COMMITTEE_VOTING_STATUS: Record<MeetingAllowedVotingStat
   emeritus: CommitteeMemberVotingStatus.EMERITUS,
   none: CommitteeMemberVotingStatus.OBSERVER,
 };
+
+/**
+ * Voting status options for the committee member form.
+ * Excludes None — the committee service rejects it on voting-enabled committees
+ * (LFXV2-2075); it persists only as a legacy value on pre-existing members.
+ */
+export const MEMBER_FORM_VOTING_STATUSES = VOTING_STATUSES_WITHOUT_NONE;
 
 /**
  * Available appointment sources for committee members

@@ -361,7 +361,7 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
   });
 
-  // The page is reachable by an ED of any foundation — `executiveDirectorGuard` gates on persona
+  // The page is reachable by an ED of any foundation — `campaignAccessGuard` gates on persona
   // and `projectQueryParamGuard` seeds the context from `?project=` — while campaign-service
   // scopes every brief on its project. A hard-coded `tlf` would file a CNCF ED's brief in TLF's
   // table, under a unique index that then collides it with unrelated TLF work for the same event.

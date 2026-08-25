@@ -9,6 +9,7 @@ import {
   COMMITTEE_LABEL,
   DOCUMENT_LABEL,
   MAILING_LIST_LABEL,
+  MARKETING_OPS_FGA_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
@@ -22,6 +23,7 @@ import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
+import { WriterGrantsService } from '@services/writer-grants.service';
 import { map, of, startWith, switchMap } from 'rxjs';
 
 /**
@@ -39,6 +41,7 @@ export class SidebarNavService {
   private readonly analyticsService = inject(AnalyticsService);
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly userService = inject(UserService);
+  private readonly writerGrantsService = inject(WriterGrantsService);
 
   /** Dark-launch gate; falls back to Me Lens nav when off. */
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
@@ -48,6 +51,22 @@ export class SidebarNavService {
   private readonly isMktgOsAgentsEnabled: Signal<boolean> = computed(() => true);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
+  /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
+  private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
+
+  /**
+   * True when the user has non-marketing foundation access (board role, root-writer, LF-staff, or
+   * writer grant on a foundation). Marketing FGA grants alone do NOT set this flag — those users
+   * still reach the foundation lens but should only see the marketing-specific nav items, not the
+   * full foundation sidebar (Dashboard, Meetings, Governance, etc.).
+   */
+  private readonly hasFullFoundationAccess = computed(
+    () =>
+      this.personaService.hasBoardRole() ||
+      this.personaService.isRootWriter() ||
+      this.personaService.isLFStaff() ||
+      this.writerGrantsService.hasWriterFoundation()
+  );
 
   private readonly activeLens = this.lensService.activeLens;
 
@@ -236,141 +255,204 @@ export class SidebarNavService {
     { initialValue: false }
   );
 
+  // Keeps isMarketingAuditor/isCampaignManager in sync with the active foundation — the root-scoped
+  // fetch alone misses a per-project grant (LFXV2-2235 review finding). Read in canSeeMarketing below
+  // to register the dependency; the refreshed value lives on PersonaService's own signals.
+  // For project-lens-only marketing users, `selectedFoundation` is never populated because
+  // foundation rows that the sidebar shows under the project lens are stored in `selectedProject`
+  // (sidebar.component.ts:188-200). Fall back to selectedProject so the scoped probe fires as soon
+  // as they pick any context, bootstrapping their first-session foundation grant.
+  private readonly marketingPersonaSlug: Signal<string> = toSignal(
+    toObservable(
+      computed(() => {
+        if (!this.isMarketingOpsFgaEnabled() || !this.userService.authenticated()) {
+          return '';
+        }
+        const foundationSlug = this.projectContextService.selectedFoundation()?.slug;
+        if (foundationSlug) {
+          return foundationSlug;
+        }
+        // Only fall back to selectedProject while no marketing grant is confirmed yet. Once
+        // isMarketingAuditor/isCampaignManager is true, a later selectedProject change with no
+        // explicit selectedFoundation must not re-probe that unrelated project slug — a `false`
+        // result there would overwrite (not merge with) the already-confirmed foundation-scoped
+        // grant (LFXV2-2235 review finding: "project slug clears marketing grant"). A genuine
+        // foundation switch still re-verifies via the selectedFoundation branch above.
+        if (this.personaService.isMarketingAuditor() || this.personaService.isCampaignManager()) {
+          return '';
+        }
+        return this.projectContextService.selectedProject()?.slug ?? '';
+      })
+    ).pipe(
+      switchMap((slug) => {
+        if (!slug) {
+          return of('');
+        }
+        return this.personaService.refreshEnrichedPersonas(false, slug).pipe(map(() => slug));
+      })
+    ),
+    { initialValue: '' }
+  );
+
   // --- Foundation Lens Items ---
   private readonly foundationLensItems = computed((): SidebarMenuItem[] => {
-    const items: SidebarMenuItem[] = [
-      {
+    // Marketing-only FGA users (marketing_auditor / campaign_manager with no board, root-writer,
+    // LF-staff, or foundation-writer access) reach this lens via hasMarketingGrant but must only
+    // see marketing-specific items. The full foundation sidebar (Dashboard, Meetings, Governance,
+    // etc.) is only surfaced when the user has broader foundation-level access.
+    const items: SidebarMenuItem[] = [];
+
+    if (this.hasFullFoundationAccess()) {
+      items.push({
         label: 'Dashboard',
         icon: 'fa-light fa-grid-2',
         routerLink: '/foundation/overview',
-      },
-    ];
-
-    if (this.foundationHasProjects()) {
-      items.push({
-        label: 'Projects',
-        icon: 'fa-light fa-diagram-project',
-        routerLink: '/foundation/projects',
-        testId: 'sidebar-foundation-projects',
       });
-    }
 
-    items.push(
-      {
-        label: 'Meetings',
-        icon: 'fa-light fa-calendar',
-        routerLink: '/foundation/meetings',
-      },
-      {
-        label: 'Events',
-        icon: 'fa-light fa-ticket',
-        routerLink: '/foundation/events',
-      },
-      {
-        label: MAILING_LIST_LABEL.plural,
-        icon: 'fa-light fa-envelope',
-        routerLink: '/foundation/mailing-lists',
-      },
-      {
-        label: COMMITTEE_LABEL.plural,
-        icon: 'fa-light fa-users-rectangle',
-        routerLink: '/foundation/groups',
-      },
-      {
-        label: DOCUMENT_LABEL.plural,
-        icon: 'fa-light fa-folder-open',
-        routerLink: '/foundation/documents',
-      },
-      {
-        label: 'Governance',
-        isSection: true,
-        expanded: true,
-        items: [
-          {
-            label: VOTE_LABEL.plural,
-            icon: 'fa-light fa-check-to-slot',
-            routerLink: '/foundation/votes',
-          },
-          {
-            label: SURVEY_LABEL.plural,
-            icon: 'fa-light fa-clipboard-list',
-            routerLink: '/foundation/surveys',
-          },
-          {
-            label: 'Permissions',
-            icon: 'fa-light fa-shield',
-            routerLink: '/foundation/settings',
-          },
-        ],
-      }
-    );
-
-    if (this.canSeeNewsletters()) {
-      items.push({
-        label: 'Communications',
-        isSection: true,
-        expanded: true,
-        items: [
-          {
-            label: 'Newsletters',
-            icon: 'fa-light fa-paper-plane',
-            routerLink: '/foundation/newsletters',
-            testId: 'sidebar-foundation-newsletters',
-          },
-        ],
-      });
-    }
-
-    if (this.personaService.canViewExecutiveDashboards()) {
-      const metricsItems: SidebarMenuItem[] = [
-        {
-          label: 'Health Metrics',
-          icon: 'fa-light fa-chart-line-up',
-          routerLink: '/foundation/health-metrics',
-          testId: 'sidebar-metrics-health-metrics',
-        },
-      ];
-
-      const foundationSfid = this.projectContextService.selectedFoundationSfid();
-      if (foundationSfid) {
-        const pccBaseUrl = environment.urls.pcc;
-        const baseUrl = pccBaseUrl.endsWith('/') ? pccBaseUrl.slice(0, -1) : pccBaseUrl;
-        metricsItems.push({
-          label: 'Social Listening',
-          icon: 'fa-light fa-ear-listen',
-          url: `${baseUrl}/project/${foundationSfid}/reports/social-listening`,
-          target: '_blank',
-          rel: 'noopener noreferrer',
-          testId: 'sidebar-metrics-social-listening',
+      if (this.foundationHasProjects()) {
+        items.push({
+          label: 'Projects',
+          icon: 'fa-light fa-diagram-project',
+          routerLink: '/foundation/projects',
+          testId: 'sidebar-foundation-projects',
         });
       }
 
-      items.push({
-        label: 'Metrics',
-        isSection: true,
-        expanded: true,
-        items: metricsItems,
-      });
-
-      const marketingItems: SidebarMenuItem[] = [
+      items.push(
         {
-          label: 'Campaign Impact',
-          icon: 'fa-light fa-bullhorn',
-          routerLink: '/foundation/marketing-impact',
-          testId: 'sidebar-marketing-impact',
+          label: 'Meetings',
+          icon: 'fa-light fa-calendar',
+          routerLink: '/foundation/meetings',
         },
-      ];
+        {
+          label: 'Events',
+          icon: 'fa-light fa-ticket',
+          routerLink: '/foundation/events',
+        },
+        {
+          label: MAILING_LIST_LABEL.plural,
+          icon: 'fa-light fa-envelope',
+          routerLink: '/foundation/mailing-lists',
+        },
+        {
+          label: COMMITTEE_LABEL.plural,
+          icon: 'fa-light fa-users-rectangle',
+          routerLink: '/foundation/groups',
+        },
+        {
+          label: DOCUMENT_LABEL.plural,
+          icon: 'fa-light fa-folder-open',
+          routerLink: '/foundation/documents',
+        },
+        {
+          label: 'Governance',
+          isSection: true,
+          expanded: true,
+          items: [
+            {
+              label: VOTE_LABEL.plural,
+              icon: 'fa-light fa-check-to-slot',
+              routerLink: '/foundation/votes',
+            },
+            {
+              label: SURVEY_LABEL.plural,
+              icon: 'fa-light fa-clipboard-list',
+              routerLink: '/foundation/surveys',
+            },
+            {
+              label: 'Permissions',
+              icon: 'fa-light fa-shield',
+              routerLink: '/foundation/settings',
+            },
+          ],
+        }
+      );
 
-      // Campaigns stays ED-only within the shared Metrics+Marketing section — LF Staff see Campaign Impact but not Campaigns.
-      if (this.personaService.currentPersona() === 'executive-director') {
-        marketingItems.push({
-          label: 'Campaigns',
-          icon: 'fa-light fa-megaphone',
-          routerLink: '/foundation/campaigns',
-          testId: 'sidebar-marketing-campaigns',
+      if (this.canSeeNewsletters()) {
+        items.push({
+          label: 'Communications',
+          isSection: true,
+          expanded: true,
+          items: [
+            {
+              label: 'Newsletters',
+              icon: 'fa-light fa-paper-plane',
+              routerLink: '/foundation/newsletters',
+              testId: 'sidebar-foundation-newsletters',
+            },
+          ],
         });
       }
 
+      if (this.personaService.canViewExecutiveDashboards()) {
+        const metricsItems: SidebarMenuItem[] = [
+          {
+            label: 'Health Metrics',
+            icon: 'fa-light fa-chart-line-up',
+            routerLink: '/foundation/health-metrics',
+            testId: 'sidebar-metrics-health-metrics',
+          },
+        ];
+
+        const foundationSfid = this.projectContextService.selectedFoundationSfid();
+        if (foundationSfid) {
+          const pccBaseUrl = environment.urls.pcc;
+          const baseUrl = pccBaseUrl.endsWith('/') ? pccBaseUrl.slice(0, -1) : pccBaseUrl;
+          metricsItems.push({
+            label: 'Social Listening',
+            icon: 'fa-light fa-ear-listen',
+            url: `${baseUrl}/project/${foundationSfid}/reports/social-listening`,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            testId: 'sidebar-metrics-social-listening',
+          });
+        }
+
+        items.push({
+          label: 'Metrics',
+          isSection: true,
+          expanded: true,
+          items: metricsItems,
+        });
+      }
+    }
+
+    // Marketing section visibility is independent of Metrics: while marketing-ops-fga-enabled is
+    // on, a root/project-scoped marketing_auditor grant also unlocks Campaign Impact, and a
+    // campaign_manager grant unlocks Campaigns — neither implies the other, so each item is built
+    // independently and the section itself only appears once it has at least one item. LF Staff see
+    // Campaign Impact via canViewExecutiveDashboards() the same as Metrics, but are restricted to the
+    // Social Listening tab once inside — full Marketing Impact access is ED/marketing_auditor only
+    // (LFXV2-2236 gap-analysis G4). Never widen the Metrics section itself for marketing_auditor.
+    this.marketingPersonaSlug();
+    const marketingItems: SidebarMenuItem[] = [];
+
+    const canSeeMarketingImpact =
+      this.personaService.canViewExecutiveDashboards() || (this.isMarketingOpsFgaEnabled() && this.personaService.isMarketingAuditor());
+    if (canSeeMarketingImpact) {
+      marketingItems.push({
+        label: 'Campaign Impact',
+        icon: 'fa-light fa-bullhorn',
+        routerLink: '/foundation/marketing-impact',
+        testId: 'sidebar-marketing-impact',
+      });
+    }
+
+    // Campaigns needs ED, or — while marketing-ops-fga-enabled is on — a campaign_manager grant.
+    // A campaign_manager-only user (no ED, no marketing_auditor, not LF Staff) must still see this
+    // item, so it cannot be nested inside the Campaign Impact check above.
+    const canSeeCampaigns =
+      this.personaService.currentPersona() === 'executive-director' || (this.isMarketingOpsFgaEnabled() && this.personaService.isCampaignManager());
+    if (canSeeCampaigns) {
+      marketingItems.push({
+        label: 'Campaigns',
+        icon: 'fa-light fa-megaphone',
+        routerLink: '/foundation/campaigns',
+        testId: 'sidebar-marketing-campaigns',
+      });
+    }
+
+    if (marketingItems.length > 0) {
       items.push({
         label: 'Marketing',
         isSection: true,
