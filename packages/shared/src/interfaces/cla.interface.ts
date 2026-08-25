@@ -75,6 +75,12 @@ export interface MyClaAgreement {
    * display still uses `claGroupName`.
    */
   claGroupId?: string;
+  /**
+   * Whether the signed-in user is a CLA manager of the employer's CCLA for this CLA
+   * group (producer `claManager`), always false on ICLA. This is the producer's own
+   * manager resolution — do not re-derive it from the cla-managers endpoint (#1575).
+   */
+  claManager?: boolean;
   /** Employer company name — present for ECLA only. */
   companyName?: string;
   /** ISO date the agreement was signed. */
@@ -298,8 +304,6 @@ export interface ClaManager {
 /** Response for `GET /api/me/clas/:signatureId/cla-managers`. */
 export interface ClaManagerList {
   signatureId: string;
-  /** True when the signed-in user is a CLA manager for this ECLA's company + CLA group. */
-  claManager: boolean;
   /** Empty when no CLA manager is currently reachable. */
   managers: ClaManager[];
   resultCount: number;

@@ -57,21 +57,22 @@ describe('canContactClaManager', () => {
 });
 
 describe('canManageInCclaConsole', () => {
-  const managerEcla = { claGroupId: 'g-anuket-005' };
+  const managerEcla = { claGroupId: 'g-anuket-005', claManager: true };
 
-  it('is true for a non-Revoked ECLA when the caller is a manager and the CLA group id is present', () => {
-    expect(canManageInCclaConsole(agreement({ status: 'valid', ...managerEcla }), true)).toBe(true);
-    expect(canManageInCclaConsole(agreement({ status: 'needs_attention', ...managerEcla }), true)).toBe(true);
-    expect(canManageInCclaConsole(agreement({ status: 'invalidated', ...managerEcla }), true)).toBe(true);
-    expect(canManageInCclaConsole(agreement({ status: 'unknown', ...managerEcla }), true)).toBe(true);
+  it('is true for a non-Revoked ECLA when the row is manager-flagged and the CLA group id is present', () => {
+    expect(canManageInCclaConsole(agreement({ status: 'valid', ...managerEcla }))).toBe(true);
+    expect(canManageInCclaConsole(agreement({ status: 'needs_attention', ...managerEcla }))).toBe(true);
+    expect(canManageInCclaConsole(agreement({ status: 'invalidated', ...managerEcla }))).toBe(true);
+    expect(canManageInCclaConsole(agreement({ status: 'unknown', ...managerEcla }))).toBe(true);
   });
 
   it('is false for non-managers, ICLA, Revoked, and a missing CLA group id', () => {
-    expect(canManageInCclaConsole(agreement({ status: 'valid', ...managerEcla }), false)).toBe(false);
-    expect(canManageInCclaConsole(agreement({ kind: 'ICLA', pdfAvailable: true, ...managerEcla }), true)).toBe(false);
-    expect(canManageInCclaConsole(agreement({ status: 'revoked', ...managerEcla }), true)).toBe(false);
-    expect(canManageInCclaConsole(agreement({ status: 'valid' }), true)).toBe(false);
-    expect(canManageInCclaConsole(agreement({ status: 'valid', claGroupId: '   ' }), true)).toBe(false);
+    expect(canManageInCclaConsole(agreement({ status: 'valid', ...managerEcla, claManager: false }))).toBe(false);
+    expect(canManageInCclaConsole(agreement({ status: 'valid', claGroupId: 'g-anuket-005' }))).toBe(false);
+    expect(canManageInCclaConsole(agreement({ kind: 'ICLA', pdfAvailable: true, ...managerEcla }))).toBe(false);
+    expect(canManageInCclaConsole(agreement({ status: 'revoked', ...managerEcla }))).toBe(false);
+    expect(canManageInCclaConsole(agreement({ status: 'valid', claManager: true }))).toBe(false);
+    expect(canManageInCclaConsole(agreement({ status: 'valid', claManager: true, claGroupId: '   ' }))).toBe(false);
   });
 });
 

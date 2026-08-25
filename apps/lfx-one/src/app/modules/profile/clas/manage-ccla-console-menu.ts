@@ -17,8 +17,8 @@ import { environment } from '@environments/environment';
  * Opens via `command` rather than `url` + `target`: PrimeNG's menu renders no `rel`
  * attribute, so an anchor here could not carry `noopener noreferrer`.
  */
-export function buildManageInCclaConsoleMenuItems(agreement: MyClaAgreement, isClaManager: boolean): MenuItem[] {
-  if (!canManageInCclaConsole(agreement, isClaManager)) {
+export function buildManageInCclaConsoleMenuItems(agreement: MyClaAgreement): MenuItem[] {
+  if (!canManageInCclaConsole(agreement)) {
     return [];
   }
   const url = cclaConsoleUrl(environment.urls.corporateConsole, agreement.foundationSfid, agreement.projectSfid);

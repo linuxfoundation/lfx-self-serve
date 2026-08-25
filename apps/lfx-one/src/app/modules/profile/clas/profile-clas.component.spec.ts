@@ -48,19 +48,16 @@ describe('ProfileClasComponent', () => {
   });
 
   let fixture: ComponentFixture<ProfileClasComponent>;
+  /** The list's own manager flags come from the row, so this stays uncalled unless the dialog opens. */
+  let getClaManagersSpy: ReturnType<typeof vi.fn>;
 
-  async function render(
-    agreements: MyClaAgreement[],
-    options: {
-      m2Enabled?: boolean;
-      getClaManagers?: (id: string) => Observable<ClaManagerList>;
-    } = {}
-  ): Promise<void> {
+  async function render(agreements: MyClaAgreement[], options: { m2Enabled?: boolean } = {}): Promise<void> {
     const response: MyClasResponse = {
       agreements,
       identity: { matchedUserIds: agreements.length > 0 ? 1 : 0, unmatched: agreements.length === 0, githubLinked: true },
     };
-    const getClaManagers = options.getClaManagers ?? ((id: string) => of<ClaManagerList>({ signatureId: id, claManager: false, managers: [], resultCount: 0 }));
+    const getClaManagers = vi.fn((id: string) => of<ClaManagerList>({ signatureId: id, managers: [], resultCount: 0 }));
+    getClaManagersSpy = getClaManagers;
 
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
@@ -248,13 +245,18 @@ describe('ProfileClasComponent', () => {
     expect(menuItems('s-attn').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request approval', 'Request Removal', 'Contact CLA Manager']);
   });
 
-  it('offers Manage in CCLA Console last when the managers GET says this user is a CLA manager', async () => {
-    await render(
-      [agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005', foundationSfid: 'a09P000000DsCE5IAN' })],
-      {
-        getClaManagers: (id) => of({ signatureId: id, claManager: true, managers: [], resultCount: 0 }),
-      }
-    );
+  it('offers Manage in CCLA Console last on a manager-flagged row', async () => {
+    await render([
+      agreement({
+        id: 's-ecla',
+        kind: 'ECLA',
+        pdfAvailable: false,
+        companyName: 'Acme',
+        claGroupId: 'g-anuket-005',
+        claManager: true,
+        foundationSfid: 'a09P000000DsCE5IAN',
+      }),
+    ]);
 
     const items = menuItems('s-ecla');
     expect(items.map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Manage in CCLA Console']);
@@ -266,72 +268,27 @@ describe('ProfileClasComponent', () => {
     open.mockRestore();
   });
 
-  it('hides Manage in CCLA Console on ICLA, missing CLA group id, and a failed managers GET', async () => {
-    await render([agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true, claGroupId: 'g-anuket-005' })], {
-      getClaManagers: (id) => of({ signatureId: id, claManager: true, managers: [], resultCount: 0 }),
-    });
+  it('hides Manage in CCLA Console on ICLA, on a missing CLA group id, and when the row is not manager-flagged', async () => {
+    await render([agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true, claGroupId: 'g-anuket-005', claManager: true })]);
     expect(menuItems('s-icla').map((item) => item.label)).toEqual(['Download PDF']);
 
-    await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' })], {
-      getClaManagers: (id) => of({ signatureId: id, claManager: true, managers: [], resultCount: 0 }),
-    });
+    await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claManager: true })]);
     expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
 
-    await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005' })], {
-      getClaManagers: () => throwError(() => new Error('boom')),
-    });
+    await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005', claManager: false })]);
     expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
   });
 
-  it('does not look up manager status while the M2 flag is off, since M1 renders no kebab', async () => {
-    const getClaManagers = vi.fn((id: string) => of<ClaManagerList>({ signatureId: id, claManager: true, managers: [], resultCount: 0 }));
-    await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005' })], {
-      m2Enabled: false,
-      getClaManagers,
-    });
+  it('reads manager status off the row rather than spending a managers GET per ECLA', async () => {
+    await render([
+      agreement({ id: 's-1', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-1', claManager: true, foundationSfid: 'found-1' }),
+      agreement({ id: 's-2', kind: 'ECLA', pdfAvailable: false, companyName: 'Globex', claGroupId: 'g-2', claManager: true, foundationSfid: 'found-2' }),
+    ]);
 
-    expect(getClaManagers).not.toHaveBeenCalled();
-  });
-
-  it('appends each row Manage in CCLA Console as its own lookup lands, not once the slowest does', async () => {
-    const slow = new Subject<ClaManagerList>();
-    await render(
-      [
-        agreement({ id: 's-fast', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-1', foundationSfid: 'found-1' }),
-        agreement({ id: 's-slow', kind: 'ECLA', pdfAvailable: false, companyName: 'Globex', claGroupId: 'g-2', foundationSfid: 'found-2' }),
-      ],
-      {
-        getClaManagers: (id) =>
-          id === 's-slow' ? slow.asObservable() : of<ClaManagerList>({ signatureId: id, claManager: true, managers: [], resultCount: 0 }),
-      }
-    );
-
-    // The slow row is still in flight, so forkJoin would have withheld both rows' items.
-    expect(menuItems('s-fast').map((item) => item.label)).toContain('Manage in CCLA Console');
-    expect(menuItems('s-slow').map((item) => item.label)).not.toContain('Manage in CCLA Console');
-
-    slow.next({ signatureId: 's-slow', claManager: true, managers: [], resultCount: 0 });
-    slow.complete();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(menuItems('s-slow').map((item) => item.label)).toContain('Manage in CCLA Console');
-  });
-
-  it('paints Request Removal before the managers GET resolves, then appends Manage in CCLA Console', async () => {
-    const pending = new Subject<ClaManagerList>();
-    await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005' })], {
-      getClaManagers: () => pending.asObservable(),
-    });
-
-    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
-
-    pending.next({ signatureId: 's-ecla', claManager: true, managers: [], resultCount: 0 });
-    pending.complete();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Manage in CCLA Console']);
+    // Both items are on the first paint — nothing is awaited, so no row can lag another.
+    expect(menuItems('s-1').map((item) => item.label)).toContain('Manage in CCLA Console');
+    expect(menuItems('s-2').map((item) => item.label)).toContain('Manage in CCLA Console');
+    expect(getClaManagersSpy).not.toHaveBeenCalled();
   });
 
   it('keeps a stable menu model across change detection so the popup can open on the first click', async () => {
@@ -614,7 +571,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
             getGithubAccounts,
             prepareSign,
             buildSignUrlFor,
-            getClaManagers: vi.fn((id: string) => of({ signatureId: id, claManager: false, managers: [], resultCount: 0 })),
+            getClaManagers: vi.fn((id: string) => of({ signatureId: id, managers: [], resultCount: 0 })),
           },
         },
       ],

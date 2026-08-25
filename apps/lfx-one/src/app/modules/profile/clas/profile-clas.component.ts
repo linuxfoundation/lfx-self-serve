@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, effect, inject, PLATFORM_ID, Signal, signal, viewChildren } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, viewChildren } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { ECLA_COVERED_DOWNLOAD_LABEL, MY_CLAS_M2_ENABLED_FLAG } from '@lfx-one/shared/constants';
@@ -11,7 +11,7 @@ import { claStatusLabel, claStatusSeverity, downloadFromUrl, isMyClasEmpty, sign
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
-import { BehaviorSubject, catchError, map, merge, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, of, switchMap, take } from 'rxjs';
 
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -80,12 +80,6 @@ export class ProfileClasComponent {
 
   private readonly signDialogOpen = signal(false);
 
-  /**
-   * Whether the signed-in user is a CLA manager for each non-Revoked ECLA (#1575).
-   * Filled after first paint from the existing managers GET; a missing key is not-a-manager.
-   */
-  private readonly claManagerById = signal<ReadonlyMap<string, boolean>>(new Map());
-  private managerPrefetchGen = 0;
   private readonly rowMenus = viewChildren(MenuComponent);
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
@@ -115,15 +109,6 @@ export class ProfileClasComponent {
    * `my-clas-m2-enabled` is the product gate — off, this page is the M1 list.
    */
   protected readonly canSign = computed(() => this.myClasM2Enabled() && !this.userService.impersonating());
-
-  public constructor() {
-    // Only the M2 kebab consumes these flags — the M1 view renders no row menus, so resolving
-    // them there would spend a request per ECLA on something nothing reads. Driving it from the
-    // flag as well as the list means turning M2 on mid-session still resolves them.
-    effect(() => {
-      this.prefetchClaManagerFlags(this.myClasM2Enabled() ? this.agreements() : []);
-    });
-  }
 
   protected retry(): void {
     this.refresh$.next();
@@ -446,42 +431,10 @@ export class ProfileClasComponent {
           disabled: true,
         },
         ...buildContactClaManagerMenuItems(agreement, this.dialogService),
-        ...buildManageInCclaConsoleMenuItems(agreement, this.claManagerById().get(agreement.id) === true),
+        ...buildManageInCclaConsoleMenuItems(agreement),
       ];
     }
     return [];
-  }
-
-  /**
-   * After the list first-paints, ask the existing managers GET whether this user is a CLA
-   * manager for each non-Revoked ECLA. A miss or error is not-a-manager — the rest of the
-   * kebab still works. Generation-guarded so a refresh cannot apply a stale batch.
-   *
-   * `merge` rather than `forkJoin`: each row's item appears as its own lookup lands, so one
-   * slow signature cannot hold back every other row's item.
-   */
-  private prefetchClaManagerFlags(agreements: MyClaAgreement[]): void {
-    const gen = ++this.managerPrefetchGen;
-    const ids = agreements.filter((row) => row.kind === 'ECLA' && row.status !== 'revoked').map((row) => row.id);
-    this.claManagerById.set(new Map());
-    if (ids.length === 0) {
-      return;
-    }
-    merge(
-      ...ids.map((id) =>
-        this.myClasService.getClaManagers(id).pipe(
-          map((list) => [id, list.claManager === true] as const),
-          catchError(() => of([id, false] as const))
-        )
-      )
-    )
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(([id, isManager]) => {
-        if (gen !== this.managerPrefetchGen) {
-          return;
-        }
-        this.claManagerById.update((flags) => new Map(flags).set(id, isManager));
-      });
   }
 
   private initState(): Signal<MyClasState> {
@@ -497,8 +450,6 @@ export class ProfileClasComponent {
 
           return this.myClasService.getMyClas().pipe(
             switchMap((data) => of<MyClasState>({ data, error: false, loaded: true })),
-            // The manager flags need no cleanup here: a failed load empties `agreements`, which
-            // re-runs the prefetch effect and clears them, dropping any in-flight generation.
             catchError(() => of<MyClasState>({ data: null, error: true, loaded: true }))
           );
         })

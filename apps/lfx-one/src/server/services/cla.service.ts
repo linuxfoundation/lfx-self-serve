@@ -348,6 +348,7 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
     projectSfid: cla.projectSFID?.trim() || undefined,
     foundationSfid: cla.foundationSFID?.trim() || undefined,
     claGroupId: cla.claGroupID?.trim() || undefined,
+    claManager: cla.claManager === true,
     companyName: !isIcla ? cla.signingEntityName || cla.companyName || undefined : undefined,
     signedOn: cla.signedOn ?? '',
     signedVia: asSignedVia(cla.signedVia),
@@ -751,7 +752,6 @@ export class ClaService {
     logger.success(req, 'cla_get_cla_managers', startTime, { manager_count: managers.length });
     return {
       signatureId: result.signatureID?.trim() || signatureId,
-      claManager: result.claManager === true,
       managers,
       resultCount: managers.length,
     };

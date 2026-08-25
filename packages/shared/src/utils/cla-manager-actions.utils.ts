@@ -26,12 +26,14 @@ export function canContactClaManager(agreement: MyClaAgreement): boolean {
 }
 
 /**
- * Manage in CCLA Console — non-Revoked ECLA whose managers GET said the caller is a
- * CLA manager, and whose CLA group id is present (#1575). Salesforce ids on the
- * agreement pick the Corporate Console path; missing ids fall back to the dashboard.
+ * Manage in CCLA Console — non-Revoked ECLA the producer marked the caller a CLA manager
+ * of, whose CLA group id is present (#1575). `claManager` is the producer's own manager
+ * resolution, carried on the row; #1575 requires reusing it rather than re-deriving it.
+ * Salesforce ids on the agreement pick the Corporate Console path; missing ids fall back
+ * to the dashboard.
  */
-export function canManageInCclaConsole(agreement: MyClaAgreement, isClaManager: boolean): boolean {
-  return agreement.kind === 'ECLA' && agreement.status !== 'revoked' && isClaManager && Boolean(agreement.claGroupId?.trim());
+export function canManageInCclaConsole(agreement: MyClaAgreement): boolean {
+  return agreement.kind === 'ECLA' && agreement.status !== 'revoked' && agreement.claManager === true && Boolean(agreement.claGroupId?.trim());
 }
 
 /**

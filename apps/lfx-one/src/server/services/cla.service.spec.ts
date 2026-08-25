@@ -287,6 +287,12 @@ describe('toMyClaAgreement', () => {
     expect(toMyClaAgreement(ecla()).foundationSfid).toBeUndefined();
   });
 
+  it('carries the producer claManager flag through as a boolean, false when omitted', () => {
+    expect(toMyClaAgreement(ecla({ claManager: true })).claManager).toBe(true);
+    expect(toMyClaAgreement(ecla({ claManager: false })).claManager).toBe(false);
+    expect(toMyClaAgreement(ecla()).claManager).toBe(false);
+  });
+
   it('copies signedVia and signedAs from the producer', () => {
     const github = toMyClaAgreement(icla({ signedVia: 'github', signedAs: 'jellis' }));
     expect(github.signedVia).toBe('github');
@@ -1215,21 +1221,12 @@ describe('ClaService.getClaManagers', () => {
 
     expect(list).toEqual({
       signatureId: MANAGER_SIG,
-      claManager: false,
       managers: [{ lfUsername: 'jdoe', name: 'Jane Doe', email: 'j@example.org' }],
       resultCount: 1,
     });
     const calledUrl = gatewayFetch.mock.calls[0][1] as string;
     expect(calledUrl).toContain(`/v4/my-clas/${MANAGER_SIG}/cla-managers?`);
     expect(calledUrl).toContain('lfUsername=alice');
-  });
-
-  it('passes claManager through as a boolean, false when omitted', async () => {
-    gatewayFetch.mockResolvedValueOnce({ signatureID: MANAGER_SIG, claManager: true, managers: [], resultCount: 0 });
-    expect((await new ClaService().getClaManagers(req, MANAGER_SIG, identity))?.claManager).toBe(true);
-
-    gatewayFetch.mockResolvedValueOnce({ signatureID: MANAGER_SIG, managers: [], resultCount: 0 });
-    expect((await new ClaService().getClaManagers(req, MANAGER_SIG, identity))?.claManager).toBe(false);
   });
 
   it('returns null on a 404 rather than an empty manager list', async () => {
