@@ -1129,6 +1129,61 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['microsoftKeywords']().length).toBe(shouldAdd ? 1 : 0);
   });
 
+  /**
+   * The Microsoft geo box must NOT apply Meta's assigned-country allowlist. That list is derived
+   * from this app's own COUNTRIES and genuinely diverges from the table Microsoft validates
+   * against — `AN` is in Microsoft's and not in ours. Dropping it silently meant the request fell
+   * back to the event country and targeted a DIFFERENT market than the operator typed.
+   *
+   * Membership stays campaign-service's call: it checks Microsoft's own table and fails the create
+   * before anything is created. This asserts shape-only handling, not that AN is targetable.
+   */
+  /**
+   * Brief-generated keywords carry the model's RAW `match_type` (both streams copy it through), so
+   * `EXACT` reaches the seed. It must be canonicalised: the `<select>` offers only PascalCase, so a
+   * raw value rendered the dropdown with NOTHING selected on a keyword that would dispatch fine.
+   * Anything not canonicalisable is dropped, since the BFF would refuse the whole config for it.
+   */
+  it('canonicalises brief match types and drops ones Microsoft rejects', async () => {
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026' },
+      keywords: [
+        { term: 'kubernetes', matchType: 'EXACT', intentLevel: 'High', notes: '' },
+        { term: 'service mesh', matchType: '  broad  ', intentLevel: 'High', notes: '' },
+        { term: 'observability', matchType: 'BROAD_MATCH', intentLevel: 'High', notes: '' },
+      ],
+      selectedPlatforms: ['microsoft-ads'],
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+
+    const c = restored.componentInstance as unknown as Record<string, any>;
+    expect(c['microsoftKeywords']()).toEqual([
+      { text: 'kubernetes', matchType: 'Exact' },
+      { text: 'service mesh', matchType: 'Broad' },
+    ]);
+  });
+
+  it('keeps a geo code Meta excludes but Microsoft supports', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['microsoftGeoTargets'].set([]);
+
+    c['addMicrosoftGeoTarget']('an');
+
+    expect(c['microsoftGeoTargets']()).toEqual(['AN']);
+    expect(c['microsoftEffectiveGeoTargets']()).toEqual(['AN']);
+  });
+
+  it('still refuses a malformed geo code', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['microsoftGeoTargets'].set([]);
+
+    c['addMicrosoftGeoTarget']('USA');
+
+    expect(c['microsoftGeoTargets']()).toEqual([]);
+  });
+
   it('refuses to add a geo target past the cap', async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftGeoTargets'].set(Array.from({ length: 30 }, (_, i) => `G${i}`));

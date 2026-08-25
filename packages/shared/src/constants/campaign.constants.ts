@@ -630,6 +630,24 @@ const MICROSOFT_MATCH_TYPE_KEYS: ReadonlySet<string> = new Set(Object.keys(MICRO
  * The ORIGINAL value is still forwarded rather than canonicalised here: upstream canonicalises it
  * anyway, so rewriting it locally would be a second normalisation that could only drift.
  */
+/**
+ * Canonicalise a match type to the PascalCase vocabulary, or null when it is not one.
+ *
+ * Mirrors the client's `canonicalMatchType`, and exists for the UI rather than the wire: the
+ * match-type `<select>` offers only `Exact`/`Phrase`/`Broad`, so a chip seeded with the brief's raw
+ * `EXACT` rendered with NO option selected — the operator saw an empty dropdown on a keyword that
+ * would nonetheless dispatch fine.
+ *
+ * The BFF still forwards whatever it receives, since upstream canonicalises anyway. Canonicalising
+ * at the SEED is what keeps the rendered control and the stored value in agreement.
+ */
+export function canonicalMicrosoftMatchType(value: unknown): CampaignKeyword['matchType'] | null {
+  if (typeof value !== 'string') return null;
+  const key = value.trim().toLowerCase();
+  const match = (Object.keys(MICROSOFT_MATCH_TYPE_MAP) as CampaignKeyword['matchType'][]).find((k) => k.toLowerCase() === key);
+  return match ?? null;
+}
+
 export function isMicrosoftMatchType(value: unknown): boolean {
   return typeof value === 'string' && MICROSOFT_MATCH_TYPE_KEYS.has(value.trim().toLowerCase());
 }
@@ -728,6 +746,36 @@ export const META_INELIGIBLE_COUNTRIES: ReadonlySet<string> = new Set<string>([
  * Which of the assigned countries Meta will actually accept remains the service's call, since it
  * additionally drops sanctioned and regulated markets; duplicating THAT list here would drift.
  */
+/**
+ * Normalise geo codes for MICROSOFT: trim, upper-case and de-duplicate, WITHOUT applying Meta's
+ * assigned-country allowlist.
+ *
+ * Separate from `normalizeGeoTargets` because that helper gates on `ASSIGNED_COUNTRY_CODES`, which
+ * is derived from this app's own `COUNTRIES` list and does NOT match the table Microsoft validates
+ * against (`internal/platform/microsoft/geo_countries.go`). The two genuinely diverge — `AN` is in
+ * Microsoft's table and not in ours, so typing it was silently dropped, and with no other chip the
+ * request fell back to the event country and targeted a DIFFERENT MARKET than the operator asked
+ * for. That silent substitution is the defect; the divergence itself is expected, since the lists
+ * have different owners.
+ *
+ * Membership is deliberately left to campaign-service, which checks Microsoft's own table and
+ * FAILS THE CREATE before anything is created when a code is unknown. Duplicating that list here
+ * could only drift from it. This helper therefore enforces SHAPE only, matching what
+ * `buildMicrosoftConfig` enforces on the same values.
+ */
+export function normalizeMicrosoftGeoTargets(codes: readonly string[] | null | undefined): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const code of codes ?? []) {
+    if (typeof code !== 'string') continue;
+    const upper = code.trim().toUpperCase();
+    if (!META_GEO_CODE_PATTERN.test(upper) || seen.has(upper)) continue;
+    seen.add(upper);
+    normalized.push(upper);
+  }
+  return normalized;
+}
+
 export function normalizeGeoTargets(codes: readonly string[] | null | undefined): string[] {
   const seen = new Set<string>();
   const normalized: string[] = [];

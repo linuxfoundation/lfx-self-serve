@@ -16,6 +16,7 @@ import {
   META_DEFAULT_PLACEMENTS,
   META_MESSENGER_INBOX_RETIRED_REASON,
   META_NUMERIC_ID_PATTERN,
+  canonicalMicrosoftMatchType,
   isMicrosoftMatchType,
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_MAX_BUDGET,
@@ -30,6 +31,7 @@ import {
   META_SELECTABLE_PLACEMENTS,
   META_INELIGIBLE_COUNTRIES,
   normalizeGeoTargets,
+  normalizeMicrosoftGeoTargets,
   CAMPAIGN_PLATFORMS,
   REDDIT_MAX_BUDGET_USD,
 } from '@lfx-one/shared/constants';
@@ -548,9 +550,9 @@ export class ImplementationTabComponent implements OnInit {
    * rather than letting Microsoft serve the campaign EVERYWHERE.
    */
   protected readonly microsoftEffectiveGeoTargets = computed<string[]>(() => {
-    const chips = normalizeGeoTargets(this.microsoftGeoTargets());
+    const chips = normalizeMicrosoftGeoTargets(this.microsoftGeoTargets());
     if (chips.length > 0) return chips;
-    return normalizeGeoTargets([this.countryCodeValue()]);
+    return normalizeMicrosoftGeoTargets([this.countryCodeValue()]);
   });
 
   /**
@@ -1150,7 +1152,7 @@ export class ImplementationTabComponent implements OnInit {
   protected addMicrosoftGeoTarget(code: string): void {
     // Same door-refusal as the keyword cap — the client bounds geo targets at 30.
     if (this.microsoftGeoTargets().length >= MICROSOFT_MAX_GEO_TARGETS) return;
-    this.microsoftGeoTargets.update((targets) => normalizeGeoTargets([...targets, code]));
+    this.microsoftGeoTargets.update((targets) => normalizeMicrosoftGeoTargets([...targets, code]));
     this.emitDraft();
   }
 
@@ -1868,7 +1870,12 @@ export class ImplementationTabComponent implements OnInit {
             isMicrosoftMatchType(k.matchType)
         )
         .slice(0, MICROSOFT_MAX_KEYWORDS)
-        .map((k) => ({ text: k.term.trim(), matchType: k.matchType }))
+        // CANONICALISED to the PascalCase vocabulary the `<select>` offers. The filter above accepts
+        // case variants because upstream does, but storing a raw `EXACT` here rendered the dropdown
+        // with no option selected on a keyword that would have dispatched fine. The `?? 'Phrase'`
+        // is unreachable — the filter already rejected anything `canonicalMicrosoftMatchType`
+        // returns null for — and exists only to satisfy the type without a cast.
+        .map((k) => ({ text: k.term.trim(), matchType: canonicalMicrosoftMatchType(k.matchType) ?? 'Phrase' }))
     );
     // Geo chips are left EMPTY here rather than seeded from the country code.
     //
