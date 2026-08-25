@@ -433,8 +433,10 @@ export class CommitteeManageComponent {
    * `getProject(uid, false)` — `current: false` so the fetch doesn't clobber ProjectService's
    * shared `project` state — resolves to null on failure, so a failed fallback leaves the
    * (stale) context untouched rather than erroring the page. (Mirror: meeting-manage's
-   * initMeetingContextFallback, minus its uncached-detail last resort — `fetchCommittee` is
-   * never cached, so a "fresh" refetch cannot return a different payload.)
+   * initMeetingContextFallback, minus its fresh-detail last resort: `getCommitteeDetail` does
+   * support `skipCache`, but a refetch cannot recover a missing `project_slug` — the BFF's
+   * committee enrichment resolves the project through the same relation-gated `/projects/:uid`
+   * GET this fallback already tried, unlike meeting enrichment's ungated query-service lookup.)
    *
    * Runs whenever the payload lacks `project_slug`, even when the uid already matches the active
    * context: the lookup is also what corrects the lens *kind* via `computeIsFoundation`. As in
