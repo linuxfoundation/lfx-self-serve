@@ -25,12 +25,16 @@
     </div>
     <div class="flex flex-col gap-1">
       <label for="id-migration-comment" class="text-sm text-gray-900">Anything else? (optional)</label>
+      <!-- [id] bound, not static: a static id= lands on the host too, so label[for] would resolve
+           to the non-labelable <lfx-textarea>. mask: replay records input verbatim at this app's
+           defaultPrivacyLevel 'allow', so abandoned drafts would leak; addAction still sends it. -->
       <lfx-textarea
         [form]="form"
         control="comment"
-        id="id-migration-comment"
+        [id]="'id-migration-comment'"
         placeholder="Anything else? (optional)"
         [rows]="3"
+        data-dd-privacy="mask"
         dataTest="id-migration-comment" />
     </div>
   </form>
@@ -45,8 +49,10 @@
       type="button"
       (onClick)="stayHere()"
       data-testid="id-migration-stay-button" />
+    <!-- ariaLabel announces the new browsing context; the visible label stays short. -->
     <lfx-button
       label="Continue to Individual Dashboard"
+      ariaLabel="Continue to Individual Dashboard (opens in a new tab)"
       icon="fa-light fa-arrow-up-right"
       iconPos="right"
       size="small"
