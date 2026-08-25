@@ -42,7 +42,13 @@ export function canManageInCclaConsole(agreement: MyClaAgreement, isClaManager: 
  * rather than putting a project id in the foundation segment and minting a 404.
  */
 export function cclaConsoleUrl(corporateConsoleBase: string, foundationSfid?: string, projectSfid?: string): string {
-  const base = corporateConsoleBase.replace(/\/+$/, '');
+  // Scanned rather than stripped with `/\/+$/`: this is an exported util, so CodeQL treats the
+  // base as untrusted and that pattern backtracks quadratically on a long run of slashes.
+  let end = corporateConsoleBase.length;
+  while (end > 0 && corporateConsoleBase[end - 1] === '/') {
+    end--;
+  }
+  const base = corporateConsoleBase.slice(0, end);
   const foundation = foundationSfid?.trim();
   const project = projectSfid?.trim();
   if (!foundation) {

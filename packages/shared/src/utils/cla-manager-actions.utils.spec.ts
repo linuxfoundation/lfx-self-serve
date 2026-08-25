@@ -78,6 +78,11 @@ describe('canManageInCclaConsole', () => {
 describe('cclaConsoleUrl', () => {
   const base = 'https://lfx.dev.platform.linuxfoundation.org';
 
+  it('strips every trailing slash from the configured base', () => {
+    expect(cclaConsoleUrl(`${base}///`, 'found-1')).toBe(`${base}/foundation/found-1/cla`);
+    expect(cclaConsoleUrl('///')).toBe('/company/dashboard');
+  });
+
   it('joins a foundation-level CLA group as /foundation/{id}/cla', () => {
     expect(cclaConsoleUrl(`${base}/`, 'a09P000000DsCE5IAN')).toBe(`${base}/foundation/a09P000000DsCE5IAN/cla`);
     expect(cclaConsoleUrl(base, 'a09P000000DsCE5IAN', 'a09P000000DsCE5IAN')).toBe(`${base}/foundation/a09P000000DsCE5IAN/cla`);

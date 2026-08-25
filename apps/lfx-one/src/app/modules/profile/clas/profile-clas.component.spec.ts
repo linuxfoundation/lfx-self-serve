@@ -283,6 +283,41 @@ describe('ProfileClasComponent', () => {
     expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
   });
 
+  it('does not look up manager status while the M2 flag is off, since M1 renders no kebab', async () => {
+    const getClaManagers = vi.fn((id: string) => of<ClaManagerList>({ signatureId: id, claManager: true, managers: [], resultCount: 0 }));
+    await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005' })], {
+      m2Enabled: false,
+      getClaManagers,
+    });
+
+    expect(getClaManagers).not.toHaveBeenCalled();
+  });
+
+  it('appends each row Manage in CCLA Console as its own lookup lands, not once the slowest does', async () => {
+    const slow = new Subject<ClaManagerList>();
+    await render(
+      [
+        agreement({ id: 's-fast', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-1', foundationSfid: 'found-1' }),
+        agreement({ id: 's-slow', kind: 'ECLA', pdfAvailable: false, companyName: 'Globex', claGroupId: 'g-2', foundationSfid: 'found-2' }),
+      ],
+      {
+        getClaManagers: (id) =>
+          id === 's-slow' ? slow.asObservable() : of<ClaManagerList>({ signatureId: id, claManager: true, managers: [], resultCount: 0 }),
+      }
+    );
+
+    // The slow row is still in flight, so forkJoin would have withheld both rows' items.
+    expect(menuItems('s-fast').map((item) => item.label)).toContain('Manage in CCLA Console');
+    expect(menuItems('s-slow').map((item) => item.label)).not.toContain('Manage in CCLA Console');
+
+    slow.next({ signatureId: 's-slow', claManager: true, managers: [], resultCount: 0 });
+    slow.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(menuItems('s-slow').map((item) => item.label)).toContain('Manage in CCLA Console');
+  });
+
   it('paints Request Removal before the managers GET resolves, then appends Manage in CCLA Console', async () => {
     const pending = new Subject<ClaManagerList>();
     await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005' })], {
