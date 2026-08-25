@@ -791,6 +791,32 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent).not.toHaveProperty('timeZone');
   });
 
+  /**
+   * The client refuses a supplied bid outside [0.01, 1000] (`targeting.go:263-268`), and because
+   * creation is async that refusal is a FAILED JOB, not an error on this request. Dropped rather
+   * than refused whole: unset is a valid serve-capable state, so the campaign still works.
+   */
+  it.each([
+    ['below the minimum', 0.001],
+    ['above the maximum', 1001],
+  ])('drops a cpcBid %s rather than dispatching one Microsoft rejects', async (_label, cpcBid) => {
+    await createWithMicrosoft({ cpcBid });
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('cpcBid');
+    // The rest of the config still dispatches — an out-of-range bid must not sink the campaign.
+    expect(sent['budget']).toBe(300);
+  });
+
+  it.each([
+    ['the minimum', 0.01],
+    ['the maximum', 1000],
+  ])('forwards a cpcBid at %s, which is in range', async (_label, cpcBid) => {
+    await createWithMicrosoft({ cpcBid });
+
+    expect((envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>)['cpcBid']).toBe(cpcBid);
+  });
+
   it('forwards cpcBid and timeZone when they carry meaning', async () => {
     await createWithMicrosoft({ cpcBid: 2.5, timeZone: 'PacificTimeUSCanadaTijuana' });
 

@@ -590,12 +590,26 @@
                 type="number"
                 [value]="microsoftCpcBid()"
                 (input)="onMicrosoftCpcBidInput($event)"
-                min="0"
+                [min]="microsoftMinCpcBid"
+                [max]="microsoftMaxCpcBid"
                 step="0.01"
                 placeholder="Account minimum"
+                [attr.aria-invalid]="microsoftCpcBidValid() ? null : 'true'"
                 class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 data-testid="implementation-microsoft-cpc-bid" />
-              <span class="text-xs text-gray-400">Leave blank to use the account-currency minimum.</span>
+              @if (microsoftCpcBidValid()) {
+                <span class="text-xs text-gray-400">Leave blank to use the account-currency minimum.</span>
+              } @else {
+                <!--
+                  Names the RANGE and the consequence rather than "invalid": Microsoft refuses an
+                  out-of-range bid during dispatch, and because creation is asynchronous that
+                  refusal arrives as a failed job rather than as an error on the click.
+                -->
+                <p role="alert" class="text-xs text-red-600" data-testid="implementation-microsoft-cpc-bid-error">
+                  Enter a bid between {{ microsoftMinCpcBid }} and {{ microsoftMaxCpcBid }}, or leave it blank — Microsoft rejects anything outside that range
+                  and the campaign would fail after submission.
+                </p>
+              }
             </div>
           </div>
 

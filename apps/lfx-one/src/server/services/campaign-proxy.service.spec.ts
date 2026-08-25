@@ -181,6 +181,54 @@ describe('CampaignProxyService email delivery type', () => {
     expect(generatedKeywords()).toBe(true);
   });
 
+  /**
+   * A Microsoft-ONLY brief contributes no ad-copy keys, so the copy stage is SKIPPED rather than
+   * called with an empty schema. This is not a tidiness fix: that stage `return`s the whole stream
+   * on failure, so a pointless call failing would abort before the keyword stage — the one stage
+   * Microsoft actually needs — and dead-end the first step of the channel.
+   */
+  it('skips the ad-copy stage for a Microsoft-only brief but still generates keywords', async () => {
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['microsoft-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{ type: string; data: unknown }>
+    );
+
+    expect(generatedAdCopy()).toBe(false);
+    expect(generatedKeywords()).toBe(true);
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+  });
+
+  /** Microsoft alongside a copy-contributing platform must still generate that platform's copy. */
+  it('still generates ad copy when Microsoft is selected with a copy-contributing platform', async () => {
+    await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['microsoft-ads', 'meta-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{ type: string; data: unknown }>
+    );
+
+    expect(generatedAdCopy()).toBe(true);
+  });
+
+  it('skips the copy stage on REFINE for a Microsoft-only brief and still regenerates keywords', async () => {
+    const events = await drain(
+      service.streamRefinedBrief(
+        req,
+        { currentCopy: {}, currentKeywords: [], feedback: 'more technical', platforms: ['microsoft-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{ type: string; data: unknown }>
+    );
+
+    expect(generatedAdCopy()).toBe(false);
+    expect(generatedKeywords()).toBe(true);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+  });
+
   /** The contrast: a platform this service genuinely cannot serve is still refused by name. */
   it('still refuses twitter-ads, which the brief generator does not serve', async () => {
     const events = await drain(

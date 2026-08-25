@@ -17,7 +17,13 @@ import type {
   CampaignToggleStatus,
   FlushableResponse,
 } from '@lfx-one/shared/interfaces';
-import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PLATFORMS, VALID_CAMPAIGN_TOGGLE_STATUSES } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_PLATFORMS,
+  MICROSOFT_MAX_CPC_BID,
+  MICROSOFT_MIN_CPC_BID,
+  VALID_CAMPAIGN_TOGGLE_STATUSES,
+} from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
@@ -1488,6 +1494,15 @@ export class CampaignController {
    * `cpcBid` and `timeZone` are forwarded only when they carry meaning. An omitted or zero
    * `cpcBid` means unset, and Microsoft then applies the account-currency minimum — a documented,
    * serve-capable floor — so sending an explicit 0 would claim a bid the account does not have.
+   *
+   * A bid OUTSIDE `[MICROSOFT_MIN_CPC_BID, MICROSOFT_MAX_CPC_BID]` is dropped rather than
+   * forwarded, because the client refuses it (`targeting.go:263-268`) and that refusal would
+   * arrive as a failed job rather than as an error on this request. Dropping is the right answer
+   * HERE specifically: unlike the budget/keywords/geo arms this does not refuse the whole create,
+   * since unset is a valid serve-capable state and an out-of-range bid is the one input whose
+   * absence still produces a working campaign. The UI blocks it before this point with a message
+   * naming the range (`microsoftCpcBidValid`), so an operator using the form is told; this arm
+   * protects the endpoint from a caller that is not the form.
    * A blank `timeZone` is the same non-answer as an absent one: the client substitutes its
    * default, so the key is dropped rather than sent empty.
    */
@@ -1515,7 +1530,7 @@ export class CampaignController {
       budget: budgetUsd,
       keywords: cleanKeywords.map((k) => ({ text: k.text.trim(), matchType: k.matchType })),
       geoTargets: cleanGeoTargets,
-      ...(Number.isFinite(cpcBid) && (cpcBid as number) > 0 ? { cpcBid } : {}),
+      ...(Number.isFinite(cpcBid) && (cpcBid as number) >= MICROSOFT_MIN_CPC_BID && (cpcBid as number) <= MICROSOFT_MAX_CPC_BID ? { cpcBid } : {}),
       ...(timeZone?.trim() ? { timeZone: timeZone.trim() } : {}),
     };
   }

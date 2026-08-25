@@ -754,8 +754,12 @@ export class CampaignProxyService {
     // cheap one. The scrape, event details and HubSpot UTM above are what an email brief needs
     // from this stream today; generated subject/preview/sender copy arrives with the `email-copy`
     // endpoint (LFXV2-3198), which this path deliberately does not try to stand in for.
-    if (!isEmail) {
-      const platformList = selectedPlatforms.join(', ');
+    // `someContributesCopy` and not merely `!isEmail`: a Microsoft-ONLY selection reaches here with
+    // no copy keys to request. See `contributesAdCopy` for why skipping beats calling with an empty
+    // schema — the failure mode is not a wasted call but a dead-ended brief.
+    const someContributesCopy = selectedPlatforms.some(contributesAdCopy);
+    if (!isEmail && someContributesCopy) {
+      const platformList = selectedPlatforms.filter(contributesAdCopy).join(', ');
       yield { type: 'status', data: `Generating copy for ${platformList}...` };
 
       const copySystemPrompt = buildCopySystemPrompt(selectedPlatforms, body.programType);
@@ -913,31 +917,36 @@ export class CampaignProxyService {
       return;
     }
 
-    yield { type: 'status', data: 'Refining brief based on your feedback...' };
-
-    const userPrompt = buildRefinePrompt(body);
-    let fullCopy = '';
     const refinePlatforms = body.platforms?.length ? body.platforms : ['google-ads'];
+    // Skipped for a selection that contributes no copy keys — the same rule as the generate path,
+    // and load-bearing for the same reason: this stage `return`s the whole stream on failure, so an
+    // empty-schema call could abort a Microsoft refinement before its keywords were regenerated.
+    if (refinePlatforms.some(contributesAdCopy)) {
+      yield { type: 'status', data: 'Refining brief based on your feedback...' };
 
-    try {
-      for await (const token of aiChatStream(buildCopySystemPrompt(refinePlatforms, body.programType), userPrompt, signal)) {
-        yield { type: 'copy_token', data: token };
-        fullCopy += token;
-      }
-      yield { type: 'copy_done', data: null };
+      const userPrompt = buildRefinePrompt(body);
+      let fullCopy = '';
 
       try {
-        const text = stripJsonFences(fullCopy);
-        const structured = JSON.parse(text) as Record<string, unknown>;
-        truncateAdCopy(structured);
-        yield { type: 'copy_structured', data: structured };
-      } catch {
-        yield { type: 'copy_structured', data: { raw: fullCopy } };
+        for await (const token of aiChatStream(buildCopySystemPrompt(refinePlatforms, body.programType), userPrompt, signal)) {
+          yield { type: 'copy_token', data: token };
+          fullCopy += token;
+        }
+        yield { type: 'copy_done', data: null };
+
+        try {
+          const text = stripJsonFences(fullCopy);
+          const structured = JSON.parse(text) as Record<string, unknown>;
+          truncateAdCopy(structured);
+          yield { type: 'copy_structured', data: structured };
+        } catch {
+          yield { type: 'copy_structured', data: { raw: fullCopy } };
+        }
+      } catch (error) {
+        if (signal.aborted) return;
+        yield { type: 'error', data: `Brief refinement failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        return;
       }
-    } catch (error) {
-      if (signal.aborted) return;
-      yield { type: 'error', data: `Brief refinement failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
-      return;
     }
 
     // Both SEARCH channels, matching the generate path above — a Microsoft brief whose keywords were
@@ -1626,6 +1635,28 @@ function extractEventNameFromUrl(url: string): string {
   } catch {
     return '';
   }
+}
+
+/**
+ * Does this platform contribute an ad-copy KEY to the generated brief?
+ *
+ * `microsoft-ads` does NOT (LFXV2-3312), and it is the only paid platform that does not: its
+ * dispatcher auto-composes a responsive search ad upstream, so the generator writes no copy for
+ * it. The one brief-derived input it consumes is the KEYWORD list, which is produced by a separate
+ * stage.
+ *
+ * This exists so the copy stage can be SKIPPED for a selection that contributes no keys. Without
+ * that skip a Microsoft-only brief asked the model for "a JSON object with keys " — an empty
+ * schema — and, worse, a failure of that pointless call `return`s from the stream BEFORE keyword
+ * generation, so the one stage Microsoft actually needs never ran.
+ *
+ * Deliberately a predicate rather than a second list of keys: `buildCopyPrompt` and
+ * `buildRefinePrompt` each build their own key list, and a third copy here could disagree with
+ * both. Anything that is not Microsoft contributes copy today, so the rule is stated that way and
+ * a new copy-less platform is a one-line change here.
+ */
+function contributesAdCopy(platform: string): boolean {
+  return platform !== 'microsoft-ads';
 }
 
 function buildCopyPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {

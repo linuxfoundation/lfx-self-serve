@@ -556,6 +556,24 @@ export const META_PLACEMENT_LABELS: Readonly<Record<keyof MetaPlacement, string>
 export const META_MESSENGER_INBOX_RETIRED_REASON = 'Removed by Meta in November 2025';
 
 /** Meta object ids (Pixel, Page) are numeric strings; mirrors campaign-service's `numericIDRE`. */
+/**
+ * The inclusive bounds Microsoft's ad-group `CpcBid` must fall within when one is SUPPLIED
+ * (`internal/platform/microsoft/targeting.go:116-117`, `minCpcBid`/`maxCpcBid`).
+ *
+ * In whole units of the ad ACCOUNT's currency — no micros, no FX — the same unit rule as the
+ * budget. Out-of-range is a HARD refusal in the client, and because `CreateCampaigns` is
+ * asynchronous that refusal surfaces as a dead job rather than an error on the request, which is
+ * why both the UI and the BFF check it before dispatch.
+ *
+ * Note that ZERO is NOT in range and is still valid input: it means UNSET, and unset is a
+ * documented serve-capable state (Microsoft applies the account-currency minimum). So the test is
+ * "if a bid is supplied, it must be within these bounds", not "the value must be within them".
+ *
+ * Shared rather than duplicated per layer so the UI guard and `buildMicrosoftConfig` cannot drift.
+ */
+export const MICROSOFT_MIN_CPC_BID = 0.01;
+export const MICROSOFT_MAX_CPC_BID = 1000;
+
 export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
 
 /** ISO 3166-1 alpha-2 shape for a Meta geo target, after normalisation. */

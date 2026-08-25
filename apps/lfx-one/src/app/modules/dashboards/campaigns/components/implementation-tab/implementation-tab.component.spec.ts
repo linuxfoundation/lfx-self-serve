@@ -1013,6 +1013,45 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
   });
 
   /**
+   * Microsoft refuses a supplied CpcBid outside [0.01, 1000] during dispatch, which surfaces as a
+   * failed job rather than an error on the click. BLANK stays valid — unset means Microsoft applies
+   * the account-currency minimum, a documented serve-capable floor — so an untouched box must not
+   * block the submit.
+   */
+  it.each([
+    ['blank, which means unset', '', true],
+    ['at the minimum', '0.01', true],
+    ['at the maximum', '1000', true],
+    ['below the minimum', '0.001', false],
+    ['above the maximum', '1001', false],
+    ['not a number', 'abc', false],
+  ])('treats a Microsoft CPC bid %s as submittable=%s', async (_label, bid, expected) => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftKeywords'].set([{ text: 'kubernetes', matchType: 'Exact' }]);
+    c['microsoftGeoTargets'].set(['US']);
+    c['microsoftBudgetUsd'].set(100);
+    c['microsoftCpcBid'].set(bid);
+    await fixture.whenStable();
+
+    expect(c['canSubmit']()).toBe(expected);
+  });
+
+  /**
+   * The out-of-range value must BLOCK, not be silently dropped to "unset" — dispatching at the
+   * account minimum while the box still displays 1001 would substitute a spend decision the
+   * operator did make.
+   */
+  it('does not silently downgrade an out-of-range Microsoft CPC bid to unset', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['microsoftCpcBid'].set('1001');
+    await fixture.whenStable();
+
+    expect(c['microsoftEffectiveCpcBid']()).toBeNull();
+    expect(c['microsoftCpcBidValid']()).toBe(false);
+  });
+
+  /**
    * `NaN < 1` is FALSE, so a bare comparison would let a NaN budget through to a client that
    * rejects it mid-dispatch — surfacing as a dead job rather than a blocked button. Pinned
    * separately from the zero case because only the `Number.isFinite` half catches it.

@@ -16,6 +16,8 @@ import {
   META_DEFAULT_PLACEMENTS,
   META_MESSENGER_INBOX_RETIRED_REASON,
   META_NUMERIC_ID_PATTERN,
+  MICROSOFT_MAX_CPC_BID,
+  MICROSOFT_MIN_CPC_BID,
   META_OBJECTIVE_LABELS,
   META_SELECTABLE_OBJECTIVES,
   META_PLACEMENT_LABELS,
@@ -347,6 +349,8 @@ export class ImplementationTabComponent implements OnInit {
    * minimum). A `number` signal would make an untouched field read 0, which `buildMicrosoftConfig`
    * drops anyway — but only after the UI had shown the operator a bid of zero they never set.
    */
+  protected readonly microsoftMinCpcBid = MICROSOFT_MIN_CPC_BID;
+  protected readonly microsoftMaxCpcBid = MICROSOFT_MAX_CPC_BID;
   protected readonly microsoftGeoTargets = signal<string[]>([]);
   protected readonly microsoftKeywords = signal<MicrosoftKeyword[]>([]);
   protected readonly microsoftBudgetUsd = signal(500);
@@ -555,7 +559,34 @@ export class ImplementationTabComponent implements OnInit {
     const raw = this.microsoftCpcBid().trim();
     if (raw === '') return null;
     const parsed = Number(raw);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    // Only an IN-RANGE bid is forwarded. Out-of-range values are not silently dropped to null and
+    // sent as "unset" — `microsoftCpcBidValid` blocks the submit for them, so the operator is told
+    // rather than quietly given a different bid from the one the box still shows.
+    if (!Number.isFinite(parsed) || parsed < MICROSOFT_MIN_CPC_BID || parsed > MICROSOFT_MAX_CPC_BID) return null;
+    return parsed;
+  });
+
+  /**
+   * Whether the CPC bid box holds something dispatchable.
+   *
+   * BLANK is valid and means unset — Microsoft then applies the account-currency minimum, a
+   * documented serve-capable floor, so an untouched box must not block anything.
+   *
+   * A non-blank value must parse AND fall within `[MICROSOFT_MIN_CPC_BID, MICROSOFT_MAX_CPC_BID]`.
+   * The client refuses anything outside that range (`targeting.go:263-268`), and because
+   * `CreateCampaigns` is asynchronous the refusal arrives as a FAILED JOB the operator has to go
+   * and read — not as an error on the click they just made. Catching it here converts a dead job
+   * into an inline message.
+   *
+   * Deliberately NOT folded into `microsoftEffectiveCpcBid` returning null: null means "send no
+   * bid", and treating `1001` as unset would dispatch a campaign at the account minimum while the
+   * form still displayed 1001 — a silent substitution of a spend decision the operator did make.
+   */
+  protected readonly microsoftCpcBidValid = computed<boolean>(() => {
+    const raw = this.microsoftCpcBid().trim();
+    if (raw === '') return true;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= MICROSOFT_MIN_CPC_BID && parsed <= MICROSOFT_MAX_CPC_BID;
   });
 
   /** Whether the pixel field applies at all — only `conversions` carries a promoted pixel object. */
@@ -687,6 +718,7 @@ export class ImplementationTabComponent implements OnInit {
     if (microsoftSelected && (!Number.isFinite(this.microsoftBudgetUsd()) || this.microsoftBudgetUsd() < 1)) return false;
     if (microsoftSelected && this.microsoftEffectiveKeywords().length === 0) return false;
     if (microsoftSelected && this.microsoftEffectiveGeoTargets().length === 0) return false;
+    if (microsoftSelected && !this.microsoftCpcBidValid()) return false;
 
     // Blocked while a brief save is in flight, because the create needs the id that save produces.
     //
