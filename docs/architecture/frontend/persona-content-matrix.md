@@ -96,15 +96,15 @@ Available to `board-member`, `executive-director`, and root writers.
 
 ### Foundation lens by persona summary
 
-| Persona                          | Sees Governance | Sees Newsletters (Communications) | Sees Metrics | Sees Marketing                                                |
-| -------------------------------- | --------------- | --------------------------------- | ------------ | ------------------------------------------------------------- |
-| `board-member`                   | Yes             | Only if `canWrite()`              | No           | No                                                            |
-| `executive-director`             | Yes             | Yes (always)                      | Yes          | Yes (all tabs + Campaigns)                                    |
-| LF Staff                         | No              | Only if `canWrite()`              | Yes          | Marketing Impact only (Social Listening)                      |
-| FGA `marketing_auditor` (non-ED) | No              | Only if `canWrite()`              | No           | Marketing Impact only, when `marketing-ops-fga-enabled` is on |
-| FGA `campaign_manager` (non-ED)  | No              | Only if `canWrite()`              | No           | Campaigns only, when `marketing-ops-fga-enabled` is on        |
+| Persona                          | Sees Governance | Sees Newsletters (Communications) | Sees Metrics | Sees Marketing                                                             |
+| -------------------------------- | --------------- | --------------------------------- | ------------ | -------------------------------------------------------------------------- |
+| `board-member`                   | Yes             | Only if `canWrite()`              | No           | No                                                                         |
+| `executive-director`             | Yes             | Yes (always)                      | Yes          | Yes (all tabs + Campaigns)                                                 |
+| LF Staff                         | No              | Only if `canWrite()`              | Yes          | Marketing Impact only (Social Listening)                                   |
+| FGA `marketing_auditor` (non-ED) | No              | Only if `canWrite()`              | No           | Marketing Impact only, when `marketing-ops-fga-enabled` is on              |
+| FGA `campaign_manager` (non-ED)  | No              | Only if `canWrite()`              | No           | Marketing Impact **and** Campaigns, when `marketing-ops-fga-enabled` is on |
 
-> The FGA-grant rows depend on both the client-side `marketing-ops-fga-enabled` OpenFeature flag (gates the route guards / nav) and the server-side `LFX_MARKETING_OPS_FGA_ENABLED` flag (gates the BFF routes) — see `charts/lfx-self-serve/README.md` "Marketing Ops FGA Enforcement" for the two-flag rollout contract. `campaign_manager` is, by FGA model design, the same population as `marketing_ops` (plus `executive_director`) — there is no separate Campaign Manager relation to grant.
+> The FGA-grant rows depend on both the client-side `marketing-ops-fga-enabled` OpenFeature flag (gates the route guards / nav) and the server-side `LFX_MARKETING_OPS_FGA_ENABLED` flag (gates the BFF routes) — see `charts/lfx-self-serve/README.md` "Marketing Ops FGA Enforcement" for the two-flag rollout contract. `campaign_manager` is, by FGA model design, the same population as `marketing_ops` (plus `executive_director`) — there is no separate Campaign Manager relation to grant. Because `campaign_manager` for a non-ED user is only reachable via `marketing_ops`, and `marketing_ops` also satisfies `marketing_auditor`, a non-ED `campaign_manager` holder always sees Marketing Impact as well as Campaigns — there is no "Campaigns-only" population. A `marketing_auditor`-only holder (granted directly via `team#member`, without `marketing_ops`) does not get `campaign_manager` and so sees Marketing Impact only.
 
 ---
 

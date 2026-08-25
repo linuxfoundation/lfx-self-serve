@@ -57,9 +57,11 @@ export class DashboardComponent {
 
   // Returns 'executive-director' for LF Staff and marketing-only grant holders too — they share the
   // ED dashboard route. ExecutiveDirectorDashboardComponent gates its ED-only sections (Pending Actions,
-  // Org Involvement, My Meetings, sidebar) behind currentPersona() === 'executive-director', so both
-  // audiences see only Foundation Health and Marketing Overview here; Marketing Impact/Campaigns access
-  // is granted separately via marketing-impact-access.guard.ts and the campaigns/analytics routes.
+  // Org Involvement, My Meetings, sidebar) behind currentPersona() === 'executive-director', and its
+  // Foundation Health section separately behind canViewMetrics() (canViewExecutiveDashboards()), which
+  // is false for a marketing-only grant holder. So LF Staff see Foundation Health + Marketing Overview
+  // here, while a marketing-only grant holder sees Marketing Overview only. Marketing Impact/Campaigns
+  // access is granted separately via marketing-impact-access.guard.ts and the campaigns/analytics routes.
   protected readonly foundationDashboardType = computed(() => {
     const hasMarketingGrant = this.isMarketingOpsFgaEnabled() && (this.personaService.isMarketingAuditor() || this.personaService.isCampaignManager());
     if (this.personaService.canViewExecutiveDashboards() || hasMarketingGrant) {
