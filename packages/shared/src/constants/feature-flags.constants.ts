@@ -39,12 +39,17 @@ export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
 
 /**
- * Gates Org Lens UI that currently renders demo/placeholder data pending a real backend source —
- * person-detail-drawer company emails (GH-1655) and the leaderboard row score-breakdown drawer
- * (LFXV2-2934). Remove each gate as its real-data backend lands; retire this flag once both are
- * unguarded.
+ * Gates Org Lens surfaces still restricted to internal audiences — person-detail-drawer company
+ * emails (GH-1655), the leaderboard row score-breakdown drawer (LFXV2-2934), and the Company Logo
+ * Upload control on the Org Profile edit page (LFXV2-3288). Remove each gate as its real-data
+ * backend lands; retire this flag once all are unguarded.
  *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`; gates no endpoint.
+ * For logo upload specifically, default false means a general Org Lens viewer sees the logo preview
+ * but not the upload affordance.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or the
+ * downstream member-service upload endpoint; server-side authorization (writer/admin) remains the
+ * source of truth for whether an upload actually succeeds.
  */
 export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
 
