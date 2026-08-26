@@ -1713,8 +1713,16 @@ export type CampaignMetricsWindow = (typeof CAMPAIGN_METRICS_WINDOWS)[number];
  */
 export type BriefMetricsRowStatus = 'ok' | 'unsupported' | 'not_ready' | 'connection_problem' | 'failed';
 
-/** The pacing band `pct` falls into. `unknown` means no pacing could be derived — NOT "on plan". */
-export type CampaignPacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspending' | 'unknown';
+/**
+ * The pacing band `pct` falls into. `unknown` means no pacing could be derived — NOT "on plan".
+ *
+ * `CampaignService*` prefixed, matching its siblings here, because it is the ONLY five-member
+ * variant: `PacingLabel`, `MetaPacingLabel`, `LinkedInPacingLabel` and `RedditPacingLabel` are
+ * all four-member BFF types with no `unknown`. Under the generic `Campaign` name this is the one
+ * a reader grabs by mistake, and `unknown` is precisely the member whose absence causes a
+ * non-computable pacing to be rendered as a number.
+ */
+export type CampaignServicePacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspending' | 'unknown';
 
 /** Email-channel counters. Present only for the email channel (HubSpot); absent for ad platforms. */
 export interface CampaignServiceEmailMetrics {
@@ -1771,7 +1779,7 @@ export interface CampaignServicePacing {
    * Read `label === 'unknown'` for that case rather than defaulting this to 0.
    */
   pct?: number;
-  label: CampaignPacingLabel;
+  label: CampaignServicePacingLabel;
 }
 
 /**
@@ -1784,6 +1792,11 @@ export interface CampaignServicePacing {
  */
 export interface BriefMetricsRow {
   campaign_id: string;
+  /**
+   * `string`, not `CampaignPlatform`: upstream's platform enum includes `hubspot` (the email
+   * channel) alongside the six ad channels, and `CampaignPlatform` has no member for it. The
+   * union would be wrong here rather than merely loose.
+   */
   platform: string;
   status: BriefMetricsRowStatus;
   /** Present if and ONLY if `status` is `ok`. Never zero-filled — a zero is a claim. */
@@ -1793,6 +1806,16 @@ export interface BriefMetricsRow {
   /** Absent unless `status` is `ok`. On an `ok` row it is always present. */
   pacing?: CampaignServicePacing;
 }
+
+/**
+ * How urgently an action item wants attention.
+ *
+ * Deliberately TWO members where the four BFF siblings (`ActionPriority`, `MetaActionPriority`,
+ * `LinkedInActionPriority`, `RedditActionPriority`) carry three: campaign-service emits only
+ * HIGH and MED, so a `'LOW'` here would declare a value the endpoint cannot return. Named rather
+ * than inlined so the narrowing reads as intentional instead of as an omission.
+ */
+export type BriefMetricsActionPriority = 'HIGH' | 'MED';
 
 /**
  * One thing an operator should look at, derived by campaign-service from the readable rows.
@@ -1806,8 +1829,9 @@ export interface BriefMetricsRow {
  */
 export interface BriefMetricsActionItem {
   rule: 'zero_delivery' | 'underspending' | 'budget_constrained' | 'low_ctr' | 'no_conversions';
-  priority: 'HIGH' | 'MED';
+  priority: BriefMetricsActionPriority;
   campaign_id: string;
+  /** `string` for the same reason as `BriefMetricsRow.platform` — `hubspot` is in scope. */
   platform: string;
   issue: string;
   action: string;
