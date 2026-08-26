@@ -709,11 +709,12 @@ export class SocialListeningComponent {
     this.markAllPending = true;
 
     try {
-      const response = await firstValueFrom(this.socialListeningService.getMentionsFeed({ foundationSlug, period: this.defaultPeriod, limit: 1, offset: 0 }));
+      // allTime: the cutoff is foundation-global, so the newest lookup spans every period — a ytd-windowed fetch
+      // returns empty in a quiet year and the fallback below would stamp a narrowed period's newest, leaving later mentions unread.
+      const response = await firstValueFrom(this.socialListeningService.getMentionsFeed({ foundationSlug, allTime: true, limit: 1, offset: 0 }));
       // A foundation switch mid-flight rebound the preference store — never stamp the old foundation's cutoff into the new one's doc.
       if (this.foundationSlug() !== foundationSlug) return;
-      // Empty window (no mentions in the default period): fall back to the newest already loaded so a
-      // past-period feed still marks instead of silently no-oping.
+      // Empty all-time window (foundation has no mentions yet): fall back to the newest already loaded so the action no-ops cleanly.
       const latestTs = this.newestTsOf(response.mentions) ?? this.newestMentionTs ?? this.newestTsOf(this.currentWindowData().mentions);
       this.mentionReadStateService.markAllAsRead(latestTs);
       // A new cutoff invalidates the unread snapshot — refresh so the unread view re-queries instead of paging stale state.
@@ -1090,7 +1091,15 @@ export class SocialListeningComponent {
   }
 
   private initTotalRecords(): Signal<number> {
-    return computed(() => this.countState().data ?? 0);
+    return computed(() => {
+      const count = this.countState();
+      if (count.data !== null) return count.data;
+      // Count request failed: a zero total would disable PrimeNG's Next button and strand the user on page 1 even
+      // though the feed returned rows. Derive a provisional total from the loaded window so paging stays possible;
+      // it self-corrects once the count recovers. The extra pageSize keeps Next enabled past the loaded rows.
+      if (count.error) return this.serverOffset() + this.currentWindowData().mentions.length + this.pageSize();
+      return 0;
+    });
   }
 
   private initDataComputedAt(): Signal<Date | null> {

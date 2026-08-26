@@ -76,8 +76,9 @@ export function parseFoundationSlug(req: Request, operation: string): string {
   return foundationSlug.toLowerCase();
 }
 
-/** Foundation + half-open `[startDate, endDate)` window + the two scope selects. `ytd` — defaulted or explicit — ends at tomorrow's UTC date so today's mentions fall inside the exclusive bound. */
+/** Foundation + half-open `[startDate, endDate)` window + the two scope selects. `ytd` — defaulted or explicit — ends at tomorrow's UTC date so today's mentions fall inside the exclusive bound. `allTime` skips the window entirely (mark-all-as-read newest lookup). */
 export function parseSocialListeningScope(req: Request, operation: string): SocialListeningScopedOptionsParams {
+  const allTime = getStringQueryParam(req, 'allTime') === 'true';
   const period = getValidatedPeriod(req, operation);
   // A live mention feed reads ytd as through-today; the month-bounded analytics preset excludes the
   // current month and collapses to an empty window every January.
@@ -87,6 +88,7 @@ export function parseSocialListeningScope(req: Request, operation: string): Soci
     foundationSlug: parseFoundationSlug(req, operation),
     startDate: range.startDate,
     endDate: range.endDate,
+    allTime,
     sourceProjectId: parseTextParam(req, 'sourceProjectId', FILTER_VALUE_MAX_LENGTH, operation),
     platform: parseTextParam(req, 'platform', FILTER_VALUE_MAX_LENGTH, operation),
   };

@@ -138,6 +138,8 @@ export interface SocialListeningScopeParams {
   startDate: string;
   /** YYYY-MM-DD, exclusive. */
   endDate: string;
+  /** Mark-all-as-read newest lookup only: skip the MENTION_TS window so the cutoff spans every period (the server otherwise defaults a missing period to ytd). */
+  allTime?: boolean;
 }
 
 /** Validated feed filters. Every value is bound as a Snowflake bind parameter — never interpolated. */
@@ -227,6 +229,8 @@ export interface SocialListeningFeedRequest extends MentionFilters {
   foundationSlug: string;
   /** Marketing-impact period token (`ytd`, `last-3`, `YYYY-MM`); server resolves via `getValidatedPeriod`. */
   period?: string;
+  /** Mark-all-as-read newest lookup only: skip the date window so the cutoff is foundation-global across every period. */
+  allTime?: boolean;
   limit?: number;
   offset?: number;
 }

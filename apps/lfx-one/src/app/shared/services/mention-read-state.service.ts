@@ -97,8 +97,10 @@ export class MentionReadStateService {
       next,
       // Re-derive at dequeue time: if an earlier queued commit failed and rolled back, the eager snapshot would resurrect it.
       rebase: (current) => computeReadToggle(current, mentionId, mentionTimestamp, currentlyRead),
-      // Targeted rollback: drop this toggle's list contribution, then flip only when the current state
-      // doesn't already match post-toggle (a later optimistic bulk action may have superseded the toggle).
+      // Targeted rollback: drop this toggle's list contribution, then re-apply the pre-toggle status (`currentlyRead`)
+      // when stripping alone doesn't restore it. Never key off `next` — a no-net-change toggle (mark-unread on a
+      // non-cutoff-covered id clears readIds without touching unreadIds) makes `next` the broken state, so it would
+      // keep the id dropped instead of restoring the prior read.
       rollback: () => {
         const current = this.store.state().data;
         const stripped: ReadStateData = {
@@ -106,9 +108,10 @@ export class MentionReadStateService {
           readIds: current.readIds.filter((id) => id !== mentionId),
           unreadIds: current.unreadIds.filter((id) => id !== mentionId),
         };
-        const wasReadAfterToggle = isReadInState(next, mentionId, mentionTimestamp);
+        // `stripped` is toggle-neutral; flip from its actual status (`readWithoutToggle`) so the result matches the
+        // pre-toggle read state — a later optimistic bulk action that superseded the toggle leaves stripped already correct.
         const readWithoutToggle = isReadInState(stripped, mentionId, mentionTimestamp);
-        this.store.replace(readWithoutToggle === wasReadAfterToggle ? stripped : computeReadToggle(stripped, mentionId, mentionTimestamp, wasReadAfterToggle));
+        this.store.replace(readWithoutToggle === currentlyRead ? stripped : computeReadToggle(stripped, mentionId, mentionTimestamp, readWithoutToggle));
       },
       onError: () => this.notifyFailure(),
     });

@@ -480,7 +480,8 @@ export class SocialListeningService {
   private buildScope(params: SocialListeningScopedOptionsParams & { mentionIds?: string[] }, alias?: string): SqlFragment {
     const col = (name: string): string => (alias ? `${alias}.${name}` : name);
     // Bookmark mode (`mentionIds` present): bookmarks are all-time — a date window would hide any older than the current period.
-    const windowed = params.mentionIds === undefined;
+    // `allTime` (mark-all-as-read newest lookup): same all-time span so the cutoff is foundation-global across every period.
+    const windowed = params.mentionIds === undefined && !params.allTime;
     const clauses = windowed
       ? [`${col('PROJECT_SLUG')} = ?`, `${col('MENTION_TS')} >= TO_DATE(?)`, `${col('MENTION_TS')} < TO_DATE(?)`]
       : [`${col('PROJECT_SLUG')} = ?`];
