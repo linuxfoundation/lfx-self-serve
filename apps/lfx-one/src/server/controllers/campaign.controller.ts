@@ -699,10 +699,16 @@ export class CampaignController {
    * the ad account — while this is BRIEF-scoped. A consumer swapping one for the other narrows
    * what an operator sees, which is why `brief` is required rather than defaulted.
    *
-   * `window` is optional and is NOT defaulted here. campaign-service applies a per-platform
-   * default that is not uniformly 30 days — X Ads caps a request at 7 — so sending one on the
-   * caller's behalf would turn an omitted window into a guaranteed failure on that platform. An
-   * unrecognised value is refused rather than dropped: dropping it would silently serve a
+   * `window` is optional and is NOT defaulted here, so campaign-service can resolve the default
+   * PER ROW, PER PLATFORM: `defaultMetricsWindowFor` (`internal/service/brief.go`) runs inside
+   * the fan-out and yields `last_7_days` for X Ads — whose stats endpoint caps a query at 7 days
+   * — and `last_30_days` for everything else. An explicit window overrides that for EVERY row.
+   *
+   * So sending `last_30_days` on the caller's behalf would not fail the request; it would
+   * DISCARD the per-platform fallback and turn a servable X row into an `unsupported` one, while
+   * the other rows carried on unchanged. Losing a row quietly is the cost, not an error.
+   *
+   * An unrecognised value is refused rather than dropped: dropping it would silently serve a
    * different window than the caller asked for, and a caller cannot detect that from the
    * response, whose `window` field would report the default as though it had been requested.
    */
@@ -752,8 +758,12 @@ export class CampaignController {
       );
       return;
     }
-    const rawWindow = windowParam === undefined ? '' : windowParam.trim();
-    if (rawWindow.length > 0 && !CAMPAIGN_METRICS_WINDOWS.includes(rawWindow as CampaignMetricsWindow)) {
+    // PRESENT-BUT-EMPTY is malformed, not absent. `?window=` and `?window=%20` arrive as a string,
+    // and treating them as "no window given" would skip the enum check and serve the default —
+    // the same fail-open shape as the array case above, one layer in. Only an OMITTED parameter
+    // may default; every supplied value must be in the enum.
+    const rawWindow = windowParam === undefined ? undefined : windowParam.trim();
+    if (rawWindow !== undefined && !CAMPAIGN_METRICS_WINDOWS.includes(rawWindow as CampaignMetricsWindow)) {
       next(
         ServiceValidationError.forField('window', `window must be one of: ${CAMPAIGN_METRICS_WINDOWS.join(', ')}`, {
           operation: 'campaign_brief_metrics',
@@ -762,7 +772,7 @@ export class CampaignController {
       );
       return;
     }
-    const window = rawWindow.length > 0 ? (rawWindow as CampaignMetricsWindow) : undefined;
+    const window = rawWindow as CampaignMetricsWindow | undefined;
 
     const startTime = logger.startOperation(req, 'campaign_brief_metrics', { briefId, projectSlug, window });
 

@@ -1685,9 +1685,13 @@ export interface CampaignStatusUpdateResult {
  * The reporting windows campaign-service accepts. Mirrors `metricsWindowEnum` in
  * `design/brief.go` — the seven values of `model.MetricsWindow`.
  *
- * An explicit window always wins. Omit it and campaign-service applies a PER-PLATFORM default,
- * which is not always `last_30_days`: X Ads caps a request's range at 7 days and REJECTS a wider
- * explicit window rather than narrowing it, so it defaults to `last_7_days`.
+ * An explicit window always wins, for EVERY row. Omit it and campaign-service picks the default
+ * per row, per platform — `last_7_days` for X Ads, whose stats endpoint caps a query at 7 days,
+ * and `last_30_days` for everything else.
+ *
+ * That fallback applies ONLY to an omitted window. An explicit window a platform cannot serve is
+ * not silently narrowed: on the single-campaign read it is a 400, and on the brief-wide read it
+ * comes back as that row's `status: 'unsupported'` while the other rows still report.
  */
 export type CampaignMetricsWindow = (typeof CAMPAIGN_METRICS_WINDOWS)[number];
 

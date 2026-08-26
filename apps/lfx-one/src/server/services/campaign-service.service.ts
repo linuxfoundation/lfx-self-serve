@@ -1084,10 +1084,14 @@ export class CampaignServiceClient {
    * window sent in the body position would reach the wire as no window at all, with no type
    * error, and campaign-service would silently apply per-platform defaults instead.
    *
-   * Omitted when the caller does not specify one, rather than defaulted here to `last_30_days`.
-   * The default is per-platform upstream and is NOT uniformly 30 days: X Ads caps a request's
-   * range at 7 days and REJECTS a wider explicit window, so sending one here would turn an
-   * omitted window into a guaranteed failure on that platform.
+   * Omitted when the caller does not specify one, rather than defaulted here, because upstream
+   * resolves the default PER ROW: `defaultMetricsWindowFor` runs inside the fan-out and gives
+   * X Ads `last_7_days` (its stats endpoint caps a query at 7 days) and everything else
+   * `last_30_days`. An explicit window overrides that for every row.
+   *
+   * Defaulting here would therefore DISCARD the per-platform fallback rather than fail: an X row
+   * that would have been served at 7 days comes back `unsupported`, and the other rows report
+   * normally. The lost row is quiet, which is why the default belongs upstream.
    */
   public async getBriefMetrics(req: Request, projectSlug: string, briefId: string, window?: CampaignMetricsWindow): Promise<BriefMetrics> {
     if (projectSlug === '' || briefId === '') {

@@ -1453,8 +1453,9 @@ describe('CampaignController.getBriefMetrics', () => {
 
   /**
    * Omitted rather than defaulted here, so campaign-service applies its PER-PLATFORM default.
-   * Defaulting to `last_30_days` at this layer would be a guaranteed failure on X Ads, which
-   * caps a request's range at 7 days and rejects a wider explicit window.
+   * Upstream resolves the default per row, per platform (`last_7_days` for X Ads, `last_30_days`
+   * elsewhere), and an explicit window overrides that for every row. Defaulting here would not
+   * fail — it would DISCARD the fallback, turning a servable X row into an `unsupported` one.
    */
   it('passes undefined when no window is given, rather than a default', async () => {
     getBriefMetrics.mockResolvedValue({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] });
@@ -1495,6 +1496,11 @@ describe('CampaignController.getBriefMetrics', () => {
     ['a repeated project param, which Express parses as an array', { project: ['tlf', 'cncf'], brief: 'b-1' }],
     ['a repeated brief param, which Express parses as an array', { project: 'cncf', brief: ['b-1', 'b-2'] }],
     ['a repeated window param, which Express parses as an array', { project: 'cncf', brief: 'b-1', window: ['today', 'today'] }],
+    // PRESENT-BUT-EMPTY is malformed, not absent. `?window=` arrives as a string, so treating it
+    // as "no window given" would skip the enum check and serve the default — the same fail-open
+    // shape as the array case, one layer in. Only an OMITTED parameter may default.
+    ['an empty window param', { project: 'cncf', brief: 'b-1', window: '' }],
+    ['a whitespace-only window param', { project: 'cncf', brief: 'b-1', window: '   ' }],
   ])('refuses a request with %s', async (_label, query) => {
     const next = vi.fn() as unknown as NextFunction;
 

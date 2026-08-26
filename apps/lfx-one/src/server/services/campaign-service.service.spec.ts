@@ -2388,9 +2388,10 @@ describe('CampaignServiceClient.getBriefMetrics', () => {
   });
 
   /**
-   * Omitted, not defaulted to `last_30_days`. campaign-service's default is per-platform and is
-   * not uniformly 30 days: X Ads caps a request at 7 and REJECTS a wider explicit window, so
-   * defaulting here would turn "no window specified" into a guaranteed failure on that platform.
+   * Omitted, not defaulted to `last_30_days`. campaign-service resolves the default PER ROW —
+   * `last_7_days` for X Ads, `last_30_days` elsewhere — and an explicit window overrides that for
+   * every row, so defaulting here would DISCARD the fallback and turn a servable X row into an
+   * `unsupported` one rather than failing outright.
    */
   it('sends no window at all when the caller specifies none', async () => {
     proxyRequest.mockResolvedValue({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] });
