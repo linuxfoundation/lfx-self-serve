@@ -186,7 +186,17 @@ describe('NewsletterPublicationListComponent', () => {
 
     fixture = TestBed.createComponent(NewsletterPublicationListComponent);
     fixture.detectChanges();
+    // NEVER never settles, so whenStable() resolves immediately here (nothing
+    // pending registers) — this still follows the repo's zoneless convention
+    // of awaiting stability rather than trusting a bare detectChanges(), per
+    // docs/architecture/testing/unit-testing.md, and matches this file's own
+    // create() helper below.
+    await fixture.whenStable();
 
+    // Pins "pending", not just "loading defaults to true": without this, the
+    // assertions below would pass identically even if listAllPublications
+    // were never called at all.
+    expect(newsletterService.listAllPublications).toHaveBeenCalledWith('proj-1');
     expect(fixture.nativeElement.querySelectorAll('p-skeleton').length).toBeGreaterThan(0);
     expect(fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-empty-state"]')).toBeFalsy();
     expect(fixture.nativeElement.querySelectorAll('[data-testid^="newsletter-publication-row-"]').length).toBe(0);

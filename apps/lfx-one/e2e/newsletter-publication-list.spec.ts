@@ -249,4 +249,36 @@ test.describe('Newsletter publication list — landing page', () => {
     await expect(page).toHaveURL(/\/foundation\/newsletters\/list(?:[?&]|$)/);
     await expect(page.getByTestId('newsletter-list-table'), 'flat list should render after navigating').toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
+
+  // Both the publication row and the "All newsletters" link are non-native
+  // (a <div role="button"> and an <a role="link"> respectively) rather than a
+  // <button>/plain <a href>, specifically so keyboard activation had to be
+  // wired by hand — this pins that it actually was, rather than trusting the
+  // role/tabindex attributes the structural spec checks.
+  test('Enter activates a publication row exactly like clicking it', async ({ page }) => {
+    const publicationId = 'p0000000-0000-0000-0000-000000000001';
+    await stubPublicationsApi(page, [buildPublication({ id: publicationId })]);
+    await gotoPublicationListUrl(page);
+
+    const row = page.getByTestId(`newsletter-publication-row-${publicationId}`);
+    await row.waitFor({ state: 'visible', timeout: PAGE_LOAD_TIMEOUT });
+    await row.focus();
+    await page.keyboard.press('Enter');
+
+    await expect(page).toHaveURL(new RegExp(`/foundation/newsletters/${MOCK_FOUNDATION_UID}/${publicationId}/editions(?:[?&]|$)`));
+  });
+
+  test("Enter activates the 'All newsletters' link exactly like clicking it", async ({ page }) => {
+    await stubPublicationsApi(page, []);
+    await stubNewslettersListApi(page);
+    await gotoPublicationListUrl(page);
+
+    const link = page.getByTestId('newsletter-publication-list-all-link');
+    await link.waitFor({ state: 'visible', timeout: PAGE_LOAD_TIMEOUT });
+    await link.focus();
+    await page.keyboard.press('Enter');
+
+    await expect(page).toHaveURL(/\/foundation\/newsletters\/list(?:[?&]|$)/);
+    await expect(page.getByTestId('newsletter-list-table'), 'flat list should render after navigating').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
 });

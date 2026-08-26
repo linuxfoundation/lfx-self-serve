@@ -208,7 +208,11 @@ test.describe('Newsletter Publication List — Structural Tests', () => {
       await expect(page.getByTestId(`publication-default-badge-${OTHER_ID}`)).toHaveCount(0);
     });
 
-    test('each row exposes keyboard activation handlers via its ARIA role', async ({ page }) => {
+    // Only the role/tabindex contract, not the actual keydown handlers — those
+    // are pinned by the content spec's "Enter activates a publication row"
+    // case, which asserts the resulting navigation, not just the attributes
+    // that make the element focusable.
+    test('each row exposes a focusable button role via role/tabindex', async ({ page }) => {
       const row = page.getByTestId(`newsletter-publication-row-${DEFAULT_ID}`);
       await expect(row).toHaveAttribute('role', 'button');
       await expect(row).toHaveAttribute('tabindex', '0');
