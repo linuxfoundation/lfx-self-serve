@@ -6,6 +6,7 @@ import {
   MENTION_HAS_TITLE_OPTIONS,
   MENTION_IDS_MAX_VALUES,
   MENTION_MAX_FEED_OFFSET,
+  MENTION_READ_IDS_MAX_VALUES,
   MENTION_RELEVANCE_OPTIONS,
   MENTION_SENTIMENT_OPTIONS,
   MENTION_SERVER_WINDOW_SIZE,
@@ -15,7 +16,12 @@ import { Request } from 'express';
 import { ServiceValidationError } from '../errors';
 import { getStringQueryParam, getValidatedPeriod } from './validation.helper';
 
-import type { ResolvedPeriodRange, SocialListeningFilterParams, SocialListeningScopedOptionsParams } from '@lfx-one/shared/interfaces';
+import type {
+  ResolvedPeriodRange,
+  SocialListeningFilterParams,
+  SocialListeningReadBlindFilterParams,
+  SocialListeningScopedOptionsParams,
+} from '@lfx-one/shared/interfaces';
 
 /**
  * Query-parameter parsing for the Social Listening endpoints: every value is validated and bounded
@@ -34,6 +40,13 @@ const FILTER_VALUE_MAX_LENGTH = 200;
 
 /** Search terms get more room than a single-token filter but still can't be unbounded. */
 const SEARCH_MAX_LENGTH = 500;
+
+/**
+ * Read-state cutoff shape: ISO 8601 (`2026-08-01T00:00:00Z`) or Snowflake's space-separated form
+ * (`2026-08-01 12:00:00`), optional millis — the two shapes the client persists, since `newestTsOf`
+ * passes feed-payload timestamps through verbatim.
+ */
+const READ_BEFORE_TS_PATTERN = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z?$/;
 
 /** A page can never exceed the server window the client is built around. */
 export const MAX_FEED_LIMIT = MENTION_SERVER_WINDOW_SIZE;
@@ -85,19 +98,24 @@ export function parseSocialListeningFilters(req: Request, operation: string): So
     ...parseSocialListeningAuthorFilters(req, operation),
     authors: parseArrayParam(req, 'authors', MENTION_FILTER_MAX_VALUES, operation),
     mentionIds: parseArrayParam(req, 'mentionIds', MENTION_IDS_MAX_VALUES, operation),
+    // Unread view: the client's persisted read state as a server-side exclusion predicate.
+    unreadOnly: getStringQueryParam(req, 'unreadOnly') === 'true' || undefined,
+    readIds: parseArrayParam(req, 'readIds', MENTION_READ_IDS_MAX_VALUES, operation),
+    unreadIds: parseArrayParam(req, 'unreadIds', MENTION_READ_IDS_MAX_VALUES, operation),
+    readBeforeTs: parseTimestampParam(req, 'readBeforeTs', operation),
   };
 }
 
-/** Analytics filters — omits `mentionIds`: bookmark mode is all-time, analytics stays windowed (the page strips it too). */
-export function parseSocialListeningAnalyticsFilters(req: Request, operation: string): Omit<SocialListeningFilterParams, 'mentionIds'> {
+/** Analytics + tag filters — omits `mentionIds` and the unread read-state params: bookmarks are all-time and read state is per-user view state, so non-feed/count queries stay read-blind (the page strips them too). */
+export function parseSocialListeningAnalyticsFilters(req: Request, operation: string): SocialListeningReadBlindFilterParams {
   return {
     ...parseSocialListeningAuthorFilters(req, operation),
     authors: parseArrayParam(req, 'authors', MENTION_FILTER_MAX_VALUES, operation),
   };
 }
 
-/** The filter subset the author-option query cascades off — omits `authors`/`mentionIds` so a multiselect never filters its own option list. */
-export function parseSocialListeningAuthorFilters(req: Request, operation: string): Omit<SocialListeningFilterParams, 'authors' | 'mentionIds'> {
+/** The filter subset the author-option query cascades off — omits `authors`/`mentionIds` and the unread read-state params so a multiselect never filters its own option list and author options stay read-state-blind. */
+export function parseSocialListeningAuthorFilters(req: Request, operation: string): Omit<SocialListeningReadBlindFilterParams, 'authors'> {
   return {
     sentiment: parseEnumParam(req, 'sentiment', VALID_SENTIMENTS, operation),
     relevance: parseEnumParam(req, 'relevance', VALID_RELEVANCES, operation),
@@ -204,6 +222,32 @@ function parseArrayParam(req: Request, name: string, cap: number, operation: str
 
   // A present-but-empty key must read as "no predicate" — a truthy `[]` zeroes the mention feed (`1 = 0`).
   return values.length === 0 ? undefined : values;
+}
+
+/**
+ * Format-checked timestamp: the value reaches `TO_TIMESTAMP_NTZ(?)` as a bind, so an unparseable
+ * shape would surface as a 500 Snowflake error instead of a 400. The regex pins the two accepted
+ * shapes; the `Date.parse` round-trip rejects regex-shaped nonsense (`2026-13-40T99:99:99Z`).
+ */
+function parseTimestampParam(req: Request, name: string, operation: string): string | undefined {
+  const value = parseTextParam(req, name, FILTER_VALUE_MAX_LENGTH, operation);
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  // Normalize the space separator so both accepted shapes parse as UTC for the validity check only — the original value is what gets bound.
+  const isoCandidate = value.replace(' ', 'T');
+  const asUtc = isoCandidate.endsWith('Z') ? isoCandidate : `${isoCandidate}Z`;
+  // `Date.parse` normalizes calendar-impossible dates (Feb 30 rolls into March) instead of rejecting them —
+  // the round-trip compare catches that: the parsed instant must reproduce the input's date-time fields.
+  const parsed = Date.parse(asUtc);
+  const calendarValid = !Number.isNaN(parsed) && new Date(parsed).toISOString().slice(0, 19) === isoCandidate.slice(0, 19);
+  if (!READ_BEFORE_TS_PATTERN.test(value) || !calendarValid) {
+    throw ServiceValidationError.forField(name, `Invalid ${name} format. Expected ISO 8601 or 'YYYY-MM-DD HH24:MI:SS'`, { operation });
+  }
+
+  return value;
 }
 
 /** Bounded integer query param. Rejects non-integers outright; out-of-range values clamp to the nearest bound. */

@@ -16,6 +16,7 @@ import {
 import type { ReadStateData, SocialListeningMention } from '../interfaces/social-listening.interface';
 import {
   buildMentionFilters,
+  buildUnreadFilterFragment,
   computeReadToggle,
   formatTag,
   garbageCollectReadState,
@@ -207,6 +208,43 @@ describe('buildMentionFilters', () => {
     expect(buildMentionFilters({ ...base, mentionIds: ['m1', 'm2'] })).toEqual({ mentionIds: ['m1', 'm2'] });
     expect(buildMentionFilters({ ...base, mentionIds: [] })).toEqual({});
     expect(buildMentionFilters(base)).toEqual({});
+  });
+
+  it('spreads the unread fragment when a read-state snapshot is present', () => {
+    const filters = buildMentionFilters({ ...base, sentiment: 'negative', unread: { readBeforeTs: '2026-08-01 12:00:00', readIds: ['m1'], unreadIds: [] } });
+
+    expect(filters).toEqual({ sentiment: 'negative', unreadOnly: true, readIds: ['m1'], readBeforeTs: '2026-08-01 12:00:00' });
+  });
+
+  it('leaves the unread fragment out when no snapshot is present', () => {
+    expect(buildMentionFilters({ ...base, unread: undefined })).toEqual({});
+  });
+});
+
+describe('buildUnreadFilterFragment', () => {
+  it('emits unreadOnly only for an empty read state', () => {
+    expect(buildUnreadFilterFragment({ readBeforeTs: null, readIds: [], unreadIds: [] })).toEqual({ unreadOnly: true });
+  });
+
+  it('omits the cutoff when null and carries the non-empty override arrays', () => {
+    expect(buildUnreadFilterFragment({ readBeforeTs: null, readIds: ['m1'], unreadIds: ['m2'] })).toEqual({
+      unreadOnly: true,
+      readIds: ['m1'],
+      unreadIds: ['m2'],
+    });
+  });
+
+  it('carries the cutoff when set and omits the empty override arrays', () => {
+    expect(buildUnreadFilterFragment({ readBeforeTs: '2026-08-01 12:00:00', readIds: [], unreadIds: [] })).toEqual({
+      unreadOnly: true,
+      readBeforeTs: '2026-08-01 12:00:00',
+    });
+  });
+
+  it('carries cutoff and both override arrays together when fully populated', () => {
+    const state: ReadStateData = { readBeforeTs: '2026-08-01 12:00:00', readIds: ['m1'], unreadIds: ['m2'] };
+
+    expect(buildUnreadFilterFragment(state)).toEqual({ unreadOnly: true, readIds: ['m1'], unreadIds: ['m2'], readBeforeTs: '2026-08-01 12:00:00' });
   });
 });
 

@@ -48,6 +48,8 @@ describe('MentionsListComponent', () => {
   function setMentions(mentions: Mention[]): void {
     fixture.componentRef.setInput('mentions', mentions);
     fixture.componentRef.setInput('totalMentions', mentions.length);
+    // Mirror the parent: the paginator total tracks the true total until the server offset cap kicks in.
+    fixture.componentRef.setInput('paginatorTotalRecords', mentions.length);
   }
 
   function cards(): MentionCardComponent[] {
@@ -136,29 +138,37 @@ describe('MentionsListComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-mark-all-unread"]')).toBeNull();
   });
 
-  it('hideTotal gates the range count and the paginator report', async () => {
+  it('keeps the range count and the paginator report visible in unread view — the server total is exact', async () => {
     setMentions([baseMention('m1')]);
     await fixture.whenStable();
     expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-count"]')).not.toBeNull();
 
-    fixture.componentRef.setInput('hideTotal', true);
+    fixture.componentRef.setInput('unreadView', true);
     await fixture.whenStable();
 
-    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-count"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-count"]')).not.toBeNull();
     const table = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
+    expect(table.showCurrentPageReport()).toBe(true);
+
+    // Above the server offset cap the report would echo the capped paginator total — it suppresses so the header's true total stays authoritative.
+    fixture.componentRef.setInput('totalMentions', 150000);
+    fixture.componentRef.setInput('paginatorTotalRecords', 100100);
+    await fixture.whenStable();
     expect(table.showCurrentPageReport()).toBe(false);
   });
 
-  it('swaps the empty state for all-caught-up copy in unread mode', async () => {
+  it('swaps the empty state for all-caught-up copy in unread view', async () => {
     setMentions([]);
     await fixture.whenStable();
     expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-empty-state"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-all-read-state"]')).toBeNull();
 
-    fixture.componentRef.setInput('hideTotal', true);
+    fixture.componentRef.setInput('unreadView', true);
     await fixture.whenStable();
 
     expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-empty-state"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-all-read-state"]')).not.toBeNull();
+    const allRead = fixture.nativeElement.querySelector('[data-testid="mentions-list-all-read-state"]');
+    expect(allRead).not.toBeNull();
+    expect(allRead.textContent).toContain('No unread mentions match the current filters.');
   });
 });

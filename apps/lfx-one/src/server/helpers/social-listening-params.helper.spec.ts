@@ -12,6 +12,7 @@ import { ServiceValidationError } from '../errors';
 import {
   parseFoundationSlug,
   parseSocialListeningAnalyticsFilters,
+  parseSocialListeningAuthorFilters,
   parseSocialListeningFilters,
   parseSocialListeningPagination,
   parseSocialListeningScope,
@@ -178,6 +179,71 @@ describe('parseSocialListeningAnalyticsFilters', () => {
     const mentionIds = Array.from({ length: 501 }, (_, i) => `mention-${i}`);
 
     expect(() => parseSocialListeningAnalyticsFilters(reqWith({ mentionIds }), 'op')).not.toThrow();
+  });
+});
+
+describe('unread read-state params (feed + count only)', () => {
+  it('parses the unread flag, both read-state id arrays, and the cutoff', () => {
+    const filters = parseSocialListeningFilters(
+      reqWith({ unreadOnly: 'true', readIds: ['k1', 'k2'], unreadIds: ['k9'], readBeforeTs: '2026-01-15 10:00:00' }),
+      'op'
+    );
+
+    expect(filters.unreadOnly).toBe(true);
+    expect(filters.readIds).toEqual(['k1', 'k2']);
+    expect(filters.unreadIds).toEqual(['k9']);
+    expect(filters.readBeforeTs).toBe('2026-01-15 10:00:00');
+  });
+
+  it('treats any unreadOnly value other than "true" as unset', () => {
+    expect(parseSocialListeningFilters(reqWith({}), 'op').unreadOnly).toBeUndefined();
+    expect(parseSocialListeningFilters(reqWith({ unreadOnly: 'false' }), 'op').unreadOnly).toBeUndefined();
+  });
+
+  it('accepts both cutoff shapes the client persists — ISO 8601 and space-separated Snowflake', () => {
+    for (const readBeforeTs of ['2026-01-15T10:00:00Z', '2026-01-15T10:00:00.123Z', '2026-01-15 10:00:00', '2026-01-15 10:00:00.123']) {
+      expect(parseSocialListeningFilters(reqWith({ unreadOnly: 'true', readBeforeTs }), 'op').readBeforeTs).toBe(readBeforeTs);
+    }
+  });
+
+  // The Feb-30 cases are regex-shaped but calendar-impossible — `Date.parse` normalizes them into March
+  // instead of rejecting, so only the round-trip compare keeps them from binding a shifted instant.
+  it.each([
+    'not-a-timestamp',
+    '2026-13-40T99:99:99Z',
+    '2026-02-30T00:00:00Z',
+    '2026-02-30 10:00:00',
+    '2026-01-15 24:00:00',
+    '2026-01-15',
+    '01/15/2026 10:00 AM',
+  ])('400s a malformed readBeforeTs (%s) instead of 500ing in Snowflake', (readBeforeTs) => {
+    expectFieldError(() => parseSocialListeningFilters(reqWith({ unreadOnly: 'true', readBeforeTs }), 'op'), 'readBeforeTs');
+  });
+
+  it.each(['readIds', 'unreadIds'])('400s over 500 %s values', (name) => {
+    const values = Array.from({ length: 501 }, (_, i) => `mention-${i}`);
+
+    expectFieldError(() => parseSocialListeningFilters(reqWith({ [name]: values }), 'op'), name);
+  });
+
+  it('omits the unread params from the analytics and author-option filter subsets', () => {
+    const query = { unreadOnly: 'true', readIds: ['k1'], unreadIds: ['k2'], readBeforeTs: '2026-01-15 10:00:00', sentiment: 'negative' };
+    const analytics = parseSocialListeningAnalyticsFilters(reqWith(query), 'op');
+    const author = parseSocialListeningAuthorFilters(reqWith(query), 'op');
+
+    for (const parsed of [analytics, author]) {
+      expect(parsed).not.toHaveProperty('unreadOnly');
+      expect(parsed).not.toHaveProperty('readIds');
+      expect(parsed).not.toHaveProperty('unreadIds');
+      expect(parsed).not.toHaveProperty('readBeforeTs');
+      expect(parsed.sentiment).toBe('negative');
+    }
+  });
+
+  it('ignores an over-cap read-state list in analytics rather than 400ing — the boundary never reads it', () => {
+    const readIds = Array.from({ length: 501 }, (_, i) => `mention-${i}`);
+
+    expect(() => parseSocialListeningAnalyticsFilters(reqWith({ readIds }), 'op')).not.toThrow();
   });
 });
 

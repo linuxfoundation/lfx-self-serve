@@ -83,6 +83,7 @@ import type {
   LoadableState,
   Mention,
   MentionFilters,
+  ReadStateData,
   SavedFilter,
   SavedViewScope,
   ScopeState,
@@ -213,6 +214,11 @@ export class SocialListeningComponent {
   /** Live bookmark set for the active user+foundation (empty while loading — decoration only until then). */
   public readonly bookmarkedIds = computed(() => this.mentionBookmarkService.state().data);
   private readonly readState = this.mentionReadStateService.state;
+  // Primitive read-state status projections — the snapshot effect must fire on load transitions only, not on every doc change (a single toggle would otherwise re-snapshot and reshuffle the page mid-triage).
+  private readonly readStateLoading = computed(() => this.readState().loading);
+  private readonly readStateErrored = computed(() => this.readState().error !== null);
+  /** Read-state snapshot behind the unread feed filter — refreshed only on mode entry, load completion, and the two mark-all actions, so single toggles restyle in place and pagination stays stable. */
+  private readonly unreadSnapshot = signal<ReadStateData | null>(null);
 
   private readonly windowIndex = computed(() => Math.floor((this.currentPage() * this.pageSize()) / this.serverWindowSize));
   // The paginator is capped at the last servable window, so serverOffset stays within MENTION_MAX_FEED_OFFSET (100,000).
@@ -223,7 +229,7 @@ export class SocialListeningComponent {
   private readonly searchQuery: Signal<string> = this.initSearchQuery();
   /** The live feed predicate as a request fragment — drives the feed, the count, and (via `analyticsFilters`) the analytics tab. */
   public readonly currentFilters: Signal<MentionFilters> = this.initCurrentFilters();
-  /** Analytics never filter by bookmark — `mentionIds` is feed+count only, so the analytics input strips it. */
+  /** Analytics never filter by bookmark or read state — `mentionIds` and the unread params are feed+count only, so the analytics input strips them. */
   public readonly analyticsFilters: Signal<MentionFilters> = this.initAnalyticsFilters();
   private readonly feedRequest: Signal<SocialListeningFeedRequest | null> = this.initFeedRequest();
   private readonly countRequest: Signal<SocialListeningCountRequest | null> = this.initCountRequest();
@@ -284,24 +290,19 @@ export class SocialListeningComponent {
 
   // No feedState fallback: on a cache miss the feed's data belongs to a prior window/filter set, so serving it flashes stale rows.
   private readonly currentWindowData = computed(() => this.windowCache().get(this.windowIndex()) ?? EMPTY_FEED_RESPONSE);
-  private readonly unreadWindowMentions: Signal<Mention[]> = this.initUnreadWindowMentions();
 
   public readonly loading = computed(() => {
     // Unread mode filters against the persisted read state — hold loading until it arrives so the
-    // "all caught up" empty state can't paint before unread mentions are actually known.
-    if (this.selectedReadFilter() === 'unread' && this.readState().loading) return true;
+    // "all caught up" empty state can't paint before unread mentions are actually known. The snapshot
+    // check closes the effect gap: entering Unread with an already-loaded read state still nulls the
+    // feed/count requests, and without the hold the prior window's cached rows would paint for a frame.
+    if (this.selectedReadFilter() === 'unread' && (this.readState().loading || this.unreadSnapshot() === null)) return true;
     // Bookmark mode filters by the persisted bookmark set — same hold, so the "no bookmarks" empty state can't flash mid-load.
     if (this.selectedBookmarkFilter() === 'bookmarked' && this.mentionBookmarkService.state().loading) return true;
     const windowData = this.windowCache().get(this.windowIndex());
     // A miss means the fetch is in flight or queued behind the coalescing debounce — hold loading so stale rows never paint.
     if (!windowData) return this.feedRequest() !== null && !this.feedState().error;
     if (windowData.complete) return false;
-    if (this.selectedReadFilter() === 'unread') {
-      // Unread pages slice a client-filtered window — wait for phase 2 to fill enough unread rows.
-      const neededEnd = (this.currentPage() + 1) * this.pageSize();
-      if (neededEnd <= this.unreadWindowMentions().length) return false;
-      return this.backgroundLoading() || this.feedState().loading;
-    }
     // Partial window: the visible page extends past what phase 2 has filled so far.
     const neededEnd = this.localOffset() + this.pageSize();
     if (neededEnd <= windowData.mentions.length) return false;
@@ -443,6 +444,8 @@ export class SocialListeningComponent {
 
     // Any scope/filter change restarts pagination from the first page with a cold window cache.
     // (foundationSlug + selectedPeriod are explicit deps; the selects feed in via currentFilters.)
+    // The unread snapshot rides currentFilters too — entering/leaving unread mode and mark-all
+    // refreshes reset here, so there is no separate unread page reset or clamp effect anymore.
     effect(() => {
       this.foundationSlug();
       // Bookmark mode freezes the request's period — depending on it here clears the cache with no refetch (skeleton hang).
@@ -484,19 +487,17 @@ export class SocialListeningComponent {
       this.previousFoundationSlug = current;
     });
 
-    // Unread mode is a client-side view over the loaded window — reset the page but keep windowCache (no refetch).
+    // Unread mode runs off a read-state snapshot: capture on mode entry and when the persisted state
+    // finishes loading — never on single toggles (primitive status deps only), so a read row restyles
+    // in place instead of vanishing mid-triage. The bulk-rollback tick is the one data-adjacent dep: a
+    // failed mark-all restores the prior doc without a loading/error transition, and the snapshot must
+    // re-capture it or the unread feed keeps paging a cutoff that never persisted.
     effect(() => {
       this.selectedReadFilter();
-      untracked(() => this.currentPage.set(0));
-    });
-
-    // Clamp currentPage when the unread total shrinks (e.g. marking the page's last unread mention as read).
-    effect(() => {
-      if (this.selectedReadFilter() !== 'unread') return;
-      const maxPage = Math.max(0, Math.ceil(this.totalRecords() / this.pageSize()) - 1);
-      if (this.currentPage() > maxPage) {
-        untracked(() => this.currentPage.set(maxPage));
-      }
+      this.readStateLoading();
+      this.readStateErrored();
+      this.mentionReadStateService.bulkRollbackTick();
+      untracked(() => this.refreshUnreadSnapshot());
     });
 
     // A foundation with a single sub-project locks the scope to it (ported from PCC). It lives here,
@@ -579,10 +580,13 @@ export class SocialListeningComponent {
       return;
     }
     this.mentionReadStateService.markAllAsRead(this.newestMentionTs);
+    // A new cutoff invalidates the unread snapshot — refresh so the unread view re-queries instead of paging stale state.
+    this.refreshUnreadSnapshot();
   }
 
   public onMarkAllAsUnread(): void {
     this.mentionReadStateService.markAllAsUnread();
+    this.refreshUnreadSnapshot();
   }
 
   /** Manual retry of a phase-2-failed window: the tick re-runs the fetch pipeline; a successful refetch overwrites the flagged cache entry (clearing it here would flash the bare empty state for a frame). */
@@ -711,6 +715,8 @@ export class SocialListeningComponent {
       // past-period feed still marks instead of silently no-oping.
       const latestTs = this.newestTsOf(response.mentions) ?? this.newestMentionTs ?? this.newestTsOf(this.currentWindowData().mentions);
       this.mentionReadStateService.markAllAsRead(latestTs);
+      // A new cutoff invalidates the unread snapshot — refresh so the unread view re-queries instead of paging stale state.
+      this.refreshUnreadSnapshot();
     } catch {
       this.messageService.add({
         severity: 'error',
@@ -720,6 +726,17 @@ export class SocialListeningComponent {
     } finally {
       this.markAllPending = false;
     }
+  }
+
+  /**
+   * Captures the persisted read state as the unread request snapshot. Only meaningful in unread mode —
+   * any other read filter clears it, so the feed/count requests drop the unread params immediately.
+   * A loading or errored state also clears it: the request null-guards then hold the feed rather than
+   * let an empty fallback doc classify every mention as unread.
+   */
+  private refreshUnreadSnapshot(): void {
+    const state = this.readState();
+    this.unreadSnapshot.set(this.selectedReadFilter() === 'unread' && !state.loading && !state.error ? state.data : null);
   }
 
   private computeScopeKey(): string | null {
@@ -770,14 +787,21 @@ export class SocialListeningComponent {
         hasTitle: this.selectedHasTitle(),
         search: this.searchQuery(),
         mentionIds,
+        // Unread mode: the read-state snapshot rides the same request path — the server filters period-wide.
+        unread: this.unreadSnapshot() ?? undefined,
       });
     });
   }
 
   private initAnalyticsFilters(): Signal<MentionFilters> {
     return computed(() => {
+      // Analytics stays bookmark- and read-state-blind: strip both per-user filter sets.
       const filters = { ...this.currentFilters() };
       delete filters.mentionIds;
+      delete filters.unreadOnly;
+      delete filters.readIds;
+      delete filters.unreadIds;
+      delete filters.readBeforeTs;
       return filters;
     });
   }
@@ -791,6 +815,8 @@ export class SocialListeningComponent {
       const bookmarked = this.selectedBookmarkFilter() === 'bookmarked';
       const period = bookmarked ? this.defaultPeriod : this.selectedPeriod();
       if (bookmarked && this.bookmarkedIds().size === 0) return null;
+      // Unread mode: no request until the read-state snapshot exists — an empty fallback doc would classify everything as unread.
+      if (this.selectedReadFilter() === 'unread' && this.unreadSnapshot() === null) return null;
       return {
         foundationSlug,
         period,
@@ -808,6 +834,8 @@ export class SocialListeningComponent {
       const bookmarked = this.selectedBookmarkFilter() === 'bookmarked';
       const period = bookmarked ? this.defaultPeriod : this.selectedPeriod();
       if (bookmarked && this.bookmarkedIds().size === 0) return null;
+      // Unread mode: no request until the read-state snapshot exists — an empty fallback doc would classify everything as unread.
+      if (this.selectedReadFilter() === 'unread' && this.unreadSnapshot() === null) return null;
       return { foundationSlug, period, ...this.currentFilters() };
     });
   }
@@ -1041,26 +1069,10 @@ export class SocialListeningComponent {
 
   private initMentions(): Signal<Mention[]> {
     return computed(() => {
-      // Unread mode slices the client-filtered window list — the server-offset window slice no longer applies.
-      if (this.selectedReadFilter() === 'unread') {
-        const start = this.currentPage() * this.pageSize();
-        return this.unreadWindowMentions().slice(start, start + this.pageSize());
-      }
       const start = this.localOffset();
       return this.currentWindowData()
         .mentions.slice(start, start + this.pageSize())
         .map(mapRawToMention);
-    });
-  }
-
-  private initUnreadWindowMentions(): Signal<Mention[]> {
-    return computed(() => {
-      // Empty while the read state loads — without the guard the unread view flashes every mention as unread.
-      // Same on load error: the store falls back to an empty doc, which would classify everything as unread.
-      if (this.readState().loading || this.readState().error) return [];
-      return this.currentWindowData()
-        .mentions.map(mapRawToMention)
-        .filter((m) => !this.mentionReadStateService.isRead(m.id, m.timestamp));
     });
   }
 
@@ -1077,13 +1089,7 @@ export class SocialListeningComponent {
   }
 
   private initTotalRecords(): Signal<number> {
-    return computed(() => {
-      // Unread totals are window-scoped: the count endpoint can't know the user's read state.
-      if (this.selectedReadFilter() === 'unread') {
-        return this.unreadWindowMentions().length;
-      }
-      return this.countState().data ?? 0;
-    });
+    return computed(() => this.countState().data ?? 0);
   }
 
   private initDataComputedAt(): Signal<Date | null> {

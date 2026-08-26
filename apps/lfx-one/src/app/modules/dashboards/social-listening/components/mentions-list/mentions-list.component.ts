@@ -46,8 +46,8 @@ export class MentionsListComponent {
   public readonly bookmarkedIds = input<Set<string>>(new Set());
   /** Read mention IDs for the current foundation (LFXV2-3002 Block 2) — decorates each card's read toggle. */
   public readonly readMentionIds = input<Set<string>>(new Set());
-  /** Unread mode hides the range count + paginator report — the window-scoped total would misread as the true total. */
-  public readonly hideTotal = input(false);
+  /** Unread view — selects the "all caught up" empty state variant. Totals stay visible: the server returns the exact unread count. */
+  public readonly unreadView = input(false);
 
   public readonly pageChange = output<{ page: number; rows: number }>();
   /** Manual retry of a phase-2-failed window. */

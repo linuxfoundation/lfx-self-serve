@@ -13,6 +13,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   MENTION_FILTER_MAX_VALUES: 200,
   MENTION_IDS_MAX_VALUES: 500,
   MENTION_MAX_FEED_OFFSET: 100_000,
+  MENTION_READ_IDS_MAX_VALUES: 500,
   MENTION_TOP_TAGS_LIMIT: 10,
   VALKEY_CACHE: { SOCIAL_LISTENING_TTL_SECONDS: 1800 },
 }));
@@ -334,6 +335,75 @@ describe('bookmark mode — mentionIds skip the date window', () => {
     expect(normalized).toContain('MENTION_TS >= TO_DATE(?)');
     expect(normalized).toContain('MENTION_TS < TO_DATE(?)');
     expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01']);
+  });
+});
+
+describe('unread mode — read-state exclusion predicate', () => {
+  it('excludes explicitly-read ids and emits no cutoff clause when readBeforeTs is absent', async () => {
+    await service().getMentionsCount(req, { ...SCOPE, unreadOnly: true, readIds: ['k2', 'k1'] });
+
+    const { sql, binds } = lastCall();
+    const normalized = normalize(sql);
+    expect(normalized).toContain('_KEY NOT IN (?, ?)');
+    expect(normalized).not.toContain('TO_TIMESTAMP_NTZ');
+    // Sorted for an order-stable cache discriminator.
+    expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'k1', 'k2']);
+  });
+
+  it('combines the cutoff with the unread overrides — newer than the cutoff, NULL timestamp, or explicitly unread', async () => {
+    await service().getMentionsCount(req, { ...SCOPE, unreadOnly: true, readIds: ['k1'], unreadIds: ['k9', 'k8'], readBeforeTs: '2026-01-15 10:00:00' });
+
+    const { sql, binds } = lastCall();
+    const normalized = normalize(sql);
+    expect(normalized).toContain('_KEY NOT IN (?)');
+    expect(normalized).toContain('((MENTION_TS > TO_TIMESTAMP_NTZ(?) OR MENTION_TS IS NULL) OR _KEY IN (?, ?))');
+    expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'k1', '2026-01-15 10:00:00', 'k8', 'k9']);
+  });
+
+  it('degrades to the bare cutoff comparison when the unread-override list is empty — NULL timestamps stay unread, matching isReadInState', async () => {
+    await service().getMentionsCount(req, { ...SCOPE, unreadOnly: true, readBeforeTs: '2026-01-15 10:00:00' });
+
+    const { sql, binds } = lastCall();
+    const normalized = normalize(sql);
+    expect(normalized).toContain('AND (MENTION_TS > TO_TIMESTAMP_NTZ(?) OR MENTION_TS IS NULL)');
+    expect(normalized).not.toContain('_KEY IN');
+    expect(binds).toEqual(['cncf', '2026-01-01', '2026-02-01', '2026-01-15 10:00:00']);
+  });
+
+  it('keeps the half-open date window in unread mode — unlike all-time bookmark mode', async () => {
+    await service().getMentionsCount(req, { ...SCOPE, unreadOnly: true, readIds: ['k1'] });
+
+    const normalized = normalize(lastCall().sql);
+    expect(normalized).toContain('MENTION_TS >= TO_DATE(?)');
+    expect(normalized).toContain('MENTION_TS < TO_DATE(?)');
+  });
+
+  it('emits no unread clause at all when unreadOnly is absent', async () => {
+    await service().getMentionsCount(req, { ...SCOPE, readIds: ['k1'], unreadIds: ['k2'], readBeforeTs: '2026-01-15 10:00:00' });
+
+    const normalized = normalize(lastCall().sql);
+    expect(normalized).not.toContain('NOT IN');
+    expect(normalized).not.toContain('TO_TIMESTAMP_NTZ');
+    expect(lastCall().binds).toEqual(['cncf', '2026-01-01', '2026-02-01']);
+  });
+
+  it('discriminates the cache by unread state — reordered inputs share an entry, empty and absent states do not', async () => {
+    const lastDiscriminator = (): unknown => withSocialListeningCache.mock.calls.at(-1)?.[2];
+
+    await service().getMentionsCount(req, { ...SCOPE, unreadOnly: true, readIds: ['k2', 'k1'], unreadIds: ['k9'], readBeforeTs: '2026-01-15 10:00:00' });
+    const first = lastDiscriminator();
+
+    // Sorted canonicalization makes the discriminator order-stable.
+    await service().getMentionsCount(req, { ...SCOPE, unreadOnly: true, readIds: ['k1', 'k2'], unreadIds: ['k9'], readBeforeTs: '2026-01-15 10:00:00' });
+    expect(lastDiscriminator()).toEqual(first);
+
+    // Unread with an empty read-state doc must not share the unfiltered entry.
+    await service().getMentionsCount(req, { ...SCOPE, unreadOnly: true });
+    const emptyUnread = lastDiscriminator();
+
+    await service().getMentionsCount(req, SCOPE);
+    expect(lastDiscriminator()).not.toEqual(emptyUnread);
+    expect(emptyUnread).not.toEqual(first);
   });
 });
 

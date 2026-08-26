@@ -13,7 +13,7 @@ import '@angular/compiler';
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const { userPreferenceSvc, socialListeningSvc, logger } = vi.hoisted(() => ({
   userPreferenceSvc: { getPreference: vi.fn(), upsertPreference: vi.fn(), deletePreference: vi.fn() },
-  socialListeningSvc: { getMentionsFeed: vi.fn() },
+  socialListeningSvc: { getMentionsFeed: vi.fn(), getMentionsTags: vi.fn() },
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), etag: vi.fn() },
 }));
 
@@ -202,6 +202,38 @@ describe('SocialListeningController', () => {
       await controller.getMentionsFeed(buildReq({ query: { foundationSlug: 'linuxfoundation' } }), buildRes(), next);
 
       expect(next).toHaveBeenCalledWith(failure);
+    });
+  });
+
+  describe('getMentionsTags — endpoint wiring', () => {
+    it('drops caller-supplied bookmark/read-state params — tags stay read-state-blind', async () => {
+      socialListeningSvc.getMentionsTags.mockResolvedValue([]);
+      const res = buildRes();
+
+      await controller.getMentionsTags(
+        buildReq({
+          query: {
+            foundationSlug: 'linuxfoundation',
+            sentiment: 'negative',
+            mentionIds: ['m1'],
+            unreadOnly: 'true',
+            readIds: ['m2'],
+            unreadIds: ['m3'],
+            readBeforeTs: '2026-08-01 12:00:00',
+          },
+        }),
+        res,
+        next
+      );
+
+      const params = socialListeningSvc.getMentionsTags.mock.calls[0][1];
+      expect(params).toMatchObject({ foundationSlug: 'linuxfoundation', sentiment: 'negative' });
+      expect(params).not.toHaveProperty('mentionIds');
+      expect(params).not.toHaveProperty('unreadOnly');
+      expect(params).not.toHaveProperty('readIds');
+      expect(params).not.toHaveProperty('unreadIds');
+      expect(params).not.toHaveProperty('readBeforeTs');
+      expect(next).not.toHaveBeenCalled();
     });
   });
 });

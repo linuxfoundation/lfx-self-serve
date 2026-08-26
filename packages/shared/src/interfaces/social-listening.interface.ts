@@ -152,8 +152,16 @@ export interface SocialListeningFilterParams {
   tags?: string[];
   authors?: string[];
   search?: string;
-  /** Reserved for the deferred bookmarked-mentions filter (follow-up ticket). */
+  /** Bookmark mode: restrict to these mention IDs (feed + count only — analytics and option queries omit it). */
   mentionIds?: string[];
+  /** Unread view: apply the per-user read-state exclusion (feed + count only — analytics and option queries omit these). */
+  unreadOnly?: boolean;
+  /** Read-state overrides: explicit reads newer than the cutoff. */
+  readIds?: string[];
+  /** Read-state overrides: explicit unreads at or before the cutoff. */
+  unreadIds?: string[];
+  /** Mark-all-as-read cutoff: mentions at or before it are read unless in `unreadIds`. */
+  readBeforeTs?: string;
 }
 
 export interface SocialListeningPaginationParams {
@@ -165,13 +173,17 @@ export interface SocialListeningFeedParams extends SocialListeningScopeParams, S
 
 export interface SocialListeningCountParams extends SocialListeningScopeParams, SocialListeningFilterParams {}
 
-/** Tag options: same predicate as the count query, plus a caller-chosen cap (analytics wants the top N, the filter panel wants the full list). */
-export interface SocialListeningTagsParams extends SocialListeningCountParams {
-  limit?: number;
-}
+/** Feed/count-only filter keys — per-user bookmark/read state. Analytics, tag, and author queries are read-state-blind by contract. */
+export type SocialListeningFeedOnlyFilterKeys = 'mentionIds' | 'unreadOnly' | 'readIds' | 'unreadIds' | 'readBeforeTs';
 
-/** Author options cascade off every other filter, but must not filter by themselves. */
-export type SocialListeningAuthorsParams = Omit<SocialListeningCountParams, 'authors' | 'mentionIds'>;
+/** The filter shape every non-feed/count query accepts — the full predicate minus the per-user bookmark/read-state fields. */
+export type SocialListeningReadBlindFilterParams = Omit<SocialListeningFilterParams, SocialListeningFeedOnlyFilterKeys>;
+
+/** Tag options: the read-blind predicate, plus a caller-chosen cap (analytics wants the top N, the filter panel wants the full list). */
+export type SocialListeningTagsParams = SocialListeningScopeParams & SocialListeningReadBlindFilterParams & { limit?: number };
+
+/** Author options cascade off every other filter, but must not filter by themselves — nor by per-user bookmark/read state. */
+export type SocialListeningAuthorsParams = Omit<SocialListeningCountParams, 'authors' | SocialListeningFeedOnlyFilterKeys>;
 
 /** Languages / keywords / tags option queries: scoped by range, optionally narrowed by platform + sub-project. */
 export interface SocialListeningScopedOptionsParams extends SocialListeningScopeParams {
@@ -184,9 +196,7 @@ export interface SocialListeningOptionsParams {
   foundationSlug: string;
 }
 
-export interface SocialListeningAnalyticsParams extends SocialListeningScopeParams, SocialListeningFilterParams {
-  limit?: number;
-}
+export type SocialListeningAnalyticsParams = SocialListeningScopeParams & SocialListeningReadBlindFilterParams & { limit?: number };
 
 // ---------------------------------------------------------------------------
 // Client request params (Angular service → REST query string; period token, not dates)
@@ -206,6 +216,11 @@ export interface MentionFilters {
   search?: string;
   /** Bookmark mode: restrict to these mention IDs (feed + count only — the page strips it before analytics). */
   mentionIds?: string[];
+  /** Unread view: server-side read-state exclusion (feed + count only — the page strips these before analytics). */
+  unreadOnly?: boolean;
+  readIds?: string[];
+  unreadIds?: string[];
+  readBeforeTs?: string;
 }
 
 export interface SocialListeningFeedRequest extends MentionFilters {
@@ -221,8 +236,8 @@ export interface SocialListeningCountRequest extends MentionFilters {
   period?: string;
 }
 
-/** Intentionally omits `authors` — a multiselect must not filter its own options. */
-export type SocialListeningAuthorsRequest = Omit<SocialListeningCountRequest, 'authors'>;
+/** Intentionally omits `authors` — a multiselect must not filter its own options — and the feed-only read-state fields. */
+export type SocialListeningAuthorsRequest = Omit<SocialListeningCountRequest, 'authors' | SocialListeningFeedOnlyFilterKeys>;
 
 export interface SocialListeningScopedOptionsRequest {
   foundationSlug: string;
@@ -235,12 +250,12 @@ export interface SocialListeningOptionsRequest {
   foundationSlug: string;
 }
 
-/** Analytics panels take the same feed predicate as the feed/count endpoints, so the two tabs agree. */
-export interface SocialListeningAnalyticsRequest extends MentionFilters {
+/** Analytics panels take the same feed predicate as the feed/count endpoints (minus the read-state fields), so the two tabs agree. */
+export type SocialListeningAnalyticsRequest = Omit<MentionFilters, SocialListeningFeedOnlyFilterKeys> & {
   foundationSlug: string;
   period?: string;
   limit?: number;
-}
+};
 
 /** Tags back two callers: the filter panel (scope only, explicit cap) and the analytics panel (full predicate, default cap). */
 export type SocialListeningTagsRequest = SocialListeningAnalyticsRequest;
@@ -371,7 +386,7 @@ export interface ReadStateData {
 // Filter predicate + URL-synced scope
 // ---------------------------------------------------------------------------
 
-/** URL-synced filter state. `readFilter` stays client-side (a view over the loaded window) — it round-trips through query params but never reaches feed/count requests. */
+/** URL-synced filter state. `readFilter` round-trips through query params like the rest; in unread mode the page snapshots the persisted read state onto the feed/count requests as the `unreadOnly` fragment (analytics and option queries stay read-state-blind). */
 export interface FilterPredicate {
   sentiment: string;
   relevance: string;

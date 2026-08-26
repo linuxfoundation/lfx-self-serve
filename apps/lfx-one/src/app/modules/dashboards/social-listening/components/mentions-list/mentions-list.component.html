@@ -6,7 +6,7 @@
   <div class="flex items-center justify-between">
     <div class="flex items-center gap-3">
       <h2 class="text-xs font-bold tracking-wide text-gray-500">LATEST MENTIONS</h2>
-      @if (!loading() && totalMentions() > 0 && mentions().length > 0 && !hideTotal()) {
+      @if (!loading() && totalMentions() > 0 && mentions().length > 0) {
         <span class="text-xs text-gray-400" data-testid="mentions-list-count"
           >{{ first() + 1 }}–{{ first() + mentions().length }} of {{ totalMentions() }}</span
         >
@@ -37,6 +37,7 @@
   </div>
 
   <!-- Cards + paginator (lfx-table is the confirmed paginator wrapper; one card per single-cell row) -->
+  <!-- The page report interpolates the capped paginatorTotalRecords — suppress it above the cap so the header's true total stays authoritative. -->
   <lfx-table
     [value]="mentions()"
     [loading]="loading()"
@@ -47,7 +48,7 @@
     [first]="first()"
     [totalRecords]="paginatorTotalRecords()"
     [rowsPerPageOptions]="rowsPerPageOptions()"
-    [showCurrentPageReport]="!hideTotal()"
+    [showCurrentPageReport]="paginatorTotalRecords() >= totalMentions()"
     currentPageReportTemplate="Showing {first} to {last} of {totalRecords} mentions"
     [alwaysShowPaginator]="totalMentions() > 0 || countError()"
     [skeletonColumns]="1"
@@ -114,11 +115,11 @@
               ctaIcon="fa-light fa-arrow-rotate-left"
               (ctaClick)="retry.emit()"
               data-testid="mentions-list-window-error" />
-          } @else if (hideTotal()) {
+          } @else if (unreadView()) {
             <lfx-empty-state
               icon="fa-light fa-circle-check"
               title="You're all caught up"
-              subtitle="No unread mentions in the loaded window."
+              subtitle="No unread mentions match the current filters."
               data-testid="mentions-list-all-read-state" />
           } @else {
             <lfx-empty-state
