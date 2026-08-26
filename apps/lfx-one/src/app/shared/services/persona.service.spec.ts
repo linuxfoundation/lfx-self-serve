@@ -242,9 +242,12 @@ describe('PersonaService — grant probe recency ordering', () => {
       service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
       http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true }));
 
-      // ROOT-confirmed grant goes under null, not under the queried slug.
+      // ROOT-confirmed campaign grant goes under null.
       expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
-      expect(service.grantsByScope().get('foundation-a')).toBeUndefined();
+      // The campaign grant is NOT filed under the project key — the null entry is the authoritative
+      // source for ROOT access. The project key still receives a denial record for the marketing
+      // relation (authoritative for the queried scope), but campaign is absent from it.
+      expect(service.grantsByScope().get('foundation-a')?.isCampaignManager).toBe(false);
     });
 
     it('writes isMarketingAuditor and isCampaignManager into their own independently-resolved scope keys when they diverge on the same response (Cursor Bugbot finding, PR #1835: "ROOT map key polluted")', () => {
@@ -276,6 +279,40 @@ describe('PersonaService — grant probe recency ordering', () => {
       // write was nested under the same global gate that just blocked A's global-signal write above,
       // so it was silently dropped and the null-key entry stayed stale or missing indefinitely.
       expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
+    });
+
+    it('clears a stale per-scope entry when a fresh probe reports that relation as denied (Copilot finding, PR #1835: revocations must invalidate every key)', () => {
+      // Seed a cached marketing grant for 'foundation-a' (project-scoped, not ROOT).
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isMarketingAuditor: true }));
+      expect(service.grantsByScope().get('foundation-a')?.isMarketingAuditor).toBe(true);
+
+      // A subsequent probe for the same scope: marketing denied, but campaign is ROOT-granted.
+      // Old code would collapse to scopeKey=null (for the ROOT campaign) and never write the
+      // marketing denial to 'foundation-a', leaving the stale 'true' behind.
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http
+        .expectOne((req) => req.url.includes('project=foundation-a'))
+        .flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true, isMarketingAuditor: false }));
+
+      // Marketing denial must be written to the 'foundation-a' key, clearing the stale grant.
+      expect(service.grantsByScope().get('foundation-a')?.isMarketingAuditor).toBe(false);
+      // The ROOT campaign grant lands under the null key.
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
+    });
+
+    it('clears a stale per-scope null-key entry when a ROOT-scoped probe denies the grant (Copilot finding, PR #1835: revocations must invalidate every key)', () => {
+      // Seed a ROOT campaign grant (null key).
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true }));
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
+
+      // A subsequent ROOT probe denies campaign — must overwrite the stale null-key grant.
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: false }));
+
+      // The null-key entry must now reflect the denial.
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(false);
     });
   });
 });

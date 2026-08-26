@@ -283,18 +283,19 @@ export class PersonaService {
   }
 
   /**
-   * Writes a grant result into {@link _grantsByScope}. When at most one relation is actively
-   * granted, or both are granted with the same root-ness, a single combined key describes both
-   * fields unambiguously — same as the original behavior. But when **both** `isMarketingAuditor`
-   * and `isCampaignManager` are granted on the same response with *different* root-ness (one
-   * ROOT-cascading, one project-scoped), a single shared key can't represent both answers — the
-   * pre-fix code picked one relation's scope for the whole entry, mis-filing the other relation's
-   * result into the wrong key (Cursor Bugbot finding, PR #1835: "ROOT map key polluted" — same root
-   * cause as {@link resolveGrantSlug}'s scalar ambiguity). In that specific case each relation is
-   * written into its own key instead, merged rather than replaced so it doesn't clobber whatever is
-   * already stored for the other relation at a shared key. Centralises the update pattern shared by
-   * {@link applyPersonaResponse} and {@link confirmActiveGrant} so the two write sites cannot
-   * silently diverge.
+   * Writes a grant result into {@link _grantsByScope}. Each relation (`isMarketingAuditor`,
+   * `isCampaignManager`) is resolved to its own scope key independently:
+   *
+   * - **Granted**: written only to the scope-appropriate key — `null` for ROOT, `projectSlug` for
+   *   project-scoped. This prevents a ROOT grant from clobbering a separately-cached project entry
+   *   and vice versa (Cursor Bugbot finding, PR #1835: "ROOT map key polluted").
+   * - **Denied**: written to *both* the queried project key and the `null` (ROOT) key. The server
+   *   checks both ROOT and project-scoped access before returning `false`, so a denial is
+   *   authoritative for all scope paths — it must clear any stale cached entry regardless of where
+   *   the prior grant was stored (Copilot finding, PR #1835: "revocations must invalidate every key").
+   *
+   * Centralises the update pattern shared by {@link applyPersonaResponse} and
+   * {@link confirmActiveGrant} so the two write sites cannot silently diverge.
    */
   private writeGrantForScope(
     response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
@@ -302,31 +303,39 @@ export class PersonaService {
   ): void {
     const marketingGranted = response.isMarketingAuditor ?? false;
     const campaignGranted = response.isCampaignManager ?? false;
-    const marketingIsRoot = !!response.isMarketingAuditorRootGrant;
-    const campaignIsRoot = !!response.isCampaignManagerRootGrant;
-    const divergentScopes = marketingGranted && campaignGranted && marketingIsRoot !== campaignIsRoot;
+    const marketingIsRoot = marketingGranted && !!response.isMarketingAuditorRootGrant;
+    const campaignIsRoot = campaignGranted && !!response.isCampaignManagerRootGrant;
 
-    if (!divergentScopes) {
-      const isRootGrant = (marketingGranted && marketingIsRoot) || (campaignGranted && campaignIsRoot);
-      const scopeKey = projectSlug && !isRootGrant ? projectSlug : null;
-      this._grantsByScope.update((m) => {
-        const next = new Map(m);
-        next.set(scopeKey, { isCampaignManager: campaignGranted, isMarketingAuditor: marketingGranted });
-        return next;
-      });
-      return;
-    }
+    const marketingGrantKey = marketingIsRoot ? null : (projectSlug ?? null);
+    const campaignGrantKey = campaignIsRoot ? null : (projectSlug ?? null);
+    // Denial is authoritative for both ROOT (null) and project scope: clear all paths.
+    const denialKeys: Array<string | null> = [projectSlug ?? null, null].filter(
+      (k, i, a) => a.indexOf(k) === i // deduplicate
+    );
 
-    const marketingKey = marketingIsRoot ? null : (projectSlug ?? null);
-    const campaignKey = campaignIsRoot ? null : (projectSlug ?? null);
     this._grantsByScope.update((m) => {
       const next = new Map(m);
       const mergeInto = (key: string | null, patch: Partial<{ isCampaignManager: boolean; isMarketingAuditor: boolean }>): void => {
         const existing = next.get(key) ?? { isCampaignManager: false, isMarketingAuditor: false };
         next.set(key, { ...existing, ...patch });
       };
-      mergeInto(marketingKey, { isMarketingAuditor: true });
-      mergeInto(campaignKey, { isCampaignManager: true });
+
+      if (marketingGranted) {
+        mergeInto(marketingGrantKey, { isMarketingAuditor: true });
+      } else {
+        for (const key of denialKeys) {
+          mergeInto(key, { isMarketingAuditor: false });
+        }
+      }
+
+      if (campaignGranted) {
+        mergeInto(campaignGrantKey, { isCampaignManager: true });
+      } else {
+        for (const key of denialKeys) {
+          mergeInto(key, { isCampaignManager: false });
+        }
+      }
+
       return next;
     });
   }
