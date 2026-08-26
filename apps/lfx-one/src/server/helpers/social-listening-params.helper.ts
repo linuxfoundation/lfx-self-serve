@@ -16,7 +16,7 @@ import { Request } from 'express';
 import { ServiceValidationError } from '../errors';
 import { getStringQueryParam, getValidatedPeriod } from './validation.helper';
 
-import type { ResolvedPeriodRange, SocialListeningFilterParams, SocialListeningScopedOptionsParams } from '@lfx-one/shared/interfaces';
+import type { ResolvedPeriodRange, SocialListeningFilterParams, SocialListeningReadBlindFilterParams, SocialListeningScopedOptionsParams } from '@lfx-one/shared/interfaces';
 
 /**
  * Query-parameter parsing for the Social Listening endpoints: every value is validated and bounded
@@ -101,11 +101,8 @@ export function parseSocialListeningFilters(req: Request, operation: string): So
   };
 }
 
-/** Analytics filters — omits `mentionIds` and the unread read-state params: bookmarks are all-time and read state is per-user view state, analytics stays windowed and read-blind (the page strips them too). */
-export function parseSocialListeningAnalyticsFilters(
-  req: Request,
-  operation: string
-): Omit<SocialListeningFilterParams, 'mentionIds' | 'unreadOnly' | 'readIds' | 'unreadIds' | 'readBeforeTs'> {
+/** Analytics + tag filters — omits `mentionIds` and the unread read-state params: bookmarks are all-time and read state is per-user view state, so non-feed/count queries stay read-blind (the page strips them too). */
+export function parseSocialListeningAnalyticsFilters(req: Request, operation: string): SocialListeningReadBlindFilterParams {
   return {
     ...parseSocialListeningAuthorFilters(req, operation),
     authors: parseArrayParam(req, 'authors', MENTION_FILTER_MAX_VALUES, operation),
@@ -116,7 +113,7 @@ export function parseSocialListeningAnalyticsFilters(
 export function parseSocialListeningAuthorFilters(
   req: Request,
   operation: string
-): Omit<SocialListeningFilterParams, 'authors' | 'mentionIds' | 'unreadOnly' | 'readIds' | 'unreadIds' | 'readBeforeTs'> {
+): Omit<SocialListeningReadBlindFilterParams, 'authors'> {
   return {
     sentiment: parseEnumParam(req, 'sentiment', VALID_SENTIMENTS, operation),
     relevance: parseEnumParam(req, 'relevance', VALID_RELEVANCES, operation),
@@ -240,7 +237,11 @@ function parseTimestampParam(req: Request, name: string, operation: string): str
   // Normalize the space separator so both accepted shapes parse as UTC for the validity check only — the original value is what gets bound.
   const isoCandidate = value.replace(' ', 'T');
   const asUtc = isoCandidate.endsWith('Z') ? isoCandidate : `${isoCandidate}Z`;
-  if (!READ_BEFORE_TS_PATTERN.test(value) || Number.isNaN(Date.parse(asUtc))) {
+  // `Date.parse` normalizes calendar-impossible dates (Feb 30 rolls into March) instead of rejecting them —
+  // the round-trip compare catches that: the parsed instant must reproduce the input's date-time fields.
+  const parsed = Date.parse(asUtc);
+  const calendarValid = !Number.isNaN(parsed) && new Date(parsed).toISOString().slice(0, 19) === isoCandidate.slice(0, 19);
+  if (!READ_BEFORE_TS_PATTERN.test(value) || !calendarValid) {
     throw ServiceValidationError.forField(name, `Invalid ${name} format. Expected ISO 8601 or 'YYYY-MM-DD HH24:MI:SS'`, { operation });
   }
 

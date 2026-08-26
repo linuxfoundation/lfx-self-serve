@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { DestroyRef, Injectable, Injector, PLATFORM_ID, inject } from '@angular/core';
+import { DestroyRef, Injectable, Injector, PLATFORM_ID, inject, signal } from '@angular/core';
 import { MAX_READ_IDS, SOCIAL_LISTENING_READ_STATE_PREFERENCE_PREFIX } from '@lfx-one/shared/constants';
 import {
   computeReadToggle,
@@ -56,6 +56,13 @@ export class MentionReadStateService {
   });
 
   public readonly state = this.store.state;
+
+  /**
+   * Bumped when a bulk commit (mark-all) rolls back — the rollback restores the prior doc via `replace`,
+   * which never transitions loading/error, so consumers keying off those primitives (the unread snapshot)
+   * need this tick to re-capture state instead of keeping a cutoff that never persisted.
+   */
+  public readonly bulkRollbackTick = signal(0);
 
   public setContext(ctx: PreferenceContext | null): void {
     this.store.setContext(ctx);
@@ -146,6 +153,7 @@ export class MentionReadStateService {
         readIds: [...new Set([...previous.readIds.filter((id) => !toggledIds.has(id)), ...current.readIds])],
         unreadIds: [...new Set([...previous.unreadIds.filter((id) => !toggledIds.has(id)), ...current.unreadIds])],
       });
+      this.bulkRollbackTick.update((tick) => tick + 1);
     };
   }
 

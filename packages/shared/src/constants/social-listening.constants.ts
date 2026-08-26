@@ -114,7 +114,7 @@ export const MAX_READ_IDS = 500;
  * both arrays, and a toggle only grows the side of the cutoff the mention sits on — but if saturated docs
  * prove real, the feed/count endpoints need to move to POST rather than lowering this cap.
  */
-export const MENTION_READ_IDS_MAX_VALUES = 500;
+export const MENTION_READ_IDS_MAX_VALUES = MAX_READ_IDS;
 
 /** Saved-view cap per user+foundation (LFXV2-3002 Block 3, PCC parity) — bounds the preference doc payload and the dropdown. */
 export const MAX_SAVED_FILTERS_PER_PROJECT = 50;

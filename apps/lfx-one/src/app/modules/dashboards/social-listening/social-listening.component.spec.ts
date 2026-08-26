@@ -55,6 +55,8 @@ describe('SocialListeningComponent', () => {
   let setBookmarkContext: ReturnType<typeof vi.fn>;
   /** MentionReadStateService harness — `isRead` delegates to the real pure function over the harness state. */
   let readState: WritableSignal<UserPreferenceState<ReadStateData>>;
+  /** Mirrors the service's bulk-rollback tick — bumped when a failed mark-all restores the prior doc. */
+  let bulkRollbackTick: WritableSignal<number>;
   let isRead: ReturnType<typeof vi.fn>;
   let toggleRead: ReturnType<typeof vi.fn>;
   let markAllAsRead: ReturnType<typeof vi.fn>;
@@ -136,6 +138,7 @@ describe('SocialListeningComponent', () => {
     toggleBookmark = vi.fn();
     setBookmarkContext = vi.fn();
     readState = signal<UserPreferenceState<ReadStateData>>(readStateWith());
+    bulkRollbackTick = signal(0);
     isRead = vi.fn((id: string, ts: string) => isReadInState(readState().data, id, ts));
     toggleRead = vi.fn();
     markAllAsRead = vi.fn();
@@ -199,7 +202,7 @@ describe('SocialListeningComponent', () => {
             { provide: MentionBookmarkService, useValue: { state: bookmarkState, setContext: setBookmarkContext, toggleBookmark } },
             {
               provide: MentionReadStateService,
-              useValue: { state: readState, setContext: setReadContext, isRead, toggleRead, markAllAsRead, markAllAsUnread },
+              useValue: { state: readState, bulkRollbackTick, setContext: setReadContext, isRead, toggleRead, markAllAsRead, markAllAsUnread },
             },
             {
               provide: SavedFilterService,
@@ -620,6 +623,27 @@ describe('SocialListeningComponent', () => {
       // Then the refreshed snapshot re-queries with the new cutoff, restarting at page 1.
       expect(fixture.componentInstance.currentPage()).toBe(0);
       expect(feedCalls().at(-1)).toMatchObject({ unreadOnly: true, readBeforeTs: '2026-08-01T00:00:00Z' });
+    });
+
+    it('re-captures the unread snapshot when a failed mark-all rolls back', async () => {
+      readState.set(readStateWith({ readBeforeTs: '2026-08-01 12:00:00' }));
+      fixture.componentInstance.selectedReadFilter.set('unread');
+      await settle();
+      expect(feedCalls().at(-1)).toMatchObject({ unreadOnly: true, readBeforeTs: '2026-08-01 12:00:00' });
+
+      // Optimistic mark-all commits synchronously; the snapshot refreshes onto the new cutoff.
+      markAllAsRead.mockImplementation((ts: string) => readState.set(readStateWith({ readBeforeTs: ts })));
+      fixture.componentInstance.onMarkAllAsRead();
+      await settle();
+      expect(feedCalls().at(-1)).toMatchObject({ unreadOnly: true, readBeforeTs: '2026-08-01T00:00:00Z' });
+
+      // The persist then fails: mergeRollback restores the prior doc and bumps the tick — no loading/error
+      // transition fires, so only the tick dep lets the effect re-capture the restored cutoff.
+      readState.set(readStateWith({ readBeforeTs: '2026-08-01 12:00:00' }));
+      bulkRollbackTick.update((tick) => tick + 1);
+      await settle();
+
+      expect(feedCalls().at(-1)).toMatchObject({ unreadOnly: true, readBeforeTs: '2026-08-01 12:00:00' });
     });
 
     it('restyles a toggled row in place — no refetch, no reshuffle, no total change', async () => {

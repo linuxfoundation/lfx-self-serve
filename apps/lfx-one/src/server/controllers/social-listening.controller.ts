@@ -255,9 +255,11 @@ export class SocialListeningController {
 
     try {
       const scope = parseSocialListeningScope(req, operation);
+      // Tags serve the analytics panel and the filter panel — both read-state-blind, so the unread
+      // feed/count params are not accepted here (parseSocialListeningAnalyticsFilters omits them).
       const tags = await this.socialListeningService.getMentionsTags(req, {
         ...scope,
-        ...parseSocialListeningFilters(req, operation),
+        ...parseSocialListeningAnalyticsFilters(req, operation),
         limit: parseSocialListeningLimit(req, operation, MAX_TAGS_LIMIT),
       });
 
