@@ -4,6 +4,7 @@
 import { IMPORT_REGISTRANTS_MAX } from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
+  ApiRequestOptions,
   ApiResponse,
   AttachmentDownloadUrlResponse,
   Committee,
@@ -265,12 +266,14 @@ export class MeetingService {
    * v1_meeting), so it only returns data when the caller holds the derived host relation —
    * covering direct Zoom co-hosts (registrants with Host=true) as well as anyone with an
    * organizer/writer/coordinator role (project writers, committee writers, meeting coordinators).
-   * Must be called with the user's bearer token active on req — NOT an M2M token.
+   * Must be called with the user's bearer token — NOT an M2M token. Pass `options.bearerToken`
+   * when running this in parallel with other calls that use a different identity (e.g. an M2M
+   * project fetch), so the call doesn't race on `req.bearerToken`.
    *
    * Returns the 6-digit host key string, or null when the user has no access or no credentials
    * document has been indexed yet.
    */
-  public async getMeetingHostKey(req: Request, meetingId: string): Promise<string | null> {
+  public async getMeetingHostKey(req: Request, meetingId: string, options?: ApiRequestOptions): Promise<string | null> {
     logger.debug(req, 'get_meeting_host_key', 'Fetching host key credentials', { meeting_id: meetingId });
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<{ host_key: string }>>(
@@ -278,7 +281,10 @@ export class MeetingService {
       'LFX_V2_SERVICE',
       '/query/resources',
       'GET',
-      { type: 'v1_meeting_host_credentials', tags: `meeting_id:${meetingId}` }
+      { type: 'v1_meeting_host_credentials', tags: `meeting_id:${meetingId}` },
+      undefined,
+      undefined,
+      options
     );
 
     const hostKey = resources?.[0]?.data?.host_key;

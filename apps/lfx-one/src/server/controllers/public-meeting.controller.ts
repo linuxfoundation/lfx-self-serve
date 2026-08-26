@@ -18,9 +18,10 @@ import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { AuthenticationError, AuthorizationError } from '../errors/authentication.error';
 import {
   addInvitedStatusToMeeting,
-  applyHostKeyVisibility,
+  applyOrganizerAndHostKeyResult,
   checkPastMeetingAccess,
   enrichMeetingsWithCreatedBy,
+  resolveOrganizerAndHostKey,
   stripHostKey,
 } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
@@ -75,12 +76,27 @@ export class PublicMeetingController {
 
       const isAuthenticated = req.oidc?.isAuthenticated();
 
-      // Fetch project and invited status in parallel (both depend only on meeting data)
-      const [project, meetingWithInvited] = await Promise.all([
+      // Guard on originalToken, not just isAuthenticated: this is an optional-auth route, so a
+      // token-refresh failure can leave isAuthenticated() true with NO user token captured
+      // (originalToken === undefined) while req.bearerToken still holds the M2M token. Running the
+      // access check in that state would evaluate the application identity — which may hold writer
+      // relations — and leak the host key. Fail closed unless we hold the user's own token.
+      const canRunUserAccessCheck = isAuthenticated && originalToken !== undefined;
+
+      // Fetch project, invited status, and organizer/host-key resolution in parallel. Each call
+      // uses its own identity explicitly (M2M for project/invited-status; the captured user token
+      // for organizer FGA + host-key fetch) so they don't race on the shared req.bearerToken
+      // field. Folding the access-check into this Promise.all — instead of running it serially
+      // after — cuts one round trip off the critical path for every authenticated caller
+      // (LFXV2-2885), which materially reduces exposure to access-check NATS blips.
+      const [project, meetingWithInvited, organizerAndHostKey] = await Promise.all([
         this.projectService.getProjectById(req, meeting.project_uid, false),
         isAuthenticated
           ? addInvitedStatusToMeeting(req, meeting, getEffectiveEmail(req) || '', m2mToken)
           : Promise.resolve(Object.assign(meeting, { invited: false })),
+        canRunUserAccessCheck
+          ? resolveOrganizerAndHostKey(req, this.accessCheckService, this.meetingService, meeting, originalToken)
+          : Promise.resolve({ organizer: false, canViewHostKey: false } as const),
       ]);
       meeting = meetingWithInvited;
 
@@ -92,63 +108,16 @@ export class PublicMeetingController {
         });
       }
 
+      // Apply organizer + host-key resolution. meeting.organizer is used by the private-meeting
+      // access gate and the organizer-only registrant count below; meeting.host_key /
+      // can_view_host_key are the response-side host-key surface. When we couldn't run the user
+      // access check (anonymous or missing user token), fail closed: no organizer, no host key.
+      applyOrganizerAndHostKeyResult(meeting, organizerAndHostKey);
+
       // Resolves the foundation project server-side (LFXV2-3266) so anonymous visitors get
       // breadcrumb/attribution data without an authenticated /api/projects/:uid call from the
-      // client. m2mToken is still active here — the user-token swap below happens later and is
-      // restored before this response is sent.
+      // client. m2mToken is still active on req.bearerToken.
       const parent = await this.resolveParentProject(req, project);
-
-      // Resolve host-key visibility (organizer OR project writer OR committee writer). This sets
-      // meeting.organizer (used for the registrant counts below) and meeting.can_view_host_key,
-      // and strips host_key when the user isn't authorized — the single source of truth for the
-      // gate across every response branch.
-      //
-      // Guard on originalToken, not just isAuthenticated: this is an optional-auth route, so a
-      // token-refresh failure can leave isAuthenticated() true with NO user token captured
-      // (originalToken === undefined) while req.bearerToken still holds the M2M token. Running the
-      // access check in that state would evaluate the application identity — which may hold writer
-      // relations — and leak the host key. Fail closed unless we hold the user's own token.
-      if (isAuthenticated && originalToken !== undefined) {
-        // Temporarily restore user's original token for the access check
-        req.bearerToken = originalToken;
-
-        try {
-          await applyHostKeyVisibility(req, this.accessCheckService, meeting);
-
-          // host_key is no longer on the v2 meeting API response — fetch it from the
-          // separately indexed v1_meeting_host_credentials object (FGA-gated by host relation).
-          // Must run while the user's own token is active, before restoring M2M below.
-          if (meeting.can_view_host_key) {
-            try {
-              const hostKey = await this.meetingService.getMeetingHostKey(req, id);
-              if (hostKey) {
-                meeting.host_key = hostKey;
-              }
-            } catch (error) {
-              logger.warning(req, 'get_public_meeting_by_id', 'Failed to fetch host key credentials, continuing without host key', {
-                meeting_id: id,
-                err: error,
-              });
-            }
-          }
-        } catch (error) {
-          // If the access check fails, log but fail closed (no organizer, no host key)
-          logger.warning(req, 'get_public_meeting_by_id', 'Failed to check host key access, continuing with no access', {
-            err: error,
-            meeting_id: id,
-          });
-          meeting.organizer = false;
-          meeting.can_view_host_key = false;
-          stripHostKey(meeting);
-        }
-
-        // Restore M2M token for subsequent operations (e.g., fetching public join URL)
-        req.bearerToken = m2mToken;
-      } else {
-        meeting.organizer = false;
-        meeting.can_view_host_key = false;
-        stripHostKey(meeting);
-      }
 
       // Fetch registrant counts for organizers, otherwise default to 0
       if (meeting.organizer) {

@@ -22,9 +22,14 @@ import { NextFunction, Request, Response } from 'express';
 
 import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { AuthorizationError, ServiceValidationError } from '../errors';
-import { addInvitedStatusToMeeting, applyHostKeyVisibility, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
+import {
+  addInvitedStatusToMeeting,
+  applyOrganizerAndHostKeyResult,
+  enrichMeetingsWithCreatedBy,
+  isWithinHostKeyWindow,
+  stripHostKey,
+} from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
-import { AccessCheckService } from '../services/access-check.service';
 import { AiService } from '../services/ai.service';
 import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
@@ -43,7 +48,6 @@ export class MeetingController {
   private committeeService: CommitteeService = new CommitteeService();
   private natsService: NatsService = new NatsService();
   private userService: UserService = new UserService();
-  private accessCheckService: AccessCheckService = new AccessCheckService();
 
   /**
    * GET /meetings
@@ -146,8 +150,16 @@ export class MeetingController {
 
       const userEmail = getEffectiveEmail(req) || '';
 
-      // Run registrant counts and invited status check in parallel
-      const [registrants, meetingWithInvitedStatus] = await Promise.all([
+      // meeting.organizer is already set by getMeetingById(access: true) above, so no separate
+      // organizer FGA check is needed here. The query-service enforces the FGA `host` relation
+      // on v1_meeting_host_credentials directly, so an optimistic host-key fetch inside the
+      // time window is safe: unauthorized callers get an empty resources array (null returned).
+      // Skipping the fetch outside the window avoids a wasted round trip for anyone viewing a
+      // meeting far in the future or past — the key would be stripped anyway.
+      const withinHostKeyWindow = isWithinHostKeyWindow(meeting);
+
+      // Run registrant counts, invited status, and host-key fetch in parallel.
+      const [registrants, meetingWithInvitedStatus, hostKey] = await Promise.all([
         // TODO: Remove this once we have a way to get the registrants count
         this.meetingService.getMeetingRegistrants(req, meeting.id).catch((error) => {
           logger.warning(req, 'get_meeting_by_id', 'Failed to fetch registrants for meeting', {
@@ -157,6 +169,15 @@ export class MeetingController {
           return null;
         }),
         addInvitedStatusToMeeting(req, meeting, userEmail),
+        withinHostKeyWindow
+          ? this.meetingService.getMeetingHostKey(req, uid).catch((error) => {
+              logger.warning(req, 'get_meeting_by_id', 'Failed to fetch host key credentials, continuing without host key', {
+                meeting_id: uid,
+                err: error,
+              });
+              return null;
+            })
+          : Promise.resolve(null),
       ]);
 
       if (registrants) {
@@ -168,25 +189,17 @@ export class MeetingController {
         meetingWithInvitedStatus.committee_members_count = 0;
       }
 
-      // Gate the Zoom host key: expose it only to organizer / project writer / committee writer,
-      // stripped for everyone else. Runs on the authenticated user's token (active on this route).
-      await applyHostKeyVisibility(req, this.accessCheckService, meetingWithInvitedStatus);
-
-      // host_key is no longer on the v2 meeting API response — fetch it from the separately
-      // indexed v1_meeting_host_credentials object (FGA-gated by host relation on v1_meeting).
-      if (meetingWithInvitedStatus.can_view_host_key) {
-        try {
-          const hostKey = await this.meetingService.getMeetingHostKey(req, uid);
-          if (hostKey) {
-            meetingWithInvitedStatus.host_key = hostKey;
-          }
-        } catch (error) {
-          logger.warning(req, 'get_meeting_by_id', 'Failed to fetch host key credentials, continuing without host key', {
-            meeting_id: uid,
-            err: error,
-          });
-        }
-      }
+      // Gate the Zoom host key: the query-service enforces FGA `host` on v1_meeting_host_credentials
+      // (covering direct co-hosts AND organizer-derived writers/coordinators), so a null return
+      // means the caller isn't authorized OR no credentials doc is indexed yet — either way, no
+      // key is surfaced. can_view_host_key is derived from a truthy fetch result (LFXV2-2885).
+      // organizer is already resolved (getMeetingById(access: true) above), so only the
+      // host-key half of applyOrganizerAndHostKeyResult's result is meaningful here.
+      applyOrganizerAndHostKeyResult(meetingWithInvitedStatus, {
+        organizer: meetingWithInvitedStatus.organizer ?? false,
+        canViewHostKey: !!hostKey,
+        hostKey: hostKey ?? undefined,
+      });
 
       // The ITX detail payload omits created_by — join back to the live v1_meeting index so
       // the organizer name can be shown. Single meeting keyed on its own UID.
