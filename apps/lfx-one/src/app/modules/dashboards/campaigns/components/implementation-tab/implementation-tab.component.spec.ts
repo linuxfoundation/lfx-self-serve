@@ -1326,6 +1326,52 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
   });
 
   /**
+   * The match-type half of the same backstop, and it needs its own test: the over-cap case above
+   * returns at the LENGTH check, so it never evaluates this branch. Deleting the match-type guard
+   * left the whole app suite green — an unreached guard is not coverage.
+   *
+   * `BROAD_MATCH` rather than `EXACT`: `isMicrosoftMatchType` folds case, so `EXACT` is VALID and
+   * a test built on it would assert the opposite of the contract. Google's SCREAMING_CASE
+   * vocabulary is the realistic source, since the brief's keyword stage is shared with Google Ads
+   * and a draft written from a Google-shaped brief can carry it.
+   *
+   * The list is within every cap, so nothing else can be what fails.
+   */
+  it('blocks submit when a restored draft carries a match type Microsoft has no name for', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftBudgetUsd'].set(100);
+    c['microsoftGeoTargets'].set(['US']);
+    c['microsoftKeywords'].set([
+      { text: 'kubernetes', matchType: 'Exact' },
+      { text: 'service mesh', matchType: 'BROAD_MATCH' },
+    ]);
+    await fixture.whenStable();
+
+    expect(c['microsoftBoundsValid']()).toBe(false);
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The same draft with the match type CORRECTED submits, so the test above cannot pass for an
+   * unrelated reason — without this, a form broken for any other cause would look like coverage.
+   */
+  it('allows submit once that draft carries a match type Microsoft accepts', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftBudgetUsd'].set(100);
+    c['microsoftGeoTargets'].set(['US']);
+    c['microsoftKeywords'].set([
+      { text: 'kubernetes', matchType: 'Exact' },
+      // Upper case on purpose: it is ACCEPTED, because the predicate folds case.
+      { text: 'service mesh', matchType: 'BROAD' },
+    ]);
+    await fixture.whenStable();
+
+    expect(c['microsoftBoundsValid']()).toBe(true);
+  });
+
+  /**
    * Microsoft refuses a supplied CpcBid outside [0.01, 1000] during dispatch, which surfaces as a
    * failed job rather than an error on the click. BLANK stays valid — unset means Microsoft applies
    * the account-currency minimum, a documented serve-capable floor — so an untouched box must not
