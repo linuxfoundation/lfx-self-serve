@@ -16,9 +16,27 @@ const { listPublications, createPublication, getPublication, updatePublication }
 // barrel that pulls in Angular-dependent utils transitively, which breaks JIT
 // compilation in this environment — mock it with the real isUuid regex so the
 // publicationUid guard tests exercise real validation behaviour.
+//
+// `@lfx-one/shared/constants` also needs mocking now that parseIfMatchHeader
+// (server/helpers/validation.helper.ts, imported by the controller under
+// test) pulls it in: the real dashboard-metrics.constants.ts (behind
+// HEALTH_METRICS_RANGES) imports the DashboardDrawerType *enum* — a runtime
+// value, not type-only — from '@lfx-one/shared/interfaces', which the empty
+// interfaces mock above can't provide. Mocking constants directly avoids
+// ever loading that real module and hitting the enum import at all.
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
+vi.mock('@lfx-one/shared/constants', () => ({
+  HEALTH_METRICS_RANGES: [],
+  MONTH_FORMAT_REGEX: /^\d{4}-(0[1-9]|1[0-2])$/,
+  AKRITES_ESCALATION_PATHS: [],
+  AKRITES_INACTIVE_REASON_OPTIONS: [],
+  AKRITES_STEWARD_ROLE_OPTIONS: [],
+  VALID_CLASSIFICATIONS: new Set(),
+  isHealthMetricsRange: () => false,
+}));
 vi.mock('@lfx-one/shared/utils', () => ({
   isUuid: (v: unknown) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v),
+  resolvePeriodRange: vi.fn(),
 }));
 vi.mock('../services/newsletter-publications.service', () => ({
   NewsletterPublicationsService: class {

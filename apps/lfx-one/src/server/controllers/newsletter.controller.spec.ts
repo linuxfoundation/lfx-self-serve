@@ -14,14 +14,30 @@ const { listNewsletters, createNewsletter, updateNewsletter, scheduleNewsletter,
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest
 // config — mock the barrels the controller imports from directly, same as
 // committee.controller.spec.ts / project.controller.spec.ts.
+// parseIfMatchHeader (server/helpers/validation.helper.ts, imported by the
+// controller under test) pulls in the Akrites/health-metrics exports below
+// too, even though nothing here exercises those code paths — several are
+// read at validation.helper.ts's own module top level (e.g.
+// AKRITES_STEWARD_ROLE_OPTIONS.map(...)), so the mock has to provide them or
+// the module fails to evaluate at all, not just at call time.
 vi.mock('@lfx-one/shared/constants', () => ({
   NEWSLETTER_BODY_MAX_LENGTH: 50_000,
   NEWSLETTER_RAW_CONTENT_MAX_LENGTH: 10_000,
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
   NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH: 5_000,
+  HEALTH_METRICS_RANGES: [],
+  MONTH_FORMAT_REGEX: /^\d{4}-(0[1-9]|1[0-2])$/,
+  AKRITES_ESCALATION_PATHS: [],
+  AKRITES_INACTIVE_REASON_OPTIONS: [],
+  AKRITES_STEWARD_ROLE_OPTIONS: [],
+  VALID_CLASSIFICATIONS: new Set(),
+  isHealthMetricsRange: () => false,
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/utils', () => ({ isUuid: vi.fn((v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)) }));
+vi.mock('@lfx-one/shared/utils', () => ({
+  isUuid: vi.fn((v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)),
+  resolvePeriodRange: vi.fn(),
+}));
 
 vi.mock('../services/newsletter.service', () => ({
   NewsletterService: class {
