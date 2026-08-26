@@ -336,7 +336,9 @@ describe('SocialListeningComponent', () => {
       await settle();
 
       expect(fixture.componentInstance.countError()).toBe('Failed to load the mention count');
-      expect(fixture.componentInstance.totalRecords()).toBe(0);
+      // No zero-total masquerade: the provisional total (serverOffset 0 + 100 loaded rows + one pageSize)
+      // keeps Next enabled past the loaded window until the count recovers.
+      expect(fixture.componentInstance.totalRecords()).toBe(120);
     });
   });
 
