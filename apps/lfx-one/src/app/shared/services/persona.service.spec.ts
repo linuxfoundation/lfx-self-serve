@@ -201,4 +201,52 @@ describe('PersonaService — grant probe recency ordering', () => {
       expect(service.isCampaignManager()).toBe(false);
     });
   });
+
+  /**
+   * LFXV2-2235 follow-up (PR #1835, Copilot finding on `confirmActiveGrant`): the force-write
+   * only repairs the global signals at the instant the guard resolves — a newer cross-scope probe
+   * that resolves *after* the guard still passes the global recency check and would overwrite the
+   * global signals with the wrong scope's answer. `grantsByScope` fixes this: each scope's write
+   * goes into its own key so a later cross-scope probe cannot touch another scope's entry.
+   */
+  describe('grantsByScope — per-scope isolation', () => {
+    it('stores per-scope results independently so a later cross-scope probe cannot clobber an earlier confirmed grant', () => {
+      const a$ = service.refreshEnrichedPersonas(true, 'foundation-a');
+      let aResponse: PersonaApiResponse | null = null;
+      a$.subscribe((response) => (aResponse = response));
+
+      // B is issued after A.
+      service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
+
+      // A resolves first with a grant; B resolves after without one.
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true }));
+      http.expectOne((req) => req.url.includes('project=foundation-b')).flush(mockResponse({ isCampaignManager: false }));
+
+      // Guard force-applies A's own response.
+      service.confirmActiveGrant(aResponse!, 'foundation-a');
+
+      // A's per-scope entry must survive B's write and still report the confirmed grant.
+      expect(service.grantsByScope().get('foundation-a')?.isCampaignManager).toBe(true);
+      // B's entry is independently correct.
+      expect(service.grantsByScope().get('foundation-b')?.isCampaignManager).toBe(false);
+    });
+
+    it('writes to grantsByScope from applyPersonaResponse so the per-scope result is available before confirmActiveGrant is called', () => {
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isMarketingAuditor: true }));
+
+      expect(service.grantsByScope().get('foundation-a')).toEqual({ isCampaignManager: true, isMarketingAuditor: true });
+    });
+
+    it('stores a ROOT-cascading grant under the null key regardless of the queried projectSlug', () => {
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(
+        mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true })
+      );
+
+      // ROOT-confirmed grant goes under null, not under the queried slug.
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
+      expect(service.grantsByScope().get('foundation-a')).toBeUndefined();
+    });
+  });
 });

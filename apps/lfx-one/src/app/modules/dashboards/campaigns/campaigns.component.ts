@@ -393,14 +393,18 @@ export class CampaignsComponent {
       return false;
     }
     const slug = this.activeFoundationSlug();
-    // `isCampaignManager()` is a single global signal shared across every foundation's probe —
-    // only trust it for this foundation if `marketingGrantSlug()` (the foundation the most
-    // recently *applied* probe actually answered for) names this same foundation. `null` is the
-    // valid representation of a confirmed ROOT-scoped grant (persona.service.ts), not a mismatch —
-    // exempt it so a ROOT campaign_manager isn't denied the moment a foundation is selected
-    // (dealako finding, PR #1835). Otherwise the true answer belongs to a different,
-    // differently-scoped probe that raced ahead of this one (Copilot finding, PR #1835, on
-    // `applyPersonaResponse`'s cross-scope recency gate).
+    // Read from the per-scope grant map: each scope's result is stored independently, so a newer
+    // cross-scope probe (e.g. sidebar-nav for a different foundation) cannot overwrite this
+    // foundation's confirmed answer — that probe writes into its own key, not this one
+    // (Copilot finding, PR #1835: confirmActiveGrant force-write overwritten by later probe).
+    // Check this foundation's entry first, then fall back to a confirmed ROOT grant (null key).
+    const grants = this.personaService.grantsByScope();
+    const scopedGrant = slug ? grants.get(slug) : undefined;
+    if (scopedGrant?.isCampaignManager) return true;
+    const rootGrant = grants.get(null);
+    if (rootGrant?.isCampaignManager) return true;
+    // No per-scope entry yet (before the guard's first probe for this scope has returned) —
+    // fall back to the global signal with the slug gate for the brief pre-resolve window.
     const grantSlug = this.personaService.marketingGrantSlug();
     if (slug && grantSlug !== null && grantSlug !== slug) {
       return false;
