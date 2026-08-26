@@ -35,7 +35,12 @@ describe('CreatePublicationDialogComponent', () => {
   let ref: DynamicDialogRef;
   let newsletterService: NewsletterService;
 
-  async function create() {
+  // `seed`, when passed, runs after the component is constructed but before
+  // its first change-detection pass — for a test that needs the dialog to
+  // render *already* in some state, rather than transitioning into it after
+  // the first stable render (see the max-length-error test below for why
+  // that distinction matters).
+  async function create(seed?: (c: CreatePublicationDialogComponent) => void) {
     await TestBed.configureTestingModule({
       imports: [CreatePublicationDialogComponent],
       providers: [
@@ -54,6 +59,7 @@ describe('CreatePublicationDialogComponent', () => {
     component = fixture.componentInstance;
     ref = TestBed.inject(DynamicDialogRef);
     newsletterService = TestBed.inject(NewsletterService);
+    seed?.(component);
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -163,13 +169,58 @@ describe('CreatePublicationDialogComponent', () => {
     component.form.controls.name.setValue('a'.repeat(component['maxNameLength'] + 1));
 
     expect(component.form.invalid).toBe(true);
-    await fixture.whenStable();
-    // Also pins the template's error key actually matching what the
-    // validator emits — a drift here (e.g. back to the pre-fix 'maxlength',
-    // which maxCodePointsValidator never sets) would disable Create with no
+  });
+
+  it('renders the max-length error message for a name over the limit', async () => {
+    // Kept alongside the "real typing" test below, deliberately redundant
+    // with it — this one is a deterministic backstop pinned purely to the
+    // validator/template wiring, immune to any CD-timing question, so it
+    // can't flake even if the mechanism below ever turns out to be subtler
+    // than understood. Seeded pre-render, not typed in after create()'s own
+    // first stable render: mutating the control to this exact invalid state
+    // via setValue() *after* that first stable render, then asserting on
+    // the DOM (with or without an intervening fixture.detectChanges()),
+    // deterministically threw NG0100 in this specific test — confirmed
+    // directly, not just inferred from the CI log, by reproducing it
+    // locally in a worktree outside this repo's sandboxed one (which can't
+    // run vitest at all). Seeding the over-limit value before the very
+    // first render sidesteps the transition entirely, and this exact test
+    // (with the seed) was itself verified the same way: it passes as
+    // written, and fails — pinning the real defect — when the template's
+    // error key is mutated back to the pre-fix 'maxlength'.
+    await create((c) => c.form.controls.name.setValue('a'.repeat(c['maxNameLength'] + 1)));
+
+    // Queries the testid, not nativeElement.textContent, and pins the
+    // template's error key actually matching what the validator emits — a
+    // drift here (e.g. back to the pre-fix 'maxlength', which
+    // maxCodePointsValidator never sets) would disable Create with no
     // on-screen explanation, exactly the failure mode noted in the
     // template's own comment.
-    expect(fixture.nativeElement.textContent).toContain('characters or fewer');
+    const error = fixture.nativeElement.querySelector('[data-testid="create-publication-name-error"]');
+    expect(error).not.toBeNull();
+    expect(error.textContent).toContain('characters or fewer');
+  });
+
+  it('shows the max-length error in response to the user actually typing past the limit', async () => {
+    await create();
+
+    // The realistic counterpart to the seeded test above: the dialog always
+    // opens with an empty name, so this is the transition a user actually
+    // triggers. A real 'input' event goes through DefaultValueAccessor's
+    // own host listener, which — unlike a bare setValue() — does notify
+    // zoneless change detection, so this needs no seeding workaround and
+    // renders in response to the edit, not before it. Verified the same way
+    // as the seeded test above: passes as written, fails when the
+    // template's error key regresses to 'maxlength'.
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('[data-testid="create-publication-name-input"] input');
+    expect(input).not.toBeNull();
+    input.value = 'a'.repeat(component['maxNameLength'] + 1);
+    input.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+
+    const error = fixture.nativeElement.querySelector('[data-testid="create-publication-name-error"]');
+    expect(error).not.toBeNull();
+    expect(error.textContent).toContain('characters or fewer');
   });
 
   it('counts code points, not UTF-16 units, so an astral-plane name at the limit is still valid', async () => {

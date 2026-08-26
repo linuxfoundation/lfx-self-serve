@@ -19,7 +19,7 @@
          only exist because the user already typed past the limit, so there's
          no premature-error risk, and gating it would silently disable Create
          with no visible explanation until the next blur. -->
-    <p class="mt-1 text-xs text-red-600" role="alert">Name must be {{ maxNameLength }} characters or fewer</p>
+    <p class="mt-1 text-xs text-red-600" role="alert" data-testid="create-publication-name-error">Name must be {{ maxNameLength }} characters or fewer</p>
   }
   @if (submitError()) {
     <p class="mt-2 text-xs text-red-600" role="alert" data-testid="create-publication-error">{{ submitError() }}</p>
