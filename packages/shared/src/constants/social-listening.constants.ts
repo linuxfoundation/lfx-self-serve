@@ -100,7 +100,10 @@ export const MENTION_FILTER_MAX_VALUES = 200;
 /** UI selection cap per array filter — keeps deep-link URLs within the ~8 KB budget common proxies allow; the server cap stays 200. */
 export const MENTION_FILTER_UI_MAX_VALUES = 50;
 
-/** Cap for the bookmarked-mentions filter — bounds the bookmark store, the HTTP boundary, and the SQL builder. */
+/**
+ * Cap for the bookmarked-mentions filter — bounds the bookmark store, the HTTP boundary, and the SQL builder. The feed/count GETs serialize the ids as
+ * repeated query params, so a saturated set can approach header-size limits (see MENTION_READ_IDS_MAX_VALUES) — same deferred-POST call, no lower cap.
+ */
 export const MENTION_IDS_MAX_VALUES = 500;
 
 /** Cap per read-state ID array (`readIds`/`unreadIds`) — same value as the bookmark cap, distinct semantic: cutoff overrides, not a query bound. */

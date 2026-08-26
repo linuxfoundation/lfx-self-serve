@@ -21,7 +21,7 @@ export type SocialListeningTab = 'feed' | 'analytics';
 /** Bookmark filter: `bookmarked` restricts the feed to the user's persisted bookmark IDs — all-time, so the server skips the date window. */
 export type SocialListeningBookmarkFilter = 'all' | 'bookmarked';
 
-/** Read filter: `unread` narrows the loaded feed window to mentions the user hasn't read — a client-side view filter, never a request param. */
+/** Read filter: `unread` narrows the feed to mentions the user hasn't read — applied server-side on feed/count requests via the `unreadOnly` read-state fragment; the `unread` token itself is never a request param. */
 export type SocialListeningReadFilter = 'all' | 'unread';
 
 /** Preference-name prefixes the BFF proxy accepts — derived from the constants tuple so the two can never drift. */

@@ -30,6 +30,8 @@ export class MentionReadStateService {
   private overflowWarningShown = false;
   // Bumped on each mark-all commit so a queued toggle's rollback can tell when a bulk state superseded it.
   private bulkSeq = 0;
+  // Toggle failures a bulk superseded — a later bulk rollback must not resurrect them from its pre-bulk snapshot.
+  private failedToggleIds = new Set<string>();
 
   private readonly store = new UserPreferenceStore<ReadStateData>({
     transport: {
@@ -46,6 +48,7 @@ export class MentionReadStateService {
     serialize: (state) => JSON.stringify(state),
     onContextChange: () => {
       this.overflowWarningShown = false;
+      this.failedToggleIds.clear();
     },
     onLoadError: () => {
       this.messageService.add({
@@ -83,6 +86,8 @@ export class MentionReadStateService {
 
     const currentlyRead = isReadInState(current, mentionId, mentionTimestamp);
     const bulkAtCommit = this.bulkSeq;
+    // A fresh toggle attempt supersedes an earlier bulk-superseded failure of the same id.
+    this.failedToggleIds.delete(mentionId);
 
     // Warn once per context when readIds nears the cap so users switch to mark-all-as-read.
     if (!currentlyRead && !this.overflowWarningShown && current.readIds.length >= MAX_READ_IDS * 0.9) {
@@ -114,6 +119,7 @@ export class MentionReadStateService {
         // A mark-all queued after this toggle superseded it: `stripped` already matches the bulk state, and
         // restoring the pre-toggle status would undo a bulk action that may have succeeded.
         if (this.bulkSeq !== bulkAtCommit) {
+          this.failedToggleIds.add(mentionId);
           this.store.replace(stripped);
           return;
         }
@@ -167,12 +173,14 @@ export class MentionReadStateService {
     return () => {
       const current = this.store.state().data;
       // A queued toggle's list wins over the restored snapshot — an id in both lists renders as read even when the persisted doc says unread.
+      // `previous` predates any bulk-superseded toggle failure, so failedToggleIds must stay out of the restored lists.
       const toggledIds = new Set([...current.readIds, ...current.unreadIds]);
       this.store.replace({
         readBeforeTs: previous.readBeforeTs,
-        readIds: [...new Set([...previous.readIds.filter((id) => !toggledIds.has(id)), ...current.readIds])],
-        unreadIds: [...new Set([...previous.unreadIds.filter((id) => !toggledIds.has(id)), ...current.unreadIds])],
+        readIds: [...new Set([...previous.readIds.filter((id) => !toggledIds.has(id) && !this.failedToggleIds.has(id)), ...current.readIds])],
+        unreadIds: [...new Set([...previous.unreadIds.filter((id) => !toggledIds.has(id) && !this.failedToggleIds.has(id)), ...current.unreadIds])],
       });
+      this.failedToggleIds.clear();
       this.bulkRollbackTick.update((tick) => tick + 1);
     };
   }
