@@ -385,7 +385,7 @@ environment:
   # "rollback is one value" line onto a future flag whose two paths could both claim the same
   # request — that one needs a no-overlap rollout or a shared runtime configuration source.
   LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS:
-    value:
+    value: "true"
 
   # Persist the generated campaign brief to campaign-service instead of holding it only in the
   # browser tab. Same accepted values and same default-deny as the flag above.
