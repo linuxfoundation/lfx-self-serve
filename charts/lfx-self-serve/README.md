@@ -199,11 +199,18 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`    | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                | No       | off      |
 
-`..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below. It is
-safe on its own: campaign-service mints UUID job ids and the legacy path mints `job_...`, so with
-`..._CREATE` still off no UUID job exists and every poll is answered by the store that holds it.
-`..._BRIEFS` and `..._CREATE` stay off and must be enabled in later changes, only once every pod
-carries this one — see **Rollout ordering** below, which still governs.
+`..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
+**While `..._CREATE` remains off** — the state this chart ships — no UUID job id can exist, so
+every poll is answered by the store that holds it and this flip is inert for job polling.
+**That inertness ends when `..._CREATE` is enabled.** From then on JOBS must be on every pod
+before CREATE, and must stay on until outstanding UUID jobs drain; a pod with JOBS off skips the
+id-shape check entirely and answers a terminal `not_found` for a campaign that is running and
+spending. `..._BRIEFS` and `..._CREATE` stay off and are enabled in later changes, each only once
+the previous has converged — see **Rollout ordering** below, which governs.
+
+One behaviour does change today: with JOBS on, a poll for a UUID job id requires `?project=` and
+is refused with a 400 without it. The LFX One client always sends it, so in-product polling is
+unaffected; a direct API caller or a saved script may not.
 
 Every cutover flag in the table above is ON for `true`, `1`, `yes`, or `on` — trimmed and matched
 case-insensitively, so `"True"` and `" on "` also enable it. Every other value is OFF, including

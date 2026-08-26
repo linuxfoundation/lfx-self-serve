@@ -379,11 +379,19 @@ environment:
   # It is NOT a live switch. This is a container environment variable, so changing it edits the
   # pod template and takes effect only as pods are replaced; with the default replica count and
   # a RollingUpdate, flag-on and flag-off pods serve side by side for the length of the rollout.
-  # That is safe for THIS flag because the source is chosen by the job id's shape as well as by
-  # the flag: a `job_...` id is answered from the in-process map on every pod, flag or no flag,
-  # and a UUID job id cannot exist until campaign creation is cut over too. Do not copy the
+  # The source is chosen by the job id's shape as well as by the flag: a `job_...` id is answered
+  # from the in-process map on every pod, flag or no flag. That made an overlapping rollout safe
+  # for THIS flag while no UUID job id could exist — but that premise EXPIRED when campaign
+  # creation shipped, and holds now only because CREATE below is still off. Once CREATE is on, a
+  # pod with JOBS off skips the id-shape check entirely and answers a terminal `not_found` for a
+  # campaign that is running and SPENDING. Enable JOBS everywhere before CREATE, and keep it on
+  # until outstanding UUID jobs drain; see the CREATE block for the full order. Do not copy the
   # "rollback is one value" line onto a future flag whose two paths could both claim the same
   # request — that one needs a no-overlap rollout or a shared runtime configuration source.
+  #
+  # With this flag on, a poll for a UUID job id requires `?project=` and is refused with a 400
+  # without it (campaign.controller.ts). The LFX One client always sends it; a direct API caller
+  # may not.
   LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS:
     value: "true"
 
