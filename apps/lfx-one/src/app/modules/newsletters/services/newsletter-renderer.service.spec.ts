@@ -98,6 +98,18 @@ describe('NewsletterRendererService (browser)', () => {
     expect(html).not.toContain('PARENT');
   });
 
+  it('renders all each= items when the element also carries an if= guard', () => {
+    // if + each on the same element: the if guards the whole loop against the
+    // parent context, then is dropped for the per-item render so it is not
+    // re-checked against each item (which has no parent-scope field). Without
+    // that, `if="jobs" each="jobs"` would drop every item.
+    const html = service.renderBlock('<section if="jobs" each="jobs"><text>{{title}}</text></section>', {
+      jobs: [{ title: 'Alpha' }, { title: 'Beta' }],
+    });
+    expect(html).toContain('Alpha');
+    expect(html).toContain('Beta');
+  });
+
   it('drops an if=-guarded element when its field is empty (non-edit mode)', () => {
     const shown = service.renderBlock('<text if="title">Section title</text>', { title: 'Present' });
     expect(shown).toContain('Section title');

@@ -227,13 +227,18 @@ export class NewsletterRendererService {
       }
     }
 
-    // Loop: repeat this element (minus `each`) once per array item, binding the
-    // item's fields inside.
+    // Loop: repeat this element (minus `each` and `if`) once per array item,
+    // binding the item's fields inside. `if` was already evaluated above against
+    // the parent context (guarding the whole loop); dropping it here stops the
+    // per-item render from re-checking it against the item context — where a
+    // guard like `if="jobs" each="jobs"` would find no `jobs` field and drop
+    // every item.
     if (attrs['each'] !== undefined) {
       const arr = getPath(ctx.content, attrs['each']);
       if (!Array.isArray(arr)) return '';
       const rest = { ...attrs };
       delete rest['each'];
+      delete rest['if'];
       return arr
         .map((item, i) => {
           // Track the indexed path to this item (e.g. `jobs.0`) so inline-edit
