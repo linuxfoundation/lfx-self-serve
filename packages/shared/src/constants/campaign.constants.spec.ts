@@ -246,11 +246,19 @@ describe('persisted leads objective', () => {
 });
 
 /**
- * Direct coverage for the two shared Microsoft helpers.
+ * Direct coverage for the shared Microsoft helpers exercised below:
+ * `canonicalMicrosoftMatchType`, `isMicrosoftMatchType` (asserted to agree with it), and
+ * `normalizeMicrosoftGeoTargets`.
  *
- * Both had only INDIRECT coverage through the implementation-tab component specs, which exercise
+ * All had only INDIRECT coverage through the implementation-tab component specs, which exercise
  * them via the form. That hides which layer a failure belongs to and leaves the helpers free to
- * drift for any caller that is not the form — and both are exported, so the BFF uses them too.
+ * drift for any caller that is not the form.
+ *
+ * The callers differ, so do not read "the BFF uses these" onto all three:
+ * `isMicrosoftMatchType` and `normalizeMicrosoftGeoTargets` are called by both the form and
+ * `campaign.controller.ts`; `canonicalMicrosoftMatchType` is UI-only today, reached from the
+ * component alone. It is covered here anyway because it is exported and the agreement test below
+ * pins it against the predicate the BFF does use.
  */
 describe('canonicalMicrosoftMatchType', () => {
   it('canonicalises the case and whitespace upstream tolerates', () => {
