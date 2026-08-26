@@ -37,6 +37,7 @@
   </div>
 
   <!-- Cards + paginator (lfx-table is the confirmed paginator wrapper; one card per single-cell row) -->
+  <!-- The page report interpolates the capped paginatorTotalRecords — suppress it above the cap so the header's true total stays authoritative. -->
   <lfx-table
     [value]="mentions()"
     [loading]="loading()"
@@ -47,7 +48,7 @@
     [first]="first()"
     [totalRecords]="paginatorTotalRecords()"
     [rowsPerPageOptions]="rowsPerPageOptions()"
-    [showCurrentPageReport]="true"
+    [showCurrentPageReport]="paginatorTotalRecords() >= totalMentions()"
     currentPageReportTemplate="Showing {first} to {last} of {totalRecords} mentions"
     [alwaysShowPaginator]="totalMentions() > 0 || countError()"
     [skeletonColumns]="1"

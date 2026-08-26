@@ -48,6 +48,8 @@ describe('MentionsListComponent', () => {
   function setMentions(mentions: Mention[]): void {
     fixture.componentRef.setInput('mentions', mentions);
     fixture.componentRef.setInput('totalMentions', mentions.length);
+    // Mirror the parent: the paginator total tracks the true total until the server offset cap kicks in.
+    fixture.componentRef.setInput('paginatorTotalRecords', mentions.length);
   }
 
   function cards(): MentionCardComponent[] {
@@ -147,6 +149,12 @@ describe('MentionsListComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-count"]')).not.toBeNull();
     const table = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
     expect(table.showCurrentPageReport()).toBe(true);
+
+    // Above the server offset cap the report would echo the capped paginator total — it suppresses so the header's true total stays authoritative.
+    fixture.componentRef.setInput('totalMentions', 150000);
+    fixture.componentRef.setInput('paginatorTotalRecords', 100100);
+    await fixture.whenStable();
+    expect(table.showCurrentPageReport()).toBe(false);
   });
 
   it('swaps the empty state for all-caught-up copy in unread view', async () => {
@@ -161,6 +169,6 @@ describe('MentionsListComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-empty-state"]')).toBeNull();
     const allRead = fixture.nativeElement.querySelector('[data-testid="mentions-list-all-read-state"]');
     expect(allRead).not.toBeNull();
-    expect(allRead.textContent).toContain('No unread mentions in this period.');
+    expect(allRead.textContent).toContain('No unread mentions match the current filters.');
   });
 });
