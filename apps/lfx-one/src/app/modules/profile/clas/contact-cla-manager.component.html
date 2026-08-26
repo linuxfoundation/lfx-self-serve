@@ -28,15 +28,47 @@ SPDX-License-Identifier: MIT
       }
     </div>
 
-    <label class="mt-4 mb-2 text-sm font-medium text-slate-700" for="cla-manager-message">Message</label>
+    <label class="mt-4 mb-2 text-sm font-medium text-slate-700" for="cla-manager-message">
+      Message
+      @if (messageRequired) {
+        <span class="text-red-500">*</span>
+      } @else {
+        <span class="font-normal text-slate-400">(optional)</span>
+      }
+    </label>
+    <!-- No native [maxlength] — it counts UTF-16 units and would block an emoji-heavy message below
+         the producer's real code-point limit; messageError and the counter enforce the cap instead. -->
     <lfx-textarea
       class="block w-full"
       [form]="form"
       control="message"
       [rows]="3"
       styleClass="w-full cla-manager-message"
-      placeholder="Add a note for the CLA manager…"
+      [placeholder]="messageRequired ? 'Write your message to the CLA manager…' : 'Add a note for the CLA manager…'"
+      [describedBy]="visibleMessageError() ? 'cla-manager-message-error' : ''"
+      [invalid]="!!visibleMessageError()"
+      [required]="messageRequired"
       id="cla-manager-message" />
+    <div class="mt-1 flex justify-between">
+      @if (visibleMessageError() === 'required') {
+        <p id="cla-manager-message-error" class="text-xs text-red-500" role="alert" data-testid="contact-cla-manager-message-error">A message is required.</p>
+      } @else if (visibleMessageError() === 'too-long') {
+        <p id="cla-manager-message-error" class="text-xs text-red-500" role="alert" data-testid="contact-cla-manager-message-error">
+          Message must be {{ messageMaxLength }} characters or fewer.
+        </p>
+      } @else {
+        <span></span>
+      }
+      <span
+        class="text-xs text-slate-400"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        [attr.aria-label]="messageLength() + ' of ' + messageMaxLength + ' characters used'"
+        data-testid="contact-cla-manager-message-counter">
+        {{ messageLength() }}/{{ messageMaxLength }}
+      </span>
+    </div>
   }
 
   @if (sendError()) {

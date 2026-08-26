@@ -10,6 +10,7 @@
 // authenticated user before searching and reports unverifiable keys in
 // `skippedIdentities` — SS surfaces that as identity-gap telemetry.
 
+import { CLA_MANAGER_REQUEST_TYPES } from '@lfx-one/shared/constants';
 import {
   Auth0Identity,
   ClaGroupOption,
@@ -290,6 +291,10 @@ export function collectClaEmails(primaryEmail: string | null, emailData: EmailMa
 const KNOWN_CLA_STATUSES = new Set<string>(['valid', 'needs_attention', 'revoked', 'invalidated', 'unknown', 'superseded']);
 
 const KNOWN_CLA_SIGNED_VIA = new Set<string>(['github', 'gitlab', 'gerrit']);
+
+// `requestType` values the producer's receipt may echo. A receipt naming some other type is not
+// a receipt for the request that was sent, so it is refused rather than forwarded.
+const KNOWN_CLA_MANAGER_REQUEST_TYPES = new Set<string>(CLA_MANAGER_REQUEST_TYPES);
 
 /** Narrows the wire `status` to `ClaStatus`, or null when it is absent or out of contract. */
 function asClaStatus(status: string | undefined): ClaStatus | null {
@@ -758,9 +763,13 @@ export class ClaService {
   }
 
   /**
-   * Records an approval or removal request and emails the selected CLA managers
+   * Records an approval, removal, or contact request and emails the selected CLA managers
    * (`POST /v4/my-clas/{id}/cla-manager-requests`). Does not change signature state.
    * 404 (unknown / not-owned / ICLA) becomes null, matching getClaManagers.
+   *
+   * The message is passed through as given. A contact request needs a non-blank one — the
+   * producer rejects an empty message for that type — and the controller enforces it, so a
+   * blank one is not quietly dropped here into a request the producer will refuse.
    *
    * No bearerToken override: this is a write, blocked at the route during impersonation,
    * so the default gateway token is the caller EasyCLA should attribute.
@@ -805,7 +814,7 @@ export class ClaService {
     const requestId = result?.requestID?.trim();
     const requestType = result?.requestType;
     const status = result?.status;
-    if (!requestId || (requestType !== 'approval' && requestType !== 'removal') || (status !== 'sent' && status !== 'recorded')) {
+    if (!requestId || !requestType || !KNOWN_CLA_MANAGER_REQUEST_TYPES.has(requestType) || (status !== 'sent' && status !== 'recorded')) {
       throw new MicroserviceError('Upstream recorded no usable CLA manager request', 502, 'UPSTREAM_ERROR', { service: SERVICE });
     }
 

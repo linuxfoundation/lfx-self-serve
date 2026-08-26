@@ -444,13 +444,67 @@ describe('ClasController.createClaManagerRequest', () => {
     });
   });
 
-  it.each(['contact', '', 'approve', undefined])('rejects %p as a request type', async (requestType) => {
+  it.each(['', 'approve', 'CONTACT', undefined])('rejects %p as a request type', async (requestType) => {
     const res = buildRes();
 
     await new ClasController().createClaManagerRequest({ params: { signatureId: SIGNATURE_ID }, body: body({ requestType }) } as any, res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(createClaManagerRequest).not.toHaveBeenCalled();
+  });
+
+  it('forwards a contact request carrying a message', async () => {
+    createClaManagerRequest.mockResolvedValue({ ...receipt, requestType: 'contact' as const });
+
+    await new ClasController().createClaManagerRequest(
+      { params: { signatureId: SIGNATURE_ID }, body: body({ requestType: 'contact', message: '  who owns our list?  ' }) } as any,
+      buildRes(),
+      vi.fn()
+    );
+
+    expect(createClaManagerRequest).toHaveBeenCalledWith(expect.anything(), SIGNATURE_ID, resolvedIdentity, {
+      requestType: 'contact',
+      recipients: ['jdoe'],
+      message: 'who owns our list?',
+    });
+  });
+
+  // The producer refuses a blank contact message; answering here keeps it a usable 400.
+  it.each([undefined, '', '   \n\t '])('rejects a contact request whose message is %j', async (message) => {
+    const res = buildRes();
+
+    await new ClasController().createClaManagerRequest(
+      { params: { signatureId: SIGNATURE_ID }, body: body({ requestType: 'contact', message }) } as any,
+      res,
+      vi.fn()
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(createClaManagerRequest).not.toHaveBeenCalled();
+  });
+
+  it('still accepts approval and removal with no message at all', async () => {
+    createClaManagerRequest.mockResolvedValue(receipt);
+
+    for (const requestType of ['approval', 'removal'] as const) {
+      createClaManagerRequest.mockClear();
+      await new ClasController().createClaManagerRequest({ params: { signatureId: SIGNATURE_ID }, body: body({ requestType }) } as any, buildRes(), vi.fn());
+
+      expect(createClaManagerRequest).toHaveBeenCalledWith(expect.anything(), SIGNATURE_ID, resolvedIdentity, { requestType, recipients: ['jdoe'] });
+    }
+  });
+
+  // Emoji are two UTF-16 units each; counting units would reject at half the producer's rune cap.
+  it('measures the message cap in code points, matching the producer rune limit', async () => {
+    createClaManagerRequest.mockResolvedValue(receipt);
+
+    await new ClasController().createClaManagerRequest(
+      { params: { signatureId: SIGNATURE_ID }, body: body({ message: '🙂'.repeat(4096) }) } as any,
+      buildRes(),
+      vi.fn()
+    );
+
+    expect(createClaManagerRequest).toHaveBeenCalled();
   });
 
   it('rejects an empty recipient list', async () => {
