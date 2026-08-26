@@ -241,12 +241,7 @@ export class PersonaService {
     // After this point the component reads from the map (not the global signals), so a later
     // cross-scope probe that passes the global recency gate cannot clobber this scope's result
     // (Copilot finding, PR #1835: confirmActiveGrant force-write overwritten by later probe).
-    const scopeKey = projectSlug ? this.resolveGrantSlug(response, projectSlug) : null;
-    this._grantsByScope.update((m) => {
-      const next = new Map(m);
-      next.set(scopeKey, { isCampaignManager: response.isCampaignManager ?? false, isMarketingAuditor: response.isMarketingAuditor ?? false });
-      return next;
-    });
+    this.writeGrantForScope(response, projectSlug);
     if (probeId !== undefined && probeId > (latestAppliedForScope ?? -Infinity)) {
       this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);
     }
@@ -268,6 +263,25 @@ export class PersonaService {
     const isRootGrant =
       (response.isMarketingAuditor && response.isMarketingAuditorRootGrant) || (response.isCampaignManager && response.isCampaignManagerRootGrant);
     return isRootGrant ? null : projectSlug;
+  }
+
+  /**
+   * Writes a grant result into {@link _grantsByScope} under the resolved scope key — `null` for a
+   * ROOT-cascading grant, `projectSlug` for a project-scoped one, or `null` when no `projectSlug`
+   * is provided (root-level probe). Centralises the identical update pattern from
+   * {@link applyPersonaResponse} and {@link confirmActiveGrant} so the two write sites cannot
+   * silently diverge.
+   */
+  private writeGrantForScope(
+    response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
+    projectSlug?: string
+  ): void {
+    const scopeKey = projectSlug ? this.resolveGrantSlug(response, projectSlug) : null;
+    this._grantsByScope.update((m) => {
+      const next = new Map(m);
+      next.set(scopeKey, { isCampaignManager: response.isCampaignManager ?? false, isMarketingAuditor: response.isMarketingAuditor ?? false });
+      return next;
+    });
   }
 
   private refreshFromApi(): void {
@@ -324,12 +338,7 @@ export class PersonaService {
       // Also write to the per-scope map so the result for this scope is stored independently.
       // A later cross-scope probe (e.g. sidebar-nav for a different foundation) writes into its
       // own key and cannot overwrite this scope's entry (Copilot finding, PR #1835).
-      const scopeKey = projectSlug ? this.resolveGrantSlug(response, projectSlug) : null;
-      this._grantsByScope.update((m) => {
-        const next = new Map(m);
-        next.set(scopeKey, { isCampaignManager: response.isCampaignManager ?? false, isMarketingAuditor: response.isMarketingAuditor ?? false });
-        return next;
-      });
+      this.writeGrantForScope(response, projectSlug);
       if (probeId !== undefined) {
         this.latestAppliedGrantProbeId = probeId;
         const latestAppliedForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
