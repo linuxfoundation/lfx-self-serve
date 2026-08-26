@@ -128,13 +128,22 @@ export class PersonaDetectionService {
     const marketingOpsFgaEnabled = isServerFeatureEnabled(ServerFeatureFlag.MarketingOpsFga);
     const needsMarketingAuditor = marketingOpsFgaEnabled && (marketingRelations === 'both' || marketingRelations === 'marketing_auditor');
     const needsCampaignManager = marketingOpsFgaEnabled && (marketingRelations === 'both' || marketingRelations === 'campaign_manager');
-    const [detections, isRootWriter, isLFStaff, isMarketingAuditor, isCampaignManager] = await Promise.all([
-      this.getPersonaDetections(req, username, email, cacheKey),
-      this.checkRootWriter(req),
-      this.checkLFStaff(req),
-      needsMarketingAuditor ? this.checkMarketingAuditorAccess(req, projectSlug) : Promise.resolve(false),
-      needsCampaignManager ? this.checkCampaignManagerAccess(req, projectSlug) : Promise.resolve(false),
-    ]);
+    // isMarketingAuditorRootGrant/isCampaignManagerRootGrant reuse checkRootMarketingAuditor/
+    // checkRootCampaignManager's own per-request WeakMap cache (see below) — checkMarketingAuditorAccess/
+    // checkCampaignManagerAccess already call these internally, so resolving them again here doesn't
+    // add a round trip. Surfacing them separately lets the frontend tell a ROOT-cascading grant apart
+    // from a project-scoped one instead of inferring scope from the `projectSlug` it happened to pass
+    // (Copilot finding, PR #1835).
+    const [detections, isRootWriter, isLFStaff, isMarketingAuditor, isCampaignManager, isMarketingAuditorRootGrant, isCampaignManagerRootGrant] =
+      await Promise.all([
+        this.getPersonaDetections(req, username, email, cacheKey),
+        this.checkRootWriter(req),
+        this.checkLFStaff(req),
+        needsMarketingAuditor ? this.checkMarketingAuditorAccess(req, projectSlug) : Promise.resolve(false),
+        needsCampaignManager ? this.checkCampaignManagerAccess(req, projectSlug) : Promise.resolve(false),
+        needsMarketingAuditor ? this.checkRootMarketingAuditor(req) : Promise.resolve(false),
+        needsCampaignManager ? this.checkRootCampaignManager(req) : Promise.resolve(false),
+      ]);
 
     // Compute the per-request persona list without mutating the cached detections object.
     let personas = detections.personas;
@@ -149,7 +158,16 @@ export class PersonaDetectionService {
       personas = this.applyForcedPersona(personas, forcedPersona as PersonaType);
     }
 
-    return { ...detections, personas, isRootWriter, isLFStaff, isMarketingAuditor, isCampaignManager };
+    return {
+      ...detections,
+      personas,
+      isRootWriter,
+      isLFStaff,
+      isMarketingAuditor,
+      isCampaignManager,
+      isMarketingAuditorRootGrant,
+      isCampaignManagerRootGrant,
+    };
   }
 
   public async checkRootWriter(req: Request): Promise<boolean> {
