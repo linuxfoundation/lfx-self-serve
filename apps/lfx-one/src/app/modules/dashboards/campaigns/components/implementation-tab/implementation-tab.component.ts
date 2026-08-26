@@ -1238,7 +1238,12 @@ export class ImplementationTabComponent implements OnInit {
     // and each term at 100 RUNES, and because dispatch is async a violation would surface as a
     // failed job. Counted with the spread, matching the client's rune count — `.length` counts
     // UTF-16 units and would reject a valid CJK or emoji keyword the client accepts.
-    if (this.microsoftKeywords().length >= MICROSOFT_MAX_KEYWORDS) return false;
+    // Counted on the EFFECTIVE list, matching the label, the add-box gate, `microsoftBoundsValid`
+    // and the payload — all five now agree on what "60 keywords" means. Counting the raw rows
+    // instead let a duplicate consume cap the request never spends: after a match-type edit made
+    // two rows collapse into one, the label could read 59/60 with the box open and the add still
+    // refused, and a duplicate row permanently blocked ever reaching 60 unique keywords.
+    if (this.microsoftEffectiveKeywords().length >= MICROSOFT_MAX_KEYWORDS) return false;
     if ([...trimmed].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH) return false;
     // Same control-character rule the BFF and the client apply. Checked on the RAW text, not the
     // trimmed one, matching upstream's pre-trim check — a leading or trailing control char must be

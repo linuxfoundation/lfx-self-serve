@@ -1176,6 +1176,37 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['microsoftDuplicateKeywordCount']()).toBe(1);
   });
 
+  /**
+   * The cap has to count what the REQUEST carries, not how many rows are on screen. Once the
+   * effective list de-dupes, a duplicate row consumes cap the request never spends: 60 raw rows
+   * containing one duplicate are 59 keywords upstream, so refusing the 60th unique keyword
+   * blocks a configuration Microsoft would accept — and no removal short of deleting the
+   * duplicate ever unblocks it.
+   *
+   * The label and the add-box visibility already read the effective length, so the raw count
+   * also disagreed with what the operator was being shown: 59/60 with the box open, and the add
+   * silently refused.
+   */
+  it('counts the cap on the keywords the request will carry', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+
+    // 60 rows, but two share a (matchType, text) pair — so only 59 are sent.
+    const rows = Array.from({ length: 59 }, (_, i) => ({ text: `kw-${i}`, matchType: 'Exact' as const }));
+    rows.push({ text: 'kw-0', matchType: 'Exact' as const });
+    c['microsoftKeywords'].set(rows);
+    expect(c['microsoftKeywords']().length).toBe(60);
+    expect(c['microsoftEffectiveKeywords']().length).toBe(59);
+
+    // There is room for one more, and the operator is being told so.
+    expect(c['addMicrosoftKeyword']('one-more')).toBe(true);
+    expect(c['microsoftEffectiveKeywords']().length).toBe(60);
+
+    // Now genuinely full: the next add is refused on the effective count.
+    expect(c['addMicrosoftKeyword']('over-the-line')).toBe(false);
+    expect(c['microsoftEffectiveKeywords']().length).toBe(60);
+  });
+
   it('clears the box once a keyword is actually added', async () => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);
