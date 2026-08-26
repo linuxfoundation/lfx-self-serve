@@ -32,8 +32,8 @@ export class MentionReadStateService {
   private bulkSeq = 0;
   // Toggle failures a bulk superseded — a later bulk rollback must not resurrect them from its pre-bulk snapshot.
   private failedToggleIds = new Set<string>();
-  // Pre-chain restore base for queued bulk writes — a superseded bulk's unpersisted optimistic state must not become a successor's rollback target.
-  private bulkChainBase: ReadStateData | null = null;
+  // Last state known persisted (load or successful write) — a bulk rollback must never restore a queued write's unpersisted optimistic doc.
+  private lastPersisted: ReadStateData | null = null;
 
   private readonly store = new UserPreferenceStore<ReadStateData>({
     transport: {
@@ -51,7 +51,10 @@ export class MentionReadStateService {
     onContextChange: () => {
       this.overflowWarningShown = false;
       this.failedToggleIds.clear();
-      this.bulkChainBase = null;
+      this.lastPersisted = null;
+    },
+    onLoaded: (result) => {
+      this.lastPersisted = result?.data ?? emptyReadState();
     },
     onLoadError: () => {
       this.messageService.add({
@@ -130,6 +133,7 @@ export class MentionReadStateService {
         const readWithoutToggle = isReadInState(stripped, mentionId, mentionTimestamp);
         this.store.replace(readWithoutToggle === currentlyRead ? stripped : computeReadToggle(stripped, mentionId, mentionTimestamp, readWithoutToggle));
       },
+      onSuccess: (written) => (this.lastPersisted = written),
       onError: () => this.notifyFailure(),
     });
   }
@@ -147,12 +151,11 @@ export class MentionReadStateService {
     if (!latestMentionTs) return;
 
     const bulkAtCommit = ++this.bulkSeq;
-    this.bulkChainBase ??= previous;
     this.store.commit({
       // The newest loaded timestamp becomes the cutoff, so mentions published after it stay unread.
       next: { readBeforeTs: latestMentionTs, readIds: [], unreadIds: [] },
       rollback: this.mergeRollback(previous, bulkAtCommit),
-      onSuccess: () => (this.bulkChainBase = null),
+      onSuccess: (written) => (this.lastPersisted = written),
       onError: () => this.notifyFailure(),
     });
   }
@@ -166,23 +169,21 @@ export class MentionReadStateService {
     this.overflowWarningShown = false;
 
     const bulkAtCommit = ++this.bulkSeq;
-    this.bulkChainBase ??= previous;
     this.store.commit({
       next: emptyReadState(),
       rollback: this.mergeRollback(previous, bulkAtCommit),
-      onSuccess: () => (this.bulkChainBase = null),
+      onSuccess: (written) => (this.lastPersisted = written),
       onError: () => this.notifyFailure(),
     });
   }
 
-  // Bulk-write rollback: restore the pre-chain state and merge id lists so optimistic toggles queued after the bulk commit survive.
+  // Bulk-write rollback: restore the last persisted state and merge id lists so optimistic toggles queued after the bulk commit survive.
   private mergeRollback(previous: ReadStateData, bulkAtCommit: number): () => void {
     return () => {
       // A later bulk superseded this one — its optimistic state (or its own rollback) governs.
       if (this.bulkSeq !== bulkAtCommit) return;
-      // An unbroken queued chain restores the pre-chain base: a failed earlier bulk's optimistic state never persisted, so it can't be a restore target.
-      const base = this.bulkChainBase ?? previous;
-      this.bulkChainBase = null;
+      // `previous` can be a queued bulk's unpersisted optimistic doc — the last persisted state is the only safe restore target.
+      const base = this.lastPersisted ?? previous;
       const current = this.store.state().data;
       // A queued toggle's list wins over the restored snapshot — an id in both lists renders as read even when the persisted doc says unread.
       // The base predates any bulk-superseded toggle failure, so failedToggleIds must stay out of the restored lists.

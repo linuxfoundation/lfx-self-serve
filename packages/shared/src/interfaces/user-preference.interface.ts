@@ -61,7 +61,8 @@ export interface UserPreferenceCommitArgs<T> {
   rebase?: (current: T) => T;
   /** Defaults to restoring the pre-commit snapshot only when no later optimistic update changed state. */
   rollback?: () => void;
-  onSuccess?: () => void;
+  /** Fired once the write (or reconciled retry) lands; receives the post-rebase value actually persisted. */
+  onSuccess?: (written: T) => void;
   onError?: () => void;
 }
 
@@ -73,7 +74,8 @@ export interface UserPreferenceQueuedCommit<T> {
   rebase?: (current: T) => T;
   optimistic: boolean;
   rollback: () => void;
-  onSuccess?: () => void;
+  /** See `UserPreferenceCommitArgs.onSuccess`. */
+  onSuccess?: (written: T) => void;
   onError?: () => void;
 }
 

@@ -75,6 +75,8 @@ describe('UserPreferenceStore', () => {
     (transport.get as ReturnType<typeof vi.fn>).mockReturnValue(of('{"ids":["a"]}'));
 
     store.setContext(ctxA);
+    // The loading gate flips synchronously — before the toObservable effect turn (see `flush`).
+    expect(store.state().loading).toBe(true);
     await flush();
 
     expect(transport.get).toHaveBeenCalledWith('Social Listening Bookmarks - p1');

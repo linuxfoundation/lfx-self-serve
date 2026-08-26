@@ -45,6 +45,8 @@ export class UserPreferenceStore<T> {
     const current = this.contextSignal();
     if (current?.userId === ctx?.userId && current?.projectId === ctx?.projectId) return;
     // Publish the new context before cancelling: concatMap dequeues synchronously on cancel, so queued commits must already fail isSameContext.
+    // Reset state synchronously too — toObservable lags an effect turn, and consumers gate writes on `loading`.
+    this.stateSignal.set({ data: this.config.initial(), loading: !!ctx, readOnly: false, error: null });
     this.contextSignal.set(ctx);
     this.cancelPersist$.next();
   }
@@ -145,7 +147,7 @@ export class UserPreferenceStore<T> {
         // Re-derive against current state so optimistic updates queued after this commit survive.
         this.replace(q.rebase ? q.rebase(this.stateSignal().data) : q.next);
       }
-      q.onSuccess?.();
+      q.onSuccess?.(next);
     };
 
     const onError = (): void => {
