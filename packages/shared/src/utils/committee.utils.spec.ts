@@ -264,6 +264,23 @@ describe('groupCommitteesByFoundation', () => {
     expect(groups.find((g) => g.key === 'uid:proj-z')?.testIdSlug).toBe('foo-bar-2');
   });
 
+  it('pins the testid slug for a label containing an NFKD-expanding compatibility character', () => {
+    // slugify() runs NFKD normalization (added for diacritic-stripping — see
+    // string.utils.spec.ts), which for a *compatibility* character can
+    // expand it into letters rather than just shed a combining mark: '™'
+    // (U+2122) decomposes to 'TM'. Two different labels distinguished only
+    // by such a character ('Alpha' vs 'Alpha™') must still land on distinct,
+    // stable slugs — this pins that they do, and pins what the slug actually
+    // is, so a future slugify change that alters this is a visible diff here
+    // rather than a silent testid drift.
+    const groups = groupCommitteesByFoundation([
+      committee({ uid: 'c1', project_uid: 'proj-a', project_name: 'Alpha' }),
+      committee({ uid: 'c2', project_uid: 'proj-b', project_name: 'Alpha™' }),
+    ]);
+    expect(groups.find((g) => g.key === 'uid:proj-a')?.testIdSlug).toBe('alpha');
+    expect(groups.find((g) => g.key === 'uid:proj-b')?.testIdSlug).toBe('alphatm');
+  });
+
   it("keeps testid slugs unique when a disambiguated suffix collides with another bucket's base slug", () => {
     // Two "Alpha Project" buckets claim alpha-project / alpha-project-2; a third bucket whose own
     // label is literally "Alpha Project 2" bases to alpha-project-2 too. A naive per-base-slug

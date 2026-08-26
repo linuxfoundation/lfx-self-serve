@@ -3,6 +3,29 @@
 
 export const NEWSLETTER_TOTAL_STEPS = 3;
 
+// Upstream's ValidEditorType (lfx-v2-newsletter-service
+// internal/domain/model/publication.go) — the only two values a
+// NewsletterPublication's editor_type can take. Shared here so a literal
+// like 'blocks' is checked against this list at every call site instead of
+// being a same-named-but-uncompared string in each one (the frontend fixed
+// a 'block'/'blocks' typo more than once before this existed).
+export const NEWSLETTER_EDITOR_TYPES = ['classic', 'blocks'] as const;
+
+// Mirrors newsletter-service's internal/service/publication.go maxSlugLength
+// — the hard ceiling on a publication's slug, independent of whatever
+// display-width limit a form puts on the name it's derived from (a name at
+// that limit can still derive a longer slug — see slugify's own doc comment
+// on NFKD expansion).
+export const NEWSLETTER_PUBLICATION_MAX_SLUG_LENGTH = 100;
+
+// UI-only display-width guard for a publication's name. Upstream enforces no
+// length limit at all on name (CreatePublication only requires it non-blank
+// after trimming; the column is a plain TEXT), so this exists purely to keep
+// the input from growing unbounded in list rows and page headers — it is not
+// what bounds the derived slug (NEWSLETTER_PUBLICATION_MAX_SLUG_LENGTH does
+// that independently, via truncateSlug(), regardless of name length).
+export const NEWSLETTER_PUBLICATION_MAX_NAME_LENGTH = 200;
+
 export const NEWSLETTER_STEP_TITLES: Record<number, string> = {
   1: 'Audience',
   2: 'Content',

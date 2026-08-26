@@ -1,9 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NEWSLETTER_EDITOR_TYPES } from '../constants/newsletter.constants';
+
 import { Project } from './project.interface';
 
 export type NewsletterStatusTabId = 'draft' | 'scheduled' | 'sent' | 'optout';
+
+/** Upstream's ValidEditorType — see NEWSLETTER_EDITOR_TYPES for why this is derived, not a literal union of its own. */
+export type NewsletterEditorType = (typeof NEWSLETTER_EDITOR_TYPES)[number];
 
 /**
  * Newsletter lifecycle states: `draft → sending → sent`, or
@@ -154,7 +159,7 @@ export interface NewsletterPublication {
   template_set_id?: string;
   view_online_base?: string;
   /** Which composer this publication's editions open in. Editions inherit it. */
-  editor_type: string;
+  editor_type: NewsletterEditorType;
   /** Optional per-publication From address the editions inherit. */
   sender_email?: string;
   created_by: string;
@@ -175,15 +180,20 @@ export interface CreatePublicationRequest {
   // meaningful.
   template_set_id?: string;
   /** Omitted defaults to the Classic composer upstream. */
-  editor_type?: string;
+  editor_type?: NewsletterEditorType;
   sender_email?: string;
   view_online_base?: string;
+}
+
+/** Dialog input only — never serialized onto the wire, so camelCase here doesn't mirror the snake_case request/response shapes below it. */
+export interface CreatePublicationDialogData {
+  projectUid: string;
 }
 
 export interface UpdatePublicationRequest {
   name?: string;
   wrapper_content?: unknown;
-  editor_type?: string;
+  editor_type?: NewsletterEditorType;
   // Upstream reads these three as three-state: omit the key to leave the
   // stored value alone, send null to clear the column, send a string to set
   // it. `null` is therefore meaningful here and not the same as omitting.

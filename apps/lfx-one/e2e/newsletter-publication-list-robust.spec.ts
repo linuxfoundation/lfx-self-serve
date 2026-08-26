@@ -79,7 +79,7 @@ function buildPublication(overrides: Partial<NewsletterPublication> = {}): Newsl
     name: 'Weekly Digest',
     is_default: true,
     wrapper_content: null,
-    editor_type: 'block',
+    editor_type: 'blocks',
     created_by: 'test-user',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -143,6 +143,22 @@ async function stubBackend(page: Page, publications: NewsletterPublication[]): P
   });
 }
 
+// Registered after stubBackend's own publications route (later registration
+// wins), so everything else (persona/nav/project) still serves normally and
+// only the publications GET fails.
+async function stubBackendFailed(page: Page): Promise<void> {
+  await stubBackend(page, []);
+  await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletter-publications*`, (route) => {
+    if (route.request().method() === 'GET') {
+      // { error: '...' }, not { message: '...' } — see the sibling
+      // stubFailedPublicationsApi in newsletter-publication-list.spec.ts for
+      // why the envelope key matters here.
+      return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'internal error' }) });
+    }
+    return route.fallback();
+  });
+}
+
 // Gated on env vars rather than on URL sniffing so genuine auth-flow regressions
 // (expired storageState, broken Auth0 login helper) still fail loudly when creds
 // ARE configured. URL-based detection silently turned those into green skips.
@@ -171,6 +187,86 @@ test.describe('Newsletter Publication List — Structural Tests', () => {
 
       await expect(page.getByTestId('newsletter-publication-list-card')).toBeAttached({ timeout: PAGE_LOAD_TIMEOUT });
       await expect(page.getByTestId('newsletter-publication-list-all-link')).toBeAttached();
+    });
+
+    test("hides the header 'New publication' button when the project has no publications", async ({ page }) => {
+      await setPersonaCookie(page, ['executive-director']);
+      await stubBackend(page, []);
+      await gotoPublicationList(page);
+
+      await expect(page.getByTestId('newsletter-publication-list-empty-state')).toBeAttached({ timeout: PAGE_LOAD_TIMEOUT });
+      await expect(page.getByTestId('newsletter-publication-list-new-button')).toHaveCount(0);
+    });
+
+    test("shows the header 'New publication' button once at least one publication exists", async ({ page }) => {
+      await setPersonaCookie(page, ['executive-director']);
+      await stubBackend(page, [buildPublication()]);
+      await gotoPublicationList(page);
+
+      await expect(page.locator('[data-testid^="newsletter-publication-row-"]')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
+      await expect(page.getByTestId('newsletter-publication-list-new-button')).toBeAttached();
+    });
+
+    test("hides the header 'New publication' button after a failed load, alongside the empty state", async ({ page }) => {
+      await setPersonaCookie(page, ['executive-director']);
+      await stubBackendFailed(page);
+      await gotoPublicationList(page);
+
+      await expect(page.getByTestId('newsletter-publication-list-error-state')).toBeAttached({ timeout: PAGE_LOAD_TIMEOUT });
+      await expect(page.getByTestId('newsletter-publication-list-new-button')).toHaveCount(0);
+      await expect(page.getByTestId('newsletter-publication-list-empty-state')).toHaveCount(0);
+    });
+  });
+
+  test.describe('Create-publication dialog', () => {
+    test.beforeEach(async ({ page }) => {
+      await setPersonaCookie(page, ['executive-director']);
+      await stubBackend(page, []);
+      await gotoPublicationList(page);
+      await expect(page.getByTestId('newsletter-publication-list-empty-state')).toBeAttached({ timeout: PAGE_LOAD_TIMEOUT });
+      // Scoped role, no name filter: this file asserts the testid contract
+      // isolated from copy changes (see this file's own docstring) — a
+      // getByRole(..., { name: 'Create publication' }) filter would make
+      // this whole block break on a copy change too, same as the content
+      // spec, defeating the split. Scoping to the empty-state testid is what
+      // keeps the query unambiguous without needing the label text.
+      await page.getByTestId('newsletter-publication-list-empty-state').getByRole('button').click();
+    });
+
+    // Presence/nesting only — the content spec (newsletter-publication-list.spec.ts)
+    // exercises the actual create round trip, the 409 failure copy, and the
+    // field-disable-while-submitting behavior; this file only pins that the
+    // testid contract those tests (and any future one) can rely on is stable.
+    test('attaches the dialog and its name field, cancel, and submit testids', async ({ page }) => {
+      await expect(page.getByTestId('create-publication-dialog')).toBeAttached({ timeout: PAGE_LOAD_TIMEOUT });
+      await expect(page.getByTestId('create-publication-name-input')).toBeAttached();
+      await expect(page.getByTestId('create-publication-cancel')).toBeAttached();
+      await expect(page.getByTestId('create-publication-submit')).toBeAttached();
+      // Not attached until a create attempt actually fails.
+      await expect(page.getByTestId('create-publication-error')).toHaveCount(0);
+    });
+
+    test('attaches the inline error testid once a create attempt fails', async ({ page }) => {
+      await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletter-publications*`, (route) => {
+        if (route.request().method() === 'POST') {
+          return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'internal error' }) });
+        }
+        return route.fallback();
+      });
+
+      // Chained under the element's own testid, not getByLabel: this file's
+      // whole point is to stay copy-independent (see the docstring at the
+      // top), and the "Name" label text is exactly the kind of change the
+      // content spec exists to catch instead. The testid lands on the
+      // <lfx-input-text> host, not the input itself (input-text.component.html
+      // forwards its own [id] onto the native <input>, but that's a separate
+      // binding from the host's data-testid), so .fill() needs the descendant
+      // native input, reached by chaining under the host testid rather than a
+      // raw #id selector.
+      await page.getByTestId('create-publication-name-input').locator('input').fill('Weekly Digest');
+      await page.getByTestId('create-publication-submit').click();
+
+      await expect(page.getByTestId('create-publication-error')).toBeAttached({ timeout: PAGE_LOAD_TIMEOUT });
     });
   });
 

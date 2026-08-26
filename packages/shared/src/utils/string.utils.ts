@@ -33,14 +33,42 @@ export function toValidUuid(raw: string | null | undefined): string | undefined 
 /**
  * Converts arbitrary label text into a kebab-case, testid-safe slug (lowercase,
  * alphanumerics only, words joined by single hyphens).
+ *
+ * Diacritics are stripped before collapsing (NFKD-normalize, drop combining
+ * marks), so accented Latin text produces a real slug instead of silently
+ * dropping the accented letters — e.g. "Événements" -> "evenements", not
+ * "v-nements". Scripts with no Latin-equivalent decomposition (CJK, Cyrillic,
+ * etc.) still collapse to '' here, same as before; callers that need every
+ * input to produce a non-empty slug (e.g. a required, derived-from-name field)
+ * need their own fallback for that case.
  * @param text - The label text to slugify
  * @returns A kebab-case slug, e.g. "Meetings Attended" -> "meetings-attended"
  */
 export function slugify(text: string): string {
-  const slug = text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const withoutDiacritics = text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+  const slug = withoutDiacritics.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   const start = slug.startsWith('-') ? 1 : 0;
   const end = slug.endsWith('-') ? slug.length - 1 : slug.length;
   return slug.slice(start, end);
+}
+
+/**
+ * Cuts a slugify()-produced slug down to `maxLength`, re-trimming a trailing
+ * hyphen the cut may have exposed. A plain `slice()` can't introduce a
+ * character outside `[a-z0-9-]` or create a run of hyphens, so a dangling
+ * trailing hyphen (landing the cut right after one) is the only way this can
+ * otherwise violate a `^[a-z0-9]+(-[a-z0-9]+)*$`-style pattern. Needed
+ * because slugify()'s NFKD normalization can expand a character (a
+ * single-codepoint ligature like "fi" can decompose into two letters), so a
+ * slug can end up longer than the text it was derived from: a length cap on
+ * the input doesn't bound the output.
+ * @param slug - A slug already produced by slugify()
+ * @param maxLength - The maximum length to keep
+ * @returns The truncated slug, with no dangling trailing hyphen
+ */
+export function truncateSlug(slug: string, maxLength: number): string {
+  const truncated = slug.slice(0, maxLength);
+  return truncated.endsWith('-') ? truncated.slice(0, -1) : truncated;
 }
 
 /**

@@ -7,6 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NewsletterPublication } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { NEVER, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -30,6 +31,7 @@ describe('NewsletterPublicationListComponent', () => {
   let component: NewsletterPublicationListComponent;
   let newsletterService: NewsletterService;
   let messageService: MessageService;
+  let dialogService: DialogService;
   let router: Router;
   let activeContextUid: WritableSignal<string>;
   // Identifiable rather than `{}`: `{}` can't distinguish "relativeTo the
@@ -45,17 +47,41 @@ describe('NewsletterPublicationListComponent', () => {
     await TestBed.configureTestingModule({
       imports: [NewsletterPublicationListComponent],
       providers: [
+        // createPublication itself is now called by CreatePublicationDialogComponent,
+        // not this component — see its own spec — so it's not stubbed here.
         { provide: NewsletterService, useValue: { listAllPublications: vi.fn() } },
         { provide: ProjectContextService, useValue: { activeContextUid } },
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: Router, useValue: { navigate: vi.fn() } },
         { provide: ActivatedRoute, useValue: routeStub },
       ],
-    }).compileComponents();
+    })
+      // The component declares its own `providers: [DialogService]` (needed
+      // in the real app so each list instance gets its own dialog stack) —
+      // that component-level provider is resolved by the node injector
+      // *before* this TestBed module's injector, so it silently shadows the
+      // mock above: without this override, the component was opening a
+      // real PrimeNG DialogService/Dialog the whole time, and every
+      // assertion against the `dialogService` mock below was checking a spy
+      // the component never actually called.
+      .overrideComponent(NewsletterPublicationListComponent, { remove: { providers: [DialogService] } })
+      .compileComponents();
 
     newsletterService = TestBed.inject(NewsletterService);
     messageService = TestBed.inject(MessageService);
+    dialogService = TestBed.inject(DialogService);
     router = TestBed.inject(Router);
+  }
+
+  // Stubs DialogService.open to return a ref whose onClose emits `result`
+  // once, matching DynamicDialogRef's real contract closely enough for this
+  // component's usage (it only ever reads onClose, never anything else on
+  // the ref). The dialog itself now owns the actual createPublication call
+  // (see CreatePublicationDialogComponent's own spec) — onClose closes with
+  // the created NewsletterPublication directly, not a request payload.
+  function stubDialogClosingWith(result: NewsletterPublication | null | undefined): void {
+    vi.mocked(dialogService.open).mockReturnValue({ onClose: of(result) } as unknown as DynamicDialogRef);
   }
 
   async function create() {
@@ -101,15 +127,75 @@ describe('NewsletterPublicationListComponent', () => {
     expect(component['hasPublications']()).toBe(false);
   });
 
-  it('surfaces a load failure via the message service and clears loading', async () => {
+  it('surfaces a load failure via the message service, clears loading, and marks loadFailed', async () => {
     await setup('proj-1');
-    vi.mocked(newsletterService.listAllPublications).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { message: 'boom' } })));
+    // { error: '...' }, not { message: '...' } — the BFF's error envelope
+    // (BaseApiError.toResponse) keys the upstream reason as `error`.
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom' } })));
 
     await create();
 
     expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Could not load publications', detail: 'boom' }));
     expect(component['loading']()).toBe(false);
     expect(component['publications']()).toEqual([]);
+    expect(component['loadFailed']()).toBe(true);
+  });
+
+  it('retryLoad() re-runs the load against the current project and clears loadFailed on success', async () => {
+    await setup('proj-1');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+    await create();
+    expect(component['loadFailed']()).toBe(true);
+
+    vi.mocked(newsletterService.listAllPublications).mockReturnValueOnce(of({ publications: [makePublication()] }));
+    component['retryLoad']();
+    await fixture.whenStable();
+
+    expect(newsletterService.listAllPublications).toHaveBeenCalledTimes(2);
+    expect(component['loadFailed']()).toBe(false);
+    expect(component['publications']()).toEqual([makePublication()]);
+  });
+
+  it('does not hide an already-populated list behind the error state when a background retry fails', async () => {
+    await setup('proj-1');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValueOnce(of({ publications: [makePublication()] }));
+    await create();
+
+    vi.mocked(newsletterService.listAllPublications).mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+    component['retryLoad']();
+    await fixture.whenStable();
+
+    // The toast still reports the failure (see the message-service test
+    // above for that assertion in isolation) — but with real, still-valid
+    // rows on screen, flipping to the dedicated error empty-state would
+    // hide them behind a "couldn't load" message that isn't true anymore.
+    expect(component['loadFailed']()).toBe(false);
+    expect(component['publications']()).toEqual([makePublication()]);
+  });
+
+  it('shows the skeleton again when Retry is clicked from the error state (there is nothing worth preserving on screen)', async () => {
+    await setup('proj-1');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+    await create();
+    expect(component['loading']()).toBe(false);
+
+    // Left unresolved so the intermediate state (right after retryLoad(),
+    // before the new result lands) is actually observable — the bug this
+    // guards against is Retry leaving `loading` false and the error panel
+    // sitting there with no feedback at all.
+    vi.mocked(newsletterService.listAllPublications).mockReturnValueOnce(NEVER);
+    component['retryLoad']();
+
+    expect(component['loading']()).toBe(true);
+  });
+
+  it('shows the error state with a Retry action instead of the create empty-state after a failed load', async () => {
+    await setup('proj-1');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    await create();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-error-state"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-empty-state"]')).toBeFalsy();
   });
 
   it("navigates to a publication's editions, carrying the publication's own project_uid alongside the publication id", async () => {
@@ -124,14 +210,117 @@ describe('NewsletterPublicationListComponent', () => {
     expect(router.navigate).toHaveBeenCalledWith(['owning-proj', 'pub-42', 'editions'], { relativeTo: routeStub });
   });
 
-  it('routes the empty-state create CTA to the edition composer', async () => {
+  it("opens the create-publication dialog with the current project, and lands on the created publication's editions on success", async () => {
+    await setup('proj-1');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [] }));
+    const created = makePublication({ id: 'new-pub', project_uid: 'proj-1', name: 'Weekly Digest', slug: 'weekly-digest' });
+    stubDialogClosingWith(created);
+    await create();
+
+    component['openCreatePublicationDialog']();
+
+    expect(dialogService.open).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ header: 'Create Publication', data: { projectUid: 'proj-1' } })
+    );
+    // Lands on the new publication's editions — same navigation
+    // goToPublicationEditions itself performs, proving this reuses it rather
+    // than duplicating (and potentially drifting from) that navigation logic.
+    expect(router.navigate).toHaveBeenCalledWith(['proj-1', 'new-pub', 'editions'], { relativeTo: routeStub });
+  });
+
+  it('does not navigate, but does re-list, when the dialog is dismissed via X/Escape (closes with undefined)', async () => {
+    await setup('proj-1');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [] }));
+    // undefined, not null: PrimeNG's own X/Escape/backdrop close affordances
+    // close with no argument, distinct from the dialog's own cancel(), which
+    // closes with `null` (see the next test).
+    stubDialogClosingWith(undefined);
+    await create();
+
+    component['openCreatePublicationDialog']();
+    await fixture.whenStable();
+
+    expect(router.navigate).not.toHaveBeenCalled();
+    // retryLoad() re-fetches defensively — a create request could have been
+    // in flight when the dialog was dismissed this way (see
+    // openCreatePublicationDialog's own doc comment on that race).
+    expect(newsletterService.listAllPublications).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not re-list on an explicit Cancel (closes with null) — a create can never be in flight on that path', async () => {
+    await setup('proj-1');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [] }));
+    stubDialogClosingWith(null);
+    await create();
+
+    component['openCreatePublicationDialog']();
+    await fixture.whenStable();
+
+    expect(router.navigate).not.toHaveBeenCalled();
+    // Only the initial load — cancel() closes with `null` only when it can
+    // prove nothing reached upstream (it checks `attemptFailed` and
+    // `submitting()` itself, not just the template's own [disabled] binding
+    // on its Cancel button — see cancel()'s own doc comment), so there is
+    // nothing a re-list could surface here.
+    expect(newsletterService.listAllPublications).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-lists on a dismissal without clearing the currently-rendered list or re-flashing the skeleton', async () => {
+    await setup('proj-1');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValueOnce(of({ publications: [makePublication()] }));
+    stubDialogClosingWith(undefined);
+    await create();
+    expect(component['publications']()).toEqual([makePublication()]);
+
+    // A second, still-unresolved call for the retry triggered by the
+    // dismissal: if the retry path clears `publications`/`loading`
+    // synchronously (the bug this test guards against), that would already
+    // be visible below before this observable ever emits.
+    vi.mocked(newsletterService.listAllPublications).mockReturnValueOnce(NEVER);
+    component['openCreatePublicationDialog']();
+    await fixture.whenStable();
+
+    expect(component['publications']()).toEqual([makePublication()]);
+    expect(component['loading']()).toBe(false);
+  });
+
+  it('does not open the dialog, but does explain why, when there is no active project', async () => {
+    await setup('');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [] }));
+    await create();
+
+    component['openCreatePublicationDialog']();
+
+    expect(dialogService.open).not.toHaveBeenCalled();
+    // The empty-state CTA is reachable in this same state (an empty
+    // projectUid renders the create empty-state, not an error state) — a
+    // silent no-op click would be a dead-click regression from the
+    // unconditional navigation this replaced.
+    expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+  });
+
+  it("clicking the header 'New publication' button opens the create dialog", async () => {
+    await setup('proj-1');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [makePublication()] }));
+    stubDialogClosingWith(undefined);
+    await create();
+
+    // `[data-testid="..."] button`, not a click on the lfx-button host
+    // element directly: ButtonComponent has no host click listener, only the
+    // inner p-button's native <button> actually fires (click) — a click on
+    // the wrapper itself wouldn't reach openCreatePublicationDialog() at all.
+    fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-new-button"] button').click();
+
+    expect(dialogService.open).toHaveBeenCalled();
+  });
+
+  it("hides the header 'New publication' button when there are no publications yet (the empty state owns the only CTA)", async () => {
     await setup('proj-1');
     vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [] }));
     await create();
 
-    component['goToCreate']();
-
-    expect(router.navigate).toHaveBeenCalledWith(['create'], { relativeTo: routeStub });
+    expect(fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-new-button"]')).toBeFalsy();
   });
 
   it("routes the 'All newsletters' link to the flat list, relative to its own route", async () => {
@@ -154,7 +343,7 @@ describe('NewsletterPublicationListComponent', () => {
     const cardText = fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-card"]').textContent;
     expect(cardText).toContain('No publications yet');
     expect(cardText).toContain('Create a publication to start organizing your newsletters.');
-    expect(cardText).toContain('Create newsletter');
+    expect(cardText).toContain('Create publication');
     expect(fixture.nativeElement.querySelectorAll('[data-testid^="newsletter-publication-row-"]').length).toBe(0);
   });
 

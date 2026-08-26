@@ -6,20 +6,40 @@
     <div class="mb-6">
       <div class="flex justify-between items-center w-full gap-4">
         <h1 class="font-display font-light text-2xl">Newsletter Publications</h1>
-        <!-- Publications only group editions that were filed under one on
-             create; unfiled editions and opt-out management have no other
-             entry point once this page replaces the flat list as the
-             `/newsletters` landing route. -->
-        <a
-          (click)="goToList()"
-          (keydown.enter)="goToList()"
-          role="link"
-          tabindex="0"
-          data-testid="newsletter-publication-list-all-link"
-          class="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 transition-colors shrink-0 cursor-pointer">
-          <i class="fa-light fa-list mr-2"></i>
-          All newsletters
-        </a>
+        <div class="flex items-center gap-4 shrink-0">
+          <!-- Only once there's at least one publication: the empty state's own
+               CTA already covers "create the first one", and showing both at
+               once would just be two ways to do the same thing. hasPublications()
+               is necessarily false whenever loadFailed() is true — loadFailed
+               is only ever set when publications() is already empty (see
+               initLoadOnContext's catchError), so the two are never true
+               together — so this button is never shown after a failed load
+               either — see the loadFailed branch below for why that
+               specifically matters here. -->
+          @if (hasPublications()) {
+            <lfx-button
+              label="New publication"
+              icon="fa-light fa-plus"
+              severity="secondary"
+              size="small"
+              (onClick)="openCreatePublicationDialog()"
+              data-testid="newsletter-publication-list-new-button"></lfx-button>
+          }
+          <!-- Publications only group editions that were filed under one on
+               create; unfiled editions and opt-out management have no other
+               entry point once this page replaces the flat list as the
+               `/newsletters` landing route. -->
+          <a
+            (click)="goToList()"
+            (keydown.enter)="goToList()"
+            role="link"
+            tabindex="0"
+            data-testid="newsletter-publication-list-all-link"
+            class="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 transition-colors shrink-0 cursor-pointer">
+            <i class="fa-light fa-list mr-2"></i>
+            All newsletters
+          </a>
+        </div>
       </div>
       <p class="mt-1 text-sm text-gray-500">Manage your newsletter publications and editions.</p>
     </div>
@@ -32,15 +52,30 @@
             <p-skeleton height="2.5rem"></p-skeleton>
             <p-skeleton height="2.5rem"></p-skeleton>
           </div>
+        } @else if (loadFailed()) {
+          <!-- Distinct from the genuine empty state below: "no publications
+               yet" isn't known to be true here, so this offers Retry rather
+               than a Create CTA that could duplicate a publication the failed
+               load just couldn't show. -->
+          <lfx-empty-state
+            [withCard]="false"
+            icon="fa-light fa-triangle-exclamation"
+            title="Couldn't load publications"
+            subtitle="Something went wrong loading your publications. Please try again."
+            ctaLabel="Retry"
+            ctaIcon="fa-light fa-rotate-right"
+            (ctaClick)="retryLoad()"
+            data-testid="newsletter-publication-list-error-state">
+          </lfx-empty-state>
         } @else if (!hasPublications()) {
           <lfx-empty-state
             [withCard]="false"
             icon="fa-light fa-newspaper"
             title="No publications yet"
             subtitle="Create a publication to start organizing your newsletters."
-            ctaLabel="Create newsletter"
+            ctaLabel="Create publication"
             ctaIcon="fa-light fa-plus"
-            (ctaClick)="goToCreate()"
+            (ctaClick)="openCreatePublicationDialog()"
             data-testid="newsletter-publication-list-empty-state">
           </lfx-empty-state>
         } @else {

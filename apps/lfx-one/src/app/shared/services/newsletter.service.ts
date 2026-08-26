@@ -158,10 +158,11 @@ export class NewsletterService {
   }
 
   // === Publication endpoints ===
-  // `listPublications` backs the publication-list page today. `getPublication`,
-  // `createPublication`, and `updatePublication` are intentionally ahead of
-  // their consumers — the publication create/manage UI is the next increment
-  // (LFXV2-2582 follow-up). Editions are read via `listNewsletters(..., publication_id)`.
+  // `listPublications` and `createPublication` back the publication-list page
+  // (list + its create-publication dialog). `getPublication` and
+  // `updatePublication` are still ahead of their consumers — editing an
+  // existing publication's name/wrapper/etc. is a further LFXV2-2582
+  // follow-up. Editions are read via `listNewsletters(..., publication_id)`.
 
   /**
    * Fetch one page of publications. The server caps the page size, so the

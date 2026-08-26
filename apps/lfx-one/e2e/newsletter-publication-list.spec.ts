@@ -89,7 +89,7 @@ function buildPublication(overrides: Partial<NewsletterPublication> = {}): Newsl
     name: 'Weekly Digest',
     is_default: true,
     wrapper_content: null,
-    editor_type: 'block',
+    editor_type: 'blocks',
     created_by: 'test-user',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -138,6 +138,47 @@ async function stubPublicationsApi(page: Page, publications: NewsletterPublicati
   await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletter-publications*`, (route) => {
     if (route.request().method() === 'GET') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
+    }
+    return route.fallback();
+  });
+}
+
+async function stubFailedPublicationsApi(page: Page): Promise<void> {
+  await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletter-publications*`, (route) => {
+    if (route.request().method() === 'GET') {
+      // { error: '...' }, not { message: '...' } — the BFF's error envelope
+      // (BaseApiError.toResponse) keys the upstream reason as `error`; a
+      // `message`-shaped fixture would pass identically against the
+      // pre-fix err?.error?.message read this commit replaced, so it
+      // wouldn't actually pin the envelope key.
+      return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'internal error' }) });
+    }
+    return route.fallback();
+  });
+}
+
+// Registered after stubPublicationsApi (Playwright tries the most-recently
+// registered route on a matching glob first, falling back to earlier ones),
+// so this only intercepts the POST — the GET list load above still serves it.
+async function stubCreatePublicationApi(page: Page, created: NewsletterPublication): Promise<{ requestBody: unknown }> {
+  const capture: { requestBody: unknown } = { requestBody: undefined };
+  await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletter-publications*`, (route) => {
+    if (route.request().method() === 'POST') {
+      capture.requestBody = route.request().postDataJSON();
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(created) });
+    }
+    return route.fallback();
+  });
+  return capture;
+}
+
+// Same registration-order note as stubCreatePublicationApi above: only
+// intercepts the POST, so the initial GET list load still goes through
+// stubPublicationsApi.
+async function stubFailedCreatePublicationApi(page: Page, status: number, body: unknown): Promise<void> {
+  await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletter-publications*`, (route) => {
+    if (route.request().method() === 'POST') {
+      return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     }
     return route.fallback();
   });
@@ -334,5 +375,135 @@ test.describe('Newsletter publication list — landing page', () => {
       timeout: ELEMENT_TIMEOUT,
     });
     expect(newslettersStub.requestedPublicationId, 'flat list request should be unscoped').toBeNull();
+  });
+
+  test('the empty-state CTA creates a publication and lands on its (empty, scoped) editions view', async ({ page }) => {
+    await stubPublicationsApi(page, []);
+    // Hex, not a mnemonic 'new-pub-id' string: this id becomes the :pubId
+    // route param on the editions navigation below, gated by the same
+    // toValidUuid the row-navigation tests' fixtures are hex-only for — see
+    // the MOCK_PUBLICATION_ID comment earlier in this file for the bug class
+    // a non-hex id here would silently reintroduce.
+    const newPublicationId = 'a0000000-0000-0000-0000-000000000099';
+    const created = buildPublication({ id: newPublicationId, slug: 'weekly-digest', name: 'Weekly Digest' });
+    const createStub = await stubCreatePublicationApi(page, created);
+    // The destination (this brand-new publication's own editions view)
+    // genuinely has none yet — a dedicated empty stub (not
+    // stubNewslettersListApi's non-empty response) that also captures the
+    // publication_id query param, same pattern as stubNewslettersListApi
+    // itself, so the navigation can be asserted as scoped, not just landed.
+    const newslettersStub: { requestedPublicationId: string | null | undefined } = { requestedPublicationId: undefined };
+    await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters*`, (route) => {
+      const url = new URL(route.request().url());
+      if (route.request().method() === 'GET' && url.pathname.endsWith('/newsletters')) {
+        newslettersStub.requestedPublicationId = url.searchParams.get('publication_id');
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ newsletters: [], next_page_token: undefined }) });
+      }
+      return route.fallback();
+    });
+    await gotoPublicationListUrl(page);
+
+    await expect(page.getByTestId('newsletter-publication-list-empty-state'), 'empty state should render first').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await page.getByRole('button', { name: 'Create publication' }).click();
+
+    // getByLabel, not a CSS reach below the input's own testid: the dialog's
+    // <label for="create-publication-name"> is correctly associated (the
+    // wrapper forwards its id input onto the inner native <input>), so this
+    // is the semantic query, not a workaround.
+    const dialogNameInput = page.getByLabel('Name');
+    await expect(dialogNameInput, 'create-publication dialog should open').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await dialogNameInput.fill('Weekly Digest');
+    await page.getByTestId('create-publication-submit').click();
+
+    await expect(page).toHaveURL(new RegExp(`/foundation/newsletters/${MOCK_FOUNDATION_UID}/${newPublicationId}/editions(?:[?&]|$)`));
+    expect(createStub.requestBody, 'derives the slug from the name, and defaults to the block composer').toEqual({
+      name: 'Weekly Digest',
+      slug: 'weekly-digest',
+      editor_type: 'blocks',
+    });
+    expect(newslettersStub.requestedPublicationId, 'lands on a request scoped to the newly created publication').toBe(newPublicationId);
+  });
+
+  test('a 409 on create shows an inline, name-based error and keeps the typed name — second, independent layer over the component spec', async ({ page }) => {
+    // Regression this guards: disabling the name field for the duration of
+    // the request re-enabled it via nameControl.enable() with no options,
+    // which emits on valueChanges by default — the same valueChanges
+    // subscription that clears submitError on a genuine edit then fired on
+    // re-enable itself, wiping the just-set error a heartbeat after the
+    // failure handler set it. The component spec pins this at the unit
+    // layer (see create-publication-dialog.component.spec.ts's "stays open
+    // ... on a create failure" test); this test covers the same regression
+    // end-to-end through the real HTTP stack, since the two layers fail
+    // independently of each other.
+    await stubPublicationsApi(page, []);
+    await stubFailedCreatePublicationApi(page, 409, { error: 'a publication with slug "weekly-digest" already exists in this project' });
+    await gotoPublicationListUrl(page);
+
+    await expect(page.getByTestId('newsletter-publication-list-empty-state'), 'empty state should render first').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await page.getByRole('button', { name: 'Create publication' }).click();
+
+    const dialogNameInput = page.getByLabel('Name');
+    await expect(dialogNameInput, 'create-publication dialog should open').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await dialogNameInput.fill('Weekly Digest');
+    await page.getByTestId('create-publication-submit').click();
+
+    // Upstream's own conflict text names the slug, never shown by this
+    // dialog — this pins the name-based substitute, not the raw string.
+    await expect(page.getByTestId('create-publication-error'), 'inline error should stay visible after the request settles').toContainText(
+      'A publication with a name like "Weekly Digest" already exists in this project. Try a more distinct name.',
+      { timeout: ELEMENT_TIMEOUT }
+    );
+    await expect(dialogNameInput, 'the typed name must not be lost').toHaveValue('Weekly Digest');
+    await expect(dialogNameInput, 'the field re-enables once the request settles').toBeEnabled();
+  });
+
+  test("the header 'New publication' button opens the same create dialog once publications already exist", async ({ page }) => {
+    await stubPublicationsApi(page, [buildPublication()]);
+    await gotoPublicationListUrl(page);
+
+    await expect(page.locator(`[data-testid^="newsletter-publication-row-"]`)).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
+    // Only asserting the dialog opens here — the create flow itself is
+    // pinned end-to-end by the empty-state CTA test above; duplicating that
+    // full round trip for a second entry point into the same dialog would
+    // only prove the same thing twice.
+    await page.getByTestId('newsletter-publication-list-new-button').click();
+
+    await expect(page.getByTestId('create-publication-name-input'), 'create-publication dialog should open').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('shows the error state with Retry (not the create empty-state) when the load fails', async ({ page }) => {
+    await stubFailedPublicationsApi(page);
+    await gotoPublicationListUrl(page);
+
+    // The ready-state testid first, at PAGE_LOAD_TIMEOUT — same convention
+    // every other first-assertion-after-navigation in this file uses
+    // (gotoPublicationListUrl only waits for domcontentloaded, so this is
+    // what actually absorbs SSR render + hydration + the failing round
+    // trip). The toast check that follows, at the smaller ELEMENT_TIMEOUT,
+    // is then effectively instant: the toast and this error state are set
+    // in the same synchronous catchError block, so once this has resolved
+    // the toast has already rendered and is nowhere near its 3s self-dismiss.
+    await expect(page.getByTestId('newsletter-publication-list-error-state'), 'error state should render').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    // Pins the BFF envelope key this fixture is shaped to (`error`, not
+    // `message`).
+    await expect(page.locator('.p-toast'), 'toast should surface the upstream error message').toContainText('internal error', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-publication-list-card')).toContainText("Couldn't load publications");
+    await expect(page.getByTestId('newsletter-publication-list-empty-state'), 'the create-CTA empty state must not also render').toHaveCount(0);
+    await expect(
+      page.getByTestId('newsletter-publication-list-new-button'),
+      'the header create button must not render either — a failed load cannot rule out existing publications'
+    ).toHaveCount(0);
+  });
+
+  test('Retry re-fetches and shows the real list once the load succeeds', async ({ page }) => {
+    await stubFailedPublicationsApi(page);
+    await gotoPublicationListUrl(page);
+    await expect(page.getByTestId('newsletter-publication-list-error-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    await stubPublicationsApi(page, [buildPublication()]);
+    await page.getByRole('button', { name: 'Retry' }).click();
+
+    await expect(page.locator('[data-testid^="newsletter-publication-row-"]')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('newsletter-publication-list-error-state')).toHaveCount(0);
   });
 });
