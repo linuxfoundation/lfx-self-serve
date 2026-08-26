@@ -105,7 +105,9 @@ describe('SocialListeningAnalyticsComponent', () => {
     expect(getMentionsTags).toHaveBeenCalledWith(expected);
     expect(getAnalyticsSentimentDistribution).toHaveBeenCalledWith(expected);
     // Top projects is the one panel that adds its own row cap.
-    expect(getAnalyticsTopProjects).toHaveBeenCalledWith(expect.objectContaining({ foundationSlug: 'cncf', period: 'ytd', limit: ANALYTICS_TOP_PROJECTS_LIMIT }));
+    expect(getAnalyticsTopProjects).toHaveBeenCalledWith(
+      expect.objectContaining({ foundationSlug: 'cncf', period: 'ytd', limit: ANALYTICS_TOP_PROJECTS_LIMIT })
+    );
   });
 
   it('refetches every panel when the scope or feed predicate changes', async () => {
