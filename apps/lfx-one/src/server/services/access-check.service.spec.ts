@@ -127,6 +127,18 @@ describe('AccessCheckService.checkAccess', () => {
 
     expect(result.get('a#writer')).toBe(false);
   });
+
+  it('threads options.bearerToken into the proxy call, distinct from req.bearerToken', async () => {
+    const reqWithToken = { bearerToken: 'req-token' } as unknown as Request;
+    proxyRequest.mockResolvedValueOnce({ results: ['project:a#writer@user:alice\ttrue'] });
+
+    await service.checkAccess(reqWithToken, [{ resource: 'project', id: 'a', access: 'writer' }], { bearerToken: 'override-token' });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    // proxyRequest signature: (req, service, path, method, query, data, customHeaders, options)
+    const options = proxyRequest.mock.calls[0][7];
+    expect(options).toEqual({ bearerToken: 'override-token' });
+  });
 });
 
 describe('AccessCheckService.checkAccessStrict / checkSingleAccessStrict', () => {

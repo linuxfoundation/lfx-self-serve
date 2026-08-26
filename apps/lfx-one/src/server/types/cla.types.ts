@@ -191,8 +191,9 @@ export interface EasyClaMyClaManagerList {
 
 /** Body for `POST /v4/my-clas/{signatureID}/cla-manager-requests` (`#/definitions/my-cla-manager-request`). */
 export interface EasyClaMyClaManagerRequest {
-  requestType: 'approval' | 'removal';
+  requestType: 'approval' | 'removal' | 'contact';
   recipients: string[];
+  /** Required and non-blank for `contact`; the producer rejects an empty one. */
   message?: string;
 }
 
@@ -200,7 +201,7 @@ export interface EasyClaMyClaManagerRequest {
 export interface EasyClaMyClaManagerRequestResult {
   requestID?: string;
   signatureID?: string;
-  requestType?: 'approval' | 'removal';
+  requestType?: 'approval' | 'removal' | 'contact';
   status?: 'sent' | 'recorded';
   recipients?: string[];
 }

@@ -48,10 +48,19 @@ describe('canRequestClaRemoval', () => {
 });
 
 describe('canContactClaManager', () => {
-  it('is true only for Needs-attention ECLA', () => {
+  it('is true for Valid and Needs-attention ECLA', () => {
+    expect(canContactClaManager(agreement({ status: 'valid' }))).toBe(true);
     expect(canContactClaManager(agreement({ status: 'needs_attention' }))).toBe(true);
-    expect(canContactClaManager(agreement({ status: 'valid' }))).toBe(false);
+  });
+
+  it('is false for every other ECLA status', () => {
     expect(canContactClaManager(agreement({ status: 'invalidated' }))).toBe(false);
+    expect(canContactClaManager(agreement({ status: 'revoked' }))).toBe(false);
+    expect(canContactClaManager(agreement({ status: 'unknown' }))).toBe(false);
+  });
+
+  it('is false for ICLA, which has no covering CCLA and so no managers', () => {
+    expect(canContactClaManager(agreement({ kind: 'ICLA', status: 'valid', pdfAvailable: true }))).toBe(false);
     expect(canContactClaManager(agreement({ kind: 'ICLA', status: 'needs_attention', pdfAvailable: true }))).toBe(false);
   });
 });
