@@ -16,7 +16,15 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD
  */
 
-import type { LensItem, NewsletterPublication, NewsletterPublicationListResponse, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
+import type {
+  LensItem,
+  Newsletter,
+  NewsletterListResponse,
+  NewsletterPublication,
+  NewsletterPublicationListResponse,
+  PersistedPersonaState,
+  PersonaType,
+} from '@lfx-one/shared/interfaces';
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
@@ -125,10 +133,34 @@ async function stubPublicationsApi(page: Page, publications: NewsletterPublicati
   });
 }
 
-async function stubEmptyNewslettersApi(page: Page): Promise<void> {
+function buildDraft(): Newsletter {
+  return {
+    id: 'n0000000-0000-0000-0000-000000000aaa',
+    project_uid: MOCK_FOUNDATION_UID,
+    subject: 'Welcome to KubeCon Recap',
+    body_html: '<p>Recap body.</p>',
+    ed_reply_email: 'ed@example.com',
+    committee_uids: [],
+    status: 'draft',
+    total_recipients: 0,
+    created_by: 'test-user',
+    version: 1,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+// A non-empty stub, not an empty one: NewsletterListComponent's 'draft' tab
+// (the default landing tab) branches to its own empty state whenever
+// hasNewsletters() is false, so an empty stub here would make the
+// newsletter-list-table assertion below either fail outright or pass only by
+// racing the brief window where loading() is still true — the destination
+// page's table branch needs at least one row to render deterministically.
+async function stubNewslettersListApi(page: Page): Promise<void> {
+  const listResponse: NewsletterListResponse = { newsletters: [buildDraft()], next_page_token: undefined };
   await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters*`, (route) => {
     if (route.request().method() === 'GET' && new URL(route.request().url()).pathname.endsWith('/newsletters')) {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ newsletters: [], next_page_token: undefined }) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(listResponse) });
     }
     return route.fallback();
   });
@@ -208,7 +240,7 @@ test.describe('Newsletter publication list — landing page', () => {
 
   test("'All newsletters' link routes to the flat, cross-publication list", async ({ page }) => {
     await stubPublicationsApi(page, []);
-    await stubEmptyNewslettersApi(page);
+    await stubNewslettersListApi(page);
     await gotoPublicationListUrl(page);
 
     await expect(page.getByTestId('newsletter-publication-list-empty-state'), 'empty state should render first').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });

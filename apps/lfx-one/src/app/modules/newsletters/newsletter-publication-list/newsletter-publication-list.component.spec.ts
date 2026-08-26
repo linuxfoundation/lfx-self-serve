@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NewsletterPublication } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { NEVER, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { NewsletterPublicationListComponent } from './newsletter-publication-list.component';
@@ -151,7 +151,10 @@ describe('NewsletterPublicationListComponent', () => {
 
     const emptyState = fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-empty-state"]');
     expect(emptyState).toBeTruthy();
-    expect(fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-card"]').textContent).toContain('No publications yet');
+    const cardText = fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-card"]').textContent;
+    expect(cardText).toContain('No publications yet');
+    expect(cardText).toContain('Create a publication to start organizing your newsletters.');
+    expect(cardText).toContain('Create newsletter');
     expect(fixture.nativeElement.querySelectorAll('[data-testid^="newsletter-publication-row-"]').length).toBe(0);
   });
 
@@ -169,23 +172,23 @@ describe('NewsletterPublicationListComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-empty-state"]')).toBeFalsy();
   });
 
-  it('shows loading skeletons before the first emission and hides the empty state and rows', async () => {
-    activeContextUid = signal('proj-1');
-    await TestBed.configureTestingModule({
-      imports: [NewsletterPublicationListComponent],
-      providers: [
-        { provide: NewsletterService, useValue: { listAllPublications: vi.fn().mockReturnValue(of({ publications: [] })) } },
-        { provide: ProjectContextService, useValue: { activeContextUid } },
-        { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: Router, useValue: { navigate: vi.fn() } },
-        { provide: ActivatedRoute, useValue: routeStub },
-      ],
-    }).compileComponents();
+  it('shows loading skeletons while the request is pending, hiding the empty state and rows', async () => {
+    // NEVER, not of(...): toObservable registers a root effect that Angular
+    // flushes within the same detectChanges() pass, before the template
+    // renders — an observable that completes synchronously (like of(...))
+    // would already have set loading(false) by the time this test's
+    // assertions run, same trap the signal-level "starts in the loading
+    // state" test above avoids by never calling detectChanges() at all. A
+    // held-open source is the only way to deterministically pin the pending
+    // state under detectChanges() rather than depending on flush ordering.
+    await setup('proj-1');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(NEVER);
 
     fixture = TestBed.createComponent(NewsletterPublicationListComponent);
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelectorAll('p-skeleton').length).toBeGreaterThan(0);
     expect(fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-empty-state"]')).toBeFalsy();
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="newsletter-publication-row-"]').length).toBe(0);
   });
 });
