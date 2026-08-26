@@ -89,6 +89,20 @@ describe('NewsletterManifestService', () => {
     expect(service.templates()).toEqual([{ key: 'default', label: 'Default' }]);
   });
 
+  it('load scopes the manifest to the owning project UID when one is passed, over the ambient lens', () => {
+    const service = configure('browser', httpGet, 'ambient-proj');
+    service.load('default', 'owning-proj').subscribe();
+
+    expect(httpGet).toHaveBeenCalledWith('/api/projects/owning-proj/newsletters/templates/default/manifest');
+  });
+
+  it('load falls back to the ambient lens when no owning project UID is passed', () => {
+    const service = configure('browser', httpGet, 'ambient-proj');
+    service.load('default').subscribe();
+
+    expect(httpGet).toHaveBeenCalledWith('/api/projects/ambient-proj/newsletters/templates/default/manifest');
+  });
+
   it('no-ops on the server — no fetch, null manifest', () => {
     const service = configure('server', httpGet);
     let emitted: NewsletterTemplateManifest | null | undefined;

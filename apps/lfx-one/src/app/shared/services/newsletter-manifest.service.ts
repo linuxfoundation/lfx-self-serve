@@ -113,7 +113,7 @@ export class NewsletterManifestService {
    * the underlying request is shared per key. No-ops on the server (returns an
    * empty manifest stream).
    */
-  public load(templateKey: string): Observable<NewsletterTemplateManifest | null> {
+  public load(templateKey: string, projectUid?: string | null): Observable<NewsletterTemplateManifest | null> {
     if (!isPlatformBrowser(this.platformId)) {
       return of(null);
     }
@@ -146,8 +146,11 @@ export class NewsletterManifestService {
       return cached;
     }
 
-    const projectUid = this.projectContext.activeContextUid();
-    if (!projectUid) {
+    // Prefer the newsletter's OWNING project (threaded by the caller) over the
+    // ambient lens, so a draft edited from a different lens still loads the
+    // palette against the project that owns it (activeContextUid can 403/404).
+    const uid = projectUid || this.projectContext.activeContextUid();
+    if (!uid) {
       // No project context yet — surface as a load failure the composer can
       // show; nothing is cached, so a later call retries once context exists.
       // In the wizard flow this does not happen: routing resolves the project
@@ -167,7 +170,7 @@ export class NewsletterManifestService {
     if (isLatest()) this.manifestSignal.set(null);
 
     const stream = this.http
-      .get<NewsletterTemplateManifest>(`/api/projects/${encodeURIComponent(projectUid)}/newsletters/templates/${encodeURIComponent(templateKey)}/manifest`)
+      .get<NewsletterTemplateManifest>(`/api/projects/${encodeURIComponent(uid)}/newsletters/templates/${encodeURIComponent(templateKey)}/manifest`)
       .pipe(
         catchError((err: unknown) => {
           console.error('NewsletterManifestService: manifest load failed', { templateKey, err });
@@ -206,7 +209,7 @@ export class NewsletterManifestService {
   }
 
   /** Convenience: kick off the load and take a single emission. */
-  public ensureLoaded(templateKey: string): Observable<NewsletterTemplateManifest | null> {
-    return this.load(templateKey).pipe(take(1));
+  public ensureLoaded(templateKey: string, projectUid?: string | null): Observable<NewsletterTemplateManifest | null> {
+    return this.load(templateKey, projectUid).pipe(take(1));
   }
 }

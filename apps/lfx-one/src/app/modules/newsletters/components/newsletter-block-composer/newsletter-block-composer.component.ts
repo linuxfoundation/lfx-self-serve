@@ -368,7 +368,11 @@ export class NewsletterBlockComposerComponent implements OnInit {
     // before the manifest is here).
     if (isPlatformBrowser(this.platformId)) {
       this.manifestService
-        .ensureLoaded(activeKey)
+        // Thread the newsletter's owning project UID (falling back to the ambient
+        // lens) so the palette loads against the owning project, matching the
+        // render-preview scope. Editing from a different lens would otherwise
+        // 403/404 the palette even though preview uses the correct scope.
+        .ensureLoaded(activeKey, this.projectUid())
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe((manifest) => {
           if (manifest) this.reconcileContainers(manifest);
