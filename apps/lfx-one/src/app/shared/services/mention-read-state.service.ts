@@ -32,6 +32,8 @@ export class MentionReadStateService {
   private bulkSeq = 0;
   // Toggle failures a bulk superseded — a later bulk rollback must not resurrect them from its pre-bulk snapshot.
   private failedToggleIds = new Set<string>();
+  // Pre-chain restore base for queued bulk writes — a superseded bulk's unpersisted optimistic state must not become a successor's rollback target.
+  private bulkChainBase: ReadStateData | null = null;
 
   private readonly store = new UserPreferenceStore<ReadStateData>({
     transport: {
@@ -49,6 +51,7 @@ export class MentionReadStateService {
     onContextChange: () => {
       this.overflowWarningShown = false;
       this.failedToggleIds.clear();
+      this.bulkChainBase = null;
     },
     onLoadError: () => {
       this.messageService.add({
@@ -143,11 +146,13 @@ export class MentionReadStateService {
     // silently hide delayed/backfilled mentions whose timestamps predate "now".
     if (!latestMentionTs) return;
 
-    this.bulkSeq++;
+    const bulkAtCommit = ++this.bulkSeq;
+    this.bulkChainBase ??= previous;
     this.store.commit({
       // The newest loaded timestamp becomes the cutoff, so mentions published after it stay unread.
       next: { readBeforeTs: latestMentionTs, readIds: [], unreadIds: [] },
-      rollback: this.mergeRollback(previous),
+      rollback: this.mergeRollback(previous, bulkAtCommit),
+      onSuccess: () => (this.bulkChainBase = null),
       onError: () => this.notifyFailure(),
     });
   }
@@ -160,25 +165,32 @@ export class MentionReadStateService {
     }
     this.overflowWarningShown = false;
 
-    this.bulkSeq++;
+    const bulkAtCommit = ++this.bulkSeq;
+    this.bulkChainBase ??= previous;
     this.store.commit({
       next: emptyReadState(),
-      rollback: this.mergeRollback(previous),
+      rollback: this.mergeRollback(previous, bulkAtCommit),
+      onSuccess: () => (this.bulkChainBase = null),
       onError: () => this.notifyFailure(),
     });
   }
 
-  // Bulk-write rollback: restore the prior cutoff and merge id lists so optimistic toggles queued after the bulk commit survive.
-  private mergeRollback(previous: ReadStateData): () => void {
+  // Bulk-write rollback: restore the pre-chain state and merge id lists so optimistic toggles queued after the bulk commit survive.
+  private mergeRollback(previous: ReadStateData, bulkAtCommit: number): () => void {
     return () => {
+      // A later bulk superseded this one — its optimistic state (or its own rollback) governs.
+      if (this.bulkSeq !== bulkAtCommit) return;
+      // An unbroken queued chain restores the pre-chain base: a failed earlier bulk's optimistic state never persisted, so it can't be a restore target.
+      const base = this.bulkChainBase ?? previous;
+      this.bulkChainBase = null;
       const current = this.store.state().data;
       // A queued toggle's list wins over the restored snapshot — an id in both lists renders as read even when the persisted doc says unread.
-      // `previous` predates any bulk-superseded toggle failure, so failedToggleIds must stay out of the restored lists.
+      // The base predates any bulk-superseded toggle failure, so failedToggleIds must stay out of the restored lists.
       const toggledIds = new Set([...current.readIds, ...current.unreadIds]);
       this.store.replace({
-        readBeforeTs: previous.readBeforeTs,
-        readIds: [...new Set([...previous.readIds.filter((id) => !toggledIds.has(id) && !this.failedToggleIds.has(id)), ...current.readIds])],
-        unreadIds: [...new Set([...previous.unreadIds.filter((id) => !toggledIds.has(id) && !this.failedToggleIds.has(id)), ...current.unreadIds])],
+        readBeforeTs: base.readBeforeTs,
+        readIds: [...new Set([...base.readIds.filter((id) => !toggledIds.has(id) && !this.failedToggleIds.has(id)), ...current.readIds])],
+        unreadIds: [...new Set([...base.unreadIds.filter((id) => !toggledIds.has(id) && !this.failedToggleIds.has(id)), ...current.unreadIds])],
       });
       this.failedToggleIds.clear();
       this.bulkRollbackTick.update((tick) => tick + 1);

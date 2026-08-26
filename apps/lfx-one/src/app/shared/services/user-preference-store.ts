@@ -142,7 +142,8 @@ export class UserPreferenceStore<T> {
     const onSuccess = (): void => {
       if (!isSameContext()) return;
       if (!q.optimistic) {
-        this.replace(next);
+        // Re-derive against current state so optimistic updates queued after this commit survive.
+        this.replace(q.rebase ? q.rebase(this.stateSignal().data) : q.next);
       }
       q.onSuccess?.();
     };

@@ -233,6 +233,44 @@ describe('UserPreferenceStore', () => {
     expect(store.state().data).toEqual({ ids: ['x'] });
   });
 
+  it('keeps a later optimistic update when a non-optimistic commit succeeds', async () => {
+    const { store, transport } = createStore();
+    const putA = deferred<undefined>();
+    const putB = deferred<undefined>();
+    (transport.get as ReturnType<typeof vi.fn>).mockReturnValue(of('{"ids":["a"]}'));
+    (transport.put as ReturnType<typeof vi.fn>).mockReturnValueOnce(putA.observable).mockReturnValueOnce(putB.observable);
+
+    store.setContext(ctxA);
+    await flush();
+    expect(store.state().data).toEqual({ ids: ['a'] });
+
+    // Non-optimistic removal of 'a' (the row stays visible until the write round-trips)...
+    store.commit({
+      next: { ids: [] },
+      rebase: (current) => ({ ids: current.ids.filter((id) => id !== 'a') }),
+      optimistic: false,
+    });
+    // ...then an optimistic save of 'b' while the removal is in flight.
+    store.commit({
+      next: { ids: ['a', 'b'] },
+      rebase: (current) => (current.ids.includes('b') ? current : { ids: [...current.ids, 'b'] }),
+    });
+    expect(store.state().data).toEqual({ ids: ['a', 'b'] });
+
+    putA.resolve(undefined);
+    await flush();
+
+    // The removal success re-derives against current state — it must not clobber the queued save.
+    expect(store.state().data).toEqual({ ids: ['b'] });
+
+    putB.resolve(undefined);
+    await flush();
+
+    expect(transport.put).toHaveBeenNthCalledWith(1, 'Social Listening Bookmarks - p1', '{"ids":[]}');
+    expect(transport.put).toHaveBeenNthCalledWith(2, 'Social Listening Bookmarks - p1', '{"ids":["b"]}');
+    expect(store.state().data).toEqual({ ids: ['b'] });
+  });
+
   it('applies non-optimistic commits only after the write succeeds', async () => {
     const { store, transport } = createStore();
     const put = deferred<undefined>();

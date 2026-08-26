@@ -268,6 +268,68 @@ describe('MentionReadStateService', () => {
     expect(service.state().data).toEqual(EMPTY_READ_STATE);
   });
 
+  it('a failed mark-all does not roll back over a later superseding bulk action', async () => {
+    socialListeningService.getPreference.mockReturnValueOnce(of(storedDoc({ readBeforeTs: CUTOFF })));
+    service.setContext(ctx);
+    await flush();
+
+    // Bulk 1's write and reconcile re-GET both fail; bulk 2's write succeeds. Failures land asynchronously
+    // so both bulk commits are queued (and bulk 2's optimistic state applied) before rollback 1 runs.
+    socialListeningService.upsertPreference
+      .mockReturnValueOnce(throwError(() => new Error('write lost')).pipe(observeOn(asapScheduler)))
+      .mockReturnValue(of(undefined));
+    socialListeningService.getPreference.mockReturnValue(throwError(() => new Error('read lost')));
+
+    service.markAllAsRead(TS);
+    service.markAllAsUnread();
+    await flush();
+
+    // Bulk 1's rollback is superseded: it must not restore the old cutoff over bulk 2's optimistic reset,
+    // which is also what bulk 2 persisted server-side.
+    expect(socialListeningService.upsertPreference).toHaveBeenNthCalledWith(1, preferenceName, storedDoc({ readBeforeTs: TS }));
+    expect(socialListeningService.upsertPreference).toHaveBeenNthCalledWith(2, preferenceName, storedDoc({}));
+    expect(service.state().data).toEqual(EMPTY_READ_STATE);
+    expect(messageService.add).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores the pre-chain state when every queued bulk write fails', async () => {
+    socialListeningService.getPreference.mockReturnValueOnce(of(storedDoc({ readBeforeTs: CUTOFF })));
+    service.setContext(ctx);
+    await flush();
+
+    socialListeningService.upsertPreference.mockReturnValue(throwError(() => new Error('write lost')).pipe(observeOn(asapScheduler)));
+    socialListeningService.getPreference.mockReturnValue(throwError(() => new Error('read lost')));
+
+    service.markAllAsRead(TS);
+    service.markAllAsUnread();
+    await flush();
+
+    // Bulk 2's captured "previous" was bulk 1's optimistic cutoff, which never persisted — the rollback
+    // must restore the pre-chain doc instead.
+    expect(service.state().data).toEqual({ readBeforeTs: CUTOFF, readIds: [], unreadIds: [] });
+    expect(messageService.add).toHaveBeenCalledTimes(2);
+  });
+
+  it('rolls a failed later bulk back to the earlier bulk state once that write persisted', async () => {
+    socialListeningService.getPreference.mockReturnValueOnce(of(storedDoc({ readBeforeTs: CUTOFF })));
+    service.setContext(ctx);
+    await flush();
+
+    // Bulk 1 succeeds; bulk 2's write and reconcile re-GET both fail.
+    socialListeningService.upsertPreference
+      .mockReturnValueOnce(of(undefined))
+      .mockReturnValueOnce(throwError(() => new Error('write lost')).pipe(observeOn(asapScheduler)));
+    socialListeningService.getPreference.mockReturnValue(throwError(() => new Error('read lost')));
+
+    service.markAllAsRead(TS);
+    service.markAllAsUnread();
+    await flush();
+
+    // Bulk 1's cutoff persisted, so it is the correct restore target for bulk 2's failure.
+    expect(service.state().data).toEqual({ readBeforeTs: TS, readIds: [], unreadIds: [] });
+    expect(messageService.add).toHaveBeenCalledTimes(1);
+  });
+
   it('no-ops commits before any context is set', async () => {
     service.toggleRead('m1', TS);
     service.markAllAsRead(TS);
