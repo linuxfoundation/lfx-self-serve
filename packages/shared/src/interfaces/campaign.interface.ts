@@ -1739,6 +1739,22 @@ export interface CampaignServiceCampaignMetrics {
   cost_micros: number;
   /** Clicks/Impressions, 0 when impressions is 0. */
   ctr: number;
+  /**
+   * Conversions attributed to this campaign over the window.
+   *
+   * FRACTIONAL, and deliberately not an integer: Google Ads and Microsoft both type this as a
+   * double and credit PARTIAL conversions under data-driven, position-based and offline
+   * attribution, so 0.4 of a conversion is a real value. Do not round it, and in particular do
+   * not treat a value below 1 as zero.
+   *
+   * ABSENT means "not measured here", which is NOT a measured 0. Meta, X, Reddit and the email
+   * channel never report a campaign-level conversion count, and Microsoft omits it whenever the
+   * ConversionsQualified column is missing or any row's cell is blank — that column is only
+   * populated for accounts wired for Universal Event Tracking, and a partial column summed as
+   * though it were complete would understate the campaign. So a consumer must not render an
+   * absent value as zero or fold it into a conversion total.
+   */
+  conversions?: number;
   email?: CampaignServiceEmailMetrics;
 }
 
@@ -1785,7 +1801,7 @@ export interface BriefMetricsRow {
  * impression floors and how paused campaigns are treated. This is the single-source version.
  */
 export interface BriefMetricsActionItem {
-  rule: 'zero_delivery' | 'underspending' | 'budget_constrained' | 'low_ctr';
+  rule: 'zero_delivery' | 'underspending' | 'budget_constrained' | 'low_ctr' | 'no_conversions';
   priority: 'HIGH' | 'MED';
   campaign_id: string;
   platform: string;

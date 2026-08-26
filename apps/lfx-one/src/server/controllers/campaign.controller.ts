@@ -732,7 +732,27 @@ export class CampaignController {
       return;
     }
 
-    const rawWindow = typeof req.query['window'] === 'string' ? req.query['window'].trim() : '';
+    // ABSENT and MALFORMED are separated before the enum check, because collapsing them makes the
+    // malformed case fail OPEN. A repeated `?window=a&window=b` arrives as an ARRAY, and a
+    // `typeof === 'string'` test alone turns that into `''` — indistinguishable from "no window
+    // given", so the enum check is skipped and the read proceeds on the per-platform default.
+    // That is the substitution this method refuses by design: the response's own `window` field
+    // would then report a period the caller never asked for, as though it had. `project` and
+    // `brief` are safe from the same shape only because an array collapses to `''` and THEIR
+    // guard refuses empty; `window` is legitimately optional, so it has no such backstop.
+    // Matches the repeated-param handling `persistBrief`, `loadBrief` and `searchHubSpotEmails`
+    // already carry.
+    const windowParam = req.query['window'];
+    if (windowParam !== undefined && typeof windowParam !== 'string') {
+      next(
+        ServiceValidationError.forField('window', 'window must be given at most once', {
+          operation: 'campaign_brief_metrics',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    const rawWindow = windowParam === undefined ? '' : windowParam.trim();
     if (rawWindow.length > 0 && !CAMPAIGN_METRICS_WINDOWS.includes(rawWindow as CampaignMetricsWindow)) {
       next(
         ServiceValidationError.forField('window', `window must be one of: ${CAMPAIGN_METRICS_WINDOWS.join(', ')}`, {

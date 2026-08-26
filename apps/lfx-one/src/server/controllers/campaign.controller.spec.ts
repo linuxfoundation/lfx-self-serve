@@ -1488,6 +1488,13 @@ describe('CampaignController.getBriefMetrics', () => {
     ['no project', { brief: 'b-1' }],
     ['a blank brief', { project: 'cncf', brief: '   ' }],
     ['a blank project', { project: '   ', brief: 'b-1' }],
+    // Repeated params, which Express parses as arrays. `project` and `brief` are covered by the
+    // blank guard above once an array collapses to `''`; `window` is NOT — it is legitimately
+    // optional, so "absent" is a valid state and a malformed value that reads as absent would
+    // fail OPEN, serving the per-platform default under a window the caller never chose.
+    ['a repeated project param, which Express parses as an array', { project: ['tlf', 'cncf'], brief: 'b-1' }],
+    ['a repeated brief param, which Express parses as an array', { project: 'cncf', brief: ['b-1', 'b-2'] }],
+    ['a repeated window param, which Express parses as an array', { project: 'cncf', brief: 'b-1', window: ['today', 'today'] }],
   ])('refuses a request with %s', async (_label, query) => {
     const next = vi.fn() as unknown as NextFunction;
 

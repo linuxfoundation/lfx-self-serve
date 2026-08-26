@@ -36,6 +36,8 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./logger.service', () => ({ logger }));
 
 import { JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import { readFileSync } from 'node:fs';
+
 import type { Request } from 'express';
 
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
@@ -2419,6 +2421,92 @@ describe('CampaignServiceClient.getBriefMetrics', () => {
     await expect(new CampaignServiceClient().getBriefMetrics(req, slug, brief)).rejects.toThrow(/requires both the project and the brief/);
 
     expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * `conversions` and the `no_conversions` rule are part of the contract and must survive the
+   * round trip. Both were MISSING from the first version of these types: the fidelity check that
+   * approved them compared against a campaign-service worktree parked on an older feature branch
+   * rather than against `origin/main`, so it confirmed an outdated contract.
+   *
+   * `conversions` is FRACTIONAL and OPTIONAL, and those two properties are the whole point.
+   * Absent means "this channel does not report it" — Meta, X, Reddit and email never do — which
+   * is not a measured 0, so a consumer must not default it. And 0.4 of a conversion is real under
+   * data-driven attribution, so it must not be rounded or floored to zero.
+   */
+  it('preserves a fractional conversions value and the no_conversions rule', async () => {
+    proxyRequest.mockResolvedValue({
+      brief_id: 'b-1',
+      window: 'last_30_days',
+      rows: [
+        {
+          campaign_id: 'c-1',
+          platform: 'google-ads',
+          status: 'ok',
+          metrics: {
+            campaign_id: 'c-1',
+            platform_campaign_id: 'p-1',
+            window: 'last_30_days',
+            impressions: 1840,
+            clicks: 212,
+            cost_micros: 1284000,
+            ctr: 0.1152,
+            conversions: 0.4,
+          },
+          pacing: { pct: 94.2, label: 'normal' },
+        },
+        // Reddit never reports a campaign-level conversion count, so the field is ABSENT here —
+        // not zero. The two rows together are what make the distinction assertable.
+        {
+          campaign_id: 'c-2',
+          platform: 'reddit-ads',
+          status: 'ok',
+          metrics: { campaign_id: 'c-2', platform_campaign_id: 'p-2', window: 'last_30_days', impressions: 10, clicks: 1, cost_micros: 0, ctr: 0.1 },
+          pacing: { label: 'unknown' },
+        },
+      ],
+      ok_count: 2,
+      action_items: [
+        {
+          rule: 'no_conversions',
+          priority: 'MED',
+          campaign_id: 'c-1',
+          platform: 'google-ads',
+          issue: 'No conversions recorded',
+          action: 'Check conversion tracking',
+        },
+      ],
+    });
+
+    const result = await new CampaignServiceClient().getBriefMetrics(req, 'cncf', 'b-1');
+
+    // Neither rounded nor floored to 0 — 0.4 of a conversion is a real value.
+    expect(result.rows[0].metrics?.conversions).toBe(0.4);
+    // ABSENT stays absent. Defaulting it to 0 would claim Reddit measured zero conversions.
+    expect(result.rows[1].metrics?.conversions).toBeUndefined();
+    expect(result.action_items[0].rule).toBe('no_conversions');
+  });
+
+  /**
+   * Pins the two fields against the SHARED TYPES rather than against this file's own fixture.
+   *
+   * The test above cannot do that job: server specs are typechecked by nothing — `tsconfig.spec.json`
+   * includes only `src/app/**` — and `proxyRequest` is an untyped `vi.fn()`, so deleting
+   * `conversions` and `no_conversions` from the interfaces leaves it green. That is precisely how
+   * both fields went missing in the first place, and a test that cannot detect their removal is
+   * not coverage.
+   *
+   * So this reads the declarations as TEXT. Crude, but it is the only assertion here that fails
+   * when the type loses the field, and the failure names what to restore.
+   */
+  it('keeps conversions and the no_conversions rule declared in the shared types', () => {
+    const declarations = readFileSync(new URL('../../../../../packages/shared/src/interfaces/campaign.interface.ts', import.meta.url), 'utf8');
+
+    // Optional, because ABSENT means "this channel does not report it" and is not a measured 0.
+    expect(declarations).toContain('conversions?: number;');
+    // The fifth rule. campaign-service can return it, so an exhaustive consumer that has never
+    // heard of it would drop or mishandle a real action item.
+    expect(declarations).toMatch(/rule: .*'no_conversions'/);
   });
 
   /**
