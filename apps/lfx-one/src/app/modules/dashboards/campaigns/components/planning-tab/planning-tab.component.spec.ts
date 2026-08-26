@@ -804,13 +804,42 @@ describe('PlanningTabComponent delivery-type mode', () => {
 
   it('keeps the ad-copy actions in paid mode', async () => {
     await build('paid-marketing');
-    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
+    const inst = fixture.componentInstance as unknown as Record<string, any>;
+    inst['step'].set('review');
+    // Copy All is additionally gated on the buffer it copies, so a paid brief that HAS copy is
+    // what proves the actions survive. Without this the assertion below would pass for the wrong
+    // reason on a brief that simply had nothing to copy.
+    inst['copyBuffer'].set('{"google_search":{"headlines":["a"]}}');
     fixture.detectChanges();
 
     const host = fixture.nativeElement as HTMLElement;
     expect(host.querySelector('[data-testid="planning-refine-brief-btn"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="planning-edit-brief-btn"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="planning-copy-all-btn"]')).not.toBeNull();
+  });
+
+  /**
+   * A Microsoft-ONLY paid brief is not email, so `!isEmail()` admits it, but it has no ad copy:
+   * Microsoft contributes no copy keys, so `campaign-proxy` emits an empty `copy_structured` and
+   * streams no copy token, leaving `copyBuffer` empty. Copy All then wrote an EMPTY clipboard with
+   * no feedback — the same silent failure the email guard exists to prevent.
+   *
+   * Asserted on the buffer rather than on the platform name so the guard also covers any future
+   * copy-less platform. Refine and Edit deliberately SURVIVE here: unlike email, this brief has a
+   * non-null `structuredCopy` (the empty object), so both are functional.
+   */
+  it('hides Copy All on a paid brief that produced no ad copy', async () => {
+    await build('paid-marketing');
+    const inst = fixture.componentInstance as unknown as Record<string, any>;
+    inst['step'].set('review');
+    inst['copyBuffer'].set('');
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.querySelector('[data-testid="planning-copy-all-btn"]')).toBeNull();
+    // Not the email guard firing by accident: the other two ad-copy actions are still rendered.
+    expect(host.querySelector('[data-testid="planning-refine-brief-btn"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="planning-edit-brief-btn"]')).not.toBeNull();
   });
 
   it('hides the Budget & Assets card in email mode', async () => {
