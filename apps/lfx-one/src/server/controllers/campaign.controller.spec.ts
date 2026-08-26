@@ -1444,7 +1444,7 @@ describe('CampaignController.getBriefMetrics', () => {
     const res = buildRes();
     const next = vi.fn() as unknown as NextFunction;
 
-    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief: 'b-1', window: 'last_7_days' }), res, next);
+    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief_id: 'b-1', window: 'last_7_days' }), res, next);
 
     expect(getBriefMetrics).toHaveBeenCalledWith(expect.anything(), 'cncf', 'b-1', 'last_7_days');
     expect(res.json).toHaveBeenCalledWith(payload);
@@ -1460,7 +1460,7 @@ describe('CampaignController.getBriefMetrics', () => {
   it('passes undefined when no window is given, rather than a default', async () => {
     getBriefMetrics.mockResolvedValue({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] });
 
-    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief: 'b-1' }), buildRes(), vi.fn() as unknown as NextFunction);
+    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief_id: 'b-1' }), buildRes(), vi.fn() as unknown as NextFunction);
 
     expect(getBriefMetrics).toHaveBeenCalledWith(expect.anything(), 'cncf', 'b-1', undefined);
   });
@@ -1473,7 +1473,7 @@ describe('CampaignController.getBriefMetrics', () => {
   it('refuses an unrecognised window instead of dropping it', async () => {
     const next = vi.fn() as unknown as NextFunction;
 
-    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief: 'b-1', window: 'last_90_days' }), buildRes(), next);
+    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief_id: 'b-1', window: 'last_90_days' }), buildRes(), next);
 
     expect(getBriefMetrics).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
@@ -1485,22 +1485,22 @@ describe('CampaignController.getBriefMetrics', () => {
    * another foundation's brief on their behalf.
    */
   it.each([
-    ['no brief', { project: 'cncf' }],
-    ['no project', { brief: 'b-1' }],
-    ['a blank brief', { project: 'cncf', brief: '   ' }],
-    ['a blank project', { project: '   ', brief: 'b-1' }],
+    ['no brief_id', { project: 'cncf' }],
+    ['no project', { brief_id: 'b-1' }],
+    ['a blank brief_id', { project: 'cncf', brief_id: '   ' }],
+    ['a blank project', { project: '   ', brief_id: 'b-1' }],
     // Repeated params, which Express parses as arrays. `project` and `brief` are covered by the
     // blank guard above once an array collapses to `''`; `window` is NOT — it is legitimately
     // optional, so "absent" is a valid state and a malformed value that reads as absent would
     // fail OPEN, serving the per-platform default under a window the caller never chose.
-    ['a repeated project param, which Express parses as an array', { project: ['tlf', 'cncf'], brief: 'b-1' }],
-    ['a repeated brief param, which Express parses as an array', { project: 'cncf', brief: ['b-1', 'b-2'] }],
-    ['a repeated window param, which Express parses as an array', { project: 'cncf', brief: 'b-1', window: ['today', 'today'] }],
+    ['a repeated project param, which Express parses as an array', { project: ['tlf', 'cncf'], brief_id: 'b-1' }],
+    ['a repeated brief_id param, which Express parses as an array', { project: 'cncf', brief_id: ['b-1', 'b-2'] }],
+    ['a repeated window param, which Express parses as an array', { project: 'cncf', brief_id: 'b-1', window: ['today', 'today'] }],
     // PRESENT-BUT-EMPTY is malformed, not absent. `?window=` arrives as a string, so treating it
     // as "no window given" would skip the enum check and serve the default — the same fail-open
     // shape as the array case, one layer in. Only an OMITTED parameter may default.
-    ['an empty window param', { project: 'cncf', brief: 'b-1', window: '' }],
-    ['a whitespace-only window param', { project: 'cncf', brief: 'b-1', window: '   ' }],
+    ['an empty window param', { project: 'cncf', brief_id: 'b-1', window: '' }],
+    ['a whitespace-only window param', { project: 'cncf', brief_id: 'b-1', window: '   ' }],
   ])('refuses a request with %s', async (_label, query) => {
     const next = vi.fn() as unknown as NextFunction;
 
@@ -1516,7 +1516,7 @@ describe('CampaignController.getBriefMetrics', () => {
     const res = buildRes();
     const next = vi.fn() as unknown as NextFunction;
 
-    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief: 'b-1' }), res, next);
+    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief_id: 'b-1' }), res, next);
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.any(Error));

@@ -713,10 +713,13 @@ export class CampaignController {
    * response, whose `window` field would report the default as though it had been requested.
    */
   public async getBriefMetrics(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const briefId = typeof req.query['brief'] === 'string' ? req.query['brief'].trim() : '';
+    // `brief_id`, matching `listBriefCampaigns`, `createCampaign` and `persistBrief` — and matching
+    // what `campaign.service.ts` already sends for `/api/campaigns/list`. A lone `brief` here would
+    // give the first UI integration a spurious 400 for copying the established param pair.
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
     if (briefId.length === 0) {
       next(
-        ServiceValidationError.forField('brief', 'a brief is required to read its campaign metrics', {
+        ServiceValidationError.forField('brief_id', 'a brief is required to read its campaign metrics', {
           operation: 'campaign_brief_metrics',
           service: 'campaign_controller',
         })
