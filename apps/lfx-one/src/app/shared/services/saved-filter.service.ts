@@ -13,8 +13,6 @@ import {
 } from '@lfx-one/shared/utils';
 import { SocialListeningService } from '@services/social-listening.service';
 import { MessageService } from 'primeng/api';
-import { firstValueFrom } from 'rxjs';
-
 import { UserPreferenceStore } from './user-preference-store';
 
 import type { FilterPredicate, PreferenceContext, SavedFilter, SavedFiltersDoc, SavedViewScope } from '@lfx-one/shared/interfaces';
@@ -32,9 +30,9 @@ export class SavedFilterService {
 
   private readonly store = new UserPreferenceStore<SavedFilter[]>({
     transport: {
-      get: (name) => firstValueFrom(this.socialListeningService.getPreference(name)),
-      put: (name, value) => firstValueFrom(this.socialListeningService.upsertPreference(name, value)),
-      delete: (name) => firstValueFrom(this.socialListeningService.deletePreference(name)),
+      get: (name) => this.socialListeningService.getPreference(name),
+      put: (name, value) => this.socialListeningService.upsertPreference(name, value),
+      delete: (name) => this.socialListeningService.deletePreference(name),
     },
     destroyRef: inject(DestroyRef),
     injector: inject(Injector),

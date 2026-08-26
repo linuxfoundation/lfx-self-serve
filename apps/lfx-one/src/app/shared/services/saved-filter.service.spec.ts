@@ -6,7 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { DEFAULT_MENTION_PREDICATE, MAX_SAVED_FILTERS_PER_PROJECT, SAVED_FILTERS_DOC_VERSION } from '@lfx-one/shared/constants';
 import { SocialListeningService } from '@services/social-listening.service';
 import { MessageService } from 'primeng/api';
-import { NEVER, Subject, of, throwError } from 'rxjs';
+import { NEVER, Subject, asapScheduler, observeOn, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SavedFilterService } from './saved-filter.service';
@@ -235,7 +235,8 @@ describe('SavedFilterService', () => {
     await flush();
 
     // The store reconciles a failed write with a re-GET — both must fail for onError to fire.
-    socialListeningService.upsertPreference.mockReturnValue(throwError(() => new Error('write lost')));
+    // The failure is delivered asynchronously so the optimistic state is observable before the rollback (HTTP never fails synchronously).
+    socialListeningService.upsertPreference.mockReturnValue(throwError(() => new Error('write lost')).pipe(observeOn(asapScheduler)));
     socialListeningService.getPreference.mockReturnValue(throwError(() => new Error('read lost')));
 
     service.addSavedFilter('Crisis', predicate(), validScope);
@@ -304,9 +305,10 @@ describe('SavedFilterService', () => {
   });
 
   it('clears the deleting set when the context changes', async () => {
+    // Removing the last view takes the DELETE path; holding it pending keeps the spinner alive until the context switch cancels it.
     const write = new Subject<void>();
     socialListeningService.getPreference.mockReturnValue(of(storedDoc([view({ id: 'a' })])));
-    socialListeningService.upsertPreference.mockReturnValue(write.asObservable());
+    socialListeningService.deletePreference.mockReturnValue(write.asObservable());
     service.setContext(ctx);
     await flush();
 

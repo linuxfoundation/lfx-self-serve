@@ -10,7 +10,7 @@ import {
   UserPreferenceState,
   UserPreferenceStoreConfig,
 } from '@lfx-one/shared/interfaces';
-import { EMPTY, Observable, Subject, catchError, concatMap, distinctUntilChanged, finalize, from, switchMap, takeUntil, tap } from 'rxjs';
+import { EMPTY, Observable, Subject, catchError, concatMap, distinctUntilChanged, finalize, switchMap, takeUntil, tap } from 'rxjs';
 
 /**
  * PCC `UserPreferenceStore` port (LFXV2-3002 Block 0): optimistic, queue-ordered, cancel-on-context-change
@@ -99,7 +99,7 @@ export class UserPreferenceStore<T> {
   }
 
   private fetchPreference$(ctx: PreferenceContext): Observable<unknown> {
-    return from(this.config.transport.get(this.config.preferenceName(ctx.projectId))).pipe(
+    return this.config.transport.get(this.config.preferenceName(ctx.projectId)).pipe(
       tap((value) => {
         if (value === null) {
           this.stateSignal.update((s) => ({ ...s, data: this.config.initial(), readOnly: false, error: null }));
@@ -157,7 +157,7 @@ export class UserPreferenceStore<T> {
     const serialized = this.config.serialize(next);
 
     if (this.config.shouldDeleteOnEmpty?.(next)) {
-      return from(this.config.transport.delete(name)).pipe(
+      return this.config.transport.delete(name).pipe(
         takeUntil(this.cancelPersist$),
         tap(() => onSuccess()),
         catchError(() => this.reconcileDelete$(name, onSuccess, onError))
@@ -168,7 +168,7 @@ export class UserPreferenceStore<T> {
   }
 
   private persistWrite$(name: string, serialized: string, onSuccess: () => void, onError: () => void): Observable<unknown> {
-    return from(this.config.transport.put(name, serialized)).pipe(
+    return this.config.transport.put(name, serialized).pipe(
       takeUntil(this.cancelPersist$),
       tap(() => onSuccess()),
       catchError(() => this.reconcileWrite$(name, serialized, onSuccess, onError))
@@ -178,14 +178,14 @@ export class UserPreferenceStore<T> {
   // Same landed-but-timed-out hazard as reconcileWrite$: re-GET, treat an absent value as a
   // successful delete, otherwise retry the delete once and roll back only after that fails.
   private reconcileDelete$(name: string, onSuccess: () => void, onError: () => void): Observable<unknown> {
-    return from(this.config.transport.get(name)).pipe(
+    return this.config.transport.get(name).pipe(
       takeUntil(this.cancelPersist$),
       switchMap((stored) => {
         if (stored === null) {
           onSuccess();
           return EMPTY;
         }
-        return from(this.config.transport.delete(name)).pipe(
+        return this.config.transport.delete(name).pipe(
           takeUntil(this.cancelPersist$),
           tap(() => onSuccess()),
           catchError(() => {
@@ -204,14 +204,14 @@ export class UserPreferenceStore<T> {
   // A failed write may still have landed (e.g. timeout after the upstream commit — PCC's row-ID
   // reconciliation, adapted to name-keying). Re-GET: a matching stored value means success; otherwise retry once.
   private reconcileWrite$(name: string, serialized: string, onSuccess: () => void, onError: () => void): Observable<unknown> {
-    return from(this.config.transport.get(name)).pipe(
+    return this.config.transport.get(name).pipe(
       takeUntil(this.cancelPersist$),
       switchMap((stored) => {
         if (stored === serialized) {
           onSuccess();
           return EMPTY;
         }
-        return from(this.config.transport.put(name, serialized)).pipe(
+        return this.config.transport.put(name, serialized).pipe(
           takeUntil(this.cancelPersist$),
           tap(() => onSuccess()),
           catchError(() => {

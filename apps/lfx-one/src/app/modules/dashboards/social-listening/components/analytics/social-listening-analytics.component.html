@@ -19,12 +19,38 @@
         } @else if (overTimeError(); as overTimeErrorMessage) {
           <lfx-message severity="error" [text]="overTimeErrorMessage" data-testid="social-listening-analytics-over-time-error" />
         } @else if (overTimeData(); as overTimeChartData) {
-          <div class="h-[400px] w-full" data-chart-tooltip-host>
+          <div class="h-[400px] w-full" data-chart-tooltip-host role="img" aria-label="Mentions over time chart. The following table lists the same values.">
             <lfx-chart type="line" [data]="overTimeChartData" [options]="overTimeOptions" height="100%" />
             <div
               data-lfx-tip
               class="pointer-events-none fixed z-50 hidden max-h-[calc(100vh-1rem)] overflow-hidden rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg"></div>
           </div>
+          <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
+          @if (overTimeTable(); as overTimeTableData) {
+            <table class="sr-only" data-testid="social-listening-analytics-over-time-table">
+              <caption>
+                Mentions over time by project
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Period</th>
+                  @for (series of overTimeTableData.series; track series.label) {
+                    <th scope="col">{{ series.label }}</th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (period of overTimeTableData.periods; track period; let i = $index) {
+                  <tr>
+                    <th scope="row">{{ period }}</th>
+                    @for (series of overTimeTableData.series; track series.label) {
+                      <td>{{ series.values[i] }}</td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
         } @else {
           <lfx-empty-state
             icon="fa-light fa-chart-line-up"
@@ -91,12 +117,34 @@
         } @else if (tagsError(); as tagsErrorMessage) {
           <lfx-message severity="error" [text]="tagsErrorMessage" data-testid="social-listening-analytics-tags-error" />
         } @else if (tagsData(); as tagsChartData) {
-          <div class="h-[350px] w-full" data-chart-tooltip-host>
+          <div class="h-[350px] w-full" data-chart-tooltip-host role="img" aria-label="Mentions by tag chart. The following table lists the same values.">
             <lfx-chart type="bar" [data]="tagsChartData" [options]="tagsChartOptions" height="100%" />
             <div
               data-lfx-tip
               class="pointer-events-none fixed z-50 hidden max-h-[calc(100vh-1rem)] overflow-hidden rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg"></div>
           </div>
+          <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
+          @if (tagsTable(); as tagsTableRows) {
+            <table class="sr-only" data-testid="social-listening-analytics-tags-table">
+              <caption>
+                Mentions by tag
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Tag</th>
+                  <th scope="col">Mentions</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of tagsTableRows; track row.label) {
+                  <tr>
+                    <th scope="row">{{ row.label }}</th>
+                    <td>{{ row.count }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
         } @else {
           <lfx-empty-state
             icon="fa-light fa-tags"

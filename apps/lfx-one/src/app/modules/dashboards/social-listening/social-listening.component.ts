@@ -41,6 +41,7 @@ import {
   mapSubProjectsToOptions,
   mergeSelectedAuthors,
   normalizeMentionSearch,
+  normalizeSnowflakeTimestamp,
   predicatesEqual,
   predicateFromSignals,
   queryParamsEqual,
@@ -1096,7 +1097,8 @@ export class SocialListeningComponent {
     return computed(() => {
       const timestamp = this.currentWindowData().computedAt;
       if (!timestamp) return null;
-      const date = new Date(timestamp);
+      // Zone-less Snowflake COMPUTED_AT — parse as UTC, not browser-local.
+      const date = new Date(normalizeSnowflakeTimestamp(timestamp));
       return isNaN(date.getTime()) ? null : date;
     });
   }

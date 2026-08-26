@@ -3,6 +3,7 @@
 
 import { ApplicationRef, DestroyRef, Injector } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { Observable, Subject, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserPreferenceStore } from './user-preference-store';
@@ -14,19 +15,21 @@ interface Doc {
 }
 
 interface Deferred<T> {
-  promise: Promise<T>;
+  observable: Observable<T>;
   resolve: (value: T) => void;
   reject: (err?: unknown) => void;
 }
 
 function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  let reject!: (err?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
+  const subject = new Subject<T>();
+  return {
+    observable: subject.asObservable(),
+    resolve: (value: T) => {
+      subject.next(value);
+      subject.complete();
+    },
+    reject: (err?: unknown) => subject.error(err),
+  };
 }
 
 describe('UserPreferenceStore', () => {
@@ -42,9 +45,9 @@ describe('UserPreferenceStore', () => {
     transport: UserPreferenceTransport;
   } {
     const transport: UserPreferenceTransport = {
-      get: vi.fn(async () => null),
-      put: vi.fn(async () => undefined),
-      delete: vi.fn(async () => undefined),
+      get: vi.fn(() => of(null)),
+      put: vi.fn(() => of(undefined)),
+      delete: vi.fn(() => of(undefined)),
     };
     const store = new UserPreferenceStore<Doc>({
       transport,
@@ -60,7 +63,7 @@ describe('UserPreferenceStore', () => {
     return { store, transport };
   }
 
-  // Effects (toObservable) fire on tick; Promise-backed transport settles on the macrotask flush.
+  // Effects (toObservable) fire on tick; the macrotask flush settles any remaining transport chains.
   async function flush(): Promise<void> {
     TestBed.inject(ApplicationRef).tick();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -69,7 +72,7 @@ describe('UserPreferenceStore', () => {
   it('loads and parses the stored value when the context is set', async () => {
     const onLoaded = vi.fn();
     const { store, transport } = createStore({ onLoaded });
-    (transport.get as ReturnType<typeof vi.fn>).mockResolvedValue('{"ids":["a"]}');
+    (transport.get as ReturnType<typeof vi.fn>).mockReturnValue(of('{"ids":["a"]}'));
 
     store.setContext(ctxA);
     await flush();
@@ -92,7 +95,7 @@ describe('UserPreferenceStore', () => {
 
   it('propagates readOnly from the parse result', async () => {
     const { store, transport } = createStore({ parse: (raw): ParseResult<Doc> => ({ data: JSON.parse(raw) as Doc, readOnly: true }) });
-    (transport.get as ReturnType<typeof vi.fn>).mockResolvedValue('{"ids":["a"]}');
+    (transport.get as ReturnType<typeof vi.fn>).mockReturnValue(of('{"ids":["a"]}'));
 
     store.setContext(ctxA);
     await flush();
@@ -104,7 +107,7 @@ describe('UserPreferenceStore', () => {
     const onLoadError = vi.fn();
     const failure = new Error('boom');
     const { store, transport } = createStore({ onLoadError });
-    (transport.get as ReturnType<typeof vi.fn>).mockRejectedValue(failure);
+    (transport.get as ReturnType<typeof vi.fn>).mockReturnValue(throwError(() => failure));
 
     store.setContext(ctxA);
     await flush();
@@ -131,7 +134,7 @@ describe('UserPreferenceStore', () => {
   it('drops a late load response from a cancelled context', async () => {
     const { store, transport } = createStore();
     const slowGet = deferred<string | null>();
-    (transport.get as ReturnType<typeof vi.fn>).mockReturnValueOnce(slowGet.promise).mockResolvedValue('{"ids":["b"]}');
+    (transport.get as ReturnType<typeof vi.fn>).mockReturnValueOnce(slowGet.observable).mockReturnValue(of('{"ids":["b"]}'));
 
     store.setContext(ctxA);
     await flush();
@@ -148,10 +151,10 @@ describe('UserPreferenceStore', () => {
     const putA = deferred<undefined>();
     const putB = deferred<undefined>();
     (transport.put as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce(putA.promise)
+      .mockReturnValueOnce(putA.observable)
       // Commit A's reconcile retry must also fail for the commit to error at all.
-      .mockRejectedValueOnce(new Error('retry lost'))
-      .mockReturnValueOnce(putB.promise);
+      .mockReturnValueOnce(throwError(() => new Error('retry lost')))
+      .mockReturnValueOnce(putB.observable);
     const onErrorA = vi.fn();
     const onSuccessB = vi.fn();
 
@@ -186,10 +189,10 @@ describe('UserPreferenceStore', () => {
     const { store, transport } = createStore();
     const putA = deferred<undefined>();
     (transport.put as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce(putA.promise)
+      .mockReturnValueOnce(putA.observable)
       // Commit A's reconcile retry must also fail for the commit to error at all.
-      .mockRejectedValueOnce(new Error('retry lost'))
-      .mockResolvedValue(undefined);
+      .mockReturnValueOnce(throwError(() => new Error('retry lost')))
+      .mockReturnValue(of(undefined));
 
     store.setContext(ctxA);
     await flush();
@@ -216,9 +219,9 @@ describe('UserPreferenceStore', () => {
 
   it('restores the snapshot on failure when no later optimistic update landed', async () => {
     const { store, transport } = createStore();
-    (transport.get as ReturnType<typeof vi.fn>).mockResolvedValue('{"ids":["x"]}');
-    (transport.put as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('lost'));
-    (transport.get as ReturnType<typeof vi.fn>).mockResolvedValue('{"ids":["x"]}');
+    (transport.get as ReturnType<typeof vi.fn>).mockReturnValue(of('{"ids":["x"]}'));
+    (transport.put as ReturnType<typeof vi.fn>).mockReturnValue(throwError(() => new Error('lost')));
+    (transport.get as ReturnType<typeof vi.fn>).mockReturnValue(of('{"ids":["x"]}'));
 
     store.setContext(ctxA);
     await flush();
@@ -233,7 +236,7 @@ describe('UserPreferenceStore', () => {
   it('applies non-optimistic commits only after the write succeeds', async () => {
     const { store, transport } = createStore();
     const put = deferred<undefined>();
-    (transport.put as ReturnType<typeof vi.fn>).mockReturnValue(put.promise);
+    (transport.put as ReturnType<typeof vi.fn>).mockReturnValue(put.observable);
 
     store.setContext(ctxA);
     await flush();
@@ -250,7 +253,7 @@ describe('UserPreferenceStore', () => {
   it('cancels an in-flight write on context change without firing success or rollback', async () => {
     const { store, transport } = createStore();
     const put = deferred<undefined>();
-    (transport.put as ReturnType<typeof vi.fn>).mockReturnValue(put.promise);
+    (transport.put as ReturnType<typeof vi.fn>).mockReturnValue(put.observable);
     const onSuccess = vi.fn();
     const onError = vi.fn();
 
@@ -288,7 +291,7 @@ describe('UserPreferenceStore', () => {
 
     store.setContext(ctxA);
     await flush();
-    (transport.delete as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('timeout'));
+    (transport.delete as ReturnType<typeof vi.fn>).mockReturnValueOnce(throwError(() => new Error('timeout')));
 
     store.commit({ next: { ids: [] }, onSuccess, onError });
     await flush();
@@ -305,8 +308,8 @@ describe('UserPreferenceStore', () => {
 
     store.setContext(ctxA);
     await flush();
-    (transport.get as ReturnType<typeof vi.fn>).mockResolvedValue('{"ids":["a"]}');
-    (transport.delete as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('timeout')).mockResolvedValue(undefined);
+    (transport.get as ReturnType<typeof vi.fn>).mockReturnValue(of('{"ids":["a"]}'));
+    (transport.delete as ReturnType<typeof vi.fn>).mockReturnValueOnce(throwError(() => new Error('timeout'))).mockReturnValue(of(undefined));
 
     store.commit({ next: { ids: [] }, onSuccess, onError });
     await flush();
@@ -323,8 +326,8 @@ describe('UserPreferenceStore', () => {
 
     store.setContext(ctxA);
     await flush();
-    (transport.get as ReturnType<typeof vi.fn>).mockResolvedValue('{"ids":["a"]}');
-    (transport.delete as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('timeout'));
+    (transport.get as ReturnType<typeof vi.fn>).mockReturnValue(of('{"ids":["a"]}'));
+    (transport.delete as ReturnType<typeof vi.fn>).mockReturnValue(throwError(() => new Error('timeout')));
 
     store.commit({ next: { ids: [] }, onSuccess, onError });
     await flush();
@@ -336,8 +339,8 @@ describe('UserPreferenceStore', () => {
 
   it('reconciles a failed write that landed anyway: re-GET match means success', async () => {
     const { store, transport } = createStore();
-    (transport.put as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('timeout'));
-    (transport.get as ReturnType<typeof vi.fn>).mockResolvedValue('{"ids":["a"]}');
+    (transport.put as ReturnType<typeof vi.fn>).mockReturnValue(throwError(() => new Error('timeout')));
+    (transport.get as ReturnType<typeof vi.fn>).mockReturnValue(of('{"ids":["a"]}'));
     const onSuccess = vi.fn();
     const onError = vi.fn();
 

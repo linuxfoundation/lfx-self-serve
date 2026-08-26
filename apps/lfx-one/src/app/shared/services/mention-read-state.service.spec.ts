@@ -6,7 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { EMPTY_READ_STATE, MAX_READ_IDS } from '@lfx-one/shared/constants';
 import { SocialListeningService } from '@services/social-listening.service';
 import { MessageService } from 'primeng/api';
-import { NEVER, of, throwError } from 'rxjs';
+import { NEVER, asapScheduler, observeOn, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MentionReadStateService } from './mention-read-state.service';
@@ -116,7 +116,10 @@ describe('MentionReadStateService', () => {
     await flush();
 
     // The store reconciles a failed write with a re-GET — both must fail for onError to fire; m2's write succeeds.
-    socialListeningService.upsertPreference.mockReturnValueOnce(throwError(() => new Error('write lost'))).mockReturnValue(of(undefined));
+    // The failure is delivered asynchronously so both toggles land optimistically before the rollback (HTTP never fails synchronously).
+    socialListeningService.upsertPreference
+      .mockReturnValueOnce(throwError(() => new Error('write lost')).pipe(observeOn(asapScheduler)))
+      .mockReturnValue(of(undefined));
     socialListeningService.getPreference.mockReturnValue(throwError(() => new Error('read lost')));
 
     service.toggleRead('m1', TS);
@@ -132,6 +135,48 @@ describe('MentionReadStateService', () => {
       summary: 'Read state failed',
       detail: 'Could not save read state. Please try again.',
     });
+  });
+
+  it('keeps a succeeded bulk mark-all-as-read when an earlier queued toggle fails', async () => {
+    service.setContext(ctx);
+    await flush();
+
+    // The toggle's write and its reconcile re-GET both fail; the queued bulk write succeeds.
+    // The failure is delivered asynchronously so the bulk commit lands optimistically before the toggle's rollback runs.
+    socialListeningService.upsertPreference
+      .mockReturnValueOnce(throwError(() => new Error('write lost')).pipe(observeOn(asapScheduler)))
+      .mockReturnValue(of(undefined));
+    socialListeningService.getPreference.mockReturnValue(throwError(() => new Error('read lost')));
+
+    service.toggleRead('m1', TS);
+    service.markAllAsRead(TS);
+    await flush();
+
+    // The toggle's rollback must not resurrect m1 as unread over the persisted bulk cutoff.
+    expect(service.state().data).toEqual({ readBeforeTs: TS, readIds: [], unreadIds: [] });
+    expect(service.isRead('m1', TS)).toBe(true);
+    expect(messageService.add).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a succeeded bulk mark-all-as-unread when an earlier queued toggle fails', async () => {
+    socialListeningService.getPreference.mockReturnValue(of(storedDoc({ readBeforeTs: CUTOFF })));
+    service.setContext(ctx);
+    await flush();
+
+    // The toggle's write and its reconcile re-GET both fail; the queued bulk reset succeeds.
+    // The failure is delivered asynchronously so the bulk commit lands optimistically before the toggle's rollback runs.
+    socialListeningService.upsertPreference
+      .mockReturnValueOnce(throwError(() => new Error('write lost')).pipe(observeOn(asapScheduler)))
+      .mockReturnValue(of(undefined));
+    socialListeningService.getPreference.mockReturnValue(throwError(() => new Error('read lost')));
+
+    // m1 predates the cutoff, so the toggle marks it unread; the bulk reset then supersedes it.
+    service.toggleRead('m1', '2026-01-15 10:00:00');
+    service.markAllAsUnread();
+    await flush();
+
+    expect(service.state().data).toEqual(EMPTY_READ_STATE);
+    expect(service.isRead('m1', '2026-01-15 10:00:00')).toBe(false);
   });
 
   it('gates toggles and mark-all actions while the initial load is in flight', async () => {

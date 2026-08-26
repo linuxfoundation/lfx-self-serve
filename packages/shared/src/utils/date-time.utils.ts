@@ -676,6 +676,17 @@ export function formatHubSpotUpdatedAt(value: string | undefined): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }
 
+/**
+ * Snowflake `TIMESTAMP_NTZ` values arrive zone-less and space-separated (`2026-08-01 15:30:00`), which
+ * `new Date()` parses as browser-local — skewing display ages and any comparison against a real instant
+ * by the viewer's offset. Normalize that exact shape to explicit-UTC ISO; anything else (already-ISO,
+ * zoned, or invalid) passes through unchanged so `new Date()` keeps its native behavior for it.
+ */
+export function normalizeSnowflakeTimestamp(timestamp: string): string {
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?$/.test(timestamp)) return timestamp;
+  return `${timestamp.replace(' ', 'T')}Z`;
+}
+
 /** Long-form relative-time label ("Just now", "5 minutes ago", "3 weeks ago"). Returns '' for missing/invalid input; re-evaluate on a tick to refresh (e.g. MENTION_TIME_TICK_INTERVAL_MS). */
 export function timeAgo(timestamp: string): string {
   if (!timestamp) return '';

@@ -14,7 +14,6 @@ import {
 } from '@lfx-one/shared/utils';
 import { SocialListeningService } from '@services/social-listening.service';
 import { MessageService } from 'primeng/api';
-import { firstValueFrom } from 'rxjs';
 
 import { UserPreferenceStore } from './user-preference-store';
 
@@ -32,9 +31,9 @@ export class MentionReadStateService {
 
   private readonly store = new UserPreferenceStore<ReadStateData>({
     transport: {
-      get: (name) => firstValueFrom(this.socialListeningService.getPreference(name)),
-      put: (name, value) => firstValueFrom(this.socialListeningService.upsertPreference(name, value)),
-      delete: (name) => firstValueFrom(this.socialListeningService.deletePreference(name)),
+      get: (name) => this.socialListeningService.getPreference(name),
+      put: (name, value) => this.socialListeningService.upsertPreference(name, value),
+      delete: (name) => this.socialListeningService.deletePreference(name),
     },
     destroyRef: inject(DestroyRef),
     injector: inject(Injector),
@@ -98,10 +97,18 @@ export class MentionReadStateService {
       next,
       // Re-derive at dequeue time: if an earlier queued commit failed and rolled back, the eager snapshot would resurrect it.
       rebase: (current) => computeReadToggle(current, mentionId, mentionTimestamp, currentlyRead),
-      // Targeted rollback: re-derive against current state so optimistic toggles queued after this one survive.
+      // Targeted rollback: drop this toggle's list contribution, then flip only when the current state
+      // doesn't already match post-toggle (a later optimistic bulk action may have superseded the toggle).
       rollback: () => {
+        const current = this.store.state().data;
+        const stripped: ReadStateData = {
+          ...current,
+          readIds: current.readIds.filter((id) => id !== mentionId),
+          unreadIds: current.unreadIds.filter((id) => id !== mentionId),
+        };
         const wasReadAfterToggle = isReadInState(next, mentionId, mentionTimestamp);
-        this.store.replace(computeReadToggle(this.store.state().data, mentionId, mentionTimestamp, wasReadAfterToggle));
+        const readWithoutToggle = isReadInState(stripped, mentionId, mentionTimestamp);
+        this.store.replace(readWithoutToggle === wasReadAfterToggle ? stripped : computeReadToggle(stripped, mentionId, mentionTimestamp, wasReadAfterToggle));
       },
       onError: () => this.notifyFailure(),
     });

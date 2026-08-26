@@ -4,6 +4,7 @@
 /** Per-user preference contracts (LFXV2-3002 Block 0) — Angular `UserPreferenceStore<T>` config/state plus the BFF wire types for `/api/social-listening/preferences/:name`. */
 
 import type { DestroyRef, Injector } from '@angular/core';
+import type { Observable } from 'rxjs';
 
 /** Store cancellation/cache key. `userId` is client-side only — the BFF resolves identity from the session token. */
 export interface PreferenceContext {
@@ -25,11 +26,11 @@ export interface ParseResult<T> {
   readOnly?: boolean;
 }
 
-/** Promise-based BFF transport keyed by preference name — the store wraps calls in `from()`. */
+/** Cold-Observable BFF transport keyed by preference name — cancellation must propagate (unsubscribe aborts the in-flight HTTP call, as with `HttpClient`). */
 export interface UserPreferenceTransport {
-  get(name: string): Promise<string | null>;
-  put(name: string, value: string): Promise<unknown>;
-  delete(name: string): Promise<unknown>;
+  get(name: string): Observable<string | null>;
+  put(name: string, value: string): Observable<unknown>;
+  delete(name: string): Observable<unknown>;
 }
 
 export interface UserPreferenceStoreConfig<T> {

@@ -98,6 +98,8 @@ export class SocialListeningAnalyticsComponent {
   public readonly overTimeData = computed(() => this.overTimeState().data);
   public readonly overTimeLoading = computed(() => this.overTimeState().loading);
   public readonly overTimeError = computed(() => this.overTimeState().error);
+  /** Screen-reader equivalent of the canvas line chart — the chart's values are otherwise tooltip-only. */
+  public readonly overTimeTable: Signal<{ periods: string[]; series: { label: string; values: (number | null)[] }[] } | null> = this.initOverTimeTable();
 
   public readonly platformRows = computed(() => this.platformState().data);
   public readonly platformLoading = computed(() => this.platformState().loading);
@@ -108,6 +110,8 @@ export class SocialListeningAnalyticsComponent {
   public readonly tagsData = computed(() => this.tagsState().data);
   public readonly tagsLoading = computed(() => this.tagsState().loading);
   public readonly tagsError = computed(() => this.tagsState().error);
+  /** Screen-reader equivalent of the canvas bar chart — the chart's values are otherwise tooltip-only. */
+  public readonly tagsTable: Signal<{ label: string; count: number | null }[] | null> = this.initTagsTable();
 
   public readonly sentimentRows = computed(() => this.sentimentState().data);
   public readonly sentimentLoading = computed(() => this.sentimentState().loading);
@@ -290,6 +294,33 @@ export class SocialListeningAnalyticsComponent {
       ),
       { initialValue: { loading: false, error: null, data: empty } }
     );
+  }
+
+  /** Screen-reader table mirror of the tags chart data; null while the panel shows its empty state. */
+  private initTagsTable(): Signal<{ label: string; count: number | null }[] | null> {
+    return computed(() => {
+      const data = this.tagsData();
+      if (!data) return null;
+      const counts = data.datasets[0]?.data ?? [];
+      return (data.labels ?? []).map((label, i) => {
+        const value = counts[i];
+        return { label: String(label), count: typeof value === 'number' ? value : null };
+      });
+    });
+  }
+
+  /** Screen-reader table mirror of the over-time chart data; null while the panel shows its empty state. */
+  private initOverTimeTable(): Signal<{ periods: string[]; series: { label: string; values: (number | null)[] }[] } | null> {
+    return computed(() => {
+      const data = this.overTimeData();
+      if (!data) return null;
+      const periods = (data.labels ?? []).map(String);
+      const series = data.datasets.map((dataset) => ({
+        label: dataset.label ?? '',
+        values: dataset.data.map((value) => (typeof value === 'number' ? value : null)),
+      }));
+      return { periods, series };
+    });
   }
 
   /** KPI stat cards; deltas come precomputed from the server and `buildAnalyticsDelta` hides thin previous windows. */

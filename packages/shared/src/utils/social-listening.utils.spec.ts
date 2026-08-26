@@ -343,6 +343,14 @@ describe('isReadInState', () => {
     expect(isReadInState(state, 'other', '2026-02-01 12:00:01')).toBe(false);
   });
 
+  // mapRawToMention normalizes mention timestamps to UTC ISO while persisted cutoffs keep the
+  // Snowflake shape — the compare must treat both as the same instant, not parse one browser-local.
+  it('compares consistently across mixed ISO and space-separated formats', () => {
+    expect(isReadInState(state, 'other', '2026-02-01T11:59:59Z')).toBe(true);
+    expect(isReadInState(state, 'other', '2026-02-01T12:00:01Z')).toBe(false);
+    expect(isReadInState({ ...state, readBeforeTs: '2026-02-01T12:00:00Z' }, 'other', '2026-02-01 11:59:59')).toBe(true);
+  });
+
   it('treats an empty timestamp as unread (NaN comparisons are false)', () => {
     expect(isReadInState(state, 'other', '')).toBe(false);
     expect(isReadInState({ ...state, readBeforeTs: null }, 'other', '')).toBe(false);

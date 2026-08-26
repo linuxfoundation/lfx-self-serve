@@ -45,6 +45,7 @@ import type {
   SocialListeningTagCount,
 } from '../interfaces/social-listening.interface';
 import type { StatCardDelta, StatCardDeltaDirection } from '../interfaces/stat-card.interface';
+import { normalizeSnowflakeTimestamp } from './date-time.utils';
 import { capitalizeFirst } from './string.utils';
 
 /** Trims, lowercases + dedupes keywords so filter state and payloads stay canonical (the server trims at its boundary too). */
@@ -77,7 +78,8 @@ export function mapRawToMention(raw: SocialListeningMention): Mention {
     id: raw.MENTION_ID,
     platform,
     keyword: (raw.KEYWORD || '').toLowerCase(),
-    timestamp: raw.MENTION_TS || '',
+    // Zone-less Snowflake timestamp → explicit UTC so `timeAgo` and read-state compares don't parse it as browser-local.
+    timestamp: normalizeSnowflakeTimestamp(raw.MENTION_TS || ''),
     authorName: raw.AUTHOR || 'Unknown',
     authorProfileLink: raw.AUTHOR_PROFILE_LINK || '',
     title: raw.TITLE || '',
@@ -466,19 +468,19 @@ export function garbageCollectReadState(state: ReadStateData): ReadStateData {
   };
 }
 
-/** Explicit IDs win over the cutoff; timestamps normalize to epoch ms before comparing (Snowflake emits space-separated timestamps). */
+/** Explicit IDs win over the cutoff; zone-less Snowflake timestamps are normalized to UTC before comparing (also repairs legacy persisted cutoffs). */
 export function isReadInState(state: ReadStateData, mentionId: string, mentionTimestamp: string): boolean {
   const { readBeforeTs, readIds, unreadIds } = state;
   if (readIds.includes(mentionId)) return true;
   if (unreadIds.includes(mentionId)) return false;
-  if (readBeforeTs && new Date(mentionTimestamp).getTime() <= new Date(readBeforeTs).getTime()) return true;
+  if (readBeforeTs && toEpochMs(mentionTimestamp) <= toEpochMs(readBeforeTs)) return true;
   return false;
 }
 
 /** Appends to the array not already implied by the cutoff, keeping the persisted doc small. */
 export function computeReadToggle(current: ReadStateData, mentionId: string, mentionTimestamp: string, currentlyRead: boolean): ReadStateData {
   const { readBeforeTs, readIds, unreadIds } = current;
-  const coveredByCutoff = readBeforeTs !== null && new Date(mentionTimestamp).getTime() <= new Date(readBeforeTs).getTime();
+  const coveredByCutoff = readBeforeTs !== null && toEpochMs(mentionTimestamp) <= toEpochMs(readBeforeTs);
 
   if (currentlyRead) {
     const newReadIds = readIds.filter((id) => id !== mentionId);
@@ -490,4 +492,9 @@ export function computeReadToggle(current: ReadStateData, mentionId: string, men
   const newUnreadIds = unreadIds.filter((id) => id !== mentionId);
   const newReadIds = !coveredByCutoff && !readIds.includes(mentionId) ? [...readIds, mentionId].slice(-MAX_READ_IDS) : readIds;
   return { readBeforeTs, readIds: newReadIds, unreadIds: newUnreadIds };
+}
+
+/** Epoch ms with the zone-less Snowflake shape treated as UTC; NaN for unparseable input (NaN comparisons are false, so callers treat it as "not covered"). */
+function toEpochMs(timestamp: string): number {
+  return new Date(normalizeSnowflakeTimestamp(timestamp)).getTime();
 }

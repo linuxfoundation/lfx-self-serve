@@ -6,7 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { MENTION_IDS_MAX_VALUES } from '@lfx-one/shared/constants';
 import { SocialListeningService } from '@services/social-listening.service';
 import { MessageService } from 'primeng/api';
-import { NEVER, of, throwError } from 'rxjs';
+import { NEVER, asapScheduler, observeOn, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MentionBookmarkService } from './mention-bookmark.service';
@@ -99,7 +99,8 @@ describe('MentionBookmarkService', () => {
 
   it('rolls back and toasts the error when the write fails', async () => {
     // The store reconciles a failed write with a re-GET — both must fail for onError to fire.
-    socialListeningService.upsertPreference.mockReturnValue(throwError(() => new Error('write lost')));
+    // The failure is delivered asynchronously so the optimistic state is observable before the rollback (HTTP never fails synchronously).
+    socialListeningService.upsertPreference.mockReturnValue(throwError(() => new Error('write lost')).pipe(observeOn(asapScheduler)));
     service.setContext(ctx);
     await flush();
     socialListeningService.getPreference.mockReturnValue(throwError(() => new Error('read lost')));
