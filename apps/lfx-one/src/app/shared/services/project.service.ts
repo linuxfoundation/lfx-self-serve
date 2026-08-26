@@ -72,10 +72,18 @@ export class ProjectService {
    * Note the two identifiers cache under separate keys for the same project.
    */
   public getProject(slugOrUid: string, current: boolean = true, options?: { meetingCoordinator?: boolean }): Observable<Project | null> {
+    // cacheKey intentionally keys on the raw slugOrUid, not the encoded form:
+    // callers (including newsletterAccessGuard) already dedupe on the same
+    // identifier they pass in, and encoding only matters for the URL actually
+    // sent, not for cache identity.
     const cacheKey = `${slugOrUid}:${current}${options?.meetingCoordinator ? ':mc' : ''}`;
     if (!this.projectCache.has(cacheKey)) {
       const params = options?.meetingCoordinator ? new HttpParams().set('meeting_coordinator', 'true') : undefined;
-      const project$ = this.http.get<Project>(`/api/projects/${slugOrUid}`, { params }).pipe(
+      // encodeURIComponent matches getProjectStrict/getProjectSfid below: several
+      // callers (route path segments, query params) forward a value that could
+      // carry a decoded "/" or other reserved character straight through to this
+      // request path otherwise.
+      const project$ = this.http.get<Project>(`/api/projects/${encodeURIComponent(slugOrUid)}`, { params }).pipe(
         catchError((error) => {
           console.error('Failed to fetch project:', error);
           return of(null);

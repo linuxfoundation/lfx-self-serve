@@ -52,6 +52,12 @@ export class NewsletterServiceClient {
     if (params.page_token) {
       query['page_token'] = params.page_token;
     }
+    // Presence, not truthiness — an explicitly empty publication_id (forwarded
+    // by the controller so upstream's validation can reject it) must not be
+    // silently dropped here, which would widen the request to every publication.
+    if (params.publication_id !== undefined) {
+      query['publication_id'] = params.publication_id;
+    }
     return this.microserviceProxy.proxyRequest<NewsletterListResponse>(
       req,
       'LFX_V2_SERVICE',

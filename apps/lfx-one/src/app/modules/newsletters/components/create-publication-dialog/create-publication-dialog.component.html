@@ -1,0 +1,45 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div data-testid="create-publication-dialog">
+  <label for="create-publication-name" class="block text-sm font-medium text-gray-700 mb-1"> Name <span class="text-red-500">*</span> </label>
+  <lfx-input-text
+    size="small"
+    [form]="form"
+    control="name"
+    [id]="'create-publication-name'"
+    placeholder="e.g. Weekly Digest"
+    styleClass="w-full"
+    data-testid="create-publication-name-input"></lfx-input-text>
+  @if (nameControl.errors?.['trimmedRequired'] && nameControl.touched) {
+    <p class="mt-1 text-xs text-red-600" role="alert">Name is required</p>
+  }
+  @if (nameControl.errors?.['maxCodePoints']) {
+    <!-- Not gated on touched like the required message above: this error can
+         only exist because the user already typed past the limit, so there's
+         no premature-error risk, and gating it would silently disable Create
+         with no visible explanation until the next blur. -->
+    <p class="mt-1 text-xs text-red-600" role="alert" data-testid="create-publication-name-error">Name must be {{ maxNameLength }} characters or fewer</p>
+  }
+  @if (submitError()) {
+    <p class="mt-2 text-xs text-red-600" role="alert" data-testid="create-publication-error">{{ submitError() }}</p>
+  }
+</div>
+<div class="flex justify-end gap-2 mt-4">
+  <lfx-button
+    label="Cancel"
+    severity="secondary"
+    [outlined]="true"
+    size="small"
+    (onClick)="cancel()"
+    [disabled]="submitting()"
+    data-testid="create-publication-cancel"></lfx-button>
+  <lfx-button
+    label="Create"
+    severity="info"
+    size="small"
+    (onClick)="create()"
+    [disabled]="form.invalid || submitting()"
+    [loading]="submitting()"
+    data-testid="create-publication-submit"></lfx-button>
+</div>

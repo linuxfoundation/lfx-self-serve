@@ -5,6 +5,7 @@ import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
   CreateNewsletterRequest,
+  CreatePublicationRequest,
   GenerateNewsletterRequest,
   GenerateNewsletterResponse,
   MyNewsletter,
@@ -14,6 +15,9 @@ import {
   NewsletterListParams,
   NewsletterListResponse,
   NewsletterOptOutListResponse,
+  NewsletterPublication,
+  NewsletterPublicationListParams,
+  NewsletterPublicationListResponse,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
   NewsletterRecipientEngagementResponse,
@@ -22,8 +26,9 @@ import {
   NewsletterSendResult,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
+  UpdatePublicationRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, take } from 'rxjs';
+import { catchError, defer, EMPTY, expand, Observable, of, reduce, take } from 'rxjs';
 
 /**
  * Angular HTTP client for the newsletter feature.
@@ -65,6 +70,9 @@ export class NewsletterService {
     }
     if (params.page_token) {
       httpParams = httpParams.set('page_token', params.page_token);
+    }
+    if (params.publication_id) {
+      httpParams = httpParams.set('publication_id', params.publication_id);
     }
     return this.http.get<NewsletterListResponse>(`/api/projects/${this.enc(projectUid)}/newsletters`, { params: httpParams }).pipe(take(1));
   }
@@ -146,6 +154,76 @@ export class NewsletterService {
     const headers = new HttpHeaders({ 'If-Match': `"${version}"` });
     return this.http
       .post<NewsletterCancelScheduleResult>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/cancel-schedule`, {}, { headers })
+      .pipe(take(1));
+  }
+
+  // === Publication endpoints ===
+  // `listPublications` and `createPublication` back the publication-list page
+  // (list + its create-publication dialog). `getPublication` and
+  // `updatePublication` are still ahead of their consumers — editing an
+  // existing publication's name/wrapper/etc. is a further LFXV2-2582
+  // follow-up. Editions are read via `listNewsletters(..., publication_id)`.
+
+  /**
+   * Fetch one page of publications. The server caps the page size, so the
+   * response can carry a `next_page_token`.
+   */
+  public listPublications(projectUid: string, params: NewsletterPublicationListParams = {}): Observable<NewsletterPublicationListResponse> {
+    let httpParams = new HttpParams();
+    if (params.page_token) {
+      httpParams = httpParams.set('page_token', params.page_token);
+    }
+    if (params.page_size) {
+      httpParams = httpParams.set('page_size', String(params.page_size));
+    }
+    return this.http
+      .get<NewsletterPublicationListResponse>(`/api/projects/${this.enc(projectUid)}/newsletter-publications`, { params: httpParams })
+      .pipe(take(1));
+  }
+
+  /**
+   * Fetch every publication in the project by following `next_page_token`
+   * until a response omits it. The publication list page has no paging
+   * controls, so it needs the full set — a project has a handful of
+   * publications, not enough to make an unbounded walk a real concern.
+   *
+   * `seenTokens` guards against a broken/looping server that keeps handing
+   * back a token it already returned: rather than truncate every project's
+   * list to an arbitrary page count, this stops only if a token repeats.
+   * Scoped inside `defer` so each subscription gets its own set.
+   */
+  public listAllPublications(projectUid: string): Observable<NewsletterPublicationListResponse> {
+    return defer(() => {
+      const seenTokens = new Set<string>();
+      return this.listPublications(projectUid).pipe(
+        expand((page) => {
+          const token = page.next_page_token;
+          if (!token || seenTokens.has(token)) {
+            return EMPTY;
+          }
+          seenTokens.add(token);
+          return this.listPublications(projectUid, { page_token: token });
+        }),
+        reduce<NewsletterPublicationListResponse, NewsletterPublicationListResponse>(
+          (acc, page) => ({ publications: [...acc.publications, ...page.publications] }),
+          { publications: [] }
+        )
+      );
+    });
+  }
+
+  public getPublication(projectUid: string, publicationUid: string): Observable<NewsletterPublication> {
+    return this.http.get<NewsletterPublication>(`/api/projects/${this.enc(projectUid)}/newsletter-publications/${this.enc(publicationUid)}`).pipe(take(1));
+  }
+
+  public createPublication(projectUid: string, payload: CreatePublicationRequest): Observable<NewsletterPublication> {
+    return this.http.post<NewsletterPublication>(`/api/projects/${this.enc(projectUid)}/newsletter-publications`, payload).pipe(take(1));
+  }
+
+  public updatePublication(projectUid: string, publicationUid: string, version: number, payload: UpdatePublicationRequest): Observable<NewsletterPublication> {
+    const headers = new HttpHeaders({ 'If-Match': `"${version}"` });
+    return this.http
+      .put<NewsletterPublication>(`/api/projects/${this.enc(projectUid)}/newsletter-publications/${this.enc(publicationUid)}`, payload, { headers })
       .pipe(take(1));
   }
 

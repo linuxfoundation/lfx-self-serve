@@ -4,7 +4,7 @@
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
@@ -23,11 +23,13 @@ import {
   NewsletterStatusTabId,
 } from '@lfx-one/shared/interfaces';
 import {
+  divergentProjectQueryParam,
   formatFutureRelativeTime,
   formatShortDateInTimezone,
   formatTo12HourInTimezone,
   getTimezoneUtcOffsetString,
   getUserTimezone,
+  toValidUuid,
 } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -71,14 +73,6 @@ export class NewsletterListComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
-  // === Tab options ===
-  protected readonly statusTabOptions: FilterPillOption[] = [
-    { id: 'draft', label: 'Drafts' },
-    { id: 'scheduled', label: 'Scheduled' },
-    { id: 'sent', label: 'Sent' },
-    { id: 'optout', label: 'Opt-out' },
-  ];
-
   // === Writable Signals ===
   protected readonly statusTab = signal<NewsletterStatusTabId>('draft');
   protected readonly newsletters = signal<NewsletterListItem[]>([]);
@@ -121,10 +115,69 @@ export class NewsletterListComponent {
   private loadGeneration = 0;
 
   // === Reactive context ===
-  public readonly projectUid: Signal<string> = this.projectContextService.activeContextUid;
+  // Publication id from the `:pubId` route param, when this instance is showing
+  // one publication's editions rather than the flat list. Subscribed via
+  // `toSignal`, not a one-time snapshot: Angular reuses this component instance
+  // across navigations that change only route params, so a snapshot would go
+  // stale navigating between two publications' editions (e.g. a deep link opened
+  // while this page is already showing a different publication) and keep
+  // querying the first one. Drives `initLoadOnContextOrTabAndPublication` below.
+  // Gated with the shared toValidUuid: an unvalidated :pubId flows straight
+  // into the publication_id list filter and (via goToCreate) into the create
+  // payload, both of which upstream 400s on a malformed value — gating here
+  // degrades a bad segment to the unfiltered list / unfiled create instead of
+  // a hard failure. Deliberately NOT the same treatment as routeProjectUid
+  // below: an unvalidated :projectUid path segment is left ungated there,
+  // since upstream reads project_uid as an opaque filter with no format
+  // validation of its own (a malformed one just yields an empty result), so
+  // degrading it here would substitute a *different* project's data instead
+  // of the intended fail-safe of showing none.
+  protected readonly publicationId: Signal<string | undefined> = toSignal(this.route.paramMap.pipe(map((p) => toValidUuid(p.get('pubId')))), {
+    initialValue: toValidUuid(this.route.snapshot.paramMap.get('pubId')),
+  });
+  // The `:pubId` editions route carries `:projectUid` alongside it (see
+  // newsletters.routes.ts) so a deep link resolves the publication's own project
+  // even next to a stale or different active-context cookie. The flat `list`
+  // route has no projectUid segment, so it falls back next to a `?project=`
+  // query param (see below), then the active context — same fallback pattern
+  // as newsletter-manage.component.ts's routeProjectUid.
+  private readonly routeProjectUid: Signal<string | null> = toSignal(this.route.paramMap.pipe(map((p) => p.get('projectUid'))), {
+    initialValue: this.route.snapshot.paramMap.get('projectUid'),
+  });
+  // newsletter-manage.component.ts's goToList() carries the resolved project
+  // on ?project= for the same divergent-context reason goToCreate() does.
+  // Every navigation that reaches 'list' comes from a different route config
+  // (create, :projectUid/:id/edit), which Angular destroys/recreates rather
+  // than reuses, so an entry-snapshot read (like newsletter-manage's sibling
+  // queryProjectRef) would suffice today — this is read reactively instead as
+  // belt-and-braces against a future list-to-list navigation being added
+  // without updating this read, not because one exists now. ?project= is
+  // otherwise always a slug everywhere else it's produced in this app;
+  // goToList/goToCreate are the exception that write a UID (see their own
+  // comments), so only a UID-shaped value is used directly here — a slug
+  // falls through to activeContextUid() instead, same shared toValidUuid
+  // gating as newsletter-manage.component.ts's queryProjectUid.
+  private readonly routeProjectRef: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((p) => p.get('project'))), {
+    initialValue: this.route.snapshot.queryParamMap.get('project'),
+  });
+  private readonly routeProjectRefUid: Signal<string | null> = computed(() => toValidUuid(this.routeProjectRef()) ?? null);
+  public readonly projectUid: Signal<string> = computed(
+    () => this.routeProjectUid() || this.routeProjectRefUid() || this.projectContextService.activeContextUid()
+  );
   protected readonly canLoadMore: Signal<boolean> = computed(() => !!this.nextPageToken() && !this.loading() && !this.loadingMore() && !!this.projectUid());
   protected readonly hasNewsletters: Signal<boolean> = computed(() => this.newsletters().length > 0 || this.armingNewsletters().length > 0);
   protected readonly hasOptOuts: Signal<boolean> = computed(() => this.optOuts().length > 0);
+  // Opt-outs are project-wide — listOptOuts(uid) has no publication scope — so
+  // the tab doesn't belong on a single publication's editions page. Showing it
+  // there would let a per-publication view read and mutate a project-wide list.
+  protected readonly statusTabOptions: Signal<FilterPillOption[]> = computed(() => {
+    const base: FilterPillOption[] = [
+      { id: 'draft', label: 'Drafts' },
+      { id: 'scheduled', label: 'Scheduled' },
+      { id: 'sent', label: 'Sent' },
+    ];
+    return this.publicationId() ? base : [...base, { id: 'optout', label: 'Opt-out' }];
+  });
   // Per-tab empty-state copy, keyed by tab id — avoids nesting ternaries in the template
   // (repo convention) for what's otherwise a flat lookup with no other tab-specific branching.
   protected readonly emptyStateCopy: Signal<{ title: string; subtitle: string }> = computed(() => {
@@ -145,20 +198,82 @@ export class NewsletterListComponent {
 
   public constructor() {
     const tabFromQuery = this.route.snapshot.queryParamMap.get('tab');
-    if (tabFromQuery === 'sent' || tabFromQuery === 'draft' || tabFromQuery === 'optout' || tabFromQuery === 'scheduled') {
+    // A `?tab=optout` deep link into a publication-scoped page must not select
+    // the hidden tab — statusTabOptions() omits it there, and the load branch
+    // below assumes optout only runs unscoped. Reads publicationId() (the
+    // isUuid()-gated signal), not the raw :pubId param: a malformed segment
+    // already makes the page behave unscoped everywhere else (statusTabOptions,
+    // onStatusTabChange, the fetch guard), so this must agree rather than
+    // independently treat any non-empty segment as "scoped" — that mismatch
+    // would gate a deep-linked ?tab=optout shut while every other check on the
+    // same malformed URL renders and permits it.
+    const optoutAllowed = !this.publicationId();
+    if (tabFromQuery === 'sent' || tabFromQuery === 'draft' || tabFromQuery === 'scheduled' || (tabFromQuery === 'optout' && optoutAllowed)) {
       this.statusTab.set(tabFromQuery);
     }
-    this.initLoadOnContextOrTab();
+    this.initLoadOnContextOrTabAndPublication();
   }
 
   protected onStatusTabChange(tab: string): void {
-    if (tab === 'draft' || tab === 'sent' || tab === 'optout' || tab === 'scheduled') {
+    if (tab === 'draft' || tab === 'sent' || tab === 'scheduled' || (tab === 'optout' && !this.publicationId())) {
       this.statusTab.set(tab);
     }
   }
 
+  // The composer sits at the flat `newsletters/create` path, so both the
+  // publication being composed into AND the owning project have to travel
+  // with the navigation rather than being inferred.
+  //
+  // publication: without it the new edition is created unfiled —
+  // `publication_id` is optional upstream and there is no project default to
+  // fall back to, so the edition would silently not belong to the
+  // publication the user opened. Unfiled is a valid state (the weekly brief
+  // creates editions that way), which is exactly why this has to be passed
+  // explicitly rather than inferred.
+  //
+  // project: on the `:projectUid/:pubId/editions` mount, this.projectUid()
+  // resolves from the route's own path segment (authoritative even beside a
+  // stale active-context cookie) — a real UID, unlike every other producer
+  // of ?project= in this app, which sends a slug. Carried on that standard
+  // query param rather than a bespoke one: newsletterAccessGuard reads it
+  // directly at the create leaf, and NewsletterManageComponent reads it
+  // directly for its save payload too (both bypass depending on
+  // projectQueryParamGuard, which runs on the newsletters parent mounts but
+  // is skipped by Angular's default guard-reuse rules when only this leaf
+  // changes and the parent mount's own path params don't) — see both call
+  // sites' own comments for why. NewsletterManageComponent gates the value
+  // with isUuid() first, so this UID is only ever used where a UID is
+  // expected and a stray slug still falls through to its own slug-resolving
+  // fallback; newsletterAccessGuard passes its ?project= source through
+  // ungated, since getProject already resolves either a slug or a UID and
+  // needs no gate to do so correctly. The composer's
+  // displayName/logoUrl are resolved from projectUid() too (see
+  // NewsletterManageComponent's resolvedProject), so they end up describing
+  // the same project as the save target rather than lagging on activeContext.
+  //
+  // Only written when it actually diverges from activeContextUid(), via the
+  // shared divergentProjectQueryParam (also used by NewsletterManageComponent
+  // and NewsletterAnalyticsComponent for the same rule): a written pin
+  // persists in the URL even after an in-page project switch
+  // (ProjectContextService.syncProjectQueryParam rewrites ?project= via
+  // location.replaceState, which bypasses the Router entirely, so a route
+  // param read never sees it change) — on the lens-prefixed mounts a switch
+  // navigates away from this 3-segment URL anyway, but the flat (me/org-
+  // lens) mount has no such guard and would keep the create/list pages
+  // pinned to a project the sidebar no longer shows as active. Omitting the
+  // param in the common (non-divergent) case preserves the pre-existing
+  // context-following behavior; it's written only in the one case that
+  // needs it, and a switch away from that project is expected to require
+  // leaving this page anyway.
   protected goToCreate(): void {
-    this.router.navigate(['..', 'create'], { relativeTo: this.route });
+    const pubId = this.publicationId();
+    this.router.navigate(['create'], {
+      relativeTo: this.route.parent,
+      queryParams: {
+        ...(pubId ? { publication: pubId } : {}),
+        ...divergentProjectQueryParam(this.projectUid(), this.projectContextService.activeContextUid()),
+      },
+    });
   }
 
   protected goToRow(item: NewsletterListItem): void {
@@ -170,9 +285,17 @@ export class NewsletterListComponent {
       return;
     }
     const target = this.statusTab() === 'sent' ? 'analytics' : 'edit';
-    // Carry the newsletter's own project_uid in the URL instead of relying on
-    // ambient context — see newsletters.routes.ts for the rationale.
-    this.router.navigate(['..', item.project_uid, item.id, target], { relativeTo: this.route });
+    // Anchor to route.parent with the full path rather than ['..', ...]: this
+    // component is mounted at both the flat 1-segment `list` route and the
+    // 3-segment `:projectUid/:pubId/editions` route, and Angular's relative
+    // navigation pops one URL segment per '..', not one Route match — so a
+    // single '..' from the 3-segment mount would only remove 'editions',
+    // landing on a URL nothing matches. route.parent is the shared
+    // `newsletters` mount in both cases (see goBack in newsletter-analytics
+    // and goToList in newsletter-manage for the same pattern). Carry the
+    // newsletter's own project_uid in the URL instead of relying on ambient
+    // context — see newsletters.routes.ts for the rationale.
+    this.router.navigate([item.project_uid, item.id, target], { relativeTo: this.route.parent });
   }
 
   protected openPreview(item: NewsletterListItem, event: Event): void {
@@ -185,13 +308,14 @@ export class NewsletterListComponent {
     const token = this.nextPageToken();
     const uid = this.projectUid();
     const status = this.statusTab();
+    const pubId = this.publicationId();
     const generation = this.loadGeneration;
     // Opt-out has no pagination — canLoadMore() never yields true for it, so
     // this is just the type guard that lets `status` narrow below.
     if (!token || this.loadingMore() || !uid || status === 'optout') return;
     this.loadingMore.set(true);
     this.newsletterService
-      .listNewsletters(uid, { status, page_token: token })
+      .listNewsletters(uid, { status, page_token: token, publication_id: pubId })
       .pipe(
         take(1),
         finalize(() => this.loadingMore.set(false))
@@ -316,18 +440,18 @@ export class NewsletterListComponent {
     });
   }
 
-  // switchMap cancels the in-flight initial list request when the tab or project
-  // changes, so a slow response can never clobber the newer tab's rows or fan out
-  // analytics for rows that are no longer displayed. (loadMore requests are not
-  // cancelled — loadMore guards its own response against context changes instead.)
-  // Loading is cleared explicitly on every outcome path (empty uid, error, next)
-  // rather than via finalize, so cancellation can never produce a loading write
-  // regardless of operator teardown ordering.
-  private initLoadOnContextOrTab(): void {
-    combineLatest([toObservable(this.projectUid), toObservable(this.statusTab)])
+  // switchMap cancels the in-flight initial list request when the tab, project,
+  // or publication changes, so a slow response can never clobber the newer tab's
+  // rows or fan out analytics for rows that are no longer displayed. (loadMore
+  // requests are not cancelled — loadMore guards its own response against context
+  // changes instead.) Loading is cleared explicitly on every outcome path (empty
+  // uid, error, next) rather than via finalize, so cancellation can never produce
+  // a loading write regardless of operator teardown ordering.
+  private initLoadOnContextOrTabAndPublication(): void {
+    combineLatest([toObservable(this.projectUid), toObservable(this.statusTab), toObservable(this.publicationId)])
       .pipe(
-        distinctUntilChanged(([prevUid, prevTab], [uid, tab]) => prevUid === uid && prevTab === tab),
-        switchMap(([uid, status]) => {
+        distinctUntilChanged(([prevUid, prevTab, prevPub], [uid, tab, pub]) => prevUid === uid && prevTab === tab && prevPub === pub),
+        switchMap(([uid, status, pubId]) => {
           this.loadGeneration++;
           this.previewVisible.set(false);
           this.selectedNewsletter.set(null);
@@ -348,6 +472,17 @@ export class NewsletterListComponent {
           }
           this.loading.set(true);
           if (status === 'optout') {
+            // Opt-outs are project-wide — listOptOuts(uid) has no publication
+            // scope. statusTabOptions() already hides the tab on a publication-
+            // scoped page, and the tab-selection guards in the constructor and
+            // onStatusTabChange keep `status` from becoming 'optout' there;
+            // this is the belt-and-suspenders check on the actual fetch, so a
+            // publication page can never read or mutate the project-wide list
+            // even if a future caller sets statusTab directly.
+            if (pubId) {
+              this.loading.set(false);
+              return EMPTY;
+            }
             return this.newsletterService.listOptOuts(uid).pipe(
               map((response): NewsletterListLoadResult => ({ kind: 'optout', response })),
               catchError((err: HttpErrorResponse) => {
@@ -365,8 +500,8 @@ export class NewsletterListComponent {
           // neither tab shows or hides the wrong rows.
           if (status === 'scheduled') {
             return forkJoin({
-              scheduled: this.newsletterService.listNewsletters(uid, { status: 'scheduled' }),
-              sending: this.newsletterService.listNewsletters(uid, { status: 'sending' }),
+              scheduled: this.newsletterService.listNewsletters(uid, { status: 'scheduled', publication_id: pubId }),
+              sending: this.newsletterService.listNewsletters(uid, { status: 'sending', publication_id: pubId }),
             }).pipe(
               map(
                 (results): NewsletterListLoadResult => ({
@@ -382,7 +517,7 @@ export class NewsletterListComponent {
               })
             );
           }
-          return this.newsletterService.listNewsletters(uid, { status }).pipe(
+          return this.newsletterService.listNewsletters(uid, { status, publication_id: pubId }).pipe(
             map(
               (response): NewsletterListLoadResult => ({
                 kind: 'newsletters',

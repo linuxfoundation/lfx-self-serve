@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom, Observable, throwError } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 
-import { extractErrorMessage, isTransientHttpError, retryTransientHttpError } from './http-error.utils';
+import { extractErrorMessage, extractStructuredErrorMessage, isTransientHttpError, retryTransientHttpError } from './http-error.utils';
 
 function httpError(status: number): HttpErrorResponse {
   return new HttpErrorResponse({ status, statusText: 'x', url: '/api/thing' });
@@ -14,6 +14,43 @@ function httpError(status: number): HttpErrorResponse {
 function httpErrorWithBody(status: number, error: unknown): HttpErrorResponse {
   return new HttpErrorResponse({ status, statusText: 'x', url: '/api/thing', error });
 }
+
+describe('extractStructuredErrorMessage', () => {
+  it("reads the BFF envelope's `error` key", () => {
+    const err = new HttpErrorResponse({ status: 409, error: { error: 'a publication with this slug already exists' } });
+    expect(extractStructuredErrorMessage(err)).toBe('a publication with this slug already exists');
+  });
+
+  it('also accepts a `message` key, for callers still on that shape', () => {
+    const err = new HttpErrorResponse({ status: 500, error: { message: 'boom' } });
+    expect(extractStructuredErrorMessage(err)).toBe('boom');
+  });
+
+  it('prefers a ServiceValidationError field-level detail over the generic top-level message, same as extractErrorMessage', () => {
+    const err = httpErrorWithBody(400, {
+      error: 'Validation failed for registrants',
+      errors: [{ field: 'registrants', message: 'This meeting has 62 registrants — imports are limited to 50 per meeting.' }],
+    });
+    expect(extractStructuredErrorMessage(err)).toBe('This meeting has 62 registrants — imports are limited to 50 per meeting.');
+  });
+
+  it('accepts a plain string body', () => {
+    const err = new HttpErrorResponse({ status: 500, error: 'raw upstream text' });
+    expect(extractStructuredErrorMessage(err)).toBe('raw upstream text');
+  });
+
+  it('returns undefined for a body-less failure, not the raw HttpErrorResponse message', () => {
+    // status 0 (network drop) — Angular still populates .message with its
+    // own "Http failure response for ..." string, which this must not surface.
+    const err = new HttpErrorResponse({ status: 0 });
+    expect(extractStructuredErrorMessage(err)).toBeUndefined();
+  });
+
+  it('returns undefined for anything that is not an HttpErrorResponse', () => {
+    expect(extractStructuredErrorMessage(new Error('boom'))).toBeUndefined();
+    expect(extractStructuredErrorMessage(null)).toBeUndefined();
+  });
+});
 
 describe('isTransientHttpError', () => {
   // Each status is named rather than looped so a failure says WHICH class of

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { capCodePointEdit, codePointLength, slugify, splitIntoParagraphs } from './string.utils';
+import { capCodePointEdit, codePointLength, slugify, splitIntoParagraphs, toValidUuid, truncateSlug } from './string.utils';
 
 describe('codePointLength', () => {
   it('counts ASCII the same as String.length', () => {
@@ -93,6 +93,47 @@ describe('slugify', () => {
   it('two labels that differ only in punctuation slugify to the same value (the collision case callers must disambiguate)', () => {
     expect(slugify('Alpha Project')).toBe(slugify('Alpha-Project'));
   });
+
+  it('strips diacritics rather than dropping the accented letters entirely', () => {
+    expect(slugify('Événements')).toBe('evenements');
+    expect(slugify('Café Münchën')).toBe('cafe-munchen');
+  });
+
+  it('still collapses to empty for scripts with no Latin-equivalent decomposition (no transliteration)', () => {
+    expect(slugify('日本語')).toBe('');
+    expect(slugify('Мой дайджест')).toBe('');
+  });
+
+  it('NFKD-expanding characters can derive a slug longer than the input text (the case truncateSlug exists for)', () => {
+    // A single-codepoint ligature decomposes to two letters under NFKD, so
+    // 60 input characters can derive a 120-character slug.
+    const name = 'ﬁ'.repeat(60);
+    expect(name.length).toBe(60);
+    expect(slugify(name).length).toBe(120);
+  });
+});
+
+describe('truncateSlug', () => {
+  it('leaves a slug under the limit untouched', () => {
+    expect(truncateSlug('weekly-digest', 100)).toBe('weekly-digest');
+  });
+
+  it('cuts a slug down to the limit', () => {
+    expect(truncateSlug('a'.repeat(150), 100)).toBe('a'.repeat(100));
+  });
+
+  it('re-trims a trailing hyphen the cut exposes', () => {
+    // Cutting 'abc-def' to 4 chars lands right after the hyphen ('abc-'),
+    // which a plain slice() would leave dangling.
+    expect(truncateSlug('abc-def', 4)).toBe('abc');
+  });
+
+  it('produces output matching the upstream slug pattern for an NFKD-expanded slug at the real 100-char cap', () => {
+    const expanded = slugify('ﬁ'.repeat(60)); // 120 chars, all [a-z] (no hyphens introduced)
+    const truncated = truncateSlug(expanded, 100);
+    expect(truncated.length).toBe(100);
+    expect(truncated).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+  });
 });
 
 describe('splitIntoParagraphs', () => {
@@ -123,5 +164,45 @@ describe('splitIntoParagraphs', () => {
   it('returns an empty array for empty or whitespace-only input', () => {
     expect(splitIntoParagraphs('')).toEqual([]);
     expect(splitIntoParagraphs('  \n\n  ')).toEqual([]);
+  });
+});
+
+describe('toValidUuid', () => {
+  const UUID = '11111111-1111-1111-1111-111111111111';
+
+  it('returns the value unchanged when it is a canonical UUID', () => {
+    expect(toValidUuid(UUID)).toBe(UUID);
+  });
+
+  it('trims surrounding whitespace before validating', () => {
+    expect(toValidUuid(`  ${UUID}  `)).toBe(UUID);
+  });
+
+  it('returns undefined for null', () => {
+    expect(toValidUuid(null)).toBeUndefined();
+  });
+
+  it('returns undefined for undefined', () => {
+    expect(toValidUuid(undefined)).toBeUndefined();
+  });
+
+  it('returns undefined for an empty string', () => {
+    expect(toValidUuid('')).toBeUndefined();
+  });
+
+  it('returns undefined for a whitespace-only string', () => {
+    expect(toValidUuid('   ')).toBeUndefined();
+  });
+
+  it('returns undefined for a non-UUID string', () => {
+    expect(toValidUuid('not-a-uuid')).toBeUndefined();
+  });
+
+  it('returns undefined for a non-canonical form uuid.Parse would accept (urn: prefix)', () => {
+    expect(toValidUuid(`urn:uuid:${UUID}`)).toBeUndefined();
+  });
+
+  it('is case-insensitive, matching isUuid', () => {
+    expect(toValidUuid(UUID.toUpperCase())).toBe(UUID.toUpperCase());
   });
 });

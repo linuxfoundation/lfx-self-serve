@@ -12,8 +12,9 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { TableComponent } from '@components/table/table.component';
 import { lfxColors, NEWSLETTER_TOP_LINKS_LIMIT } from '@lfx-one/shared/constants';
 import { NewsletterAnalytics, NewsletterChartData, NewsletterLinkRow } from '@lfx-one/shared/interfaces';
-import { normalizeToUrl } from '@lfx-one/shared/utils';
+import { divergentProjectQueryParam, normalizeToUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -43,6 +44,7 @@ export class NewsletterAnalyticsComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly newsletterService = inject(NewsletterService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -135,10 +137,20 @@ export class NewsletterAnalyticsComponent {
 
   // `['..']` on a 2-segment route resolves to `/<id>` — anchor to route.parent + explicit 'list' child.
   // Analytics is only reachable from the Sent tab, so anchor Back there explicitly.
+  //
+  // Carries the resolved project on ?project= for the same divergent-context
+  // reason NewsletterManageComponent's goToList does: this route's own
+  // :projectUid path segment (read into projectUid() above) is authoritative
+  // even beside a stale active context, and this lands on a leaf under the
+  // same reused parent mount, so that parent's projectQueryParamGuard
+  // doesn't re-run. NewsletterListComponent's routeProjectRefUid (isUuid-gated the same way)
+  // picks this back up on the list page. divergentProjectQueryParam applies
+  // the same "only when it diverges" rule shared with goToList/goToCreate —
+  // see its own doc comment for why the pin is conditional at all.
   protected goBack(): void {
     this.router.navigate(['list'], {
       relativeTo: this.route.parent,
-      queryParams: { tab: 'sent' },
+      queryParams: { tab: 'sent', ...divergentProjectQueryParam(this.projectUid(), this.projectContextService.activeContextUid()) },
     });
   }
 

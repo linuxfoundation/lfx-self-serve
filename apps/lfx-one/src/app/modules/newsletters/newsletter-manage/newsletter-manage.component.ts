@@ -31,6 +31,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   combineDateTime,
+  divergentProjectQueryParam,
   formatFutureRelativeTime,
   formatRelativeTime,
   formatTo12HourInTimezone,
@@ -38,6 +39,7 @@ import {
   getUserTimezone,
   isValidEmail,
   stripHtml,
+  toValidUuid,
 } from '@lfx-one/shared/utils';
 import { newsletterScheduleWindowValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
@@ -110,6 +112,35 @@ export class NewsletterManageComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly platformId = inject(PLATFORM_ID);
 
+  // === Compose inputs ===
+  // The publication this edition is being composed into, carried on the
+  // ?publication= query param because the composer sits at the flat
+  // `newsletters/create` path rather than under `newsletters/:pubId`. Read
+  // reactively rather than as an entry snapshot, for the same reason
+  // queryProjectRef below is: CreateArtifactDialogComponent can navigate to
+  // this same route with its own ?project= (dropping ?publication=
+  // entirely, since it replaces the query string) while Angular reuses an
+  // already-mounted composer instance — a snapshot read would keep filing
+  // the edition under the stale publication instead of correctly leaving it
+  // unfiled. This corrects the pre-save case; it does not (and can't, on its
+  // own) correct a project/publication switch AFTER an autosave has already
+  // created a draft under the prior selection — newsletterId, the loaded
+  // form content, and this reused composer's still-open editing session
+  // would need to reset together for that, which is a pre-existing gap this
+  // change doesn't introduce and doesn't attempt to close.
+  // Resolved through the shared toValidUuid (trims, then requires isUuid() —
+  // see its own doc comment for the upstream-uuid.Parse narrowing note), for
+  // the same reason queryProjectUid below is gated: both a bare
+  // `?publication=` (empty after trim) and a malformed value (hand-edited
+  // URL, stale link) would otherwise reach the create payload as something
+  // other than a clean UUID, and upstream rejects either with a hard 400 on
+  // every save attempt, with no in-app recovery. Gating collapses both cases
+  // to undefined — the unfiled state, which the composer already treats as
+  // valid — instead of a hard failure.
+  private readonly composePublicationId: Signal<string | undefined> = toSignal(this.route.queryParamMap.pipe(map((p) => toValidUuid(p.get('publication')))), {
+    initialValue: toValidUuid(this.route.snapshot.queryParamMap.get('publication')),
+  });
+
   // === Forms ===
   // Form control names stay camelCase (Angular convention). API payloads
   // are serialized to snake_case at the boundary in saveDraft / runSend.
@@ -172,14 +203,90 @@ export class NewsletterManageComponent {
   public readonly activeContext: Signal<ProjectContext | null> = this.projectContextService.activeContext;
   // In edit mode the route carries the owning newsletter's project_uid; prefer
   // that over ambient context so an edit URL keeps working after a foundation/
-  // project context switch. Create mode has no projectUid segment, so we fall
-  // back to the active context.
+  // project context switch. Create mode has no projectUid path segment of its
+  // own, so a publication-scoped create link carries its owning project on the
+  // standard ?project= query param instead (see goToCreate in
+  // newsletter-list.component.ts). Read it directly here rather than relying
+  // on projectQueryParamGuard to have resolved it into activeContext first:
+  // that guard runs on the newsletters parent mounts (flat, foundation, and
+  // project), and Angular's default runGuardsAndResolvers ('paramsChange')
+  // does not re-run a reused parent's guards when only the LEAF route changes
+  // and the parent mount's own path params don't — which is what the in-app
+  // "Create" click does (e.g. editions -> create). newsletterAccessGuard, on
+  // the newly-activated create leaf, still runs and still reads ?project=
+  // directly (see its own comment); it's only the PARENT's context-syncing
+  // guard that's skipped. Reading it here directly keeps the save payload
+  // correct in that case regardless of whether the parent's guard re-ran.
+  // displayName/logoUrl below are resolved the same
+  // way, off projectUid() rather than activeContext() directly, so they agree
+  // with the save payload instead of lagging on a stale active context.
+  //
+  // ?project= is otherwise always a slug everywhere else it's produced
+  // (create-artifact-dialog, sidebar, writer.guard, etc.) — this route's own
+  // producer, goToCreate, is the one exception that writes a UID (see its own
+  // comment for why). This endpoint has no slug-resolution middleware
+  // (requireProjectUid forwards the path segment as-is), so only a UID-shaped
+  // value from the query param may be used directly; a slug must still fall
+  // through to activeContextUid(), which projectQueryParamGuard resolves from
+  // exactly that slug on every navigation that actually runs it.
   private readonly routeProjectUid: Signal<string | null> = toSignal(this.route.paramMap.pipe(map((p) => p.get('projectUid'))), { initialValue: null });
-  public readonly projectUid: Signal<string> = computed(() => this.routeProjectUid() || this.projectContextService.activeContextUid());
-  public readonly displayName: Signal<string> = computed(() => this.activeContext()?.name ?? '');
-  private readonly fetchedLogoUrl = signal<string | undefined>(undefined);
-  public readonly logoUrl: Signal<string | undefined> = computed(() => this.activeContext()?.logoUrl || this.fetchedLogoUrl());
+  // Read reactively rather than as an entry-snapshot, unlike composePublicationId
+  // above: this route (create) is also the target of the rail-global
+  // CreateArtifactDialogComponent, which navigates here with its own ?project=
+  // (a slug) after the composer may already be mounted from a prior goToCreate()
+  // navigation carrying a UID. Angular reuses the component instance across that
+  // navigation (same routeConfig; only a query param changed), so a snapshot read
+  // would keep serving the first UID forever — silently ignoring the dialog's
+  // project pick. A reactive read picks up the change; the shared toValidUuid
+  // below still rejects the dialog's slug and falls through to
+  // activeContextUid(), which the dialog updates via its own setContext()
+  // before navigating, so that path resolves correctly either way.
+  private readonly queryProjectRef: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((p) => p.get('project')?.trim() || null)), {
+    initialValue: this.route.snapshot.queryParamMap.get('project')?.trim() || null,
+  });
+  private readonly queryProjectUid: Signal<string | null> = computed(() => toValidUuid(this.queryProjectRef()) ?? null);
+  public readonly projectUid: Signal<string> = computed(
+    () => this.routeProjectUid() || this.queryProjectUid() || this.projectContextService.activeContextUid()
+  );
+  // Resolved by fetching projectUid() directly (initResolvedProject below),
+  // not read off activeContext(): the two can now disagree in the exact
+  // divergent-context case documented above (queryProjectUid wins the save
+  // payload while activeContext, unrefreshed, still names the wrong
+  // project) — and this pair backs the review panel and send-confirmation
+  // step, where mislabeling the project is more than cosmetic. Falls back to
+  // activeContext() only when it actually describes the same project as
+  // projectUid() (an immediate best-guess while the fetch is in flight, or a
+  // best-effort display if it failed) — never when the two disagree, since a
+  // confidently-wrong project name on a send-confirmation screen is worse
+  // than a blank one.
+  private readonly resolvedProject = signal<{ name: string; logoUrl?: string } | null>(null);
+  private readonly contextMatchesTarget: Signal<boolean> = computed(() => {
+    const ctxUid = this.activeContext()?.uid;
+    return !!ctxUid && ctxUid === this.projectUid();
+  });
+  public readonly displayName: Signal<string> = computed(
+    () => this.resolvedProject()?.name ?? (this.contextMatchesTarget() ? (this.activeContext()?.name ?? '') : '')
+  );
+  public readonly logoUrl: Signal<string | undefined> = computed(
+    () => this.resolvedProject()?.logoUrl ?? (this.contextMatchesTarget() ? this.activeContext()?.logoUrl : undefined)
+  );
   public readonly hasContext: Signal<boolean> = computed(() => this.projectUid().length > 0);
+  // Carries the resolved project on ?project= for the same divergent-context
+  // reason goToCreate() does in newsletter-list.component.ts: goToList() below
+  // lands on a leaf under the same reused parent mount, so that parent's
+  // projectQueryParamGuard doesn't re-run, and NewsletterListComponent's own
+  // routeProjectRef (with the same isUuid gating this component's
+  // queryProjectUid uses) is what picks this back up on the list page. Also
+  // bound directly on the
+  // template's "Back to Newsletters" link so Back agrees with Cancel/send/
+  // delete (all routed through goToList) on which project's list it lands
+  // on, instead of Back alone falling through to a stale active context.
+  // divergentProjectQueryParam is shared with the same rule applied in
+  // NewsletterListComponent.goToCreate and NewsletterAnalyticsComponent.goBack
+  // — see its own doc comment for why the pin is conditional at all.
+  public readonly listQueryParams: Signal<Record<string, string>> = computed(() =>
+    divergentProjectQueryParam(this.projectUid(), this.projectContextService.activeContextUid())
+  );
 
   // === Auth-derived ===
   public readonly edName: Signal<string> = computed(() => {
@@ -388,7 +495,7 @@ export class NewsletterManageComponent {
 
   public constructor() {
     this.initScheduleTimezone();
-    this.initContextLogo();
+    this.initResolvedProject();
     this.initFormMirrors();
     this.initLoadDraft();
     this.initSaveChannel();
@@ -624,7 +731,7 @@ export class NewsletterManageComponent {
   private goToList(tab?: 'draft' | 'scheduled' | 'sent'): void {
     this.router.navigate(['list'], {
       relativeTo: this.route.parent,
-      queryParams: tab ? { tab } : undefined,
+      queryParams: { ...(tab ? { tab } : {}), ...this.listQueryParams() },
     });
   }
 
@@ -1295,22 +1402,33 @@ export class NewsletterManageComponent {
     return 1;
   }
 
-  private initContextLogo(): void {
-    toObservable(this.activeContext)
+  // Fetches by projectUid() rather than reading activeContext() directly:
+  // the two can disagree in the divergent-context/reused-parent-mount case
+  // (see resolvedProject's own comment above), and switchMap on a project
+  // UID that's always correct is what makes this authoritative regardless of
+  // whether activeContext ever gets refreshed. Resetting resolvedProject to
+  // null before each fetch (rather than leaving the previous project's data
+  // visible) avoids briefly mislabeling the new project with the old one's
+  // name/logo while the request is in flight — displayName/logoUrl's
+  // activeContext() fallback still shows a reasonable best-guess during that
+  // gap.
+  private initResolvedProject(): void {
+    toObservable(this.projectUid)
       .pipe(
-        switchMap((ctx) => {
-          if (ctx?.logoUrl || !ctx?.slug) {
-            this.fetchedLogoUrl.set(undefined);
-            return of(undefined);
-          }
-          return this.projectService.getProject(ctx.slug, false).pipe(
-            map((project) => project?.logo_url || undefined),
-            catchError(() => of(undefined))
-          );
+        distinctUntilChanged(),
+        tap(() => this.resolvedProject.set(null)),
+        switchMap((uid) => {
+          if (!uid) return of(null);
+          // getProject already terminates its own error channel (returns
+          // of(null) on failure), so this stream can't error — no
+          // component-level catchError needed on top of it.
+          return this.projectService
+            .getProject(uid, false)
+            .pipe(map((project) => (project ? { name: project.name, logoUrl: project.logo_url || undefined } : null)));
         }),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((url) => this.fetchedLogoUrl.set(url));
+      .subscribe((project) => this.resolvedProject.set(project));
   }
 
   private initLoadDraft(): void {
@@ -1492,7 +1610,14 @@ export class NewsletterManageComponent {
       );
     }
 
-    const create: CreateNewsletterRequest = basePayload;
+    // publication_id is only sent on create. It is optional upstream — an
+    // omitted value leaves the edition unfiled rather than resolving to a
+    // project default, since projects are not given one — so it is passed here
+    // to file the edition under the publication the user opened. The PUT omits
+    // the key entirely, which upstream reads as "keep the current publication"
+    // rather than "unfile"; that distinction is why the update field is a raw
+    // message and not a plain optional string.
+    const create: CreateNewsletterRequest = { ...basePayload, publication_id: this.composePublicationId() };
     return this.newsletterService.createNewsletter(projectUid, create).pipe(
       take(1),
       finalize(clearSavingFlags),

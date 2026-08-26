@@ -1,9 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NEWSLETTER_EDITOR_TYPES } from '../constants/newsletter.constants';
+
 import { Project } from './project.interface';
 
 export type NewsletterStatusTabId = 'draft' | 'scheduled' | 'sent' | 'optout';
+
+/** Upstream's ValidEditorType — see NEWSLETTER_EDITOR_TYPES for why this is derived, not a literal union of its own. */
+export type NewsletterEditorType = (typeof NEWSLETTER_EDITOR_TYPES)[number];
 
 /**
  * Newsletter lifecycle states: `draft → sending → sent`, or
@@ -137,9 +142,89 @@ export interface NewsletterCancelScheduleResult {
   newsletter: Newsletter;
 }
 
+export interface NewsletterPublication {
+  id: string;
+  project_uid: string;
+  slug: string;
+  name: string;
+  is_default: boolean;
+  wrapper_content: unknown;
+  // Upstream emits these as `omitempty` pointers, so a value that is not set
+  // arrives with the key ABSENT — undefined at runtime, never null. Declaring
+  // them required would be a type lie that only bites once something
+  // dereferences them. Plain optional (no `| null`), matching how every other
+  // response-side omitempty pointer in this file is typed (e.g. Newsletter's
+  // sent_at, group_id, scheduled_at) — `| null` is reserved for the tri-state
+  // update request fields below, where a client-sent `null` is meaningful.
+  template_set_id?: string;
+  view_online_base?: string;
+  /** Which composer this publication's editions open in. Editions inherit it. */
+  editor_type: NewsletterEditorType;
+  /** Optional per-publication From address the editions inherit. */
+  sender_email?: string;
+  created_by: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePublicationRequest {
+  slug: string;
+  name: string;
+  wrapper_content?: unknown;
+  // Plain optional, not tri-state: upstream types these as `*string` with
+  // plain `omitempty` (not `json.RawMessage`), so a client-sent `null` and an
+  // omitted key both unmarshal to the same nil pointer — there is no "clear"
+  // signal to distinguish on a brand-new resource. `| null` is reserved for
+  // the update requests below, where the raw-message tri-state makes it
+  // meaningful.
+  template_set_id?: string;
+  /** Omitted defaults to the Classic composer upstream. */
+  editor_type?: NewsletterEditorType;
+  sender_email?: string;
+  view_online_base?: string;
+}
+
+/** Dialog input only — never serialized onto the wire, so camelCase here doesn't mirror the snake_case request/response shapes below it. */
+export interface CreatePublicationDialogData {
+  projectUid: string;
+}
+
+export interface UpdatePublicationRequest {
+  name?: string;
+  wrapper_content?: unknown;
+  editor_type?: NewsletterEditorType;
+  // Upstream reads these three as three-state: omit the key to leave the
+  // stored value alone, send null to clear the column, send a string to set
+  // it. `null` is therefore meaningful here and not the same as omitting.
+  template_set_id?: string | null;
+  sender_email?: string | null;
+  view_online_base?: string | null;
+}
+
+export interface NewsletterPublicationListResponse {
+  publications: NewsletterPublication[];
+  next_page_token?: string;
+}
+
+/**
+ * Query parameters for the publication list. The upstream list is paginated and
+ * caps the page size, so a caller that needs every publication follows
+ * `next_page_token` until the response omits it.
+ */
+export interface NewsletterPublicationListParams {
+  page_token?: string;
+  page_size?: number;
+}
+
 export interface Newsletter {
   id: string;
   project_uid: string;
+  // Optional: a newsletter is created before it is assigned to a publication,
+  // and pre-migration / synthetic newsletters (e.g. weekly-brief) carry none.
+  // Publication scoping is applied via the NewsletterListParams filter, not by
+  // dereferencing this field, so it stays optional (LFXV2-2582).
+  publication_id?: string;
   subject: string;
   body_html: string;
   ed_reply_email: string;
@@ -150,7 +235,7 @@ export interface Newsletter {
    * Two meanings depending on `status`: while `draft`, the author's saved
    * intent — saving it does not by itself contact the send provider. Once
    * `status='scheduled'`, the committed release time armed at the provider.
-   * Null when no schedule has ever been set. Survives cancel-schedule (which
+   * Absent (undefined) when no schedule has ever been set. Survives cancel-schedule (which
    * reverts to `draft` but retains this value) so re-arming doesn't require
    * re-entering the time.
    */
@@ -177,6 +262,13 @@ export interface NewsletterReaderState {
 }
 
 export interface CreateNewsletterRequest {
+  /**
+   * Optionally files the edition under a publication. Omitting it leaves the
+   * edition unfiled, which is valid: publications are created explicitly, a
+   * project is not given a default one, and server-initiated editions (the
+   * weekly brief) have no publication to pick.
+   */
+  publication_id?: string;
   subject: string;
   body_html: string;
   ed_reply_email: string;
@@ -200,6 +292,17 @@ export interface UpdateNewsletterRequest {
    * schedule must always send the current value back.
    */
   scheduled_at?: string | null;
+  /**
+   * Deliberately NOT full-replace, unlike every other field above — mirrors
+   * UpdatePublicationRequest's tri-state fields: omit the key to preserve the
+   * edition's current publication link, send `null` (or `""`) to unfile it,
+   * send a uuid to move it to that publication. Callers that only want to
+   * touch subject/body/etc. must omit this key entirely rather than sending
+   * back the current value, since sending it back is indistinguishable from
+   * "move to this same publication" but omitting it is the actual "leave
+   * alone" signal upstream reads.
+   */
+  publication_id?: string | null;
 }
 
 export interface NewsletterListItem extends Newsletter {
@@ -209,6 +312,7 @@ export interface NewsletterListItem extends Newsletter {
   // inline them.
   unique_opens?: number;
   open_rate?: number;
+  // publication_id is inherited from Newsletter
 }
 
 export interface NewsletterListResponse {
@@ -261,6 +365,7 @@ export interface MyNewsletterRow extends MyNewsletter {
 export interface NewsletterListParams {
   status?: NewsletterStatus;
   page_token?: string;
+  publication_id?: string;
 }
 
 /**

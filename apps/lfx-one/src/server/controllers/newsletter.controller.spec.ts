@@ -14,14 +14,30 @@ const { listNewsletters, createNewsletter, updateNewsletter, scheduleNewsletter,
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest
 // config — mock the barrels the controller imports from directly, same as
 // committee.controller.spec.ts / project.controller.spec.ts.
+// parseIfMatchHeader (server/helpers/validation.helper.ts, imported by the
+// controller under test) pulls in the Akrites/health-metrics exports below
+// too, even though nothing here exercises those code paths — several are
+// read at validation.helper.ts's own module top level (e.g.
+// AKRITES_STEWARD_ROLE_OPTIONS.map(...)), so the mock has to provide them or
+// the module fails to evaluate at all, not just at call time.
 vi.mock('@lfx-one/shared/constants', () => ({
   NEWSLETTER_BODY_MAX_LENGTH: 50_000,
   NEWSLETTER_RAW_CONTENT_MAX_LENGTH: 10_000,
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
   NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH: 5_000,
+  HEALTH_METRICS_RANGES: [],
+  MONTH_FORMAT_REGEX: /^\d{4}-(0[1-9]|1[0-2])$/,
+  AKRITES_ESCALATION_PATHS: [],
+  AKRITES_INACTIVE_REASON_OPTIONS: [],
+  AKRITES_STEWARD_ROLE_OPTIONS: [],
+  VALID_CLASSIFICATIONS: new Set(),
+  isHealthMetricsRange: () => false,
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/utils', () => ({ isUuid: vi.fn((v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)) }));
+vi.mock('@lfx-one/shared/utils', () => ({
+  isUuid: vi.fn((v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)),
+  resolvePeriodRange: vi.fn(),
+}));
 
 vi.mock('../services/newsletter.service', () => ({
   NewsletterService: class {
@@ -64,7 +80,7 @@ describe('NewsletterController.listNewsletters — status allowlist', () => {
     await new NewsletterController().listNewsletters({ params: { projectUid: 'p1' }, query: { status }, path: '/x' } as any, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(listNewsletters).toHaveBeenCalledWith(expect.anything(), 'p1', { status, page_token: undefined });
+    expect(listNewsletters).toHaveBeenCalledWith(expect.anything(), 'p1', { status, page_token: undefined, publication_id: undefined });
     expect(res.json).toHaveBeenCalled();
   });
 
@@ -76,6 +92,35 @@ describe('NewsletterController.listNewsletters — status allowlist', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(listNewsletters).not.toHaveBeenCalled();
+  });
+
+  it('forwards publication_id to scope the editions view to one publication', async () => {
+    listNewsletters.mockResolvedValue({ newsletters: [], next_page_token: undefined });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new NewsletterController().listNewsletters(
+      { params: { projectUid: 'p1' }, query: { status: 'sent', publication_id: 'pub-9' }, path: '/x' } as any,
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(listNewsletters).toHaveBeenCalledWith(expect.anything(), 'p1', { status: 'sent', page_token: undefined, publication_id: 'pub-9' });
+  });
+
+  it('forwards an explicitly empty publication_id instead of dropping it to undefined', async () => {
+    // Presence, not truthiness: an explicit `?publication_id=` must reach the
+    // service so upstream's own validation can reject it, rather than being
+    // silently widened here to "list every publication".
+    listNewsletters.mockResolvedValue({ newsletters: [], next_page_token: undefined });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new NewsletterController().listNewsletters({ params: { projectUid: 'p1' }, query: { publication_id: '' }, path: '/x' } as any, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(listNewsletters).toHaveBeenCalledWith(expect.anything(), 'p1', { status: undefined, page_token: undefined, publication_id: '' });
   });
 });
 

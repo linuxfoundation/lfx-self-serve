@@ -415,6 +415,36 @@ export function parseUpdateStatusBody(req: Request, operation: string): AkritesU
   };
 }
 
+/**
+ * Parses the `If-Match` header into a positive integer version, for
+ * optimistic-concurrency update/send routes. Strips a leading weak (`W/`)
+ * indicator and surrounding quotes before parsing, so both the strong and
+ * weak forms upstream's `formatETag`/`requireIfMatch` accept parse cleanly.
+ * Was duplicated verbatim (differing only in `operation`/`service`) between
+ * the newsletter and newsletter-publications controllers before this
+ * extraction.
+ */
+export function parseIfMatchHeader(req: Request, options: ValidationOptions): number {
+  const raw = (req.header('If-Match') || '').trim();
+  if (!raw) {
+    throw ServiceValidationError.forField('If-Match', 'If-Match header is required', {
+      operation: options.operation,
+      service: options.service || 'controller',
+      path: req.path,
+    });
+  }
+  const cleaned = raw.replace(/^W\//i, '').replace(/^"|"$/g, '');
+  const version = Number(cleaned);
+  if (!Number.isFinite(version) || !Number.isInteger(version) || version < 1) {
+    throw ServiceValidationError.forField('If-Match', 'If-Match must be a positive integer version', {
+      operation: options.operation,
+      service: options.service || 'controller',
+      path: req.path,
+    });
+  }
+  return version;
+}
+
 export function validateRequestBody<T>(body: T | undefined, req: Request, next: NextFunction, options: ValidationOptions): body is T {
   if (!body || (typeof body === 'object' && Object.keys(body).length === 0)) {
     const validationError = ServiceValidationError.forField('body', 'Request body is required', {

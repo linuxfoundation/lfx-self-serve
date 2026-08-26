@@ -20,7 +20,7 @@
 
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="newsletter-list-card">
       <lfx-card-tabs-bar
-        [options]="statusTabOptions"
+        [options]="statusTabOptions()"
         [selectedFilter]="statusTab()"
         (filterChange)="onStatusTabChange($event)"
         data-testid="newsletter-status-tabs">
