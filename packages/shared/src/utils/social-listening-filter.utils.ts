@@ -90,7 +90,8 @@ export function normalizeViewScope(raw: unknown, defaultPeriod: string): SavedVi
   const s = raw as Partial<SavedViewScope>;
   const str = (v: unknown, fallback: string): string => (typeof v === 'string' ? v : fallback);
   return {
-    period: str(s.period, defaultPeriod),
+    // Resolve like the URL decoder — an obsolete/malformed persisted period falls back instead of 400ing every request.
+    period: coercePeriod(typeof s.period === 'string' ? s.period : undefined, defaultPeriod),
     sourceProjectId: str(s.sourceProjectId, DEFAULT_MENTION_VIEW_SCOPE.sourceProjectId),
     platform: str(s.platform, DEFAULT_MENTION_VIEW_SCOPE.platform),
   };
@@ -113,10 +114,12 @@ export function normalizePredicate(raw: unknown): FilterPredicate {
   const str = (v: unknown, fallback: string): string => (typeof v === 'string' ? v : fallback);
   const strArr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
   return {
-    sentiment: str(p.sentiment, DEFAULT_MENTION_PREDICATE.sentiment),
-    relevance: str(p.relevance, DEFAULT_MENTION_PREDICATE.relevance),
+    // Enum-backed fields coerce against the shared option sets like the URL decoder — a stale v1 value
+    // (e.g. sentiment "mixed") would otherwise pass here and 400 every feed request at the BFF.
+    sentiment: coerceLiteral(p.sentiment, SENTIMENT_VALUES, DEFAULT_MENTION_PREDICATE.sentiment),
+    relevance: coerceLiteral(p.relevance, RELEVANCE_VALUES, DEFAULT_MENTION_PREDICATE.relevance),
     language: str(p.language, DEFAULT_MENTION_PREDICATE.language),
-    hasTitle: str(p.hasTitle, DEFAULT_MENTION_PREDICATE.hasTitle),
+    hasTitle: coerceLiteral(p.hasTitle, HAS_TITLE_VALUES, DEFAULT_MENTION_PREDICATE.hasTitle),
     bookmarkFilter: p.bookmarkFilter === 'bookmarked' ? 'bookmarked' : DEFAULT_MENTION_PREDICATE.bookmarkFilter,
     readFilter: p.readFilter === 'unread' ? 'unread' : DEFAULT_MENTION_PREDICATE.readFilter,
     keywords: normalizeKeywords(strArr(p.keywords)),
@@ -232,8 +235,8 @@ const SENTIMENT_VALUES = new Set(MENTION_SENTIMENT_OPTIONS.map((o) => o.value));
 const RELEVANCE_VALUES = new Set(MENTION_RELEVANCE_OPTIONS.map((o) => o.value));
 const HAS_TITLE_VALUES = new Set(MENTION_HAS_TITLE_OPTIONS.map((o) => o.value));
 
-function coerceLiteral(value: string | undefined, allowed: Set<string>, fallback: string): string {
-  return value && allowed.has(value) ? value : fallback;
+function coerceLiteral(value: unknown, allowed: Set<string>, fallback: string): string {
+  return typeof value === 'string' && allowed.has(value) ? value : fallback;
 }
 
 /** An unresolvable `?period=` falls back to the default instead of reaching the server as a 400. */

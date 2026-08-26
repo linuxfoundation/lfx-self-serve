@@ -179,6 +179,8 @@ export class SocialListeningComponent {
   private readonly windowCache = signal<Map<number, SocialListeningWindowCacheEntry>>(new Map());
   // Global-newest MENTION_TS, captured whenever window 0 loads — survives cache pruning so a mark-all from a deep page still stamps the true cutoff.
   private newestMentionTs: string | null = null;
+  /** Guards the mark-all cutoff fetch against double-clicks during a slow round-trip. */
+  private markAllPending = false;
   private readonly backgroundLoading = signal(false);
   /** Bumped to force a one-time refetch of a window whose phase-2 fill failed. */
   private readonly feedRetryTick = signal(0);
@@ -246,6 +248,8 @@ export class SocialListeningComponent {
   public readonly optionsLoading = computed(() => this.subProjectsState().loading || this.platformsState().loading);
 
   // === Filter-option pipelines (3017): lazy — gated on filtersOpenedOnce, never fire on page load ===
+  /** Latches once a languages fetch succeeds — distinguishes "options landed empty" from "never fetched". */
+  private readonly languagesResolved = signal(false);
   private readonly languagesState: Signal<LoadableState<string[]>> = this.initLanguagesState();
   private readonly keywordsState: Signal<LoadableState<string[]>> = this.initScopedOptionsState((req) => this.socialListeningService.getMentionsKeywords(req));
   // The filter panel needs the full tag vocabulary for the scope, not the analytics top-10 default.
@@ -256,14 +260,18 @@ export class SocialListeningComponent {
 
   public readonly languageOptions = computed(() => mapLanguagesToOptions(this.languagesState().data));
   public readonly languagesLoading = computed(() => this.languagesState().loading);
+  public readonly languagesError = computed(() => this.languagesState().error !== null);
   public readonly availableKeywords = computed(() => this.keywordsState().data);
   public readonly keywordsLoading = computed(() => this.keywordsState().loading);
+  public readonly keywordsError = computed(() => this.keywordsState().error !== null);
   public readonly availableTags = computed(() => this.tagsState().data);
   public readonly tagsLoading = computed(() => this.tagsState().loading);
+  public readonly tagsError = computed(() => this.tagsState().error !== null);
   // A kept author selection can drop out of the rescoped options — mergeSelectedAuthors re-adds
   // it as a placeholder so the multiselect chip label still resolves.
   public readonly availableAuthors = computed(() => mergeSelectedAuthors(this.authorsState().data, this.selectedAuthors()));
   public readonly authorsLoading = computed(() => this.authorsState().loading);
+  public readonly authorsError = computed(() => this.authorsState().error !== null);
 
   public readonly activeFilterCount = computed(() => countActiveFilters(this.currentPredicate()));
   // Analytics can't apply bookmark/read filters (`mentionIds` is feed-only, read state is never sent) —
@@ -287,6 +295,8 @@ export class SocialListeningComponent {
     // Unread mode filters against the persisted read state — hold loading until it arrives so the
     // "all caught up" empty state can't paint before unread mentions are actually known.
     if (this.selectedReadFilter() === 'unread' && this.readState().loading) return true;
+    // Bookmark mode filters by the persisted bookmark set — same hold, so the "no bookmarks" empty state can't flash mid-load.
+    if (this.selectedBookmarkFilter() === 'bookmarked' && this.mentionBookmarkService.state().loading) return true;
     const windowData = this.windowCache().get(this.windowIndex());
     // A miss means the fetch is in flight or queued behind the coalescing debounce — hold loading so stale rows never paint.
     if (!windowData) return this.feedRequest() !== null && !this.feedState().error;
@@ -299,6 +309,8 @@ export class SocialListeningComponent {
   public readonly error = computed(() => this.feedState().error);
   /** Unread mode with a failed read-state load: the list swaps for an error banner so an empty fallback doc can't pose as "all caught up". */
   public readonly readStateError = computed(() => this.selectedReadFilter() === 'unread' && this.readState().error !== null);
+  /** Bookmark mode with a failed bookmark load: same swap, so an empty fallback set can't pose as "no bookmarked mentions". */
+  public readonly bookmarkStateError = computed(() => this.selectedBookmarkFilter() === 'bookmarked' && this.mentionBookmarkService.state().error !== null);
   /** Current window's background fill failed past its automatic retry — the list swaps the empty state for a retry row. */
   public readonly phase2Failed = computed(() => this.windowCache().get(this.windowIndex())?.phase2Failed === true);
   public readonly first = computed(() => this.currentPage() * this.pageSize());
@@ -398,11 +410,11 @@ export class SocialListeningComponent {
       });
     });
 
-    // A language the loaded scope carries no rows for (stale URL, rescoped period) is dropped rather
-    // than left advertising a pill nothing can match — only once the option list has actually landed.
+    // A language the scope carries no rows for (stale URL, rescoped period) is dropped — the resolved latch
+    // separates "landed empty" (invalidate) from "never fetched" (don't wipe a deep-linked ?language=).
     effect(() => {
       const state = this.languagesState();
-      if (state.loading || state.data.length === 0) return;
+      if (!this.languagesResolved() || state.loading || state.error) return;
       const selected = untracked(this.selectedLanguage);
       if (selected === DEFAULT_MENTION_PREDICATE.language) return;
       if (state.data.some((language) => language.toLowerCase() === selected.toLowerCase())) return;
@@ -556,15 +568,13 @@ export class SocialListeningComponent {
 
   /** The cutoff is the newest loaded MENTION_TS — never wall-clock, so backfilled mentions aren't silently hidden. */
   public onMarkAllAsRead(): void {
-    // The read-state doc is foundation-global, so a narrowed feed's newest can't stand in for it.
-    if (this.feedNarrowed()) {
+    // The read-state doc is foundation-global, so a narrowed feed's newest can't stand in for it. Same when
+    // window 0 never landed (paged away mid-fetch) — the retained global-newest is unknown, so resolve it live.
+    if (this.feedNarrowed() || !this.newestMentionTs) {
       void this.markAllFromUnfilteredNewest();
       return;
     }
-    // Prefer the retained global-newest (captured when window 0 loads; survives cache pruning) so a
-    // mark-all from a deep page doesn't stamp an older cutoff and leave newer window-0 mentions unread.
-    const latestTs = this.newestMentionTs ?? this.newestTsOf(this.currentWindowData().mentions);
-    this.mentionReadStateService.markAllAsRead(latestTs);
+    this.mentionReadStateService.markAllAsRead(this.newestMentionTs);
     // A new cutoff invalidates the unread snapshot — refresh so the unread view re-queries instead of paging stale state.
     this.refreshUnreadSnapshot();
   }
@@ -597,7 +607,11 @@ export class SocialListeningComponent {
   }
 
   public saveCurrentView(name: string): void {
-    const created = this.savedFilterService.addSavedFilter(name, this.currentPredicate(), this.currentViewScope());
+    // On a failed write the rollback drops the view — clearing the pending id keeps the foreign-view
+    // detector from misreading the user's own failed save as a shared preset.
+    const created = this.savedFilterService.addSavedFilter(name, this.currentPredicate(), this.currentViewScope(), () => {
+      if (created && this.activeViewId() === created.id) this.activeViewId.set(null);
+    });
     if (created) this.activeViewId.set(created.id);
   }
 
@@ -685,11 +699,18 @@ export class SocialListeningComponent {
   /** Resolves the foundation-global newest (limit-1 unfiltered fetch; the feed sorts newest-first) and stamps it as the read cutoff. */
   private async markAllFromUnfilteredNewest(): Promise<void> {
     const foundationSlug = this.foundationSlug();
-    if (!foundationSlug) return;
+    if (!foundationSlug || this.markAllPending) return;
+    this.markAllPending = true;
 
     try {
       const response = await firstValueFrom(this.socialListeningService.getMentionsFeed({ foundationSlug, period: this.defaultPeriod, limit: 1, offset: 0 }));
-      this.mentionReadStateService.markAllAsRead(this.newestTsOf(response.mentions));
+      // A foundation switch mid-flight rebound the preference store — never stamp the old foundation's cutoff into the new one's doc.
+      if (this.foundationSlug() !== foundationSlug) return;
+      // Empty window (no mentions in the default period): fall back to the newest already loaded so a
+      // past-period feed still marks instead of silently no-oping.
+      const latestTs = this.newestTsOf(response.mentions) ?? this.newestMentionTs ?? this.newestTsOf(this.currentWindowData().mentions);
+      this.mentionReadStateService.markAllAsRead(latestTs);
+      // A new cutoff invalidates the unread snapshot — refresh so the unread view re-queries instead of paging stale state.
       this.refreshUnreadSnapshot();
     } catch {
       this.messageService.add({
@@ -697,6 +718,8 @@ export class SocialListeningComponent {
         summary: 'Mark all as read failed',
         detail: 'Could not resolve the latest mentions — nothing was marked as read. Please try again.',
       });
+    } finally {
+      this.markAllPending = false;
     }
   }
 
@@ -926,7 +949,7 @@ export class SocialListeningComponent {
 
   /** Languages option fetch (3017): lazy like the other filter options, and scoped like keywords/tags so the dropdown and the invalid-language reset track the actual feed scope. */
   private initLanguagesState(): Signal<LoadableState<string[]>> {
-    return this.initScopedOptionsState((req) => this.socialListeningService.getMentionsLanguages(req));
+    return this.initScopedOptionsState((req) => this.socialListeningService.getMentionsLanguages(req).pipe(tap(() => this.languagesResolved.set(true))));
   }
 
   /** Scoped option fetches (3017): lazy on the Filters button, refetch when the platform/sub-project scope changes. */
@@ -1007,7 +1030,8 @@ export class SocialListeningComponent {
             })
             .pipe(
               map((data): LoadableState<AuthorOption[]> => ({ loading: false, error: null, data: mapAuthorsToOptions(data) })),
-              catchError(() => of<LoadableState<AuthorOption[]>>({ loading: false, error: null, data: [] })),
+              // Surface the failure like the other option lists — an empty success and a transport failure must not look alike.
+              catchError(() => of<LoadableState<AuthorOption[]>>({ loading: false, error: 'Failed to load options', data: [] })),
               startWith<LoadableState<AuthorOption[]>>({ loading: true, error: null, data: [] })
             )
         )

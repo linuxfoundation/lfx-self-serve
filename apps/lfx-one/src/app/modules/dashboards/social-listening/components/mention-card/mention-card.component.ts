@@ -3,6 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { afterEveryRender, Component, computed, DestroyRef, ElementRef, inject, input, output, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
@@ -21,6 +22,8 @@ import type { Mention, MentionPlatformConfigEntry, MentionRelevanceConfigEntry, 
 
 /** How long the copy-link button shows its transient "Copied!" state. */
 const COPIED_STATE_MS = 1000;
+/** Collapsed analysis block: ~2 lines of text-xs before the "Show more" toggle. */
+const ANALYSIS_COLLAPSED_MAX_HEIGHT_PX = 40;
 
 /**
  * A single mention in the Social Listening feed (LFXV2-3016): a stretched link to `originalUrl` with
@@ -28,7 +31,7 @@ const COPIED_STATE_MS = 1000;
  */
 @Component({
   selector: 'lfx-mention-card',
-  imports: [MarkdownRendererComponent, TagComponent, FormatTagPipe, ValidExternalUrlPipe, TooltipModule],
+  imports: [ExpandableTextComponent, MarkdownRendererComponent, TagComponent, FormatTagPipe, ValidExternalUrlPipe, TooltipModule],
   templateUrl: './mention-card.component.html',
   styleUrl: './mention-card.component.scss',
 })
@@ -53,6 +56,8 @@ export class MentionCardComponent {
   public readonly truncated = signal(false);
   private copyTimeoutId: ReturnType<typeof setTimeout> | null = null;
   private readonly bodyEl = viewChild<ElementRef<HTMLElement>>('bodyEl');
+
+  protected readonly analysisMaxHeight = ANALYSIS_COLLAPSED_MAX_HEIGHT_PX;
 
   public readonly platformConfig = computed<MentionPlatformConfigEntry>(
     () => MENTION_PLATFORM_CONFIG[this.mention().platform] ?? MENTION_PLATFORM_CONFIG.other
