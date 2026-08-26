@@ -6,6 +6,7 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { parseIfMatchHeader } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { NewsletterPublicationsService } from '../services/newsletter-publications.service';
 
@@ -98,7 +99,7 @@ export class NewsletterPublicationsController {
     try {
       const projectUid = this.requireProjectUid(req);
       const publicationUid = this.requirePublicationUid(req);
-      const version = parseIfMatch(req);
+      const version = parseIfMatchHeader(req, { operation: 'newsletter_publications_if_match', service: 'newsletter_publications_controller' });
       const payload = req.body as UpdatePublicationRequest;
       this.validateUpdatePublicationPayload(payload, req.path, 'newsletter_publication_update');
 
@@ -203,29 +204,4 @@ export class NewsletterPublicationsController {
       });
     }
   }
-}
-
-/**
- * Parse the If-Match header into a version integer. Used by update routes
- * for optimistic concurrency control.
- */
-function parseIfMatch(req: Request): number {
-  const raw = (req.header('If-Match') || '').trim();
-  if (!raw) {
-    throw ServiceValidationError.forField('If-Match', 'If-Match header is required', {
-      operation: 'newsletter_publications_if_match',
-      service: 'newsletter_publications_controller',
-      path: req.path,
-    });
-  }
-  const cleaned = raw.replace(/^W\//i, '').replace(/^"|"$/g, '');
-  const version = Number(cleaned);
-  if (!Number.isFinite(version) || !Number.isInteger(version) || version < 1) {
-    throw ServiceValidationError.forField('If-Match', 'If-Match must be a positive integer version', {
-      operation: 'newsletter_publications_if_match',
-      service: 'newsletter_publications_controller',
-      path: req.path,
-    });
-  }
-  return version;
 }

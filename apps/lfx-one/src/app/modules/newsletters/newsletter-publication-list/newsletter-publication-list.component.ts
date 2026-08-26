@@ -3,7 +3,7 @@
 
 import { Component, DestroyRef, inject, signal, Signal, computed } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { Router, ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -63,6 +63,16 @@ export class NewsletterPublicationListComponent {
   // the edition lands unfiled, which is a valid resting state.
   protected goToCreate(): void {
     this.router.navigate(['create'], { relativeTo: this.route });
+  }
+
+  // Publications only group editions that were filed under one on create;
+  // unfiled editions and opt-out management (NewsletterListComponent's
+  // 'optout' tab, hidden whenever a :pubId is present) have no other entry
+  // point once this page replaces the flat list as the `/newsletters`
+  // landing route. 'list' is a sibling of this component's own route (see
+  // newsletters.routes.ts), same relativeTo anchor as goToCreate above.
+  protected goToList(): void {
+    this.router.navigate(['list'], { relativeTo: this.route });
   }
 
   private initLoadOnContext(): void {

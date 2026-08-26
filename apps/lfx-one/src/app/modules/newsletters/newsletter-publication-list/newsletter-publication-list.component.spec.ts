@@ -32,6 +32,13 @@ describe('NewsletterPublicationListComponent', () => {
   let messageService: MessageService;
   let router: Router;
   let activeContextUid: WritableSignal<string>;
+  // Identifiable rather than `{}`: `{}` can't distinguish "relativeTo the
+  // component's own route" from "relativeTo something else" — any object
+  // (including `undefined`) satisfies `expect.anything()` except `undefined`
+  // itself, which is exactly the value a wrong relativeTo source would
+  // produce. Asserting the exact reference pins the anchor, not just its
+  // presence.
+  const routeStub = { __id: 'newsletter-publication-list-route' };
 
   async function setup(uid = 'proj-1') {
     activeContextUid = signal(uid);
@@ -42,7 +49,7 @@ describe('NewsletterPublicationListComponent', () => {
         { provide: ProjectContextService, useValue: { activeContextUid } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: Router, useValue: { navigate: vi.fn() } },
-        { provide: ActivatedRoute, useValue: {} },
+        { provide: ActivatedRoute, useValue: routeStub },
       ],
     }).compileComponents();
 
@@ -114,7 +121,7 @@ describe('NewsletterPublicationListComponent', () => {
 
     component['goToPublicationEditions'](makePublication({ id: 'pub-42', project_uid: 'owning-proj' }));
 
-    expect(router.navigate).toHaveBeenCalledWith(['owning-proj', 'pub-42', 'editions'], expect.objectContaining({ relativeTo: expect.anything() }));
+    expect(router.navigate).toHaveBeenCalledWith(['owning-proj', 'pub-42', 'editions'], { relativeTo: routeStub });
   });
 
   it('routes the empty-state create CTA to the edition composer', async () => {
@@ -124,6 +131,61 @@ describe('NewsletterPublicationListComponent', () => {
 
     component['goToCreate']();
 
-    expect(router.navigate).toHaveBeenCalledWith(['create'], expect.objectContaining({ relativeTo: expect.anything() }));
+    expect(router.navigate).toHaveBeenCalledWith(['create'], { relativeTo: routeStub });
+  });
+
+  it("routes the 'All newsletters' link to the flat list, relative to its own route", async () => {
+    await setup('proj-1');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [] }));
+    await create();
+
+    fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-all-link"]').click();
+
+    expect(router.navigate).toHaveBeenCalledWith(['list'], { relativeTo: routeStub });
+  });
+
+  it('renders the empty state with its title, subtitle, and create CTA when there are no publications', async () => {
+    await setup('proj-1');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(of({ publications: [] }));
+    await create();
+
+    const emptyState = fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-empty-state"]');
+    expect(emptyState).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-card"]').textContent).toContain('No publications yet');
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="newsletter-publication-row-"]').length).toBe(0);
+  });
+
+  it('renders one row per publication, with the default badge only on the default publication', async () => {
+    await setup('proj-1');
+    vi.mocked(newsletterService.listAllPublications).mockReturnValue(
+      of({ publications: [makePublication({ id: 'pub-1', is_default: true }), makePublication({ id: 'pub-2', name: 'Release Notes', is_default: false })] })
+    );
+    await create();
+
+    const rows = fixture.nativeElement.querySelectorAll('[data-testid^="newsletter-publication-row-"]');
+    expect(rows.length).toBe(2);
+    expect(fixture.nativeElement.querySelector('[data-testid="publication-default-badge-pub-1"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="publication-default-badge-pub-2"]')).toBeFalsy();
+    expect(fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-empty-state"]')).toBeFalsy();
+  });
+
+  it('shows loading skeletons before the first emission and hides the empty state and rows', async () => {
+    activeContextUid = signal('proj-1');
+    await TestBed.configureTestingModule({
+      imports: [NewsletterPublicationListComponent],
+      providers: [
+        { provide: NewsletterService, useValue: { listAllPublications: vi.fn().mockReturnValue(of({ publications: [] })) } },
+        { provide: ProjectContextService, useValue: { activeContextUid } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: Router, useValue: { navigate: vi.fn() } },
+        { provide: ActivatedRoute, useValue: routeStub },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(NewsletterPublicationListComponent);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelectorAll('p-skeleton').length).toBeGreaterThan(0);
+    expect(fixture.nativeElement.querySelector('[data-testid="newsletter-publication-list-empty-state"]')).toBeFalsy();
   });
 });

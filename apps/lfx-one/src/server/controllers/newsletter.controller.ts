@@ -21,6 +21,7 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { parseIfMatchHeader } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
 import { logger } from '../services/logger.service';
 import { NewsletterService } from '../services/newsletter.service';
@@ -217,7 +218,7 @@ export class NewsletterController {
     const startTime = logger.startOperation(req, 'newsletter_update', { project_uid: projectUid, newsletter_id: newsletterUid });
 
     try {
-      const version = parseIfMatch(req);
+      const version = parseIfMatchHeader(req, { operation: 'newsletter_if_match', service: 'newsletter_controller' });
       const payload = req.body as UpdateNewsletterRequest;
       this.validateCommonPayload(payload, req.path, 'newsletter_update');
       this.validateCommitteeUids(payload.committee_uids, req.path, 'newsletter_update');
@@ -262,7 +263,7 @@ export class NewsletterController {
     const startTime = logger.startOperation(req, 'newsletter_send', { project_uid: projectUid, newsletter_id: newsletterUid });
 
     try {
-      const version = parseIfMatch(req);
+      const version = parseIfMatchHeader(req, { operation: 'newsletter_if_match', service: 'newsletter_controller' });
       const result = await this.newsletterService.sendNewsletter(req, projectUid, newsletterUid, version);
       logger.success(req, 'newsletter_send', startTime, {
         newsletter_id: newsletterUid,
@@ -293,7 +294,7 @@ export class NewsletterController {
       const projectUid = this.requireProjectUid(req);
       const newsletterUid = this.requireNewsletterUid(req);
       const startTime = logger.startOperation(req, 'newsletter_schedule', { project_uid: projectUid, newsletter_id: newsletterUid });
-      const version = parseIfMatch(req);
+      const version = parseIfMatchHeader(req, { operation: 'newsletter_if_match', service: 'newsletter_controller' });
       const payload = req.body as NewsletterSchedulePayload | undefined;
       const scheduledAtOverride = this.validateScheduleOverride(payload, req.path, 'newsletter_schedule');
 
@@ -322,7 +323,7 @@ export class NewsletterController {
       const projectUid = this.requireProjectUid(req);
       const newsletterUid = this.requireNewsletterUid(req);
       const startTime = logger.startOperation(req, 'newsletter_cancel_schedule', { project_uid: projectUid, newsletter_id: newsletterUid });
-      const version = parseIfMatch(req);
+      const version = parseIfMatchHeader(req, { operation: 'newsletter_if_match', service: 'newsletter_controller' });
       const result = await this.newsletterService.cancelScheduleNewsletter(req, projectUid, newsletterUid, version);
       logger.success(req, 'newsletter_cancel_schedule', startTime, { newsletter_id: newsletterUid });
       res.json(result);
@@ -696,29 +697,4 @@ export class NewsletterController {
 
     return payload.scheduled_at;
   }
-}
-
-/**
- * Parse the If-Match header into a version integer. Used by update/send routes
- * for optimistic concurrency control.
- */
-function parseIfMatch(req: Request): number {
-  const raw = (req.header('If-Match') || '').trim();
-  if (!raw) {
-    throw ServiceValidationError.forField('If-Match', 'If-Match header is required', {
-      operation: 'newsletter_if_match',
-      service: 'newsletter_controller',
-      path: req.path,
-    });
-  }
-  const cleaned = raw.replace(/^W\//i, '').replace(/^"|"$/g, '');
-  const version = Number(cleaned);
-  if (!Number.isFinite(version) || !Number.isInteger(version) || version < 1) {
-    throw ServiceValidationError.forField('If-Match', 'If-Match must be a positive integer version', {
-      operation: 'newsletter_if_match',
-      service: 'newsletter_controller',
-      path: req.path,
-    });
-  }
-  return version;
 }
