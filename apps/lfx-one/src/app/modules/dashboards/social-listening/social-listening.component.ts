@@ -1093,12 +1093,10 @@ export class SocialListeningComponent {
   private initTotalRecords(): Signal<number> {
     return computed(() => {
       const count = this.countState();
-      if (count.data !== null) return count.data;
-      // Count request failed: a zero total would disable PrimeNG's Next button and strand the user on page 1 even
-      // though the feed returned rows. Derive a provisional total from the loaded window so paging stays possible;
-      // it self-corrects once the count recovers. The extra pageSize keeps Next enabled past the loaded rows.
+      // Count failed: a zero total would disable Next and strand the user on page 1 despite loaded rows.
+      // Derive a provisional total from the loaded window; the extra pageSize keeps Next enabled past it.
       if (count.error) return this.serverOffset() + this.currentWindowData().mentions.length + this.pageSize();
-      return 0;
+      return count.data ?? 0;
     });
   }
 
