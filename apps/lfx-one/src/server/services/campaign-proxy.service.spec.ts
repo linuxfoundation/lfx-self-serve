@@ -197,6 +197,12 @@ describe('CampaignProxyService email delivery type', () => {
     // but the keyword generator must still run, because keywords are the one brief-derived input
     // `microsoftConfig` consumes, and a campaign without them can never serve.
     expect(generatedKeywords()).toBe(true);
+    // And that the prompt NAMES Microsoft. `generatedKeywords()` deliberately matches only
+    // `keyword strategist` so a rewording cannot unhook it (see its doc above) — but that
+    // looseness means it also passes against the old Google-only prompt. Without this line,
+    // reverting KEYWORD_SYSTEM_PROMPT to "for Google Ads" would leave every test green while
+    // the model was told to write keywords for the wrong platform.
+    expect(aiCalls.some((p) => p.includes('Google Ads and Microsoft Advertising'))).toBe(true);
   });
 
   /**
