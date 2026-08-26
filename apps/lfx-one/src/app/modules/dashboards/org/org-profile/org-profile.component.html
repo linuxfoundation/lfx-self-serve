@@ -32,7 +32,12 @@
       <p-button label="Retry" icon="fa-light fa-rotate-right" severity="secondary" data-testid="org-profile-retry-button" (onClick)="retry()" />
     </section>
   } @else if (editMode() && record(); as r) {
-    <lfx-org-profile-edit [record]="r" (saved)="onProfileSaved($event)" (cancelled)="exitEditMode()" data-testid="org-profile-edit" />
+    <lfx-org-profile-edit
+      [record]="r"
+      (saved)="onProfileSaved($event)"
+      (cancelled)="exitEditMode()"
+      (logoUpdated)="onLogoUpdated($event)"
+      data-testid="org-profile-edit" />
   } @else if (record(); as r) {
     <!-- Profile summary card (matches LFX One V3 wireframe). -->
     <section class="rounded-lg border border-gray-200 bg-white p-6" data-testid="org-profile-summary-card">
