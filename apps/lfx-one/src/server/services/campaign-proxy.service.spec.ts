@@ -503,6 +503,17 @@ describe('CampaignProxyService legacy platform gate', () => {
       eventName: 'KubeCon EU 2026',
       eventSlug: 'kubecon-eu-2026',
       platforms: ['microsoft-ads'],
+      // SUPPLIED so this test cannot reach HubSpot. `executeCampaignCreation` calls
+      // `resolveHubSpotUtm` whenever `hsToken` is absent, and that helper does not merely READ —
+      // it calls `hubspotCreateCampaign`. This block's `afterEach` restores the real environment
+      // and the real global `fetch`, so on a machine with HUBSPOT_ACCESS_TOKEN set, a unit test
+      // asserting a platform refusal would have created a campaign in HubSpot. Only the token
+      // being unset stood between this and a real write.
+      //
+      // A dummy value rather than a stub: it short-circuits the branch entirely, so the test
+      // cannot depend on how the lookup is mocked, and nothing downstream reads it — the create
+      // is refused before any dispatch.
+      hsToken: 'test-hs-token',
     } as unknown as Parameters<typeof service.createCampaign>[1]);
 
     const text = JSON.stringify(result);
