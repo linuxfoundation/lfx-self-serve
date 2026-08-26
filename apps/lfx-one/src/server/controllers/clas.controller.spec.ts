@@ -469,8 +469,9 @@ describe('ClasController.createClaManagerRequest', () => {
     });
   });
 
-  // The producer refuses a blank contact message; answering here keeps it a usable 400.
-  it.each([undefined, '', '   \n\t '])('rejects a contact request whose message is %j', async (message) => {
+  // The producer refuses a blank contact message; answering here keeps it a usable 400. The
+  // control-character case is blank only after sanitization, which is what the producer validates.
+  it.each([undefined, '', '   \n\t ', '\x07\x1b', ' \r\n \x07 \t '])('rejects a contact request whose message is %j', async (message) => {
     const res = buildRes();
 
     await new ClasController().createClaManagerRequest(
@@ -505,6 +506,24 @@ describe('ClasController.createClaManagerRequest', () => {
     );
 
     expect(createClaManagerRequest).toHaveBeenCalled();
+  });
+
+  // The producer strips control characters before it measures, so they must not consume the cap.
+  it('does not count stripped control characters against the message cap', async () => {
+    createClaManagerRequest.mockResolvedValue(receipt);
+
+    await new ClasController().createClaManagerRequest(
+      { params: { signatureId: SIGNATURE_ID }, body: body({ message: `${'x'.repeat(4096)}${'\x07'.repeat(50)}` }) } as any,
+      buildRes(),
+      vi.fn()
+    );
+
+    expect(createClaManagerRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      SIGNATURE_ID,
+      expect.anything(),
+      expect.objectContaining({ message: 'x'.repeat(4096) })
+    );
   });
 
   it('rejects an empty recipient list', async () => {

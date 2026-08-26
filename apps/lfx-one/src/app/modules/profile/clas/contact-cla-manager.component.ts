@@ -6,8 +6,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CLA_MANAGER_MESSAGE_MAX_LENGTH, CLA_MANAGER_MODAL_COPY } from '@lfx-one/shared/constants';
 import type { ClaManagerRequestResult, ClaManagerView, ContactClaManagerDialogData } from '@lfx-one/shared/interfaces';
-import { codePointLength } from '@lfx-one/shared/utils';
-import { maxCodePointsValidator, trimmedRequired } from '@lfx-one/shared/validators';
+import { codePointLength, sanitizePlainText } from '@lfx-one/shared/utils';
+import { plainTextMessageValidator } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { take } from 'rxjs';
@@ -57,9 +57,7 @@ export class ContactClaManagerComponent {
   protected readonly managerForm = new FormGroup({});
   protected readonly messageControl = new FormControl('', {
     nonNullable: true,
-    validators: this.messageRequired
-      ? [trimmedRequired(), maxCodePointsValidator(CLA_MANAGER_MESSAGE_MAX_LENGTH)]
-      : [maxCodePointsValidator(CLA_MANAGER_MESSAGE_MAX_LENGTH)],
+    validators: [plainTextMessageValidator({ required: this.messageRequired, max: CLA_MANAGER_MESSAGE_MAX_LENGTH })],
   });
   protected readonly form = new FormGroup({
     message: this.messageControl,
@@ -76,7 +74,9 @@ export class ContactClaManagerComponent {
 
   protected readonly messageError: Signal<'required' | 'too-long' | null> = this.initMessageError();
   protected readonly visibleMessageError = computed(() => (this.messageEdited() ? this.messageError() : null));
-  protected readonly messageLength = computed(() => codePointLength(this.messageValue()));
+  // Counts what the cap actually measures, so the counter cannot read under the limit while the
+  // control is invalid (or the reverse).
+  protected readonly messageLength = computed(() => codePointLength(sanitizePlainText(this.messageValue())));
 
   protected readonly hasManagers = computed(() => this.managers().length > 0);
   protected readonly canSend = computed(
@@ -124,7 +124,7 @@ export class ContactClaManagerComponent {
     this.sending.set(true);
     this.sendError.set(false);
 
-    const message = this.messageControl.value.trim();
+    const message = sanitizePlainText(this.messageControl.value);
     this.myClasService
       .createClaManagerRequest(this.data.signatureId, {
         requestType: this.data.mode,

@@ -10,7 +10,6 @@
 // authenticated user before searching and reports unverifiable keys in
 // `skippedIdentities` — SS surfaces that as identity-gap telemetry.
 
-import { CLA_MANAGER_REQUEST_TYPES } from '@lfx-one/shared/constants';
 import {
   Auth0Identity,
   ClaGroupOption,
@@ -291,10 +290,6 @@ export function collectClaEmails(primaryEmail: string | null, emailData: EmailMa
 const KNOWN_CLA_STATUSES = new Set<string>(['valid', 'needs_attention', 'revoked', 'invalidated', 'unknown', 'superseded']);
 
 const KNOWN_CLA_SIGNED_VIA = new Set<string>(['github', 'gitlab', 'gerrit']);
-
-// `requestType` values the producer's receipt may echo. A receipt naming some other type is not
-// a receipt for the request that was sent, so it is refused rather than forwarded.
-const KNOWN_CLA_MANAGER_REQUEST_TYPES = new Set<string>(CLA_MANAGER_REQUEST_TYPES);
 
 /** Narrows the wire `status` to `ClaStatus`, or null when it is absent or out of contract. */
 function asClaStatus(status: string | undefined): ClaStatus | null {
@@ -814,7 +809,7 @@ export class ClaService {
     const requestId = result?.requestID?.trim();
     const requestType = result?.requestType;
     const status = result?.status;
-    if (!requestId || !requestType || !KNOWN_CLA_MANAGER_REQUEST_TYPES.has(requestType) || (status !== 'sent' && status !== 'recorded')) {
+    if (!requestId || requestType !== request.requestType || (status !== 'sent' && status !== 'recorded')) {
       throw new MicroserviceError('Upstream recorded no usable CLA manager request', 502, 'UPSTREAM_ERROR', { service: SERVICE });
     }
 

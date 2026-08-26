@@ -9,7 +9,7 @@
 
 import { CLA_GROUP_SEARCH_MIN_CHARS, CLA_MANAGER_MESSAGE_MAX_LENGTH, CLA_MANAGER_REQUEST_TYPES } from '@lfx-one/shared/constants';
 import type { ClaManagerRequestType } from '@lfx-one/shared/interfaces';
-import { codePointLength } from '@lfx-one/shared/utils';
+import { codePointLength, sanitizePlainText } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
@@ -266,7 +266,9 @@ export class ClasController {
         return;
       }
 
-      const trimmedMessage = String(body?.message ?? '').trim();
+      // Sanitized, because the producer validates and stores the sanitized text: control
+      // characters other than newline and tab never reach it, so they must not count here.
+      const trimmedMessage = sanitizePlainText(String(body?.message ?? ''));
       // Code points, not UTF-16 units, to match the producer's go-swagger rune cap — see
       // CLA_MANAGER_MESSAGE_MAX_LENGTH.
       if (codePointLength(trimmedMessage) > CLA_MANAGER_MESSAGE_MAX_LENGTH) {

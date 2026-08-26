@@ -8,5 +8,6 @@ export * from './linux-alias.validator';
 export * from './mailing-list.validators';
 export * from './max-code-points.validator';
 export * from './meeting.validators';
+export * from './plain-text-message.validator';
 export * from './newsletter.validators';
 export * from './vote.validators';
