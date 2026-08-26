@@ -1,8 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA, PD_HEALTH_TAG, PD_TIME_RANGE_MONTHS, PD_TIME_RANGE_TYPE, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_LFX_ONE_PLATINUM_SCHEMA,
+  ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_KEYS,
+  PD_HEALTH_TAG,
+  PD_TIME_RANGE_MONTHS,
+  PD_TIME_RANGE_TYPE,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
+  OrgLeaderboardDetailBreakdown,
+  OrgLeaderboardDetailCategoryFigure,
+  OrgLeaderboardDetailLevel,
   OrgLensCardDetailCell,
   OrgLensCardDetailRow,
   OrgLensCardDetailSection,
@@ -185,6 +195,7 @@ interface TrendSeries {
 
 interface ActivityBoardRow {
   BOARD_TYPE: string;
+  ORG_ORGANIZATION_ID: string | null;
   ORG_ACCOUNT_ID: string | null;
   ORG_NAME: string | null;
   ORG_LOGO_URL: string | null;
@@ -193,7 +204,38 @@ interface ActivityBoardRow {
   RANK: number | null;
 }
 
+/**
+ * One warehouse column set behind a single drawer category. Only `points` is mandatory: the binary
+ * awards (maintainers, board members) have no share, and membership tier has no count or total at
+ * all, because it maps from the tier rather than being scored on participation.
+ */
+interface CategorySource {
+  key: string;
+  points: string;
+  count?: string;
+  projectTotal?: string;
+  /** Lifetime project-wide total, which distinguishes "the project never runs this" from "nobody from this organization took part". */
+  allTimeTotal?: string;
+  share?: string;
+}
+
+/**
+ * A breakdown row. The identity and dimension-total columns are named; the category columns are read
+ * through the per-dimension `CategorySource` map rather than restated here, so adding a category is a
+ * one-line change in one place instead of an interface and a query and a mapper.
+ */
+interface BreakdownRow {
+  ACCOUNT_ID: string | null;
+  ORGANIZATION_NAME: string | null;
+  TECHNICAL_INFLUENCE_SCORE: number | null;
+  TECHNICAL_INFLUENCE_LEVEL: string | null;
+  ECOSYSTEM_INFLUENCE_SCORE: number | null;
+  ECOSYSTEM_INFLUENCE_LEVEL: string | null;
+  [column: string]: number | string | null | undefined;
+}
+
 interface LeaderboardRow {
+  ORG_ORGANIZATION_ID: string | null;
   ORG_ACCOUNT_ID: string | null;
   ORG_NAME: string | null;
   ORG_LOGO_URL: string | null;
@@ -223,6 +265,97 @@ export class OrgLensProjectDetailService {
   // shares on projects with many orgs).
   private static readonly trendNamedOrgCap = 10;
   private static readonly trendOthersLabel = 'All others';
+
+  // Score-breakdown drawer categories, in the drawer's display order, mapped to the warehouse columns
+  // behind them. Keys match the drawer's category lists; the two must stay the same size as the
+  // warehouse's scored-component counts, which a shared-package test asserts.
+  private static readonly technicalCategorySources: readonly CategorySource[] = [
+    { key: 'maintainer', points: 'MAINTAINERS_POINTS', count: 'MAINTAINERS_COUNT', projectTotal: 'MAINTAINERS_PROJECT_TOTAL' },
+    {
+      key: 'contributors',
+      points: 'CONTRIBUTORS_POINTS',
+      count: 'CONTRIBUTORS_COUNT',
+      projectTotal: 'CONTRIBUTORS_PROJECT_TOTAL',
+      share: 'CONTRIBUTORS_SHARE_PCT',
+    },
+    { key: 'commits', points: 'COMMITS_POINTS', count: 'COMMITS_COUNT', projectTotal: 'COMMITS_PROJECT_TOTAL', share: 'COMMITS_SHARE_PCT' },
+    { key: 'prs', points: 'PRS_OPENED_POINTS', count: 'PRS_OPENED_COUNT', projectTotal: 'PRS_OPENED_PROJECT_TOTAL', share: 'PRS_OPENED_SHARE_PCT' },
+  ];
+
+  private static readonly ecosystemCategorySources: readonly CategorySource[] = [
+    {
+      key: 'collab',
+      points: 'COLLABORATION_ACTIVITY_POINTS',
+      count: 'COLLABORATION_ACTIVITY_COUNT',
+      projectTotal: 'COLLABORATION_ACTIVITY_PROJECT_TOTAL',
+      allTimeTotal: 'COLLABORATION_ACTIVITY_ALL_TIME_TOTAL',
+      share: 'COLLABORATION_ACTIVITY_SHARE_PCT',
+    },
+    {
+      key: 'meeting',
+      points: 'MEETING_ATTENDANCE_POINTS',
+      count: 'MEETING_ATTENDANCE_COUNT',
+      projectTotal: 'MEETING_ATTENDANCE_PROJECT_TOTAL',
+      allTimeTotal: 'MEETING_ATTENDANCE_ALL_TIME_TOTAL',
+      share: 'MEETING_ATTENDANCE_SHARE_PCT',
+    },
+    {
+      key: 'event',
+      points: 'EVENT_ATTENDANCE_POINTS',
+      count: 'EVENT_ATTENDANCE_COUNT',
+      projectTotal: 'EVENT_ATTENDANCE_PROJECT_TOTAL',
+      allTimeTotal: 'EVENT_ATTENDANCE_ALL_TIME_TOTAL',
+      share: 'EVENT_ATTENDANCE_SHARE_PCT',
+    },
+    {
+      key: 'committee',
+      points: 'COMMITTEE_MEMBERS_POINTS',
+      count: 'COMMITTEE_MEMBERS_COUNT',
+      projectTotal: 'COMMITTEE_MEMBERS_PROJECT_TOTAL',
+      allTimeTotal: 'COMMITTEE_MEMBERS_ALL_TIME_TOTAL',
+      share: 'COMMITTEE_MEMBERS_SHARE_PCT',
+    },
+    {
+      key: 'board',
+      points: 'BOARD_MEMBERS_POINTS',
+      count: 'BOARD_MEMBERS_COUNT',
+      projectTotal: 'BOARD_MEMBERS_PROJECT_TOTAL',
+      allTimeTotal: 'BOARD_MEMBERS_ALL_TIME_TOTAL',
+    },
+    {
+      key: 'speakers',
+      points: 'EVENT_SPEAKERS_POINTS',
+      count: 'EVENT_SPEAKERS_COUNT',
+      projectTotal: 'EVENT_SPEAKERS_PROJECT_TOTAL',
+      allTimeTotal: 'EVENT_SPEAKERS_ALL_TIME_TOTAL',
+      share: 'EVENT_SPEAKERS_SHARE_PCT',
+    },
+    {
+      key: 'meetup',
+      points: 'MEETUP_ATTENDANCE_POINTS',
+      count: 'MEETUP_ATTENDANCE_COUNT',
+      projectTotal: 'MEETUP_ATTENDANCE_PROJECT_TOTAL',
+      allTimeTotal: 'MEETUP_ATTENDANCE_ALL_TIME_TOTAL',
+      share: 'MEETUP_ATTENDANCE_SHARE_PCT',
+    },
+    {
+      key: 'sponsor',
+      points: 'SPONSORSHIP_EVENTS_POINTS',
+      count: 'SPONSORSHIP_EVENTS_COUNT',
+      projectTotal: 'SPONSORSHIP_EVENTS_PROJECT_TOTAL',
+      allTimeTotal: 'SPONSORSHIP_EVENTS_ALL_TIME_TOTAL',
+      share: 'SPONSORSHIP_EVENTS_SHARE_PCT',
+    },
+    {
+      key: 'certified',
+      points: 'CERTIFIED_INDIVIDUALS_POINTS',
+      count: 'CERTIFIED_INDIVIDUALS_COUNT',
+      projectTotal: 'CERTIFIED_INDIVIDUALS_PROJECT_TOTAL',
+      allTimeTotal: 'CERTIFIED_INDIVIDUALS_ALL_TIME_TOTAL',
+      share: 'CERTIFIED_INDIVIDUALS_SHARE_PCT',
+    },
+    { key: 'tier', points: 'MEMBERSHIP_TIER_POINTS' },
+  ];
 
   // Sparklines are emitted as a dense, contiguous, current-month-anchored monthly array; the
   // shipped component maps points to a fixed 36-month label axis by position and slices per range.
@@ -576,6 +709,72 @@ export class OrgLensProjectDetailService {
   }
 
   /**
+   * The clicked leaderboard row's score breakdown for one dimension: every scoring category with the
+   * points it contributed, the org's count, the project-wide total behind that count, and its share.
+   *
+   * The categories reconcile to `totalScore` because both come from the same warehouse row — the
+   * total is read, never summed here, so the drawer cannot disagree with the board that opened it.
+   *
+   * Categories backed by participation records LFX holds privately are omitted entirely for callers
+   * outside the subject organization, and named in `withheldCategories`. They are never zeroed,
+   * banded, or rounded: a zero is a claim about the data, absence is not. Belonging is the same
+   * account comparison the board uses for its own-row highlight, so the two cannot drift.
+   */
+  public async getLeaderboardBreakdown(
+    orgUid: string,
+    projectSlug: string,
+    dimension: 'technical' | 'ecosystem',
+    organizationId: string,
+    range: OrgLensLeaderboardTimeRange
+  ): Promise<OrgLeaderboardDetailBreakdown | null> {
+    const slug = projectSlug.trim().toLowerCase();
+    const timeRangeType = PD_TIME_RANGE_TYPE[range];
+
+    const row = await this.fetchBreakdownRow(slug, timeRangeType, organizationId);
+    if (row === null) return null;
+    const isOwnOrganization = row.ACCOUNT_ID === orgUid;
+
+    // The cache key carries the caller's own-organization status: without it the first caller's
+    // visibility would be served to the next, and a member of the subject organization would
+    // populate the cache with the unwithheld response for everyone.
+    const cacheKey = `project-detail-breakdown-${dimension}:${this.paramSignature([slug, range, organizationId, isOwnOrganization])}`;
+    const key = buildOrgCacheKey(orgUid, cacheKey);
+    if (key !== null) {
+      const cached = await valkeyService.getJson<OrgLeaderboardDetailBreakdown>(key, OrgLensProjectDetailService.isLeaderboardBreakdown);
+      if (cached !== null) return cached;
+    }
+
+    const [position, activitySharePercent] = await Promise.all([
+      this.fetchBoardPosition(slug, timeRangeType, dimension, organizationId),
+      this.fetchActivitySharePercent(slug, timeRangeType, dimension, organizationId),
+    ]);
+
+    const withheldCategories = isOwnOrganization ? [] : this.withheldKeysFor(dimension);
+    const withheld = new Set(withheldCategories);
+    const breakdown: OrgLeaderboardDetailBreakdown = {
+      organizationId,
+      organizationName: row.ORGANIZATION_NAME ?? '',
+      dimension,
+      range,
+      totalScore: this.round1(this.num(dimension === 'technical' ? row.TECHNICAL_INFLUENCE_SCORE : row.ECOSYSTEM_INFLUENCE_SCORE)),
+      level: this.mapDetailLevel(dimension === 'technical' ? row.TECHNICAL_INFLUENCE_LEVEL : row.ECOSYSTEM_INFLUENCE_LEVEL),
+      isOwnOrganization,
+      rank: position.rank,
+      totalOrganizations: position.total,
+      ...(activitySharePercent === null ? {} : { activitySharePercent }),
+      categories: this.categorySources(dimension)
+        .filter((source) => !withheld.has(source.key))
+        .map((source) => this.mapCategoryFigure(source, row)),
+      withheldCategories,
+    };
+
+    if (key !== null) {
+      await valkeyService.setJson(key, breakdown, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
+    }
+    return breakdown;
+  }
+
+  /**
    * One server-paginated, server-searched page of a leaderboard board for one dimension
    * (technical / ecosystem) and metric (Calculated Influence / Activity Count). Ranking and paging
    * happen in SQL over the FULL org set (no top-N cap); the viewing org is flagged per row and lands
@@ -659,7 +858,7 @@ export class OrgLensProjectDetailService {
     const countParams = pageParams;
 
     const pageSql = `
-      SELECT ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, SCORE_COMBINED, SCORE_TECHNICAL, SCORE_ECOSYSTEM,
+      SELECT ORG_ORGANIZATION_ID, ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, SCORE_COMBINED, SCORE_TECHNICAL, SCORE_ECOSYSTEM,
              LEVEL_COMBINED, LEVEL_TECHNICAL, LEVEL_ECOSYSTEM, DIM_RANK AS RANK
       FROM (
         SELECT *, ROW_NUMBER() OVER (ORDER BY ${scoreColumn} DESC NULLS LAST, ORG_NAME ASC, ORG_ORGANIZATION_ID ASC) AS DIM_RANK
@@ -713,7 +912,7 @@ export class OrgLensProjectDetailService {
     const pageParams = params;
 
     const pageSql = `
-      SELECT BOARD_TYPE, ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, ACTIVITY_TOTAL, ACTIVITY_PCT, RANK
+      SELECT BOARD_TYPE, ORG_ORGANIZATION_ID, ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, ACTIVITY_TOTAL, ACTIVITY_PCT, RANK
       FROM ${this.activityLeaderboardsTable()}
       WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ?${searchClause}
       -- RANK and ORG_ACCOUNT_ID are both nullable, so they are not a total order for OFFSET paging.
@@ -736,6 +935,153 @@ export class OrgLensProjectDetailService {
       rows: pageResult.rows.map((row) => this.mapActivityRow(row, dimension, orgUid)),
       total: this.num(countResult.rows[0]?.N ?? 0),
     };
+  }
+
+  /**
+   * The single breakdown row behind a clicked leaderboard row. Only the identity columns, the two
+   * dimension totals, and the requested dimension's category columns are selected — the column list
+   * comes from the same per-dimension map the mapping reads, so a column can't be selected without
+   * being mapped or mapped without being selected.
+   *
+   * The table is absent until the warehouse model is deployed, which is treated as "no breakdown"
+   * rather than a 500 so the drawer degrades to its empty state during the deploy window.
+   */
+  private async fetchBreakdownRow(slug: string, timeRangeType: string, organizationId: string): Promise<BreakdownRow | null> {
+    const columns = [
+      'ACCOUNT_ID',
+      'ORGANIZATION_NAME',
+      'TECHNICAL_INFLUENCE_SCORE',
+      'TECHNICAL_INFLUENCE_LEVEL',
+      'ECOSYSTEM_INFLUENCE_SCORE',
+      'ECOSYSTEM_INFLUENCE_LEVEL',
+      ...this.categorySources('technical').flatMap((source) => this.categoryColumns(source)),
+      ...this.categorySources('ecosystem').flatMap((source) => this.categoryColumns(source)),
+    ];
+    try {
+      const result = await this.snowflakeService.execute<BreakdownRow>(
+        `
+          SELECT ${columns.join(', ')}
+          FROM ${this.leaderboardBreakdownTable()}
+          WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ORGANIZATION_ID = ?
+          LIMIT 1
+        `,
+        [slug, timeRangeType, organizationId],
+        { expectMissingObject: true }
+      );
+      return result.rows[0] ?? null;
+    } catch (error) {
+      if (!SnowflakeService.isMissingObjectError(error)) throw error;
+      return null;
+    }
+  }
+
+  /**
+   * The organization's position on this dimension's board, and how many organizations it is ranked
+   * among. Both are read from the leaderboard model with the same ordering the board itself uses, so
+   * the drawer's "#3 out of 41" always matches the rank on the row that opened it. The count is
+   * deliberately unfiltered by the board's search term — the phrasing is about the project, not
+   * about whatever the user happens to have typed.
+   */
+  private async fetchBoardPosition(
+    slug: string,
+    timeRangeType: string,
+    dimension: 'technical' | 'ecosystem',
+    organizationId: string
+  ): Promise<{ rank: number | null; total: number }> {
+    const scoreColumn = dimension === 'technical' ? 'SCORE_TECHNICAL' : 'SCORE_ECOSYSTEM';
+    const result = await this.snowflakeService.execute<{ DIM_RANK: number | null; TOTAL: number | null }>(
+      `
+        SELECT MAX(CASE WHEN ORG_ORGANIZATION_ID = ? THEN DIM_RANK END) AS DIM_RANK, COUNT(*) AS TOTAL
+        FROM (
+          SELECT ORG_ORGANIZATION_ID,
+                 ROW_NUMBER() OVER (ORDER BY ${scoreColumn} DESC NULLS LAST, ORG_NAME ASC, ORG_ORGANIZATION_ID ASC) AS DIM_RANK
+          FROM ${this.leaderboardTable()}
+          WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ?
+        )
+      `,
+      [organizationId, slug, timeRangeType]
+    );
+    const row = result.rows[0];
+    const rank = this.numOrNull(row?.DIM_RANK);
+    return { rank: rank === null ? null : Math.round(rank), total: Math.round(this.num(row?.TOTAL)) };
+  }
+
+  /**
+   * The organization's share of all project activity for this dimension — contributions for
+   * technical, collaborations for ecosystem — read from the same activity model the Activity Count
+   * board reads. Null when the organization has no activity row, so the drawer's summary drops the
+   * clause rather than claiming a 0% share.
+   */
+  private async fetchActivitySharePercent(
+    slug: string,
+    timeRangeType: string,
+    dimension: 'technical' | 'ecosystem',
+    organizationId: string
+  ): Promise<number | null> {
+    const boardType = dimension === 'technical' ? 'contributions' : 'collaborations';
+    const result = await this.snowflakeService.execute<{ ACTIVITY_PCT: number | null }>(
+      `
+        SELECT ACTIVITY_PCT
+        FROM ${this.activityLeaderboardsTable()}
+        WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND BOARD_TYPE = ? AND ORG_ORGANIZATION_ID = ?
+        LIMIT 1
+      `,
+      [slug, timeRangeType, boardType, organizationId]
+    );
+    const pct = this.numOrNull(result.rows[0]?.ACTIVITY_PCT);
+    return pct === null ? null : this.round1(pct);
+  }
+
+  /** Warehouse columns backing one drawer category, per dimension, in the drawer's display order. */
+  private categorySources(dimension: 'technical' | 'ecosystem'): readonly CategorySource[] {
+    return dimension === 'technical'
+      ? OrgLensProjectDetailService.technicalCategorySources
+      : OrgLensProjectDetailService.ecosystemCategorySources;
+  }
+
+  private categoryColumns(source: CategorySource): string[] {
+    return [source.points, source.count, source.projectTotal, source.allTimeTotal, source.share].filter((column): column is string => !!column);
+  }
+
+  private mapCategoryFigure(source: CategorySource, row: BreakdownRow): OrgLeaderboardDetailCategoryFigure {
+    const count = source.count ? this.numOrNull(this.column(row, source.count)) : null;
+    const projectTotal = source.projectTotal ? this.numOrNull(this.column(row, source.projectTotal)) : null;
+    const allTimeTotal = source.allTimeTotal ? this.numOrNull(this.column(row, source.allTimeTotal)) : null;
+    // A null share upstream means the project's lifetime total for the activity is zero — it does not
+    // run this activity at all. That is carried as an absent share, not as 0%.
+    const share = source.share ? this.numOrNull(this.column(row, source.share)) : null;
+    return {
+      key: source.key,
+      points: this.round1(this.num(this.column(row, source.points))),
+      ...(count === null ? {} : { count: Math.round(count) }),
+      ...(projectTotal === null ? {} : { projectTotal: Math.round(projectTotal) }),
+      ...(allTimeTotal === null ? {} : { projectAllTimeTotal: Math.round(allTimeTotal) }),
+      ...(share === null ? {} : { sharePercent: this.round1(share) }),
+    };
+  }
+
+  private column(row: BreakdownRow, name: string): number | null {
+    const value = row[name];
+    return typeof value === 'number' ? value : null;
+  }
+
+  /** Category keys the caller outside the subject organization must not receive; technical has none. */
+  private withheldKeysFor(dimension: 'technical' | 'ecosystem'): string[] {
+    const scored = new Set(this.categorySources(dimension).map((source) => source.key));
+    return ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_KEYS.filter((key) => scored.has(key));
+  }
+
+  private mapDetailLevel(level: string | null | undefined): OrgLeaderboardDetailLevel {
+    switch ((level ?? '').toLowerCase()) {
+      case 'leading':
+        return 'Leading';
+      case 'contributing':
+        return 'Contributing';
+      case 'participating':
+        return 'Participating';
+      default:
+        return 'Silent';
+    }
   }
 
   private async fetchHeroRow(orgUid: string, slug: string): Promise<HeroRow | null> {
@@ -1472,6 +1818,7 @@ export class OrgLensProjectDetailService {
   /** Map a combined-leaderboard row to a Calculated Influence board row (scores + bands + rank). */
   private mapInfluenceRow(row: LeaderboardRow, orgUid: string, isNonLf: boolean): OrgLensProjectLeaderboardRow {
     return {
+      organizationId: row.ORG_ORGANIZATION_ID ?? '',
       orgName: row.ORG_NAME ?? '',
       orgLogoUrl: row.ORG_LOGO_URL ?? '',
       scores: {
@@ -1500,6 +1847,7 @@ export class OrgLensProjectDetailService {
     const total = Math.round(this.num(row.ACTIVITY_TOTAL));
     const pct = this.round1(this.num(row.ACTIVITY_PCT));
     return {
+      organizationId: row.ORG_ORGANIZATION_ID ?? '',
       orgName: row.ORG_NAME ?? '',
       orgLogoUrl: row.ORG_LOGO_URL ?? '',
       scores: { combined: 0, technical: 0, ecosystem: 0 },
@@ -1796,6 +2144,10 @@ export class OrgLensProjectDetailService {
     return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_LEADERBOARD`;
   }
 
+  private leaderboardBreakdownTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_LEADERBOARD_BREAKDOWN`;
+  }
+
   private activityLeaderboardsTable(): string {
     return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_ACTIVITY_LEADERBOARDS`;
   }
@@ -1874,6 +2226,18 @@ export class OrgLensProjectDetailService {
 
   private avgMergeTimeTable(): string {
     return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_AVG_MERGE_TIME`;
+  }
+
+  private static isLeaderboardBreakdown(value: unknown): value is OrgLeaderboardDetailBreakdown {
+    if (value === null || typeof value !== 'object') return false;
+    const candidate = value as OrgLeaderboardDetailBreakdown;
+    return (
+      typeof candidate.organizationId === 'string' &&
+      typeof candidate.totalScore === 'number' &&
+      typeof candidate.isOwnOrganization === 'boolean' &&
+      Array.isArray(candidate.categories) &&
+      Array.isArray(candidate.withheldCategories)
+    );
   }
 
   private static isRosterPage(value: unknown): value is OrgLensCardRosterPage {

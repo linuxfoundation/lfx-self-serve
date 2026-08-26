@@ -11,18 +11,7 @@
   <ng-template #header>
     <div class="flex w-full items-start justify-between gap-4">
       <div class="flex min-w-0 flex-col gap-0.5">
-        <div class="flex items-center gap-2">
-          <h2 class="text-lg font-semibold text-gray-900" data-testid="org-leaderboard-detail-title">{{ orgName() }}</h2>
-          @if (hasData()) {
-            <span
-              class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700"
-              pTooltip="This breakdown uses illustrative sample data while the real per-category data source is being built — it does not reflect this organization's actual figures."
-              tooltipPosition="bottom"
-              data-testid="org-leaderboard-detail-sample-data-badge">
-              Sample data
-            </span>
-          }
-        </div>
+        <h2 class="truncate text-lg font-semibold text-gray-900" data-testid="org-leaderboard-detail-title">{{ orgName() }}</h2>
         <p class="text-sm text-gray-500">{{ projectName() }} &middot; {{ subtitleLabel() }}</p>
       </div>
       <button
@@ -36,91 +25,143 @@
     </div>
   </ng-template>
 
-  @if (hasData()) {
-    <div class="flex flex-col gap-6 pb-2" data-testid="org-leaderboard-detail-content">
-      <!-- Summary sentence -->
-      <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-relaxed text-gray-800" data-testid="org-leaderboard-detail-summary">
-        <span class="font-semibold">{{ orgName() }}</span> has a
-        <span class="font-semibold" [class]="levelTextClass()">{{ level() }}</span>
-        {{ dimension() }} influence in {{ projectName() }} due to contributing
-        <span class="font-semibold text-blue-600">{{ company()?.activityPct }}%</span>
-        of all project {{ dimension() }} activities. This yields a score of
-        <span class="font-semibold text-blue-600">{{ company()?.score }}</span>
-        &mdash; which is
-        <span class="font-semibold text-blue-600">#{{ company()?.rank }}</span>
-        out of
-        <span class="font-semibold text-blue-600">{{ totalCompanies() }}</span>
-        companies participating in the project.
-      </div>
-
-      <!-- Category breakdown -->
-      <div class="flex flex-col gap-4" data-testid="org-leaderboard-detail-categories">
-        <p class="text-xs font-semibold text-gray-500">The % of {{ orgName() }}'s score that each category contributes, and the points it earned</p>
-
-        @for (row of categoryRows(); track row.key) {
-          <div class="flex flex-col gap-1.5" [attr.data-testid]="'org-leaderboard-detail-category-' + row.key">
-            <div class="flex items-baseline justify-between gap-3 text-sm">
-              @if (row.masked) {
-                <span class="min-w-0 truncate font-semibold text-gray-900">{{ row.name }}</span>
-              } @else {
-                <span class="font-semibold text-gray-900">{{ row.name }} ({{ row.count | number }})</span>
-              }
-              <span class="flex shrink-0 items-baseline gap-2.5">
-                @if (row.masked) {
-                  <span
-                    class="flex min-w-[3rem] items-baseline justify-end gap-1 font-bold text-gray-400"
-                    data-testid="org-leaderboard-detail-category-masked-points">
-                    <i class="fa-light fa-lock text-xs" aria-hidden="true"></i>
-                    <span>pts</span>
-                    <i
-                      class="fa-light fa-circle-info cursor-help text-xs text-gray-400"
-                      [pTooltip]="maskedTooltipFor(row.key)"
-                      tooltipPosition="left"
-                      [attr.aria-label]="maskedTooltipFor(row.key)"
-                      tabindex="0"
-                      data-testid="org-leaderboard-detail-category-masked-info"></i>
-                  </span>
-                } @else {
-                  <span class="min-w-[3rem] text-right font-bold tabular-nums text-gray-500">{{ row.points }} pts</span>
-                }
-              </span>
-            </div>
-            @if (row.masked) {
-              <div class="h-2 w-full rounded-full bg-gray-100"></div>
-            } @else {
-              <div class="h-2 w-full overflow-hidden rounded-full bg-gray-200">
-                <div class="h-full rounded-full bg-gray-400" [style.width.%]="row.pct"></div>
-              </div>
-            }
+  @switch (state().status) {
+    @case ('loading') {
+      <div class="flex flex-col gap-4" data-testid="org-leaderboard-detail-loading">
+        <div class="h-16 animate-pulse rounded-lg bg-gray-100"></div>
+        @for (placeholder of [1, 2, 3, 4]; track placeholder) {
+          <div class="flex flex-col gap-1.5">
+            <div class="h-4 w-2/5 animate-pulse rounded bg-gray-100"></div>
+            <div class="h-2 w-full animate-pulse rounded-full bg-gray-100"></div>
           </div>
         }
+      </div>
+    }
+    @case ('error') {
+      <div
+        class="flex flex-col items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-5 py-10 text-center"
+        data-testid="org-leaderboard-detail-error">
+        <i class="fa-light fa-triangle-exclamation text-2xl text-gray-400" aria-hidden="true"></i>
+        <p class="text-sm text-gray-500">This breakdown could not be loaded. Close the panel and try again.</p>
+      </div>
+    }
+    @case ('ready') {
+      <div class="flex flex-col gap-6 pb-2" data-testid="org-leaderboard-detail-content">
+        <!-- Summary sentence -->
+        <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-relaxed text-gray-800" data-testid="org-leaderboard-detail-summary">
+          <span class="font-semibold">{{ orgName() }}</span> has a
+          <span class="font-semibold" [class]="levelTextClass()">{{ breakdown()?.level }}</span>
+          {{ dimension() }} influence in {{ projectName() }}@if (breakdown()?.activitySharePercent !== undefined) {
+            <span>
+              due to contributing
+              <span class="font-semibold text-blue-600">{{ breakdown()?.activitySharePercent }}%</span>
+              of all project {{ dimension() }} activities</span
+            >
+          }. This yields a score of
+          <span class="font-semibold text-blue-600">{{ breakdown()?.totalScore }}</span>
+          @if (breakdown()?.rank) {
+            <span>
+              &mdash; which is
+              <span class="font-semibold text-blue-600">#{{ breakdown()?.rank }}</span>
+              out of
+              <span class="font-semibold text-blue-600">{{ breakdown()?.totalOrganizations | number }}</span>
+              companies participating in the project</span
+            >
+          }.
+        </div>
 
-        <div class="flex items-center justify-between border-t-2 border-gray-300 pt-3" data-testid="org-leaderboard-detail-total">
-          <span class="text-sm font-semibold text-gray-900">Total score</span>
-          <span class="text-lg font-bold text-gray-900">{{ company()?.score }} pts</span>
+        <!-- Category breakdown -->
+        <div class="flex flex-col gap-4" data-testid="org-leaderboard-detail-categories">
+          <p class="text-xs font-semibold text-gray-500">The % of {{ orgName() }}'s score that each category contributes, and the points it earned</p>
+
+          @for (row of categoryRows(); track row.key) {
+            <div class="flex flex-col gap-1.5" [attr.data-testid]="'org-leaderboard-detail-category-' + row.key">
+              <div class="flex items-baseline justify-between gap-3 text-sm">
+                <span class="min-w-0 truncate font-semibold text-gray-900">
+                  {{ row.name }}
+                  @if (!row.withheld) {
+                    @if (row.notTrackedForProject) {
+                      <span class="font-normal text-gray-400">(not tracked for this project)</span>
+                    } @else if (row.count !== null && row.projectTotal !== null) {
+                      <span>({{ row.count | number }} of {{ row.projectTotal | number }})</span>
+                    } @else if (row.count !== null) {
+                      <span>({{ row.count | number }})</span>
+                    } @else if (uncountedTooltipFor(row.key)) {
+                      <i
+                        class="fa-light fa-circle-info cursor-help text-xs text-gray-400"
+                        [pTooltip]="uncountedTooltipFor(row.key) ?? ''"
+                        tooltipPosition="right"
+                        [attr.aria-label]="uncountedTooltipFor(row.key)"
+                        tabindex="0"
+                        data-testid="org-leaderboard-detail-category-uncounted-info"></i>
+                    }
+                  }
+                </span>
+                <span class="flex shrink-0 items-baseline gap-2.5">
+                  @if (row.withheld) {
+                    <span
+                      class="flex min-w-[3rem] items-baseline justify-end gap-1 font-bold text-gray-400"
+                      data-testid="org-leaderboard-detail-category-withheld-points">
+                      <i class="fa-light fa-lock text-xs" aria-hidden="true"></i>
+                      <span>pts</span>
+                      <i
+                        class="fa-light fa-circle-info cursor-help text-xs text-gray-400"
+                        [pTooltip]="withheldTooltipFor(row.key)"
+                        tooltipPosition="left"
+                        [attr.aria-label]="withheldTooltipFor(row.key)"
+                        tabindex="0"
+                        data-testid="org-leaderboard-detail-category-withheld-info"></i>
+                    </span>
+                  } @else {
+                    <span class="min-w-[3rem] text-right font-bold tabular-nums text-gray-500">{{ row.points }} pts</span>
+                  }
+                </span>
+              </div>
+              @if (row.withheld) {
+                <div class="h-2 w-full rounded-full bg-gray-100"></div>
+              } @else {
+                <div class="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                  <div class="h-full rounded-full bg-gray-400" [style.width.%]="row.pct"></div>
+                </div>
+              }
+            </div>
+          }
+
+          <div class="flex items-center justify-between border-t-2 border-gray-300 pt-3" data-testid="org-leaderboard-detail-total">
+            <span class="text-sm font-semibold text-gray-900">Total score</span>
+            <span class="text-lg font-bold text-gray-900">{{ breakdown()?.totalScore }} pts</span>
+          </div>
+
+          @if (breakdown()?.withheldCategories?.length) {
+            <p class="text-xs leading-relaxed text-gray-500" data-testid="org-leaderboard-detail-withheld-note">
+              Locked categories are based on individual participation records that LFX does not publish. Their figures are shown only to members of
+              {{ orgName() }}, so they are not included above &mdash; but they are part of the total score.
+            </p>
+          }
+        </div>
+
+        <!-- Methodology -->
+        <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-4 text-xs leading-relaxed text-gray-700">
+          <h3 class="text-sm font-semibold text-gray-900">How this score is calculated</h3>
+          <p class="text-xs font-normal text-gray-700">{{ methodology().intro }}</p>
+          <ul class="flex flex-col gap-1.5 pl-4">
+            @for (bullet of methodology().bullets; track bullet.label) {
+              <li class="list-disc text-xs font-normal text-gray-700">
+                <span class="font-semibold text-gray-700">{{ bullet.label }}</span> {{ bullet.text }}
+              </li>
+            }
+          </ul>
+          <p class="text-xs font-normal text-gray-700">{{ methodology().levelMapping }}</p>
         </div>
       </div>
-
-      <!-- Methodology -->
-      <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-4 text-xs leading-relaxed text-gray-700">
-        <h3 class="text-sm font-semibold text-gray-900">How this score is calculated</h3>
-        <p class="text-xs font-normal text-gray-700">{{ methodology().intro }}</p>
-        <ul class="flex flex-col gap-1.5 pl-4">
-          @for (bullet of methodology().bullets; track bullet.label) {
-            <li class="list-disc text-xs font-normal text-gray-700">
-              <span class="font-semibold text-gray-700">{{ bullet.label }}</span> {{ bullet.text }}
-            </li>
-          }
-        </ul>
-        <p class="text-xs font-normal text-gray-700">{{ methodology().levelMapping }}</p>
+    }
+    @default {
+      <div
+        class="flex flex-col items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-5 py-10 text-center"
+        data-testid="org-leaderboard-detail-empty">
+        <i class="fa-light fa-chart-simple text-2xl text-gray-400" aria-hidden="true"></i>
+        <p class="text-sm text-gray-500">A detailed breakdown is not available for this organization.</p>
       </div>
-    </div>
-  } @else {
-    <div
-      class="flex flex-col items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-5 py-10 text-center"
-      data-testid="org-leaderboard-detail-empty">
-      <i class="fa-light fa-chart-simple text-2xl text-gray-400" aria-hidden="true"></i>
-      <p class="text-sm text-gray-500">A detailed breakdown is not yet available for this organization.</p>
-    </div>
+    }
   }
 </p-drawer>

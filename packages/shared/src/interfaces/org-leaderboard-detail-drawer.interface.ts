@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { LeaderboardDimension } from './org-lens-project-detail.interface';
+import type { LeaderboardDimension, OrgLensLeaderboardTimeRange } from './org-lens-project-detail.interface';
 
 /** One influence-score category (e.g. "Maintainers", "Meeting Attendance") shown in the detail drawer. */
 export interface OrgLeaderboardDetailCategory {
@@ -10,19 +10,57 @@ export interface OrgLeaderboardDetailCategory {
 }
 
 /**
- * Demo/placeholder per-company score breakdown for the Org Lens Project Detail leaderboard detail
- * drawer (LFXV2-2934). See `packages/shared/src/constants/org-leaderboard-detail-drawer.constants.ts`
- * for the real seam comment — this shape mirrors the eventual Snowflake-backed payload so swapping
- * the data source later doesn't require changing the drawer component.
+ * One category's figures as served by the BFF. The ratio fields are optional rather than nullable:
+ * maintainers and board members are binary point awards and membership tier maps from the tier, so
+ * those rows have no ratio at all — an absent field reads as "no ratio here", where a null would
+ * invite the client to render "0 of 0".
  */
-export interface OrgLeaderboardDetailCompany {
-  rank: number;
-  activityPct: number;
-  score: number;
-  /** Points earned per category key, independent (no preset weights) — sums to `score`. */
-  points: Record<string, number>;
-  /** Raw activity count behind each category's points, keyed the same as `points`. */
-  counts: Record<string, number>;
+export interface OrgLeaderboardDetailCategoryFigure {
+  key: string;
+  points: number;
+  /** The organization's own count. Absent for membership tier, which is not scored on participation. */
+  count?: number;
+  /** Range-scoped project-wide total the count is measured against. */
+  projectTotal?: number;
+  /**
+   * Project-wide lifetime total for the activity, regardless of the active range. A zero means the
+   * project does not run this activity at all, which is a different fact from an organization that
+   * did not participate in one that it does run.
+   */
+  projectAllTimeTotal?: number;
+  /** The organization's share of `projectTotal`, as a percentage. Absent for the binary awards. */
+  sharePercent?: number;
+}
+
+/**
+ * A ranked organization's score breakdown for one leaderboard dimension, as served by the BFF.
+ *
+ * `totalScore` is the figure the clicked leaderboard row displays; the client renders it rather than
+ * summing `categories`, because the categories summing to the score is a warehouse guarantee and
+ * re-deriving it client-side would reintroduce the drift that guarantee exists to prevent.
+ *
+ * Categories the caller may not see are absent from `categories` and named in `withheldCategories` —
+ * never present with zeroed figures, since a zero is a claim about the data and absence is not.
+ */
+export interface OrgLeaderboardDetailBreakdown {
+  organizationId: string;
+  organizationName: string;
+  dimension: LeaderboardDimension;
+  range: OrgLensLeaderboardTimeRange;
+  totalScore: number;
+  level: OrgLeaderboardDetailLevel;
+  /** Whether the caller belongs to the subject organization. A display input for explaining withheld rows, never a gate. */
+  isOwnOrganization: boolean;
+  /** The organization's 1-based position on this dimension's board over the full ranked set; null when unranked. */
+  rank: number | null;
+  /** Organizations ranked on this board for the project and range, for the "#3 out of 41" phrasing. */
+  totalOrganizations: number;
+  /** The organization's share of all project activity for this dimension; absent when the warehouse has no activity row for it. */
+  activitySharePercent?: number;
+  /** In the drawer's display order, one entry per category the caller may see. */
+  categories: OrgLeaderboardDetailCategoryFigure[];
+  /** Keys omitted from `categories`, listed explicitly so a category absent for any other reason does not read as "hidden for privacy". */
+  withheldCategories: string[];
 }
 
 /** One methodology bullet — a bolded lead-in category label followed by the scoring explanation. */
@@ -38,12 +76,6 @@ export interface OrgLeaderboardDetailMethodology {
   levelMapping: string;
 }
 
-/** Row-level identity + context needed to open the leaderboard detail drawer for a clicked row. */
-export interface OrgLeaderboardDetailRequest {
-  dimension: LeaderboardDimension;
-  orgName: string;
-}
-
 /** Influence level derived from a company's total score for one leaderboard dimension. */
 export type OrgLeaderboardDetailLevel = 'Silent' | 'Participating' | 'Contributing' | 'Leading';
 
@@ -51,12 +83,15 @@ export type OrgLeaderboardDetailLevel = 'Silent' | 'Participating' | 'Contributi
 export interface OrgLeaderboardDetailCategoryRow {
   key: string;
   name: string;
-  count: number;
   points: number;
+  /** Share of the total score this category's points represent. */
   pct: number;
-  /**
-   * When true the row's raw count and share percentage must not be rendered — the category is
-   * privacy-restricted for the viewing org (see `ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_KEYS`).
-   */
-  masked: boolean;
+  /** The organization's count, or null for a category with no count to show (binary awards, membership tier). */
+  count: number | null;
+  /** Range-scoped project-wide total, or null when the category has no ratio. */
+  projectTotal: number | null;
+  /** True when the project never runs this activity at all — rendered differently from a zero count. */
+  notTrackedForProject: boolean;
+  /** True when the server withheld this category's figures, so only its name is rendered. */
+  withheld: boolean;
 }

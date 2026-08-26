@@ -2,33 +2,38 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { Component, computed, input, model, Signal } from '@angular/core';
+import { Component, computed, inject, input, model, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES,
-  ORG_LEADERBOARD_DETAIL_ECOSYSTEM_COMPANIES,
-  ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_KEYS,
-  ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_TOOLTIP_FALLBACK,
-  ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_TOOLTIPS,
   ORG_LEADERBOARD_DETAIL_METHODOLOGY,
   ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES,
-  ORG_LEADERBOARD_DETAIL_TECHNICAL_COMPANIES,
+  ORG_LEADERBOARD_DETAIL_UNCOUNTED_CATEGORY_TOOLTIPS,
+  ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIP_FALLBACK,
+  ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIPS,
 } from '@lfx-one/shared/constants';
 import type {
+  BlockState,
   LeaderboardDimension,
+  OrgLeaderboardDetailBreakdown,
   OrgLeaderboardDetailCategoryRow,
-  OrgLeaderboardDetailCompany,
-  OrgLeaderboardDetailLevel,
+  OrgLensLeaderboardTimeRange,
   OrgLensProjectBand,
 } from '@lfx-one/shared/interfaces';
-import { orgLeaderboardDetailCategoryRows, orgLeaderboardDetailLevelFor } from '@lfx-one/shared/utils';
+import { orgLeaderboardDetailCategoryRows } from '@lfx-one/shared/utils';
+import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
+import { catchError, combineLatest, filter, map, Observable, of, startWith, switchMap } from 'rxjs';
 
 /**
- * Score-breakdown drawer opened by clicking an Org Lens Project Detail leaderboard row (LFXV2-2934).
- * Category points/counts are DEMO/PLACEHOLDER data (see `org-leaderboard-detail-drawer.constants.ts`)
- * pending a real Snowflake-backed data source — the drawer renders a graceful empty state for any
- * org not present in the demo lookup, since the real leaderboards cover far more organizations.
+ * Score-breakdown drawer opened by clicking an Org Lens Project Detail leaderboard row: the clicked
+ * organization's per-category points, counts, and shares for one influence dimension.
+ *
+ * The total score, the level, and the rank all come from the response rather than being derived here,
+ * so the drawer cannot disagree with the board row that opened it. Categories the caller may not see
+ * are absent from the response and rendered as name-only rows — this component has no copy of the
+ * privacy rule to enforce, which is the point: the figures never reach the browser.
  */
 @Component({
   selector: 'lfx-org-leaderboard-detail-drawer',
@@ -36,25 +41,29 @@ import { TooltipModule } from 'primeng/tooltip';
   templateUrl: './org-leaderboard-detail-drawer.component.html',
 })
 export class OrgLeaderboardDetailDrawerComponent {
+  private readonly detailService = inject(OrgLensProjectDetailService);
+
   // === Public fields from inputs (readonly) ===
   public readonly dimension = input.required<LeaderboardDimension>();
+  /** The clicked row's crowd.dev organization — what the breakdown is keyed by. */
+  public readonly organizationId = input.required<string>();
   public readonly orgName = input.required<string>();
   public readonly projectName = input.required<string>();
-  /** Server-computed flag for whether the clicked row is the viewer's own org — authoritative, not derived from name matching. */
-  public readonly isViewingOrg = input<boolean>(false);
+  public readonly projectSlug = input.required<string>();
+  /** The viewing organization, which the server uses to decide what it may serve. */
+  public readonly orgUid = input.required<string>();
+  public readonly range = input.required<OrgLensLeaderboardTimeRange>();
 
   // === Model signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
   // === Complex computed signals (via private init functions) ===
+  protected readonly state: Signal<BlockState<OrgLeaderboardDetailBreakdown>> = this.initState();
+  protected readonly breakdown: Signal<OrgLeaderboardDetailBreakdown | null> = computed(() => this.state().data);
   protected readonly subtitleLabel: Signal<string> = computed(() => (this.dimension() === 'technical' ? 'Technical Influence' : 'Ecosystem Influence'));
   protected readonly methodology = computed(() => ORG_LEADERBOARD_DETAIL_METHODOLOGY[this.dimension()]);
-  protected readonly company: Signal<OrgLeaderboardDetailCompany | null> = this.initCompany();
-  protected readonly hasData: Signal<boolean> = computed(() => this.company() !== null);
-  protected readonly totalCompanies: Signal<number> = this.initTotalCompanies();
-  protected readonly level: Signal<OrgLeaderboardDetailLevel | null> = this.initLevel();
   protected readonly levelTextClass: Signal<string> = computed(() => {
-    const band = this.level()?.toLowerCase() as OrgLensProjectBand | undefined;
+    const band = this.breakdown()?.level.toLowerCase() as OrgLensProjectBand | undefined;
     const classByBand: Record<OrgLensProjectBand, string> = {
       leading: 'text-emerald-600',
       contributing: 'text-blue-600',
@@ -66,9 +75,14 @@ export class OrgLeaderboardDetailDrawerComponent {
   protected readonly categoryRows: Signal<OrgLeaderboardDetailCategoryRow[]> = this.initCategoryRows();
 
   // === Protected methods ===
-  /** Tooltip copy naming the non-public data source behind a masked row's withheld figures. */
-  protected maskedTooltipFor(key: string): string {
-    return ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_TOOLTIPS[key] ?? ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_TOOLTIP_FALLBACK;
+  /** Tooltip copy naming the non-public data source behind a withheld row's absent figures. */
+  protected withheldTooltipFor(key: string): string {
+    return ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIPS[key] ?? ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIP_FALLBACK;
+  }
+
+  /** Tooltip copy explaining why a category has points but no activity count behind it. */
+  protected uncountedTooltipFor(key: string): string | null {
+    return ORG_LEADERBOARD_DETAIL_UNCOUNTED_CATEGORY_TOOLTIPS[key] ?? null;
   }
 
   protected onClose(): void {
@@ -76,35 +90,35 @@ export class OrgLeaderboardDetailDrawerComponent {
   }
 
   // === Private initializer functions ===
-  private initCompany(): Signal<OrgLeaderboardDetailCompany | null> {
-    return computed(() => {
-      const companies = this.dimension() === 'technical' ? ORG_LEADERBOARD_DETAIL_TECHNICAL_COMPANIES : ORG_LEADERBOARD_DETAIL_ECOSYSTEM_COMPANIES;
-      const orgName = this.orgName();
-      return Object.hasOwn(companies, orgName) ? companies[orgName] : null;
-    });
-  }
-
-  private initTotalCompanies(): Signal<number> {
-    return computed(() => {
-      const companies = this.dimension() === 'technical' ? ORG_LEADERBOARD_DETAIL_TECHNICAL_COMPANIES : ORG_LEADERBOARD_DETAIL_ECOSYSTEM_COMPANIES;
-      return Object.keys(companies).length;
-    });
-  }
-
-  private initLevel(): Signal<OrgLeaderboardDetailLevel | null> {
-    return computed(() => {
-      const company = this.company();
-      return company ? orgLeaderboardDetailLevelFor(this.dimension(), company.score) : null;
-    });
+  private initState(): Signal<BlockState<OrgLeaderboardDetailBreakdown>> {
+    const requests$: Observable<BlockState<OrgLeaderboardDetailBreakdown>> = combineLatest([
+      toObservable(this.visible),
+      toObservable(this.orgUid),
+      toObservable(this.projectSlug),
+      toObservable(this.dimension),
+      toObservable(this.organizationId),
+      toObservable(this.range),
+    ]).pipe(
+      // Only fetch while open: a range change with the drawer closed should not spend a request, and
+      // one made while open re-fetches so the drawer can never show figures from another range.
+      filter(([visible, orgUid, projectSlug, , organizationId]) => visible && !!orgUid && !!projectSlug && !!organizationId),
+      switchMap(([, orgUid, projectSlug, dimension, organizationId, range]) =>
+        this.detailService.getLeaderboardBreakdown(orgUid, projectSlug, dimension, organizationId, range).pipe(
+          map((breakdown): BlockState<OrgLeaderboardDetailBreakdown> => ({ status: breakdown === null ? 'empty' : 'ready', data: breakdown })),
+          catchError(() => of<BlockState<OrgLeaderboardDetailBreakdown>>({ status: 'error', data: null })),
+          startWith<BlockState<OrgLeaderboardDetailBreakdown>>({ status: 'loading', data: null })
+        )
+      )
+    );
+    return toSignal(requests$, { initialValue: { status: 'loading', data: null } });
   }
 
   private initCategoryRows(): Signal<OrgLeaderboardDetailCategoryRow[]> {
     return computed(() => {
-      const company = this.company();
-      if (!company) return [];
+      const breakdown = this.breakdown();
+      if (breakdown === null) return [];
       const categories = this.dimension() === 'technical' ? ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES : ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES;
-      const maskedKeys = this.isViewingOrg() ? [] : ORG_LEADERBOARD_DETAIL_MASKED_CATEGORY_KEYS;
-      return orgLeaderboardDetailCategoryRows(categories, company.points, company.counts, company.score, maskedKeys);
+      return orgLeaderboardDetailCategoryRows(categories, breakdown);
     });
   }
 }

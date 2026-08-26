@@ -130,11 +130,11 @@ export class OrgProjectDetailComponent {
   protected readonly drawerOpen = signal(false);
 
   // Leaderboard row detail drawer (LFXV2-2934) — opened by clicking a technical/ecosystem row;
-  // renders that org's category score breakdown (demo data pending a real data-source integration).
+  // renders that org's category score breakdown, which the drawer fetches for itself.
   protected readonly leaderboardDetailOpen = signal(false);
   protected readonly leaderboardDetailDimension = signal<LeaderboardDimension>('technical');
+  protected readonly leaderboardDetailOrganizationId = signal('');
   protected readonly leaderboardDetailOrgName = signal('');
-  protected readonly leaderboardDetailIsViewingOrg = signal(false);
 
   // B5 drawer state + per-(card, range) cache so re-opening the same card at the same range is
   // instant (no spinner flash); a range change closes the drawer and its cache key differs.
@@ -160,6 +160,7 @@ export class OrgProjectDetailComponent {
   protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
   protected readonly timeRange = computed<OrgLensLeaderboardTimeRange>(() => this.initTimeRange());
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
+  protected readonly orgUid = computed(() => this.accountContext.selectedAccount()?.uid ?? '');
   private readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly projectSlug = toSignal(this.route.paramMap.pipe(map((params) => params.get('projectSlug'))), { initialValue: null });
   private readonly drawerCardParam = computed<string | null>(() => {
@@ -454,12 +455,17 @@ export class OrgProjectDetailComponent {
     if (!visible) this.closeCardDetail();
   }
 
-  /** Opens the leaderboard row score-breakdown drawer for the clicked technical/ecosystem row. No-op in activity mode — the breakdown is influence-score only. */
+  /**
+   * Opens the leaderboard row score-breakdown drawer for the clicked technical/ecosystem row. No-op
+   * in activity mode — the breakdown is influence-score only — and for a row with no organization
+   * id, since the breakdown is keyed by it and a display name cannot stand in (names are not unique
+   * within a project, so keying by one can open another company's figures).
+   */
   protected openLeaderboardDetail(dimension: LeaderboardDimension, row: BoardDisplayRow): void {
-    if (this.isActivityMode()) return;
+    if (this.isActivityMode() || !row.organizationId) return;
     this.leaderboardDetailDimension.set(dimension);
+    this.leaderboardDetailOrganizationId.set(row.organizationId);
     this.leaderboardDetailOrgName.set(row.orgName);
-    this.leaderboardDetailIsViewingOrg.set(row.isViewingOrg);
     this.leaderboardDetailOpen.set(true);
   }
 
@@ -692,6 +698,7 @@ export class OrgProjectDetailComponent {
         const activityPct = dimension === 'technical' ? row.activityCount.contributionsPct : row.activityCount.collaborationsPct;
         return {
           rank,
+          organizationId: row.organizationId,
           orgName: row.orgName,
           orgLogoUrl: row.orgLogoUrl,
           initials: this.initialsFor(row.orgName),
@@ -707,6 +714,7 @@ export class OrgProjectDetailComponent {
       const bandMeta = level ? PD_BAND_TAG[level] : null;
       return {
         rank,
+        organizationId: row.organizationId,
         orgName: row.orgName,
         orgLogoUrl: row.orgLogoUrl,
         initials: this.initialsFor(row.orgName),
