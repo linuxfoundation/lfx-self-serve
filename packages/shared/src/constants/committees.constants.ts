@@ -286,6 +286,14 @@ export const VOTING_STATUSES = [
 const VOTING_STATUSES_WITHOUT_NONE = VOTING_STATUSES.filter(({ value }) => value !== CommitteeMemberVotingStatus.NONE);
 
 /**
+ * Display label for a committee member with no recorded voting status (legacy null).
+ * @description 'None' and 'Observer' are real assignable statuses, so a legacy null must not
+ * render as either — a neutral missing-value label keeps null distinct from a recorded 'None'
+ * and matches the app-wide '—' convention for absent values (GH-1831).
+ */
+export const NO_VOTING_STATUS_LABEL = '—';
+
+/**
  * Voting status options for meeting committee filters.
  * Excludes None — it is not a selectable value in meeting forms but remains
  * a valid member status. None is treated as Observer for filtering purposes.

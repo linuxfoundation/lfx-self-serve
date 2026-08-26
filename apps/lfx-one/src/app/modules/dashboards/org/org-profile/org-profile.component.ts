@@ -82,6 +82,12 @@ export class OrgProfileComponent {
     });
   }
 
+  /** LFXV2-3288 — logo saves immediately (like avatar upload), independent of the form's Save/Cancel; patch the cached record without exiting edit mode or duplicating the child's own success toast. */
+  protected onLogoUpdated(updated: OrgCanonicalRecord): void {
+    this.record.set(updated);
+    this.accountContext.updateCanonicalRecord(updated);
+  }
+
   protected retry(): void {
     this.retryTrigger.update((v) => v + 1);
   }

@@ -321,6 +321,8 @@ export * from './org-lens-roi.interface';
 export * from './org-lens-roi.internal.interface';
 // Brand Kit generation contract interfaces
 export * from './brand-kit.interface';
+// Message Foundation generation contract interfaces
+export * from './foundation-message.interface';
 
 // Individual Dashboard → LFX migration banner (LFXV2-3336)
 export * from './id-migration.interface';

@@ -1739,6 +1739,43 @@ describe('CampaignServiceClient.createCampaigns', () => {
   });
 
   /**
+   * LFXV2-3312, the Microsoft equivalent of the pair above and added for the same reason: nothing
+   * else pins this map entry. The CONTROLLER specs mock `createCampaigns` and inspect the envelope
+   * it was handed, so they never execute `hasPlatformConfig` — deleting or misspelling
+   * `'microsoft-ads': 'microsoftConfig'` would leave every one of them green while every real
+   * Microsoft create was refused as unconfigured.
+   *
+   * Run with the cutover flags ON, which is the only state in which this guard executes at all.
+   */
+  it('dispatches a Microsoft campaign once microsoftConfig is present', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000f' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['microsoft-ads'], {
+      microsoftConfig: { budget: 300, keywords: [{ text: 'kubernetes', matchType: 'Exact' }], geoTargets: ['US'] },
+    });
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000f');
+    expect(res.error).toBeNull();
+  });
+
+  it('still refuses a Microsoft campaign whose microsoftConfig is missing', async () => {
+    // A non-empty envelope carrying the WRONG key — the shape a half-built builder produces.
+    // `unmarshalPlatformConfig` reads the absent `microsoftConfig` as a ZERO VALUE, which would
+    // dispatch a campaign with no budget, no keywords and no geo targeting: unservable, and
+    // serving everywhere the moment anyone enabled it.
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['microsoft-ads'], { hsToken: 'tok' });
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.enabled).toBe(true);
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('microsoft-ads');
+  });
+
+  /**
    * campaign-service DOES have a Demand Gen path as of #130, and the slot key is
    * `(brief_id, platform, variant)` — so a brief can hold a Search row and a Demand Gen row at
    * once and the database does not forbid the pair. What is refused here is a MIXED selection,
