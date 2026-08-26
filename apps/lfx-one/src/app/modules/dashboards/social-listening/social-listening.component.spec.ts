@@ -861,7 +861,9 @@ describe('SocialListeningComponent', () => {
     it('falls back to the loaded newest when the unfiltered cutoff window comes back empty', async () => {
       // No mentions in the default period (a foundation whose mentions are all in a prior year) — mark-all
       // must still stamp the newest loaded timestamp instead of silently no-oping on a visible feed.
-      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => (req.limit === 1 ? of({ mentions: [], computedAt: null }) : of(feedResponse(req))));
+      getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) =>
+        req.limit === 1 ? of({ mentions: [], computedAt: null }) : of(feedResponse(req))
+      );
       fixture.destroy();
       fixture = TestBed.createComponent(SocialListeningComponent);
       fixture.detectChanges();

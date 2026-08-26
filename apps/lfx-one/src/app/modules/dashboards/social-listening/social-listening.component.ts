@@ -293,8 +293,10 @@ export class SocialListeningComponent {
 
   public readonly loading = computed(() => {
     // Unread mode filters against the persisted read state — hold loading until it arrives so the
-    // "all caught up" empty state can't paint before unread mentions are actually known.
-    if (this.selectedReadFilter() === 'unread' && this.readState().loading) return true;
+    // "all caught up" empty state can't paint before unread mentions are actually known. The snapshot
+    // check closes the effect gap: entering Unread with an already-loaded read state still nulls the
+    // feed/count requests, and without the hold the prior window's cached rows would paint for a frame.
+    if (this.selectedReadFilter() === 'unread' && (this.readState().loading || this.unreadSnapshot() === null)) return true;
     // Bookmark mode filters by the persisted bookmark set — same hold, so the "no bookmarks" empty state can't flash mid-load.
     if (this.selectedBookmarkFilter() === 'bookmarked' && this.mentionBookmarkService.state().loading) return true;
     const windowData = this.windowCache().get(this.windowIndex());

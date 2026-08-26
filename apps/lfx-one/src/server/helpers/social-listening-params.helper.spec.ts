@@ -208,12 +208,17 @@ describe('unread read-state params (feed + count only)', () => {
 
   // The Feb-30 cases are regex-shaped but calendar-impossible — `Date.parse` normalizes them into March
   // instead of rejecting, so only the round-trip compare keeps them from binding a shifted instant.
-  it.each(['not-a-timestamp', '2026-13-40T99:99:99Z', '2026-02-30T00:00:00Z', '2026-02-30 10:00:00', '2026-01-15 24:00:00', '2026-01-15', '01/15/2026 10:00 AM'])(
-    '400s a malformed readBeforeTs (%s) instead of 500ing in Snowflake',
-    (readBeforeTs) => {
-      expectFieldError(() => parseSocialListeningFilters(reqWith({ unreadOnly: 'true', readBeforeTs }), 'op'), 'readBeforeTs');
-    }
-  );
+  it.each([
+    'not-a-timestamp',
+    '2026-13-40T99:99:99Z',
+    '2026-02-30T00:00:00Z',
+    '2026-02-30 10:00:00',
+    '2026-01-15 24:00:00',
+    '2026-01-15',
+    '01/15/2026 10:00 AM',
+  ])('400s a malformed readBeforeTs (%s) instead of 500ing in Snowflake', (readBeforeTs) => {
+    expectFieldError(() => parseSocialListeningFilters(reqWith({ unreadOnly: 'true', readBeforeTs }), 'op'), 'readBeforeTs');
+  });
 
   it.each(['readIds', 'unreadIds'])('400s over 500 %s values', (name) => {
     const values = Array.from({ length: 501 }, (_, i) => `mention-${i}`);

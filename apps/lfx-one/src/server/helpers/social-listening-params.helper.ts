@@ -16,7 +16,12 @@ import { Request } from 'express';
 import { ServiceValidationError } from '../errors';
 import { getStringQueryParam, getValidatedPeriod } from './validation.helper';
 
-import type { ResolvedPeriodRange, SocialListeningFilterParams, SocialListeningReadBlindFilterParams, SocialListeningScopedOptionsParams } from '@lfx-one/shared/interfaces';
+import type {
+  ResolvedPeriodRange,
+  SocialListeningFilterParams,
+  SocialListeningReadBlindFilterParams,
+  SocialListeningScopedOptionsParams,
+} from '@lfx-one/shared/interfaces';
 
 /**
  * Query-parameter parsing for the Social Listening endpoints: every value is validated and bounded
@@ -110,10 +115,7 @@ export function parseSocialListeningAnalyticsFilters(req: Request, operation: st
 }
 
 /** The filter subset the author-option query cascades off — omits `authors`/`mentionIds` and the unread read-state params so a multiselect never filters its own option list and author options stay read-state-blind. */
-export function parseSocialListeningAuthorFilters(
-  req: Request,
-  operation: string
-): Omit<SocialListeningReadBlindFilterParams, 'authors'> {
+export function parseSocialListeningAuthorFilters(req: Request, operation: string): Omit<SocialListeningReadBlindFilterParams, 'authors'> {
   return {
     sentiment: parseEnumParam(req, 'sentiment', VALID_SENTIMENTS, operation),
     relevance: parseEnumParam(req, 'relevance', VALID_RELEVANCES, operation),
