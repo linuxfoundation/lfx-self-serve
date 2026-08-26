@@ -5,7 +5,6 @@ export const environment = {
   production: true,
   urls: {
     home: 'https://app.staging.lfx.dev',
-    support: 'https://jira.linuxfoundation.org/plugins/servlet/desk',
     pcc: 'https://pcc.staging.platform.linuxfoundation.org',
     changelog: 'https://changelog.lfx.dev/',
     mentorship: 'https://mentorship.lfx.linuxfoundation.org/',

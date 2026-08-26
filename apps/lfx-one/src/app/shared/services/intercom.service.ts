@@ -11,7 +11,7 @@ import { DataDogRumService } from './datadog-rum.service';
   providedIn: 'root',
 })
 export class IntercomService {
-  // Read by OpenIntercomDirective to decide whether to open Intercom or fall back to JIRA.
+  // Read by openMessenger() to decide whether an on-demand anonymous boot is needed first.
   // Set synchronously when boot() is called; the stub queue absorbs commands until the script loads.
   public isBootRequested = false;
 
@@ -46,6 +46,16 @@ export class IntercomService {
       return;
     }
     window.Intercom('show');
+  }
+
+  // Entry point for support CTAs: boots Intercom anonymously on demand when startup boot was
+  // skipped (impersonation, public pages, missing JWT claim), then shows the messenger.
+  // Fire-and-forget — a fresh boot queues behind the stub and replays before show on script load.
+  public openMessenger(appId: string): void {
+    if (!this.isBootRequested) {
+      this.boot({ app_id: appId });
+    }
+    this.show();
   }
 
   // Call before re-booting with a different user (impersonation identity reset).
@@ -92,7 +102,7 @@ export class IntercomService {
       script.remove();
       this.scriptElement = null;
       console.error('Intercom: failed to load widget script', error);
-      // Surface to RUM so "users stuck in Jira fallback" is dashboardable.
+      // Surface to RUM so sessions where the Fin messenger cannot open are dashboardable.
       this.dataDogRumService.addError(new Error('Intercom script failed to load'), { context: 'intercom_load' });
     };
 

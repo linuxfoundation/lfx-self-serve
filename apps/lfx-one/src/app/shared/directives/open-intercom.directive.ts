@@ -1,25 +1,24 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Directive, HostListener, inject } from '@angular/core';
-import { environment } from '@environments/environment';
+import { Directive, HostListener, inject, TransferState } from '@angular/core';
+import { getRuntimeConfig } from '@app/shared/providers/runtime-config.provider';
 import { IntercomService } from '@services/intercom.service';
 
-// Falls back to the Jira support URL when Intercom is not booted.
+// Opens the Fin Intercom messenger on click, booting Intercom anonymously on demand when
+// startup boot was skipped (impersonation, public pages, missing JWT claim).
 @Directive({
   selector: '[lfxOpenIntercom]',
 })
 export class OpenIntercomDirective {
   private readonly intercomService = inject(IntercomService);
+  private readonly transferState = inject(TransferState);
 
   @HostListener('click', ['$event'])
   public onClick(event: MouseEvent): void {
     event.preventDefault();
 
-    if (this.intercomService.isBootRequested) {
-      this.intercomService.show();
-    } else if (typeof window !== 'undefined') {
-      window.open(environment.urls.support, '_blank', 'noopener,noreferrer');
-    }
+    const { intercomAppId } = getRuntimeConfig(this.transferState);
+    this.intercomService.openMessenger(intercomAppId);
   }
 }
