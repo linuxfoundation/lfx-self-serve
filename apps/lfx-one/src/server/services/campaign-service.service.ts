@@ -4,10 +4,12 @@
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import type {
   ApiResponse,
+  BriefMetrics,
   CampaignBriefLoadResult,
   CampaignServiceCreateResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
+  CampaignMetricsWindow,
   HubSpotEmailSearchResult,
   HubSpotMarketingEmail,
   CampaignEventDetails,
@@ -1042,6 +1044,66 @@ export class CampaignServiceClient {
         possiblyTruncated: false,
       };
     }
+  }
+
+  /**
+   * Read live metrics for EVERY campaign on a brief, in one request.
+   *
+   * This is the read that makes campaign-service's `action_items` reachable at all. Until now
+   * nothing in this app called it: the Optimize tab derives its action items from FOUR separate
+   * rule engines in this BFF (`campaign-metrics.service.ts`, `linkedin-ads.service.ts`,
+   * `reddit-ads.service.ts`, `meta-ads.service.ts`), which disagree with each other and with
+   * campaign-service on the low-CTR threshold, the impression floor beneath which CTR is not
+   * judged, and whether a paused campaign raises anything at all.
+   *
+   * Nothing is cut over here. This adds the read; the tab keeps its existing source until a
+   * caller is wired, because the two are not equivalent in SCOPE — see below.
+   *
+   * ## Brief-scoped, where the existing engines are account-scoped
+   *
+   * The BFF engines query each ad platform directly and report on every campaign in the ad
+   * account. This reports on the campaigns campaign-service has adopted onto ONE brief. Swapping
+   * one for the other narrows what an operator sees, so a consumer must pass the brief it means
+   * — there is no "all campaigns" call here, and constructing one by fanning out over briefs
+   * needs the brief ids from the Query Service, which owns brief lists (rule 3).
+   *
+   * ## Failures are per-row, and are not measurements
+   *
+   * A brief spans several platforms and each read can fail independently, so one campaign's
+   * failure must not fail the request. Every campaign gets a row; only `status === 'ok'` carries
+   * `metrics`, and a failed row omits it rather than zero-filling. Callers MUST NOT default a
+   * missing `metrics` to zeroes — that is precisely the substitution that renders an outage as a
+   * performance result, and it is the defect this row shape exists to prevent.
+   *
+   * For the same reason `ok_count` travels alongside `rows`: an empty `action_items` is not an
+   * all-clear if half the rows could not be read.
+   *
+   * ## The window is a QUERY parameter
+   *
+   * Passed as the proxy's fifth argument, which is `query` — the sixth is the request body. A
+   * window sent in the body position would reach the wire as no window at all, with no type
+   * error, and campaign-service would silently apply per-platform defaults instead.
+   *
+   * Omitted when the caller does not specify one, rather than defaulted here to `last_30_days`.
+   * The default is per-platform upstream and is NOT uniformly 30 days: X Ads caps a request's
+   * range at 7 days and REJECTS a wider explicit window, so sending one here would turn an
+   * omitted window into a guaranteed failure on that platform.
+   */
+  public async getBriefMetrics(req: Request, projectSlug: string, briefId: string, window?: CampaignMetricsWindow): Promise<BriefMetrics> {
+    if (projectSlug === '' || briefId === '') {
+      // Refused rather than sent, for the reason `loadBrief` and `searchHubSpotEmails` refuse: an
+      // empty segment makes `/projects//briefs//metrics`, a DIFFERENT route that 404s at the
+      // gateway. A gateway 404 is not campaign-service saying the brief does not exist, and a
+      // caller cannot tell the two apart from the status code alone.
+      throw new Error('A brief metrics read requires both the project and the brief it is scoped to.');
+    }
+    return this.microserviceProxy.proxyRequest<BriefMetrics>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/metrics`,
+      'GET',
+      window ? { window } : undefined
+    );
   }
 
   /**

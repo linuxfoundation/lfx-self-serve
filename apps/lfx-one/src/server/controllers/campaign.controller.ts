@@ -6,6 +6,7 @@ import { NextFunction, Request, Response } from 'express';
 import type {
   BulkKeywordActionRequest,
   CampaignBriefLoadResult,
+  CampaignMetricsWindow,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
@@ -17,7 +18,7 @@ import type {
   CampaignToggleStatus,
   FlushableResponse,
 } from '@lfx-one/shared/interfaces';
-import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PLATFORMS, VALID_CAMPAIGN_TOGGLE_STATUSES } from '@lfx-one/shared/constants';
+import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_METRICS_WINDOWS, CAMPAIGN_PLATFORMS, VALID_CAMPAIGN_TOGGLE_STATUSES } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
 import { ServiceValidationError } from '../errors';
@@ -679,6 +680,84 @@ export class CampaignController {
       // `status` is logged on every arm, `unreadable` included: it is the one outcome that says
       // a stored brief exists and this build cannot open it, and nothing else would record it.
       logger.success(req, 'campaign_load_brief', startTime, { eventSlug, projectSlug, status: result.status, briefId: result.briefId });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Read campaign-service's own metrics and action items for one brief.
+   *
+   * Distinct from `getMonitorData` and its three per-platform siblings below, which query the ad
+   * platforms directly and derive action items from FOUR rule engines in this BFF. Those engines
+   * disagree with each other and with campaign-service on the low-CTR threshold, the impression
+   * floor beneath which CTR is judged at all, and whether a paused campaign raises anything. This
+   * route exposes the single-source version; nothing is cut over to it yet.
+   *
+   * The two are NOT interchangeable. The monitor routes are ACCOUNT-scoped — every campaign in
+   * the ad account — while this is BRIEF-scoped. A consumer swapping one for the other narrows
+   * what an operator sees, which is why `brief` is required rather than defaulted.
+   *
+   * `window` is optional and is NOT defaulted here. campaign-service applies a per-platform
+   * default that is not uniformly 30 days — X Ads caps a request at 7 — so sending one on the
+   * caller's behalf would turn an omitted window into a guaranteed failure on that platform. An
+   * unrecognised value is refused rather than dropped: dropping it would silently serve a
+   * different window than the caller asked for, and a caller cannot detect that from the
+   * response, whose `window` field would report the default as though it had been requested.
+   */
+  public async getBriefMetrics(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const briefId = typeof req.query['brief'] === 'string' ? req.query['brief'].trim() : '';
+    if (briefId.length === 0) {
+      next(
+        ServiceValidationError.forField('brief', 'a brief is required to read its campaign metrics', {
+          operation: 'campaign_brief_metrics',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    // Refused, not defaulted, for the reason `loadBrief` refuses: `/foundation/campaigns` is
+    // reachable by an ED of any foundation, and a constant here would read another foundation's
+    // brief on their behalf.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation: 'campaign_brief_metrics',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const rawWindow = typeof req.query['window'] === 'string' ? req.query['window'].trim() : '';
+    if (rawWindow.length > 0 && !CAMPAIGN_METRICS_WINDOWS.includes(rawWindow as CampaignMetricsWindow)) {
+      next(
+        ServiceValidationError.forField('window', `window must be one of: ${CAMPAIGN_METRICS_WINDOWS.join(', ')}`, {
+          operation: 'campaign_brief_metrics',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    const window = rawWindow.length > 0 ? (rawWindow as CampaignMetricsWindow) : undefined;
+
+    const startTime = logger.startOperation(req, 'campaign_brief_metrics', { briefId, projectSlug, window });
+
+    try {
+      const result = await this.campaignServiceClient.getBriefMetrics(req, projectSlug, briefId, window);
+      // `okCount` beside `rowCount` deliberately: they are the pair that says whether an empty
+      // `action_items` is an all-clear or a blind spot, and a log carrying only the row count
+      // would answer the easier question.
+      logger.success(req, 'campaign_brief_metrics', startTime, {
+        briefId,
+        projectSlug,
+        rowCount: result.rows.length,
+        okCount: result.ok_count,
+        actionItemCount: result.action_items.length,
+      });
       res.json(result);
     } catch (error) {
       next(error);

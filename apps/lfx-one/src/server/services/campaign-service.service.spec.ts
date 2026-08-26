@@ -2359,3 +2359,106 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false });
   });
 });
+
+describe('CampaignServiceClient.getBriefMetrics', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * The window is the proxy's FIFTH argument, which is `query`. The SIXTH is the request body.
+   * Passing it in the body position sends NO query string and raises no type error — both
+   * parameters are optional and loosely typed — so campaign-service would apply per-platform
+   * defaults while the caller believed it had asked for a window.
+   *
+   * Asserted positionally rather than with `objectContaining`, because the defect this pins is
+   * entirely about WHICH position the value lands in.
+   */
+  it('sends the window as a query parameter, not a body', async () => {
+    proxyRequest.mockResolvedValue({ brief_id: 'b-1', window: 'last_7_days', rows: [], ok_count: 0, action_items: [] });
+
+    await new CampaignServiceClient().getBriefMetrics(req, 'cncf', 'b-1', 'last_7_days');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/briefs/b-1/metrics', 'GET', { window: 'last_7_days' });
+    // The body position must be EMPTY. Without this the previous assertion still passes when a
+    // future edit adds a body, and the query would keep working while the body silently shipped.
+    expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+  });
+
+  /**
+   * Omitted, not defaulted to `last_30_days`. campaign-service's default is per-platform and is
+   * not uniformly 30 days: X Ads caps a request at 7 and REJECTS a wider explicit window, so
+   * defaulting here would turn "no window specified" into a guaranteed failure on that platform.
+   */
+  it('sends no window at all when the caller specifies none', async () => {
+    proxyRequest.mockResolvedValue({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] });
+
+    await new CampaignServiceClient().getBriefMetrics(req, 'cncf', 'b-1');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/briefs/b-1/metrics', 'GET', undefined);
+  });
+
+  /** Both segments are encoded: an unencoded slug would silently change the path. */
+  it('encodes both path segments', async () => {
+    proxyRequest.mockResolvedValue({ brief_id: 'b/1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] });
+
+    await new CampaignServiceClient().getBriefMetrics(req, 'a b', 'b/1');
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b/briefs/b%2F1/metrics');
+  });
+
+  /**
+   * An empty segment makes `/projects//briefs//metrics` — a DIFFERENT route that 404s at the
+   * gateway. A caller cannot tell that from campaign-service answering "no such brief", so the
+   * request is refused before it is sent rather than after.
+   */
+  it.each([
+    ['no project', '', 'b-1'],
+    ['no brief id', 'cncf', ''],
+  ])('refuses a request with %s without calling the proxy', async (_label, slug, brief) => {
+    await expect(new CampaignServiceClient().getBriefMetrics(req, slug, brief)).rejects.toThrow(/requires both the project and the brief/);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The row shape is returned VERBATIM. A failed row carries no `metrics`, and this client must
+   * not zero-fill it on the way through — that substitution is what turns an outage into a
+   * measured zero, and it is the whole reason the row carries a status.
+   */
+  it('passes a failed row through without inventing metrics for it', async () => {
+    proxyRequest.mockResolvedValue({
+      brief_id: 'b-1',
+      window: 'last_30_days',
+      rows: [
+        {
+          campaign_id: 'c-1',
+          platform: 'linkedin-ads',
+          status: 'ok',
+          metrics: {
+            campaign_id: 'c-1',
+            platform_campaign_id: 'p-1',
+            window: 'last_30_days',
+            impressions: 1840,
+            clicks: 212,
+            cost_micros: 1284000,
+            ctr: 0.1152,
+          },
+          pacing: { pct: 94.2, label: 'normal' },
+        },
+        { campaign_id: 'c-2', platform: 'reddit-ads', status: 'failed', reason: 'the platform read failed' },
+      ],
+      ok_count: 1,
+      action_items: [],
+    });
+
+    const result = await new CampaignServiceClient().getBriefMetrics(req, 'cncf', 'b-1');
+
+    expect(result.rows[1].metrics).toBeUndefined();
+    expect(result.rows[1].status).toBe('failed');
+    // ok_count must survive too: it is what tells a consumer that an empty action_items list
+    // covers only 1 of the 2 campaigns.
+    expect(result.ok_count).toBe(1);
+    expect(result.rows).toHaveLength(2);
+  });
+});

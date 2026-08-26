@@ -717,3 +717,16 @@ export const JOB_LOST_MESSAGE = 'Lost connection to the campaign creation proces
  * user actually wants — scrolling 4,000 rows is not.
  */
 export const HUBSPOT_TEMPLATE_RENDER_LIMIT = 100;
+
+/**
+ * Every reporting window campaign-service accepts, as a runtime list.
+ *
+ * `CampaignMetricsWindow` is a compile-time type and cannot check a query string, so a BFF route
+ * taking `?window=` needs this to reject a value before it reaches the wire. Kept beside the type
+ * and derived from the same source (`metricsWindowEnum`, `design/brief.go`) so the two cannot
+ * drift: a value accepted here but absent from the type — or the reverse — would be a 400 the
+ * caller cannot predict from the published contract.
+ *
+ * Order is the enum's, widening then calendar-relative; nothing depends on it.
+ */
+export const CAMPAIGN_METRICS_WINDOWS = ['today', 'yesterday', 'last_7_days', 'last_14_days', 'last_30_days', 'this_month', 'last_month'] as const;

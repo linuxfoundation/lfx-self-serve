@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
+
 // ---------------------------------------------------------------------------
 // Platform & Phase
 // ---------------------------------------------------------------------------
@@ -1677,4 +1679,148 @@ export interface CampaignStatusUpdateResult {
    * "what was asked for". Absent on the legacy path, whose SDK calls return no row.
    */
   serviceStatus?: string;
+}
+
+/**
+ * The reporting windows campaign-service accepts. Mirrors `metricsWindowEnum` in
+ * `design/brief.go` — the seven values of `model.MetricsWindow`.
+ *
+ * An explicit window always wins. Omit it and campaign-service applies a PER-PLATFORM default,
+ * which is not always `last_30_days`: X Ads caps a request's range at 7 days and REJECTS a wider
+ * explicit window rather than narrowing it, so it defaults to `last_7_days`.
+ */
+export type CampaignMetricsWindow = (typeof CAMPAIGN_METRICS_WINDOWS)[number];
+
+/**
+ * Whether a row in a brief-wide metrics read carries a measurement. ONLY `ok` does.
+ *
+ * Mirrors `briefMetricsRowStatusEnum`. The values are the failure modes the single-campaign
+ * endpoint expresses as distinct HTTP responses, which an aggregate cannot do — one campaign's
+ * 409 must not fail the other five:
+ *
+ * - `ok` — the read succeeded.
+ * - `unsupported` — no metrics dispatcher for the platform, or the window is unservable there.
+ *   Retrying is pointless; a narrower window may help.
+ * - `not_ready` — no platform campaign id yet, or no data for the window. Common and benign: a
+ *   staged email draft reads this way until a human sends it. NOT a failure to surface as one.
+ * - `connection_problem` — the connection cannot serve this campaign. An operator repairs it;
+ *   retrying never helps.
+ * - `failed` — the platform read itself failed. Transient; retrying may succeed.
+ */
+export type BriefMetricsRowStatus = 'ok' | 'unsupported' | 'not_ready' | 'connection_problem' | 'failed';
+
+/** The pacing band `pct` falls into. `unknown` means no pacing could be derived — NOT "on plan". */
+export type CampaignPacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspending' | 'unknown';
+
+/** Email-channel counters. Present only for the email channel (HubSpot); absent for ad platforms. */
+export interface CampaignServiceEmailMetrics {
+  sent: number;
+  delivered: number;
+  opens: number;
+  clicks: number;
+  bounces: number;
+  unsubscribes: number;
+}
+
+/** One campaign's measurement, as campaign-service reports it. */
+export interface CampaignServiceCampaignMetrics {
+  campaign_id: string;
+  platform_campaign_id: string;
+  window: CampaignMetricsWindow;
+  /** Impressions over the window on an ad platform; opens to date on the email channel. */
+  impressions: number;
+  clicks: number;
+  /**
+   * Cost in MICRO-UNITS of the platform's OWN native currency — USD for LinkedIn/Reddit, X's
+   * billing unit for Twitter. campaign-service performs no FX conversion, so these must never be
+   * summed across platforms: the result would carry no currency and no meaning. Always 0 on the
+   * email channel, which bills no per-send cost; do not blend that 0 into a cross-channel CPA.
+   */
+  cost_micros: number;
+  /** Clicks/Impressions, 0 when impressions is 0. */
+  ctr: number;
+  email?: CampaignServiceEmailMetrics;
+}
+
+/** Spend against the flight-prorated plan, for ONE campaign. Never total or average across rows. */
+export interface CampaignServicePacing {
+  /**
+   * Spend as a percentage of what this campaign should have spent BY NOW.
+   *
+   * ABSENT when pacing is not computable — never zero-filled, because 0% is a claim about spend.
+   * Read `label === 'unknown'` for that case rather than defaulting this to 0.
+   */
+  pct?: number;
+  label: CampaignPacingLabel;
+}
+
+/**
+ * One campaign's slot in a brief-wide metrics read.
+ *
+ * Every campaign on the brief gets a row, INCLUDING ones that could not be read — that is the
+ * point of the type. `metrics` is present if and only if `status === 'ok'`, and absent otherwise
+ * rather than zero-filled, so a consumer can tell "measured zero" from "could not measure". A
+ * zero-filled row is the exact substitution that turns a failed read into a performance result.
+ */
+export interface BriefMetricsRow {
+  campaign_id: string;
+  platform: string;
+  status: BriefMetricsRowStatus;
+  /** Present if and ONLY if `status` is `ok`. Never zero-filled — a zero is a claim. */
+  metrics?: CampaignServiceCampaignMetrics;
+  /** Why this row carries no measurement, in consumer-safe wording. Absent when `status` is `ok`. */
+  reason?: string;
+  /** Absent unless `status` is `ok`. On an `ok` row it is always present. */
+  pacing?: CampaignServicePacing;
+}
+
+/**
+ * One thing an operator should look at, derived by campaign-service from the readable rows.
+ *
+ * `rule` is a STABLE TOKEN — group, filter or link on it. `issue` and `action` are for humans and
+ * may be reworded, so keying on that prose would break silently when it is.
+ *
+ * Distinct from the BFF's own `CampaignActionItem`, which four platform services derive
+ * independently and which disagree with each other and with this one on CTR thresholds,
+ * impression floors and how paused campaigns are treated. This is the single-source version.
+ */
+export interface BriefMetricsActionItem {
+  rule: 'zero_delivery' | 'underspending' | 'budget_constrained' | 'low_ctr';
+  priority: 'HIGH' | 'MED';
+  campaign_id: string;
+  platform: string;
+  issue: string;
+  action: string;
+}
+
+/**
+ * A brief-wide metrics read: `GET /projects/{projectId}/briefs/{briefId}/metrics`.
+ *
+ * There is deliberately NO cross-channel cost total — see `cost_micros`. Impressions and clicks
+ * are unitless and could be summed, but campaign-service leaves that to the consumer alongside
+ * `ok_count` rather than presenting a whole-brief figure the row set may not support.
+ */
+export interface BriefMetrics {
+  brief_id: string;
+  /**
+   * The window REQUESTED for this read. Per-platform defaults still apply when it is omitted, so
+   * an individual row may cover a NARROWER window than this — each row's own `metrics.window`
+   * records what that row actually covers.
+   */
+  window: CampaignMetricsWindow;
+  /** One row per campaign on the brief, in a stable order. Includes rows that could not be read. */
+  rows: BriefMetricsRow[];
+  /**
+   * How many rows carry a measurement. Compare against `rows.length` before presenting ANY
+   * cross-campaign total — a total over 2 of 6 campaigns is not the brief's performance.
+   */
+  ok_count: number;
+  /**
+   * What an operator should look at, derived from the READABLE rows.
+   *
+   * Empty means nothing was flagged among those rows. It is NOT a claim that every row was
+   * readable — unreadable rows raise no items — so check `ok_count` against `rows.length` before
+   * rendering an empty list as an all-clear.
+   */
+  action_items: BriefMetricsActionItem[];
 }
