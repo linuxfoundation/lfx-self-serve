@@ -9,7 +9,7 @@ import { IntercomService } from '@services/intercom.service';
 // Opens the Fin Intercom messenger on click, booting Intercom anonymously on demand when
 // startup boot was skipped (impersonation, public pages, missing JWT claim). The click fails
 // visibly (toast) rather than silently when no app id is configured (boot() would refuse with
-// only a console.warn) or when the on-demand boot's widget script fails to load.
+// only a console.warn) or when the widget script fails to load after the click.
 @Directive({
   selector: '[lfxOpenIntercom]',
 })

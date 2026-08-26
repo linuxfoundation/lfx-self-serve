@@ -55,12 +55,15 @@ export class IntercomService {
   // Entry point for support CTAs: boots Intercom anonymously on demand when startup boot was
   // skipped (impersonation, public pages, missing JWT claim), then shows the messenger.
   // Fire-and-forget — a fresh boot queues behind the stub and replays before show on script load.
-  // onLoadError fires if that on-demand boot's widget script fails to load (e.g. ad-blockers);
-  // it is ignored when Intercom is already booted, and cleared once the script loads.
+  // onLoadError fires if the widget script fails to load (e.g. ad-blockers) — including a click
+  // landing while a startup boot is still in flight. It is never registered by page-load boots
+  // and is cleared once the script loads, so ad-blocked users are only toasted after a click.
   public openMessenger(appId: string, onLoadError?: () => void): void {
     if (!this.isBootRequested) {
-      this.onLoadError = onLoadError;
       this.boot({ app_id: appId });
+    }
+    if (!this.isLoaded) {
+      this.onLoadError = onLoadError;
     }
     this.show();
   }

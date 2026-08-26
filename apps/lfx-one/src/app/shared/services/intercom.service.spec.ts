@@ -11,8 +11,9 @@ import { IntercomService } from './intercom.service';
  * Covers openMessenger(), the support-CTA entry point added for GH-1857: when startup boot was
  * skipped (impersonation, public pages, missing JWT claim) the first click must boot Intercom
  * anonymously, and boot must queue before show on the pre-load stub so the widget replays them
- * in order once its script loads. A click-triggered boot whose script fails to load must invoke
- * the caller's error callback so the CTA can fail visibly, and a successful load must clear it.
+ * in order once its script loads. A click whose widget script fails to load must invoke the
+ * caller's error callback so the CTA can fail visibly — including a click landing while a
+ * startup boot is still in flight — and a successful load must clear the callback.
  */
 describe('IntercomService', () => {
   let service: IntercomService;
@@ -94,5 +95,15 @@ describe('IntercomService', () => {
     widgetScript()?.onerror?.call(widgetScript() as GlobalEventHandlers, new Event('error'));
 
     expect(onLoadError).not.toHaveBeenCalled();
+  });
+
+  it('should invoke the load-error callback for a click landing while a startup boot is still loading', () => {
+    service.boot({ app_id: 'test-app-id' });
+    const onLoadError = vi.fn();
+
+    service.openMessenger('test-app-id', onLoadError);
+    widgetScript()?.onerror?.call(widgetScript() as GlobalEventHandlers, new Event('error'));
+
+    expect(onLoadError).toHaveBeenCalledTimes(1);
   });
 });
