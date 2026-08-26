@@ -301,7 +301,7 @@ describe('PersonaService — grant probe recency ordering', () => {
       expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
     });
 
-    it('clears a stale per-scope null-key entry when a ROOT-scoped probe denies the grant (Copilot finding, PR #1835: revocations must invalidate every key)', () => {
+    it('clears a stale per-scope null-key entry when a project-scoped probe denies the grant — denial must also clear the ROOT key since the server checks all access paths (Copilot finding, PR #1835: revocations must invalidate every key)', () => {
       // Seed a ROOT campaign grant (null key).
       service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
       http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true }));

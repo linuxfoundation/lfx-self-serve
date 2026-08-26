@@ -306,8 +306,8 @@ export class PersonaService {
     const marketingIsRoot = marketingGranted && !!response.isMarketingAuditorRootGrant;
     const campaignIsRoot = campaignGranted && !!response.isCampaignManagerRootGrant;
 
-    const marketingGrantKey = marketingIsRoot ? null : (projectSlug ?? null);
-    const campaignGrantKey = campaignIsRoot ? null : (projectSlug ?? null);
+    const marketingGrantedKey = marketingIsRoot ? null : (projectSlug ?? null);
+    const campaignGrantedKey = campaignIsRoot ? null : (projectSlug ?? null);
     // Denial is authoritative for both ROOT (null) and project scope: clear all paths.
     const denialKeys: Array<string | null> = [projectSlug ?? null, null].filter(
       (k, i, a) => a.indexOf(k) === i // deduplicate
@@ -321,7 +321,7 @@ export class PersonaService {
       };
 
       if (marketingGranted) {
-        mergeInto(marketingGrantKey, { isMarketingAuditor: true });
+        mergeInto(marketingGrantedKey, { isMarketingAuditor: true });
       } else {
         for (const key of denialKeys) {
           mergeInto(key, { isMarketingAuditor: false });
@@ -329,7 +329,7 @@ export class PersonaService {
       }
 
       if (campaignGranted) {
-        mergeInto(campaignGrantKey, { isCampaignManager: true });
+        mergeInto(campaignGrantedKey, { isCampaignManager: true });
       } else {
         for (const key of denialKeys) {
           mergeInto(key, { isCampaignManager: false });
