@@ -182,11 +182,15 @@ ways:
 
 Resolve every added or changed route to its **effective path and resulting auth
 classification**, then flag any that is anonymously reachable without the
-exposure being a documented public surface. Do not restrict the finding to
-changes of the config or the mount itself — a sensitive handler dropped into an
-existing `public-*.route.ts` is the most likely real instance. Do not expect
-each router to carry its own middleware, and do not demand a checklist line
-requiring it — there is none.
+exposure being a documented public surface. **Also treat a change to the auth
+infrastructure itself as a trigger even when no route line changes** — the
+`app.use(authMiddleware)` mount moving down past existing handlers, `defaultAuth`
+weakening from `required`, or a classifier edit that reclassifies existing paths
+into the optional/public lane all expose routes already present. Do not restrict
+the finding to changes of the config or the mount itself — a sensitive handler
+dropped into an existing `public-*.route.ts` is the most likely real instance.
+Do not expect each router to carry its own middleware, and do not demand a
+checklist line requiring it — there is none.
 
 ### 4. SSR safety around browser-only APIs
 
