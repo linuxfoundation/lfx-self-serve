@@ -40,11 +40,25 @@ Patterns where new backend routes are mounted without the right auth middleware,
 
 **Detect:** for each added or changed route, resolve its **effective path** and its **resulting auth classification** against `DEFAULT_ROUTE_CONFIG`. Flag it Critical when a sensitive route becomes anonymously reachable through any of: (a) a new `DEFAULT_ROUTE_CONFIG` entry with `auth: 'optional'`/`'public'`; (b) a new `/public/api/*` (or other public-prefix) mount in `server.ts`; or (c) a new or changed handler added to a router **already mounted** under an existing optional/public prefix (any `public-*.route.ts` under `/public/api`, or an SSR path matching an existing optional pattern), which inherits that classification with no config or mount change. Do **not** flag a normal new `/api/*` mount for lacking an inline `authMiddleware` — the global mount already covers it, and demanding `app.use('/api/<prefix>', authMiddleware, router)` or `router.use(authMiddleware)` is a false positive in this codebase.
 
-**Empirical citation:** PR #706 `apps/lfx-one/src/server/controllers/org-lens-foundations.controller.ts:63` — Copilot — "`getFoundationsAndProjects` performs no AuthN/AuthZ check before querying for an arbitrary `accountId`." The durable lesson is the missing **authorization** (the caller is not checked against the `accountId` they query) together with public-lane classification; it is not that an `/api/*` prefix needs its own middleware call.
+**Empirical citation:** general pattern (no single anchor). The classification model is `DEFAULT_ROUTE_CONFIG` in `auth.middleware.ts` and the `/public/api/*` mounts in `server.ts`; this rule guards new routes from silently landing in the optional/public lane. For a required-auth route that still fails to check the caller against the resource it serves, see `server-request-handling/cross-account-authorization-missing` below — that is a different defect from public exposure.
 
 **Failure message:** New route is anonymously reachable via public/optional classification — unintended unauthenticated access.
 
 **Fix:** if the exposure is unintentional, keep the route in the default `required` lane (do not add a `/public/api` mount or an `optional`/`public` `DEFAULT_ROUTE_CONFIG` entry for it). If public access is intentional, mount it under `/public/api/` (or add the explicit `DEFAULT_ROUTE_CONFIG` entry) **and** document why, and ensure the handler still enforces any per-user authorization it needs on the data it returns.
+
+---
+
+## `server-request-handling/cross-account-authorization-missing` — Critical
+
+**Pattern:** a **required-auth** route reads a resource identifier from the request (`req.params`/`req.query`/body) and returns that resource's data without checking that the authenticated caller is allowed to access **that specific** identifier. Authentication is satisfied — the caller has a valid session — but authorization is not: any logged-in user can substitute another tenant's id and read across the account boundary (IDOR / broken object-level authorization). The global `authMiddleware` does **not** close this gap; it only proves the caller is authenticated, never that they own the requested object.
+
+**Detect:** for a handler that takes an account/org/foundation/project identifier from the request and queries by it, verify the handler establishes the caller (`getEffectiveEmail(req)` / the bearer token, per `docs/reviews/backend-checklist.md`) and checks the caller's entitlement to that identifier before returning data — a membership/ownership lookup, an upstream call made **as the user**, or an equivalent access check. Flag it Critical when the identifier flows straight from the request into the data lookup with no such check between them. This is orthogonal to route classification: a route can be correctly required-auth and still fail this.
+
+**Empirical citation:** PR #706 `apps/lfx-one/src/server/controllers/org-lens-foundations.controller.ts:63` — Copilot — "`getFoundationsAndProjects` performs no AuthN/AuthZ check before querying for an arbitrary `accountId`." The route is required-auth (it is not under a public prefix), so the defect is not exposure — it is that any authenticated user could enumerate any org's foundations and projects by supplying its id.
+
+**Failure message:** Required-auth route queries a caller-supplied id without an ownership/entitlement check — cross-account (IDOR) access.
+
+**Fix:** before serving the resource, resolve the authenticated caller and verify their entitlement to the requested identifier — a membership/ownership check, or an upstream read performed as the user so the upstream enforces access. Do not rely on the route being authenticated; authentication is not authorization.
 
 ---
 
