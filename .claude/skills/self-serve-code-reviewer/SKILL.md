@@ -184,7 +184,7 @@ Resolve every added or changed route to its **effective path and resulting auth
 classification**, then flag any that is anonymously reachable without the
 exposure being a documented public surface. **Also treat a change to the auth
 infrastructure itself as a trigger even when no route line changes** — the
-`app.use(authMiddleware)` mount moving down past existing handlers, `defaultAuth`
+`app.use(authMiddleware)` mount moving down past existing handlers, `DEFAULT_CONFIG.defaultAuth`
 weakening from `required`, or a classifier edit that reclassifies existing paths
 into the optional/public lane all expose routes already present. Do not restrict
 the finding to changes of the config or the mount itself — a sensitive handler
