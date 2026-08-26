@@ -40,6 +40,54 @@ export interface MktgIntakeField {
   prefill?: MktgIntakePrefillSource;
   /** Honest hint shown when the prefill source has no value on the LFX project. */
   missingPrefillHint?: string;
+  /** Always-visible helper text under the control (e.g. the README auto-fetch note). */
+  hint?: string;
+  /**
+   * Optional answer: no required validator, no asterisk, and the key is
+   * omitted from the submitted answers when the trimmed value is empty.
+   */
+  optional?: boolean;
+}
+
+/**
+ * A dependency document auto-attached to an intake's submitted answers
+ * (dec-agent-dependency-gating): agents that CONSUME another agent's output
+ * (e.g. the Message Foundation consumes the Brand Kit) never ask for it —
+ * the run page fetches the dependency's stored document at submit time
+ * (server-persisted preferred, browser-stored run fallback) and submits it
+ * under the agent's own schema key. The form shows a non-interactive
+ * "Using <project>'s <document> (vN)" chip instead of any choice UI.
+ */
+export interface MktgIntakeAttachment {
+  /** Catalog agent id whose stored output is attached — must appear in the consuming agent's `dependsOn`. */
+  sourceAgentId: string;
+  /** Answer key the document is submitted under (the agent's own batch schema key, e.g. `brand_kit_markdown`). */
+  answerKey: string;
+  /** Human name of the attached document for the on-form chip, e.g. `Brand Kit`. */
+  documentName: string;
+}
+
+/**
+ * A dependency agent's stored output document resolved for one project —
+ * what marketplace gating checks and intake attachments submit.
+ */
+export interface MktgDependencyDocument {
+  /** Catalog agent id that produced the document. */
+  agentId: string;
+  /** Where the document came from: BFF object-store persistence, or this browser's stored run. */
+  source: 'server' | 'browser';
+  /** Latest stored draft version. */
+  version: number;
+  /** The stored document (Markdown). */
+  document: string;
+}
+
+/** One word-count-locked derivative surfaced as a copyable chip on the result. */
+export interface MktgIntakeDerivativeChip {
+  /** Derivative key in the agent's envelope `derivatives` record. */
+  key: string;
+  /** Human label, e.g. `25-word summary`. */
+  label: string;
 }
 
 /**
@@ -62,8 +110,19 @@ export interface MktgRunEndpoints {
  * answers against the agent's own intake schema.
  */
 export interface MktgRunGenerateBody {
-  /** Answers keyed by intake field key; every field required, non-empty. */
+  /** Answers keyed by intake field key; conditional/optional keys may be absent per the agent's own contract. */
   answers: Record<string, string>;
+  /**
+   * Feedback on the prior draft (regenerate-via-generate intakes only): the
+   * server renders it into the batch payload's feedback block so the agent
+   * regenerates incorporating it.
+   */
+  feedback?: string;
+  /**
+   * Version of the prior draft being revised (regenerate-via-generate intakes
+   * only); the agent finalizes the new draft as `priorVersion + 1`.
+   */
+  priorVersion?: number;
 }
 
 /**
@@ -75,6 +134,14 @@ export interface MktgRunResultBody {
   sessionId: string;
   /** Creator-binding owner token returned by the generate endpoint. */
   ownerToken: string;
+  /**
+   * LFX project uid the run is scoped to. Agents that persist their output
+   * use the SERVER-RESOLVED project as the storage partition and require the
+   * caller's writer grant on it before writing (dec-brand-kit-storage-v2);
+   * omitting it (no active project) means the document is returned but never
+   * persisted, never that it lands in an unverified partition.
+   */
+  project?: string;
 }
 
 /** Response of an agent's `generate` endpoint — the session to poll. */
@@ -83,6 +150,39 @@ export interface MktgRunSessionResponse {
   sessionId: string;
   /** Opaque creator-binding token; required to fetch the result. */
   ownerToken: string;
+}
+
+/**
+ * Receipt of an agent's server-side persistence write, returned on a `ready`
+ * result by agents whose contract persists the validated document (the Brand
+ * Kit's dec-brand-kit-storage-v2 write path today). The run shell reads only
+ * its PRESENCE: a ready result WITHOUT a receipt means the object-store write
+ * did not happen — transient by default, and because the keys are
+ * content-addressed the next poll re-runs the same write idempotently.
+ * Field names are snake_case (unlike the camelCase enclosing response) on
+ * purpose: they mirror the downstream Artifact contract verbatim so minting
+ * needs no normalization layer — do not camelCase them.
+ */
+export interface MktgRunPersistReceipt {
+  /** Content-addressed object key the document was written to, e.g. `brand-kit/{project}/{content_sha256}.md`. */
+  s3_key: string;
+  /** Validated + recomputed document SHA-256. */
+  content_sha256: string;
+  /**
+   * Storage partition: the SERVER-RESOLVED LFX project uid the document was
+   * written for (the caller held its writer grant), never an agent-emitted,
+   * free-text-derived slug — the write and read paths must address the same
+   * identifier or a persisted document is invisible to the project that owns it.
+   */
+  project: string;
+  /**
+   * Document draft version from the envelope — a label scoped to the run that
+   * produced the document, not a project-wide sequence: it restarts at 1 for a
+   * different writer, browser or expired stored run. Never order a project's
+   * stored documents by it; the store's write time is the only ordering that
+   * is monotonic across writers.
+   */
+  version: number;
 }
 
 /**
@@ -97,6 +197,16 @@ export interface MktgRunResultResponse {
   documentMarkdown?: string;
   /** Draft version from the validated envelope. Present when ready. */
   version?: number;
+  /** Word-count-locked derivatives from the validated envelope, when the agent's contract defines them. */
+  derivatives?: Record<string, string>;
+  /**
+   * Persistence receipt for the returned document — present when ready AND
+   * the server-side write succeeded, for the agents whose intake declares
+   * {@link MktgAgentIntake.persistsDocument}. Absent on a ready result means
+   * no server copy exists yet, which is what the run shell's bounded
+   * persistence retry polls for.
+   */
+  persistence?: MktgRunPersistReceipt;
 }
 
 /**
@@ -118,12 +228,41 @@ export interface MktgAgentIntake {
    * agent's own form-mode wording, quoted verbatim so its MODE RULES trigger.
    */
   batchPreamble: string[];
-  /** Ordered intake fields; every answer is required. */
+  /** Ordered intake fields; required unless marked `optional` or branched by the gate. */
   fields: MktgIntakeField[];
   /** Section labels the generated document is expected to contain. */
   sections: string[];
   /** BFF endpoints for the agent's validated generation flow. */
   endpoints: MktgRunEndpoints;
+  /**
+   * Dependency documents auto-attached to the submitted answers at submit
+   * time (dec-agent-dependency-gating), for agents that consume another
+   * agent's stored output. Every `sourceAgentId` must appear in the catalog
+   * agent's `dependsOn`, which gates the marketplace card until the
+   * dependency's stored output exists.
+   */
+  attachments?: MktgIntakeAttachment[];
+  /** Copyable derivative chips shown on the result, when the agent's envelope carries derivatives. */
+  derivativeChips?: MktgIntakeDerivativeChip[];
+  /**
+   * The agent's result endpoint persists the validated document server-side
+   * and reports a {@link MktgRunPersistReceipt} on `ready`
+   * (dec-brand-kit-storage-v2). Set it for every persisting agent: it is what
+   * tells the run shell that a ready result WITHOUT a receipt is a failed
+   * write worth retrying, so a transient storage outage does not leave the
+   * project without the server copy that dependency gating — and every other
+   * browser and user — reads.
+   */
+  persistsDocument?: boolean;
+  /**
+   * Follow-ups (edit-inputs resubmit, feedback regeneration) go through the
+   * agent's generate endpoint as a full resubmit (`feedback` + `priorVersion`
+   * in the body, fresh Guild session) instead of a chat follow-up on the
+   * stored session. Required for agents whose batch payload is a structured
+   * `agent_input` object (server-side README fetch, typed form contract) —
+   * a chat follow-up could carry neither.
+   */
+  regenerateViaGenerate?: boolean;
 }
 
 /** One generated document version for an agent run. */
@@ -134,6 +273,8 @@ export interface MktgRunVersion {
   document: string;
   /** The feedback that produced this version, when it was a regeneration. */
   feedback?: string;
+  /** Word-count-locked derivatives from the validated envelope, when the agent's contract defines them. */
+  derivatives?: Record<string, string>;
   /** ISO-8601 creation timestamp. */
   createdAt: string;
 }

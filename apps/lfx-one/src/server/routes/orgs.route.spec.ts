@@ -24,13 +24,26 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  */
 
 const getAccessAwareOrgs = vi.fn();
+const proxyRequest = vi.fn();
+const proxyRequestWithResponse = vi.fn();
 
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
   },
 }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'lguerra' }));
+vi.mock('../services/microservice-proxy.service', () => ({
+  MicroserviceProxyService: class {
+    public proxyRequest = proxyRequest;
+    public proxyRequestWithResponse = proxyRequestWithResponse;
+  },
+}));
+// `isImpersonating` is needed because the LFXV2-3288 logo route now runs `blockDuringImpersonation`
+// before its raw body parser (mirrors profile.route.ts's picture-upload gate). A partial mock that
+// omitted it would make the middleware call `undefined(req)` and 500 every test in this file.
+// Toggled via `impersonatingStub` so the impersonation-blocked scenario can flip it per test.
+let impersonatingStub = false;
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'lguerra', isImpersonating: () => impersonatingStub }));
 vi.mock('../services/logger.service', () => ({
   logger: {
     info: vi.fn(),
@@ -67,6 +80,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  impersonatingStub = false;
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
 });
 
@@ -108,5 +122,84 @@ describe('orgs router — Org Lens read gate', () => {
     const res = await fetch(`${baseUrl}/api/orgs/me/role-grants`);
 
     expect(res.status).not.toBe(403);
+  });
+});
+
+/**
+ * LFXV2-3288 — the logo upload route's `express.raw()` middleware and its 413-conversion handler.
+ * Router-level (real HTTP, real body-size enforcement) because the size limit and content-type
+ * filter are configured on the route registration, not inside the controller — a unit test that
+ * calls the controller directly would keep passing even if the raw-parser wiring were removed.
+ */
+describe('orgs router — POST /uid/:uid/logo', () => {
+  const UID = '0014100000Te2ovAAB';
+  const rawOrg = { uid: UID, name: 'Acme', logo_url: 'https://cdn.example.com/logo.png?v=1' };
+
+  it('parses an allowed content type as a raw buffer and proxies it', async () => {
+    proxyRequestWithResponse.mockResolvedValue({ data: rawOrg, status: 200, statusText: 'OK', headers: { etag: 'W/"etag-1"' } });
+    proxyRequest.mockResolvedValue(rawOrg);
+    const body = Buffer.from('fake-png-bytes');
+
+    const res = await fetch(`${baseUrl}/api/orgs/uid/${UID}/logo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png' },
+      body,
+    });
+
+    expect(res.status).toBe(200);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/b2b_orgs/${UID}/logo`, 'POST', undefined, expect.any(Buffer), {
+      'Content-Type': 'image/png',
+      'If-Match': 'W/"etag-1"',
+    });
+  });
+
+  it('rejects a disallowed content type with a 400 and never forwards it upstream', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/uid/${UID}/logo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/pdf' },
+      body: Buffer.from('not-an-image'),
+    });
+
+    // express.raw()'s type filter skips parsing for a non-matching content-type, so req.body is
+    // never populated as a Buffer; the controller's own empty-body check then rejects it (400),
+    // rather than ever forwarding to member-service.
+    expect(res.status).toBe(400);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('converts an oversized body to 413 rather than a generic 500', async () => {
+    // MAX_ORG_LOGO_SIZE_BYTES is enforced by express.raw({ limit }); one byte over it must trip
+    // handleLogoUploadParseError's entity.too.large branch.
+    const { MAX_ORG_LOGO_SIZE_BYTES } = await import('@lfx-one/shared/constants');
+    const oversized = Buffer.alloc(MAX_ORG_LOGO_SIZE_BYTES + 1);
+
+    const res = await fetch(`${baseUrl}/api/orgs/uid/${UID}/logo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png' },
+      body: oversized,
+    });
+
+    expect(res.status).toBe(413);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * PR #1583 — pins that `blockDuringImpersonation` is wired on this route (not just imported).
+   * Without a router-level assertion, a future refactor could drop the middleware and every other
+   * test in this file would still pass, since they exercise the raw parser + proxy path with
+   * impersonation off. The middleware's own unit tests can't catch a wiring regression here.
+   */
+  it('refuses the upload with 403 while impersonating and never forwards it upstream', async () => {
+    impersonatingStub = true;
+
+    const res = await fetch(`${baseUrl}/api/orgs/uid/${UID}/logo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png' },
+      body: Buffer.from('fake-png-bytes'),
+    });
+
+    expect(res.status).toBe(403);
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 });

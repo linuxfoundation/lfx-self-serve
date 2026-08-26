@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
-import { MKTG_RUN_POLL, MKTG_RUN_STORAGE_KEY_PREFIX, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
+import { MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS, MKTG_RUN_POLL, MKTG_RUN_STORAGE_KEY_PREFIX, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
 import {
   MktgChatRequest,
   MktgChatResponse,
@@ -20,7 +20,23 @@ import {
   MktgStoredAgentRun,
 } from '@lfx-one/shared/interfaces';
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
-import { catchError, concat, exhaustMap, filter, map, Observable, of, switchMap, take, throwError, timeout, timer } from 'rxjs';
+import {
+  catchError,
+  concat,
+  EMPTY,
+  exhaustMap,
+  filter,
+  ignoreElements,
+  map,
+  Observable,
+  of,
+  switchMap,
+  take,
+  takeWhile,
+  throwError,
+  timeout,
+  timer,
+} from 'rxjs';
 
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
 
@@ -31,8 +47,13 @@ import { UserService } from './user.service';
  * the batch intake answers to the agent's validated generate endpoint (the BFF
  * renders the batch message server-side); every follow-up — edit-inputs
  * resubmit or feedback regeneration — resubmits the full form plus the stored
- * run's prior version (and feedback, when given) on the run's existing Guild
- * session via the chat/session BFF. Either way the document comes exclusively
+ * run's prior version (and feedback, when given) down one of two paths, per
+ * the intake's `regenerateViaGenerate` flag: default intakes post on the
+ * run's EXISTING Guild session via the chat/session BFF, while
+ * `regenerateViaGenerate` intakes (e.g. the Message Foundation) go back
+ * through the validated generate endpoint on a FRESH session, replacing the
+ * stored run's session while keeping its version history. Either way the
+ * document comes exclusively
  * from the agent's result endpoint, which returns only schema-validated,
  * sha256-verified envelopes — raw chat text is never treated as the document.
  * Each run (session + answers + versions) persists in localStorage, keyed to
@@ -64,17 +85,37 @@ export class MktgAgentRunService {
    * Generates (or regenerates) an agent document. Emits `submitted` once the
    * generate/chat POST resolves, then `document` with the updated stored run
    * once the validated document lands.
+   *
+   * The stream stays open a little longer than the last emission for agents
+   * that persist their document server-side: `retryPersistence` spends a small
+   * bounded budget of extra polls when the ready result carried no persistence
+   * receipt, so a transient storage failure still ends with the server copy
+   * written. It emits nothing, so the user sees the document at the same
+   * moment either way; cancelling the subscription (project switch, a new
+   * submission, leaving the page) cancels the retry with it.
    */
   public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
     const stored = this.loadRun(request.projectUid, request.agentId);
-    const attempt$: Observable<MktgRunAttempt> = stored ? this.followUp(request, stored) : this.startRun(request);
+    let attempt$: Observable<MktgRunAttempt>;
+    if (!stored) {
+      attempt$ = this.startRun(request);
+    } else if (request.intake.regenerateViaGenerate) {
+      attempt$ = this.resubmitRun(request, stored);
+    } else {
+      attempt$ = this.followUp(request, stored);
+    }
 
     return attempt$.pipe(
       switchMap(({ session, priorVersion }) =>
         concat(
           of<MktgGenerateProgress>({ type: 'submitted' }),
-          this.pollForDocument(request.intake.endpoints.result, session, priorVersion).pipe(
-            map((result) => ({ type: 'document' as const, run: this.appendVersion(request, session, result) }))
+          this.pollForDocument(request.intake.endpoints.result, session, priorVersion, request.projectUid).pipe(
+            switchMap((result) =>
+              concat(
+                of<MktgGenerateProgress>({ type: 'document', run: this.appendVersion(request, session, result) }),
+                this.retryPersistence(request, session, result)
+              )
+            )
           )
         )
       )
@@ -131,6 +172,31 @@ export class MktgAgentRunService {
     return this.http
       .post<MktgRunSessionResponse>(request.intake.endpoints.generate, body)
       .pipe(map((response) => ({ session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken }, priorVersion: 0 })));
+  }
+
+  /**
+   * Follow-up for `regenerateViaGenerate` intakes (e.g. the Message
+   * Foundation): every edit-inputs resubmit or feedback regeneration is a
+   * FULL resubmit through the generate endpoint on a fresh Guild session —
+   * the BFF re-renders the agent's typed batch payload (re-fetching
+   * server-side inputs like the README) with `feedback` + `priorVersion`, so
+   * the agent finalizes as `priorVersion + 1`, which is exactly the version
+   * the result poll's strictly-newer gate accepts. The stored run keeps the
+   * version history; only its session is replaced by `appendVersion`.
+   */
+  private resubmitRun(request: MktgGenerateRequest, stored: MktgStoredAgentRun): Observable<MktgRunAttempt> {
+    const priorVersion = stored.versions.at(-1)?.version ?? 0;
+    if (priorVersion === 0) {
+      // A stored run without versions has nothing to revise — plain first run.
+      return this.startRun(request);
+    }
+    const body: MktgRunGenerateBody = { answers: request.answers, priorVersion };
+    if (request.feedback?.trim()) {
+      body.feedback = request.feedback.trim();
+    }
+    return this.http
+      .post<MktgRunSessionResponse>(request.intake.endpoints.generate, body)
+      .pipe(map((response) => ({ session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken }, priorVersion })));
   }
 
   /**
@@ -192,9 +258,13 @@ export class MktgAgentRunService {
    * `switchMap`, result-endpoint latency consistently above the interval would
    * abort every attempt before it resolved, timing out a multi-minute
    * generation whose document may already be ready.
+   *
+   * The run's project uid rides every poll: agents that persist their output
+   * partition storage by the SERVER-resolved project and require the caller's
+   * writer grant on it, so the run must say which project it belongs to.
    */
-  private pollForDocument(resultPath: string, session: MktgSessionInfo, priorVersion: number): Observable<MktgRunResultResponse> {
-    const body: MktgRunResultBody = { sessionId: session.sessionId, ownerToken: session.ownerToken };
+  private pollForDocument(resultPath: string, session: MktgSessionInfo, priorVersion: number, projectUid: string): Observable<MktgRunResultResponse> {
+    const body = this.resultBody(session, projectUid);
     return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
       exhaustMap(() =>
         this.http.post<MktgRunResultResponse>(resultPath, body).pipe(
@@ -212,6 +282,52 @@ export class MktgAgentRunService {
     );
   }
 
+  /**
+   * Bounded background persistence retry for agents whose result endpoint
+   * persists the validated document (`intake.persistsDocument`, today the
+   * Brand Kit's dec-brand-kit-storage-v2 write path).
+   *
+   * A `ready` result with NO persistence receipt means the server-side write
+   * did not happen — usually a transient object-store failure, which the BFF
+   * degrades through (WARN, document still returned) rather than failing the
+   * run. Because the write is content-addressed and idempotent, another poll
+   * simply re-runs it. Without this, the only copy of the document is this
+   * browser's stored run: the project's server copy — what dependency gating
+   * reads for every other browser and user (a dependent agent stays locked
+   * until it exists) — would be lost to a blip no one ever sees.
+   *
+   * The document is already emitted and rendered by the time this runs, so the
+   * stream deliberately emits NOTHING (`ignoreElements`) and never errors a
+   * run that already succeeded: a failed retry poll is just a spent attempt,
+   * exactly as on the standalone Brand Kit form, and the budget is shared with
+   * it (`MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS`). Polling stops the moment a
+   * receipt arrives. No project scope means the BFF never persists at all, so
+   * there is nothing to retry.
+   */
+  private retryPersistence(request: MktgGenerateRequest, session: MktgSessionInfo, result: MktgRunResultResponse): Observable<never> {
+    if (!request.intake.persistsDocument || result.persistence || !request.projectUid) {
+      return EMPTY;
+    }
+    const body = this.resultBody(session, request.projectUid);
+    return timer(MKTG_RUN_POLL.intervalMs, MKTG_RUN_POLL.intervalMs).pipe(
+      exhaustMap(() =>
+        this.http
+          .post<MktgRunResultResponse>(request.intake.endpoints.result, body)
+          // A failed retry poll spends one attempt like any other; the next
+          // interval tries again within the budget.
+          .pipe(catchError(() => of<MktgRunResultResponse>({ status: 'pending' })))
+      ),
+      take(MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS),
+      takeWhile((response) => !response.persistence),
+      ignoreElements()
+    );
+  }
+
+  /** Result-endpoint body: the owner token travels in the body (never the query string), with the run's project scope when there is one. */
+  private resultBody(session: MktgSessionInfo, projectUid: string): MktgRunResultBody {
+    return { sessionId: session.sessionId, ownerToken: session.ownerToken, ...(projectUid && { project: projectUid }) };
+  }
+
   /** Appends the validated document as the next version and persists the run. */
   private appendVersion(request: MktgGenerateRequest, session: MktgSessionInfo, result: MktgRunResultResponse): MktgStoredAgentRun {
     const stored = this.loadRun(request.projectUid, request.agentId);
@@ -222,6 +338,7 @@ export class MktgAgentRunService {
       version: result.version ?? lastVersion + 1,
       document: result.documentMarkdown ?? '',
       feedback: request.feedback,
+      derivatives: result.derivatives,
       createdAt: new Date().toISOString(),
     };
     const run: MktgStoredAgentRun = {
