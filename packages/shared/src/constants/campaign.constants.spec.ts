@@ -33,9 +33,30 @@ describe('campaignToggleAction', () => {
     expect(campaignToggleAction('enabled', 'google-ads')).toBe('unavailable');
   });
 
+  /**
+   * Narrowed to `twitter-ads` by LFXV2-3312, which ENABLED Microsoft.
+   * `TOGGLEABLE_CAMPAIGN_PLATFORMS` is derived from `CAMPAIGN_PLATFORMS.filter((p) => !p.disabled)`,
+   * so dropping that flag admits microsoft-ads here BY DESIGN. X stays disabled — a capability gap
+   * rather than missing plumbing — so it remains the subject and the guard still binds: make X
+   * toggleable and this goes red.
+   *
+   * Both statuses are still exercised, just both against X, so "at any status" stays true of the
+   * assertion rather than becoming a claim only the deleted line supported.
+   */
   it('refuses a platform this app does not offer, at any status', () => {
-    expect(campaignToggleAction('created', 'microsoft-ads')).toBe('unavailable');
+    expect(campaignToggleAction('created', 'twitter-ads')).toBe('unavailable');
     expect(campaignToggleAction('paused', 'twitter-ads')).toBe('unavailable');
+  });
+
+  /**
+   * The other half of the same derivation, and the reason the case above could be narrowed safely
+   * rather than simply deleted: Microsoft is now OFFERED, so its campaigns must be pausable. If
+   * `disabled: true` is ever restored to the shared constant, this fails — which is what stops the
+   * enablement from being silently reverted at the one site that has no other test.
+   */
+  it('offers pause and resume for microsoft-ads, which this app now enables', () => {
+    expect(campaignToggleAction('created', 'microsoft-ads')).toBe('pause');
+    expect(campaignToggleAction('paused', 'microsoft-ads')).toBe('resume');
   });
 
   /** Optional so the status-only question stays askable; absence is not "unsupported". */

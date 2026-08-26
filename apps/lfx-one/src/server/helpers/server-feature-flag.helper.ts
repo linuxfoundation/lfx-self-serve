@@ -170,10 +170,12 @@ export enum ServerFeatureFlag {
    * flag-off deployment renders the rows with a stated reason instead of a doomed button.
    * Said here as well as in the chart because this doc is what a reader reaches from the code.
    *
-   * Two counts live here and conflating them invites deleting a guard that is doing its job:
-   * campaign-service implements SIX toggle dispatchers upstream, but what this flag exposes is
-   * the non-disabled entries of `CAMPAIGN_PLATFORMS` — four today, because Microsoft and X are
-   * dispatchable upstream and simply not offered by this app. See
+   * Two SETS live here and conflating them invites deleting a guard that is doing its job:
+   * campaign-service implements a toggle dispatcher for every paid platform upstream, but what
+   * this flag exposes is only the non-disabled entries of `CAMPAIGN_PLATFORMS` — a platform can be
+   * dispatchable upstream and simply not offered by this app (X is, today). Deliberately not
+   * stated as a count: the roster changes whenever a `disabled` flag flips — LFXV2-3312 enabled
+   * Microsoft — and a number here goes stale silently. See
    * `CAMPAIGN_SERVICE_STATUS_PLATFORMS` for why the narrowing is deliberate.
    *
    * ROLLOUT OVERLAP IS SAFE HERE, unlike `CampaignServiceJobs`, and the reason is worth stating
