@@ -119,6 +119,19 @@ export class MentionCardComponent {
     }
   }
 
+  /** Covers clicks on regions lifted above the stretched link (e.g. the selectable body text); links and buttons handle themselves. */
+  public onCardContainerClick(event: MouseEvent): void {
+    if ((event.target as HTMLElement).closest('a, button')) return;
+    // A non-empty selection means the user was copying quote text, not navigating.
+    if (window.getSelection()?.toString()) return;
+
+    const url = normalizeToUrl(this.mention().originalUrl);
+    if (!url) return;
+
+    window.open(url, '_blank', 'noopener,noreferrer');
+    this.onCardClick();
+  }
+
   /** Copies the mention's canonical URL to the clipboard with a transient "Copied!" state. */
   public onCopyLink(): void {
     // The Clipboard API is absent on insecure origins and in older browsers, so it can't be assumed.

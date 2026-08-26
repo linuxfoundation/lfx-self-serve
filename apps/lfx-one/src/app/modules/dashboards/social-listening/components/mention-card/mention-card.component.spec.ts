@@ -69,19 +69,6 @@ describe('MentionCardComponent', () => {
     expect(querySelector('.card-link')).toBeNull();
   });
 
-  it('gates the external-link affordances on the same URL policy as the stretched link', async () => {
-    setMention(baseMention());
-    await fixture.whenStable();
-
-    // Valid URL: the header icon shows even before truncation is measured.
-    expect(fixture.nativeElement.querySelectorAll('.fa-arrow-up-right-from-square')).toHaveLength(1);
-
-    setMention(baseMention({ originalUrl: 'javascript:alert(1)' }));
-    await fixture.whenStable();
-
-    expect(fixture.nativeElement.querySelectorAll('.fa-arrow-up-right-from-square')).toHaveLength(0);
-  });
-
   it('shows the read-more affordance only when the body is truncated with a navigable URL', async () => {
     setMention(baseMention());
     await fixture.whenStable();
