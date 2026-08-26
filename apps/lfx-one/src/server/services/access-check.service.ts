@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AccessCheckAccessType, AccessCheckApiRequest, AccessCheckApiResponse, AccessCheckRequest, AccessCheckResourceType } from '@lfx-one/shared/interfaces';
+import {
+  AccessCheckAccessType,
+  AccessCheckApiRequest,
+  AccessCheckApiResponse,
+  AccessCheckRequest,
+  AccessCheckResourceType,
+  ApiRequestOptions,
+} from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { logger } from '../services/logger.service';
@@ -21,9 +28,10 @@ export class AccessCheckService {
    * Check access permissions for multiple resources
    * @param req Express request object with auth context
    * @param resources Array of resources to check access for
+   * @param options Optional per-call overrides (e.g. explicit bearer token)
    * @returns Map keyed by "id#access" to their access status (e.g. "meeting-1#organizer")
    */
-  public async checkAccess(req: Request, resources: AccessCheckRequest[]): Promise<Map<string, boolean>> {
+  public async checkAccess(req: Request, resources: AccessCheckRequest[], options?: ApiRequestOptions): Promise<Map<string, boolean>> {
     if (resources.length === 0) {
       return new Map();
     }
@@ -31,7 +39,7 @@ export class AccessCheckService {
     const { operationName, startTime } = this.beginCheckOperation(req, resources);
 
     try {
-      return await this.performCheck(req, resources, operationName, startTime);
+      return await this.performCheck(req, resources, operationName, startTime, options);
     } catch (error) {
       logger.error(req, operationName, startTime, error, {
         request_count: resources.length,
@@ -53,16 +61,17 @@ export class AccessCheckService {
    * from "couldn't verify" (503) — `checkAccess`'s fallback collapses that distinction.
    * @param req Express request object with auth context
    * @param resources Array of resources to check access for
+   * @param options Optional per-call overrides (e.g. explicit bearer token)
    * @returns Map keyed by "id#access" to their access status
    */
-  public async checkAccessStrict(req: Request, resources: AccessCheckRequest[]): Promise<Map<string, boolean>> {
+  public async checkAccessStrict(req: Request, resources: AccessCheckRequest[], options?: ApiRequestOptions): Promise<Map<string, boolean>> {
     if (resources.length === 0) {
       return new Map();
     }
 
     const { operationName, startTime } = this.beginCheckOperation(req, resources);
     try {
-      return await this.performCheck(req, resources, operationName, startTime);
+      return await this.performCheck(req, resources, operationName, startTime, options);
     } catch (error) {
       // Unlike checkAccess, this rethrows rather than degrading — but still logs, so a failed
       // strict check leaves the same terminal error record as any other failed operation instead
@@ -76,10 +85,11 @@ export class AccessCheckService {
    * Check access for a single resource (convenience method)
    * @param req Express request object with auth context
    * @param resource Resource to check access for
+   * @param options Optional per-call overrides (e.g. explicit bearer token)
    * @returns Boolean indicating whether user has access
    */
-  public async checkSingleAccess(req: Request, resource: AccessCheckRequest): Promise<boolean> {
-    const results = await this.checkAccess(req, [resource]);
+  public async checkSingleAccess(req: Request, resource: AccessCheckRequest, options?: ApiRequestOptions): Promise<boolean> {
+    const results = await this.checkAccess(req, [resource], options);
     return results.get(`${resource.id}#${resource.access}`) || false;
   }
 
@@ -87,10 +97,11 @@ export class AccessCheckService {
    * Check access for a single resource, propagating upstream failures. See `checkAccessStrict`.
    * @param req Express request object with auth context
    * @param resource Resource to check access for
+   * @param options Optional per-call overrides (e.g. explicit bearer token)
    * @returns Boolean indicating whether user has access
    */
-  public async checkSingleAccessStrict(req: Request, resource: AccessCheckRequest): Promise<boolean> {
-    const results = await this.checkAccessStrict(req, [resource]);
+  public async checkSingleAccessStrict(req: Request, resource: AccessCheckRequest, options?: ApiRequestOptions): Promise<boolean> {
+    const results = await this.checkAccessStrict(req, [resource], options);
     return results.get(`${resource.id}#${resource.access}`) || false;
   }
 
@@ -100,13 +111,15 @@ export class AccessCheckService {
    * @param resources Array of resource objects with uid or id field
    * @param resourceType Type of resource (project, meeting, committee)
    * @param accessType Type of access to check (default: writer)
+   * @param options Optional per-call overrides (e.g. explicit bearer token)
    * @returns Array of resources with writer field added
    */
   public async addAccessToResources<T extends { uid: string } | { id: string }>(
     req: Request,
     resources: T[],
     resourceType: AccessCheckResourceType,
-    accessType: AccessCheckAccessType = 'writer'
+    accessType: AccessCheckAccessType = 'writer',
+    options?: ApiRequestOptions
   ): Promise<(T & { writer?: boolean })[]> {
     if (resources.length === 0) {
       return resources;
@@ -120,7 +133,7 @@ export class AccessCheckService {
     }));
 
     // Perform batch access check
-    const accessResults = await this.checkAccess(req, accessCheckRequests);
+    const accessResults = await this.checkAccess(req, accessCheckRequests, options);
 
     // Add access field to each resource
     return resources.map((resource) => ({
@@ -135,13 +148,15 @@ export class AccessCheckService {
    * @param resource Single resource object with uid or id field
    * @param resourceType Type of resource (project, meeting, committee)
    * @param accessType Type of access to check (default: writer)
+   * @param options Optional per-call overrides (e.g. explicit bearer token)
    * @returns Resource with writer field added
    */
   public async addAccessToResource<T extends { uid: string } | { id: string }>(
     req: Request,
     resource: T,
     resourceType: AccessCheckResourceType,
-    accessType: AccessCheckAccessType = 'writer'
+    accessType: AccessCheckAccessType = 'writer',
+    options?: ApiRequestOptions
   ): Promise<T & { writer?: boolean }> {
     const resourceId = this.getResourceId(resource);
     logger.debug(req, 'add_access_to_resource', 'Adding access to resource', {
@@ -150,11 +165,15 @@ export class AccessCheckService {
       access_type: accessType,
     });
 
-    const hasAccess = await this.checkSingleAccess(req, {
-      resource: resourceType,
-      id: resourceId,
-      access: accessType,
-    });
+    const hasAccess = await this.checkSingleAccess(
+      req,
+      {
+        resource: resourceType,
+        id: resourceId,
+        access: accessType,
+      },
+      options
+    );
 
     return {
       ...resource,
@@ -181,7 +200,13 @@ export class AccessCheckService {
    * Performs the access-check request/response round trip with no error handling — callers decide
    * whether to degrade (`checkAccess`) or propagate (`checkAccessStrict`).
    */
-  private async performCheck(req: Request, resources: AccessCheckRequest[], operationName: string, startTime: number): Promise<Map<string, boolean>> {
+  private async performCheck(
+    req: Request,
+    resources: AccessCheckRequest[],
+    operationName: string,
+    startTime: number,
+    options?: ApiRequestOptions
+  ): Promise<Map<string, boolean>> {
     // Transform requests to the expected API format
     const apiRequests = resources.map((resource) => `${resource.resource}:${resource.id}#${resource.access}`);
 
@@ -189,14 +214,17 @@ export class AccessCheckService {
       requests: apiRequests,
     };
 
-    // Make the API request
+    // Make the API request. options?.bearerToken (when set) opts the call out of req.bearerToken
+    // for parallel-safe fan-out — see ApiRequestOptions.
     const response = await this.microserviceProxy.proxyRequest<AccessCheckApiResponse>(
       req,
       'LFX_V2_SERVICE',
       '/access-check',
       'POST',
       undefined,
-      requestPayload
+      requestPayload,
+      undefined,
+      options
     );
 
     // Parse each result string into a lookup keyed by the "resource:id#access" tuple it

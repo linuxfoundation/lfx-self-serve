@@ -1298,6 +1298,63 @@ describe('ClaService.createClaManagerRequest', () => {
     expect(opts.body).toEqual({ requestType: 'approval', recipients: ['jdoe'] });
   });
 
+  it('posts contact with its message and returns the contact receipt', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      requestID: 'r-2',
+      signatureID: MANAGER_SIG,
+      requestType: 'contact',
+      status: 'sent',
+      recipients: ['jdoe'],
+    });
+
+    const result = await new ClaService().createClaManagerRequest(req, MANAGER_SIG, identity, {
+      requestType: 'contact',
+      recipients: ['jdoe'],
+      message: 'who owns our approved list?',
+    });
+
+    expect(result).toEqual({
+      requestId: 'r-2',
+      signatureId: MANAGER_SIG,
+      requestType: 'contact',
+      status: 'sent',
+      recipients: ['jdoe'],
+    });
+    const [, , opts] = gatewayFetch.mock.calls[0] as [unknown, string, { body?: Record<string, unknown>; bearerToken?: string }];
+    expect(opts.body).toEqual({ requestType: 'contact', recipients: ['jdoe'], message: 'who owns our approved list?' });
+    expect(opts.bearerToken).toBeUndefined();
+  });
+
+  it('refuses a receipt naming a request type outside the producer enum', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      requestID: 'r-3',
+      signatureID: MANAGER_SIG,
+      requestType: 'nudge',
+      status: 'sent',
+      recipients: ['jdoe'],
+    });
+
+    await expect(
+      new ClaService().createClaManagerRequest(req, MANAGER_SIG, identity, { requestType: 'contact', recipients: ['jdoe'], message: 'hi' })
+    ).rejects.toThrow('Upstream recorded no usable CLA manager request');
+  });
+
+  it('refuses a receipt for a different request type than the one sent', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      requestID: 'r-4',
+      signatureID: MANAGER_SIG,
+      requestType: 'approval',
+      status: 'sent',
+      recipients: ['jdoe'],
+    });
+
+    // An approval receipt for a contact request would otherwise be forwarded as success, and the
+    // modal picks its copy from the mode it asked for, hiding the mismatch from the contributor.
+    await expect(
+      new ClaService().createClaManagerRequest(req, MANAGER_SIG, identity, { requestType: 'contact', recipients: ['jdoe'], message: 'hi' })
+    ).rejects.toThrow('Upstream recorded no usable CLA manager request');
+  });
+
   it('returns null on a 404', async () => {
     gatewayFetch.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { service: 'cla_service' }));
 

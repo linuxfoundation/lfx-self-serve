@@ -18,11 +18,12 @@ export function canRequestClaRemoval(agreement: MyClaAgreement): boolean {
 }
 
 /**
- * Contact CLA Manager — Needs-attention ECLA only (v17). Send is a no-op; this gate
- * only decides whether the item is offered.
+ * Contact CLA Manager — Valid or Needs-attention ECLA. Never ICLA: both endpoints the modal
+ * needs (`GET`/`POST /my-clas/{id}/cla-manager[-request]s`) 404 on an ICLA signature id,
+ * because an ICLA has no covering CCLA and so no managers to resolve.
  */
 export function canContactClaManager(agreement: MyClaAgreement): boolean {
-  return agreement.kind === 'ECLA' && agreement.status === 'needs_attention';
+  return agreement.kind === 'ECLA' && (agreement.status === 'valid' || agreement.status === 'needs_attention');
 }
 
 /**

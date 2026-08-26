@@ -397,7 +397,33 @@ export class CampaignsComponent {
     if (!isPlatformBrowser(this.platformId) || !this.featureFlagService.providerReady()) {
       return true;
     }
-    return this.marketingOpsFgaEnabled() && this.personaService.isCampaignManager();
+    if (!this.marketingOpsFgaEnabled()) {
+      return false;
+    }
+    const slug = this.activeFoundationSlug();
+    // Read from the per-scope grant map: each scope's result is stored independently, so a newer
+    // cross-scope probe (e.g. sidebar-nav for a different foundation) cannot overwrite this
+    // foundation's confirmed answer — that probe writes into its own key, not this one
+    // (Copilot finding, PR #1835: confirmActiveGrant force-write overwritten by later probe).
+    // Check this foundation's entry first, then fall back to a confirmed ROOT grant (null key).
+    const grants = this.personaService.grantsByScope();
+    const scopedGrant = slug ? grants.get(slug) : undefined;
+    if (scopedGrant?.isCampaignManager) return true;
+    const rootGrant = grants.get(null);
+    if (rootGrant?.isCampaignManager) return true;
+    // An authoritative `false` at either scope key must win over the legacy global signal below,
+    // which can be stale `true` from a different scope's earlier probe (Copilot/Cursor finding,
+    // PR #1835: legacy fallback overrides an authoritative map denial).
+    if (scopedGrant !== undefined || rootGrant !== undefined) {
+      return false;
+    }
+    // No per-scope entry yet (before the guard's first probe for this scope has returned) —
+    // fall back to the global signal with the slug gate for the brief pre-resolve window.
+    const grantSlug = this.personaService.marketingGrantSlug();
+    if (slug && grantSlug !== null && grantSlug !== slug) {
+      return false;
+    }
+    return this.personaService.isCampaignManager();
   });
 
   /**
