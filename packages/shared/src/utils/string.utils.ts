@@ -117,6 +117,26 @@ export function codePointLength(value: string): number {
 }
 
 /**
+ * Mirror of the CLA backend's `utils.SanitizePlainText` for free-text a user sends upstream:
+ * CR and CRLF become LF, other control characters are dropped, and the result is trimmed.
+ * Validate the sanitized value, because the producer validates what it stores, not what was
+ * typed — a control-character-only message is blank to it, and its length cap counts the
+ * sanitized runes, so measuring the raw input rejects text the producer would accept.
+ * @param value - The raw user-supplied text
+ * @returns The text as the producer will store it
+ */
+export function sanitizePlainText(value: string): string {
+  return (
+    value
+      .replace(/\r\n?/gu, '\n')
+      // \p{Cc} is the Unicode control category, which is exactly what Go's `unicode.IsControl`
+      // matches; newline and tab survive because the producer keeps them.
+      .replace(/\p{Cc}/gu, (control) => (control === '\n' || control === '\t' ? control : ''))
+      .trim()
+  );
+}
+
+/**
  * Clip `next` to `max` code points by trimming only the region that changed vs `previous`, so a
  * mid-string insertion into a full field drops the excess input rather than unrelated trailing text.
  * @param previous - The last within-cap value (must itself be <= max code points)

@@ -73,8 +73,22 @@ export class ValkeyService implements CachePort {
       if (raw == null) return null;
       // setJson caps our own writes, but another client (or a manual write) could store an oversized value.
       // Parsing a very large JSON string blocks the event loop, so reject oversized reads as a miss before parsing.
-      if (Buffer.byteLength(raw, 'utf8') > VALKEY_CACHE.MAX_VALUE_BYTES) {
-        logger.warning(undefined, 'valkey_get', 'Cached value exceeds max size — treating as miss', { cache_key: ValkeyService.redactKey(key) });
+      const readSize = Buffer.byteLength(raw, 'utf8');
+      if (readSize > VALKEY_CACHE.MAX_VALUE_BYTES) {
+        // `cache_namespace` is the code-defined `{domain}:v{N}` label as a typed field so CloudWatch
+        // queries can group and filter oversize events by cache family without substring-matching
+        // the redacted `cache_key` (which already carries the same segment in the default
+        // deployment, but only until a caller sets `VALKEY_KEY_NAMESPACE` to a `vN`-shaped value —
+        // `redactKey`'s header calls that edge case out; `extractNamespace` closes it). `size_bytes`
+        // is genuinely net-new attribution: the existing warning couldn't distinguish a payload just
+        // over the 1 MB cap from one 10× over it, and that's exactly what tells us whether a caller
+        // needs a slimmer projection or a fundamentally different caching strategy.
+        logger.warning(undefined, 'valkey_get', 'Cached value exceeds max size — treating as miss', {
+          cache_key: ValkeyService.redactKey(key),
+          cache_namespace: ValkeyService.extractNamespace(key),
+          size_bytes: readSize,
+          max_bytes: VALKEY_CACHE.MAX_VALUE_BYTES,
+        });
         return null;
       }
       const parsed = JSON.parse(raw);
@@ -99,8 +113,20 @@ export class ValkeyService implements CachePort {
     if (!this.client) return false;
     try {
       const serialized = JSON.stringify(value);
-      if (Buffer.byteLength(serialized, 'utf8') > VALKEY_CACHE.MAX_VALUE_BYTES) {
-        logger.warning(undefined, 'valkey_set', 'Skipping cache write — value exceeds max size', { cache_key: ValkeyService.redactKey(key) });
+      const writeSize = Buffer.byteLength(serialized, 'utf8');
+      if (writeSize > VALKEY_CACHE.MAX_VALUE_BYTES) {
+        // Same enrichment as the read-path oversize warning: `cache_namespace` gives log queries a
+        // typed field to group by (rather than substring-matching the redacted `cache_key`, which
+        // works in the default deployment but breaks when `VALKEY_KEY_NAMESPACE` is `vN`-shaped),
+        // and `size_bytes` is the actually-new attribution — the existing warning didn't distinguish
+        // a payload just over the 1 MB cap from one 10× over it, and that gap is exactly what
+        // determines whether the fix is a slimmer projection or a different caching strategy.
+        logger.warning(undefined, 'valkey_set', 'Skipping cache write — value exceeds max size', {
+          cache_key: ValkeyService.redactKey(key),
+          cache_namespace: ValkeyService.extractNamespace(key),
+          size_bytes: writeSize,
+          max_bytes: VALKEY_CACHE.MAX_VALUE_BYTES,
+        });
         return false;
       }
       await this.withTimeout(
@@ -178,6 +204,41 @@ export class ValkeyService implements CachePort {
     const versionIdx = parts.findIndex((p) => /^v\d+$/.test(p));
     if (versionIdx === -1 || versionIdx >= parts.length - 1) return key;
     return `${parts.slice(0, versionIdx + 1).join(':')}:***`;
+  }
+
+  /**
+   * Returns the code-defined `{domain}:v{N}` namespace segment (e.g. `org-lens-sf:v1`, `org-seats:v1`)
+   * for structured logging, so oversize/failure events can be attributed to a specific cache family
+   * without leaking the principal or sub-resource. For keys built via this service's `build*CacheKey`
+   * helpers, the namespace is one of the static, code-defined labels in `VALKEY_CACHE.*_NAMESPACE`
+   * and therefore carries no PII. A foreign consumer that shares the Valkey backend could write a
+   * key with any string at that position, so the returned value is only guaranteed PII-free for keys
+   * our own helpers produced — the read-path warning that logs this field explicitly acknowledges
+   * that possibility with its "another client (or a manual write) could store an oversized value"
+   * comment, and either way the value is a colon-delimited path segment, not a user-supplied blob.
+   *
+   * Anchors on the *first* `vN`-shaped segment at index ≥ 2 rather than the first overall. The
+   * app prefix (index 0) is never `vN`, and the optional deployment namespace (index 1, from
+   * `VALKEY_KEY_NAMESPACE`) may itself be `vN`-shaped (a caveat `redactKey`'s header already calls
+   * out) — skipping the first two positions lets a `v5`-style deployment namespace slide past
+   * without over-anchoring on it. A first-match search (rather than last-match) is also required
+   * because several sub-resource labels embed their own `:vN:` schema-version segments
+   * (`projects:v3:...`, `meetings-kpi:v2:...`, `meetings-influence:v4:...`), so anchoring on the
+   * last `vN` would mis-attribute to the sub-resource's version instead of the domain's.
+   *
+   * Returns `null` on any key that doesn't carry a `vN` at a valid position with at least one
+   * segment after it (e.g. a manually-written entry from another consumer, or a truncated key).
+   * Both call sites pass the return value through unconditionally, so a null lands in the log
+   * payload as `cache_namespace: null` — deliberate for CloudWatch column consistency, so log
+   * queries can uniformly filter on `cache_namespace != null` rather than the field being
+   * present/absent based on key shape.
+   */
+  private static extractNamespace(key: string): string | null {
+    const parts = key.split(':');
+    // Skip index 0 (app prefix) and index 1 (optional deployment namespace, possibly `vN`-shaped).
+    const versionIdx = parts.findIndex((p, i) => i >= 2 && /^v\d+$/.test(p));
+    if (versionIdx === -1 || versionIdx + 1 >= parts.length) return null;
+    return `${parts[versionIdx - 1]}:${parts[versionIdx]}`;
   }
 
   /**

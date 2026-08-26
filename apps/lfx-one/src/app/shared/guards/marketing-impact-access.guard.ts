@@ -52,10 +52,28 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
     // Force a refetch unless we already know the caller is a marketing auditor.
     const force = override && !personaService.isMarketingAuditor();
     return personaService.refreshEnrichedPersonas(force, override ? projectSlug : undefined).pipe(
-      map(() => {
-        const allowed = override
-          ? personaService.canViewExecutiveDashboards() || personaService.isMarketingAuditor()
-          : personaService.canViewExecutiveDashboards();
+      map((response) => {
+        // Decide the FGA grant from this call's own response, not the shared signal — a newer
+        // probe issued elsewhere (e.g. sidebar-nav) can win the "latest" race and block this
+        // response from being written to the signal, even though it's the answer this guard needs
+        // (LFXV2-2235 Cursor finding: probe race can deny valid grants). An errored-but-non-null
+        // response (HTTP 200 with `response.error` set) isn't authoritative either —
+        // applyPersonaResponse preserves the last-known-good grant in that case, so fall back too.
+        // ED/LF-staff eligibility below still reads the shared `canViewExecutiveDashboards()`
+        // signal directly — `isLFStaff` is written unconditionally, outside the probeId guard, so
+        // it isn't subject to the same race and doesn't need to come from this response.
+        const isMarketingAuditor = response && !response.error ? (response.isMarketingAuditor ?? false) : personaService.isMarketingAuditor();
+        // This guard's own response is the most authoritative source for the route it's about to
+        // admit — force-apply it so downstream signal readers (`MarketingImpactComponent`) agree
+        // with the decision made here, even if a differently-scoped background probe won the
+        // recency race and would otherwise have left the shared signal stale (Copilot finding,
+        // PR #1835). Only force-apply on an actual grant — a deny response has no scope of its own
+        // to defend and would otherwise clobber a genuinely newer, differently-scoped grant that
+        // already won the recency race legitimately (Cursor finding, PR #1835).
+        if (response && !response.error && isMarketingAuditor) {
+          personaService.confirmActiveGrant(response, override ? projectSlug : undefined);
+        }
+        const allowed = override ? personaService.canViewExecutiveDashboards() || isMarketingAuditor : personaService.canViewExecutiveDashboards();
         if (allowed) {
           return true;
         }
@@ -80,9 +98,17 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
       const force = marketingOpsFgaEnabled && !personaService.isMarketingAuditor();
 
       return personaService.refreshEnrichedPersonas(force, marketingOpsFgaEnabled ? projectSlug : undefined).pipe(
-        map(() => {
+        map((response) => {
+          // Decide the FGA grant from this call's own response, not the shared signal — see the
+          // override branch above for why, and for why ED/LF-staff eligibility stays signal-based.
+          const isMarketingAuditor = response && !response.error ? (response.isMarketingAuditor ?? false) : personaService.isMarketingAuditor();
+          // Force-apply this call's own response — see the override branch above for why. Only on
+          // an actual grant — see the override branch above for why a deny must not force-apply.
+          if (response && !response.error && isMarketingAuditor) {
+            personaService.confirmActiveGrant(response, marketingOpsFgaEnabled ? projectSlug : undefined);
+          }
           const allowed = marketingOpsFgaEnabled
-            ? personaService.canViewExecutiveDashboards() || personaService.isMarketingAuditor()
+            ? personaService.canViewExecutiveDashboards() || isMarketingAuditor
             : personaService.canViewExecutiveDashboards();
           if (allowed) {
             return true;

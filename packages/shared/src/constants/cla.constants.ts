@@ -37,18 +37,42 @@ export const CLA_GROUP_ORG_SOURCE_ICONS = {
 /** Hover tooltips on a right-edge kebab open off-screen; keep the CCLA reason in the item. */
 export const ECLA_COVERED_DOWNLOAD_LABEL = 'Download PDF<br><span class="mt-0.5 block text-xs font-normal">Covered by Corporate CLA (CCLA)</span>';
 
+/**
+ * Mirrors the producer's `message` bound (`my-cla-manager-request.yaml`: maxLength 4096).
+ * Shared between the BFF validator, the modal's reactive-form validator and its counter so
+ * client and server enforce one contract. Counted in code points, not UTF-16 units: go-swagger
+ * validates `maxLength` with `utf8.RuneCountInString`, so counting units would reject an
+ * emoji-heavy message the producer would have accepted.
+ */
+export const CLA_MANAGER_MESSAGE_MAX_LENGTH = 4096;
+
+/** The `requestType` values the producer's enum accepts (`my-cla-manager-request.yaml`). */
+export const CLA_MANAGER_REQUEST_TYPES = ['approval', 'removal', 'contact'] as const;
+
+/** Approval and removal share one receipt; contact phrases it as a message. */
+const CLA_MANAGER_REQUEST_RECEIPT = {
+  sent: { summary: 'Request sent', detail: 'The CLA manager(s) you selected will be notified.' },
+  recorded: { summary: 'Request recorded', detail: 'The request was recorded, but no CLA manager email could be delivered.' },
+} as const;
+
 /** v17 `mgrCopy` — titles also used as DialogService headers by the kebab factory. */
 export const CLA_MANAGER_MODAL_COPY = {
   approval: {
     title: 'Request approval',
     hint: (project: string) => `Ask the CLA manager(s) below to re-approve your ECLA for ${project}.`,
+    receipt: CLA_MANAGER_REQUEST_RECEIPT,
   },
   removal: {
     title: 'Request Removal',
     hint: (project: string) => `Ask the CLA manager(s) below to remove your ECLA for ${project}. This starts the process to invalidate it on your behalf.`,
+    receipt: CLA_MANAGER_REQUEST_RECEIPT,
   },
   contact: {
     title: 'Contact CLA Manager',
     hint: (project: string) => `Send a message to the CLA manager(s) for ${project}.`,
+    receipt: {
+      sent: { summary: 'Message sent', detail: 'The CLA manager(s) you selected will be notified.' },
+      recorded: { summary: 'Message recorded', detail: 'The message was recorded, but no CLA manager email could be delivered.' },
+    },
   },
 } as const;
