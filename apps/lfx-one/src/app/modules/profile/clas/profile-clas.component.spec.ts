@@ -226,7 +226,7 @@ describe('ProfileClasComponent', () => {
   it('shows a disabled Download PDF item with a Covered by Corporate CLA line on an ECLA row', async () => {
     await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' })]);
 
-    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Contact CLA Manager']);
     expect(menuItems('s-ecla')[0]).toMatchObject({ disabled: true, escape: false });
   });
 
@@ -259,7 +259,7 @@ describe('ProfileClasComponent', () => {
     ]);
 
     const items = menuItems('s-ecla');
-    expect(items.map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Manage in CCLA Console']);
+    expect(items.map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Contact CLA Manager', 'Manage in CCLA Console']);
 
     // PrimeNG's menu renders no `rel`, so the item opens through `command` to keep noopener/noreferrer.
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
@@ -273,10 +273,10 @@ describe('ProfileClasComponent', () => {
     expect(menuItems('s-icla').map((item) => item.label)).toEqual(['Download PDF']);
 
     await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claManager: true })]);
-    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Contact CLA Manager']);
 
     await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005', claManager: false })]);
-    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Contact CLA Manager']);
   });
 
   it('reads manager status off the row rather than spending a managers GET per ECLA', async () => {
