@@ -67,8 +67,10 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
         // admit — force-apply it so downstream signal readers (`MarketingImpactComponent`) agree
         // with the decision made here, even if a differently-scoped background probe won the
         // recency race and would otherwise have left the shared signal stale (Copilot finding,
-        // PR #1835).
-        if (response && !response.error) {
+        // PR #1835). Only force-apply on an actual grant — a deny response has no scope of its own
+        // to defend and would otherwise clobber a genuinely newer, differently-scoped grant that
+        // already won the recency race legitimately (Cursor finding, PR #1835).
+        if (response && !response.error && isMarketingAuditor) {
           personaService.confirmActiveGrant(response, override ? projectSlug : undefined);
         }
         const allowed = override ? personaService.canViewExecutiveDashboards() || isMarketingAuditor : personaService.canViewExecutiveDashboards();
@@ -100,8 +102,9 @@ export const marketingImpactAccessGuard: CanActivateFn = (route: ActivatedRouteS
           // Decide the FGA grant from this call's own response, not the shared signal — see the
           // override branch above for why, and for why ED/LF-staff eligibility stays signal-based.
           const isMarketingAuditor = response && !response.error ? (response.isMarketingAuditor ?? false) : personaService.isMarketingAuditor();
-          // Force-apply this call's own response — see the override branch above for why.
-          if (response && !response.error) {
+          // Force-apply this call's own response — see the override branch above for why. Only on
+          // an actual grant — see the override branch above for why a deny must not force-apply.
+          if (response && !response.error && isMarketingAuditor) {
             personaService.confirmActiveGrant(response, marketingOpsFgaEnabled ? projectSlug : undefined);
           }
           const allowed = marketingOpsFgaEnabled

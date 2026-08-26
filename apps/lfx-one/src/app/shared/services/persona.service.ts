@@ -179,7 +179,7 @@ export class PersonaService {
           // most-recently-issued response — a root-scoped call (no `projectSlug`) leaves this
           // untouched, since a ROOT grant isn't tied to one project.
           if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager) && probeId >= this.latestAppliedGrantProbeId) {
-            this.marketingGrantSlug.set(projectSlug);
+            this.marketingGrantSlug.set(this.resolveGrantSlug(response, projectSlug));
           }
         }
       })
@@ -210,7 +210,10 @@ export class PersonaService {
    * force-apply just by having been issued (Cursor Bugbot + Copilot findings, PR #1835). Callers
    * must only invoke this with an authoritative, non-errored response.
    */
-  public confirmActiveGrant(response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager'>, projectSlug?: string): void {
+  public confirmActiveGrant(
+    response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
+    projectSlug?: string
+  ): void {
     const probeId = this.grantProbeIdByResponse.get(response);
     const latestAppliedForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
     if (probeId !== undefined && latestAppliedForScope !== undefined && probeId < latestAppliedForScope) {
@@ -219,11 +222,29 @@ export class PersonaService {
     this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
     this.isCampaignManager.set(response.isCampaignManager ?? false);
     if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager)) {
-      this.marketingGrantSlug.set(projectSlug);
+      this.marketingGrantSlug.set(this.resolveGrantSlug(response, projectSlug));
     }
     if (probeId !== undefined && probeId > (latestAppliedForScope ?? -Infinity)) {
       this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);
     }
+  }
+
+  /**
+   * `isMarketingAuditor`/`isCampaignManager` alone can't tell a ROOT-cascading grant apart from one
+   * scoped only to `projectSlug` — the backend collapses "ROOT grant OR project-scoped grant" into a
+   * single boolean (Copilot finding, PR #1835). `isMarketingAuditorRootGrant`/`isCampaignManagerRootGrant`
+   * disambiguate: when the grant actually came from the ROOT check, `marketingGrantSlug` must stay
+   * `null` (the documented ROOT sentinel, see its field comment) instead of being pinned to this one
+   * project — otherwise switching to a different foundation would spuriously read as a scope mismatch
+   * and deny a grant that legitimately cascades everywhere.
+   */
+  private resolveGrantSlug(
+    response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
+    projectSlug: string
+  ): string | null {
+    const isRootGrant =
+      (response.isMarketingAuditor && response.isMarketingAuditorRootGrant) || (response.isCampaignManager && response.isCampaignManagerRootGrant);
+    return isRootGrant ? null : projectSlug;
   }
 
   private refreshFromApi(): void {

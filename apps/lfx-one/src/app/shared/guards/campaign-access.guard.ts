@@ -60,7 +60,10 @@ export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot
         // admit — force-apply it so downstream signal readers (`CampaignsComponent`) agree with
         // the decision made here, even if a differently-scoped background probe won the recency
         // race and would otherwise have left the shared signal stale (Copilot finding, PR #1835).
-        if (response && !response.error) {
+        // Only force-apply on an actual grant — a deny response has no scope of its own to defend
+        // and would otherwise clobber a genuinely newer, differently-scoped grant that already won
+        // the recency race legitimately (Cursor finding, PR #1835).
+        if (response && !response.error && isCampaignManager) {
           personaService.confirmActiveGrant(response, projectSlug);
         }
         if (personaService.currentPersona() === 'executive-director' || isCampaignManager) {
@@ -93,8 +96,9 @@ export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot
           // above for why (LFXV2-2235 Cursor finding: probe race can deny valid grants), and for
           // why an errored-but-non-null response also falls back to the shared signal.
           const isCampaignManager = response && !response.error ? (response.isCampaignManager ?? false) : personaService.isCampaignManager();
-          // Force-apply this call's own response — see the override branch above for why.
-          if (response && !response.error) {
+          // Force-apply this call's own response — see the override branch above for why. Only on
+          // an actual grant — see the override branch above for why a deny must not force-apply.
+          if (response && !response.error && isCampaignManager) {
             personaService.confirmActiveGrant(response, projectSlug);
           }
           // Re-check ED too — applyPersonaResponse can promote currentPersona as a side effect of

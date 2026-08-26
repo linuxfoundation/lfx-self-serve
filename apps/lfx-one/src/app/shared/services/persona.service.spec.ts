@@ -19,6 +19,8 @@ const mockResponse = (overrides: Partial<PersonaApiResponse>): PersonaApiRespons
   isLFStaff: false,
   isMarketingAuditor: false,
   isCampaignManager: false,
+  isMarketingAuditorRootGrant: false,
+  isCampaignManagerRootGrant: false,
   ...overrides,
 });
 
