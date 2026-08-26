@@ -68,9 +68,8 @@ export class MentionReadStateService {
   public readonly state = this.store.state;
 
   /**
-   * Bumped when a bulk commit (mark-all) rolls back — the rollback restores the prior doc via `replace`,
-   * which never transitions loading/error, so consumers keying off those primitives (the unread snapshot)
-   * need this tick to re-capture state instead of keeping a cutoff that never persisted.
+   * Bumped when a bulk commit (mark-all) rolls back — `replace` restores the prior doc without a loading/error
+   * transition, so consumers keying off those primitives (the unread snapshot) re-capture state off this tick.
    */
   public readonly bulkRollbackTick = signal(0);
 
@@ -111,10 +110,8 @@ export class MentionReadStateService {
       next,
       // Re-derive at dequeue time: if an earlier queued commit failed and rolled back, the eager snapshot would resurrect it.
       rebase: (current) => computeReadToggle(current, mentionId, mentionTimestamp, currentlyRead),
-      // Targeted rollback: drop this toggle's list contribution, then re-apply the pre-toggle status (`currentlyRead`)
-      // when stripping alone doesn't restore it. Never key off `next` — a no-net-change toggle (mark-unread on a
-      // non-cutoff-covered id clears readIds without touching unreadIds) makes `next` the broken state, so it would
-      // keep the id dropped instead of restoring the prior read.
+      // Targeted rollback: strip this toggle's list contribution, then re-apply the pre-toggle status (`currentlyRead`) when stripping alone doesn't restore it.
+      // Never key off `next` — a no-net-change toggle (mark-unread on a non-cutoff-covered id) makes `next` the broken state.
       rollback: () => {
         const current = this.store.state().data;
         const stripped: ReadStateData = {

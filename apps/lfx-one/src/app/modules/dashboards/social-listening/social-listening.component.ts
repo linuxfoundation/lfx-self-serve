@@ -488,11 +488,8 @@ export class SocialListeningComponent {
       this.previousFoundationSlug = current;
     });
 
-    // Unread mode runs off a read-state snapshot: capture on mode entry and when the persisted state
-    // finishes loading — never on single toggles (primitive status deps only), so a read row restyles
-    // in place instead of vanishing mid-triage. The bulk-rollback tick is the one data-adjacent dep: a
-    // failed mark-all restores the prior doc without a loading/error transition, and the snapshot must
-    // re-capture it or the unread feed keeps paging a cutoff that never persisted.
+    // Unread snapshot re-captures on mode entry and load finish only — never on single toggles, so a read row restyles in place mid-triage.
+    // The bulk-rollback tick is the one data-adjacent dep: a failed mark-all restores the prior doc without a loading/error transition.
     effect(() => {
       this.selectedReadFilter();
       this.readStateLoading();
