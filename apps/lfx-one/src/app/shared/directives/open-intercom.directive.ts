@@ -7,9 +7,9 @@ import { getRuntimeConfig } from '@app/shared/providers/runtime-config.provider'
 import { IntercomService } from '@services/intercom.service';
 
 // Opens the Fin Intercom messenger on click, booting Intercom anonymously on demand when
-// startup boot was skipped (impersonation, public pages, missing JWT claim). With no app id
-// configured the click cannot open anything (boot() would refuse with only a console.warn),
-// so surface that to the user instead of failing silently.
+// startup boot was skipped (impersonation, public pages, missing JWT claim). The click fails
+// visibly (toast) rather than silently when no app id is configured (boot() would refuse with
+// only a console.warn) or when the on-demand boot's widget script fails to load.
 @Directive({
   selector: '[lfxOpenIntercom]',
 })
@@ -24,14 +24,18 @@ export class OpenIntercomDirective {
 
     const { intercomAppId } = getRuntimeConfig(this.transferState);
     if (!intercomAppId) {
-      this.messageService.add({
-        severity: 'error',
-        summary: 'Support Unavailable',
-        detail: 'Support chat is unavailable right now. Please try again later.',
-      });
+      this.showSupportUnavailableToast();
       return;
     }
 
-    this.intercomService.openMessenger(intercomAppId);
+    this.intercomService.openMessenger(intercomAppId, () => this.showSupportUnavailableToast());
+  }
+
+  private showSupportUnavailableToast(): void {
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Support Unavailable',
+      detail: 'Support chat is unavailable right now. Please try again later.',
+    });
   }
 }

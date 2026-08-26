@@ -21,6 +21,10 @@ export class IntercomService {
 
   private scriptElement: HTMLScriptElement | null = null;
 
+  // Invoked from the widget script's onerror when set by a click-triggered openMessenger() —
+  // lets support CTAs surface a toast on load failure while startup boot stays silent.
+  private onLoadError?: () => void;
+
   // Fire-and-forget: stub queue absorbs calls before the script loads and replays them on load.
   public boot(options: IntercomBootOptions): void {
     if (typeof window === 'undefined') {
@@ -51,8 +55,11 @@ export class IntercomService {
   // Entry point for support CTAs: boots Intercom anonymously on demand when startup boot was
   // skipped (impersonation, public pages, missing JWT claim), then shows the messenger.
   // Fire-and-forget — a fresh boot queues behind the stub and replays before show on script load.
-  public openMessenger(appId: string): void {
+  // onLoadError fires if that on-demand boot's widget script fails to load (e.g. ad-blockers);
+  // it is ignored when Intercom is already booted, and cleared once the script loads.
+  public openMessenger(appId: string, onLoadError?: () => void): void {
     if (!this.isBootRequested) {
+      this.onLoadError = onLoadError;
       this.boot({ app_id: appId });
     }
     this.show();
@@ -94,6 +101,7 @@ export class IntercomService {
 
     script.onload = () => {
       this.isLoaded = true;
+      this.onLoadError = undefined;
       console.info('Intercom: widget script loaded');
     };
 
@@ -104,6 +112,8 @@ export class IntercomService {
       console.error('Intercom: failed to load widget script', error);
       // Surface to RUM so sessions where the Fin messenger cannot open are dashboardable.
       this.dataDogRumService.addError(new Error('Intercom script failed to load'), { context: 'intercom_load' });
+      this.onLoadError?.();
+      this.onLoadError = undefined;
     };
 
     const firstScript = document.getElementsByTagName('script')[0];

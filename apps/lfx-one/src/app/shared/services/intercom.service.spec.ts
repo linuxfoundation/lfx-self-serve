@@ -11,15 +11,18 @@ import { IntercomService } from './intercom.service';
  * Covers openMessenger(), the support-CTA entry point added for GH-1857: when startup boot was
  * skipped (impersonation, public pages, missing JWT claim) the first click must boot Intercom
  * anonymously, and boot must queue before show on the pre-load stub so the widget replays them
- * in order once its script loads.
+ * in order once its script loads. A click-triggered boot whose script fails to load must invoke
+ * the caller's error callback so the CTA can fail visibly, and a successful load must clear it.
  */
 describe('IntercomService', () => {
   let service: IntercomService;
 
   const queuedCommands = (): unknown[][] => window.Intercom?.q ?? [];
+  const widgetScript = (): HTMLScriptElement | null => document.querySelector('script[src^="https://widget.intercom.io/"]');
 
   beforeEach(() => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     TestBed.configureTestingModule({
       providers: [{ provide: DataDogRumService, useValue: { addError: vi.fn() } }],
@@ -65,5 +68,31 @@ describe('IntercomService', () => {
     expect(service.isBootRequested).toBe(false);
     expect(window.Intercom).toBeUndefined();
     expect(warnSpy).toHaveBeenCalledWith('Intercom: boot called without app_id');
+  });
+
+  it('should invoke the load-error callback and allow a retry when the widget script fails to load', () => {
+    const onLoadError = vi.fn();
+
+    service.openMessenger('test-app-id', onLoadError);
+    widgetScript()?.onerror?.call(widgetScript() as GlobalEventHandlers, new Event('error'));
+
+    expect(onLoadError).toHaveBeenCalledTimes(1);
+    expect(service.isBootRequested).toBe(false);
+
+    // A later click re-attempts the boot with a fresh script element.
+    service.openMessenger('test-app-id', onLoadError);
+
+    expect(service.isBootRequested).toBe(true);
+    expect(document.querySelectorAll('script[src^="https://widget.intercom.io/"]')).toHaveLength(1);
+  });
+
+  it('should clear the load-error callback once the widget script loads', () => {
+    const onLoadError = vi.fn();
+
+    service.openMessenger('test-app-id', onLoadError);
+    widgetScript()?.onload?.call(widgetScript() as GlobalEventHandlers, new Event('load'));
+    widgetScript()?.onerror?.call(widgetScript() as GlobalEventHandlers, new Event('error'));
+
+    expect(onLoadError).not.toHaveBeenCalled();
   });
 });
