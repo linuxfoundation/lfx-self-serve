@@ -21,7 +21,7 @@ import {
   StatCardGridColumns,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
-import { buildEngagementStatCards, getGroupBehavioralClass, groupCommitteesByFoundation } from '@lfx-one/shared/utils';
+import { buildEngagementStatCards, getGroupBehavioralClass, getGroupCommands, groupCommitteesByFoundation } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { InvitationService } from '@services/invitation.service';
@@ -310,7 +310,13 @@ export class CommitteeDashboardComponent {
   }
 
   public onCommitteeClick(committee: Committee): void {
-    this.router.navigate(['/groups', committee.uid], {
+    // Canonical tier-prefixed view link (GH-1566): the group's own `is_foundation` picks
+    // /foundation vs /project instead of the viewer's transient active lens; `?project=` rides
+    // along when the row carries a slug. Non-Me rows are decorated with the active context's
+    // tier/slug (see initializeDecoratedCommittees); the flat /groups/:uid fallback remains for
+    // any row that still resolves no tier.
+    this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], {
+      queryParams: committee.project_slug ? { project: committee.project_slug } : undefined,
       state: { backLabel: this.isMeLens() ? 'My Groups' : 'Groups' },
     });
   }
@@ -549,12 +555,26 @@ export class CommitteeDashboardComponent {
   }
 
   private initializeDecoratedCommittees(): Signal<Committee[]> {
-    return computed(() =>
-      this.committees().map((c) => {
+    return computed(() => {
+      // /api/committees returns query-service rows: they can carry an indexer-populated
+      // project_slug, but never is_foundation (only enrichWithProjectData supplies that).
+      // The list is scoped by `project_uid:<active context uid>` — an exact-match tag per the
+      // committee-service indexer contract — so every row is owned by the active context; fall
+      // back to its tier/slug so canonical tier-prefixed links (getGroupCommands) and `?project=`
+      // resolve instead of degrading to the flat /groups/:uid path (GH-1566).
+      const context = this.project();
+      const contextIsFoundation = this.isFoundationContext();
+      return this.committees().map((c) => {
         const behavioralClass = getGroupBehavioralClass(c.category);
-        return { ...c, behavioralClass, classDisplay: BEHAVIORAL_CLASS_CONFIG[behavioralClass] };
-      })
-    );
+        return {
+          ...c,
+          project_slug: c.project_slug ?? context?.slug,
+          is_foundation: c.is_foundation ?? contextIsFoundation,
+          behavioralClass,
+          classDisplay: BEHAVIORAL_CLASS_CONFIG[behavioralClass],
+        };
+      });
+    });
   }
 
   private initializeDecoratedMyCommittees(): Signal<MyCommittee[]> {

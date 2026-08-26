@@ -11,7 +11,7 @@ import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { FullNamePipe } from '@pipes/full-name.pipe';
-import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, NO_VOTING_STATUS_LABEL } from '@lfx-one/shared/constants';
 import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import {
   Committee,
@@ -95,6 +95,11 @@ export class CommitteeMembersManagerComponent implements OnInit {
 
   // UI labels
   public readonly committeeLabel = COMMITTEE_LABEL.singular;
+  // Neutral label for legacy members with no recorded voting status (GH-1831).
+  public readonly noVotingStatusLabel = NO_VOTING_STATUS_LABEL;
+  // Voting badges render only for voting-enabled groups — the live Step 3 draft overrides the
+  // persisted snapshot, mirroring the effective-committee overlay in openCollectInviteDialog().
+  public readonly votingEnabled = computed(() => this.organizationRequirements()?.enable_voting ?? this.committee()?.enable_voting ?? false);
 
   // Writable signals for state management
   public membersWithState: WritableSignal<CommitteeMemberWithState[]> = signal([]);

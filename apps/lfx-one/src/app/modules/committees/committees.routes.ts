@@ -27,6 +27,9 @@ export const COMMITTEE_ROUTES: Routes = [
     path: ':id/edit',
     loadComponent: () => import('./committee-manage/committee-manage.component').then((m) => m.CommitteeManageComponent),
     canActivate: [authGuard, writerGuard],
-    data: { writeFeature: 'committees' },
+    // entityScopedSlug: writerGuard resolves the authorization slug from the committee itself on
+    // this route. A route-data flag, not a path check, so a route rename/restructure
+    // can't silently revert the guard to stale-context authorization.
+    data: { writeFeature: 'committees', entityScopedSlug: true },
   },
 ];

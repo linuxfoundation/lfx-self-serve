@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime, resolveGroupsCardRoleSeverity } from '@lfx-one/shared/utils';
+import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity } from '@lfx-one/shared/utils';
 import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
@@ -70,6 +70,10 @@ export class MyGroupsCardGridComponent {
           committee,
           roleBadgeSeverity: resolveGroupsCardRoleSeverity(committee.my_role),
           lastActivityLabel,
+          // Canonical tier-prefixed view link (GH-1566): the group's own `is_foundation` picks
+          // /foundation vs /project; rows without tier data keep the flat /groups/:uid fallback.
+          viewCommands: getGroupCommands(committee) ?? ['/groups', committee.uid],
+          viewQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
           ariaLabel: parts.join(', '),
         };
       })

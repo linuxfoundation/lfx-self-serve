@@ -106,6 +106,18 @@ describe('buildInvitationActions', () => {
     const [action] = buildInvitationActions([invitation()]);
     expect(action.inviteRequiresOrganization).toBe(true);
   });
+
+  it('carries the owning project slug and tier through for the canonical view link (GH-1566)', () => {
+    const [action] = buildInvitationActions([invitation({ project_slug: 'pytorch', is_foundation: false })]);
+    expect(action.inviteProjectSlug).toBe('pytorch');
+    expect(action.inviteIsFoundation).toBe(false);
+  });
+
+  it('normalizes absent project slug/tier to null so the view link falls back to the flat path', () => {
+    const [action] = buildInvitationActions([invitation()]);
+    expect(action.inviteProjectSlug).toBeNull();
+    expect(action.inviteIsFoundation).toBeNull();
+  });
 });
 
 describe('committeeRequiresOrganization', () => {

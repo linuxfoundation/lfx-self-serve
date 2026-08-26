@@ -18,20 +18,27 @@ export class AuthHelper {
     // Wait for Auth0 login page (assuming we're already navigated to the app)
     await page.waitForURL(/auth0\.com/, { timeout: 10000 });
 
+    // The Transcend cookie-consent banner (#transcend-consent-manager) overlays the form and
+    // intercepts pointer events on the SIGN IN button. Its internal accept-button markup isn't
+    // worth chasing — forcing it non-interactive via injected CSS is robust regardless of shadow
+    // DOM or exact button text, and this is test setup, not something a real user needs to see.
+    await page.addStyleTag({ content: '#transcend-consent-manager { display: none !important; pointer-events: none !important; }' });
+
     // Fill in credentials using role-based selectors
     await page.getByRole('textbox', { name: 'Username or Email' }).fill(credentials.username);
     await page.getByRole('textbox', { name: 'Password' }).fill(credentials.password);
 
     // Wait for button to be enabled and click sign in button
     await page.waitForSelector('button:has-text("SIGN IN"):not([disabled])', { timeout: 5000 });
+    // Re-assert the style in case the banner mounted late (its own load/render can lag the form).
+    await page.addStyleTag({ content: '#transcend-consent-manager { display: none !important; pointer-events: none !important; }' });
     await page.getByRole('button', { name: 'SIGN IN' }).click();
 
     // Handle consent page if it appears (Auth0 may show /u/consent after login)
     try {
       await page.waitForURL(/\/u\/consent/, { timeout: 5000 });
-      // Click the accept/authorize button on the consent page
-      const acceptBtn =
-        page.getByRole('button', { name: /accept/i }) || page.getByRole('button', { name: /authorize/i }) || page.getByRole('button', { name: /allow/i });
+      // Click whichever accept/authorize/allow button actually exists on this consent page.
+      const acceptBtn = page.getByRole('button', { name: /accept|authorize|allow/i }).first();
       await acceptBtn.click();
     } catch {
       // Consent page didn't appear — proceed directly
