@@ -165,8 +165,11 @@ new route being unprotected is **not** a missing middleware call — it is a
 **public/optional exemption** (or a middleware-order bypass), reachable these
 ways:
 
-- a new `DEFAULT_ROUTE_CONFIG` entry or a new public-prefix router mount that
-  opens a route to `optional`/`public` auth; **or**
+- a new **or modified** `DEFAULT_ROUTE_CONFIG` entry, or a new public-prefix
+  router mount, that opens a route to `optional`/`public` auth — including
+  flipping an existing entry from `required`, widening its pattern, or
+  reordering it ahead of a stricter entry (compare the path's effective
+  classification before and after); **or**
 - a new or changed handler added to a router **already mounted** under an
   existing optional/public prefix (any of the `public-*.route.ts` routers under
   `/public/api`, or an SSR path matching an existing optional pattern), which
