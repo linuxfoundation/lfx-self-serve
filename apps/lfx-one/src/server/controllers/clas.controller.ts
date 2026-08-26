@@ -266,9 +266,17 @@ export class ClasController {
         return;
       }
 
+      // Do not `String(message)`: an object body becomes "[object Object]" and would pass the
+      // contact blank check, then fail the producer's `type: string` schema after the round trip.
+      const rawMessage = body?.message;
+      if (rawMessage !== undefined && rawMessage !== null && typeof rawMessage !== 'string') {
+        res.status(400).json({ message: 'Message must be a string' });
+        return;
+      }
+
       // Sanitized, because the producer validates and stores the sanitized text: control
       // characters other than newline and tab never reach it, so they must not count here.
-      const trimmedMessage = sanitizePlainText(String(body?.message ?? ''));
+      const trimmedMessage = sanitizePlainText(rawMessage ?? '');
       // Code points, not UTF-16 units, to match the producer's go-swagger rune cap — see
       // CLA_MANAGER_MESSAGE_MAX_LENGTH.
       if (codePointLength(trimmedMessage) > CLA_MANAGER_MESSAGE_MAX_LENGTH) {

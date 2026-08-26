@@ -484,6 +484,21 @@ describe('ClasController.createClaManagerRequest', () => {
     expect(createClaManagerRequest).not.toHaveBeenCalled();
   });
 
+  // `String({})` is "[object Object]" — that would pass the contact blank check and then fail
+  // the producer's string schema after a gateway round trip.
+  it.each([{}, 12, true, ['hi']])('rejects a contact message that is not a string (%j)', async (message) => {
+    const res = buildRes();
+
+    await new ClasController().createClaManagerRequest(
+      { params: { signatureId: SIGNATURE_ID }, body: body({ requestType: 'contact', message }) } as any,
+      res,
+      vi.fn()
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(createClaManagerRequest).not.toHaveBeenCalled();
+  });
+
   it('still accepts approval and removal with no message at all', async () => {
     createClaManagerRequest.mockResolvedValue(receipt);
 
