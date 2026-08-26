@@ -1369,6 +1369,10 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     await fixture.whenStable();
 
     expect(c['microsoftBoundsValid']()).toBe(true);
+    // canSubmit too, not just the bounds: without it an unrelated prerequisite being false would
+    // leave BOTH cases green, and the pair would no longer prove the match type was what blocked
+    // submission in the negative case above.
+    expect(c['canSubmit']()).toBe(true);
   });
 
   /**
