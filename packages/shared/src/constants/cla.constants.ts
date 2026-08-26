@@ -49,23 +49,23 @@ export const CLA_MANAGER_MESSAGE_MAX_LENGTH = 4096;
 /** The `requestType` values the producer's enum accepts (`my-cla-manager-request.yaml`). */
 export const CLA_MANAGER_REQUEST_TYPES = ['approval', 'removal', 'contact'] as const;
 
+/** Approval and removal share one receipt; contact phrases it as a message. */
+const CLA_MANAGER_REQUEST_RECEIPT = {
+  sent: { summary: 'Request sent', detail: 'The CLA manager(s) you selected will be notified.' },
+  recorded: { summary: 'Request recorded', detail: 'The request was recorded, but no CLA manager email could be delivered.' },
+} as const;
+
 /** v17 `mgrCopy` — titles also used as DialogService headers by the kebab factory. */
 export const CLA_MANAGER_MODAL_COPY = {
   approval: {
     title: 'Request approval',
     hint: (project: string) => `Ask the CLA manager(s) below to re-approve your ECLA for ${project}.`,
-    receipt: {
-      sent: { summary: 'Request sent', detail: 'The CLA manager(s) you selected will be notified.' },
-      recorded: { summary: 'Request recorded', detail: 'The request was recorded, but no CLA manager email could be delivered.' },
-    },
+    receipt: CLA_MANAGER_REQUEST_RECEIPT,
   },
   removal: {
     title: 'Request Removal',
     hint: (project: string) => `Ask the CLA manager(s) below to remove your ECLA for ${project}. This starts the process to invalidate it on your behalf.`,
-    receipt: {
-      sent: { summary: 'Request sent', detail: 'The CLA manager(s) you selected will be notified.' },
-      recorded: { summary: 'Request recorded', detail: 'The request was recorded, but no CLA manager email could be delivered.' },
-    },
+    receipt: CLA_MANAGER_REQUEST_RECEIPT,
   },
   contact: {
     title: 'Contact CLA Manager',
