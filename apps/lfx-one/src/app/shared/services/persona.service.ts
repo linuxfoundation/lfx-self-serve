@@ -64,12 +64,13 @@ export class PersonaService {
   /** True for EDs and LF Staff — the audience for Foundation Health, Marketing Overview, and Social Listening */
   public readonly canViewExecutiveDashboards: Signal<boolean>;
   /**
-   * Monotonic counter guarding {@link refreshEnrichedPersonas} against out-of-order responses.
+   * Monotonic counter tracking each {@link refreshEnrichedPersonas} call's *issuance* order.
    * Concurrent probes (route guard + sidebar-nav, or a rapid foundation switch) can resolve in a
-   * different order than they were issued — only the response from the most recently *issued*
-   * call, across every scope, is allowed to write the shared grant signals below, so a slow reply
-   * for a foundation the user has already navigated away from can't overwrite the grant for the
-   * foundation currently on screen.
+   * different order than they were issued. This counter alone does not decide who may write the
+   * shared grant signals — that guarantee lives on {@link latestAppliedGrantProbeId}, the applied
+   * high-water mark: a response may write as long as its probeId is at least as new as the last
+   * probe that actually *applied*, which lets an earlier-issued-but-still-in-flight probe write
+   * even if a later probe was issued after it, so long as that later probe hasn't applied yet.
    *
    * This is deliberately global, not per-scope: an earlier per-scope version of this guard (see
    * git history) let an unrelated, differently-scoped probe's late-arriving response overwrite

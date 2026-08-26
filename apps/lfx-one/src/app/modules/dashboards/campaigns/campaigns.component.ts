@@ -395,10 +395,14 @@ export class CampaignsComponent {
     const slug = this.activeFoundationSlug();
     // `isCampaignManager()` is a single global signal shared across every foundation's probe —
     // only trust it for this foundation if `marketingGrantSlug()` (the foundation the most
-    // recently *applied* probe actually answered for) names this same foundation. Otherwise the
-    // true answer belongs to a different, differently-scoped probe that raced ahead of this one
-    // (Copilot finding, PR #1835, on `applyPersonaResponse`'s cross-scope recency gate).
-    if (slug && this.personaService.marketingGrantSlug() !== slug) {
+    // recently *applied* probe actually answered for) names this same foundation. `null` is the
+    // valid representation of a confirmed ROOT-scoped grant (persona.service.ts), not a mismatch —
+    // exempt it so a ROOT campaign_manager isn't denied the moment a foundation is selected
+    // (dealako finding, PR #1835). Otherwise the true answer belongs to a different,
+    // differently-scoped probe that raced ahead of this one (Copilot finding, PR #1835, on
+    // `applyPersonaResponse`'s cross-scope recency gate).
+    const grantSlug = this.personaService.marketingGrantSlug();
+    if (slug && grantSlug !== null && grantSlug !== slug) {
       return false;
     }
     return this.personaService.isCampaignManager();
