@@ -309,7 +309,7 @@ export class PersonaService {
     const marketingGrantedKey = marketingIsRoot ? null : (projectSlug ?? null);
     const campaignGrantedKey = campaignIsRoot ? null : (projectSlug ?? null);
     // Denial is authoritative for both ROOT (null) and project scope: clear all paths.
-    const denialKeys: Array<string | null> = [projectSlug ?? null, null].filter(
+    const denialKeys: (string | null)[] = [projectSlug ?? null, null].filter(
       (k, i, a) => a.indexOf(k) === i // deduplicate
     );
 
