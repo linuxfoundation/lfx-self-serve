@@ -28,6 +28,8 @@ export class MentionReadStateService {
   private readonly messageService = inject(MessageService);
   private readonly socialListeningService = inject(SocialListeningService);
   private overflowWarningShown = false;
+  // Bumped on each mark-all commit so a queued toggle's rollback can tell when a bulk state superseded it.
+  private bulkSeq = 0;
 
   private readonly store = new UserPreferenceStore<ReadStateData>({
     transport: {
@@ -80,6 +82,7 @@ export class MentionReadStateService {
     }
 
     const currentlyRead = isReadInState(current, mentionId, mentionTimestamp);
+    const bulkAtCommit = this.bulkSeq;
 
     // Warn once per context when readIds nears the cap so users switch to mark-all-as-read.
     if (!currentlyRead && !this.overflowWarningShown && current.readIds.length >= MAX_READ_IDS * 0.9) {
@@ -108,8 +111,13 @@ export class MentionReadStateService {
           readIds: current.readIds.filter((id) => id !== mentionId),
           unreadIds: current.unreadIds.filter((id) => id !== mentionId),
         };
-        // `stripped` is toggle-neutral; flip from its actual status (`readWithoutToggle`) so the result matches the
-        // pre-toggle read state — a later optimistic bulk action that superseded the toggle leaves stripped already correct.
+        // A mark-all queued after this toggle superseded it: `stripped` already matches the bulk state, and
+        // restoring the pre-toggle status would undo a bulk action that may have succeeded.
+        if (this.bulkSeq !== bulkAtCommit) {
+          this.store.replace(stripped);
+          return;
+        }
+        // `stripped` is toggle-neutral; flip from its actual status (`readWithoutToggle`) so the result matches the pre-toggle read state.
         const readWithoutToggle = isReadInState(stripped, mentionId, mentionTimestamp);
         this.store.replace(readWithoutToggle === currentlyRead ? stripped : computeReadToggle(stripped, mentionId, mentionTimestamp, readWithoutToggle));
       },
@@ -129,6 +137,7 @@ export class MentionReadStateService {
     // silently hide delayed/backfilled mentions whose timestamps predate "now".
     if (!latestMentionTs) return;
 
+    this.bulkSeq++;
     this.store.commit({
       // The newest loaded timestamp becomes the cutoff, so mentions published after it stay unread.
       next: { readBeforeTs: latestMentionTs, readIds: [], unreadIds: [] },
@@ -145,6 +154,7 @@ export class MentionReadStateService {
     }
     this.overflowWarningShown = false;
 
+    this.bulkSeq++;
     this.store.commit({
       next: emptyReadState(),
       rollback: this.mergeRollback(previous),
