@@ -126,6 +126,24 @@ export class PersonaService {
    * {@link latestAppliedGrantProbeId}'s same rationale one level down, per scope.
    */
   private readonly latestAppliedGrantProbeIdByScope = new Map<string | undefined, number>();
+  /**
+   * Last probeId that actually wrote a given **resolved** map key (`null` for ROOT, or the exact
+   * `projectSlug` string) in {@link _grantsByScope} — distinct from
+   * {@link latestAppliedGrantProbeIdByScope}, which is keyed by the *queried* `projectSlug` and
+   * only gates {@link confirmActiveGrant}'s global-signal writes. Two probes queried for different
+   * foundations can both resolve to the same ROOT (`null`) map key; gating solely on the queried
+   * slug never sees that overlap, so a slower probe for foundation A could still overwrite `null`
+   * after a newer probe for foundation B had already won that race (Cursor Bugbot finding,
+   * PR #1835: "Stale ROOT grant race"). {@link writeGrantForScope} gates each write against this
+   * map using the resolved key it is actually about to touch, closing that gap.
+   *
+   * Keyed by `${relation}:${resolvedKey}` (not just the resolved key) — `isMarketingAuditor` and
+   * `isCampaignManager` resolve independently and a denial writes to both the queried slug and the
+   * `null` key, so tracking a single shared entry per resolved key let one relation's denial write
+   * (e.g. an implicit `isMarketingAuditor: false` touching `null`) poison the gate for the other
+   * relation's unrelated grant write at that same key.
+   */
+  private readonly latestAppliedGrantProbeIdByResolvedKey = new Map<string, number>();
   /** Correlates a resolved {@link PersonaApiResponse} back to the probeId that produced it, so {@link confirmActiveGrant} can look up same-scope recency without changing `refreshEnrichedPersonas`'s public `Observable<PersonaApiResponse | null>` contract. */
   private readonly grantProbeIdByResponse = new WeakMap<object, number>();
 
@@ -241,7 +259,9 @@ export class PersonaService {
     // After this point the component reads from the map (not the global signals), so a later
     // cross-scope probe that passes the global recency gate cannot clobber this scope's result
     // (Copilot finding, PR #1835: confirmActiveGrant force-write overwritten by later probe).
-    this.writeGrantForScope(response, projectSlug);
+    // Gating against the resolved map key (not this queried `projectSlug`) is handled inside
+    // writeGrantForScope itself — see latestAppliedGrantProbeIdByResolvedKey.
+    this.writeGrantForScope(response, projectSlug, probeId);
     if (probeId !== undefined && probeId > (latestAppliedForScope ?? -Infinity)) {
       this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);
     }
@@ -296,10 +316,17 @@ export class PersonaService {
    *
    * Centralises the update pattern shared by {@link applyPersonaResponse} and
    * {@link confirmActiveGrant} so the two write sites cannot silently diverge.
+   *
+   * When `probeId` is provided, each individual write is additionally gated against
+   * {@link latestAppliedGrantProbeIdByResolvedKey} for the exact key it targets — not the queried
+   * `projectSlug` — so two probes for different foundations that both resolve to the same ROOT
+   * (`null`) key correctly race against each other instead of each seeing an untouched gate for
+   * their own queried slug (Cursor Bugbot finding, PR #1835: "Stale ROOT grant race").
    */
   private writeGrantForScope(
     response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
-    projectSlug?: string
+    projectSlug?: string,
+    probeId?: number
   ): void {
     const marketingGranted = response.isMarketingAuditor ?? false;
     const campaignGranted = response.isCampaignManager ?? false;
@@ -313,6 +340,33 @@ export class PersonaService {
       (k, i, a) => a.indexOf(k) === i // deduplicate
     );
 
+    // Composite key: same resolved key (e.g. `null`) is gated independently per relation, so a
+    // marketing write/denial can never block an unrelated campaign write at that same key.
+    const gateKey = (relation: 'marketing' | 'campaign', key: string | null): string => `${relation}:${key ?? '__root__'}`;
+    const canWrite = (relation: 'marketing' | 'campaign', key: string | null): boolean => {
+      if (probeId === undefined) return true;
+      const latest = this.latestAppliedGrantProbeIdByResolvedKey.get(gateKey(relation, key));
+      return latest === undefined || probeId >= latest;
+    };
+    const markWritten = (relation: 'marketing' | 'campaign', key: string | null): void => {
+      if (probeId === undefined) return;
+      const composite = gateKey(relation, key);
+      const latest = this.latestAppliedGrantProbeIdByResolvedKey.get(composite);
+      if (latest === undefined || probeId > latest) {
+        this.latestAppliedGrantProbeIdByResolvedKey.set(composite, probeId);
+      }
+    };
+
+    const marketingWriteKey = marketingGranted && canWrite('marketing', marketingGrantedKey) ? marketingGrantedKey : undefined;
+    const marketingDenialKeys = marketingGranted ? [] : denialKeys.filter((key) => canWrite('marketing', key));
+    const campaignWriteKey = campaignGranted && canWrite('campaign', campaignGrantedKey) ? campaignGrantedKey : undefined;
+    const campaignDenialKeys = campaignGranted ? [] : denialKeys.filter((key) => canWrite('campaign', key));
+
+    if (marketingWriteKey !== undefined) markWritten('marketing', marketingWriteKey);
+    marketingDenialKeys.forEach((key) => markWritten('marketing', key));
+    if (campaignWriteKey !== undefined) markWritten('campaign', campaignWriteKey);
+    campaignDenialKeys.forEach((key) => markWritten('campaign', key));
+
     this._grantsByScope.update((m) => {
       const next = new Map(m);
       const mergeInto = (key: string | null, patch: Partial<{ isCampaignManager: boolean; isMarketingAuditor: boolean }>): void => {
@@ -320,20 +374,18 @@ export class PersonaService {
         next.set(key, { ...existing, ...patch });
       };
 
-      if (marketingGranted) {
-        mergeInto(marketingGrantedKey, { isMarketingAuditor: true });
-      } else {
-        for (const key of denialKeys) {
-          mergeInto(key, { isMarketingAuditor: false });
-        }
+      if (marketingWriteKey !== undefined) {
+        mergeInto(marketingWriteKey, { isMarketingAuditor: true });
+      }
+      for (const key of marketingDenialKeys) {
+        mergeInto(key, { isMarketingAuditor: false });
       }
 
-      if (campaignGranted) {
-        mergeInto(campaignGrantedKey, { isCampaignManager: true });
-      } else {
-        for (const key of denialKeys) {
-          mergeInto(key, { isCampaignManager: false });
-        }
+      if (campaignWriteKey !== undefined) {
+        mergeInto(campaignWriteKey, { isCampaignManager: true });
+      }
+      for (const key of campaignDenialKeys) {
+        mergeInto(key, { isCampaignManager: false });
       }
 
       return next;
@@ -395,16 +447,23 @@ export class PersonaService {
         this.latestAppliedGrantProbeId = probeId;
       }
     }
-    // The per-scope map write is gated on this scope's OWN applied high-water mark, not the global
-    // one above — nesting it under the global gate meant a probe for scope A could be dropped
-    // entirely (including its per-scope write) just because an unrelated scope B's probe applied
-    // more recently, leaving scope A's map entry stale or missing indefinitely (Cursor Bugbot
-    // finding, PR #1835: "stale ROOT grant persists"). The per-scope map's whole purpose is
-    // isolating scopes from each other's races, so it must not share the global probe's gate.
-    const latestAppliedForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
-    if (probeId === undefined || latestAppliedForScope === undefined || probeId >= latestAppliedForScope) {
-      this.writeGrantForScope(response, projectSlug);
-      if (probeId !== undefined && probeId > (latestAppliedForScope ?? -Infinity)) {
+    // The per-scope map write must not share the global gate above — nesting it there meant a
+    // probe for scope A could be dropped entirely (including its per-scope write) just because an
+    // unrelated scope B's probe applied more recently, leaving scope A's map entry stale or
+    // missing indefinitely (Cursor Bugbot finding, PR #1835: "stale ROOT grant persists").
+    // writeGrantForScope gates each write itself against the *resolved* map key it targets (not
+    // this queried `projectSlug`), so two differently-queried probes that both resolve to the same
+    // ROOT key correctly race against each other (Cursor Bugbot finding, PR #1835: "Stale ROOT
+    // grant race").
+    this.writeGrantForScope(response, projectSlug, probeId);
+    // Record that this queried scope was applied here, independent of the write gating above —
+    // confirmActiveGrant's own same-queried-scope recency check reads this same map, and it must
+    // see every probe that applied via this method (not only ones that applied via
+    // confirmActiveGrant itself), or it can no longer detect a same-scope probe that has already
+    // superseded it.
+    if (probeId !== undefined) {
+      const latestForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
+      if (latestForScope === undefined || probeId > latestForScope) {
         this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);
       }
     }
