@@ -255,20 +255,44 @@ export class PersonaService {
    * `null` (the documented ROOT sentinel, see its field comment) instead of being pinned to this one
    * project — otherwise switching to a different foundation would spuriously read as a scope mismatch
    * and deny a grant that legitimately cascades everywhere.
+   *
+   * `marketingGrantSlug` is a single scalar covering both relations, so when one relation is
+   * ROOT-scoped and the other is project-scoped on the same response, this can't report both
+   * answers at once — it deliberately resolves to `projectSlug` (not `null`) whenever *either*
+   * active relation is project-scoped. Reporting `null` (ROOT) here would let the project-scoped
+   * relation's grant appear to cascade to every foundation, which is the unsafe direction; pinning
+   * to `projectSlug` only under-scopes the ROOT-cascading relation for this one legacy fallback
+   * signal, which the caller-side slug-mismatch check merely treats as "recheck this foundation"
+   * (Copilot finding, PR #1835: OR'd root flags collapsed two independently-scoped relations into
+   * one answer). {@link writeGrantForScope} does not have this ambiguity — it resolves each
+   * relation's scope independently — so this conflation only affects the legacy fallback path.
    */
   private resolveGrantSlug(
     response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
     projectSlug: string
   ): string | null {
-    const isRootGrant =
-      (response.isMarketingAuditor && response.isMarketingAuditorRootGrant) || (response.isCampaignManager && response.isCampaignManagerRootGrant);
-    return isRootGrant ? null : projectSlug;
+    const marketingIsRoot = response.isMarketingAuditor ? !!response.isMarketingAuditorRootGrant : undefined;
+    const campaignIsRoot = response.isCampaignManager ? !!response.isCampaignManagerRootGrant : undefined;
+    if (marketingIsRoot === false || campaignIsRoot === false) {
+      return projectSlug;
+    }
+    if (marketingIsRoot === true || campaignIsRoot === true) {
+      return null;
+    }
+    return projectSlug;
   }
 
   /**
-   * Writes a grant result into {@link _grantsByScope} under the resolved scope key — `null` for a
-   * ROOT-cascading grant, `projectSlug` for a project-scoped one, or `null` when no `projectSlug`
-   * is provided (root-level probe). Centralises the identical update pattern from
+   * Writes a grant result into {@link _grantsByScope}. When at most one relation is actively
+   * granted, or both are granted with the same root-ness, a single combined key describes both
+   * fields unambiguously — same as the original behavior. But when **both** `isMarketingAuditor`
+   * and `isCampaignManager` are granted on the same response with *different* root-ness (one
+   * ROOT-cascading, one project-scoped), a single shared key can't represent both answers — the
+   * pre-fix code picked one relation's scope for the whole entry, mis-filing the other relation's
+   * result into the wrong key (Cursor Bugbot finding, PR #1835: "ROOT map key polluted" — same root
+   * cause as {@link resolveGrantSlug}'s scalar ambiguity). In that specific case each relation is
+   * written into its own key instead, merged rather than replaced so it doesn't clobber whatever is
+   * already stored for the other relation at a shared key. Centralises the update pattern shared by
    * {@link applyPersonaResponse} and {@link confirmActiveGrant} so the two write sites cannot
    * silently diverge.
    */
@@ -276,10 +300,33 @@ export class PersonaService {
     response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
     projectSlug?: string
   ): void {
-    const scopeKey = projectSlug ? this.resolveGrantSlug(response, projectSlug) : null;
+    const marketingGranted = response.isMarketingAuditor ?? false;
+    const campaignGranted = response.isCampaignManager ?? false;
+    const marketingIsRoot = !!response.isMarketingAuditorRootGrant;
+    const campaignIsRoot = !!response.isCampaignManagerRootGrant;
+    const divergentScopes = marketingGranted && campaignGranted && marketingIsRoot !== campaignIsRoot;
+
+    if (!divergentScopes) {
+      const isRootGrant = (marketingGranted && marketingIsRoot) || (campaignGranted && campaignIsRoot);
+      const scopeKey = projectSlug && !isRootGrant ? projectSlug : null;
+      this._grantsByScope.update((m) => {
+        const next = new Map(m);
+        next.set(scopeKey, { isCampaignManager: campaignGranted, isMarketingAuditor: marketingGranted });
+        return next;
+      });
+      return;
+    }
+
+    const marketingKey = marketingIsRoot ? null : (projectSlug ?? null);
+    const campaignKey = campaignIsRoot ? null : (projectSlug ?? null);
     this._grantsByScope.update((m) => {
       const next = new Map(m);
-      next.set(scopeKey, { isCampaignManager: response.isCampaignManager ?? false, isMarketingAuditor: response.isMarketingAuditor ?? false });
+      const mergeInto = (key: string | null, patch: Partial<{ isCampaignManager: boolean; isMarketingAuditor: boolean }>): void => {
+        const existing = next.get(key) ?? { isCampaignManager: false, isMarketingAuditor: false };
+        next.set(key, { ...existing, ...patch });
+      };
+      mergeInto(marketingKey, { isMarketingAuditor: true });
+      mergeInto(campaignKey, { isCampaignManager: true });
       return next;
     });
   }
@@ -335,16 +382,21 @@ export class PersonaService {
     if (probeId === undefined || probeId >= this.latestAppliedGrantProbeId) {
       this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
       this.isCampaignManager.set(response.isCampaignManager ?? false);
-      // Also write to the per-scope map so the result for this scope is stored independently.
-      // A later cross-scope probe (e.g. sidebar-nav for a different foundation) writes into its
-      // own key and cannot overwrite this scope's entry (Copilot finding, PR #1835).
-      this.writeGrantForScope(response, projectSlug);
       if (probeId !== undefined) {
         this.latestAppliedGrantProbeId = probeId;
-        const latestAppliedForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
-        if (probeId > (latestAppliedForScope ?? -Infinity)) {
-          this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);
-        }
+      }
+    }
+    // The per-scope map write is gated on this scope's OWN applied high-water mark, not the global
+    // one above — nesting it under the global gate meant a probe for scope A could be dropped
+    // entirely (including its per-scope write) just because an unrelated scope B's probe applied
+    // more recently, leaving scope A's map entry stale or missing indefinitely (Cursor Bugbot
+    // finding, PR #1835: "stale ROOT grant persists"). The per-scope map's whole purpose is
+    // isolating scopes from each other's races, so it must not share the global probe's gate.
+    const latestAppliedForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
+    if (probeId === undefined || latestAppliedForScope === undefined || probeId >= latestAppliedForScope) {
+      this.writeGrantForScope(response, projectSlug);
+      if (probeId !== undefined && probeId > (latestAppliedForScope ?? -Infinity)) {
+        this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);
       }
     }
 

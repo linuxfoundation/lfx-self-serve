@@ -240,13 +240,42 @@ describe('PersonaService — grant probe recency ordering', () => {
 
     it('stores a ROOT-cascading grant under the null key regardless of the queried projectSlug', () => {
       service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
-      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(
-        mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true })
-      );
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true }));
 
       // ROOT-confirmed grant goes under null, not under the queried slug.
       expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
       expect(service.grantsByScope().get('foundation-a')).toBeUndefined();
+    });
+
+    it('writes isMarketingAuditor and isCampaignManager into their own independently-resolved scope keys when they diverge on the same response (Cursor Bugbot finding, PR #1835: "ROOT map key polluted")', () => {
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http
+        .expectOne((req) => req.url.includes('project=foundation-a'))
+        .flush(mockResponse({ isMarketingAuditor: true, isCampaignManager: true, isCampaignManagerRootGrant: true }));
+
+      // isMarketingAuditor is project-scoped — it must land under 'foundation-a', not be swept into
+      // the ROOT key just because isCampaignManager on the same response happened to be ROOT-scoped.
+      expect(service.grantsByScope().get('foundation-a')).toEqual({ isCampaignManager: false, isMarketingAuditor: true });
+      // isCampaignManager is ROOT-scoped — it lands under the null key independently.
+      expect(service.grantsByScope().get(null)).toEqual({ isCampaignManager: true, isMarketingAuditor: false });
+    });
+
+    it('writes a scope\'s grantsByScope entry even when a later cross-scope probe wins the global recency race and blocks that scope\'s global-signal write (Cursor Bugbot finding, PR #1835: "stale ROOT grant persists")', () => {
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
+
+      // B is issued after A and resolves first, winning the global recency race.
+      http.expectOne((req) => req.url.includes('project=foundation-b')).flush(mockResponse({ isCampaignManager: true }));
+      // A resolves after — its global-signal write is blocked by B's win, but its own per-scope
+      // write must not be, since that write is gated on A's own scope, not the global counter.
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true }));
+
+      // B won the global race — the legacy global signal reflects B's answer, not A's ROOT grant.
+      expect(service.isCampaignManager()).toBe(true);
+      // A's per-scope ROOT-cascading entry must still land under the null key. Before the fix, this
+      // write was nested under the same global gate that just blocked A's global-signal write above,
+      // so it was silently dropped and the null-key entry stayed stale or missing indefinitely.
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
     });
   });
 });
