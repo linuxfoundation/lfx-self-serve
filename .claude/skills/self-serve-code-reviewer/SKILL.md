@@ -81,20 +81,21 @@ your Markdown review to the invoking host.**
 
 These are this repo's authoritative written sources. Quote from them.
 
-| Source                                                  | What it governs                                                                                                                                 |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLAUDE.md` (auto-loaded; the same file is `AGENTS.md`) | monorepo structure, commit/PR conventions, source hygiene, architecture rules, the design-is-HTML source of truth, the source-of-truth ordering |
-| `.claude/rules/commit-workflow.md`                      | commit format, sign-off + GPG, PR sizing, ticket tracking                                                                                       |
-| `.claude/rules/component-organization.md`               | component placement, DELETE→CREATE for full replacements, module boundaries                                                                     |
-| `.claude/rules/development-rules.md`                    | the M2M-vs-user-token rule, auth posture, general development constraints                                                                       |
-| `.claude/rules/logging-patterns.md`                     | logger levels (INFO vs DEBUG), the `err` field convention, what to log                                                                          |
-| `.claude/rules/ssr-safety.md`                           | `isPlatformBrowser` guards, browser-only API usage under SSR                                                                                    |
-| `.claude/rules/styling.md`                              | `flex + flex-col + gap-*` over `space-y-*`, `lfxColors` over hard-coded hex                                                                     |
-| `docs/reviews/backend-checklist.md`                     | Express server, routes, controllers, services, validation, auth middleware                                                                      |
-| `docs/reviews/frontend-checklist.md`                    | components, templates, signals, state, accessibility, PrimeNG wrappers                                                                          |
-| `docs/reviews/shared-and-sql-checklist.md`              | `@lfx-one/shared` placement, interfaces-vs-constants split, Snowflake SQL                                                                       |
-| `docs/reviews/docs-checklist.md`                        | documentation changes under `docs/**`                                                                                                           |
-| `docs/architecture/**`                                  | the deeper architecture the checklists and rules reference (frontend, backend, shared, testing, deployment)                                     |
+| Source                                                  | What it governs                                                                                                                                         |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLAUDE.md` (auto-loaded; the same file is `AGENTS.md`) | monorepo structure, commit/PR conventions, source hygiene, architecture rules, the design-is-HTML source of truth, the source-of-truth ordering         |
+| `.claude/rules/commit-workflow.md`                      | commit format, sign-off + GPG, PR sizing, ticket tracking                                                                                               |
+| `.claude/rules/component-organization.md`               | component placement, DELETE→CREATE for full replacements, module boundaries                                                                             |
+| `.claude/rules/development-rules.md`                    | the M2M-vs-user-token rule, auth posture, general development constraints                                                                               |
+| `.claude/rules/logging-patterns.md`                     | logger levels (INFO vs DEBUG), the `err` field convention, what to log                                                                                  |
+| `.claude/rules/ssr-safety.md`                           | `isPlatformBrowser` guards, browser-only API usage under SSR                                                                                            |
+| `.claude/rules/styling.md`                              | `flex + flex-col + gap-*` over `space-y-*`, `lfxColors` over hard-coded hex                                                                             |
+| `.claude/rules/skill-guidance.md`                       | which skills/reviewers apply to which work, and the post-commit review workflow (load when a change touches `.claude/skills/**` or the review workflow) |
+| `docs/reviews/backend-checklist.md`                     | Express server, routes, controllers, services, validation, auth middleware                                                                              |
+| `docs/reviews/frontend-checklist.md`                    | components, templates, signals, state, accessibility, PrimeNG wrappers                                                                                  |
+| `docs/reviews/shared-and-sql-checklist.md`              | `@lfx-one/shared` placement, interfaces-vs-constants split, Snowflake SQL                                                                               |
+| `docs/reviews/docs-checklist.md`                        | documentation changes under `docs/**`                                                                                                                   |
+| `docs/architecture/**`                                  | the deeper architecture the checklists and rules reference (frontend, backend, shared, testing, deployment)                                             |
 
 `.github/copilot-instructions.md`, `.github/skills/**` and the
 `.claude/skills/lfx-review-pr` skill are **not** your rule source. They are the
@@ -161,14 +162,20 @@ by **prefix or pattern** — for example `{ pattern: '/public/api', auth:
 'optional' }` covers _every_ route under that prefix — and any route not matched
 by a documented public entry falls through to `defaultAuth: 'required'`. So a
 new route being unprotected is **not** a missing middleware call — it is a
-**public/optional exemption**, and that exemption can be reached two ways:
+**public/optional exemption** (or a middleware-order bypass), reachable these
+ways:
 
 - a new `DEFAULT_ROUTE_CONFIG` entry or a new public-prefix router mount that
   opens a route to `optional`/`public` auth; **or**
 - a new or changed handler added to a router **already mounted** under an
   existing optional/public prefix (any of the `public-*.route.ts` routers under
   `/public/api`, or an SSR path matching an existing optional pattern), which
-  inherits that classification with **no config or mount change at all**.
+  inherits that classification with **no config or mount change at all**; **or**
+- a handler **mounted before `app.use(authMiddleware)`** in `server.ts`, which
+  the global middleware never runs for — so it is anonymous whatever
+  `DEFAULT_ROUTE_CONFIG` would classify its path as. The sitemap/static handlers
+  sit above that line deliberately; a sensitive route added above it is the
+  defect.
 
 Resolve every added or changed route to its **effective path and resulting auth
 classification**, then flag any that is anonymously reachable without the
