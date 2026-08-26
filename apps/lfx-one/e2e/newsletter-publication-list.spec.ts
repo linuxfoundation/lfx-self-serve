@@ -35,6 +35,16 @@ const ELEMENT_TIMEOUT = 10_000;
 
 const MOCK_FOUNDATION_SLUG = 'test-foundation';
 const MOCK_FOUNDATION_UID = 'f0000000-0000-0000-0000-000000000001';
+const MOCK_NEWSLETTER_ID = 'n0000000-0000-0000-0000-000000000aaa';
+// Deliberately hex-only (not the `p...` mnemonic prefix sibling fixtures use
+// for "publication") — this value reaches toValidUuid as the :pubId route
+// param when a row navigates to its editions, and a non-hex prefix silently
+// degrades that navigation to the unscoped list instead of failing a test
+// (see this file's git history for exactly that bug). Named constants, not
+// inline literals, so every use carries this warning rather than only the
+// one at buildPublication's default.
+const MOCK_PUBLICATION_ID = 'a0000000-0000-0000-0000-000000000001';
+const MOCK_PUBLICATION_ID_2 = 'a0000000-0000-0000-0000-000000000002';
 
 const MOCK_FOUNDATION_ITEM: LensItem = {
   uid: MOCK_FOUNDATION_UID,
@@ -73,7 +83,7 @@ function buildProjectStub() {
 
 function buildPublication(overrides: Partial<NewsletterPublication> = {}): NewsletterPublication {
   return {
-    id: 'p0000000-0000-0000-0000-000000000001',
+    id: MOCK_PUBLICATION_ID,
     project_uid: MOCK_FOUNDATION_UID,
     slug: 'weekly-digest',
     name: 'Weekly Digest',
@@ -135,7 +145,7 @@ async function stubPublicationsApi(page: Page, publications: NewsletterPublicati
 
 function buildDraft(): Newsletter {
   return {
-    id: 'n0000000-0000-0000-0000-000000000aaa',
+    id: MOCK_NEWSLETTER_ID,
     project_uid: MOCK_FOUNDATION_UID,
     subject: 'Welcome to KubeCon Recap',
     body_html: '<p>Recap body.</p>',
@@ -152,18 +162,38 @@ function buildDraft(): Newsletter {
 
 // A non-empty stub, not an empty one: NewsletterListComponent's 'draft' tab
 // (the default landing tab) branches to its own empty state whenever
-// hasNewsletters() is false, so an empty stub here would make the
-// newsletter-list-table assertion below either fail outright or pass only by
-// racing the brief window where loading() is still true — the destination
-// page's table branch needs at least one row to render deterministically.
-async function stubNewslettersListApi(page: Page): Promise<void> {
+// hasNewsletters() is false, so an empty stub here would make the assertions
+// below either fail outright or pass only by racing the brief window where
+// loading() is still true — the destination page's table branch renders
+// during that loading window too (@else if (!loading() && !hasNewsletters())
+// gates the empty state, not the table), so asserting the table alone is
+// exactly as racy. The tests below assert the stubbed row itself instead,
+// which only exists once this response has actually landed.
+// Returned object's requestedPublicationId is populated (mutated in place)
+// once the stub actually serves a request — read it only after the
+// navigation that's expected to trigger the request, not immediately after
+// calling this. Every caller reads it: the row keyboard tests assert it
+// equals the activated publication's id (this request should be scoped);
+// the "All newsletters" tests assert it's null (this request should be
+// cross-publication) — so both directions of "did the app request the right
+// thing" are pinned, not just "some response landed." Starts as `undefined`,
+// not `null`: `null` is also url.searchParams.get()'s own "param absent"
+// value, so initializing to it would make an unscoped-request assertion
+// (toBeNull()) pass identically whether the stub was ever actually hit or
+// not — undefined is a sentinel `searchParams.get()` can never itself
+// produce, so a stub that's never invoked still fails that assertion loudly.
+async function stubNewslettersListApi(page: Page): Promise<{ requestedPublicationId: string | null | undefined }> {
+  const capture: { requestedPublicationId: string | null | undefined } = { requestedPublicationId: undefined };
   const listResponse: NewsletterListResponse = { newsletters: [buildDraft()], next_page_token: undefined };
   await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}/newsletters*`, (route) => {
-    if (route.request().method() === 'GET' && new URL(route.request().url()).pathname.endsWith('/newsletters')) {
+    const url = new URL(route.request().url());
+    if (route.request().method() === 'GET' && url.pathname.endsWith('/newsletters')) {
+      capture.requestedPublicationId = url.searchParams.get('publication_id');
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(listResponse) });
     }
     return route.fallback();
   });
+  return capture;
 }
 
 async function setPersonaCookie(page: Page, personas: string[]): Promise<void> {
@@ -221,64 +251,88 @@ test.describe('Newsletter publication list — landing page', () => {
   test('lists each publication as a row, with the default badge only on the default one', async ({ page }) => {
     await stubPublicationsApi(page, [
       buildPublication(),
-      buildPublication({ id: 'p0000000-0000-0000-0000-000000000002', slug: 'release-notes', name: 'Release Notes', is_default: false }),
+      buildPublication({ id: MOCK_PUBLICATION_ID_2, slug: 'release-notes', name: 'Release Notes', is_default: false }),
     ]);
     await gotoPublicationListUrl(page);
 
     const rows = page.locator('[data-testid^="newsletter-publication-row-"]');
     await expect(rows, 'both publications should render as rows').toHaveCount(2, { timeout: PAGE_LOAD_TIMEOUT });
-    await expect(
-      page.getByTestId('publication-default-badge-p0000000-0000-0000-0000-000000000001'),
-      'default badge should mark the default publication'
-    ).toBeVisible();
-    await expect(
-      page.getByTestId('publication-default-badge-p0000000-0000-0000-0000-000000000002'),
-      'the non-default publication should not carry the badge'
-    ).toHaveCount(0);
+    await expect(page.getByTestId(`publication-default-badge-${MOCK_PUBLICATION_ID}`), 'default badge should mark the default publication').toBeVisible();
+    await expect(page.getByTestId(`publication-default-badge-${MOCK_PUBLICATION_ID_2}`), 'the non-default publication should not carry the badge').toHaveCount(
+      0
+    );
     await expect(page.getByTestId('newsletter-publication-list-empty-state')).toHaveCount(0);
   });
 
   test("'All newsletters' link routes to the flat, cross-publication list", async ({ page }) => {
     await stubPublicationsApi(page, []);
-    await stubNewslettersListApi(page);
+    const newslettersStub = await stubNewslettersListApi(page);
     await gotoPublicationListUrl(page);
 
     await expect(page.getByTestId('newsletter-publication-list-empty-state'), 'empty state should render first').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await page.getByTestId('newsletter-publication-list-all-link').click();
 
     await expect(page).toHaveURL(/\/foundation\/newsletters\/list(?:[?&]|$)/);
-    await expect(page.getByTestId('newsletter-list-table'), 'flat list should render after navigating').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId(`newsletter-row-${MOCK_NEWSLETTER_ID}`), 'stubbed edition should render in the flat list').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    // Mirror of the row tests' scoped-request assertion below: "cross-
+    // publication" means this request must carry no publication_id at all,
+    // not just that a response landed.
+    expect(newslettersStub.requestedPublicationId, 'flat list request should be unscoped').toBeNull();
   });
 
   // Both the publication row and the "All newsletters" link are non-native
   // (a <div role="button"> and an <a role="link"> respectively) rather than a
   // <button>/plain <a href>, specifically so keyboard activation had to be
-  // wired by hand — this pins that it actually was, rather than trusting the
-  // role/tabindex attributes the structural spec checks.
-  test('Enter activates a publication row exactly like clicking it', async ({ page }) => {
-    const publicationId = 'p0000000-0000-0000-0000-000000000001';
-    await stubPublicationsApi(page, [buildPublication({ id: publicationId })]);
-    await gotoPublicationListUrl(page);
+  // wired by hand — these pin that it actually was, rather than trusting the
+  // role/tabindex attributes the structural spec checks. Stubs the
+  // destination (stubNewslettersListApi) and asserts it renders, same as the
+  // click-based "All newsletters" test above, rather than only asserting the
+  // URL changed — otherwise the row's Enter/Space path would depend on an
+  // unstubbed request against the live dev backend to even resolve.
+  for (const key of ['Enter', 'Space'] as const) {
+    test(`${key} activates a publication row exactly like clicking it`, async ({ page }) => {
+      const publicationId = MOCK_PUBLICATION_ID;
+      await stubPublicationsApi(page, [buildPublication({ id: publicationId })]);
+      const newslettersStub = await stubNewslettersListApi(page);
+      await gotoPublicationListUrl(page);
 
-    const row = page.getByTestId(`newsletter-publication-row-${publicationId}`);
-    await row.waitFor({ state: 'visible', timeout: PAGE_LOAD_TIMEOUT });
-    await row.focus();
-    await page.keyboard.press('Enter');
+      const row = page.getByTestId(`newsletter-publication-row-${publicationId}`);
+      await expect(row, 'publication row should render').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+      await row.focus();
+      await page.keyboard.press(key);
 
-    await expect(page).toHaveURL(new RegExp(`/foundation/newsletters/${MOCK_FOUNDATION_UID}/${publicationId}/editions(?:[?&]|$)`));
-  });
+      await expect(page).toHaveURL(new RegExp(`/foundation/newsletters/${MOCK_FOUNDATION_UID}/${publicationId}/editions(?:[?&]|$)`));
+      await expect(page.getByTestId(`newsletter-row-${MOCK_NEWSLETTER_ID}`), 'stubbed edition should render in the editions list').toBeVisible({
+        timeout: ELEMENT_TIMEOUT,
+      });
+      // Confirms the destination request was actually scoped to this
+      // publication, not merely that some response landed — the id-format fix
+      // above is what makes this assertion meaningful rather than vacuous.
+      expect(newslettersStub.requestedPublicationId, 'editions request should be scoped to the activated publication').toBe(publicationId);
+    });
+  }
 
   test("Enter activates the 'All newsletters' link exactly like clicking it", async ({ page }) => {
     await stubPublicationsApi(page, []);
-    await stubNewslettersListApi(page);
+    const newslettersStub = await stubNewslettersListApi(page);
     await gotoPublicationListUrl(page);
 
+    // Same settle-wait as the click-based version above: the link sits in the
+    // static header outside the loading/empty/populated branches, so it's
+    // visible at first paint — waiting for the empty state first means
+    // hydration (and its (keydown.enter) listener attachment) has actually
+    // completed before the keypress, rather than leaning on event replay.
+    await expect(page.getByTestId('newsletter-publication-list-empty-state'), 'empty state should render first').toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     const link = page.getByTestId('newsletter-publication-list-all-link');
-    await link.waitFor({ state: 'visible', timeout: PAGE_LOAD_TIMEOUT });
     await link.focus();
     await page.keyboard.press('Enter');
 
     await expect(page).toHaveURL(/\/foundation\/newsletters\/list(?:[?&]|$)/);
-    await expect(page.getByTestId('newsletter-list-table'), 'flat list should render after navigating').toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId(`newsletter-row-${MOCK_NEWSLETTER_ID}`), 'stubbed edition should render in the flat list').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+    expect(newslettersStub.requestedPublicationId, 'flat list request should be unscoped').toBeNull();
   });
 });

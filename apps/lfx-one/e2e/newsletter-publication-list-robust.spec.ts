@@ -24,6 +24,17 @@ const PAGE_LOAD_TIMEOUT = 20_000;
 
 const MOCK_FOUNDATION_SLUG = 'test-foundation';
 const MOCK_FOUNDATION_UID = 'f0000000-0000-0000-0000-000000000001';
+// Deliberately hex-only (not the `p...` mnemonic prefix sibling fixtures use
+// for "publication") — kept in sync with this module's content spec,
+// newsletter-publication-list.spec.ts, where this value reaches toValidUuid
+// as the :pubId route param on navigation (this file only asserts
+// attributes, so it doesn't itself exercise that path, but a mismatched id
+// here would desync the two specs' fixtures for no reason). A non-hex prefix
+// silently degrades that navigation to the unscoped list instead of failing
+// a test — named constants, not inline literals, so every use carries this
+// warning.
+const MOCK_PUBLICATION_ID = 'a0000000-0000-0000-0000-000000000001';
+const MOCK_PUBLICATION_ID_2 = 'a0000000-0000-0000-0000-000000000002';
 
 const MOCK_FOUNDATION_ITEM: LensItem = {
   uid: MOCK_FOUNDATION_UID,
@@ -62,7 +73,7 @@ function buildProjectStub() {
 
 function buildPublication(overrides: Partial<NewsletterPublication> = {}): NewsletterPublication {
   return {
-    id: 'p0000000-0000-0000-0000-000000000001',
+    id: MOCK_PUBLICATION_ID,
     project_uid: MOCK_FOUNDATION_UID,
     slug: 'weekly-digest',
     name: 'Weekly Digest',
@@ -178,8 +189,8 @@ test.describe('Newsletter Publication List — Structural Tests', () => {
   });
 
   test.describe('Populated rows', () => {
-    const DEFAULT_ID = 'p0000000-0000-0000-0000-000000000001';
-    const OTHER_ID = 'p0000000-0000-0000-0000-000000000002';
+    const DEFAULT_ID = MOCK_PUBLICATION_ID;
+    const OTHER_ID = MOCK_PUBLICATION_ID_2;
 
     test.beforeEach(async ({ page }) => {
       await setPersonaCookie(page, ['executive-director']);
@@ -209,9 +220,9 @@ test.describe('Newsletter Publication List — Structural Tests', () => {
     });
 
     // Only the role/tabindex contract, not the actual keydown handlers — those
-    // are pinned by the content spec's "Enter activates a publication row"
-    // case, which asserts the resulting navigation, not just the attributes
-    // that make the element focusable.
+    // are pinned by the content spec's "Enter activates a publication row" /
+    // "Space activates a publication row" cases, which assert the resulting
+    // navigation, not just the attributes that make the element focusable.
     test('each row exposes a focusable button role via role/tabindex', async ({ page }) => {
       const row = page.getByTestId(`newsletter-publication-row-${DEFAULT_ID}`);
       await expect(row).toHaveAttribute('role', 'button');
