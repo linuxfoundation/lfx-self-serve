@@ -643,11 +643,17 @@ export class ImplementationTabComponent implements OnInit {
    * counts exactly as the dispatched payload excludes them — counting the raw signals would block
    * a form whose actual request is within bounds.
    */
-
   protected readonly microsoftBoundsValid = computed<boolean>(() => {
     const keywords = this.microsoftEffectiveKeywords();
     if (keywords.length > MICROSOFT_MAX_KEYWORDS) return false;
     if (keywords.some((k) => [...k.text].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH)) return false;
+    // MATCH TYPE, for the same reason the caps above are here. The add handler and the `<select>`
+    // can only produce the three canonical values, but `applyDraft` replays a draft VERBATIM by
+    // design, so a draft written before match-type canonicalisation landed can carry a raw
+    // `EXACT`. The BFF filters keywords on `isMicrosoftMatchType` and would drop it — or refuse
+    // the whole config — while this form reported the campaign as ready. Checking it here turns a
+    // generic downstream "unconfigured platform" into a submit the operator can see is blocked.
+    if (keywords.some((k) => !isMicrosoftMatchType(k.matchType))) return false;
     return this.microsoftEffectiveGeoTargets().length <= MICROSOFT_MAX_GEO_TARGETS;
   });
 

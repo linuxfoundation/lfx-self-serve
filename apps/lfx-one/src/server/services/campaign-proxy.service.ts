@@ -440,7 +440,11 @@ function buildCopySystemPrompt(platforms: string[], programType?: CampaignProgra
   return prompt;
 }
 
-const KEYWORD_SYSTEM_PROMPT = `You are a Google Ads keyword strategist. Return only a valid JSON array. No markdown fences, no explanation.`;
+// Names both search platforms, because both reach this stage: the keyword gate admits
+// `google-ads` OR `microsoft-ads` (and a platform-less brief, which defaults to google-ads).
+// Saying "Google Ads" alone described the caller inaccurately for a Microsoft-only brief and
+// biased the model toward one platform's conventions for keywords dispatched to the other.
+const KEYWORD_SYSTEM_PROMPT = `You are a paid search keyword strategist for Google Ads and Microsoft Advertising. Return only a valid JSON array. No markdown fences, no explanation.`;
 
 const LINKEDIN_STRATEGY_SYSTEM_PROMPT_EVENTS = `You are a LinkedIn Ads strategist specializing in developer and open-source technology events.
 Analyze the event details and generate a comprehensive targeting strategy for LinkedIn Sponsored Content campaigns.

@@ -1245,15 +1245,6 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
   });
 
   /**
-   * The Microsoft geo box must NOT apply Meta's assigned-country allowlist. That list is derived
-   * from this app's own COUNTRIES and genuinely diverges from the table Microsoft validates
-   * against — `AN` is in Microsoft's and not in ours. Dropping it silently meant the request fell
-   * back to the event country and targeted a DIFFERENT market than the operator typed.
-   *
-   * Membership stays campaign-service's call: it checks Microsoft's own table and fails the create
-   * before anything is created. This asserts shape-only handling, not that AN is targetable.
-   */
-  /**
    * Brief-generated keywords carry the model's RAW `match_type` (both streams copy it through), so
    * `EXACT` reaches the seed. It must be canonicalised: the `<select>` offers only PascalCase, so a
    * raw value rendered the dropdown with NOTHING selected on a keyword that would dispatch fine.
@@ -1280,6 +1271,15 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     ]);
   });
 
+  /**
+   * The Microsoft geo box must NOT apply Meta's assigned-country allowlist. That list is derived
+   * from this app's own COUNTRIES and genuinely diverges from the table Microsoft validates
+   * against — `AN` is in Microsoft's and not in ours. Dropping it silently meant the request fell
+   * back to the event country and targeted a DIFFERENT market than the operator typed.
+   *
+   * Membership stays campaign-service's call: it checks Microsoft's own table and fails the create
+   * before anything is created. This asserts shape-only handling, not that AN is targetable.
+   */
   it('keeps a geo code Meta excludes but Microsoft supports', async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftGeoTargets'].set([]);

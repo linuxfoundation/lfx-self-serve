@@ -3,7 +3,16 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { META_OBJECTIVE_LABELS, META_OBJECTIVE_PARAMS, META_SELECTABLE_OBJECTIVES, campaignToggleAction, normalizeGeoTargets } from './campaign.constants';
+import {
+  META_OBJECTIVE_LABELS,
+  META_OBJECTIVE_PARAMS,
+  META_SELECTABLE_OBJECTIVES,
+  campaignToggleAction,
+  canonicalMicrosoftMatchType,
+  isMicrosoftMatchType,
+  normalizeGeoTargets,
+  normalizeMicrosoftGeoTargets,
+} from './campaign.constants';
 
 describe('campaignToggleAction', () => {
   it('offers pause for the statuses that are running upstream', () => {
@@ -233,5 +242,59 @@ describe('persisted leads objective', () => {
     for (const objective of Object.keys(META_OBJECTIVE_PARAMS) as (keyof typeof META_OBJECTIVE_PARAMS)[]) {
       expect(META_OBJECTIVE_LABELS[objective]).toBeTruthy();
     }
+  });
+});
+
+/**
+ * Direct coverage for the two shared Microsoft helpers.
+ *
+ * Both had only INDIRECT coverage through the implementation-tab component specs, which exercise
+ * them via the form. That hides which layer a failure belongs to and leaves the helpers free to
+ * drift for any caller that is not the form — and both are exported, so the BFF uses them too.
+ */
+describe('canonicalMicrosoftMatchType', () => {
+  it('canonicalises the case and whitespace upstream tolerates', () => {
+    // Upstream does strings.ToLower(strings.TrimSpace(in)), so all of these are valid there.
+    expect(canonicalMicrosoftMatchType('EXACT')).toBe('Exact');
+    expect(canonicalMicrosoftMatchType('  exact  ')).toBe('Exact');
+    expect(canonicalMicrosoftMatchType('bRoAd')).toBe('Broad');
+    expect(canonicalMicrosoftMatchType('Phrase')).toBe('Phrase');
+  });
+
+  it('returns null for a value Microsoft has no match type for', () => {
+    // null, not a default: substituting one would dispatch a match type the operator never chose.
+    expect(canonicalMicrosoftMatchType('BROAD_MATCH')).toBeNull();
+    expect(canonicalMicrosoftMatchType('')).toBeNull();
+    expect(canonicalMicrosoftMatchType(undefined)).toBeNull();
+    expect(canonicalMicrosoftMatchType(123)).toBeNull();
+  });
+
+  it('agrees with isMicrosoftMatchType on every input', () => {
+    // The two are used as a pair — one to filter, one to convert — so a disagreement between them
+    // is what would let a value pass the guard and then fail to convert.
+    for (const v of ['EXACT', '  exact  ', 'bRoAd', 'Phrase', 'BROAD_MATCH', '', undefined, 123, null]) {
+      expect(isMicrosoftMatchType(v)).toBe(canonicalMicrosoftMatchType(v) !== null);
+    }
+  });
+});
+
+describe('normalizeMicrosoftGeoTargets', () => {
+  it('upper-cases, trims and de-dupes while preserving first-seen order', () => {
+    expect(normalizeMicrosoftGeoTargets([' us ', 'DE', 'us', 'de', 'FR'])).toEqual(['US', 'DE', 'FR']);
+  });
+
+  it('keeps a code Meta excludes but Microsoft supports', () => {
+    // The whole reason this is separate from normalizeGeoTargets: AN is in Microsoft's table and
+    // not in this app's COUNTRIES, and dropping it silently retargeted the campaign.
+    expect(normalizeMicrosoftGeoTargets(['AN'])).toEqual(['AN']);
+  });
+
+  it('drops malformed entries rather than passing them upstream', () => {
+    expect(normalizeMicrosoftGeoTargets(['USA', '', '  ', 'u1', 'US'])).toEqual(['US']);
+  });
+
+  it('treats null and undefined as an empty list', () => {
+    expect(normalizeMicrosoftGeoTargets(null)).toEqual([]);
+    expect(normalizeMicrosoftGeoTargets(undefined)).toEqual([]);
   });
 });

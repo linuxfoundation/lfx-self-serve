@@ -124,9 +124,18 @@ describe('CampaignProxyService email delivery type', () => {
     return aiCalls.some((p) => p.includes('PLATFORM SPECIFICATIONS'));
   }
 
-  /** Did any AI call use the Google Ads keyword strategist prompt? */
+  /**
+   * Did any AI call use the keyword-strategist prompt?
+   *
+   * Matches on `keyword strategist` rather than the full sentence. The prompt named only Google
+   * Ads until Microsoft was wired onto the same stage, and rewording it silently unhooked this
+   * helper: `includes('Google Ads keyword strategist')` went false for every call, so four tests
+   * asserting the keyword stage RAN began asserting it had not — a rename read as a behaviour
+   * change. The shorter substring survives naming the platforms without matching an unrelated
+   * prompt, since no other system prompt in this file mentions keywords.
+   */
   function generatedKeywords(): boolean {
-    return aiCalls.some((p) => p.includes('Google Ads keyword strategist'));
+    return aiCalls.some((p) => p.includes('keyword strategist'));
   }
 
   /**
@@ -389,5 +398,45 @@ describe('CampaignProxyService email delivery type', () => {
       ) as AsyncGenerator<{ type: string; data: unknown }>
     );
     expect(generatedAdCopy()).toBe(true);
+  });
+});
+
+/**
+ * Isolated from the delivery-type block above deliberately.
+ *
+ * `createCampaign` starts a REAL job and polls it, so it outlives the test that started it and
+ * would clobber that block's shared `fetch` stub — its `aiCalls` recorder came back empty for
+ * four sibling tests when this lived there. Its own describe means its background work cannot
+ * reach them.
+ */
+describe('CampaignProxyService legacy platform gate', () => {
+  const req = {} as unknown as Request;
+  const service = new CampaignProxyService();
+
+  /**
+   * Microsoft is the FIRST channel that requires the cutover flags, so the legacy path is the
+   * thing that answers when they are dark: `createCampaigns` reports `enabled: false`, the request
+   * falls through here, and `supportedPlatforms` must produce an explicit "Unsupported
+   * platform(s)" error.
+   *
+   * Locked by a test because the failure mode of getting it wrong is SILENT. Every entry in that
+   * list has an `execute<Platform>Dispatch` behind it and Microsoft has none — it exists only as
+   * `MicrosoftDispatcher` in campaign-service — so adding `microsoft-ads` to the list to "fix" a
+   * refusal would turn the error into a create that quietly does nothing, reporting success for a
+   * campaign that was never made. The omission is deliberate; this is what says so in code.
+   */
+  it('refuses microsoft-ads on the legacy path rather than creating nothing', async () => {
+    const result = await service.createCampaign(req, {
+      eventName: 'KubeCon EU 2026',
+      eventSlug: 'kubecon-eu-2026',
+      platforms: ['microsoft-ads'],
+    } as unknown as Parameters<typeof service.createCampaign>[1]);
+
+    const text = JSON.stringify(result);
+    // The platform is NAMED, so an operator can see which one was refused.
+    expect(text).toContain('microsoft-ads');
+    expect(text).toMatch(/Unsupported platform/i);
+    // And the four that ARE wired are still offered, so the message says what to do instead.
+    expect(text).toContain('google-ads');
   });
 });

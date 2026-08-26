@@ -922,17 +922,6 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * Optional chaining guards a NULLISH receiver, not a wrong-TYPED one — `(123)?.trim()` still
-   * throws. A direct caller sending `timeZone: 123` therefore answered with a 500 rather than the
-   * controlled path. The rest of the config is valid, so this asserts the create still SUCCEEDS
-   * with the key simply omitted: a bad optional field must not sink an otherwise good campaign.
-   */
-  /**
-   * U+00A0 (NBSP) sits immediately above the C1 range, and Go reports `IsControl(U+00A0) == false`
-   * — verified by running it — so it must still dispatch. Without this case the obvious "widen to
-   * U+00FF" fix would look correct while silently refusing a keyword Microsoft accepts.
-   */
-  /**
    * Upstream `canonicalMatchType` does `strings.ToLower(strings.TrimSpace(in))`, so `EXACT` and
    * ` exact ` are both valid. An exact-case `Set.has` was STRICTER than the service and refused a
    * request it would have accepted, reporting the platform as unconfigured instead.
@@ -958,12 +947,23 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent).not.toHaveProperty('endDate');
   });
 
+  /**
+   * U+00A0 (NBSP) sits immediately above the C1 range, and Go reports `IsControl(U+00A0) == false`
+   * — verified by running it — so it must still dispatch. Without this case the obvious "widen to
+   * U+00FF" fix would look correct while silently refusing a keyword Microsoft accepts.
+   */
   it('accepts a non-breaking space, which is not a control character', async () => {
     await createWithMicrosoft({ keywords: [{ text: 'kuber\u00A0netes', matchType: 'Exact' }] });
 
     expect(envelopeFor(createCampaigns)).toHaveProperty('microsoftConfig');
   });
 
+  /**
+   * Optional chaining guards a NULLISH receiver, not a wrong-TYPED one — `(123)?.trim()` still
+   * throws. A direct caller sending `timeZone: 123` therefore answered with a 500 rather than the
+   * controlled path. The rest of the config is valid, so this asserts the create still SUCCEEDS
+   * with the key simply omitted: a bad optional field must not sink an otherwise good campaign.
+   */
   it('omits a wrong-typed timeZone instead of throwing', async () => {
     await createWithMicrosoft({ timeZone: 123 });
 
