@@ -3,7 +3,7 @@
 
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router, RouterStateSnapshot } from '@angular/router';
-import { isUuid, toValidUuid } from '@lfx-one/shared/utils';
+import { toValidUuid } from '@lfx-one/shared/utils';
 import { map } from 'rxjs';
 
 import { PersonaService } from '../services/persona.service';
@@ -44,7 +44,7 @@ export function projectUidFromUrl(url: string): string | null {
   // happens to contain the literal word "newsletters".
   const path = url.split(/[?#]/)[0];
   const candidate = /^\/(?:foundation\/|project\/)?newsletters\/([^/;]+)/.exec(path)?.[1];
-  return candidate && isUuid(candidate) ? candidate : null;
+  return toValidUuid(candidate) ?? null;
 }
 
 /**
@@ -85,13 +85,13 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
   // the first two sources.
   //
   // route.paramMap.get('projectUid') is gated with the shared toValidUuid
-  // here too, matching projectUidFromUrl's own gating: Angular decodes a %2F
-  // inside a path segment before it reaches paramMap, so an unvalidated value
-  // here could carry an embedded "/" through to getProject's unencoded
-  // `/api/projects/${slugOrUid}` request path. The route's own :projectUid
-  // segment is expected to always be a UUID already — this only rejects a
-  // malformed one rather than forwarding it, falling through to the
-  // remaining sources instead.
+  // here too, matching projectUidFromUrl's own gating. ProjectService.getProject
+  // now encodeURIComponent-wraps its request path, so this is no longer
+  // closing a live injection hazard — it's validating the route contract: the
+  // route's own :projectUid segment is expected to always be a UUID already,
+  // so this rejects a malformed one and falls through to the remaining
+  // sources, rather than resolving (and authorizing against) whatever
+  // garbage the segment happened to contain.
   const projectRef =
     toValidUuid(route.paramMap.get('projectUid')) ??
     projectUidFromUrl(state.url) ??
