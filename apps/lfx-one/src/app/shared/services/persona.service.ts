@@ -306,9 +306,14 @@ export class PersonaService {
    * Writes a grant result into {@link _grantsByScope}. Each relation (`isMarketingAuditor`,
    * `isCampaignManager`) is resolved to its own scope key independently:
    *
-   * - **Granted**: written only to the scope-appropriate key — `null` for ROOT, `projectSlug` for
+   * - **Granted**: written to the scope-appropriate key — `null` for ROOT, `projectSlug` for
    *   project-scoped. This prevents a ROOT grant from clobbering a separately-cached project entry
-   *   and vice versa (Cursor Bugbot finding, PR #1835: "ROOT map key polluted").
+   *   and vice versa (Cursor Bugbot finding, PR #1835: "ROOT map key polluted"). The response also
+   *   resolves the *other* key to `false` — a grant response reflects both the ROOT and
+   *   project-scoped checks the server ran to decide which key is true, so the non-target key is
+   *   known-false, not merely stale-unknown; leaving it untouched let a previously-cached `true` at
+   *   that key survive a grant that has since narrowed to the other scope (Copilot finding, PR
+   *   #1835: "positive grant doesn't clear stale opposite-key true").
    * - **Denied**: written to *both* the queried project key and the `null` (ROOT) key. The server
    *   checks both ROOT and project-scoped access before returning `false`, so a denial is
    *   authoritative for all scope paths — it must clear any stale cached entry regardless of where
@@ -358,14 +363,20 @@ export class PersonaService {
     };
 
     const marketingWriteKey = marketingGranted && canWrite('marketing', marketingGrantedKey) ? marketingGrantedKey : undefined;
-    const marketingDenialKeys = marketingGranted ? [] : denialKeys.filter((key) => canWrite('marketing', key));
+    // A granted response also resolves the other key to known-false; a fully-denied response
+    // clears both keys — either way the untargeted key(s) get an explicit false write.
+    const marketingClearKeys = (marketingGranted ? denialKeys.filter((key) => key !== marketingGrantedKey) : denialKeys).filter((key) =>
+      canWrite('marketing', key)
+    );
     const campaignWriteKey = campaignGranted && canWrite('campaign', campaignGrantedKey) ? campaignGrantedKey : undefined;
-    const campaignDenialKeys = campaignGranted ? [] : denialKeys.filter((key) => canWrite('campaign', key));
+    const campaignClearKeys = (campaignGranted ? denialKeys.filter((key) => key !== campaignGrantedKey) : denialKeys).filter((key) =>
+      canWrite('campaign', key)
+    );
 
     if (marketingWriteKey !== undefined) markWritten('marketing', marketingWriteKey);
-    marketingDenialKeys.forEach((key) => markWritten('marketing', key));
+    marketingClearKeys.forEach((key) => markWritten('marketing', key));
     if (campaignWriteKey !== undefined) markWritten('campaign', campaignWriteKey);
-    campaignDenialKeys.forEach((key) => markWritten('campaign', key));
+    campaignClearKeys.forEach((key) => markWritten('campaign', key));
 
     this._grantsByScope.update((m) => {
       const next = new Map(m);
@@ -377,14 +388,14 @@ export class PersonaService {
       if (marketingWriteKey !== undefined) {
         mergeInto(marketingWriteKey, { isMarketingAuditor: true });
       }
-      for (const key of marketingDenialKeys) {
+      for (const key of marketingClearKeys) {
         mergeInto(key, { isMarketingAuditor: false });
       }
 
       if (campaignWriteKey !== undefined) {
         mergeInto(campaignWriteKey, { isCampaignManager: true });
       }
-      for (const key of campaignDenialKeys) {
+      for (const key of campaignClearKeys) {
         mergeInto(key, { isCampaignManager: false });
       }
 
@@ -403,20 +414,31 @@ export class PersonaService {
         // If enriched resolved first, preserve its project metadata and FGA grants instead of
         // clobbering them with the sparse bootstrap payload (which never carries these fields).
         if (this.enrichedPersonasLoaded() && response && !response.error) {
-          this.applyPersonaResponse({
-            ...response,
-            projects: this.detectedProjects(),
-            personaProjects: this.personaProjects(),
-            isMarketingAuditor: this.isMarketingAuditor(),
-            isCampaignManager: this.isCampaignManager(),
-          });
+          this.applyPersonaResponse(
+            {
+              ...response,
+              projects: this.detectedProjects(),
+              personaProjects: this.personaProjects(),
+              isMarketingAuditor: this.isMarketingAuditor(),
+              isCampaignManager: this.isCampaignManager(),
+            },
+            undefined,
+            undefined,
+            // The merged response's `*RootGrant` fields are stale (carried over from the sparse,
+            // no-`?project=` bootstrap payload) while `isMarketingAuditor`/`isCampaignManager` above
+            // were just patched in from the live, possibly project-scoped signals — re-deriving a
+            // scope key from that mismatched pair would poison the ROOT map entry with a
+            // project-only grant (David Deal finding, PR #1835). The map is already correct from
+            // whichever call originally set these signals, so skip re-writing it here.
+            true
+          );
           return;
         }
         this.applyPersonaResponse(response);
       });
   }
 
-  private applyPersonaResponse(response: PersonaApiResponse | null, probeId?: number, projectSlug?: string): void {
+  private applyPersonaResponse(response: PersonaApiResponse | null, probeId?: number, projectSlug?: string, skipGrantScopeWrite?: boolean): void {
     if (!response || response.error) {
       // Preserve last-known-good grants on a failed/errored refetch — a transient network or
       // upstream failure must not silently revoke access that was already confirmed.
@@ -455,7 +477,9 @@ export class PersonaService {
     // this queried `projectSlug`), so two differently-queried probes that both resolve to the same
     // ROOT key correctly race against each other (Cursor Bugbot finding, PR #1835: "Stale ROOT
     // grant race").
-    this.writeGrantForScope(response, projectSlug, probeId);
+    if (!skipGrantScopeWrite) {
+      this.writeGrantForScope(response, projectSlug, probeId);
+    }
     // Record that this queried scope was applied here, independent of the write gating above —
     // confirmActiveGrant's own same-queried-scope recency check reads this same map, and it must
     // see every probe that applied via this method (not only ones that applied via

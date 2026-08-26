@@ -267,18 +267,23 @@ describe('PersonaService — grant probe recency ordering', () => {
       service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
       service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
 
-      // B is issued after A and resolves first, winning the global recency race.
+      // B is issued after A and resolves first, winning the global recency race. Both grants are
+      // project-scoped (non-root), so each writes to its OWN key ('foundation-a' / 'foundation-b')
+      // — neither contests the other's key. (Each also clears the null/ROOT key as a side effect
+      // per the opposite-key-clear rule, but that's exercised by its own dedicated test above and
+      // doesn't affect the keys asserted on here.)
       http.expectOne((req) => req.url.includes('project=foundation-b')).flush(mockResponse({ isCampaignManager: true }));
       // A resolves after — its global-signal write is blocked by B's win, but its own per-scope
-      // write must not be, since that write is gated on A's own scope, not the global counter.
-      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true }));
+      // write must not be, since that write is gated on A's own resolved key, not the global counter.
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true }));
 
-      // B won the global race — the legacy global signal reflects B's answer, not A's ROOT grant.
+      // B won the global race — the legacy global signal reflects B's answer.
       expect(service.isCampaignManager()).toBe(true);
-      // A's per-scope ROOT-cascading entry must still land under the null key. Before the fix, this
-      // write was nested under the same global gate that just blocked A's global-signal write above,
-      // so it was silently dropped and the null-key entry stayed stale or missing indefinitely.
-      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
+      // A's per-scope entry must still land under its own key. Before the fix, this write was
+      // nested under the same global gate that just blocked A's global-signal write above, so it
+      // was silently dropped and the per-scope entry stayed stale or missing indefinitely.
+      expect(service.grantsByScope().get('foundation-a')?.isCampaignManager).toBe(true);
+      expect(service.grantsByScope().get('foundation-b')?.isCampaignManager).toBe(true);
     });
 
     it('clears a stale per-scope entry when a fresh probe reports that relation as denied (Copilot finding, PR #1835: revocations must invalidate every key)', () => {
@@ -313,6 +318,39 @@ describe('PersonaService — grant probe recency ordering', () => {
 
       // The null-key entry must now reflect the denial.
       expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(false);
+    });
+
+    it("clears a stale ROOT true when a fresh probe reports a project-scoped-only grant (Copilot finding, PR #1835: positive grant doesn't clear stale opposite-key true)", () => {
+      // Seed a ROOT campaign grant (null key).
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true }));
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
+
+      // A subsequent probe for the same scope resolves to a project-scoped-only grant (not ROOT)
+      // — the server explicitly checked ROOT this time and found it false.
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: false }));
+
+      // The project key now holds the grant.
+      expect(service.grantsByScope().get('foundation-a')?.isCampaignManager).toBe(true);
+      // The stale ROOT true must be cleared, not left behind.
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(false);
+    });
+
+    it('gates the ROOT (null) map key by resolved key, not by the queried foundation slug — two probes for different foundations that both resolve to ROOT must race against each other (David Deal finding, PR #1835)', () => {
+      service.refreshEnrichedPersonas(true, 'foundation-x').subscribe();
+      service.refreshEnrichedPersonas(true, 'foundation-y').subscribe();
+
+      // foundation-y's probe (issued second) resolves first with a ROOT-cascading grant.
+      http.expectOne((req) => req.url.includes('project=foundation-y')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true }));
+      // foundation-x's probe (issued first) resolves after with a denial. foundation-x's own
+      // queried scope never saw a probe apply yet, so a queried-slug gate would wrongly let this
+      // stale denial through to the null key. The composite resolved-key gate must block it
+      // instead, since a probe for the SAME resolved key (null) already applied with a higher
+      // probeId.
+      http.expectOne((req) => req.url.includes('project=foundation-x')).flush(mockResponse({ isCampaignManager: false }));
+
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
     });
   });
 });

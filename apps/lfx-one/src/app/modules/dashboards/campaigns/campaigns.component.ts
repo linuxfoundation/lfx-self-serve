@@ -403,6 +403,12 @@ export class CampaignsComponent {
     if (scopedGrant?.isCampaignManager) return true;
     const rootGrant = grants.get(null);
     if (rootGrant?.isCampaignManager) return true;
+    // An authoritative `false` at either scope key must win over the legacy global signal below,
+    // which can be stale `true` from a different scope's earlier probe (Copilot/Cursor finding,
+    // PR #1835: legacy fallback overrides an authoritative map denial).
+    if (scopedGrant !== undefined || rootGrant !== undefined) {
+      return false;
+    }
     // No per-scope entry yet (before the guard's first probe for this scope has returned) —
     // fall back to the global signal with the slug gate for the brief pre-resolve window.
     const grantSlug = this.personaService.marketingGrantSlug();

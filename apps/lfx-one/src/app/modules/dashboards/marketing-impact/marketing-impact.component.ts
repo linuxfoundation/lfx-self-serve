@@ -189,6 +189,9 @@ export class MarketingImpactComponent {
       if (this.personaService.currentPersona() === 'executive-director') {
         return true;
       }
+      if (!isPlatformBrowser(this.platformId) || !this.featureFlagService.providerReady()) {
+        return true;
+      }
       if (!this.marketingOpsFgaEnabled()) {
         return false;
       }
@@ -202,6 +205,12 @@ export class MarketingImpactComponent {
       if (scopedGrant?.isMarketingAuditor) return true;
       const rootGrant = grants.get(null);
       if (rootGrant?.isMarketingAuditor) return true;
+      // An authoritative `false` at either scope key must win over the legacy global signal below,
+      // which can be stale `true` from a different scope's earlier probe (Copilot/Cursor finding,
+      // PR #1835: legacy fallback overrides an authoritative map denial).
+      if (scopedGrant !== undefined || rootGrant !== undefined) {
+        return false;
+      }
       // No per-scope entry yet — fall back to the global signal with the slug gate.
       const grantSlug = this.personaService.marketingGrantSlug();
       if (slug && grantSlug !== null && grantSlug !== slug) {
