@@ -1124,6 +1124,58 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['microsoftKeywords']().length).toBe(2);
   });
 
+  /**
+   * The add-time guard can only refuse a NEW row. `onMicrosoftKeywordMatchTypeChange` can move an
+   * EXISTING row onto another's `(matchType, text)` afterwards — start at `kubernetes/Exact`, add
+   * `kubernetes/Phrase`, then switch the second row back to `Exact`.
+   *
+   * The client does not reject that: `validateKeywords` drops the duplicate with `continue`, so
+   * the create SUCCEEDS having made one keyword while the form still showed two. The failure is a
+   * silent undercount, not a failed job — which is why the fix is de-duping the effective list
+   * (the signal every count and the payload derive from) rather than only refusing the edit.
+   */
+  it('does not let a match-type edit smuggle a duplicate past the effective list', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftKeywords'].set([
+      { text: 'kubernetes', matchType: 'Exact' },
+      { text: 'kubernetes', matchType: 'Phrase' },
+    ]);
+    expect(c['microsoftEffectiveKeywords']().length).toBe(2);
+    expect(c['microsoftDuplicateKeywordCount']()).toBe(0);
+
+    // Move row 1 onto row 0's pair, the way the <select> does.
+    c['onMicrosoftKeywordMatchTypeChange'](1, { target: { value: 'Exact' } } as unknown as Event);
+
+    // The operator's rows are kept intact...
+    expect(c['microsoftKeywords']().length).toBe(2);
+    // ...but only ONE keyword is actually sent, and the form says so rather than claiming two.
+    expect(c['microsoftEffectiveKeywords']()).toEqual([{ text: 'kubernetes', matchType: 'Exact' }]);
+    expect(c['microsoftDuplicateKeywordCount']()).toBe(1);
+  });
+
+  /**
+   * The case fold has to survive into the effective list too: `Kubernetes/Exact` and
+   * `kubernetes/Exact` are ONE keyword upstream, so a restore carrying both must not report two.
+   * `populateFromBrief` applies no uniqueness filter, so this arrives from the server, not the UI.
+   */
+  it('folds case when de-duping the effective keyword list', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftKeywords'].set([
+      { text: 'Kubernetes', matchType: 'Exact' },
+      { text: 'kubernetes', matchType: 'Exact' },
+      { text: 'kubernetes', matchType: 'Phrase' },
+    ]);
+
+    // First occurrence wins, keeping the operator's original casing — as the client does.
+    expect(c['microsoftEffectiveKeywords']()).toEqual([
+      { text: 'Kubernetes', matchType: 'Exact' },
+      { text: 'kubernetes', matchType: 'Phrase' },
+    ]);
+    expect(c['microsoftDuplicateKeywordCount']()).toBe(1);
+  });
+
   it('clears the box once a keyword is actually added', async () => {
     const c = component() as unknown as Record<string, any>;
     c['selectedPlatforms'].set(['microsoft-ads']);

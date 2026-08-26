@@ -563,11 +563,41 @@ export class ImplementationTabComponent implements OnInit {
    * Microsoft can match a query against, so letting one satisfy the "at least one" rule would
    * produce exactly the unservable campaign the guard exists to prevent. The server applies the
    * same filter — see `buildMicrosoftConfig` — so both doors agree.
+   *
+   * DE-DUPED by `(matchType, case-folded text)`, first occurrence wins, mirroring the client's
+   * `validateKeywords` exactly. The add-time guard alone was not enough: it can only refuse a NEW
+   * row, and `onMicrosoftKeywordMatchTypeChange` can move an existing row onto another's pair
+   * afterwards. The client drops such a duplicate silently (`continue`, not an error), so the
+   * count, the "at least one" gate and the dispatched payload would otherwise all overstate what
+   * Microsoft actually receives — the operator sees two keywords and one is created.
+   *
+   * De-duping HERE rather than refusing the match-type change keeps the operator's edit intact;
+   * the row list still shows what they typed, while every count derived from this signal is the
+   * truth about the request. `microsoftDuplicateKeywordCount` is what surfaces the difference.
    */
-  protected readonly microsoftEffectiveKeywords = computed<MicrosoftKeyword[]>(() =>
-    this.microsoftKeywords()
+  protected readonly microsoftEffectiveKeywords = computed<MicrosoftKeyword[]>(() => {
+    const seen = new Set<string>();
+    return this.microsoftKeywords()
       .filter((k) => k.text?.trim())
       .map((k) => ({ text: k.text.trim(), matchType: k.matchType }))
+      .filter((k) => {
+        // Same key shape as the client: match type, NUL, case-folded text.
+        const key = `${k.matchType}\u0000${k.text.toLowerCase()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  });
+
+  /**
+   * How many keyword rows the request will DROP as duplicates, for the hint under the list.
+   *
+   * Counted against the blank-filtered raw list rather than the raw list itself, so a whitespace
+   * row is not reported as a duplicate — it is dropped for a different reason the label above
+   * already reflects.
+   */
+  protected readonly microsoftDuplicateKeywordCount = computed<number>(
+    () => this.microsoftKeywords().filter((k) => k.text?.trim()).length - this.microsoftEffectiveKeywords().length
   );
 
   /**

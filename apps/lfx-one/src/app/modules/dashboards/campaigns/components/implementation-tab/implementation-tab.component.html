@@ -692,6 +692,18 @@
               }
             </div>
             <!--
+              Says WHICH rows are redundant, not just that some are. A duplicate here is not a
+              refusal: the client drops it silently, so without this the operator would see rows
+              they typed and a lower count with nothing connecting the two. Reachable by editing a
+              row's match type onto another row's — the add box refuses that pair, this does not.
+            -->
+            @if (microsoftDuplicateKeywordCount() > 0) {
+              <p class="mt-1 text-xs text-amber-700" data-testid="implementation-microsoft-keyword-duplicates">
+                {{ microsoftDuplicateKeywordCount() }} keyword{{ microsoftDuplicateKeywordCount() === 1 ? '' : 's' }} repeat a match type and text already
+                listed — Microsoft keeps one of each pair, so only {{ microsoftEffectiveKeywords().length }} will be created.
+              </p>
+            }
+            <!--
               Names the CONSEQUENCE rather than saying "required". Without keywords Microsoft
               creates the campaign and it can never serve — and ToggleStatus then refuses to
               activate it — so an operator told only "required" would not know that submitting
