@@ -18,7 +18,7 @@ allowed-tools: Bash, Read, Glob, Grep
 
 You are checking whether **local commits are shaped correctly to open as a PR** — branch name, ticket references (JIRA or GitHub Issue) in commit messages, conventional-commit format, rebase status, DCO + GPG signing on every commit, total diff size.
 
-This skill does NOT audit code. Code audits run post-commit via the reviewer trio — generic background children each loading one review skill. See `.claude/rules/skill-guidance.md` for canonical post-commit reviewer-trio launch instructions (the three review skills the children load, the single `subagent_type: general-purpose`, and the parallel/background launch convention). By the time you run, every running review in the trio must have returned, the full-branch sweep must have run on multi-commit branches (`branch` arg) — and on any branch whose final commit's post-commit trio was skipped under the final-commit optimization, even a single-commit one, and any Critical or reasonable Important findings must already be addressed in a fix commit.
+This skill does NOT audit code. Code audits run post-commit via the reviewer trio — generic background children each loading one review skill. See `.claude/rules/skill-guidance.md` for canonical post-commit reviewer-trio launch instructions (the three review skills the children load, the single `subagent_type: general-purpose`, and the parallel/background launch convention). By the time you run, every running review in the trio must have returned, the full-branch sweep must have run (`branch` keyword) — on multi-commit branches, and on any branch whose final commit's post-commit trio was skipped under the final-commit optimization, even a single-commit one — and any Critical or reasonable Important findings must already be addressed in a fix commit.
 
 The PR-shape checklist lives in `references/pr-shape.md` and is walked directly in this body.
 
@@ -130,6 +130,6 @@ Every finding must quote an item in `references/pr-shape.md`. Drop hallucinated 
 
 ## Companion skills & subagents
 
-- Post-commit reviewer trio: see `.claude/rules/skill-guidance.md` for canonical post-commit reviewer-trio launch instructions. The queue must be drained and the latest trio returned clean before this check.
+- Post-commit reviewer trio: see `.claude/rules/skill-guidance.md` for canonical post-commit reviewer-trio launch instructions. The queue must be drained and the latest review batch returned clean (no INCOMPLETE reports) before this check.
 - `/preflight` — mechanical checks (license, format, lint, build, protected files). Run after this passes.
 - `/lfx-review-pr` — post-PR reviewer. Not part of pre-PR.
