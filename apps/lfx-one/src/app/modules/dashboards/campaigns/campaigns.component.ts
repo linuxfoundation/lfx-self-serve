@@ -1401,7 +1401,8 @@ export class CampaignsComponent {
     // Only once persistence is KNOWN to be on. The flag lives on the server, so the first save
     // of a session cannot know its state until the response arrives — and showing "Saving this
     // brief…" in the meantime would put a persistence banner in front of every user in every
-    // environment where the cutover is still dark, which is all of them by default. The cost is
+    // environment where the cutover is still dark — no longer the chart default since #1881, but
+    // still the state of any override or un-rolled deployment. The cost is
     // that the first save shows no in-flight banner, only its outcome; every later one in the
     // same session shows both.
     if (this.briefPersistenceEnabled()) {

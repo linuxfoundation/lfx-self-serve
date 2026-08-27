@@ -450,8 +450,8 @@ export class CampaignController {
     // The client therefore sees one `CampaignJobStatus` either way, with `result` set on the
     // in-process path and `platformResults` on the campaign-service path.
     //
-    // The flag is necessary but NOT sufficient to route. With CREATE off — which the chart no
-    // longer defaults to, but which any override or un-rolled deployment still produces —
+    // The flag is necessary but NOT sufficient to route. With CREATE off — still the chart
+    // default, and the state every deployment is in until the CREATE cutover ships —
     // `createCampaign` above mints `job_<epoch>_<rand>` into the in-process map, and
     // campaign-service's `get-job` declares `Format(FormatUUID)` on `job_id`, so it would answer
     // 400 for every one of them. Flag-only routing would therefore break all polling the moment

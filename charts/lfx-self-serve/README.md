@@ -219,14 +219,19 @@ refused terminally — `createCampaigns` returns `enabled: true` with _"its brie
 yet"_ rather than falling through to the legacy creator, so the user gets a dead end rather than a
 working campaign.
 
-`..._STATUS_TOGGLE` ships alongside `..._CREATE`. Its rollout overlap is safe where the others' is
-not: routing runs a campaign-id **shape** check before and independently of the flag, and the two
-id spaces are disjoint — campaign-service keys campaigns by UUID, the legacy path by the ad
-platform's numeric id — so no request can be claimed by both. It is also **inert** until
-`..._CREATE` has produced UUID-keyed campaigns, which is why it lands here rather than earlier.
-Without it, Google Ads and LinkedIn campaigns cannot be paused at all: the legacy pause path is a
-`switch` over `meta-ads`/`reddit-ads` whose `default` arm throws, and pause is the primary
-cost-control lever on a mis-targeted campaign.
+`..._STATUS_TOGGLE` ships BEFORE `..._CREATE`, as its own rollout, and must be allowed to converge
+first. It cannot be **misrouted** during an overlap the way the others can: routing runs a
+campaign-id **shape** check before and independently of the flag, and the two id spaces are
+disjoint — campaign-service keys campaigns by UUID, the legacy path by the ad platform's numeric
+id — so no request can be claimed by both. But that guarantee is about misrouting only; a pod
+without the flag still refuses a UUID with a 400, so shipping it TOGETHER WITH `..._CREATE` would
+let a new pod mint a campaign the old pods cannot pause. See the ordering discussion below.
+
+Shipping it first is free because it is **inert** until `..._CREATE` has produced UUID-keyed
+campaigns — nothing observable changes — which is precisely what makes it the safe half to roll
+alone. Without it, Google Ads and LinkedIn campaigns cannot be paused at all: the legacy pause
+path is a `switch` over `meta-ads`/`reddit-ads` whose `default` arm throws, and pause is the
+primary cost-control lever on a mis-targeted campaign.
 
 ### Before enabling `..._CREATE`
 
