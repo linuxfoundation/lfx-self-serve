@@ -32,7 +32,10 @@ vi.mock('@lfx-one/shared/constants', () => ({
   NATS_CONFIG: {},
   PENDING_ACTION_SEVERITY: {},
   PENDING_ACTION_SURVEYS_ROW_LIMIT: 0,
-  PROJECT_HEALTH_SCORE_CATEGORIES: [],
+  // Real values, not []: normalizeHealthScoreCategory (getFoundationProjectsDetail) validates the
+  // upstream HEALTH_SCORE_CATEGORY_V2 string against this set, so an empty stub would silently null
+  // out every genuine category.
+  PROJECT_HEALTH_SCORE_CATEGORIES: ['critical', 'concerning', 'fair', 'healthy', 'excellent'],
   ROOT_PROJECT_SLUG: 'root',
   // Real values (3 / 40, matching foundation-projects.constants.ts), not 0/undefined: discoverSubFoundations
   // compares depth/budget against these at runtime, so a test exercising the depth or node cap needs the
@@ -881,6 +884,79 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
       const [sql, binds] = execute.mock.calls[0];
       expect(sql).toContain('EVENT_IS_PAST = FALSE OR');
       expect(binds).toEqual(['tlf', '2026-03-01', '2026-04-01']);
+    });
+  });
+});
+
+// IN-1252: getHealthMetricsDaily's v1→v2 column flip is covered above (in the daily-health-metrics
+// describe block); these three cover the other call sites the same fix touched — each used to read
+// (or remap through mapV1BandToV2) a v1 Snowflake column/shim and now reads HEALTH_SCORE_CATEGORY_V2
+// directly.
+describe('ProjectService — Health Score v2 categories', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  describe('getFoundationHealthScoreDistribution', () => {
+    it('reads HEALTH_SCORE_CATEGORY_V2 directly without remapping to a v1 band', async () => {
+      execute.mockResolvedValueOnce({ rows: [{ HEALTH_SCORE_CATEGORY_V2: 'fair', PROJECT_COUNT: 4 }] });
+
+      const result = await service.getFoundationHealthScoreDistribution('cncf');
+
+      // fails before fix: the v1 query read HEALTH_SCORE_CATEGORY through mapV1BandToV2, so a
+      // genuine v2 'fair' category would have fallen through to `unscored` instead of `fair`.
+      expect(result.fair).toBe(4);
+      expect(result.unscored).toBe(0);
+      expect(execute.mock.calls[0][0]).toContain('HEALTH_SCORE_CATEGORY_V2');
+    });
+  });
+
+  describe('getFoundationProjectsDetail', () => {
+    it('normalizes healthScoreCategory from HEALTH_SCORE_CATEGORY_V2 without a v1 shim', async () => {
+      execute.mockResolvedValueOnce({
+        rows: [
+          {
+            PROJECT_ID: 'proj-1',
+            PROJECT_NAME: 'Project One',
+            PROJECT_SLUG: 'project-one',
+            LIFECYCLE_STAGE: null,
+            CONTRIBUTORS_90D_COUNT: 1,
+            COMMITS_90D_COUNT: 1,
+            MAINTAINERS_CURRENT_COUNT: 1,
+            STARS_YTD_COUNT: 1,
+            LAST_UPDATED_TS: '2026-01-01',
+            HEALTH_SCORE_CATEGORY_V2: 'fair',
+          },
+        ],
+      });
+
+      const result = await service.getFoundationProjectsDetail('cncf');
+
+      // fails before fix: normalizeHealthScoreCategory ran the v1 mapV1BandToV2 shim over this
+      // column, so a genuine v2 'fair' category could be coerced instead of passing through as-is.
+      expect(result.projects[0].healthScoreCategory).toBe('fair');
+      expect(execute.mock.calls[0][0]).toContain('d.HEALTH_SCORE_CATEGORY_V2');
+    });
+  });
+
+  describe('getMultiFoundationSummary', () => {
+    it('reads HEALTH_SCORE_CATEGORY_V2 per foundation without remapping to a v1 band', async () => {
+      execute.mockImplementation((sql: string) => {
+        if (String(sql).includes('FOUNDATION_HEALTH_SCORE_DISTRIBUTION')) {
+          return Promise.resolve({ rows: [{ FOUNDATION_SLUG: 'cncf', HEALTH_SCORE_CATEGORY_V2: 'fair', PROJECT_COUNT: 7 }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      const result = await service.getMultiFoundationSummary(req, ['cncf']);
+
+      // fails before fix: the local HealthScoreRow type read HEALTH_SCORE_CATEGORY and remapped it
+      // via mapV1BandToV2, so a v2 'fair' category wouldn't have passed straight through.
+      expect(result.perFoundation['cncf'].healthScores.fair).toBe(7);
+      expect(result.perFoundation['cncf'].healthScores.unscored).toBe(0);
     });
   });
 });
