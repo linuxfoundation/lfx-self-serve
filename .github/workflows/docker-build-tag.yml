@@ -145,3 +145,28 @@ jobs:
       registry-username: ${{ github.actor }}
     secrets:
       registry-password: ${{ secrets.GITHUB_TOKEN }}
+
+  notify-argocd-version-bump:
+    name: Notify ArgoCD version-bump job
+    needs:
+      - build-and-push
+      - release-helm-chart
+      - create-ghcr-helm-provenance
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Dispatch create-version-bump-pr.yml
+        env:
+          GH_TOKEN: ${{ secrets.LFX_ARGOCD_WORKFLOW_DISPATCH_TOKEN }}
+          APP_VERSION: ${{ needs.build-and-push.outputs.app_version }}
+        run: |
+          set -euo pipefail
+          gh workflow run create-version-bump-pr.yml \
+            --repo linuxfoundation/lfx-v2-argocd \
+            --ref main \
+            -f service=lfx-self-serve \
+            -f version="${APP_VERSION}" \
+            -f source_repo="${GITHUB_REPOSITORY}" \
+            -f source_run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            -f release_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"
