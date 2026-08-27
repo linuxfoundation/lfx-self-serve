@@ -124,11 +124,20 @@ export const CAMPAIGN_PACING_THRESHOLDS = {
  * separate decision (LFXV2-3314) precisely because it CHANGES which alerts fire on live
  * campaigns, and that is not a change to make silently while extracting constants.
  *
- * `minImpressions` is the floor below which the CTR rule is suppressed, because a click-through
- * rate over a handful of impressions is noise. LinkedIn has no floor today and instead requires
- * `ctr > 0`; the two are not equivalent — a campaign with 12 impressions and one click reads as
- * 8.3% and is silently trusted — but recording `null` states what is there rather than
- * inventing a value.
+ * Units, since the three fields are not in the same kind of quantity:
+ *
+ *   lowCtrPct                — PERCENTAGE POINTS, not a ratio. `0.3` means 0.3%, and the rule
+ *                              fires when a campaign's `ctr` is below it. The upstream `ctr`
+ *                              fields are already percentages, so no conversion is applied.
+ *   clicksWithoutConversions — a COUNT of clicks. The rule fires above it, with zero
+ *                              conversions.
+ *   minImpressions           — a COUNT of impressions, the floor below which the CTR rule is
+ *                              suppressed, because a click-through rate over a handful of
+ *                              impressions is noise.
+ *
+ * LinkedIn has no impression floor today and instead requires `ctr > 0`; the two are not
+ * equivalent — a campaign with 12 impressions and one click reads as 8.3% and is silently
+ * trusted — but recording `null` states what is there rather than inventing a value.
  */
 export const CAMPAIGN_ALERT_THRESHOLDS = {
   'linkedin-ads': { lowCtrPct: 0.3, clicksWithoutConversions: 50, minImpressions: null },

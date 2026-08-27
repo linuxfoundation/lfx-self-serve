@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CAMPAIGN_ALERT_THRESHOLDS,
   META_OBJECTIVE_LABELS,
   META_OBJECTIVE_PARAMS,
   META_SELECTABLE_OBJECTIVES,
@@ -304,5 +305,55 @@ describe('normalizeMicrosoftGeoTargets', () => {
   it('treats null and undefined as an empty list', () => {
     expect(normalizeMicrosoftGeoTargets(null)).toEqual([]);
     expect(normalizeMicrosoftGeoTargets(undefined)).toEqual([]);
+  });
+});
+
+/**
+ * These thresholds are the single edit point for the Optimize tab's low-CTR and
+ * clicks-without-conversions rules, and the rules themselves have no spec of their own. So this
+ * block pins the VALUES rather than re-deriving the rules: the whole claim of LFXV2-3314's first
+ * step is that centralising them changed no behaviour, and a value drifting here is exactly how
+ * that claim would quietly stop being true.
+ *
+ * Written as literals on purpose. Asserting `x === CAMPAIGN_ALERT_THRESHOLDS[p].lowCtrPct` would
+ * pass against any value at all.
+ */
+describe('CAMPAIGN_ALERT_THRESHOLDS', () => {
+  it('preserves the values each service used before they were named', () => {
+    expect(CAMPAIGN_ALERT_THRESHOLDS['linkedin-ads']).toEqual({
+      lowCtrPct: 0.3,
+      clicksWithoutConversions: 50,
+      minImpressions: null,
+    });
+    expect(CAMPAIGN_ALERT_THRESHOLDS['meta-ads']).toEqual({
+      lowCtrPct: 0.5,
+      clicksWithoutConversions: 20,
+      minImpressions: 500,
+    });
+    expect(CAMPAIGN_ALERT_THRESHOLDS['reddit-ads']).toEqual({
+      lowCtrPct: 0.3,
+      clicksWithoutConversions: 100,
+      minImpressions: 1000,
+    });
+  });
+
+  /**
+   * The divergence is the finding, not an accident of this spec. Pinned so that CONVERGING the
+   * platforms — LFXV2-3314's second step — has to delete this test deliberately rather than
+   * discover it red, and so nobody "tidies" one value into agreement without that being the
+   * point of their change.
+   */
+  it('records that the three platforms currently disagree', () => {
+    const ctr = Object.values(CAMPAIGN_ALERT_THRESHOLDS).map((t) => t.lowCtrPct);
+    const clicks = Object.values(CAMPAIGN_ALERT_THRESHOLDS).map((t) => t.clicksWithoutConversions);
+    expect(new Set(ctr).size).toBeGreaterThan(1);
+    expect(new Set(clicks).size).toBe(3);
+  });
+
+  /** LinkedIn alone has no floor; it guards with `ctr > 0` instead. Not equivalent — see the JSDoc. */
+  it('records that only LinkedIn has no impression floor', () => {
+    expect(CAMPAIGN_ALERT_THRESHOLDS['linkedin-ads'].minImpressions).toBeNull();
+    expect(CAMPAIGN_ALERT_THRESHOLDS['meta-ads'].minImpressions).not.toBeNull();
+    expect(CAMPAIGN_ALERT_THRESHOLDS['reddit-ads'].minImpressions).not.toBeNull();
   });
 });
