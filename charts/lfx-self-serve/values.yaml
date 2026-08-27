@@ -545,10 +545,14 @@ environment:
   # this on is what makes Google Ads and LinkedIn pausable at all — and pause is the primary
   # cost-control lever on a mis-targeted or overspending campaign.
   #
-  # It does NOT give users a pause button. This enables the SERVER path only: the app cannot call
-  # it until the campaign read lands (LFXV2-3099), because pausing needs a campaign UUID, brief id
-  # and ETag that nothing in the UI can obtain today. Flipping this expecting a visible control
-  # would change nothing on screen.
+  # This IS user-visible now. The line that stood here said it enabled the server path only and
+  # that nothing would change on screen — true when written, false since the UI half landed: the
+  # Optimize tab propagates statusToggleEnabled and calls updateCampaignStatus, so operators get a
+  # working pause control.
+  #
+  # Still inert for campaigns the LEGACY path created: pausing needs a campaign UUID, which only a
+  # campaign-service create mints. The control appears for campaigns made after CREATE was
+  # enabled, not retroactively.
   #
   # ROLLOUT OVERLAP IS SAFE, unlike LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS, whose hazard looks
   # identical and is not. Routing runs a campaign-id SHAPE check BEFORE and INDEPENDENTLY of this

@@ -235,10 +235,12 @@ connection tables, never from this application's `GADS_*` / `LINKEDIN_*` environ
 Two things must be true per project, and neither fails at deploy time — both surface per-campaign
 at dispatch:
 
-- **A connection must exist.** A project with none falls back to the LF-owned system account, so
-  the spend lands on the LF's ad account rather than the project's.
-- **The project must not have DISCONNECTED.** A soft-deleted row is a statement, not an absence:
-  the fallback is refused and the dispatch fails closed.
+- **A usable credential source must resolve.** Either works: a live project connection, in which
+  case the spend lands on the project's own ad account; or the LF system-account fallback, in
+  which case **the spend lands on the LF's**. A project connection is therefore not mandatory for
+  the dispatch to succeed — it decides who is billed.
+- **The project must not have DISCONNECTED.** This is the case that actually fails closed. A
+  soft-deleted row is a statement, not an absence, so the fallback is refused rather than used.
 
 One behaviour does change today: with JOBS on, a poll for a UUID job id requires `?project=` and
 is refused with a 400 without it. The LFX One client always sends it, so in-product polling is
@@ -273,12 +275,15 @@ Meta and Reddit whose default arm throws, so pause was unavailable for every oth
 matter what the allowlist said. Since pause is the primary cost-control lever on a mis-targeted or
 overspending campaign, "cannot pause Google Ads from the product" meant logging into Google Ads.
 
-**Turning it on does NOT give users a pause button.** It enables the SERVER path only. The app
-cannot call it yet — pausing a campaign-service campaign needs its UUID, brief id and ETag, and
-nothing in the UI can obtain any of them until the campaign read lands (LFXV2-3099). So the reach
-above is reach the API gains, not a control the product grows. An operator flipping this expecting
-a working pause control would find nothing changed on screen. Enable it when the UI half ships, or
-earlier if you want the endpoint reachable for direct API use.
+**This is now user-visible.** An earlier revision of this section said the flag enabled the server
+path only and that nothing would change on screen — that was true when it was written and stopped
+being true when the UI half landed (#1586). The Optimize tab propagates `statusToggleEnabled` and
+calls `updateCampaignStatus`, so turning this on gives operators a working pause control for
+campaign-service campaigns rather than an unreachable endpoint.
+
+It remains inert for campaigns the legacy path created: pausing needs a campaign UUID, which only
+a campaign-service create produces. So the control appears for campaigns made after `..._CREATE`
+was enabled, and not retroactively for older ones.
 
 An overlapping rollout is SAFE here, and it is worth saying why, because the hazard recorded for
 `LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` looks identical and is not. Routing runs a campaign-id SHAPE

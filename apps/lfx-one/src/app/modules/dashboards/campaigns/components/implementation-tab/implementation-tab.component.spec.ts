@@ -656,6 +656,24 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * `Object.keys(META_OBJECTIVE_LABELS)`, which agreed with whatever that map contained and so
    * could never have caught an objective appearing or disappearing from the picker.
    */
+
+  /**
+   * The untouched form must submit successfully once the cutover is live.
+   *
+   * `createCampaigns` refuses a Google request carrying BOTH `search` and `demand-gen` and does
+   * not fall back to the legacy creator, so defaulting both to true handed a user a terminal
+   * failure on their very first create. `canSubmit` does not catch it either — it only blocks
+   * when NEITHER is selected.
+   *
+   * Pinned as a default rather than as a rule, because that is what regressed: someone restoring
+   * `includeDemandGen: [true]` for symmetry would reintroduce the dead end silently.
+   */
+  it('defaults Google to Search only, the combination the server accepts', () => {
+    const c = component() as unknown as Record<string, any>;
+    expect(c['campaignForm'].controls['includeSearch'].value).toBe(true);
+    expect(c['campaignForm'].controls['includeDemandGen'].value).toBe(false);
+  });
+
   it('renders exactly the selectable objectives, in order', () => {
     const select = require<HTMLSelectElement>('implementation-meta-objective');
     const rendered = Array.from(select.options).map((o) => o.value);

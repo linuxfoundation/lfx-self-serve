@@ -246,7 +246,13 @@ export class ImplementationTabComponent implements OnInit {
     startDate: ['', [Validators.required]],
     endDate: ['', [Validators.required]],
     includeSearch: [true],
-    includeDemandGen: [true],
+    // Search only by default. Both on is a REFUSED combination once the campaign-service cutover
+    // is live: `createCampaigns` rejects a Google request carrying both `search` and `demand-gen`
+    // and does NOT fall back to the legacy creator, so a user who accepted the old defaults got a
+    // terminal failure on their first create rather than a campaign. Search alone and Demand Gen
+    // alone are each servable; only the pair is not. Defaulting to the one that works means the
+    // untouched form submits successfully, and choosing Demand Gen stays one click away.
+    includeDemandGen: [false],
     headlines: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)])]),
     descriptions: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)])]),
     // The LinkedIn ad account, geo targets and targeting profile, on the FORM rather than in
