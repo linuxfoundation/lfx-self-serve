@@ -1200,32 +1200,33 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
 
         // The real value, not `null`: the tab renders the control only on an explicit `true`.
-        expect(
-          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
-        ).toBe(true);
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
       });
 
       /**
-       * When brief persistence is disabled (`enabled: false`), `result.briefId` is '' and the
-       * old `!briefId` guard would exit before dispatching. But `canCreateDemandGen()` returns
-       * `true` on the legacy path, and the server returns that capability even on an empty-id
-       * read — the client must not skip the request just because no brief row exists yet.
+       * The disabled-persist path deliberately does NOT dispatch a capability read.
        *
-       * Asserted through the parent for the same reason as the first-create test above: an input
-       * set by hand passes against exactly this bug.
+       * It is tempting to send one: `result.briefId` is `''` there, and the service really does
+       * return `demandGenEnabled` for a blank brief id. But the HTTP path never reaches that
+       * branch — `campaign.controller.ts` 400s on a blank `brief_id` first, which
+       * `campaign.controller.spec.ts` pins. Dispatching would spend a request per Implementation
+       * entry to receive an error, land in the error arm, and set the capability to `null`; the
+       * control stays hidden either way, with a spurious 400 added.
+       *
+       * So the assertion is that NOTHING was sent, and the capability stays unknown. Fixing this
+       * properly needs a capability read that does not require a brief id at all.
        */
-      it('loads the demand-gen capability when brief persistence is disabled', async () => {
-        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
-          of({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true })
-        );
+      it('sends no capability request when brief persistence is disabled', async () => {
+        const list = vi
+          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
+          .mockReturnValue(of({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true }));
 
         persistBrief.mockReturnValue(of({ enabled: false, briefId: '', etag: null, created: false, approved: false }));
         proceed();
         await fixture.whenStable();
 
-        expect(
-          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
-        ).toBe(true);
+        expect(list).not.toHaveBeenCalled();
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBeNull();
       });
 
       /**
@@ -1238,9 +1239,7 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
         await fixture.whenStable();
 
-        expect(
-          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
-        ).toBeNull();
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBeNull();
       });
 
       /**
@@ -1269,9 +1268,7 @@ describe('CampaignsComponent brief persistence', () => {
         capability.complete();
         await fixture.whenStable();
 
-        expect(
-          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
-        ).toBe(true);
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
       });
 
       /**
@@ -1290,9 +1287,7 @@ describe('CampaignsComponent brief persistence', () => {
         restore(brief, 'brief-9', true);
         await fixture.whenStable();
 
-        expect(
-          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
-        ).toBe(true);
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
       });
 
       /**
@@ -1309,17 +1304,13 @@ describe('CampaignsComponent brief persistence', () => {
 
         await withSavedBrief();
         await fixture.whenStable();
-        expect(
-          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
-        ).toBe(true);
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
 
         list.mockReturnValue(throwError(() => new Error('query service down')));
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
         await fixture.whenStable();
 
-        expect(
-          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
-        ).toBeNull();
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBeNull();
       });
 
       /**
@@ -1341,17 +1332,13 @@ describe('CampaignsComponent brief persistence', () => {
         list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
         await fixture.whenStable();
-        expect(
-          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
-        ).toBe(true);
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
 
         // The superseded request now fails. It must not touch the newer answer.
         older.error(new Error('query service down'));
         await fixture.whenStable();
 
-        expect(
-          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
-        ).toBe(true);
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
       });
 
       /**
@@ -1377,9 +1364,7 @@ describe('CampaignsComponent brief persistence', () => {
         pending.complete();
         await fixture.whenStable();
 
-        expect(
-          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
-        ).toBeNull();
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBeNull();
       });
 
       it('clears the previous brief campaigns when the foundation changes', async () => {

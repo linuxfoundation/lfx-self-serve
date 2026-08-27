@@ -1299,15 +1299,16 @@ export class CampaignsComponent {
    * opened before `persistBrief` resolves, so reading `briefPersistence()` at entry finds `null`
    * and the entry-time call guards itself out. The persist success arm passes its own id here.
    *
-   * Called with an EMPTY brief id when brief persistence is disabled (`enabled: false`). The
-   * server's `listBriefCampaigns` handles an empty brief id and still returns
-   * `demandGenEnabled: canCreateDemandGen()`, so the client learns the capability without a
-   * stored brief. `null` is guarded because a `null` id means "no id was supplied at all" and
-   * should not make the request; an empty string is a deliberate signal from the disabled path.
+   * An EMPTY id is refused here along with `null`, and that is not an oversight. The service
+   * does return `demandGenEnabled` for a blank brief id — but the HTTP path never reaches that
+   * branch: `campaign.controller.ts` 400s on a blank `brief_id` before calling the service, and
+   * `campaign.controller.spec.ts` pins it. Sending one would spend a request per Implementation
+   * entry to receive an error, land in the arm below, and set the capability to `null` — the
+   * control stays hidden either way, with a spurious 400 added.
    */
   private loadCreateCapabilitiesFor(briefId: string | null): void {
     const projectSlug = this.activeFoundationSlug();
-    if (projectSlug === '' || briefId === null) return;
+    if (projectSlug === '' || !briefId) return;
 
     // Ordered by this reader's OWN generation, and checked against the foundation too — see
     // `createCapabilitiesGeneration`. The counter gives ordering among repeated Implementation
@@ -1621,14 +1622,6 @@ export class CampaignsComponent {
           }
 
           if (generation !== this.briefPersistenceGeneration) return;
-          // Load capabilities here for BOTH paths — enabled and disabled. When disabled
-          // (`enabled: false`), `result.briefId` is '' and `loadCreateCapabilitiesFor` sends
-          // the request without a brief id; the server returns `demandGenEnabled: canCreateDemandGen()`
-          // even on that empty-id read, so the legacy creator gets the correct answer.
-          // When enabled, this also covers the first-create path where the Implementation tab
-          // opened before the persist resolved — the entry-time call guarded out because no id
-          // was known yet, and this is where the id first arrives.
-          this.loadCreateCapabilitiesFor(result.briefId);
           if (!result.enabled) {
             this.briefPersistence.set(this.idlePersistence);
             return;
@@ -1704,6 +1697,12 @@ export class CampaignsComponent {
           // as a `message` on the SAVED state rather than a new status or an `error`: describing a
           // durable write as failed would be its own lie, and the banner already renders a message
           // in this state.
+          //
+          // The capability read needs a brief id, and THIS is where a first create gets one: the
+          // Implementation tab opened before the persist resolved, so the entry-time attempt
+          // guarded itself out. Without this the create path never learns the capability.
+          this.loadCreateCapabilitiesFor(result.briefId);
+
           this.briefPersistence.set({
             status: 'saved',
             briefId: result.briefId,
