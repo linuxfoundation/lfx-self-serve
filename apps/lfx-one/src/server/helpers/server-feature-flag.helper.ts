@@ -94,10 +94,15 @@ export enum ServerFeatureFlag {
    * "id-shape backstop" here, which is what an earlier version of this doc called it — for CREATE
    * it is a hard prerequisite.
    *
-   * That id-shape distinction is what makes an OVERLAPPING rollout safe: campaign-service mints
-   * UUID job ids and the legacy path mints `job_...`, so a poll is answered by whichever system
-   * actually owns that job regardless of which pod serves it. A CREATE-flag-on pod creating and a
-   * CREATE-flag-off pod polling still works.
+   * That id-shape distinction is what makes an overlapping rollout safe FOR JOB POLLING, and only
+   * for that: campaign-service mints UUID job ids and the legacy path mints `job_...`, so a poll
+   * is answered by whichever system actually owns that job regardless of which pod serves it. A
+   * CREATE-flag-on pod creating and a CREATE-flag-off pod polling still works.
+   *
+   * It says NOTHING about the rest of a campaign's life. The same overlap mints a UUID campaign
+   * that a pod without `CampaignServiceStatusToggle` refuses to pause — see that flag's doc below.
+   * Do not read this paragraph as "an overlapping CREATE rollout is safe"; it covers the poll and
+   * nothing else.
    *
    * That safety holds only while JOBS is on everywhere, and it is an ORDERING requirement, not
    * just a set of prerequisites: a pod with JOBS off does not apply the id-shape check at all and
