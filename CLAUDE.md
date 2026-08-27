@@ -245,9 +245,9 @@ Placement decision trees ("where does my component go?", "do I need a new module
    - **Self Serve convention child** — loads **`lfx-self-serve-code-review`** (`.claude/skills/lfx-self-serve-code-review/`): Self Serve convention audit against the documented rule surface (`.claude/rules/`, the four `docs/reviews/` checklists, architecture docs) and upstream API contracts. Renders a markdown review with Upstream API / data-layer validation and Repo conventions sections.
    - **Self Serve learnings child** — loads **`lfx-self-serve-learnings-review`** (`.claude/skills/lfx-self-serve-learnings-review/`): empirical-pattern matching against `docs/reviews/knowledge-base/` (patterns sampled from past PR review comments on this repo). Renders a markdown review.
 
-   **Why a canonical prompt:** the Agent tool needs a non-empty prompt to launch reliably, so we standardize on one canonical string per mode rather than leave it ambiguous. Each skill's playbook parses for `target repo:`, `branch`, and `extra:`, and its own Step 1 names `git show HEAD` / `origin/main...HEAD` — moving references. The canonical prompt therefore pins `target_sha` / `base_sha` / the exact diff range and declares them authoritative, so all three children audit the same exact range even if you commit again while the reviews run; the prompt's pinned-range line is what binds the child, so never omit it. The `model: opus` pin lives here in the caller (the skill files carry no model frontmatter). If this work cycle is launched from the LFX workspace parent, the prompt must specify the target review repo so the reviewer operates in `lfx-self-serve`; the canonical prompts below include that line and are also safe when already inside this repo. If a skill is displayed with a namespace or directory-scope prefix (e.g. `work:lfx-self-serve-code-review`), use the displayed name.
+   **Why a canonical prompt:** the Agent tool needs a non-empty prompt to launch reliably, so we standardize on one canonical string per mode rather than leave it ambiguous. The two repo-owned skills' playbooks parse for `target repo:`, `branch`, and `extra:`, and their Step 1 names `git show HEAD` / `origin/main...HEAD` — moving references (the general skill is already caller-pinned). The canonical prompt therefore pins `target_sha` / `base_sha` / the exact diff range and declares them authoritative, so all three children audit the same exact range even if you commit again while the reviews run; the prompt's pinned-range line is what binds the child, so never omit it. The `model: opus` pin lives here in the caller (the skill files carry no model frontmatter). If this work cycle is launched from the LFX workspace parent, the prompt must specify the target review repo so the reviewer operates in `lfx-self-serve`; the canonical prompts below include that line and are also safe when already inside this repo. If a skill is displayed with a namespace or directory-scope prefix (e.g. `work:lfx-self-serve-code-review`), use the displayed name.
 
-   **Post-commit mode prompt (exact, all three children — substitute the child's skill name and the pinned SHAs):**
+   **Post-commit mode prompt (exact, all three children — substitute the child's skill name, the repo root, and the pinned SHAs):**
 
    ```text
    Load exactly one skill and follow it end to end as your complete review playbook: <skill>. Do not load any other review skill. If <skill> is not listed under any name, Read its SKILL.md directly (repo-owned skills live at <repo-root>/.claude/skills/<skill>/SKILL.md) and follow it as your playbook; if you can neither load nor read it, return "INCOMPLETE — could not load <skill>" instead of reviewing without it.
@@ -263,6 +263,8 @@ Placement decision trees ("where does my component go?", "do I need a new module
    ```
 
    where `<skill>` is `lfx-skills:lfx-general-code-review`, `lfx-self-serve-code-review`, or `lfx-self-serve-learnings-review` respectively. Append `extra: <focus>` on a new line only when there's a priority hint to add. Do NOT pass `branch` here.
+
+   The Read fallback applies to the two repo-owned skills (the plugin skill has no repo-root path, so an unlistable plugin skill correctly falls through to `INCOMPLETE`). Skills added or renamed in the current session may be absent from a child's skill roster — the Read fallback is the expected path there, and an `INCOMPLETE — could not load <skill>` means relaunch (a fresh session picks the skill up), not that the review found a problem.
 
 3. **Keep working.** Start the next commit while the reviewers run. Do not block on them.
 4. **When the reviewers return:** read all three reports. Roll every Critical finding and every reasonable Important finding into the next commit (a separate `fix(review): address findings` commit is fine; squashing is not required — the history shows review-driven iteration).
@@ -282,7 +284,7 @@ When the work is "done" — no more code commits planned:
    BASE_SHA=$(git merge-base origin/main HEAD)
    ```
 
-   The prompt for each child must include the `branch` keyword so the loaded skill audits the branch's diff against `origin/main` instead of just the latest commit. **Full-branch mode prompt (exact, all three children):**
+   The prompt for each child must include the `branch` keyword so the loaded skill audits the branch's diff against `origin/main` instead of just the latest commit. **Full-branch mode prompt (exact, all three children — substitute the child's skill name, the repo root, and the pinned SHAs):**
 
    ```text
    Load exactly one skill and follow it end to end as your complete review playbook: <skill>. Do not load any other review skill. If <skill> is not listed under any name, Read its SKILL.md directly (repo-owned skills live at <repo-root>/.claude/skills/<skill>/SKILL.md) and follow it as your playbook; if you can neither load nor read it, return "INCOMPLETE — could not load <skill>" instead of reviewing without it.
