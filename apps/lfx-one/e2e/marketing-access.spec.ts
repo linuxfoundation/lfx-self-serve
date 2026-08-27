@@ -26,6 +26,7 @@
  *   S6  Flag ON  — contributor without campaign_manager is redirected off /foundation/campaigns
  *   S7  Flag ON  — LF Staff stays Social-Listening-only on Marketing Impact even with marketing_auditor-equivalent access already granted via canViewExecutiveDashboards
  *   S8  Flag OFF (default) — grants present on the API response are ignored; behavior is byte-identical to pre-LFXV2-2236 ED/LF-staff-only gating
+ *   S9  Flag ON  — marketing_auditor + campaign_manager grants do not unlock Health Metrics (ED/LF-Staff-only, LFXV2-2237)
  *
  * This suite does NOT flip the server `LFX_MARKETING_OPS_FGA_ENABLED` env var or hit protected
  * analytics/campaigns routes directly — see `require-marketing-access.middleware.spec.ts` for
@@ -60,6 +61,7 @@ const SIDEBAR = {
   marketingSection: 'sidebar-item-marketing',
   marketingImpact: 'sidebar-marketing-impact',
   campaigns: 'sidebar-marketing-campaigns',
+  healthMetrics: 'sidebar-metrics-health-metrics',
 };
 
 const CAMPAIGNS_PAGE = 'campaigns-page';
@@ -347,6 +349,37 @@ test.describe('S8: Foundation lens — flag OFF (default) ignores marketing_audi
 
     await gotoAndWaitForSidebar(page, `/foundation/marketing-impact?project=${MOCK_FOUNDATION_SLUG}`);
     await expect(page.getByTestId('marketing-impact-social-listening-only'), 'flag=off marketing_auditor grant should not unlock full tabs').toBeVisible({
+      timeout: ELEMENT_TIMEOUT,
+    });
+  });
+});
+
+// ─── S9: marketing_auditor/campaign_manager grants do not unlock Health Metrics ──
+
+test.describe('S9: Foundation lens — marketing_auditor + campaign_manager grants do not unlock Health Metrics (flag ON)', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubMarketingOpsFlag(page, true);
+    await stubPersona(page, ['contributor'], { isMarketingAuditor: true, isCampaignManager: true });
+    await setPersonaCookie(page, ['contributor']);
+    await stubNavLensItems(page);
+    await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false);
+  });
+
+  test('sidebar hides Health Metrics despite marketing_auditor/campaign_manager grants', async ({ page }) => {
+    await gotoAndWaitForSidebar(page, `/foundation/overview?project=${MOCK_FOUNDATION_SLUG}`);
+    await expect(
+      page.getByTestId(SIDEBAR.healthMetrics),
+      'persona=marketing_auditor+campaign_manager item=health-metrics should be hidden (ED/LF-Staff-only)'
+    ).toHaveCount(0);
+  });
+
+  test('is redirected off /foundation/health-metrics to /foundation/overview', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.goto(`/foundation/health-metrics?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await expect(page, 'persona=marketing_auditor+campaign_manager should be redirected away from health-metrics').toHaveURL(/\/foundation\/overview/, {
       timeout: ELEMENT_TIMEOUT,
     });
   });
