@@ -14,7 +14,7 @@ Before starting any new feature or task, always start from the latest `main`:
 git checkout main
 git pull
 git checkout -b <type>/LFXV2-<ticket-number>   # JIRA-tracked work
-git checkout -b <type>/GH-<issue-number>       # GitHub Issue-tracked work
+git checkout -b <type>/issue-<issue-number>    # GitHub Issue-tracked work
 ```
 
 If you already have a working branch, ensure it's rebased on the latest `main` before proceeding.
@@ -85,7 +85,7 @@ See the `/lfx` skill's `references/repo-map.md` for the upstream microservice re
 - **Run `yarn e2e` before major changes** to ensure all tests pass consistently
 - **Use `data-testid` naming convention** — `[section]-[component]-[element]` for hierarchical structure
 - **Test responsive behavior** — validate mobile, tablet, and desktop viewports appropriately
-- **Never use real customer or personal data in fixtures** — names, emails, and company domains in tests must be synthetic (e.g. `acme-motors.example`, `vendor-corp.example`). Copying a real payload from a bug report or support ticket into a test is the most common way this leaks — redact it first. `check-fixture-emails.sh` (wired into `.husky/pre-commit`) blocks staged `*.spec.ts`/`*.fixture.ts`/`*.ndjson` files containing a denylisted real customer/vendor domain; add a domain there when a new incident surfaces one (see GH-1674)
+- **Never use real customer or personal data in fixtures** — names, emails, and company domains in tests must be synthetic (e.g. `acme-motors.example`, `vendor-corp.example`). Copying a real payload from a bug report or support ticket into a test is the most common way this leaks — redact it first. `check-fixture-emails.sh` (wired into `.husky/pre-commit`) blocks staged `*.spec.ts`/`*.fixture.ts`/`*.ndjson` files containing a denylisted real customer/vendor domain; add a domain there when a new incident surfaces one (see #1674)
 - When running tests to validate UI tests, use `reporter=list`
 
 ## Documentation Maintenance
@@ -112,4 +112,4 @@ When editing files in `docs/`:
 
 - Some work is tracked directly as GitHub Issues on `linuxfoundation/lfx-self-serve` instead of JIRA — e.g. items filed under an epic (like the [August 2026 Bugs Epic](https://github.com/linuxfoundation/lfx-self-serve/issues/1294)) and tracked on the [LFX Self Serve Kanban board](https://github.com/orgs/linuxfoundation/projects/17).
 - File new issues with `gh issue create`, set `--type` (e.g. `Bug`), `--parent <epic-number>` when it belongs under an epic, and `--project "LFX Self Serve Kanban Board"` so it lands on the board.
-- Reference GitHub Issues in commits/branches as `GH-<issue-number>`, or in commit/PR bodies as the fully-qualified `org/repo#<issue-number>` path (e.g. `linuxfoundation/lfx-self-serve#1331`) when the ticket isn't in this repo (see `.claude/rules/commit-workflow.md`); don't file a duplicate JIRA ticket for work already tracked as a GitHub Issue.
+- Reference GitHub Issues in branches as `issue-<issue-number>`, and in commits/PR bodies as `#<issue-number>` or the fully-qualified `org/repo#<issue-number>` path (e.g. `linuxfoundation/lfx-self-serve#1331`) when the ticket isn't in this repo (see `.claude/rules/commit-workflow.md`); don't file a duplicate JIRA ticket for work already tracked as a GitHub Issue.
