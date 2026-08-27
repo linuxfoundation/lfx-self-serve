@@ -502,6 +502,22 @@ export class CampaignsComponent {
   private briefCampaignsGeneration = 0;
 
   /**
+   * Generation counter for the create-time capability read — its OWN, deliberately.
+   *
+   * Two wrong versions preceded this one, and both were reachable. Sharing
+   * `briefCampaignsGeneration` fails because `loadBriefCampaigns` increments it, so an ordinary
+   * Optimize visit discarded an in-flight capability response. Guarding on the foundation alone
+   * fails the other way: it drops no valid response but imposes no ORDER, so two Implementation
+   * entries within one foundation can land out of order and an older failure can wipe a newer
+   * success back to `null`.
+   *
+   * A counter owned by this reader answers both — bumped on every dispatch here, untouched by
+   * Optimize, and made stale by the foundation-switch effect for free because that dispatches
+   * nothing here. Only the newest capability read may write.
+   */
+  private createCapabilitiesGeneration = 0;
+
+  /**
    * Whether the server has told us the brief-persistence cutover is on.
    *
    * Starts false meaning UNKNOWN, not off, and only a response can change it: the flag is an
@@ -945,14 +961,12 @@ export class CampaignsComponent {
     const projectSlug = this.activeFoundationSlug();
     if (projectSlug === '' || !briefId) return;
 
-    // Guarded on the FOUNDATION, not on `briefCampaignsGeneration`. Sharing that counter looked
-    // right — it is the staleness guard for the same endpoint — but it is incremented by
-    // `loadBriefCampaigns` on every Optimize entry as well as by the foundation-switch effect.
-    // So a user who opens Implementation and then clicks Optimize bumps it while this read is
-    // still in flight, and the response would be discarded as stale though nothing about it is:
-    // the capability would stay `null` and the control stay hidden, which is the defect this
-    // method exists to fix. The foundation is what actually invalidates the answer.
-    const requestedSlug = projectSlug;
+    // Ordered by this reader's OWN generation, and checked against the foundation too — see
+    // `createCapabilitiesGeneration`. The counter gives ordering among repeated Implementation
+    // entries; the slug is what makes a response from the previous foundation inapplicable
+    // rather than merely old.
+    const generation = ++this.createCapabilitiesGeneration;
+    const isCurrent = (): boolean => generation === this.createCapabilitiesGeneration && projectSlug === this.activeFoundationSlug();
     this.campaignService
       .listBriefCampaigns(projectSlug, briefId)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
@@ -961,14 +975,14 @@ export class CampaignsComponent {
         // those belong to Optimize's own read, and writing them from here would render a list
         // the operator did not ask for and cannot see.
         next: (result) => {
-          if (requestedSlug !== this.activeFoundationSlug()) return;
+          if (!isCurrent()) return;
           this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
         },
         // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
         // draft's selection on evidence a failed read does not have; leaving the previous value
         // keeps offering the control on the strength of a read that has since started failing.
         error: () => {
-          if (requestedSlug !== this.activeFoundationSlug()) return;
+          if (!isCurrent()) return;
           this.briefCampaignsDemandGenEnabled.set(null);
         },
       });
@@ -1676,9 +1690,6 @@ export class CampaignsComponent {
           // as a `message` on the SAVED state rather than a new status or an `error`: describing a
           // durable write as failed would be its own lie, and the banner already renders a message
           // in this state.
-          // The capability read needs a brief id, and THIS is where a first create gets one — the
-          // Implementation tab opened before the persist resolved, so the entry-time attempt was
-          // guarded out. Without this the first-create path never learns the capability at all.
           // The capability read needs a brief id, and THIS is where a first create gets one: the
           // Implementation tab opened before the persist resolved, so the entry-time attempt
           // guarded itself out. Without this the create path never learns the capability.

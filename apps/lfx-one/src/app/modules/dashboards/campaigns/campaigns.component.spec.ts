@@ -1300,6 +1300,38 @@ describe('CampaignsComponent brief persistence', () => {
         ).toBeNull();
       });
 
+      /**
+       * Out-of-order completion WITHIN one foundation — the case a foundation-only guard misses.
+       *
+       * The first version of this guard shared Optimize's counter and dropped valid responses.
+       * The second guarded on the foundation alone, which drops nothing valid but imposes no
+       * ORDER: two Implementation entries in the same foundation can complete in either order,
+       * and an older request failing after a newer one succeeded would wipe a live `true` back
+       * to `null`, hiding Demand Gen on a deployment that had just confirmed it.
+       */
+      it('ignores an older capability read that fails after a newer one succeeded', async () => {
+        const older = new Subject<CampaignListResult>();
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(older.asObservable());
+
+        await withSavedBrief();
+
+        // A second Implementation entry supersedes the first, and answers first.
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+        (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
+        await fixture.whenStable();
+        expect(
+          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
+        ).toBe(true);
+
+        // The superseded request now fails. It must not touch the newer answer.
+        older.error(new Error('query service down'));
+        await fixture.whenStable();
+
+        expect(
+          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
+        ).toBe(true);
+      });
+
       it('clears the previous brief campaigns when the foundation changes', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
