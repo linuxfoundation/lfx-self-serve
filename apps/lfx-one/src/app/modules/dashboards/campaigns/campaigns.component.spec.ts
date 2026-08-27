@@ -1278,9 +1278,9 @@ describe('CampaignsComponent brief persistence', () => {
        * on every entry — so an ordinary Optimize click discarded an in-flight capability response
        * and left the control hidden.
        *
-       * Both readers hit the same endpoint, so they cannot disagree about the deployment; the
-       * mock answers `true` on both. What is asserted is that the answer SURVIVES the overlap,
-       * whichever of the two happens to deliver it.
+       * Both mocked responses return `true`. What is asserted is that the answer SURVIVES the
+       * overlap — whichever of the two requests delivers it first, a `true` lands on the signal
+       * rather than being overwritten to `null` by the later arrival.
        */
       it('keeps a capability answer when an Optimize load races it', async () => {
         const capability = new Subject<CampaignListResult>();
@@ -1403,8 +1403,8 @@ describe('CampaignsComponent brief persistence', () => {
        * A foundation switch clears the capability but dispatches no capability read of its own,
        * so it never bumps `createCapabilitiesGeneration`. An in-flight read from the previous
        * foundation therefore still looks current BY GENERATION, and only the slug check stops it
-       * writing foundation A's answer onto foundation B — a capability claim about a deployment
-       * the user is no longer looking at.
+       * writing foundation A's answer onto foundation B — a stale answer for a slug the user
+       * is no longer viewing.
        */
       it('drops a capability answer that arrives after the foundation changed', async () => {
         const pending = new Subject<CampaignListResult>();
