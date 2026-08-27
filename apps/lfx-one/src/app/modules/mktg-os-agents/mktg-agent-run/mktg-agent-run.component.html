@@ -81,6 +81,15 @@
                         From LFX
                       </span>
                     }
+                    <!-- Reused from another agent's run — never labelled "From LFX": LFX has no such value. -->
+                    @if (fromPriorRun()[field.key]; as priorRunLabel) {
+                      <span
+                        class="inline-flex items-center gap-1 border border-gray-200 bg-gray-50 text-gray-600 text-xs font-medium px-2 py-0.5 rounded-full"
+                        [attr.data-testid]="'mktg-agent-run-from-prior-run-' + field.key">
+                        <i class="fa-light fa-clock-rotate-left" aria-hidden="true"></i>
+                        {{ priorRunLabel }}
+                      </span>
+                    }
                   </div>
                   @if (field.kind === 'textarea') {
                     <lfx-textarea
@@ -102,8 +111,15 @@
                   @if (field.hint) {
                     <span class="text-xs text-gray-400">{{ field.hint }}</span>
                   }
-                  @if (field.missingPrefillHint && lfxMissing()[field.key]) {
+                  @if (field.missingPrefillHint && missingPrefillHintKeys()[field.key]) {
                     <span class="text-xs text-gray-400">{{ field.missingPrefillHint }}</span>
+                  }
+                  <!-- Blocking: submission stays disabled until the value can actually do what the field is for. -->
+                  @if (fieldFormatErrors()[field.key]; as formatError) {
+                    <span class="flex items-start gap-1.5 text-xs text-red-600" [attr.data-testid]="'mktg-agent-run-field-error-' + field.key" role="alert">
+                      <i class="fa-light fa-circle-exclamation mt-0.5 shrink-0" aria-hidden="true"></i>
+                      <span>{{ formatError }}</span>
+                    </span>
                   }
                 </div>
               </ng-template>
@@ -206,6 +222,14 @@
                 @if (feedbackNote()) {
                   <div class="px-4 py-2 border-b border-gray-100 bg-blue-50 text-xs text-blue-700" data-testid="mktg-agent-run-feedback-note">
                     Incorporates your feedback: “{{ feedbackNote() }}”
+                  </div>
+                }
+
+                <!-- A README-less run makes a materially thinner document — say so rather than let it read as the agent underperforming. -->
+                @if (readmeNote()) {
+                  <div class="flex items-start gap-2 px-4 py-2 border-b border-gray-100 bg-amber-50" data-testid="mktg-agent-run-readme-note">
+                    <i class="fa-light fa-circle-info text-amber-600 text-xs mt-0.5 shrink-0" aria-hidden="true"></i>
+                    <span class="text-xs text-amber-700">{{ readmeNote() }}</span>
                   </div>
                 }
 

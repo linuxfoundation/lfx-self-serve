@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FOUNDATION_MESSAGE_CONTRACT_ID } from '@lfx-one/shared/constants';
-import { FoundationMessageEnvelope, FoundationMessageResultResponse } from '@lfx-one/shared/interfaces';
+import { FoundationMessageEnvelope, FoundationMessageGenerationStart, FoundationMessageResultResponse } from '@lfx-one/shared/interfaces';
 import {
   buildFoundationMessageFormPayload,
   extractMktgEnvelopeCandidates,
@@ -60,20 +60,32 @@ export class FoundationMessageService {
 
   /**
    * Start a one-shot form-mode generation session (fresh session for first
-   * runs AND regenerations). Returns the session id; the caller binds it to
-   * the requesting user via the owner token.
+   * runs AND regenerations). Returns the session id — which the caller binds
+   * to the requesting user via the owner token — together with the README
+   * fetch outcome.
+   *
+   * The outcome travels back with the session because the README fetch is
+   * part of composing THIS submission: by the time the document is polled it
+   * is long settled, and a run that generated without a README must be able
+   * to say so on the result rather than leave the user with an unexplained
+   * thin document.
    */
   public async startGeneration(
     req: Request,
     answers: Record<string, string>,
     options: { feedback?: string; priorVersion?: number },
     guildAgentHandle: string
-  ): Promise<string> {
+  ): Promise<FoundationMessageGenerationStart> {
     // Best-effort README fetch — by contract it can never fail the run.
     const readme = await this.githubReadmeService.fetchReadme(req, answers['github_url'] ?? '');
+    if (!readme.outcome.fetched) {
+      logger.warning(req, 'foundation_message_generate', 'Generating without a README — the agent will mark README-dependent gaps TBD', {
+        reason: readme.outcome.skipReason,
+      });
+    }
 
     const payload = buildFoundationMessageFormPayload(answers, {
-      readmeMarkdown: readme ?? undefined,
+      readmeMarkdown: readme.readme ?? undefined,
       feedback: options.feedback,
       priorVersion: options.priorVersion,
     });
@@ -82,13 +94,15 @@ export class FoundationMessageService {
     // Guild agent_input verbatim; the handle rides only as the explicit
     // agent_id (no @mention can be prepended to a non-text input).
     if (this.structuredAgentInputEnabled) {
-      return this.guildService.createSession(req, { agentInput: payload, handle: guildAgentHandle });
+      const sessionId = await this.guildService.createSession(req, { agentInput: payload, handle: guildAgentHandle });
+      return { sessionId, readme: readme.outcome };
     }
 
     // Default: render the agent's own form-mode message text (verbatim
     // mirror of its renderFormMessage) and ride the known-good text
     // transport — @handle prepend AND explicit agent_id, belt and braces.
-    return this.guildService.createSession(req, { message: renderFoundationMessageFormText(payload), handle: guildAgentHandle });
+    const sessionId = await this.guildService.createSession(req, { message: renderFoundationMessageFormText(payload), handle: guildAgentHandle });
+    return { sessionId, readme: readme.outcome };
   }
 
   /**

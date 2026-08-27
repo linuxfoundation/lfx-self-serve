@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MktgAgentIntake, MktgIntakeField } from '../interfaces';
+import { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeField, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
 import { BRAND_KIT_FORM_PREAMBLE_LINES, BRAND_KIT_INTAKE_QUESTIONS } from './brand-kit.constants';
 import {
   FOUNDATION_MESSAGE_DERIVATIVE_CHIPS,
@@ -23,7 +23,9 @@ import {
  */
 const BRAND_KIT_FIELD_PRESENTATION: Record<(typeof BRAND_KIT_INTAKE_QUESTIONS)[number]['key'], Omit<MktgIntakeField, 'key' | 'question'>> = {
   project_name: { kind: 'text', prefill: 'project-name' },
-  github_url: { kind: 'text', prefill: 'repository-url' },
+  // Q2 asks for the repo or README URL, and an organization URL answers
+  // neither — refused here rather than accepted and quietly under-used.
+  github_url: { kind: 'text', prefill: 'repository-url', format: 'github-repo-url' },
   one_line_description: {
     kind: 'text',
     prefill: 'project-description',
@@ -117,6 +119,13 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
       kind: 'text',
       prefill: 'repository-url',
       hint: 'The README is fetched automatically from this repo and passed to the agent.',
+      // Blocking. Paul's contract keeps this answer free text for the AGENT
+      // (which tolerates a missing README) — it does not bind the LFX
+      // collection UI, and the question wording above is still verbatim.
+      // Product ruling: a URL that provably cannot yield a README is not
+      // accepted, because the user would only find out minutes later, as a
+      // thinner document.
+      format: 'github-repo-url',
     },
     // Paul's Step 1d gap areas, offered as one optional free-text field — the
     // placeholder names his five areas so form mode never has to ask.
@@ -153,6 +162,33 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
 /** Max recursion depth when scanning event payloads for envelope candidates (all Marketing OS contracts). */
 export const MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH = 16;
 
+/**
+ * Blocking field-error copy for an intake value that fails its `format` rule.
+ * Keyed by the rule and by what the value turned out to be, so the message
+ * names the ACTUAL problem instead of a generic "invalid" — an organization
+ * URL and a typo are different mistakes with different fixes.
+ */
+export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Record<GithubRepoUrlErrorReason, string>> = {
+  'github-repo-url': {
+    organization:
+      'That’s an organization URL, not a repository — there’s no repository README behind it. Enter a repository URL, e.g. https://github.com/org/repo.',
+    unrecognized: 'That doesn’t look like a GitHub repository URL. Enter one like https://github.com/org/repo so the agent can read the repository’s README.',
+  },
+};
+
+/**
+ * What the result says when the document was generated WITHOUT a README. The
+ * agent tolerates a missing README by design — it marks the gaps TBD — but a
+ * thinner document with no explanation reads as the agent underperforming.
+ * Each reason states what actually happened so the user knows whether a
+ * corrected URL and a regeneration would help.
+ */
+export const MKTG_README_SKIP_NOTES: Record<MktgReadmeSkipReason, string> = {
+  'not-a-repo-url': 'Generated without a README — the repo URL didn’t resolve to a readable repository, so the agent had no README to work from.',
+  'no-readme': 'Generated without a README — that repository has no README the agent could read.',
+  'fetch-failed': 'Generated without a README — GitHub couldn’t be reached for that repository, so the agent had no README to work from.',
+};
+
 /** Running-phase stage checklist labels, in order. */
 export const MKTG_RUN_STAGES = ['Submitting your intake', 'Agent drafting the document', 'Validating required sections'] as const;
 
@@ -166,6 +202,33 @@ export const MKTG_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-agent-run';
  * fresh run. Generous enough to keep same-day/next-day restore working.
  */
 export const MKTG_RUN_STORAGE_TTL_MS = 86400000;
+
+/**
+ * localStorage key prefix for the per-(user, project) intake answer memory;
+ * full key is `<prefix>:<userSub>:<projectUid>`. Separate from the stored-run
+ * prefix on purpose: a run record is per AGENT and carries a session
+ * capability token, while this is the cross-agent answer vocabulary a project
+ * has accumulated.
+ */
+export const MKTG_ANSWER_MEMORY_KEY_PREFIX = 'lfx-mktg-agent-answers';
+
+/**
+ * TTL for a remembered intake answer, measured from the submission that
+ * recorded it. Longer than a stored run's (it holds no capability token, and
+ * re-asking a user for the same repository URL a week later is exactly the
+ * failure this exists to prevent) but still bounded — a year-old answer is
+ * likelier to be wrong than helpful, and stale personal input should not sit
+ * at rest forever.
+ */
+export const MKTG_ANSWER_MEMORY_TTL_MS = 2592000000;
+
+/**
+ * Longest answer worth remembering. The memory exists to carry short shared
+ * identifiers (repository URL, project name) between agents, never document-
+ * sized text — a cap keeps one verbose answer from consuming the origin's
+ * storage quota and evicting the rest.
+ */
+export const MKTG_ANSWER_MEMORY_MAX_VALUE_CHARS = 2000;
 
 /** Validated-result polling cadence while a generation is in flight. */
 export const MKTG_RUN_POLL = {

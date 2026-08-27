@@ -5,7 +5,7 @@ import { isPlatformBrowser, NgClass } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, NavigationEnd, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -14,7 +14,7 @@ import { MktgAgent, MktgAgentAccent, MktgAgentTile, MktgDependencyDocument, Proj
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { distinctUntilChanged, filter, switchMap } from 'rxjs';
+import { distinctUntilChanged, filter, map, merge, Observable, of, switchMap } from 'rxjs';
 
 // Marketplace landing for the Marketing OS marketplace (approved form-first
 // design): catalog grid with client-side search, "Coming soon" tags on
@@ -92,6 +92,14 @@ export class MktgOsAgentsComponent {
     gray: 'border-l-gray-300',
   };
 
+  /**
+   * Navigation that put this component on screen. Everything AFTER it is a
+   * re-entry (or a return from an agent's run page) worth re-resolving on;
+   * this one is already covered by the stream's own first resolution, so
+   * excluding it is what keeps the first load down to a single fetch.
+   */
+  private readonly entryNavigationId: number = this.router.getCurrentNavigation()?.id ?? 0;
+
   public constructor() {
     // Stored-run badges read localStorage per project, and the project selector
     // reuses this component on a switch (it only rewrites ?project= via
@@ -108,13 +116,21 @@ export class MktgOsAgentsComponent {
           distinctUntilChanged((previous, current) => previous.uid === current.uid),
           switchMap((context) => {
             // Clear first so a project with no stored runs never keeps the
-            // previous project's badges or dependency gating.
+            // previous project's badges or dependency gating. Only on a
+            // project CHANGE — a refresh must not flash every dependent card
+            // back to locked while it re-resolves.
             this.storedVersions.set({});
             this.dependencyDocs.set({});
-            this.loadStoredVersions(context.uid);
             // switchMap drops a stale in-flight resolution on project switch,
-            // so the gating always reflects the CURRENT active project.
-            return this.dependencyService.resolveDependencies(context.uid, this.catalogDependencyIds);
+            // so the gating always reflects the CURRENT active project. The
+            // inner stream resolves once immediately (`of`, synchronous — no
+            // double fetch) and again on every refresh trigger.
+            return merge(of(context.uid), this.refreshTriggers(context.uid)).pipe(
+              switchMap(() => {
+                this.loadStoredVersions(context.uid);
+                return this.dependencyService.resolveDependencies(context.uid, this.catalogDependencyIds);
+              })
+            );
           }),
           takeUntilDestroyed()
         )
@@ -133,6 +149,30 @@ export class MktgOsAgentsComponent {
   }
 
   // === Private initializers ===
+  /**
+   * When the marketplace must re-resolve its dependency gating for the active
+   * project, beyond the resolution it does on arrival:
+   *
+   * 1. **A run completed.** Generating a Brand Kit stores the very document
+   *    its dependents are gated on — leaving the grid on the old answer would
+   *    keep the Message Foundation card locked over a document that exists.
+   * 2. **The marketplace became active again.** Returning from a run page is
+   *    the ordinary way a user reaches the grid after generating something,
+   *    and it is exactly then that the gating is most likely stale. Navigation
+   *    events cover it whether this instance is rebuilt or kept alive by the
+   *    router's reuse strategy; the navigation that mounted us is excluded, so
+   *    first load still resolves exactly once.
+   */
+  private refreshTriggers(projectUid: string): Observable<string> {
+    const runCompleted$ = this.dependencyService.documentsChanged$.pipe(filter((changedUid) => changedUid === projectUid));
+    const reentry$ = this.router.events.pipe(
+      filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+      filter((event) => event.id !== this.entryNavigationId),
+      map(() => projectUid)
+    );
+    return merge(runCompleted$, reentry$);
+  }
+
   private initTiles(): Signal<MktgAgentTile[]> {
     return computed(() => {
       const term = this.searchTerm().trim().toLowerCase();

@@ -7,6 +7,8 @@ import { provideRouter } from '@angular/router';
 import { BRAND_KIT_INTAKE_QUESTIONS } from '@lfx-one/shared/constants';
 import { BrandKitResultResponse } from '@lfx-one/shared/interfaces';
 import { BrandKitService } from '@services/brand-kit.service';
+import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -22,12 +24,16 @@ import { BrandKitFormComponent } from './brand-kit-form.component';
  * test is the component's own.
  */
 describe('BrandKitFormComponent — generation poll state machine', () => {
+  /** Satisfies the github_url format rule shared with the form-first run shell. */
+  const VALID_REPO_URL = 'https://github.com/example-org/example-repo';
   const POLL_INTERVAL_MS = 10_000;
   const MAX_ATTEMPTS = 30;
 
   let fixture: ComponentFixture<BrandKitFormComponent>;
   let generate: ReturnType<typeof vi.fn>;
   let getResult: ReturnType<typeof vi.fn>;
+  let remember: ReturnType<typeof vi.fn>;
+  let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
 
   const PENDING: BrandKitResultResponse = { status: 'pending' };
 
@@ -53,6 +59,8 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
     vi.useFakeTimers();
     generate = vi.fn(() => of({ sessionId: 'session-1', ownerToken: 'owner-1' }));
     getResult = vi.fn();
+    remember = vi.fn();
+    notifyDocumentsChanged = vi.fn();
 
     await TestBed.configureTestingModule({
       imports: [BrandKitFormComponent],
@@ -62,6 +70,10 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
         { provide: BrandKitService, useValue: { generate, getResult } },
         // The run's project scope: the uid the BFF persists the ready document under.
         { provide: ProjectContextService, useValue: { activeContextUid: () => 'proj-uid-1' } },
+        // Cross-agent answer memory + the marketplace's staleness signal:
+        // both are written by a submission, neither is exercised here.
+        { provide: MktgAnswerMemoryService, useValue: { remember, load: () => ({}) } },
+        { provide: MktgDependencyService, useValue: { notifyDocumentsChanged } },
       ],
     }).compileComponents();
 
@@ -77,7 +89,10 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
   function submitGenerationForm(): void {
     const form = (fixture.componentInstance as unknown as { intakeForm: { get(key: string): { setValue(v: string): void } | null } }).intakeForm;
     for (const question of BRAND_KIT_INTAKE_QUESTIONS) {
-      form.get(question.key)?.setValue('An answer');
+      // github_url carries a blocking format rule (it must resolve to a
+      // repository), so a placeholder there would leave the form invalid and
+      // the submit button inert.
+      form.get(question.key)?.setValue(question.key === 'github_url' ? VALID_REPO_URL : 'An answer');
     }
     fixture.detectChanges();
     const submit = fixture.nativeElement.querySelector('button[type="submit"]') as HTMLButtonElement | null;
@@ -114,6 +129,85 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
 
     expect(getResult).toHaveBeenNthCalledWith(1, 'session-1', 'owner-1', 'proj-uid-1');
     expect(getResult).toHaveBeenNthCalledWith(2, 'session-1', 'owner-1', 'proj-uid-1');
+  });
+
+  /**
+   * Both surfaces that collect a repo URL enforce the same rule, from the same
+   * shared intake definition — a URL refused on the run shell must not sail
+   * through here. Blocking is a UI decision: the agent's own contract still
+   * takes free text and tolerates a missing README.
+   */
+  describe('github_url format rule — blocking, shared with the run shell', () => {
+    const fillAll = (githubUrl: string): void => {
+      const form = (fixture.componentInstance as unknown as { intakeForm: { get(key: string): { setValue(v: string): void } | null } }).intakeForm;
+      for (const question of BRAND_KIT_INTAKE_QUESTIONS) {
+        form.get(question.key)?.setValue(question.key === 'github_url' ? githubUrl : 'An answer');
+      }
+      fixture.detectChanges();
+    };
+    const submitButton = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('button[type="submit"]');
+    const fieldError = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="brand-kit-form-field-error-github_url"]');
+
+    it('disables submit and names the problem for an organization URL', () => {
+      fillAll('https://github.com/aaif');
+
+      expect(fieldError()?.textContent).toContain('organization URL');
+      expect(submitButton()?.disabled).toBe(true);
+
+      submitButton()?.click();
+      expect(generate).not.toHaveBeenCalled();
+    });
+
+    it('disables submit for a URL that is not a GitHub repository at all', () => {
+      fillAll('https://gitlab.com/example-org/example-repo');
+
+      expect(fieldError()?.textContent).toContain('doesn’t look like a GitHub repository URL');
+      expect(submitButton()?.disabled).toBe(true);
+    });
+
+    it('enables submit once a real repository URL is entered', () => {
+      fillAll('https://github.com/aaif');
+      expect(submitButton()?.disabled).toBe(true);
+
+      fillAll(VALID_REPO_URL);
+
+      expect(fieldError()).toBeNull();
+      expect(submitButton()?.disabled).toBe(false);
+      submitButton()?.click();
+      expect(generate).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves a blank answer to the required rule rather than reporting a format problem', () => {
+      fillAll('');
+
+      expect(fieldError()).toBeNull();
+      expect(submitButton()?.disabled).toBe(true);
+    });
+  });
+
+  /**
+   * The Brand Kit is the first agent most users run, so its answers are the
+   * ones every later intake would otherwise re-ask for — and its stored
+   * document is what unlocks the agents that depend on it.
+   */
+  it('remembers the submitted answers for the project so a later agent’s intake can reuse them', () => {
+    getResult.mockReturnValue(of(PENDING));
+
+    submitGenerationForm();
+
+    expect(remember).toHaveBeenCalledWith('proj-uid-1', 'brand-kit', expect.objectContaining({ github_url: VALID_REPO_URL, project_name: 'An answer' }));
+  });
+
+  it('announces the stored document once it is PERSISTED, so the marketplace stops showing dependents as locked', () => {
+    getResult.mockReturnValueOnce(of(PENDING)).mockReturnValueOnce(of(READY));
+
+    submitGenerationForm();
+    // Still pending — nothing is stored yet, so nothing to announce.
+    expect(notifyDocumentsChanged).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(POLL_INTERVAL_MS);
+
+    expect(notifyDocumentsChanged).toHaveBeenCalledExactlyOnceWith('proj-uid-1');
   });
 
   it('fails with a timeout message at the 30-attempt budget and never polls past it', () => {
@@ -208,11 +302,15 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
  * BrandKitService is mocked; the polling loop under test is the component's own.
  */
 describe('BrandKitFormComponent — persistence retry polling', () => {
+  /** Satisfies the github_url format rule shared with the form-first run shell. */
+  const VALID_REPO_URL = 'https://github.com/example-org/example-repo';
   const POLL_INTERVAL_MS = 10_000;
 
   let fixture: ComponentFixture<BrandKitFormComponent>;
   let generate: ReturnType<typeof vi.fn>;
   let getResult: ReturnType<typeof vi.fn>;
+  let remember: ReturnType<typeof vi.fn>;
+  let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
 
   const READY_WITHOUT_RECEIPT: BrandKitResultResponse = {
     status: 'ready',
@@ -238,6 +336,8 @@ describe('BrandKitFormComponent — persistence retry polling', () => {
     vi.useFakeTimers();
     generate = vi.fn(() => of({ sessionId: 'session-1', ownerToken: 'owner-1' }));
     getResult = vi.fn();
+    remember = vi.fn();
+    notifyDocumentsChanged = vi.fn();
 
     await TestBed.configureTestingModule({
       imports: [BrandKitFormComponent],
@@ -247,6 +347,10 @@ describe('BrandKitFormComponent — persistence retry polling', () => {
         { provide: BrandKitService, useValue: { generate, getResult } },
         // The run's project scope: the uid the BFF persists the ready document under.
         { provide: ProjectContextService, useValue: { activeContextUid: () => 'proj-uid-1' } },
+        // Cross-agent answer memory + the marketplace's staleness signal:
+        // both are written by a submission, neither is exercised here.
+        { provide: MktgAnswerMemoryService, useValue: { remember, load: () => ({}) } },
+        { provide: MktgDependencyService, useValue: { notifyDocumentsChanged } },
       ],
     }).compileComponents();
 
@@ -262,7 +366,10 @@ describe('BrandKitFormComponent — persistence retry polling', () => {
   function submitForm(): void {
     const form = (fixture.componentInstance as unknown as { intakeForm: { get(key: string): { setValue(v: string): void } | null } }).intakeForm;
     for (const question of BRAND_KIT_INTAKE_QUESTIONS) {
-      form.get(question.key)?.setValue('An answer');
+      // github_url carries a blocking format rule (it must resolve to a
+      // repository), so a placeholder there would leave the form invalid and
+      // the submit button inert.
+      form.get(question.key)?.setValue(question.key === 'github_url' ? VALID_REPO_URL : 'An answer');
     }
     fixture.detectChanges();
     const submit = fixture.nativeElement.querySelector('button[type="submit"]') as HTMLButtonElement | null;

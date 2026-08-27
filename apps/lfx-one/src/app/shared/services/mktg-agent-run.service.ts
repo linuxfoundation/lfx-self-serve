@@ -106,14 +106,14 @@ export class MktgAgentRunService {
     }
 
     return attempt$.pipe(
-      switchMap(({ session, priorVersion }) =>
+      switchMap((attempt) =>
         concat(
           of<MktgGenerateProgress>({ type: 'submitted' }),
-          this.pollForDocument(request.intake.endpoints.result, session, priorVersion, request.projectUid).pipe(
+          this.pollForDocument(request.intake.endpoints.result, attempt.session, attempt.priorVersion, request.projectUid).pipe(
             switchMap((result) =>
               concat(
-                of<MktgGenerateProgress>({ type: 'document', run: this.appendVersion(request, session, result) }),
-                this.retryPersistence(request, session, result)
+                of<MktgGenerateProgress>({ type: 'document', run: this.appendVersion(request, attempt, result) }),
+                this.retryPersistence(request, attempt.session, result)
               )
             )
           )
@@ -169,9 +169,16 @@ export class MktgAgentRunService {
    */
   private startRun(request: MktgGenerateRequest): Observable<MktgRunAttempt> {
     const body: MktgRunGenerateBody = { answers: request.answers };
-    return this.http
-      .post<MktgRunSessionResponse>(request.intake.endpoints.generate, body)
-      .pipe(map((response) => ({ session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken }, priorVersion: 0 })));
+    return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
+      map((response) => ({
+        session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken },
+        priorVersion: 0,
+        // The BFF reports what its server-side README fetch produced for THIS
+        // submission; it travels with the attempt so the version it generates
+        // can say it was written without one.
+        readme: response.readme,
+      }))
+    );
   }
 
   /**
@@ -194,9 +201,15 @@ export class MktgAgentRunService {
     if (request.feedback?.trim()) {
       body.feedback = request.feedback.trim();
     }
-    return this.http
-      .post<MktgRunSessionResponse>(request.intake.endpoints.generate, body)
-      .pipe(map((response) => ({ session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken }, priorVersion })));
+    return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
+      map((response) => ({
+        session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken },
+        priorVersion,
+        // Every resubmit re-fetches the README, so this version's outcome is
+        // the fresh one — a corrected URL must not inherit the old verdict.
+        readme: response.readme,
+      }))
+    );
   }
 
   /**
@@ -329,7 +342,7 @@ export class MktgAgentRunService {
   }
 
   /** Appends the validated document as the next version and persists the run. */
-  private appendVersion(request: MktgGenerateRequest, session: MktgSessionInfo, result: MktgRunResultResponse): MktgStoredAgentRun {
+  private appendVersion(request: MktgGenerateRequest, attempt: MktgRunAttempt, result: MktgRunResultResponse): MktgStoredAgentRun {
     const stored = this.loadRun(request.projectUid, request.agentId);
     const lastVersion = stored?.versions.length ? stored.versions[stored.versions.length - 1].version : 0;
     const version: MktgRunVersion = {
@@ -339,13 +352,17 @@ export class MktgAgentRunService {
       document: result.documentMarkdown ?? '',
       feedback: request.feedback,
       derivatives: result.derivatives,
+      // Recorded per version: the submission that produced this document is
+      // the one whose README fetch matters, and it is what the result note
+      // and a restored run both read.
+      readme: attempt.readme,
       createdAt: new Date().toISOString(),
     };
     const run: MktgStoredAgentRun = {
       agentId: request.agentId,
       projectUid: request.projectUid,
-      sessionId: session.sessionId,
-      ownerToken: session.ownerToken,
+      sessionId: attempt.session.sessionId,
+      ownerToken: attempt.session.ownerToken,
       answers: { ...request.answers },
       versions: [...(stored?.versions ?? []), version],
       savedAt: new Date().toISOString(),
