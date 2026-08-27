@@ -195,7 +195,7 @@ changing a value here rather than by shipping a revert.
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`          | Serves campaign job status from campaign-service; see the accepted values below                                                     | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`        | Persists the generated brief in campaign-service instead of only in the browser tab                                                 | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`        | Creates campaigns through campaign-service instead of the per-platform Express services — enable only after STATUS_TOGGLE converges | No       | _unset_  |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`        | Creates campaigns through campaign-service instead of the per-platform Express services — deploy only after STATUS_TOGGLE converges | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`    | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                | No       | `"true"` |
 
@@ -206,13 +206,18 @@ off skips the id-shape check entirely and answers a terminal `not_found` for a c
 running and spending. On rollback, turn `..._CREATE` off first and keep `..._JOBS` on until
 outstanding UUID jobs have drained.
 
-The cutover ships as four flags, one at a time, each converging before the next. The first three
-have landed; `..._CREATE` is the remaining step:
+The cutover is four flags, and they must reach the cluster ONE AT A TIME, each converging before
+the next:
 
 ```text
 JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
- ✅        ✅          this PR          next
 ```
+
+**This is a deploy constraint, not a merge one.** All four now default to `"true"` in this chart,
+and nothing in CI staggers them — a single rollout of this chart turns them all on at once, which
+is the failure mode each ordering note below exists to prevent. Stage it with per-release value
+overrides: deploy with the not-yet-due flags overridden `""`, let each converge, then drop its
+override.
 
 They could not share a rollout. `createCampaigns` gates on all three together, so during a mixed
 deployment a brief save can land on a BRIEFS-off pod and answer `enabled: false` with no persisted
@@ -345,6 +350,20 @@ all.
 - JOBS, because a campaign-service create returns a job the client must then POLL.
 
 ### Rollout ordering (this order matters)
+
+The chart defaults all four to `"true"`, so a single `helm upgrade` from these values turns them
+on together — which is exactly what the ordering below forbids. Stage the rollout by overriding
+the not-yet-due flags off for each release, e.g.
+
+```bash
+# release 1 — JOBS only
+helm upgrade ... \
+  --set environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS.value="" \
+  --set environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE.value="" \
+  --set environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE.value=""
+```
+
+then drop one override per release, confirming every pod has rolled before the next.
 
 1. Turn **JOBS** on first and leave it on.
 2. Then **BRIEFS**.

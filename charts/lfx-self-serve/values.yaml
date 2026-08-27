@@ -470,15 +470,23 @@ environment:
   # `POST /projects/{slug}/connection-{provider}` (singleton per provider — a second POST 409s).
   # Where neither a project row nor the fallback applies, the failure surfaces per-campaign rather
   # than at startup, so nothing warns you at deploy time.
-  # Order: enable this ONLY after LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE below has been on
-  # and its rollout has fully converged. Turning both on in one rollout opens a window where a
-  # new pod mints a UUID campaign while an old pod, still without the toggle flag, refuses that
-  # campaign's pause/resume at campaign.controller.ts:1156. Requests are not sticky and this
-  # chart runs replicaCount: 3 with maxSurge: "100%", so during the overlap pause — the primary
+  # The LAST cutover step. This chart now ships every flag on, but they must not all reach the
+  # cluster in ONE rollout — the ordering is a DEPLOY constraint, not a merge one, and nothing in
+  # CI enforces it.
+  #
+  # STATUS_TOGGLE below must be on and CONVERGED before this goes on. Otherwise a new pod mints a
+  # UUID campaign while an old pod, still without the toggle flag, refuses that campaign's
+  # pause/resume at campaign.controller.ts:1156. Requests are not sticky and this chart runs
+  # replicaCount: 3 with maxSurge: "100%", so during such an overlap pause — the primary
   # cost-control lever — can intermittently 400 on a campaign created moments earlier.
-  # Sequencing costs one extra deploy and closes the window outright.
+  #
+  # To deploy safely from this chart, roll it out with this value overridden OFF, let
+  # STATUS_TOGGLE converge, then remove the override. See "Rollout ordering" in README.md.
+  #
+  # On rollback this comes off FIRST, before JOBS: turn it off and let outstanding UUID jobs drain
+  # while JOBS is still on to answer their polls.
   LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE:
-    value:
+    value: "true"
 
   # Gates whether a Demand Gen Google campaign may be requested at all (LFXV2-3257).
   #
