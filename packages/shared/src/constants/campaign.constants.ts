@@ -127,8 +127,11 @@ export const CAMPAIGN_PACING_THRESHOLDS = {
  * Units, since the three fields are not in the same kind of quantity:
  *
  *   lowCtrPct                — PERCENTAGE POINTS, not a ratio. `0.3` means 0.3%, and the rule
- *                              fires when a campaign's `ctr` is below it. The upstream `ctr`
- *                              fields are already percentages, so no conversion is applied.
+ *                              fires when a campaign's `ctr` is below it. Each service builds
+ *                              that `ctr` itself as `(clicks / impressions) * 100` — it is not
+ *                              read from the platform — so the scale is set locally and a
+ *                              builder switching to the raw ratio would silence every one of
+ *                              these rules rather than error.
  *   clicksWithoutConversions — a COUNT of clicks. The rule fires above it, with zero
  *                              conversions.
  *   minImpressions           — a COUNT of impressions. Consumers guard with `impressions >
