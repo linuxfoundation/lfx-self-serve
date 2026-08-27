@@ -643,11 +643,24 @@ export class ImplementationTabComponent implements OnInit {
    * counts exactly as the dispatched payload excludes them — counting the raw signals would block
    * a form whose actual request is within bounds.
    */
-
   protected readonly microsoftBoundsValid = computed<boolean>(() => {
     const keywords = this.microsoftEffectiveKeywords();
     if (keywords.length > MICROSOFT_MAX_KEYWORDS) return false;
     if (keywords.some((k) => [...k.text].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH)) return false;
+    // MATCH TYPE, for the same reason the caps above are here. The add handler and the `<select>`
+    // can only produce the three canonical values, but `applyDraft` replays a draft VERBATIM by
+    // design, so a draft can carry a value neither can produce.
+    //
+    // NOT a case problem: `isMicrosoftMatchType` folds case and trims, so `EXACT` and ` exact `
+    // are both accepted here exactly as they are upstream. What it rejects is a value outside
+    // {exact, phrase, broad} entirely — Google's `BROAD_MATCH` is the realistic one, since the
+    // brief's keyword stage is shared with Google Ads and a draft written from a Google-shaped
+    // brief can hold it.
+    //
+    // The BFF filters on the same predicate and refuses the WHOLE microsoftConfig when a keyword
+    // fails it, so without this check the form reported the campaign as ready and the create came
+    // back as a generic unconfigured platform. Checking it here makes the block visible instead.
+    if (keywords.some((k) => !isMicrosoftMatchType(k.matchType))) return false;
     return this.microsoftEffectiveGeoTargets().length <= MICROSOFT_MAX_GEO_TARGETS;
   });
 

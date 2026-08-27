@@ -1245,15 +1245,6 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
   });
 
   /**
-   * The Microsoft geo box must NOT apply Meta's assigned-country allowlist. That list is derived
-   * from this app's own COUNTRIES and genuinely diverges from the table Microsoft validates
-   * against — `AN` is in Microsoft's and not in ours. Dropping it silently meant the request fell
-   * back to the event country and targeted a DIFFERENT market than the operator typed.
-   *
-   * Membership stays campaign-service's call: it checks Microsoft's own table and fails the create
-   * before anything is created. This asserts shape-only handling, not that AN is targetable.
-   */
-  /**
    * Brief-generated keywords carry the model's RAW `match_type` (both streams copy it through), so
    * `EXACT` reaches the seed. It must be canonicalised: the `<select>` offers only PascalCase, so a
    * raw value rendered the dropdown with NOTHING selected on a keyword that would dispatch fine.
@@ -1280,6 +1271,15 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     ]);
   });
 
+  /**
+   * The Microsoft geo box must NOT apply Meta's assigned-country allowlist. That list is derived
+   * from this app's own COUNTRIES and genuinely diverges from the table Microsoft validates
+   * against — `AN` is in Microsoft's and not in ours. Dropping it silently meant the request fell
+   * back to the event country and targeted a DIFFERENT market than the operator typed.
+   *
+   * Membership stays campaign-service's call: it checks Microsoft's own table and fails the create
+   * before anything is created. This asserts shape-only handling, not that AN is targetable.
+   */
   it('keeps a geo code Meta excludes but Microsoft supports', async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftGeoTargets'].set([]);
@@ -1323,6 +1323,56 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
 
     expect(c['microsoftBoundsValid']()).toBe(false);
     expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The match-type half of the same backstop, and it needs its own test: the over-cap case above
+   * returns at the LENGTH check, so it never evaluates this branch. Deleting the match-type guard
+   * left the whole app suite green — an unreached guard is not coverage.
+   *
+   * `BROAD_MATCH` rather than `EXACT`: `isMicrosoftMatchType` folds case, so `EXACT` is VALID and
+   * a test built on it would assert the opposite of the contract. Google's SCREAMING_CASE
+   * vocabulary is the realistic source, since the brief's keyword stage is shared with Google Ads
+   * and a draft written from a Google-shaped brief can carry it.
+   *
+   * The list is within every cap, so nothing else can be what fails.
+   */
+  it('blocks submit when a restored draft carries a match type Microsoft has no name for', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftBudgetUsd'].set(100);
+    c['microsoftGeoTargets'].set(['US']);
+    c['microsoftKeywords'].set([
+      { text: 'kubernetes', matchType: 'Exact' },
+      { text: 'service mesh', matchType: 'BROAD_MATCH' },
+    ]);
+    await fixture.whenStable();
+
+    expect(c['microsoftBoundsValid']()).toBe(false);
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The same draft with the match type CORRECTED submits, so the test above cannot pass for an
+   * unrelated reason — without this, a form broken for any other cause would look like coverage.
+   */
+  it('allows submit once that draft carries a match type Microsoft accepts', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftBudgetUsd'].set(100);
+    c['microsoftGeoTargets'].set(['US']);
+    c['microsoftKeywords'].set([
+      { text: 'kubernetes', matchType: 'Exact' },
+      // Upper case on purpose: it is ACCEPTED, because the predicate folds case.
+      { text: 'service mesh', matchType: 'BROAD' },
+    ]);
+    await fixture.whenStable();
+
+    expect(c['microsoftBoundsValid']()).toBe(true);
+    // canSubmit too, not just the bounds: without it an unrelated prerequisite being false would
+    // leave BOTH cases green, and the pair would no longer prove the match type was what blocked
+    // submission in the negative case above.
+    expect(c['canSubmit']()).toBe(true);
   });
 
   /**
