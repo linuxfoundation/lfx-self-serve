@@ -1731,8 +1731,13 @@ export interface CampaignListResult {
    * capability refusal saying Demand Gen is not available at all. The first message walks the
    * user into the second.
    *
-   * Defaults to `false` on every error and pre-load path. Withholding a control for one request
-   * is cheap; offering one that cannot succeed is not.
+   * Always present on a successful read, and never a fallback: an error produces no
+   * `CampaignListResult` at all, so there is no arm of this type that means "we could not tell".
+   * The client models that separately — it holds the capability as `boolean | null` and uses
+   * `null` for unanswered or failed, because a false negative there would clear a user's saved
+   * Demand Gen selection rather than merely withhold a control. Do not read this field's type as
+   * licence to treat `false` as a safe default for "unknown"; `false` is a server statement that
+   * the capability is off.
    */
   demandGenEnabled: boolean;
 }
