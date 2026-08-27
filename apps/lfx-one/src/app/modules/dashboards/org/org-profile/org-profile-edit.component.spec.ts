@@ -304,4 +304,34 @@ describe('OrgProfileEditComponent — logo upload', () => {
     fixture.componentInstance['onCancel']();
     expect(cancelled).toEqual([undefined]);
   });
+
+  it('renders the Upload Logo button, the hidden file input and the logo image', () => {
+    fixture.detectChanges();
+    const root: HTMLElement = fixture.nativeElement;
+
+    expect(root.querySelector('[data-testid="org-profile-edit-upload-logo-button"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="org-profile-edit-logo-input"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="org-profile-edit-logo-image"]')).not.toBeNull();
+  });
+
+  it('does not reopen the file picker while an upload is already in flight', async () => {
+    fixture.detectChanges();
+    const clickSpy = vi.spyOn(fixture.componentInstance['logoInput']()!.nativeElement, 'click');
+
+    fixture.componentInstance['onLogoFileSelected']({
+      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+    } as unknown as Event);
+    await fixture.whenStable();
+    clickSpy.mockClear();
+
+    // busy() is true while uploadLogo is pending, so the trigger must be inert.
+    fixture.componentInstance['triggerLogoUpload']();
+    expect(clickSpy).not.toHaveBeenCalled();
+
+    uploadLogo$.next({ ...record, logoUrl: 'https://cdn.example.com/logo.png?v=3' });
+    await fixture.whenStable();
+
+    fixture.componentInstance['triggerLogoUpload']();
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+  });
 });

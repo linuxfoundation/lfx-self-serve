@@ -162,9 +162,9 @@ export class OrgProfileEditComponent implements OnInit {
 
   /** Open the OS file picker via the hidden input — keeps the trigger a real, keyboard-operable `<button>`. */
   protected triggerLogoUpload(): void {
-    // Defense-in-depth: template already hides the Upload Logo button and the hidden file input
-    // when the flag is off (PR #1583). Guarding here too closes the imperative call path — a
-    // synthetic click or `@ViewChild` grabbed from a leftover reference cannot bypass the gate.
+    // Re-entrancy guard, not an access gate: a change event queued from a picker opened before
+    // Save can otherwise start a second upload mid-flight. Authorization lives upstream — the edit
+    // view is only instantiated when OrgProfileComponent.canEdit() passes.
     if (this.busy()) return;
     this.logoInput()?.nativeElement.click();
   }

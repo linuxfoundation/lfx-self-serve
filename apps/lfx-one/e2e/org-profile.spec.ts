@@ -16,8 +16,6 @@
  * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  */
 
-// Deep-imported, not from the barrel — the barrel pulls in Angular-dependent modules that fail to
-// load outside the app (same trap as org-roi.helper.ts).
 import type { CascadingRoleGrant } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 

@@ -35,10 +35,10 @@
         (drop)="onLogoDrop($event)"
         data-testid="org-profile-edit-logo-dropzone">
         @if (logoUrl()) {
-          <img [src]="logoUrl()" [alt]="record().name + ' logo'" class="h-20 w-20 rounded-md object-contain" data-testid="org-profile-edit-logo-image" />
+          <img [src]="logoUrl()" [alt]="record().name + ' logo'" class="h-full w-full rounded-md object-contain" data-testid="org-profile-edit-logo-image" />
         } @else {
           <div
-            class="flex h-20 w-20 items-center justify-center rounded-md bg-blue-600 text-xl font-semibold text-white"
+            class="flex h-full w-full items-center justify-center rounded-md bg-blue-600 text-xl font-semibold text-white"
             data-testid="org-profile-edit-logo-initials">
             {{ (record().name | initials) || 'OR' }}
           </div>
