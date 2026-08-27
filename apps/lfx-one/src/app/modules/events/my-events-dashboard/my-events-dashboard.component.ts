@@ -8,7 +8,9 @@ import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { MY_EVENT_STATUS_OPTIONS, VISA_REQUEST_STATUS_OPTIONS } from '@lfx-one/shared/constants';
 import { EventTabId, FilterOption, FilterPillOption } from '@lfx-one/shared/interfaces';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MessageService } from 'primeng/api';
+import { ToastModule } from 'primeng/toast';
 import { Tooltip } from 'primeng/tooltip';
 import { catchError, defer, finalize, map, of } from 'rxjs';
 import { DiscoverEventsButtonComponent } from '../components/discover-events-button/discover-events-button.component';
@@ -16,9 +18,22 @@ import { EventsTopBarComponent } from '../components/events-top-bar/events-top-b
 import { EventsListComponent } from './components/events-list/events-list.component';
 import { UserService } from '@app/shared/services/user.service';
 
+/** Dedicated toast key so the custom support-CTA template renders only for this component's Salesforce-ID error toast. */
+const SALESFORCE_ERROR_TOAST_KEY = 'my-events-salesforce-error';
+
 @Component({
   selector: 'lfx-my-events-dashboard',
-  imports: [ButtonComponent, CardComponent, CardTabsBarComponent, DiscoverEventsButtonComponent, EventsTopBarComponent, EventsListComponent, Tooltip],
+  imports: [
+    ButtonComponent,
+    CardComponent,
+    CardTabsBarComponent,
+    DiscoverEventsButtonComponent,
+    EventsTopBarComponent,
+    EventsListComponent,
+    Tooltip,
+    ToastModule,
+    OpenIntercomDirective,
+  ],
   templateUrl: './my-events-dashboard.component.html',
 })
 export class MyEventsDashboardComponent {
@@ -63,6 +78,7 @@ export class MyEventsDashboardComponent {
   protected readonly upcomingCount = computed(() => this.eventsListRef()?.tabCounts().upcoming ?? 0);
 
   protected readonly isSalesforceIdLoading = signal(false);
+  protected readonly salesforceErrorToastKey = SALESFORCE_ERROR_TOAST_KEY;
   protected readonly isCreateEnabled: Signal<boolean> = this.initIsCreateEnabled();
 
   protected onFoundationChange(value: string | null): void {
@@ -119,9 +135,12 @@ export class MyEventsDashboardComponent {
           }
 
           this.messageService.add({
+            key: SALESFORCE_ERROR_TOAST_KEY,
             severity: 'error',
             summary: 'Error',
             detail: 'Your account is missing the required Salesforce ID. Please contact support.',
+            data: { showSupport: true },
+            closable: true,
           });
           return false;
         }),
