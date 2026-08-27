@@ -1,7 +1,42 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Mirrors committee-engagement.service.spec.ts: the
+// `@lfx-one/shared/utils` barrel transitively pulls in Angular (form.utils.ts, meeting.utils.ts,
+// vote.utils.ts import @angular/forms / @angular/common/http), which this Node-environment suite
+// can't load — so it needs a stub. Unlike `@lfx-one/shared/enums` (imported at runtime by the
+// helper under test, committee-engagement-mock.helper.ts, not by this spec file directly), which
+// resolves cleanly through the package's built `exports` map and so needs no stub — under `yarn
+// test`, where turbo.json's `test.dependsOn: ["^build"]` guarantees `packages/shared/dist` exists
+// first; a bare `yarn test:server` on a clean tree bypasses turbo and needs `yarn build` run first
+// too. The predicate is deep-imported from its real implementation (not hand-copied) so a decision-
+// table change there fails this suite too (GH-1848); its own boundary behavior is exhaustively
+// covered in packages/shared/src/utils/committee-engagement-classifier.utils.spec.ts.
+vi.mock('@lfx-one/shared/utils', async () => {
+  const actual = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/committee-engagement-classifier.utils')>(
+    '../../../../../packages/shared/src/utils/committee-engagement-classifier.utils'
+  );
+  // A plain `{ isLfStaffNonVotingSeat }` object would make any *other* barrel export the helper
+  // under test starts using resolve to `undefined` — surfacing as an opaque "X is not a function"
+  // wherever it's called, far from this mock. The Proxy throws immediately, at the missing
+  // property, naming this file as the place to add the new export.
+  return new Proxy(
+    { isLfStaffNonVotingSeat: actual.isLfStaffNonVotingSeat },
+    {
+      get(target, prop, receiver) {
+        // `'then'` is probed by JS's own Promise-resolution algorithm (this factory is async, and
+        // its return value gets duck-typed) — answering `undefined` here says "not a thenable"
+        // without tripping the guard below.
+        if (prop === 'then' || prop in target) return Reflect.get(target, prop, receiver);
+        throw new Error(
+          `committee-engagement-mock.helper.spec.ts's '@lfx-one/shared/utils' mock doesn't stub '${String(prop)}' — add it to the mock in this file (the real barrel can't load in this Node-environment suite; see the comment above).`
+        );
+      },
+    }
+  );
+});
 
 import { generateMockEngagementRows } from './committee-engagement-mock.helper';
 
@@ -195,6 +230,18 @@ describe('generateMockEngagementRows', () => {
       expect(rows.some((r) => r.MEMBER_VOTING_STATUS === 'Emeritus')).toBe(true);
     });
 
+    it('never promotes a real LF Staff member with a real None voting status to the fabricated Emeritus fallback, same as Observer (GH-1848)', () => {
+      // Regression: a real 'None' voting status (the norm on a committee without voting) is just as
+      // load-bearing for the exclusion as 'Observer' since GH-1848 broadened isLfStaffNonVotingSeat.
+      const roster = [member('m0', { role: { name: 'LF Staff' } as never, voting: { status: 'None' } as never }), ...ROSTER.slice(1)];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      const m0 = rows.find((r) => r.MEMBER_USER_ID === 'm0');
+      expect(m0?.MEMBER_ROLE).toBe('LF Staff');
+      expect(m0?.MEMBER_VOTING_STATUS).not.toBe('Emeritus');
+      // Someone else on the roster still demonstrates the Emeritus scenario.
+      expect(rows.some((r) => r.MEMBER_VOTING_STATUS === 'Emeritus')).toBe(true);
+    });
+
     it('never assigns the Orlin case to a real Emeritus member, even if they are the most-recently-joined real member — a different eligible member takes it instead', () => {
       // Regression: buildAttendanceProfile checks isEmeritus before the Orlin slot, so an
       // Emeritus candidate would silently absorb the role without ever rendering forced counts —
@@ -251,7 +298,30 @@ describe('generateMockEngagementRows', () => {
       expect(m1).toMatchObject({ INVITED_COUNT_30D: 5, ATTENDED_COUNT_30D: 5, MEMBER_JOINED_AT: secondMostRecentJoin });
     });
 
-    it('DOES assign the Orlin case to a real LF Staff + Voting Rep member — only Observer-status staff seats are excluded (LFXV2-3101 follow-up)', () => {
+    it('never assigns the Orlin case to a real LF Staff member with a real None voting status, same as Observer (GH-1848)', () => {
+      const mostRecentJoin = new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString();
+      const secondMostRecentJoin = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString();
+      const roster = [
+        member('m0', { role: { name: 'LF Staff' } as never, voting: { status: 'None' } as never, created_at: mostRecentJoin }),
+        member('m1', { voting: { status: 'Voting Rep' } as never, created_at: secondMostRecentJoin }),
+        ...ROSTER.slice(2),
+      ];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      const m0 = rows.find((r) => r.MEMBER_USER_ID === 'm0');
+      const m1 = rows.find((r) => r.MEMBER_USER_ID === 'm1');
+      expect(m0?.MEMBER_ROLE).toBe('LF Staff');
+      expect(m0).not.toMatchObject({
+        INVITED_COUNT_30D: 5,
+        ATTENDED_COUNT_30D: 5,
+        INVITED_COUNT_90D: 5,
+        ATTENDED_COUNT_90D: 5,
+        INVITED_COUNT_YTD: 5,
+        ATTENDED_COUNT_YTD: 5,
+      });
+      expect(m1).toMatchObject({ INVITED_COUNT_30D: 5, ATTENDED_COUNT_30D: 5, MEMBER_JOINED_AT: secondMostRecentJoin });
+    });
+
+    it('DOES assign the Orlin case to a real LF Staff + Voting Rep member — only non-voting staff seats are excluded (LFXV2-3101 follow-up)', () => {
       // A real Voting Rep who happens to be LF Staff never classifies 'LF Staff' under the
       // narrowed rule, so they're eligible for the Orlin slot exactly like any other real member.
       const mostRecentJoin = new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString();
@@ -306,7 +376,27 @@ describe('generateMockEngagementRows', () => {
       });
     });
 
-    it('DOES assign a reserved demo pattern to a real LF Staff + Voting Rep member at slot 2 — only Observer-status staff seats are excluded (LFXV2-3101 follow-up)', () => {
+    it('never assigns a reserved Inactive/Low/Medium demo pattern to a real LF Staff member with a real None voting status, same as Observer (GH-1848)', () => {
+      const roster = [ROSTER[0], ROSTER[1], member('m2', { role: { name: 'LF Staff' } as never, voting: { status: 'None' } as never }), ...ROSTER.slice(3)];
+      const rows = generateMockEngagementRows('committee-1', roster);
+      const m2 = rows.find((r) => r.MEMBER_USER_ID === 'm2');
+      const m3 = rows.find((r) => r.MEMBER_USER_ID === 'm3');
+      expect(m2?.MEMBER_ROLE).toBe('LF Staff');
+      for (const suffix of ['30D', '90D', 'YTD'] as const) {
+        expect(m3?.[`INVITED_COUNT_${suffix}`]).toBeGreaterThan(0);
+        expect(m3?.[`ATTENDED_COUNT_${suffix}`]).toBe(0);
+      }
+      expect(m2).not.toMatchObject({
+        INVITED_COUNT_30D: m3?.INVITED_COUNT_30D,
+        ATTENDED_COUNT_30D: 0,
+        INVITED_COUNT_90D: m3?.INVITED_COUNT_90D,
+        ATTENDED_COUNT_90D: 0,
+        INVITED_COUNT_YTD: m3?.INVITED_COUNT_YTD,
+        ATTENDED_COUNT_YTD: 0,
+      });
+    });
+
+    it('DOES assign a reserved demo pattern to a real LF Staff + Voting Rep member at slot 2 — only non-voting staff seats are excluded (LFXV2-3101 follow-up)', () => {
       const roster = [
         ROSTER[0],
         ROSTER[1],
