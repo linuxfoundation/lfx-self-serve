@@ -32,6 +32,7 @@ import { OrgLensGroupsService } from '@services/org-lens-groups.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 
 import { GroupSeatHoldersDrawerComponent } from './components/group-seat-holders-drawer/group-seat-holders-drawer.component';
 
@@ -43,6 +44,7 @@ import { GroupSeatHoldersDrawerComponent } from './components/group-seat-holders
     GroupSeatHoldersDrawerComponent,
     InputTextComponent,
     NgTemplateOutlet,
+    OpenIntercomDirective,
     PersonDetailDrawerComponent,
     RouterLink,
     SelectComponent,
