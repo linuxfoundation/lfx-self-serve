@@ -203,8 +203,11 @@ describe('RewardsService', () => {
   });
 
   it.each([
+    ['a null promotion ID', { ...promotionPage.Data![0], PromotionID: null }],
+    ['a null category', { ...promotionPage.Data![0], Category: null }],
     ['a numeric description', { ...promotionPage.Data![0], Description: 42 }],
     ['a null product', { ...promotionPage.Data![0], Products: [null] }],
+    ['a null content type', { ...promotionPage.Data![0], TIContentTypes: [null] }],
     ['negative required rewards', { ...promotionPage.Data![0], RequiredRewards: -1 }],
     ['string eligibility', { ...promotionPage.Data![0], Eligible: 'false' }],
     ['string redemption state', { ...promotionPage.Data![0], Redeemed: 'false' }],
@@ -226,6 +229,31 @@ describe('RewardsService', () => {
       availability: { profile: 'available', promotions: 'unavailable' },
       availableIncentives: [],
       coupons: [],
+    });
+  });
+
+  it.each([
+    ['description', { ...promotionPage.Data![0], Description: null }],
+    ['discount', { ...promotionPage.Data![0], Discount: null }],
+    ['discount type', { ...promotionPage.Data![0], DiscountType: null }],
+    ['required rewards', { ...promotionPage.Data![0], RequiredRewards: null }],
+    ['relative expiry', { ...promotionPage.Data![0], RelativeExpiryInterval: null }],
+    ['absolute expiry', { ...promotionPage.Data![0], ExpiresAT: null }],
+    ['coupon', { ...promotionPage.Data![0], Coupon: null }],
+    ['eligibility', { ...promotionPage.Data![0], Eligible: null }],
+    ['redemption state', { ...promotionPage.Data![0], Redeemed: null }],
+    ['eligibility comment', { ...promotionPage.Data![0], EligiblityComment: null }],
+    ['promotion logo', { ...promotionPage.Data![0], LogoURL: null }],
+    ['products', { ...promotionPage.Data![0], Products: null }],
+    ['content types', { ...promotionPage.Data![0], TIContentTypes: null }],
+    ['product fields', { ...promotionPage.Data![0], Products: [{ ID: null, Name: null, LogoURL: null }] }],
+  ])('keeps promotions available when optional %s is null', async (_caseName, promotion) => {
+    gatewayFetch.mockImplementation(async (_req: Request, url: string) =>
+      url.endsWith('/me') ? profile : { Data: [promotion], Metadata: { Offset: 0, PageSize: 500, TotalSize: 1 } }
+    );
+
+    await expect(service.getSummary(req)).resolves.toMatchObject({
+      availability: { profile: 'available', promotions: 'available' },
     });
   });
 

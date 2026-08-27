@@ -377,21 +377,21 @@ function isValidPromotion(value: unknown): value is RewardPromotionRaw {
     ['Description', 'DiscountType', 'ExpiresAT', 'Coupon', 'EligiblityComment', 'LogoURL'].every((field) => isOptionalString(promotion[field])) &&
     ['Discount', 'RequiredRewards', 'RelativeExpiryInterval'].every((field) => isOptionalNonNegativeNumber(promotion[field])) &&
     ['Eligible', 'Redeemed'].every((field) => isOptionalBoolean(promotion[field])) &&
-    (products === undefined || (Array.isArray(products) && products.every(isValidPromotionProduct))) &&
-    (contentTypes === undefined || (Array.isArray(contentTypes) && contentTypes.every((item) => typeof item === 'string')))
+    (products == null || (Array.isArray(products) && products.every(isValidPromotionProduct))) &&
+    (contentTypes == null || (Array.isArray(contentTypes) && contentTypes.every((item) => typeof item === 'string')))
   );
 }
 
 function isOptionalString(value: unknown): boolean {
-  return value === undefined || typeof value === 'string';
+  return value == null || typeof value === 'string';
 }
 
 function isOptionalNonNegativeNumber(value: unknown): boolean {
-  return value === undefined || (typeof value === 'number' && Number.isFinite(value) && value >= 0);
+  return value == null || (typeof value === 'number' && Number.isFinite(value) && value >= 0);
 }
 
 function isOptionalBoolean(value: unknown): boolean {
-  return value === undefined || typeof value === 'boolean';
+  return value == null || typeof value === 'boolean';
 }
 
 function isValidPromotionProduct(value: unknown): boolean {
