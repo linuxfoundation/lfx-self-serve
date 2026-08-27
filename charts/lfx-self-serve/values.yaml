@@ -381,9 +381,10 @@ environment:
   # a RollingUpdate, flag-on and flag-off pods serve side by side for the length of the rollout.
   # The source is chosen by the job id's shape as well as by the flag: a `job_...` id is answered
   # from the in-process map on every pod, flag or no flag. That made an overlapping rollout safe
-  # for THIS flag while no UUID job id could exist — but that premise EXPIRED when campaign
-  # creation shipped. CREATE below is now ON, so the premise does not hold at all: a pod with JOBS
-  # off skips the id-shape check entirely and answers a terminal `not_found` for a campaign that is
+  # for THIS flag while no UUID job id could exist — but that premise expires the moment campaign
+  # creation ships. CREATE below is still unset, so no UUID job id exists yet and the premise
+  # holds today; it stops holding as soon as CREATE is enabled, and a pod with JOBS off would then
+  # skip the id-shape check entirely and answer a terminal `not_found` for a campaign that is
   # running and SPENDING. JOBS must stay on, and on rollback it comes off LAST — turn CREATE off
   # first and let outstanding UUID jobs drain. Do not copy the
   # "rollback is one value" line onto a future flag whose two paths could both claim the same
@@ -442,11 +443,11 @@ environment:
   # answered by whichever system owns that job.
   #
   # It is NOT unconditionally safe, and the ORDER is the whole of the safety. The check only runs
-  # on a pod that has JOBS on. If all three flags flip in one RollingUpdate, a flag-on pod mints a
+  # on a pod that has JOBS on. If the cutover flags flip in one RollingUpdate, a flag-on pod mints a
   # UUID job while a not-yet-updated pod routes that UUID to its in-process map and answers
   # terminal `not_found` — a campaign that is running and spending, reported as lost.
   #
-  #   Enable:   JOBS -> confirm every pod has it -> BRIEFS -> CREATE
+  #   Enable:   JOBS -> confirm every pod has it -> BRIEFS -> STATUS_TOGGLE -> CREATE
   #   Roll back: CREATE off first -> let outstanding UUID jobs drain -> then JOBS
   #
   # OPERATIONAL PRECONDITION: campaign-service reads ad-platform credentials from its OWN
@@ -481,7 +482,7 @@ environment:
 
   # Gates whether a Demand Gen Google campaign may be requested at all (LFXV2-3257).
   #
-  # SEPARATE from the three flags above because it asks a different question: not "should
+  # SEPARATE from the cutover flags above because it asks a different question: not "should
   # creates go through campaign-service?" but "does the DEPLOYED campaign-service understand
   # googleAdsConfig.channel?". That field ships with LFXV2-3257, and the two can be out of
   # step — the create cutover may be on against a service that predates it.

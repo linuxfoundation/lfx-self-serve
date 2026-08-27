@@ -200,16 +200,18 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                | No       | `"true"` |
 
 `..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
-**`..._JOBS` must stay on, and comes off LAST.** With `..._CREATE` on, campaign-service mints UUID
-job ids, so the earlier "no UUID can exist" argument no longer applies: a pod with JOBS off skips
-the id-shape check entirely and answers a terminal `not_found` for a campaign that is running and
-spending. On rollback, turn `..._CREATE` off first and keep `..._JOBS` on until outstanding UUID
-jobs have drained.
+**`..._JOBS` must stay on, and comes off LAST.** Once `..._CREATE` is enabled campaign-service
+mints UUID job ids, and the earlier "no UUID can exist" argument stops applying: a pod with JOBS
+off skips the id-shape check entirely and answers a terminal `not_found` for a campaign that is
+running and spending. On rollback, turn `..._CREATE` off first and keep `..._JOBS` on until
+outstanding UUID jobs have drained.
 
-The cutover landed as three flags, one at a time, each converging before the next:
+The cutover ships as four flags, one at a time, each converging before the next. The first three
+have landed; `..._CREATE` is the remaining step:
 
 ```text
-JOBS  →  BRIEFS  →  CREATE
+JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
+ ✅        ✅          this PR          next
 ```
 
 They could not share a rollout. `createCampaigns` gates on all three together, so during a mixed
@@ -357,9 +359,9 @@ with JOBS **off** does not apply that check and sends the poll to its in-process
 job does not exist — so a job that is real and **spending** becomes unreportable. Turning CREATE on
 before JOBS, or JOBS off while UUID jobs are still in flight, strands them exactly that way.
 
-Before creation was cut over, JOBS on by itself was inert: no UUID job could exist, so every real
-poll went to the in-process map regardless. That is no longer true once CREATE is on — do not read
-"flag on, no errors" from that earlier era as a verified cutover.
+Until creation is cut over, JOBS on by itself is inert: no UUID job can exist, so every real poll
+goes to the in-process map regardless. That stops being true the moment CREATE is enabled — do not
+read "flag on, no errors" from this pre-CREATE era as a verified cutover.
 
 Campaign traffic reaches campaign-service **through the gateway**, at `environment.LFX_V2_SERVICE`.
 There is deliberately no chart parameter for a campaign-service base URL. The application does read
