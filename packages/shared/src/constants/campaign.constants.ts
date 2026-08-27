@@ -131,9 +131,10 @@ export const CAMPAIGN_PACING_THRESHOLDS = {
  *                              fields are already percentages, so no conversion is applied.
  *   clicksWithoutConversions — a COUNT of clicks. The rule fires above it, with zero
  *                              conversions.
- *   minImpressions           — a COUNT of impressions, the floor below which the CTR rule is
- *                              suppressed, because a click-through rate over a handful of
- *                              impressions is noise.
+ *   minImpressions           — a COUNT of impressions. Consumers guard with `impressions >
+ *                              minImpressions`, so a campaign AT the value is suppressed too —
+ *                              the rule needs strictly more. Exists because a click-through rate
+ *                              over a handful of impressions is noise.
  *
  * LinkedIn has no impression floor today and instead requires `ctr > 0`; the two are not
  * equivalent — a campaign with 12 impressions and one click reads as 8.3% and is silently

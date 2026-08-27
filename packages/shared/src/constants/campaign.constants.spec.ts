@@ -309,8 +309,14 @@ describe('normalizeMicrosoftGeoTargets', () => {
 });
 
 /**
- * These thresholds are the single edit point for the Optimize tab's low-CTR and
- * clicks-without-conversions rules, and the rules themselves have no spec of their own. So this
+ * These thresholds are the edit point for the LinkedIn, Meta and Reddit low-CTR and
+ * clicks-without-conversions rules — not for every Optimize-tab rule. Google keeps its own
+ * literals in `campaign-metrics.service.ts` and is deliberately out of scope here: its display
+ * rule reads `!isSearch && ctr < 0.3 && impressions > 1000`, which is a different predicate over
+ * a different population, so folding it in would flatten a real distinction rather than an
+ * accidental one. LFXV2-3314's convergence is where that decision belongs.
+ *
+ * The rules themselves have no spec of their own. So this
  * block pins the VALUES rather than re-deriving the rules: the whole claim of LFXV2-3314's first
  * step is that centralising them changed no behaviour, and a value drifting here is exactly how
  * that claim would quietly stop being true.
