@@ -308,9 +308,17 @@ export class OrgProjectDetailComponent {
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.closeCardDetail());
 
+    // An org or slug change also invalidates the leaderboard drawer's subject: the row it was opened
+    // from belonged to the previous board, and only the subject is pinned — slug, org and range are
+    // live inputs. Left open it would refetch that company against the project the user navigated
+    // to, which they never clicked a row on. Range changes are excluded: they legitimately re-scope
+    // the open row.
     combineLatest([this.orgUid$, this.slug$])
       .pipe(skip(1), takeUntilDestroyed())
-      .subscribe(() => this.resetLeaderboardSearch());
+      .subscribe(() => {
+        this.resetLeaderboardSearch();
+        this.leaderboardDetailOpen.set(false);
+      });
 
     // Board reload driver — org / slug / range / metric changes re-request BOTH boards at page 0,
     // once the Leaderboards tab has been activated (lazy on first activation). Superseded requests

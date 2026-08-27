@@ -4,13 +4,13 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, type ParamMap, Router } from '@angular/router';
 import { Account, BoardDisplayRow } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { of } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgProjectDetailComponent } from './org-project-detail.component';
@@ -27,6 +27,10 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
 
   const ACCOUNT: Account = { accountId: 'acc-1', accountName: 'Test Org', uid: 'acc-1' } as Account;
 
+  // Replayed rather than a plain Subject: the component subscribes during construction and must see
+  // the first slug, and a later emission stands in for navigating to another project.
+  let paramMap: BehaviorSubject<ParamMap>;
+
   const makeRow = (overrides: Partial<BoardDisplayRow> = {}): BoardDisplayRow => ({
     rank: 1,
     orgName: 'Acme',
@@ -41,6 +45,8 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
   });
 
   beforeEach(async () => {
+    paramMap = new BehaviorSubject<ParamMap>(convertToParamMap({ projectSlug: 'k8s' }));
+
     await TestBed.configureTestingModule({
       imports: [OrgProjectDetailComponent],
       providers: [
@@ -78,7 +84,7 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
         {
           provide: ActivatedRoute,
           useValue: {
-            paramMap: of(convertToParamMap({ projectSlug: 'k8s' })),
+            paramMap: paramMap.asObservable(),
             queryParamMap: of(convertToParamMap({})),
             snapshot: { queryParamMap: convertToParamMap({}) },
           },
@@ -101,6 +107,20 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
 
   it('stays closed for a row with no organization id', async () => {
     component['openLeaderboardDetail']('technical', makeRow({ organizationId: '' }));
+    await fixture.whenStable();
+
+    expect(component['leaderboardDetailOpen']()).toBe(false);
+  });
+
+  // Only the subject is pinned when the drawer opens; slug, org and range are live inputs. Left open
+  // across a project navigation it would refetch the previous board's company against the project
+  // the user has moved to, which they never clicked a row on.
+  it('closes the drawer when the project changes underneath it', async () => {
+    component['openLeaderboardDetail']('technical', makeRow());
+    await fixture.whenStable();
+    expect(component['leaderboardDetailOpen']()).toBe(true);
+
+    paramMap.next(convertToParamMap({ projectSlug: 'envoy' }));
     await fixture.whenStable();
 
     expect(component['leaderboardDetailOpen']()).toBe(false);

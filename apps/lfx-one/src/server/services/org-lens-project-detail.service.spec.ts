@@ -404,10 +404,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
 
   // Guards the column names themselves: a renamed or mistyped warehouse column reads as absent and
   // would otherwise ship as a plausible zero row.
-  it.each([
-    ['technical', ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES],
-    ['ecosystem', ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES],
-  ] as const)('resolves a warehouse column for every %s category it declares', async (dimension) => {
+  it.each(['technical', 'ecosystem'] as const)('resolves a warehouse column for every %s category it declares', async (dimension) => {
     mockWarehouse({ breakdown: populatedBreakdownRow });
 
     const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y');
