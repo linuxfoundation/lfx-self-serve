@@ -51,7 +51,7 @@ describe('ProfileClasComponent', () => {
   /** The list's own manager flags come from the row, so this stays uncalled unless the dialog opens. */
   let getClaManagersSpy: ReturnType<typeof vi.fn>;
 
-  async function render(agreements: MyClaAgreement[], options: { m2Enabled?: boolean } = {}): Promise<void> {
+  async function render(agreements: MyClaAgreement[], options: { m2Enabled?: boolean; impersonating?: boolean } = {}): Promise<void> {
     const response: MyClasResponse = {
       agreements,
       identity: { matchedUserIds: agreements.length > 0 ? 1 : 0, unmatched: agreements.length === 0, githubLinked: true },
@@ -68,7 +68,7 @@ describe('ProfileClasComponent', () => {
         { provide: MyClasService, useValue: { getMyClas: () => of(response), getPdfUrl: vi.fn(), getClaManagers } },
         // Stubbed rather than real: the Sign CLA action reads impersonating(), and the real
         // service would drag HttpClient into a TestBed that has no reason to make requests.
-        { provide: UserService, useValue: { impersonating: signal(false) } },
+        { provide: UserService, useValue: { impersonating: signal(options.impersonating ?? false) } },
         // Existing tests document M2 overlay behaviour; pin the flag on unless a case opts out.
         {
           provide: FeatureFlagService,
@@ -277,6 +277,42 @@ describe('ProfileClasComponent', () => {
 
     await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005', claManager: false })]);
     expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Contact CLA Manager']);
+  });
+
+  it('disables every row action except Download PDF while impersonating (#1894)', async () => {
+    const attnEcla = agreement({
+      id: 's-attn',
+      kind: 'ECLA',
+      pdfAvailable: false,
+      status: 'needs_attention',
+      statusReason: 'not_on_approval_list',
+      companyName: 'Acme',
+      claGroupId: 'g-anuket-005',
+      claManager: true,
+      foundationSfid: 'a09P000000DsCE5IAN',
+    });
+
+    await render([attnEcla], { impersonating: true });
+
+    // Nothing is withheld — the same items a normal session gets, greyed out, so the
+    // administrator can see the action exists and that it is unavailable.
+    expect(menuItems('s-attn').map((item) => item.label)).toEqual([
+      eclaDownloadLabel,
+      'Request approval',
+      'Request Removal',
+      'Contact CLA Manager',
+      'Manage in CCLA Console',
+    ]);
+    expect(menuItems('s-attn').every((item) => item.disabled)).toBe(true);
+    expect(actionsTrigger('s-attn')).not.toBeNull();
+  });
+
+  it('keeps Download PDF enabled while impersonating — retrieving the document is a read (#1894)', async () => {
+    await render([agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true })], { impersonating: true });
+
+    const items = menuItems('s-icla');
+    expect(items.map((item) => item.label)).toEqual(['Download PDF']);
+    expect(items[0].disabled).toBeFalsy();
   });
 
   it('reads manager status off the row rather than spending a managers GET per ECLA', async () => {
@@ -591,6 +627,11 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   }
 
+  /** The real `<button>` inside `<lfx-button>` — where `disabled` and `aria-label` land. */
+  function signButton(fixture: ComponentFixture<ProfileClasComponent>): HTMLButtonElement | null {
+    return query(fixture, 'sign-cla-action')?.querySelector<HTMLButtonElement>('button') ?? null;
+  }
+
   /** Runs the whole flow from the entry point, as a click would. */
   async function sign(fixture: ComponentFixture<ProfileClasComponent>): Promise<void> {
     (fixture.componentInstance as any).openSignDialog();
@@ -624,12 +665,33 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     const fixture = await setup();
 
     expect(query(fixture, 'sign-cla-action')).not.toBeNull();
+    expect(signButton(fixture)?.disabled).toBe(false);
+    expect(signButton(fixture)?.getAttribute('aria-label')).toBeNull();
   });
 
-  it('withholds the action while impersonating, since the server refuses the write', async () => {
+  it('renders Sign CLA disabled, not hidden, while impersonating (#1894)', async () => {
     const fixture = await setup({ impersonating: true });
 
-    expect(query(fixture, 'sign-cla-action')).toBeNull();
+    // Visible and greyed rather than absent, so the administrator can see the action exists and
+    // read why it is unavailable — the same treatment as every other impersonation-blocked
+    // control on the profile. The server is still the guard.
+    expect(query(fixture, 'sign-cla-action')).not.toBeNull();
+    expect(signButton(fixture)?.disabled).toBe(true);
+    expect(signButton(fixture)?.getAttribute('aria-label')).toBe('This action is unavailable while impersonating another user');
+  });
+
+  it('opens no picker when Sign CLA is reached while impersonating', async () => {
+    const fixture = await setup({ impersonating: true });
+
+    signButton(fixture)?.click();
+    await fixture.whenStable();
+    expect(opened).toEqual([]);
+
+    // Guarded in the method too, not only on the button: now that the button is rendered, a
+    // keyboard or programmatic activation can reach `openSignDialog` directly.
+    await sign(fixture);
+    expect(opened).toEqual([]);
+    expect(prepareSign).not.toHaveBeenCalled();
   });
 
   it('withholds Sign CLA when my-clas-m2-enabled is off', async () => {
