@@ -3318,7 +3318,10 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
   it('sends only search when a hidden Demand Gen selection accompanies Search', async () => {
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j-1' }));
 
-    fixture.componentRef.setInput('demandGenEnabled', false);
+    // `null` AT MOUNT, so `applyDraft` PRESERVES the draft's `true` — the clear at :1636 fires
+    // only on an explicit `false`. This is the one sequence that puts a hidden `true` on the
+    // form, and therefore the only one the wire guard can be reached through.
+    fixture.componentRef.setInput('demandGenEnabled', null);
     fixture.componentRef.setInput('draft', {
       eventSlug: 'kubecon-eu-2026',
       eventName: 'KubeCon EU 2026',
@@ -3337,10 +3340,16 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
 
+    // The capability now resolves OFF. The control disappears; the form value does not change.
+    fixture.componentRef.setInput('demandGenEnabled', false);
+    fixture.detectChanges();
+
     const c = fixture.componentInstance as unknown as Record<string, any>;
     // The form really is submittable — otherwise this would pass without reaching the builder.
     expect(c['canSubmit']()).toBe(true);
-    expect(c['campaignForm'].controls['includeDemandGen'].value).toBe(false);
+    // The hidden `true` the wire guard exists for. If this were already false the guard would
+    // have nothing to guard and the test would pass against its deletion.
+    expect(c['campaignForm'].controls['includeDemandGen'].value).toBe(true);
 
     c['submit']();
     await fixture.whenStable();
