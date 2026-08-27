@@ -43,6 +43,7 @@ import type {
   SocialListeningSentimentRow,
   SocialListeningSubProject,
   SocialListeningTagCount,
+  SocialListeningTagRow,
 } from '../interfaces/social-listening.interface';
 import type { StatCardDelta, StatCardDeltaDirection } from '../interfaces/stat-card.interface';
 import { normalizeSnowflakeTimestamp } from './date-time.utils';
@@ -78,6 +79,7 @@ export function mapRawToMention(raw: SocialListeningMention): Mention {
     id: raw.MENTION_ID,
     platform,
     keyword: (raw.KEYWORD || '').toLowerCase(),
+    sourceProjectName: raw.SOURCE_PROJECT_NAME || '',
     // Zone-less Snowflake timestamp → explicit UTC so `timeAgo` and read-state compares don't parse it as browser-local.
     timestamp: normalizeSnowflakeTimestamp(raw.MENTION_TS || ''),
     authorName: raw.AUTHOR || 'Unknown',
@@ -272,22 +274,15 @@ export function buildOverTimeChartData(points: SocialListeningOverTimePoint[]): 
   return { labels, datasets };
 }
 
-/** Mentions by Tag bar chart: rows arrive pre-sorted/capped (`MENTION_TOP_TAGS_LIMIT`); labels title-cased via `formatTag`. Null when empty. */
-export function buildTagsChartData(tags: SocialListeningTagCount[]): ChartData<'bar'> | null {
-  const rows = tags.filter((tag) => !!tag.TAG);
-  if (rows.length === 0) return null;
-
-  return {
-    labels: rows.map((tag) => formatTag(tag.TAG)),
-    datasets: [
-      {
-        data: rows.map((tag) => tag.TOTAL_COUNT),
-        backgroundColor: rows.map((_, i) => seriesColor(i)),
-        borderRadius: 4,
-        borderSkipped: false,
-      },
-    ],
-  };
+/** Ranked Mentions by Tag rows; upstream pre-sorts and caps (`MENTION_TOP_TAGS_LIMIT`) but the sort is re-applied so the bar widths stay monotonic. */
+export function mapTagRows(tags: SocialListeningTagCount[]): SocialListeningTagRow[] {
+  const rows = tags.filter((tag) => !!tag.TAG).sort((a, b) => b.TOTAL_COUNT - a.TOTAL_COUNT);
+  const max = rows[0]?.TOTAL_COUNT ?? 0;
+  return rows.map((tag) => ({
+    label: formatTag(tag.TAG),
+    count: tag.TOTAL_COUNT,
+    percentOfMax: max > 0 ? (tag.TOTAL_COUNT / max) * 100 : 0,
+  }));
 }
 
 /** Top-N platform rows (default `ANALYTICS_TOP_PLATFORMS_LIMIT`) grouped by normalized key — raw duplicates (`X`/`twitter`, unsupported → other) would duplicate the template's `track row.config.label` keys. */
@@ -304,6 +299,7 @@ export function mapPlatformDistributionRows(
       existing.percentOfTotal += row.PERCENT_OF_TOTAL || 0;
     } else {
       byKey.set(key, {
+        platform: key,
         config: MENTION_PLATFORM_CONFIG[key],
         mentionsCount: row.MENTIONS_COUNT,
         percentOfTotal: row.PERCENT_OF_TOTAL || 0,

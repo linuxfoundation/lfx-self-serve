@@ -5,6 +5,7 @@
 
 import type { SOCIAL_LISTENING_PREFERENCE_NAME_PREFIXES } from '../constants/social-listening.constants';
 import type { TagSeverity } from './components.interface';
+import type { StatCardDelta } from './stat-card.interface';
 
 // ---------------------------------------------------------------------------
 // Value unions
@@ -295,6 +296,8 @@ export interface Mention {
   id: string;
   platform: MentionPlatform;
   keyword: string;
+  /** Sub-project the mention was matched against — the card's project pill falls back to `keyword` when blank. */
+  sourceProjectName: string;
   timestamp: string;
   authorName: string;
   authorProfileLink: string;
@@ -335,6 +338,10 @@ export interface MentionSentimentConfigEntry {
   severity: TagSeverity;
   /** Tailwind bg-color class for the analytics sentiment-distribution bar segment (no hex — repo styling rule). */
   barClass: string;
+  /** Tailwind bg-color class for the mention card's left sentiment rail (no hex — repo styling rule). */
+  railClass: string;
+  /** Tailwind text-color class for the rail's sentiment icon (no hex — repo styling rule). */
+  textClass: string;
 }
 
 /** Display config for a relevance value (see `MENTION_RELEVANCE_CONFIG`). */
@@ -352,6 +359,8 @@ export interface AuthorOption extends SocialListeningMentionAuthor {
 
 /** Analytics platform-distribution row with display config pre-resolved (built by `mapPlatformDistributionRows`). */
 export interface SocialListeningPlatformRow {
+  /** Normalized grouping key — also the value the analytics tab emits when a row is clicked to scope the feed. */
+  platform: MentionPlatform;
   config: MentionPlatformConfigEntry;
   mentionsCount: number;
   /** 0–100 share of in-scope mentions, one decimal (server-rounded). */
@@ -365,6 +374,20 @@ export interface SocialListeningSentimentRow {
   mentionCount: number;
   /** 0–100 share of in-scope mentions, one decimal (server-rounded). */
   percentOfTotal: number;
+}
+
+/** Ranked tag row for the analytics tag list; `percentOfMax` sizes the bar against the top row so the longest always fills. */
+export interface SocialListeningTagRow {
+  label: string;
+  count: number;
+  /** 0–100 share of the top row's count. */
+  percentOfMax: number;
+}
+
+/** Sentiment trend chips, sourced from the overview panel (the distribution endpoint carries no change percentages); null when that panel has no data or errored. */
+export interface SocialListeningSentimentTrends {
+  positive: StatCardDelta | null;
+  negative: StatCardDelta | null;
 }
 
 /** Declarative fetch state for the toSignal pipelines. */

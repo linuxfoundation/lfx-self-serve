@@ -54,6 +54,7 @@ export class MentionCardComponent {
   public readonly failedImageUrl = signal<string | null>(null);
   /** Drives the fade + "Read full post" affordance; measured against the clamped body after each render. */
   public readonly truncated = signal(false);
+  public readonly bodyExpanded = signal(false);
   private copyTimeoutId: ReturnType<typeof setTimeout> | null = null;
   private readonly bodyEl = viewChild<ElementRef<HTMLElement>>('bodyEl');
 
@@ -69,6 +70,10 @@ export class MentionCardComponent {
     () => MENTION_RELEVANCE_CONFIG[this.mention().relevance] ?? MENTION_RELEVANCE_CONFIG.low
   );
   public readonly displayKeyword = computed(() => capitalizeFirst(this.mention().keyword));
+  /** Blank `SOURCE_PROJECT_NAME` rows still get a pill — the keyword is the closest thing the feed matched on. */
+  public readonly displayProject = computed(() => this.mention().sourceProjectName || this.displayKeyword());
+  /** Expanding removes the clamp, so `truncated` reads false — latch on `bodyExpanded` to keep the toggle and full-post link in place. */
+  public readonly bodyExpandable = computed(() => this.truncated() || this.bodyExpanded());
   public readonly isReddit = computed(() => this.mention().platform === 'reddit');
   /** Subreddit directory link — distinct from the stretched card link, which opens the mention itself. */
   public readonly subredditUrl = computed(() => {
@@ -105,6 +110,10 @@ export class MentionCardComponent {
   /** Re-emits the toggle intent — the page decides whether the write proceeds (cap/loading gates live in the service). */
   public onToggleBookmark(): void {
     this.bookmarkToggled.emit(this.mention());
+  }
+
+  public onToggleBody(): void {
+    this.bodyExpanded.update((expanded) => !expanded);
   }
 
   /** Re-emits the toggle intent — the loading gate lives in the service. */

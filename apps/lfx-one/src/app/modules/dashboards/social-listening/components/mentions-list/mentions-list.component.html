@@ -1,60 +1,51 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div #listContainer class="flex flex-col gap-4">
-  <!-- Header row -->
-  <div class="flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <h2 class="text-xs font-bold tracking-wide text-gray-500">LATEST MENTIONS</h2>
-      @if (!loading() && totalMentions() > 0 && mentions().length > 0) {
-        <span class="text-xs text-gray-400" data-testid="mentions-list-count"
-          >{{ first() + 1 }}–{{ first() + mentions().length }} of {{ totalMentions() }}</span
-        >
-      }
-    </div>
-    <div class="flex items-center gap-2">
-      @if (!loading() && totalMentions() > 0) {
-        <lfx-button
-          label="Mark all as read"
-          icon="fa-light fa-check-double"
-          [text]="true"
-          styleClass="mark-all-btn"
-          (onClick)="markAllRead.emit()"
-          data-testid="mentions-list-mark-all-read" />
-        <lfx-button
-          label="Mark all as unread"
-          icon="fa-light fa-eye-slash"
-          [text]="true"
-          styleClass="mark-all-btn"
-          (onClick)="markAllUnread.emit()"
-          data-testid="mentions-list-mark-all-unread" />
-        <span class="text-xs text-gray-300">&middot;</span>
-      }
-      @if (dataComputedAt(); as computedAt) {
-        <span class="text-xs text-gray-400" data-testid="mentions-list-computed-at">Data as of {{ computedAt | date: 'short' }}</span>
-      }
+<div class="flex flex-col gap-4">
+  <!-- Count row: 12px label + count, hairline rule, mark-all actions and the freshness watermark -->
+  <div class="flex flex-col gap-2 border-b border-gray-100 pb-3">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-3">
+        <h2 class="text-xs font-bold tracking-wide text-gray-500">LATEST MENTIONS</h2>
+        @if (!loading() && totalMentions() > 0 && mentions().length > 0) {
+          <span class="text-xs text-gray-400" data-testid="mentions-list-count">{{ loadedCount() }} of {{ totalMentions() }}</span>
+        }
+      </div>
+      <div class="flex items-center gap-2">
+        @if (!loading() && totalMentions() > 0) {
+          <lfx-button
+            label="Mark all as read"
+            icon="fa-light fa-check-double"
+            [text]="true"
+            styleClass="mark-all-btn"
+            (onClick)="markAllRead.emit()"
+            data-testid="mentions-list-mark-all-read" />
+          <lfx-button
+            label="Mark all as unread"
+            icon="fa-light fa-eye-slash"
+            [text]="true"
+            styleClass="mark-all-btn"
+            (onClick)="markAllUnread.emit()"
+            data-testid="mentions-list-mark-all-unread" />
+          <span class="text-xs text-gray-300">&middot;</span>
+        }
+        @if (dataComputedAt(); as computedAt) {
+          <span class="text-xs text-gray-400" data-testid="mentions-list-computed-at">Data as of {{ computedAt | date: 'short' }}</span>
+        }
+      </div>
     </div>
   </div>
 
-  <!-- Cards + paginator (lfx-table is the confirmed paginator wrapper; one card per single-cell row) -->
-  <!-- The page report interpolates the capped paginatorTotalRecords — suppress it above the cap so the header's true total stays authoritative. -->
+  <!-- Cards only — lfx-table is retained for its skeleton-row and empty-message machinery, not its paginator -->
   <lfx-table
     [value]="mentions()"
     [loading]="loading()"
     [lazy]="true"
     [lazyLoadOnInit]="false"
-    [paginator]="true"
-    [rows]="rows()"
-    [first]="first()"
-    [totalRecords]="paginatorTotalRecords()"
-    [rowsPerPageOptions]="rowsPerPageOptions()"
-    [showCurrentPageReport]="paginatorTotalRecords() >= totalMentions()"
-    currentPageReportTemplate="Showing {first} to {last} of {totalRecords} mentions"
-    [alwaysShowPaginator]="totalMentions() > 0 || countError()"
+    [paginator]="false"
     [skeletonColumns]="1"
     [skeletonRows]="3"
     styleClass="mentions-table"
-    (onPage)="onTablePage($event)"
     data-testid="mentions-list-table">
     <ng-template #body let-mention>
       <tr>
@@ -109,8 +100,8 @@
           @if (phase2Failed()) {
             <lfx-empty-state
               icon="fa-light fa-triangle-exclamation"
-              title="Couldn't load this page"
-              subtitle="This page of mentions failed to load. Try again."
+              title="Couldn't load these mentions"
+              subtitle="This batch of mentions failed to load. Try again."
               ctaLabel="Retry"
               ctaIcon="fa-light fa-arrow-rotate-left"
               (ctaClick)="retry.emit()"
@@ -126,10 +117,40 @@
               icon="fa-light fa-ear-listen"
               title="No mentions found"
               subtitle="No mentions match the current scope and filters. Try widening the period or clearing the search."
+              ctaLabel="Clear filters"
+              ctaIcon="fa-light fa-filter-slash"
+              (ctaClick)="clearFilters.emit()"
               data-testid="mentions-list-empty-state" />
           }
         </td>
       </tr>
     </ng-template>
   </lfx-table>
+
+  <!-- Load More footer: running count plus the advance control, both gone once the feed is exhausted -->
+  @if (hasMore()) {
+    <div class="flex flex-col items-center gap-2" data-testid="mentions-list-load-more-footer">
+      <p class="text-xs text-gray-400" data-testid="mentions-list-showing">
+        @if (countError()) {
+          Showing {{ loadedCount() }} mentions
+        } @else {
+          Showing {{ loadedCount() }} of {{ servableTotal() }} mentions
+        }
+      </p>
+      <button
+        type="button"
+        class="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-default disabled:opacity-60"
+        [disabled]="loadingMore()"
+        data-testid="mentions-list-load-more"
+        (click)="loadMore.emit()">
+        @if (loadingMore()) {
+          <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+          Loading…
+        } @else {
+          <i class="fa-light fa-arrow-down" aria-hidden="true"></i>
+          Load more mentions
+        }
+      </button>
+    </div>
+  }
 </div>

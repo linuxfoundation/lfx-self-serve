@@ -167,6 +167,90 @@ describe('SocialListeningAnalyticsComponent', () => {
     expect(cards[1].value).toBe('0%');
   });
 
+  it('ranks the tag rows, drops blank tags, and sizes each bar against the top row', async () => {
+    getMentionsTags.mockReturnValue(
+      of([
+        { TAG: 'cloud_native', TOTAL_COUNT: 5 },
+        { TAG: '', TOTAL_COUNT: 99 },
+        { TAG: 'ai_agents', TOTAL_COUNT: 10 },
+      ])
+    );
+    create();
+    await settle();
+
+    expect(fixture.componentInstance.tagRows()).toEqual([
+      { label: 'AI Agents', count: 10, percentOfMax: 100 },
+      { label: 'Cloud Native', count: 5, percentOfMax: 50 },
+    ]);
+    const labels = [...fixture.nativeElement.querySelectorAll('[data-testid="social-listening-analytics-tags-list"] li')].map((li: Element) =>
+      (li.textContent || '').trim()
+    );
+    expect(labels).toHaveLength(2);
+    expect(labels[0]).toContain('AI Agents');
+    expect(labels[0]).toContain('10');
+  });
+
+  it('emits the normalized platform key when a platform row is clicked', async () => {
+    getAnalyticsPlatformDistribution.mockReturnValue(
+      of([
+        { SOURCE_PLATFORM: 'reddit', SOCIAL_NETWORK: 'Reddit', MENTIONS_COUNT: 40, PERCENT_OF_TOTAL: 80 },
+        { SOURCE_PLATFORM: 'X', SOCIAL_NETWORK: 'X', MENTIONS_COUNT: 10, PERCENT_OF_TOTAL: 20 },
+      ])
+    );
+    create();
+    await settle();
+
+    const emitted: string[] = [];
+    fixture.componentInstance.platformSelected.subscribe((platform) => emitted.push(platform));
+
+    // `X` normalizes to the `twitter` config key, which is what the row carries and emits.
+    const row = fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-platform-row-twitter"]') as HTMLButtonElement;
+    expect(row).toBeTruthy();
+    row.click();
+
+    expect(emitted).toEqual(['twitter']);
+  });
+
+  it('keeps the sentiment counts and percentages when the overview errors, omitting only the trend chips', async () => {
+    getAnalyticsOverview.mockImplementation(() => throwError(() => new Error('boom')));
+    getAnalyticsSentimentDistribution.mockReturnValue(
+      of([
+        { SENTIMENT: 'positive', MENTION_COUNT: 90, PERCENT_OF_TOTAL: 45 },
+        { SENTIMENT: 'negative', MENTION_COUNT: 40, PERCENT_OF_TOTAL: 20 },
+      ])
+    );
+    create();
+    await settle();
+
+    expect(fixture.componentInstance.overviewError()).toBe('Failed to load this panel');
+    expect(fixture.componentInstance.sentimentTrends()).toEqual({ positive: null, negative: null });
+
+    const panel = fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-sentiment"]');
+    expect(panel.textContent).toContain('45%');
+    expect(panel.textContent).toContain('90');
+    expect(panel.querySelector('[data-testid="social-listening-analytics-sentiment-trend-positive"]')).toBeNull();
+    expect(panel.querySelector('[data-testid="social-listening-analytics-sentiment-trend-negative"]')).toBeNull();
+  });
+
+  it('renders the sentiment trend chips from the overview panel', async () => {
+    getAnalyticsSentimentDistribution.mockReturnValue(
+      of([
+        { SENTIMENT: 'positive', MENTION_COUNT: 90, PERCENT_OF_TOTAL: 45 },
+        { SENTIMENT: 'negative', MENTION_COUNT: 40, PERCENT_OF_TOTAL: 20 },
+      ])
+    );
+    create();
+    await settle();
+
+    // A null POSITIVE_SENTIMENT_CHANGE_PCT (thin previous window) hides that chip; the negative one inverts.
+    expect(fixture.componentInstance.sentimentTrends().positive).toBeNull();
+    expect(fixture.componentInstance.sentimentTrends().negative).toEqual({ label: '4.2% vs last period', direction: 'down', inverted: true });
+
+    const panel = fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-sentiment"]');
+    expect(panel.querySelector('[data-testid="social-listening-analytics-sentiment-trend-positive"]')).toBeNull();
+    expect(panel.querySelector('[data-testid="social-listening-analytics-sentiment-trend-negative"]').className).toContain('text-emerald-700');
+  });
+
   it('reports panelsLoading while any panel is in flight and clears it once all settle', async () => {
     const overview$ = new Subject<SocialListeningAnalyticsOverview>();
     getAnalyticsOverview.mockReturnValue(overview$.asObservable());

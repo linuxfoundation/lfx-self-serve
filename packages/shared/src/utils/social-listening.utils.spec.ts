@@ -38,6 +38,7 @@ function rawMention(overrides: Partial<SocialListeningMention> = {}): SocialList
     SOURCE_PLATFORM: 'reddit',
     SOCIAL_NETWORK: 'Reddit',
     KEYWORD: 'Kubernetes',
+    SOURCE_PROJECT_NAME: 'CNCF Kubernetes',
     MENTION_TS: '2026-02-01T12:00:00Z',
     AUTHOR: '@alice',
     AUTHOR_PROFILE_LINK: 'https://example.test/alice',
@@ -103,6 +104,7 @@ describe('mapRawToMention', () => {
       id: 'key-1',
       platform: 'reddit',
       keyword: 'kubernetes',
+      sourceProjectName: 'CNCF Kubernetes',
       authorName: '@alice',
       sentiment: 'positive',
       relevance: 'high',
@@ -145,6 +147,7 @@ describe('mapRawToMention', () => {
 
     expect(mention).toMatchObject({
       keyword: '',
+      sourceProjectName: '',
       timestamp: '',
       authorName: 'Unknown',
       title: '',

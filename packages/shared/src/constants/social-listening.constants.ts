@@ -3,6 +3,7 @@
 
 /** Social Listening runtime constants — option lists double as server-side validation whitelists (3015). No hex colors (styling rule): Tailwind `colorClass` + `TagSeverity`. */
 
+import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
   FilterPredicate,
   MentionPlatform,
@@ -37,9 +38,30 @@ export const MENTION_PLATFORM_CONFIG: Record<MentionPlatform, MentionPlatformCon
 };
 
 export const MENTION_SENTIMENT_CONFIG: Record<MentionSentiment, MentionSentimentConfigEntry> = {
-  positive: { icon: 'fa-light fa-face-smile', label: 'Positive', severity: 'success', barClass: 'bg-emerald-500' },
-  neutral: { icon: 'fa-light fa-face-meh', label: 'Neutral', severity: 'secondary', barClass: 'bg-amber-400' },
-  negative: { icon: 'fa-light fa-thumbs-down', label: 'Negative', severity: 'danger', barClass: 'bg-red-500' },
+  positive: {
+    icon: 'fa-light fa-face-smile',
+    label: 'Positive',
+    severity: 'success',
+    barClass: 'bg-emerald-500',
+    railClass: 'bg-emerald-500',
+    textClass: 'text-emerald-500',
+  },
+  neutral: {
+    icon: 'fa-light fa-face-meh',
+    label: 'Neutral',
+    severity: 'secondary',
+    barClass: 'bg-amber-400',
+    railClass: 'bg-amber-400',
+    textClass: 'text-amber-400',
+  },
+  negative: {
+    icon: 'fa-light fa-thumbs-down',
+    label: 'Negative',
+    severity: 'danger',
+    barClass: 'bg-red-500',
+    railClass: 'bg-red-500',
+    textClass: 'text-red-500',
+  },
 };
 
 export const MENTION_RELEVANCE_CONFIG: Record<MentionRelevance, MentionRelevanceConfigEntry> = {
@@ -80,19 +102,24 @@ export const MENTION_READ_FILTER_OPTIONS: SocialListeningOption[] = [
   { label: 'Unread', value: 'unread' },
 ];
 
+/** Feed/Analytics view-switcher pills — owned by the page header since the redesign dropped `lfx-card-tabs-bar`. */
+export const SOCIAL_LISTENING_TAB_OPTIONS: FilterPillOption[] = [
+  { id: 'feed', label: 'Feed' },
+  { id: 'analytics', label: 'Analytics' },
+];
+
 // ---------------------------------------------------------------------------
 // Pagination + limits
 // ---------------------------------------------------------------------------
 
-export const MENTION_PAGE_SIZE_OPTIONS: number[] = [10, 20, 50, 100];
+/** Load More batch size — fixed, since the feed has no rows-per-page selector. */
 export const DEFAULT_MENTION_PAGE_SIZE = 20;
 
-/** Server fetch window: the client caches ±2 windows of this size around the visible page. */
+/** Server fetch window: windows are retained for the range the user has loaded, so Load More never refetches. */
 export const MENTION_SERVER_WINDOW_SIZE = 100;
 
 /** Deepest feed offset the server honors — past ~1000 windows a paginated request is a scan, not navigation. */
 export const MENTION_MAX_FEED_OFFSET = 100_000;
-export const MENTION_MAX_CACHED_WINDOWS = 2;
 
 /** Cap for array-valued filters (keywords / tags / authors) — enforced at the HTTP boundary and in the SQL builder. */
 export const MENTION_FILTER_MAX_VALUES = 200;

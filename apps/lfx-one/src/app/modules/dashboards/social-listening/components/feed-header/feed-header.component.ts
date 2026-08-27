@@ -5,26 +5,19 @@ import { Component, computed, DestroyRef, effect, ElementRef, inject, input, mod
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
-import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { buildMarketingImpactPeriodOptions } from '@lfx-one/shared/utils';
 
-import type { FilterPillOption, MarketingImpactPeriodOption, SocialListeningOption, SocialListeningTab } from '@lfx-one/shared/interfaces';
-
-/** Feed/Analytics tab pills for the header's `lfx-card-tabs-bar`. */
-const SOCIAL_LISTENING_TAB_OPTIONS: FilterPillOption[] = [
-  { id: 'feed', label: 'Feed' },
-  { id: 'analytics', label: 'Analytics' },
-];
+import type { MarketingImpactPeriodOption, SocialListeningOption, SocialListeningTab } from '@lfx-one/shared/interfaces';
 
 /**
- * Social Listening feed header (LFXV2-3016/17/18): tabs, scope selects, search, Filters button, and
+ * Social Listening feed header (LFXV2-3016/17/18): scope selects, search, Filters button, and
  * the analytics export trigger. State lives in the page; `headerForm` bridges the form-bound wrappers.
  */
 @Component({
   selector: 'lfx-feed-header',
-  imports: [ReactiveFormsModule, ButtonComponent, CardTabsBarComponent, SelectComponent, InputTextComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, SelectComponent, InputTextComponent],
   templateUrl: './feed-header.component.html',
   styleUrl: './feed-header.component.scss',
 })
@@ -32,7 +25,7 @@ export class FeedHeaderComponent {
   private readonly fb = inject(FormBuilder);
   private readonly destroyRef = inject(DestroyRef);
 
-  public readonly activeTab = model.required<SocialListeningTab>();
+  public readonly activeTab = input.required<SocialListeningTab>();
   public readonly selectedPeriod = model.required<string>();
   public readonly selectedProject = model.required<string>();
   public readonly selectedPlatform = model.required<string>();
@@ -68,7 +61,6 @@ export class FeedHeaderComponent {
     search: [''],
   });
 
-  protected readonly tabOptions = SOCIAL_LISTENING_TAB_OPTIONS;
   /** Resolved per component instance (matches marketing-impact): the month list depends on "now". */
   protected readonly periodOptions: MarketingImpactPeriodOption[] = buildMarketingImpactPeriodOptions();
 
@@ -100,12 +92,6 @@ export class FeedHeaderComponent {
 
     this.restoreFocusOnFiltersClose();
     this.restoreFocusOnViewsClose();
-  }
-
-  protected onTabChange(tabId: string): void {
-    if (tabId === 'feed' || tabId === 'analytics') {
-      this.activeTab.set(tabId);
-    }
   }
 
   // One panel at a time (PCC's activePanel union): opening one closes the other.

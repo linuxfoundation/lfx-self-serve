@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (mention(); as mention) {
-  <div class="mention-card flex gap-5 p-5" [class.mention-card--read]="isRead()" data-testid="mention-card" (click)="onCardContainerClick($event)">
+  <div class="mention-card flex gap-3 p-5" [class.mention-card--read]="isRead()" data-testid="mention-card" (click)="onCardContainerClick($event)">
     <!-- Stretched link: covers the whole card, sits below the interactive elements -->
     @if (mention.originalUrl | validExternalUrl; as url) {
       <a
@@ -15,130 +15,152 @@
         (click)="onCardClick()"></a>
     }
 
-    <!-- Left: text content -->
-    <div class="flex min-w-0 flex-1 flex-col">
-      <!-- Header -->
-      <div class="mb-2 flex flex-wrap items-center gap-1.5 text-sm text-gray-900">
-        <i [class]="platformConfig().icon + ' ' + platformConfig().colorClass" class="text-base" aria-hidden="true"></i>
-        <span>Mention of</span>
-        <span class="font-semibold text-amber-600">{{ displayKeyword() }}</span>
-        <span class="text-gray-300">&middot;</span>
-        <span>{{ platformConfig().label }}</span>
-        <span class="text-gray-300">&middot;</span>
-        <span class="text-gray-400">{{ timeAgo() }}</span>
-        <span class="text-gray-300">&middot;</span>
-        @if (mention.authorProfileLink | validExternalUrl; as profileUrl) {
-          <a [href]="profileUrl" target="_blank" rel="noopener noreferrer" class="card-interactive font-medium text-gray-900 hover:underline">{{
-            mention.authorName
-          }}</a>
-        } @else {
-          <span class="font-medium text-gray-900">{{ mention.authorName }}</span>
-        }
-        @if (isReddit() && mention.subreddit) {
-          @if (subredditUrl() | validExternalUrl; as subredditUrl) {
-            <span>in</span>
-            <a [href]="subredditUrl" target="_blank" rel="noopener noreferrer" class="card-interactive text-gray-500 hover:underline"
-              >r/{{ mention.subreddit }}</a
-            >
+    <!-- Sentiment rail: the color runs the height of the card, replacing the old sentiment chip -->
+    <div
+      class="mention-rail flex shrink-0 flex-col items-center gap-2"
+      [attr.aria-label]="sentimentConfig().label + ' sentiment'"
+      data-testid="mention-card-sentiment-rail">
+      <i [class]="sentimentConfig().icon + ' ' + sentimentConfig().textClass" class="text-base leading-none" aria-hidden="true"></i>
+      <span class="w-0.5 flex-1 rounded-full" [class]="sentimentConfig().railClass" aria-hidden="true"></span>
+      <span class="sr-only">{{ sentimentConfig().label }} sentiment</span>
+    </div>
+
+    <div class="flex min-w-0 flex-1 flex-col gap-2">
+      <!-- Header: provenance line on the left, action cluster on the right -->
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-gray-500">
+          <i [class]="platformConfig().icon + ' ' + platformConfig().colorClass" class="text-sm" aria-hidden="true"></i>
+          <span>Mention of</span>
+          <span class="rounded-full bg-blue-100 px-1.5 py-0.5 font-semibold text-blue-500" data-testid="mention-card-project">{{ displayProject() }}</span>
+          <span>in</span>
+          <span class="font-medium text-gray-700">{{ platformConfig().label }}</span>
+          @if (isReddit() && mention.subreddit) {
+            @if (subredditUrl() | validExternalUrl; as subredditUrl) {
+              <a [href]="subredditUrl" target="_blank" rel="noopener noreferrer" class="card-interactive text-gray-500 hover:underline"
+                >r/{{ mention.subreddit }}</a
+              >
+            }
+          }
+          <span class="text-gray-300">&middot;</span>
+          <span>by</span>
+          @if (mention.authorProfileLink | validExternalUrl; as profileUrl) {
+            <a [href]="profileUrl" target="_blank" rel="noopener noreferrer" class="card-interactive font-medium text-gray-900 hover:underline">{{
+              mention.authorName
+            }}</a>
+          } @else {
+            <span class="font-medium text-gray-900">{{ mention.authorName }}</span>
+          }
+          <span class="text-gray-300">&middot;</span>
+          <span class="text-gray-400">{{ timeAgo() }}</span>
+        </div>
+
+        <div class="action-icons flex shrink-0 items-center gap-1">
+          <a
+            [href]="forwardEmailHref()"
+            class="card-interactive icon-btn"
+            pTooltip="Forward by email"
+            tooltipPosition="top"
+            aria-label="Forward mention by email"
+            data-testid="mention-card-forward-email">
+            <i class="fa-light fa-share text-base"></i>
+          </a>
+          <button
+            type="button"
+            class="card-interactive icon-btn"
+            [pTooltip]="copied() ? 'Copied!' : 'Copy Link'"
+            tooltipPosition="top"
+            [attr.aria-label]="copied() ? 'Link copied' : 'Copy link to mention'"
+            (click)="onCopyLink()"
+            data-testid="mention-card-copy-link">
+            <i [class]="copied() ? 'fa-light fa-check text-base text-emerald-600' : 'fa-light fa-link text-base'"></i>
+          </button>
+          <button
+            type="button"
+            class="card-interactive icon-btn"
+            [pTooltip]="isRead() ? 'Mark as Unread' : 'Mark as Read'"
+            tooltipPosition="top"
+            [attr.aria-label]="isRead() ? 'Mark mention as unread' : 'Mark mention as read'"
+            [attr.aria-pressed]="isRead()"
+            (click)="onToggleRead()"
+            data-testid="mention-card-read-toggle">
+            <i [class]="isRead() ? 'fa-solid fa-eye-slash text-base text-gray-400' : 'fa-light fa-eye text-base'"></i>
+          </button>
+          <button
+            type="button"
+            class="card-interactive icon-btn"
+            [pTooltip]="isBookmarked() ? 'Remove Bookmark' : 'Bookmark'"
+            tooltipPosition="top"
+            [attr.aria-label]="isBookmarked() ? 'Remove bookmark' : 'Bookmark mention'"
+            [attr.aria-pressed]="isBookmarked()"
+            (click)="onToggleBookmark()"
+            data-testid="mention-card-bookmark">
+            <i [class]="isBookmarked() ? 'fa-solid fa-bookmark text-base text-blue-600' : 'fa-light fa-bookmark text-base'"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Body beside the link preview; the preview column collapses entirely when there is no image -->
+      <div class="flex gap-4">
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
+          @if (hasTitle()) {
+            <h3 class="text-base font-bold text-gray-900">{{ mention.title }}</h3>
+          }
+
+          <!-- Body content (restricted markdown: no images or raw HTML, links gated by the external-URL policy) -->
+          @if (mention.content) {
+            <div #bodyEl class="mention-body break-words" [class.line-clamp-4]="!bodyExpanded()" [class.mention-body--truncated]="truncated()">
+              <lfx-markdown-renderer [content]="mention.content" [breaks]="true" [restricted]="true" data-testid="mention-card-body" />
+            </div>
+          }
+
+          @if (bodyExpandable()) {
+            <div class="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                class="card-interactive cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-blue-600 hover:underline"
+                [attr.aria-expanded]="bodyExpanded()"
+                (click)="onToggleBody()"
+                data-testid="mention-card-body-toggle">
+                {{ bodyExpanded() ? 'See less' : 'Show more' }}
+              </button>
+
+              <!-- Decorative: the stretched link handles the click and stays the sole tab stop to the original URL. -->
+              @if (hasOriginalUrl()) {
+                <span class="text-xs font-medium text-blue-600" data-testid="mention-card-read-more">
+                  Read full post on {{ platformConfig().label }}
+                  <i class="fa-light fa-arrow-up-right-from-square ml-1 text-[10px]" aria-hidden="true"></i>
+                </span>
+              }
+            </div>
+          }
+        </div>
+
+        @if (mention.imageUrl | validExternalUrl; as imageUrl) {
+          @if (failedImageUrl() !== imageUrl) {
+            <img
+              [src]="imageUrl"
+              [alt]="mention.title || 'Mention image'"
+              loading="lazy"
+              (error)="onImageError(imageUrl)"
+              class="h-28 w-[200px] shrink-0 rounded-xl object-cover"
+              data-testid="mention-card-image" />
           }
         }
       </div>
 
-      <!-- Title -->
-      @if (hasTitle()) {
-        <h3 class="mb-1 text-base font-bold text-gray-900">{{ mention.title }}</h3>
-      }
-
-      <!-- Body content (restricted markdown: no images or raw HTML, links gated by the external-URL policy) -->
-      @if (mention.content) {
-        <div #bodyEl class="mention-body line-clamp-3 mb-3 break-words" [class.mention-body--truncated]="truncated()">
-          <lfx-markdown-renderer [content]="mention.content" [breaks]="true" [restricted]="true" data-testid="mention-card-body" />
-        </div>
-      }
-
-      <!-- Decorative: the stretched link handles the click and stays the sole tab stop to the original URL. -->
-      @if (truncated() && hasOriginalUrl()) {
-        <span class="-mt-2 mb-3 text-sm font-medium text-blue-600" data-testid="mention-card-read-more">
-          Read full post on {{ platformConfig().label }}
-          <i class="fa-light fa-arrow-up-right-from-square ml-1 text-xs" aria-hidden="true"></i>
-        </span>
-      }
+      <!-- Chips row (mt-auto keeps it flush with the card bottom) -->
+      <div class="mt-auto flex flex-wrap items-center gap-2">
+        <lfx-tag [value]="relevanceConfig().label + ' Relevance'" [severity]="relevanceConfig().severity" [rounded]="true" />
+        @for (tag of mention.tags; track tag) {
+          <lfx-tag [value]="tag | formatTag" icon="fa-light fa-tag" severity="secondary" [rounded]="true" [outlined]="true" />
+        }
+      </div>
 
       <!-- Analysis (Octolens enrichment — not on the original post, so it needs its own expand path) -->
       @if (mention.analysis) {
-        <div class="mb-3">
-          <lfx-expandable-text [maxHeight]="analysisMaxHeight">
-            <p class="text-xs text-gray-700">{{ mention.analysis }}</p>
-          </lfx-expandable-text>
-        </div>
-      }
-
-      <!-- Pills row (mt-auto keeps it flush with the card bottom) -->
-      <div class="mt-auto flex flex-wrap items-center gap-2">
-        <lfx-tag [value]="sentimentConfig().label" [icon]="sentimentConfig().icon" [severity]="sentimentConfig().severity" [rounded]="true" />
-        <lfx-tag [value]="relevanceConfig().label + ' Relevance'" [severity]="relevanceConfig().severity" [rounded]="true" />
-        @for (tag of mention.tags; track tag) {
-          <lfx-tag [value]="tag | formatTag" severity="secondary" [rounded]="true" [outlined]="true" />
-        }
-      </div>
-    </div>
-
-    <!-- Right: actions + image -->
-    <div class="flex shrink-0 flex-col items-end gap-3">
-      <div class="action-icons flex items-center gap-2">
-        <button
-          type="button"
-          class="card-interactive icon-btn"
-          [pTooltip]="isBookmarked() ? 'Remove Bookmark' : 'Bookmark'"
-          tooltipPosition="top"
-          [attr.aria-label]="isBookmarked() ? 'Remove bookmark' : 'Bookmark mention'"
-          [attr.aria-pressed]="isBookmarked()"
-          (click)="onToggleBookmark()"
-          data-testid="mention-card-bookmark">
-          <i [class]="isBookmarked() ? 'fa-solid fa-bookmark text-base text-blue-600' : 'fa-light fa-bookmark text-base'"></i>
-        </button>
-        <button
-          type="button"
-          class="card-interactive icon-btn"
-          [pTooltip]="copied() ? 'Copied!' : 'Copy Link'"
-          tooltipPosition="top"
-          [attr.aria-label]="copied() ? 'Link copied' : 'Copy link to mention'"
-          (click)="onCopyLink()"
-          data-testid="mention-card-copy-link">
-          <i [class]="copied() ? 'fa-light fa-check text-base text-emerald-600' : 'fa-light fa-link text-base'"></i>
-        </button>
-        <button
-          type="button"
-          class="card-interactive icon-btn"
-          [pTooltip]="isRead() ? 'Mark as Unread' : 'Mark as Read'"
-          tooltipPosition="top"
-          [attr.aria-label]="isRead() ? 'Mark mention as unread' : 'Mark mention as read'"
-          [attr.aria-pressed]="isRead()"
-          (click)="onToggleRead()"
-          data-testid="mention-card-read-toggle">
-          <i [class]="isRead() ? 'fa-solid fa-eye-slash text-base text-gray-400' : 'fa-light fa-eye text-base'"></i>
-        </button>
-        <a
-          [href]="forwardEmailHref()"
-          class="card-interactive icon-btn"
-          pTooltip="Forward by email"
-          tooltipPosition="top"
-          aria-label="Forward mention by email"
-          data-testid="mention-card-forward-email">
-          <i class="fa-light fa-envelope text-base text-gray-400"></i>
-        </a>
-      </div>
-
-      @if (mention.imageUrl | validExternalUrl; as imageUrl) {
-        @if (failedImageUrl() !== imageUrl) {
-          <img
-            [src]="imageUrl"
-            [alt]="mention.title || 'Mention image'"
-            loading="lazy"
-            (error)="onImageError(imageUrl)"
-            class="max-h-36 w-48 rounded-lg object-cover"
-            data-testid="mention-card-image" />
-        }
+        <lfx-expandable-text [maxHeight]="analysisMaxHeight">
+          <p class="text-xs text-gray-400">{{ mention.analysis }}</p>
+        </lfx-expandable-text>
       }
     </div>
   </div>

@@ -1,187 +1,244 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div #analyticsContent class="flex flex-col gap-4" data-testid="social-listening-analytics">
-  <!-- Row 1: KPI stat cards (error degrades the row to a message instead of zeroed cards) -->
+<div #analyticsContent class="flex flex-col gap-5" [class.analytics--exporting]="isExporting()" data-testid="social-listening-analytics">
+  <!-- KPI band (error degrades the row to a message instead of zeroed cards) -->
   @if (overviewError(); as overviewErrorMessage) {
     <lfx-message severity="error" [text]="overviewErrorMessage" data-testid="social-listening-analytics-overview-error" />
   } @else {
     <lfx-stat-card-grid [cards]="statCards()" [loading]="overviewLoading()" [columns]="3" data-testid="social-listening-analytics-stats" />
   }
 
-  <!-- Row 2: Mentions Over Time + Mentions by Platform -->
-  <div class="grid grid-cols-1 gap-4 lg:grid-cols-[13fr_7fr]">
-    <lfx-card styleClass="[&_.p-card-body]:p-5">
-      <div class="analytics-panel" data-testid="social-listening-analytics-over-time">
-        <h3 class="panel-title">Mentions Over Time</h3>
-        @if (overTimeLoading()) {
-          <p-skeleton height="400px" />
-        } @else if (overTimeError(); as overTimeErrorMessage) {
-          <lfx-message severity="error" [text]="overTimeErrorMessage" data-testid="social-listening-analytics-over-time-error" />
-        } @else if (overTimeData(); as overTimeChartData) {
-          <div class="h-[400px] w-full" data-chart-tooltip-host role="img" aria-label="Mentions over time chart. The following table lists the same values.">
-            <lfx-chart type="line" [data]="overTimeChartData" [options]="overTimeOptions" height="100%" />
-            <div
-              data-lfx-tip
-              class="pointer-events-none fixed z-50 hidden max-h-[calc(100vh-1rem)] overflow-hidden rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg"></div>
-          </div>
-          <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
-          @if (overTimeTable(); as overTimeTableData) {
-            <table class="sr-only" data-testid="social-listening-analytics-over-time-table">
-              <caption>
-                Mentions over time by project
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Period</th>
-                  @for (series of overTimeTableData.series; track series.label) {
-                    <th scope="col">{{ series.label }}</th>
-                  }
-                </tr>
-              </thead>
-              <tbody>
-                @for (period of overTimeTableData.periods; track period; let i = $index) {
+  <div class="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+    <!-- Left column: the wide chart panels -->
+    <div class="flex flex-col gap-5">
+      <lfx-card styleClass="[&_.p-card-body]:p-5">
+        <div class="analytics-panel" data-testid="social-listening-analytics-over-time">
+          <h3 class="panel-title">Mentions Over Time</h3>
+          @if (overTimeLoading()) {
+            <p-skeleton height="400px" />
+          } @else if (overTimeError(); as overTimeErrorMessage) {
+            <lfx-message severity="error" [text]="overTimeErrorMessage" data-testid="social-listening-analytics-over-time-error" />
+          } @else if (overTimeData(); as overTimeChartData) {
+            <div class="h-[400px] w-full" data-chart-tooltip-host role="img" aria-label="Mentions over time chart. The following table lists the same values.">
+              <lfx-chart type="line" [data]="overTimeChartData" [options]="overTimeOptions" height="100%" />
+              <div
+                data-lfx-tip
+                class="pointer-events-none fixed z-50 hidden max-h-[calc(100vh-1rem)] overflow-hidden rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg"></div>
+            </div>
+            <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
+            @if (overTimeTable(); as overTimeTableData) {
+              <table class="sr-only" data-testid="social-listening-analytics-over-time-table">
+                <caption>
+                  Mentions over time by project
+                </caption>
+                <thead>
                   <tr>
-                    <th scope="row">{{ period }}</th>
+                    <th scope="col">Period</th>
                     @for (series of overTimeTableData.series; track series.label) {
-                      <td>{{ series.values[i] }}</td>
+                      <th scope="col">{{ series.label }}</th>
                     }
                   </tr>
-                }
-              </tbody>
-            </table>
-          }
-        } @else {
-          <lfx-empty-state
-            icon="fa-light fa-chart-line-up"
-            title="No mentions in this period"
-            subtitle="Try a different period or broaden the project or platform scope."
-            [withCard]="false"
-            data-testid="social-listening-analytics-over-time-empty" />
-        }
-      </div>
-    </lfx-card>
-
-    <lfx-card styleClass="[&_.p-card-body]:p-5">
-      <div class="analytics-panel" data-testid="social-listening-analytics-platform">
-        <h3 class="panel-title">Mentions by Platform</h3>
-        @if (platformLoading()) {
-          <div class="flex flex-col gap-4">
-            @for (row of [1, 2, 3, 4, 5]; track row) {
-              <p-skeleton height="2.5rem" />
-            }
-          </div>
-        } @else if (platformError(); as platformErrorMessage) {
-          <lfx-message severity="error" [text]="platformErrorMessage" data-testid="social-listening-analytics-platform-error" />
-        } @else if (platformRows().length > 0) {
-          <div class="flex flex-col gap-4">
-            @for (row of platformRows(); track row.config.label) {
-              <div class="flex flex-col gap-2">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-1.5">
-                    <i [class]="row.config.icon + ' ' + row.config.colorClass" aria-hidden="true"></i>
-                    <span class="text-sm font-medium text-gray-900">{{ row.config.label }}</span>
-                  </div>
-                  @if (showPlatformPercents()) {
-                    <span class="text-sm font-semibold text-gray-900">{{ row.percentOfTotal }}%</span>
+                </thead>
+                <tbody>
+                  @for (period of overTimeTableData.periods; track period; let i = $index) {
+                    <tr>
+                      <th scope="row">{{ period }}</th>
+                      @for (series of overTimeTableData.series; track series.label) {
+                        <td>{{ series.values[i] }}</td>
+                      }
+                    </tr>
                   }
-                </div>
-                <div class="flex items-center gap-3">
-                  <div class="h-2.5 flex-1 overflow-hidden rounded-full bg-gray-200">
-                    <div class="h-full rounded-full" [class]="row.config.barClass" [style.width.%]="row.percentOfTotal"></div>
-                  </div>
-                  <span class="min-w-12 flex-shrink-0 text-right text-sm font-medium text-gray-400">{{ row.mentionsCount | number }}</span>
-                </div>
-              </div>
+                </tbody>
+              </table>
             }
-          </div>
-        } @else {
-          <lfx-empty-state
-            icon="fa-light fa-chart-pie"
-            title="No platform data"
-            subtitle="No mentions matched the current scope in this period."
-            [withCard]="false"
-            data-testid="social-listening-analytics-platform-empty" />
-        }
-      </div>
-    </lfx-card>
-  </div>
-
-  <!-- Row 3: Mentions by Tag + right column (Sentiment Distribution, Top Projects) -->
-  <div class="grid grid-cols-1 gap-4 lg:grid-cols-[13fr_7fr]">
-    <lfx-card styleClass="[&_.p-card-body]:p-5">
-      <div class="analytics-panel" data-testid="social-listening-analytics-tags">
-        <h3 class="panel-title">Mentions by Tag</h3>
-        @if (tagsLoading()) {
-          <p-skeleton height="350px" />
-        } @else if (tagsError(); as tagsErrorMessage) {
-          <lfx-message severity="error" [text]="tagsErrorMessage" data-testid="social-listening-analytics-tags-error" />
-        } @else if (tagsData(); as tagsChartData) {
-          <div class="h-[350px] w-full" data-chart-tooltip-host role="img" aria-label="Mentions by tag chart. The following table lists the same values.">
-            <lfx-chart type="bar" [data]="tagsChartData" [options]="tagsChartOptions" height="100%" />
-            <div
-              data-lfx-tip
-              class="pointer-events-none fixed z-50 hidden max-h-[calc(100vh-1rem)] overflow-hidden rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg"></div>
-          </div>
-          <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
-          @if (tagsTable(); as tagsTableRows) {
-            <table class="sr-only" data-testid="social-listening-analytics-tags-table">
-              <caption>
-                Mentions by tag
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Tag</th>
-                  <th scope="col">Mentions</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (row of tagsTableRows; track row.label) {
-                  <tr>
-                    <th scope="row">{{ row.label }}</th>
-                    <td>{{ row.count }}</td>
-                  </tr>
-                }
-              </tbody>
-            </table>
+          } @else {
+            <lfx-empty-state
+              icon="fa-light fa-chart-line-up"
+              title="No mentions in this period"
+              subtitle="Try a different period or broaden the project or platform scope."
+              [withCard]="false"
+              data-testid="social-listening-analytics-over-time-empty" />
           }
-        } @else {
-          <lfx-empty-state
-            icon="fa-light fa-tags"
-            title="No tags in this period"
-            subtitle="Tagged mentions appear here once they are ingested for the current scope."
-            [withCard]="false"
-            data-testid="social-listening-analytics-tags-empty" />
-        }
-      </div>
-    </lfx-card>
+        </div>
+      </lfx-card>
 
-    <div class="flex flex-col gap-4">
-      <lfx-card styleClass="h-full [&_.p-card-body]:p-5">
+      <lfx-card styleClass="[&_.p-card-body]:p-5">
+        <div class="analytics-panel" data-testid="social-listening-analytics-platform">
+          <h3 class="panel-title">Mentions by Platform</h3>
+          @if (platformLoading()) {
+            <div class="flex flex-col gap-4">
+              @for (row of [1, 2, 3, 4, 5]; track row) {
+                <p-skeleton height="2.5rem" />
+              }
+            </div>
+          } @else if (platformError(); as platformErrorMessage) {
+            <lfx-message severity="error" [text]="platformErrorMessage" data-testid="social-listening-analytics-platform-error" />
+          } @else if (platformRows().length > 0) {
+            <div class="flex flex-col gap-1">
+              @for (row of platformRows(); track row.platform) {
+                <button
+                  type="button"
+                  class="platform-row"
+                  [attr.aria-label]="'Show ' + row.config.label + ' mentions in the feed'"
+                  (click)="onPlatformRowClick(row)"
+                  [attr.data-testid]="'social-listening-analytics-platform-row-' + row.platform">
+                  <div class="flex w-full items-center justify-between gap-3">
+                    <div class="flex min-w-0 items-center gap-2">
+                      <i [class]="row.config.icon + ' ' + row.config.colorClass" class="text-sm" aria-hidden="true"></i>
+                      <span class="truncate text-[13px] font-medium text-gray-900">{{ row.config.label }}</span>
+                    </div>
+                    @if (showPlatformPercents()) {
+                      <span class="text-[13px] font-semibold text-gray-900">{{ row.percentOfTotal }}%</span>
+                    }
+                  </div>
+                  <div class="flex w-full items-center gap-3">
+                    <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
+                      <div class="h-full rounded-full" [class]="row.config.barClass" [style.width.%]="row.percentOfTotal"></div>
+                    </div>
+                    <span class="min-w-12 shrink-0 text-right text-xs font-medium text-gray-400">{{ row.mentionsCount | number }}</span>
+                  </div>
+                </button>
+              }
+            </div>
+          } @else {
+            <lfx-empty-state
+              icon="fa-light fa-chart-pie"
+              title="No platform data"
+              subtitle="No mentions matched the current scope in this period."
+              [withCard]="false"
+              data-testid="social-listening-analytics-platform-empty" />
+          }
+        </div>
+      </lfx-card>
+
+      <lfx-card styleClass="[&_.p-card-body]:p-5">
+        <div class="analytics-panel" data-testid="social-listening-analytics-tags">
+          <h3 class="panel-title">Mentions by Tag</h3>
+          @if (tagsLoading()) {
+            <div class="flex flex-col gap-3">
+              @for (row of [1, 2, 3, 4, 5]; track row) {
+                <p-skeleton height="1.5rem" />
+              }
+            </div>
+          } @else if (tagsError(); as tagsErrorMessage) {
+            <lfx-message severity="error" [text]="tagsErrorMessage" data-testid="social-listening-analytics-tags-error" />
+          } @else if (tagRows().length > 0) {
+            <ol class="flex flex-col gap-3" data-testid="social-listening-analytics-tags-list">
+              @for (row of tagRows(); track row.label) {
+                <li class="flex items-center gap-3">
+                  <span class="min-w-0 flex-1 truncate text-xs text-gray-600">{{ row.label }}</span>
+                  <span class="tag-track">
+                    <span class="tag-fill" [style.width.%]="row.percentOfMax"></span>
+                  </span>
+                  <span class="min-w-10 shrink-0 text-right text-xs font-medium text-gray-900">{{ row.count | number }}</span>
+                </li>
+              }
+            </ol>
+          } @else {
+            <lfx-empty-state
+              icon="fa-light fa-tags"
+              title="No tags in this period"
+              subtitle="Tagged mentions appear here once they are ingested for the current scope."
+              [withCard]="false"
+              data-testid="social-listening-analytics-tags-empty" />
+          }
+        </div>
+      </lfx-card>
+    </div>
+
+    <!-- Right rail: the summary panels, pinned while the left column scrolls -->
+    <div class="analytics-rail flex flex-col gap-5">
+      <lfx-card styleClass="[&_.p-card-body]:p-5">
+        <div class="analytics-panel" data-testid="social-listening-analytics-top-projects">
+          <h3 class="panel-title">Mentions by Project</h3>
+          @if (topProjectsLoading()) {
+            <div class="flex flex-col gap-3">
+              @for (row of [1, 2, 3, 4, 5]; track row) {
+                <p-skeleton height="2.25rem" />
+              }
+            </div>
+          } @else if (topProjectsError(); as topProjectsErrorMessage) {
+            <lfx-message severity="error" [text]="topProjectsErrorMessage" data-testid="social-listening-analytics-top-projects-error" />
+          } @else if (topProjects().length > 0) {
+            <ol class="flex flex-col gap-3">
+              @for (project of topProjects(); track project.SOURCE_PROJECT_NAME; let idx = $index) {
+                <li class="flex items-center gap-3">
+                  <span class="project-rank" aria-hidden="true">{{ idx + 1 }}</span>
+                  <span class="flex min-w-0 flex-1 flex-col">
+                    <span class="truncate text-[13px] font-semibold text-gray-900">{{ project.SOURCE_PROJECT_NAME }}</span>
+                    <span class="text-[11px] text-gray-500">{{ project.TOTAL_MENTIONS | number }} mentions</span>
+                  </span>
+                </li>
+              }
+            </ol>
+          } @else {
+            <lfx-empty-state
+              icon="fa-light fa-diagram-project"
+              title="No project data"
+              subtitle="Project mention rankings appear here when mentions exist for the current scope."
+              [withCard]="false"
+              data-testid="social-listening-analytics-top-projects-empty" />
+          }
+        </div>
+      </lfx-card>
+
+      <lfx-card styleClass="[&_.p-card-body]:p-5">
         <div class="analytics-panel" data-testid="social-listening-analytics-sentiment">
           <h3 class="panel-title">Sentiment Distribution</h3>
           @if (sentimentLoading()) {
             <div class="flex flex-col gap-3">
-              <p-skeleton height="0.75rem" />
+              <p-skeleton height="1.125rem" />
               <p-skeleton height="2rem" />
               <p-skeleton height="2rem" />
             </div>
           } @else if (sentimentError(); as sentimentErrorMessage) {
             <lfx-message severity="error" [text]="sentimentErrorMessage" data-testid="social-listening-analytics-sentiment-error" />
           } @else if (sentimentRows().length > 0) {
-            <div class="flex h-3 w-full overflow-hidden rounded-full bg-gray-100" role="img" aria-label="Sentiment distribution bar">
+            <div class="flex h-[18px] w-full overflow-hidden rounded-full bg-gray-100" role="img" aria-label="Sentiment distribution bar">
               @for (row of sentimentRows(); track row.sentiment) {
-                <div class="h-full" [class]="row.config.barClass" [style.width.%]="row.percentOfTotal"></div>
+                <div class="flex h-full items-center justify-center overflow-hidden" [class]="row.config.barClass" [style.width.%]="row.percentOfTotal">
+                  @if (row.percentOfTotal >= 12) {
+                    <span class="text-[10px] font-semibold text-white">{{ row.mentionCount | number }}</span>
+                  }
+                </div>
               }
             </div>
             <div class="flex flex-col gap-3">
               @for (row of sentimentRows(); track row.sentiment) {
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2.5">
-                    <span class="h-3 w-3 flex-shrink-0 rounded-full" [class]="row.config.barClass" aria-hidden="true"></span>
-                    <span class="text-sm font-medium text-gray-900">{{ row.config.label }}</span>
+                <div class="flex items-center justify-between gap-3">
+                  <div class="flex min-w-0 items-center gap-2.5">
+                    <span class="h-3 w-3 shrink-0 rounded-full" [class]="row.config.barClass" aria-hidden="true"></span>
+                    <span class="truncate text-[13px] font-medium text-gray-900">{{ row.config.label }}</span>
                   </div>
-                  <span class="text-sm font-semibold text-gray-900">{{ row.percentOfTotal }}%</span>
+                  <div class="flex shrink-0 items-center gap-2">
+                    <span class="text-[13px] text-gray-500">{{ row.mentionCount | number }}</span>
+                    <span class="text-[13px] font-semibold text-gray-900">{{ row.percentOfTotal }}%</span>
+                    @switch (row.sentiment) {
+                      @case ('positive') {
+                        @if (sentimentTrends().positive; as trend) {
+                          <span
+                            class="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium"
+                            [class]="deltaTextClass[trend.direction]"
+                            data-testid="social-listening-analytics-sentiment-trend-positive">
+                            <i [class]="deltaIcon[trend.direction]" aria-hidden="true"></i>
+                            {{ trend.label }}
+                          </span>
+                        }
+                      }
+                      @case ('negative') {
+                        @if (sentimentTrends().negative; as trend) {
+                          <span
+                            class="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium"
+                            [class]="invertedDeltaTextClass[trend.direction]"
+                            data-testid="social-listening-analytics-sentiment-trend-negative">
+                            <i [class]="deltaIcon[trend.direction]" aria-hidden="true"></i>
+                            {{ trend.label }}
+                          </span>
+                        }
+                      }
+                    }
+                  </div>
                 </div>
               }
             </div>
@@ -192,40 +249,6 @@
               subtitle="Sentiment breakdown appears here when mentions exist for the current scope."
               [withCard]="false"
               data-testid="social-listening-analytics-sentiment-empty" />
-          }
-        </div>
-      </lfx-card>
-
-      <lfx-card styleClass="h-full [&_.p-card-body]:p-5">
-        <div class="analytics-panel" data-testid="social-listening-analytics-top-projects">
-          <h3 class="panel-title">Top Projects</h3>
-          @if (topProjectsLoading()) {
-            <div class="flex flex-col gap-3">
-              @for (row of [1, 2, 3, 4, 5]; track row) {
-                <p-skeleton height="3.5rem" />
-              }
-            </div>
-          } @else if (topProjectsError(); as topProjectsErrorMessage) {
-            <lfx-message severity="error" [text]="topProjectsErrorMessage" data-testid="social-listening-analytics-top-projects-error" />
-          } @else if (topProjects().length > 0) {
-            <div class="flex flex-col gap-3">
-              @for (project of topProjects(); track project.SOURCE_PROJECT_NAME; let idx = $index) {
-                <div class="top-project-row">
-                  <div class="project-rank">{{ idx + 1 }}</div>
-                  <div class="flex flex-1 flex-col">
-                    <div class="text-sm font-semibold text-gray-900">{{ project.SOURCE_PROJECT_NAME }}</div>
-                    <div class="text-xs text-gray-500">{{ project.TOTAL_MENTIONS | number }} mentions</div>
-                  </div>
-                </div>
-              }
-            </div>
-          } @else {
-            <lfx-empty-state
-              icon="fa-light fa-diagram-project"
-              title="No project data"
-              subtitle="Project mention rankings appear here when mentions exist for the current scope."
-              [withCard]="false"
-              data-testid="social-listening-analytics-top-projects-empty" />
           }
         </div>
       </lfx-card>

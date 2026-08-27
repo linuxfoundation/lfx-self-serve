@@ -4,3 +4,12 @@
 :host {
   @apply block;
 }
+
+// Ghost-pill treatment for the views/filters/export triggers: 12px label, tight height, no fill at rest.
+:host ::ng-deep .feed-header__pill {
+  @apply h-8 gap-1.5 whitespace-nowrap border-gray-200 px-3 text-xs text-gray-600;
+
+  &:not(:disabled):hover {
+    @apply border-gray-300 bg-gray-50 text-gray-900;
+  }
+}
