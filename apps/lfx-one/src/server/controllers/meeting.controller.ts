@@ -473,6 +473,10 @@ export class MeetingController {
       // email OR username (getMeetingRegistrantsForUser) — a registrant added under a username
       // with a different email now passes, widening the gate slightly from the previous
       // email-only check (getMeetingRegistrantsByEmail).
+      //
+      // getEffectiveUsername (not getUsernameFromAuth) deliberately, so this access-control check
+      // honors isImpersonating on the Authelia auth path too. getUsernameFromAuth's other call
+      // sites still have this gap — tracked separately in #1908.
       const userEmail = getEffectiveEmail(req) ?? undefined;
       const username = getEffectiveUsername(req) ?? undefined;
 

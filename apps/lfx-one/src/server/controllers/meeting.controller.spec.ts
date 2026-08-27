@@ -75,6 +75,8 @@ vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
+
 import { MeetingController } from './meeting.controller';
 
 function buildReq(query: Record<string, string> = {}): any {
@@ -331,6 +333,23 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
       bearerToken: M2M_TOKEN,
     });
     // req.bearerToken was never swapped to the M2M token at any point the caller's own token was needed.
+    expect(req.bearerToken).toBe(USER_TOKEN);
+  });
+
+  it('restores the caller token and propagates the error when enrichCommitteeRegistrants throws', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: true, committees: [{ uid: COMMITTEE_UID }] }));
+    meetingSvc.getMeetingRegistrants.mockResolvedValue([{ uid: 'r1' }]);
+    const enrichError = new Error('NATS lookup failed');
+    vi.mocked(resolveCommitteeV2UidsToV1Ids).mockRejectedValue(enrichError);
+    const req = buildRegistrantsReq();
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMyMeetingRegistrants(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(enrichError);
+    expect(res.json).not.toHaveBeenCalled();
+    // The M2M token swapped in for the enrichment call must not leak onto req after the throw.
     expect(req.bearerToken).toBe(USER_TOKEN);
   });
 });
