@@ -1221,6 +1221,85 @@ describe('CampaignsComponent brief persistence', () => {
         ).toBeNull();
       });
 
+      /**
+       * The capability read must survive an Optimize visit landing on top of it.
+       *
+       * It originally shared `briefCampaignsGeneration` with `loadBriefCampaigns`, which looked
+       * right — same endpoint, same staleness question — but that counter is INCREMENTED by
+       * `loadBriefCampaigns` itself. So entering Optimize while the capability request was in
+       * flight bumped it and the response was dropped as stale, leaving the capability `null`
+       * and the control hidden: exactly the defect this method exists to fix. Guarding on the
+       * foundation instead is what makes an unrelated read harmless.
+       */
+      it('keeps a capability response that an Optimize load raced', async () => {
+        const capability = new Subject<CampaignListResult>();
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(capability.asObservable());
+
+        await withSavedBrief();
+
+        // Optimize entry lands on top of the still-open capability request.
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: false }));
+        load();
+        await fixture.whenStable();
+
+        // ...and only now does the capability answer arrive.
+        capability.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true });
+        capability.complete();
+        await fixture.whenStable();
+
+        expect(
+          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
+        ).toBe(true);
+      });
+
+      /**
+       * The RESTORE path, which knows its brief id and still missed the capability.
+       *
+       * `onProceedToImplementation` originally asked for the capability before the
+       * `alreadyPersisted` branch wrote the restored id onto `briefPersistence`, so the read saw
+       * the PREVIOUS id and guarded itself out. Unlike a first create there is no persist to
+       * follow, so nothing retried and the capability stayed unknown for the whole session.
+       */
+      it('loads the capability for a brief restored from campaign-service', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true })
+        );
+
+        restore(brief, 'brief-9', true);
+        await fixture.whenStable();
+
+        expect(
+          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
+        ).toBe(true);
+      });
+
+      /**
+       * A read that starts failing must not leave the previous answer standing.
+       *
+       * The error arm wrote nothing at first, which reads as "left null" only on the FIRST read.
+       * Once a successful read had set `true`, a later failure kept offering the control on the
+       * strength of a read that no longer succeeds. Asserts the value, not merely that the arm ran.
+       */
+      it('clears a previously known capability when a later read fails', async () => {
+        const list = vi
+          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
+          .mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+
+        await withSavedBrief();
+        await fixture.whenStable();
+        expect(
+          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
+        ).toBe(true);
+
+        list.mockReturnValue(throwError(() => new Error('query service down')));
+        (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
+        await fixture.whenStable();
+
+        expect(
+          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
+        ).toBeNull();
+      });
+
       it('clears the previous brief campaigns when the foundation changes', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
