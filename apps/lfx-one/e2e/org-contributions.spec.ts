@@ -52,6 +52,10 @@ const MOCK_PERSON_DETAIL: OrgAllEmployeeDetail = {
   // employer). The previous fixture used a `.co.uk` sibling, which encoded the fabrication the panel
   // used to perform rather than anything the warehouse can return.
   companyEmails: ['aramirez@acme-corp.example', 'aramirez@contractor.acme-corp.example'],
+  // Required by the response contract: the panel distinguishes "resolved with addresses" from
+  // "resolved with none", "lookup failed" and "no identity to look up", and an absent status would
+  // leave the fixture asserting a state the server can no longer send.
+  companyEmailsStatus: 'resolved',
 };
 
 const BASE_RESPONSE: OrgContributionsResponse = {

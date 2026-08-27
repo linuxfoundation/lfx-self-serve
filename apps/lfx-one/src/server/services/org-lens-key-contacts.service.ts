@@ -213,6 +213,9 @@ export class OrgLensKeyContactsService {
         jobTitle: d.title?.trim() ? d.title.trim() : null,
         initials: this.deriveInitials(firstName, lastName),
         avatarUrl: d.avatar?.trim() ? d.avatar.trim() : null,
+        // Carried so a key-contact-only row in the All Employees roster still has an identity the
+        // person drawer can resolve addresses on. Null when the index omits it.
+        lfUsername: d.username?.trim() ? d.username.trim() : null,
       });
     }
     return [...byEmail.values()].sort((a, b) => a.fullName.localeCompare(b.fullName));

@@ -155,7 +155,24 @@ export class ValkeyService implements CachePort {
     }
   }
 
-  public async withCache<T>(key: string | null, ttlSeconds: number, fetcher: () => Promise<T>, accept?: (value: unknown) => boolean): Promise<T> {
+  /**
+   * Read-through cache.
+   *
+   * `accept` validates a value read BACK from the cache (a shape gate, so entries written by an older
+   * deployment are treated as a miss). `storable` decides whether a freshly fetched value is worth
+   * WRITING. They are separate because a value can be perfectly well-shaped and still be something we
+   * must not persist: a result that encodes "this lookup failed" is valid to return to the caller once,
+   * but caching it replays one transient upstream blip for the whole TTL. Without `storable` a fetcher
+   * that degrades errors into a value — rather than throwing — silently converts a momentary fault into
+   * a long-lived one.
+   */
+  public async withCache<T>(
+    key: string | null,
+    ttlSeconds: number,
+    fetcher: () => Promise<T>,
+    accept?: (value: unknown) => boolean,
+    storable?: (value: T) => boolean
+  ): Promise<T> {
     // Fail-closed (no principal-bound key) or disabled cache → direct fetch, no read/write.
     if (key === null || !this.client) {
       logger.debug(undefined, 'cache_bypass', 'Cache bypassed (no key or disabled) — fetching directly', {
@@ -172,6 +189,13 @@ export class ValkeyService implements CachePort {
 
     logger.debug(undefined, 'cache_miss', 'Cache miss — fetching from source', { cache_key: ValkeyService.redactKey(key) });
     const result = await fetcher();
+    if (storable && !storable(result)) {
+      // Returned to this caller, deliberately not persisted, so the next request retries.
+      logger.debug(undefined, 'cache_skip_write', 'Result not eligible for caching — serving without storing', {
+        cache_key: ValkeyService.redactKey(key),
+      });
+      return result;
+    }
     await this.setJson(key, result, ttlSeconds);
     return result;
   }
@@ -441,9 +465,10 @@ export function withOrgCache<T>(
   subResource: string,
   ttlSeconds: number,
   fetcher: () => Promise<T>,
-  accept?: (value: unknown) => boolean
+  accept?: (value: unknown) => boolean,
+  storable?: (value: T) => boolean
 ): Promise<T> {
-  return valkeyService.withCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, accept);
+  return valkeyService.withCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, accept, storable);
 }
 
 /** Best-effort invalidation of a per-user org key (e.g. after a write so the caller's own next read is fresh); an unsafe identity yields a null key → no-op. */

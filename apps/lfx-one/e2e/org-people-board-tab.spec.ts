@@ -20,6 +20,10 @@ const MOCK_ACCOUNT_SLUG = 'acme-motors';
 const PERF_DEV_MULTIPLIER = 5;
 
 const JORDAN_EMAIL = 'jordan.reyes@acme-motors.example';
+// Identity and address are deliberately unrelated strings: the lookup is keyed on the username, and
+// a test whose address is derivable from its username could not tell the two directions apart.
+const JORDAN_USERNAME = 'jreyes';
+const JORDAN_COMPANY_EMAIL = 'j.reyes@acme-motors.example';
 const SAM_EMAIL = 'sam.rivera@acme-motors.example';
 const ALEX_EMAIL = 'alex.chen@acme-motors.example';
 const TAYLOR_EMAIL = 'taylor.kim@acme-motors.example';
@@ -27,7 +31,10 @@ const TAYLOR_EMAIL = 'taylor.kim@acme-motors.example';
 // Models the Acme Motors board screenshot: 4 members, 2 voting + 3 non-voting seats, 3 foundations.
 // Jordan + Taylor are foundation-controlled (read-only → "Why can't I edit?"); Sam + Alex hold
 // Membership-Entitlement seats (editable). Alex spans 2 foundations with mixed voting status.
-function boardMembersResponse() {
+//
+// `username` is omitted by default, which is the common upstream shape and the one that must render
+// the drawer's "not available from this view" state. Pass it to exercise the identity-keyed lookup.
+function boardMembersResponse(opts: { username?: string } = {}) {
   const seat = (
     uid: string,
     committeeName: string,
@@ -53,7 +60,15 @@ function boardMembersResponse() {
     reason: isOrgEditable ? null : "This seat is held by foundation election or appointment, not by your organization's membership entitlement.",
     person,
   });
-  const jordan = { email: JORDAN_EMAIL, firstName: 'Jordan', lastName: 'Reyes', fullName: 'Jordan Reyes', jobTitle: 'Engineer', initials: 'JR' };
+  const jordan = {
+    email: JORDAN_EMAIL,
+    firstName: 'Jordan',
+    lastName: 'Reyes',
+    fullName: 'Jordan Reyes',
+    jobTitle: 'Engineer',
+    initials: 'JR',
+    ...(opts.username ? { username: opts.username } : {}),
+  };
   const sam = { email: SAM_EMAIL, firstName: 'Sam', lastName: 'Rivera', fullName: 'Sam Rivera', jobTitle: 'Principal Software Engineer', initials: 'SR' };
   const alex = {
     email: ALEX_EMAIL,
@@ -346,15 +361,19 @@ test.describe('Org People → Board tab', () => {
     expect(personDetailCalls).toBe(0);
   });
 
-  // Board rows have no personKey, so the drawer's only email source is the company-emails POST.
-  // With org-lens-private-release OFF, the fetch-side gate in PersonDetailDrawerService must skip
-  // this request entirely — not just hide the result client-side — so assert it never fires.
+  // Board rows have no personKey, so the drawer's only address source is the username-keyed
+  // company-emails GET. With org-lens-private-release OFF, the fetch-side gate in
+  // PersonDetailDrawerService must skip this request entirely — not just hide the result
+  // client-side — so assert it never fires.
   test('company-emails request never fires when org-lens-private-release is OFF', async ({ page }) => {
     await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
     await stubAccountContext(page);
     await stubBoardMembers(page);
     let companyEmailCalls = 0;
-    await page.route('**/api/orgs/*/lens/people/company-emails', (route) => {
+    // The address read is keyed on identity: `…/lens/people/by-username/:username/company-emails`.
+    // Matching the old address-keyed POST path here would make this test pass no matter what the
+    // client does, since nothing requests that path any more.
+    await page.route('**/api/orgs/*/lens/people/by-username/*/company-emails', (route) => {
       companyEmailCalls += 1;
       return route.fulfill({ status: 500, body: 'unexpected company-emails fetch' });
     });
@@ -363,8 +382,67 @@ test.describe('Org People → Board tab', () => {
     await page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}-name`).click();
     await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
+    // With the flag off none of the four address states renders at all.
     await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
-    await expect(page.getByTestId('person-detail-drawer-email-unavailable')).toHaveCount(0);
+    await expect(page.getByTestId('person-detail-drawer-email-failed')).toHaveCount(0);
+    await expect(page.getByTestId('person-detail-drawer-email-not-available')).toHaveCount(0);
+    await expect(page.getByTestId('person-detail-drawer-email-none')).toHaveCount(0);
     expect(companyEmailCalls).toBe(0);
+  });
+
+  // The four rendered states are mutually exclusive and each says something materially different to
+  // an administrator, so each is asserted against the response that must produce it. Conflating
+  // "failed" or "not available" with "none on record" would assert, from a lookup that never
+  // succeeded, that a person holds no company address — the false statement this panel must not make.
+  //
+  // Board seats resolve identity from the seat's username (never from the row's email address), so
+  // the first three cases stub a roster whose seats agree on one; the fourth uses the default roster,
+  // whose seats carry none.
+  test('renders each company-email state from its own response', async ({ page }) => {
+    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: true });
+    await stubAccountContext(page);
+
+    const openDrawer = async (): Promise<void> => {
+      await gotoBoardTab(page);
+      await page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}-name`).click();
+      await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    };
+
+    const stubCompanyEmails = async (fulfil: Parameters<Page['route']>[1]): Promise<void> => {
+      await page.route('**/api/orgs/*/lens/people/by-username/*/company-emails', fulfil);
+    };
+
+    // 1. Resolved WITH addresses → the addresses render verbatim.
+    await stubBoardMembers(page, boardMembersResponse({ username: JORDAN_USERNAME }));
+    await stubCompanyEmails((route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ companyEmails: [JORDAN_COMPANY_EMAIL] }) })
+    );
+    await openDrawer();
+    await expect(page.getByTestId('person-detail-drawer-email-0')).toHaveText(JORDAN_COMPANY_EMAIL);
+
+    // 2. Resolved EMPTY → "no company email on record". Only this state may make that claim.
+    await stubCompanyEmails((route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ companyEmails: [] }) }));
+    await openDrawer();
+    await expect(page.getByTestId('person-detail-drawer-email-none')).toBeVisible();
+    await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
+
+    // 3. Lookup FAILED → "couldn't be loaded", never an assertion about what the person holds.
+    await stubCompanyEmails((route) => route.fulfill({ status: 500, body: 'warehouse unavailable' }));
+    await openDrawer();
+    await expect(page.getByTestId('person-detail-drawer-email-failed')).toBeVisible();
+    await expect(page.getByTestId('person-detail-drawer-email-none')).toHaveCount(0);
+
+    // 4. No identity to look up → "not available from this view", and NO request is made: with no
+    //    username there is nothing to key on, and the address must never be used as one.
+    let callsWithoutIdentity = 0;
+    await stubBoardMembers(page);
+    await stubCompanyEmails((route) => {
+      callsWithoutIdentity += 1;
+      return route.fulfill({ status: 500, body: 'unexpected lookup without an identity' });
+    });
+    await openDrawer();
+    await expect(page.getByTestId('person-detail-drawer-email-not-available')).toBeVisible();
+    await expect(page.getByTestId('person-detail-drawer-email-none')).toHaveCount(0);
+    expect(callsWithoutIdentity).toBe(0);
   });
 });

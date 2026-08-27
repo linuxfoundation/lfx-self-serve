@@ -247,7 +247,11 @@ export class OrgPeopleDirectoryService {
     if (keyContacts.status === 'fulfilled') {
       for (const emp of keyContacts.value) {
         const email = (emp.email ?? '').trim().toLowerCase();
-        // Key contacts carry no verified identity, so they always match at the email rung.
+        // Merged at the EMAIL rung deliberately, even though the document may now carry a username.
+        // The username is member-service's resolution of this address, not an independently verified
+        // identity, so promoting it to a merge key would let one address decide that two rows are the
+        // same human — the address → identity direction this feature prohibits. It is safe to carry
+        // as a lookup key on the row it came from, and unsafe to join on.
         const key = resolveMergeKey({ email });
         if (!key) continue;
         const existing = byKey.get(key);
@@ -255,6 +259,12 @@ export class OrgPeopleDirectoryService {
           this.addSource(existing, 'keyContact');
           this.addEmail(existing, email);
           this.fill(existing, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
+          // Backfill only: a row that already resolved an identity keeps it. Without this, a person
+          // who is both a key contact and (say) a committee member whose seat carried no username
+          // would still open the drawer with nothing to look addresses up on.
+          if (!existing.lfUsername && emp.lfUsername?.trim()) {
+            existing.lfUsername = emp.lfUsername.trim().toLowerCase();
+          }
         } else {
           byKey.set(key, this.rowFromKeyContact(emp, email, key));
         }
@@ -408,7 +418,10 @@ export class OrgPeopleDirectoryService {
   }
 
   private rowFromKeyContact(emp: KeyContactEmployee, email: string, key: string): OrgAllEmployeeRow {
-    return this.liveRow(email, emp.firstName || null, emp.lastName || null, emp.jobTitle, emp.avatarUrl ?? null, 'keyContact', key, null);
+    // The username, where the key_contact document carries one, is what lets the person drawer look
+    // this row's company addresses up: a key-contact-only row has no Snowflake person_key, so without
+    // it the drawer can only say "not available from this view". Null when upstream omits it.
+    return this.liveRow(email, emp.firstName || null, emp.lastName || null, emp.jobTitle, emp.avatarUrl ?? null, 'keyContact', key, emp.lfUsername ?? null);
   }
 
   private rowFromAccess(user: OrgAccessUser, email: string, key: string): OrgAllEmployeeRow {

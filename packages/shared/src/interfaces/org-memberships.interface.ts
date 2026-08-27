@@ -125,6 +125,14 @@ export interface KeyContactEmployee {
   initials: string;
   /** Optional avatar/photo URL; the picker falls back to initials when absent. */
   avatarUrl?: string | null;
+  /**
+   * Resolved LF username for this person, when the key_contact document carries one. Carried so the
+   * All Employees roster can build a key-contact-only row that the person drawer is able to look
+   * company addresses up on — the drawer resolves identity → address and has no other identifier for
+   * these rows. Absent/null degrades to the drawer's "not available from this view" state, never to
+   * a claim that the person has no company address.
+   */
+  lfUsername?: string | null;
 }
 
 /** Response envelope for `GET /api/orgs/:orgUid/lens/key-contacts/employees`. */

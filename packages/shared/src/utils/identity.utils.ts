@@ -58,18 +58,28 @@ export function isIdentityAlreadyLinkedError(...texts: (string | undefined | nul
  * misattribution the whole company-address feature exists to help administrators detect, so it must
  * not be introduced by the lookup itself.
  *
- * Requiring unanimity (ignoring rows that carry no username) fails closed: an ambiguous group yields
- * `null`, the caller passes no identity, and the panel says it cannot resolve addresses from this
- * view rather than showing the wrong ones.
+ * Agreement means EVERY row carries the same username. A row with no username is a disagreement, not
+ * an abstention: `[null, 'bob']` is a group whose header may well be Alice's row, and resolving it to
+ * Bob would show Bob's addresses under Alice's name. Skipping such rows would reintroduce exactly the
+ * misattribution this helper exists to prevent, so an incomplete group fails closed — the caller
+ * passes no identity and the panel says it cannot resolve addresses from this view.
  */
 export function agreedUsername(usernames: readonly (string | null | undefined)[]): string | null {
+  // An empty group agrees on nothing.
+  if (usernames.length === 0) {
+    return null;
+  }
+
   const distinct = new Set<string>();
 
   for (const raw of usernames) {
     const normalized = raw?.trim().toLowerCase();
-    if (normalized) {
-      distinct.add(normalized);
+    // A missing username makes the group unresolvable: we cannot tell whether this row is the same
+    // human as the rows that do carry one.
+    if (!normalized) {
+      return null;
     }
+    distinct.add(normalized);
   }
 
   if (distinct.size !== 1) {

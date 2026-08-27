@@ -367,7 +367,8 @@ export class OrgLensPeopleService {
       `people-detail:${personKey}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.runEmployeeDetailFetch(accountId, personKey),
-      isEmployeeDetailRaw
+      isEmployeeDetailRaw,
+      isCacheableEmployeeDetail
     );
   }
 
@@ -665,8 +666,28 @@ function isEmployeeDetailRaw(value: unknown): boolean {
     v.companyEmails.every((email) => typeof email === 'string') &&
     // Also gates on the status, so a cached entry that predates it is refetched rather than replayed
     // with an undefined status the client would fall back to rendering as "none on record".
-    (v.companyEmailsStatus === 'resolved' || v.companyEmailsStatus === 'unavailable' || v.companyEmailsStatus === 'failed')
+    // 'failed' is NOT accepted: an entry in that state should never have been written (see
+    // isCacheableEmployeeDetail), and one left behind by an earlier deployment must expire on first
+    // read rather than keep reporting an outage that is over.
+    (v.companyEmailsStatus === 'resolved' || v.companyEmailsStatus === 'unavailable')
   );
+}
+
+/**
+ * Whether a freshly fetched detail is eligible to be WRITTEN to the cache.
+ *
+ * `tryFetchCompanyEmails` deliberately turns a warehouse error into a fulfilled
+ * `{ status: 'failed' }` so one bad table cannot blank the activity tabs. That degradation is right
+ * for the response and wrong for the cache: persisting it would replay a single transient blip for
+ * the full one-hour Org Lens TTL, so a warehouse hiccup lasting seconds would hide addresses for an
+ * hour with no way to retry. The detail is returned to this caller and simply not stored, so the
+ * next drawer open tries the warehouse again.
+ *
+ * 'unavailable' IS cacheable — it means no identity existed to look up, which is a stable property
+ * of the row rather than a fault.
+ */
+function isCacheableEmployeeDetail(value: { companyEmailsStatus: OrgCompanyEmailsStatus }): boolean {
+  return value.companyEmailsStatus !== 'failed';
 }
 
 /** Narrow upstream free-text voting status to the three badges; unknown values collapse to 'Non-voting'. */
