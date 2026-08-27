@@ -3,14 +3,20 @@
 
 import { ALLOWED_FILE_TYPES, LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
-import { AddUserToProjectRequest, CreateProjectDocumentRequest, UpdateUserRoleRequest, UploadProjectDocumentRequest } from '@lfx-one/shared/interfaces';
+import {
+  AddUserToProjectRequest,
+  CreateProjectDocumentRequest,
+  PublicProjectMeetingsResponse,
+  UpdateUserRoleRequest,
+  UploadProjectDocumentRequest,
+} from '@lfx-one/shared/interfaces';
 import { computeIsFoundation, isFileTypeAllowed, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
-import { ServiceValidationError } from '../errors';
+import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { getStringQueryParam, validateUidParameter } from '../helpers/validation.helper';
@@ -920,16 +926,23 @@ export class ProjectController {
       const query = { tags: `project_uid:${id}` };
 
       // Fetch all pages — first-page-only would silently drop meetings beyond the default page size.
-      const [upcoming, past] = await Promise.all([
+      const [upcoming, past, calname] = await Promise.all([
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_meeting', false)),
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
+        this.projectService
+          .getProjectById(req, id, false)
+          .then((project) => project.name)
+          .catch((error) => {
+            logger.warning(req, 'get_project_calendar', 'Failed to resolve project name for X-WR-CALNAME', { project_id: id, err: error });
+            return undefined;
+          }),
       ]);
 
       // Filter PRIVATE meetings from the public feed. Restricted (invited-guests-only) public meetings are
       // still listed so their existence is discoverable; join authorization is enforced separately at join time.
       const allMeetings = [...upcoming, ...past].filter((m) => m.visibility === MeetingVisibility.PUBLIC);
       const events = meetingsToVEvents(allMeetings);
-      const ics = buildVCalendar(events, '-//LFX//Project Calendar//EN');
+      const ics = buildVCalendar(events, '-//LFX//Project Calendar//EN', calname);
 
       logger.success(req, 'get_project_calendar', startTime, {
         project_id: id,
@@ -941,6 +954,51 @@ export class ProjectController {
       res.setHeader('Content-Disposition', `attachment; filename="project-${id}.ics"`);
       res.setHeader('Cache-Control', 'public, max-age=900'); // 15 minutes — reduces load from calendar clients polling every 15-60 minutes
       res.send(ics);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /public/api/projects/:id/meetings — PUBLIC meetings for the project calendar page (by UID or slug).
+   * Optional `committee` query param scopes the feed to a single committee within the project.
+   */
+  public async getProjectMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const committeeUid = getStringQueryParam(req, 'committee');
+    const startTime = logger.startOperation(req, 'get_project_meetings', { project_id: id, committee_uid: committeeUid });
+
+    if (!id || !/^[A-Za-z0-9_-]+$/.test(id)) {
+      next(ServiceValidationError.forField('id', 'Invalid project ID', { operation: 'get_project_meetings' }));
+      return;
+    }
+
+    try {
+      if (!req.bearerToken) {
+        req.bearerToken = await generateM2MToken(req);
+      }
+
+      const projectUid = await this.resolveProjectIdentifier(req, id);
+      const query = committeeUid ? { tags_all: [`project_uid:${projectUid}`, `committee_uid:${committeeUid}`] } : { tags: `project_uid:${projectUid}` };
+
+      const [upcoming, past, project] = await Promise.all([
+        fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_meeting', false)),
+        fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
+        this.projectService.getProjectById(req, projectUid, false),
+      ]);
+
+      // Filter PRIVATE meetings from the public feed. Restricted (invited-guests-only) public meetings are
+      // still listed so their existence is discoverable; join authorization is enforced separately at join time.
+      const meetings = [...upcoming, ...past].filter((m) => m.visibility === MeetingVisibility.PUBLIC);
+      const response: PublicProjectMeetingsResponse = { meetings, total: meetings.length, project: { uid: project.uid, name: project.name } };
+
+      logger.success(req, 'get_project_meetings', startTime, {
+        project_id: id,
+        committee_uid: committeeUid,
+        meeting_count: meetings.length,
+      });
+
+      res.json(response);
     } catch (error) {
       next(error);
     }
@@ -1002,5 +1060,21 @@ export class ProjectController {
       res.setHeader('Cache-Control', 'no-store');
       res.redirect(302, `/${resource}?project=${encodeURIComponent(slug)}`);
     }
+  }
+
+  /** Resolves a project route param that may be a UID or a slug down to a UID. */
+  private async resolveProjectIdentifier(req: Request, identifier: string): Promise<string> {
+    if (isUuid(identifier)) {
+      return identifier;
+    }
+    const result = await this.projectService.getProjectIdBySlug(req, identifier);
+    if (!result.exists || !result.uid) {
+      throw new ResourceNotFoundError('Project', identifier, {
+        operation: 'resolve_project_identifier',
+        service: 'project_controller',
+        path: `/projects/${identifier}`,
+      });
+    }
+    return result.uid;
   }
 }

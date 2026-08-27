@@ -1442,3 +1442,10 @@ export interface MeLensMeetingFilters {
   /** Viewer username/LFID used by the `organizerOnly` predicate; null disables matching. */
   viewerUsername: string | null;
 }
+
+/** Response envelope returned by `GET /public/api/projects/:id/meetings` — the public calendar page's meeting list. */
+export interface PublicProjectMeetingsResponse {
+  meetings: Meeting[];
+  total: number;
+  project: { uid: string; name: string };
+}
