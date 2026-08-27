@@ -7,20 +7,26 @@
   --sl-header-offset: 5.5rem;
 }
 
-// The pinned header needs an opaque backdrop plus a fade so cards scrolling under it dissolve
-// instead of colliding with the title row.
+// The pinned header floats on the page canvas: an opaque backdrop in the canvas color plus a fade
+// so cards scrolling under it dissolve instead of colliding with the title row.
 .social-listening-header {
-  @apply -mx-4 bg-white px-4 pb-4 pt-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8;
+  @apply -mx-4 bg-gray-50 px-4 pb-4 pt-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8;
 
   &::after {
     content: '';
-    @apply pointer-events-none absolute inset-x-0 top-full h-4 bg-gradient-to-b from-white to-transparent;
+    @apply pointer-events-none absolute inset-x-0 top-full h-4 bg-gradient-to-b from-gray-50 to-transparent;
   }
 }
 
 // Sticky at the header's height so the scope selects, search, and Filters trigger stay reachable while
 // the feed scrolls. `position: sticky` also anchors the absolutely positioned filters/views panels.
+// The fade sits at the bottom of the pinned stack so the feed dissolves as it scrolls underneath.
 .social-listening-filter-row {
-  @apply sticky;
+  @apply sticky bg-gray-50;
   top: var(--sl-header-offset);
+
+  &::after {
+    content: '';
+    @apply pointer-events-none absolute inset-x-0 top-full h-4 bg-gradient-to-b from-gray-50 to-transparent;
+  }
 }

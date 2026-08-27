@@ -49,7 +49,7 @@
     data-testid="mentions-list-table">
     <ng-template #body let-mention>
       <tr>
-        <td class="border-0 p-0 pb-3">
+        <td class="border-0 p-0 pb-6">
           <lfx-mention-card
             [mention]="mention"
             [timeTick]="timeTick()"
@@ -63,8 +63,8 @@
 
     <ng-template #loadingbody let-rowData>
       <tr class="lfx-skeleton-row" [style.animation-delay]="rowData.delay">
-        <td class="border-0 p-0 pb-3">
-          <div class="flex gap-5 rounded-lg border border-gray-200 bg-white p-5">
+        <td class="border-0 p-0 pb-6">
+          <div class="flex gap-5 rounded-2xl border border-gray-200 bg-white p-5">
             <div class="min-w-0 flex-1">
               <div class="mb-2 flex items-center gap-1.5">
                 <p-skeleton width="1rem" height="1rem" shape="circle" />

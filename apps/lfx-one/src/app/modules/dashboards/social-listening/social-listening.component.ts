@@ -5,7 +5,6 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, PLATFORM_ID, Signal, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MessageComponent } from '@components/message/message.component';
@@ -118,7 +117,6 @@ const EMPTY_FEED_RESPONSE: SocialListeningFeedResponse = { mentions: [], compute
 @Component({
   selector: 'lfx-social-listening',
   imports: [
-    CardComponent,
     EmptyStateComponent,
     FilterPillsComponent,
     MessageComponent,
