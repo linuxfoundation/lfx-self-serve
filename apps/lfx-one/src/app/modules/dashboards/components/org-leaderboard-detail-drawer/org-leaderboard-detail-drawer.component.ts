@@ -21,7 +21,7 @@ import { orgLeaderboardDetailCategoryRows } from '@lfx-one/shared/utils';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, filter, map, Observable, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, map, Observable, of, startWith, switchMap } from 'rxjs';
 
 /**
  * Score-breakdown drawer opened by clicking an Org Lens Project Detail leaderboard row: the clicked
@@ -88,14 +88,18 @@ export class OrgLeaderboardDetailDrawerComponent {
     ]).pipe(
       // Only fetch while open: a range change with the drawer closed should not spend a request, and
       // one made while open re-fetches so the drawer can never show figures from another range.
-      filter(([visible, orgUid, projectSlug, , organizationId]) => visible && !!orgUid && !!projectSlug && !!organizationId),
-      switchMap(([, orgUid, projectSlug, dimension, organizationId, range]) =>
-        this.detailService.getLeaderboardBreakdown(orgUid, projectSlug, dimension, organizationId, range).pipe(
+      // Closing discards the payload rather than merely pausing, so reopening on a different row
+      // cannot render the previous organization's figures under the new row's name.
+      switchMap(([visible, orgUid, projectSlug, dimension, organizationId, range]) => {
+        if (!visible || !orgUid || !projectSlug || !organizationId) {
+          return of<BlockState<OrgLeaderboardDetailBreakdown>>({ status: 'loading', data: null });
+        }
+        return this.detailService.getLeaderboardBreakdown(orgUid, projectSlug, dimension, organizationId, range).pipe(
           map((breakdown): BlockState<OrgLeaderboardDetailBreakdown> => ({ status: breakdown === null ? 'empty' : 'ready', data: breakdown })),
           catchError(() => of<BlockState<OrgLeaderboardDetailBreakdown>>({ status: 'error', data: null })),
           startWith<BlockState<OrgLeaderboardDetailBreakdown>>({ status: 'loading', data: null })
-        )
-      )
+        );
+      })
     );
     return toSignal(requests$, { initialValue: { status: 'loading', data: null } });
   }
