@@ -44,6 +44,8 @@ export class ExecutiveDirectorDashboardComponent {
   protected readonly showMeetings = computed(() => this.lensService.activeLens() !== 'org');
   protected readonly showOrgInvolvement = computed(() => this.lensService.activeLens() !== 'me');
   protected readonly isExecutiveDirector = computed(() => this.personaService.currentPersona() === 'executive-director');
+  /** ED or LF Staff — matches persona-content-matrix.md's Metrics-section gate. Marketing-only grant holders are explicitly excluded ("Sees Metrics: No"). */
+  protected readonly canViewMetrics = this.personaService.canViewExecutiveDashboards;
 
   // === Configuration ===
   private readonly refresh$ = new BehaviorSubject<void>(undefined);

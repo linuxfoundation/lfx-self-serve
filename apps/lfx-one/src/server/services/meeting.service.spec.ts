@@ -210,6 +210,18 @@ describe('MeetingService.getMeetingHostKey', () => {
 
     expect(result).toBeNull();
   });
+
+  it('threads options.bearerToken into the proxy call, distinct from req.bearerToken', async () => {
+    const reqWithToken = { bearerToken: 'req-token' } as unknown as Request;
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+
+    await service.getMeetingHostKey(reqWithToken, 'meeting-abc', { bearerToken: 'override-token' });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    // proxyRequest signature: (req, service, path, method, query, data, customHeaders, options)
+    const options = proxyRequest.mock.calls[0][7];
+    expect(options).toEqual({ bearerToken: 'override-token' });
+  });
 });
 
 describe('MeetingService.getPastOccurrencesForMeeting', () => {

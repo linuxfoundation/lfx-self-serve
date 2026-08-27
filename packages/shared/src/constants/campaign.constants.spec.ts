@@ -3,7 +3,16 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { META_OBJECTIVE_LABELS, META_OBJECTIVE_PARAMS, META_SELECTABLE_OBJECTIVES, campaignToggleAction, normalizeGeoTargets } from './campaign.constants';
+import {
+  META_OBJECTIVE_LABELS,
+  META_OBJECTIVE_PARAMS,
+  META_SELECTABLE_OBJECTIVES,
+  campaignToggleAction,
+  canonicalMicrosoftMatchType,
+  isMicrosoftMatchType,
+  normalizeGeoTargets,
+  normalizeMicrosoftGeoTargets,
+} from './campaign.constants';
 
 describe('campaignToggleAction', () => {
   it('offers pause for the statuses that are running upstream', () => {
@@ -33,9 +42,30 @@ describe('campaignToggleAction', () => {
     expect(campaignToggleAction('enabled', 'google-ads')).toBe('unavailable');
   });
 
+  /**
+   * Narrowed to `twitter-ads` by LFXV2-3312, which ENABLED Microsoft.
+   * `TOGGLEABLE_CAMPAIGN_PLATFORMS` is derived from `CAMPAIGN_PLATFORMS.filter((p) => !p.disabled)`,
+   * so dropping that flag admits microsoft-ads here BY DESIGN. X stays disabled — a capability gap
+   * rather than missing plumbing — so it remains the subject and the guard still binds: make X
+   * toggleable and this goes red.
+   *
+   * Both statuses are still exercised, just both against X, so "at any status" stays true of the
+   * assertion rather than becoming a claim only the deleted line supported.
+   */
   it('refuses a platform this app does not offer, at any status', () => {
-    expect(campaignToggleAction('created', 'microsoft-ads')).toBe('unavailable');
+    expect(campaignToggleAction('created', 'twitter-ads')).toBe('unavailable');
     expect(campaignToggleAction('paused', 'twitter-ads')).toBe('unavailable');
+  });
+
+  /**
+   * The other half of the same derivation, and the reason the case above could be narrowed safely
+   * rather than simply deleted: Microsoft is now OFFERED, so its campaigns must be pausable. If
+   * `disabled: true` is ever restored to the shared constant, this fails — which is what stops the
+   * enablement from being silently reverted at the one site that has no other test.
+   */
+  it('offers pause and resume for microsoft-ads, which this app now enables', () => {
+    expect(campaignToggleAction('created', 'microsoft-ads')).toBe('pause');
+    expect(campaignToggleAction('paused', 'microsoft-ads')).toBe('resume');
   });
 
   /** Optional so the status-only question stays askable; absence is not "unsupported". */
@@ -212,5 +242,67 @@ describe('persisted leads objective', () => {
     for (const objective of Object.keys(META_OBJECTIVE_PARAMS) as (keyof typeof META_OBJECTIVE_PARAMS)[]) {
       expect(META_OBJECTIVE_LABELS[objective]).toBeTruthy();
     }
+  });
+});
+
+/**
+ * Direct coverage for the shared Microsoft helpers exercised below:
+ * `canonicalMicrosoftMatchType`, `isMicrosoftMatchType` (asserted to agree with it), and
+ * `normalizeMicrosoftGeoTargets`.
+ *
+ * All had only INDIRECT coverage through the implementation-tab component specs, which exercise
+ * them via the form. That hides which layer a failure belongs to and leaves the helpers free to
+ * drift for any caller that is not the form.
+ *
+ * The callers differ, so do not read "the BFF uses these" onto all three:
+ * `isMicrosoftMatchType` and `normalizeMicrosoftGeoTargets` are called by both the form and
+ * `campaign.controller.ts`; `canonicalMicrosoftMatchType` is UI-only today, reached from the
+ * component alone. It is covered here anyway because it is exported and the agreement test below
+ * pins it against the predicate the BFF does use.
+ */
+describe('canonicalMicrosoftMatchType', () => {
+  it('canonicalises the case and whitespace upstream tolerates', () => {
+    // Upstream does strings.ToLower(strings.TrimSpace(in)), so all of these are valid there.
+    expect(canonicalMicrosoftMatchType('EXACT')).toBe('Exact');
+    expect(canonicalMicrosoftMatchType('  exact  ')).toBe('Exact');
+    expect(canonicalMicrosoftMatchType('bRoAd')).toBe('Broad');
+    expect(canonicalMicrosoftMatchType('Phrase')).toBe('Phrase');
+  });
+
+  it('returns null for a value Microsoft has no match type for', () => {
+    // null, not a default: substituting one would dispatch a match type the operator never chose.
+    expect(canonicalMicrosoftMatchType('BROAD_MATCH')).toBeNull();
+    expect(canonicalMicrosoftMatchType('')).toBeNull();
+    expect(canonicalMicrosoftMatchType(undefined)).toBeNull();
+    expect(canonicalMicrosoftMatchType(123)).toBeNull();
+  });
+
+  it('agrees with isMicrosoftMatchType on every input', () => {
+    // The two are used as a pair — one to filter, one to convert — so a disagreement between them
+    // is what would let a value pass the guard and then fail to convert.
+    for (const v of ['EXACT', '  exact  ', 'bRoAd', 'Phrase', 'BROAD_MATCH', '', undefined, 123, null]) {
+      expect(isMicrosoftMatchType(v)).toBe(canonicalMicrosoftMatchType(v) !== null);
+    }
+  });
+});
+
+describe('normalizeMicrosoftGeoTargets', () => {
+  it('upper-cases, trims and de-dupes while preserving first-seen order', () => {
+    expect(normalizeMicrosoftGeoTargets([' us ', 'DE', 'us', 'de', 'FR'])).toEqual(['US', 'DE', 'FR']);
+  });
+
+  it('keeps a code Meta excludes but Microsoft supports', () => {
+    // The whole reason this is separate from normalizeGeoTargets: AN is in Microsoft's table and
+    // not in this app's COUNTRIES, and dropping it silently retargeted the campaign.
+    expect(normalizeMicrosoftGeoTargets(['AN'])).toEqual(['AN']);
+  });
+
+  it('drops malformed entries rather than passing them upstream', () => {
+    expect(normalizeMicrosoftGeoTargets(['USA', '', '  ', 'u1', 'US'])).toEqual(['US']);
+  });
+
+  it('treats null and undefined as an empty list', () => {
+    expect(normalizeMicrosoftGeoTargets(null)).toEqual([]);
+    expect(normalizeMicrosoftGeoTargets(undefined)).toEqual([]);
   });
 });

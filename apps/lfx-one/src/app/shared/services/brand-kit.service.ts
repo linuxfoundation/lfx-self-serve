@@ -1,9 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { BrandKitGenerateRequest, BrandKitGenerateResponse, BrandKitResultRequest, BrandKitResultResponse } from '@lfx-one/shared/interfaces';
+import {
+  BrandKitGenerateRequest,
+  BrandKitGenerateResponse,
+  BrandKitResultRequest,
+  BrandKitResultResponse,
+  BrandKitStoredResponse,
+} from '@lfx-one/shared/interfaces';
 import { Observable } from 'rxjs';
 
 /**
@@ -25,9 +31,28 @@ export class BrandKitService {
     return this.http.post<BrandKitGenerateResponse>('/api/mktg-agents/brand-kit/generate', body);
   }
 
-  /** Poll the generation session for the validated document. */
-  public getResult(sessionId: string, ownerToken: string): Observable<BrandKitResultResponse> {
-    const body: BrandKitResultRequest = { sessionId, ownerToken };
+  /**
+   * Poll the generation session for the validated document.
+   *
+   * `projectUid` scopes the server-side persistence write that rides a ready
+   * result: the BFF resolves the project, requires the caller's writer grant,
+   * and partitions storage by the resolved project. Without an active project
+   * the document still comes back — it simply isn't persisted (no receipt).
+   */
+  public getResult(sessionId: string, ownerToken: string, projectUid?: string): Observable<BrandKitResultResponse> {
+    const body: BrandKitResultRequest = { sessionId, ownerToken, ...(projectUid && { project: projectUid }) };
     return this.http.post<BrandKitResultResponse>('/api/mktg-agents/brand-kit/result', body);
+  }
+
+  /**
+   * The project's latest SERVER-persisted Brand Kit document with its receipt
+   * metadata (dec-agent-dependency-gating read path). The BFF gates the read
+   * on the caller's project writer entitlement and 404s when nothing is
+   * stored — callers treat any error as "no server-persisted kit" and fall
+   * back to the browser-stored run.
+   */
+  public getStored(projectUid: string): Observable<BrandKitStoredResponse> {
+    const params = new HttpParams().set('project', projectUid);
+    return this.http.get<BrandKitStoredResponse>('/api/mktg-agents/brand-kit/stored', { params });
   }
 }

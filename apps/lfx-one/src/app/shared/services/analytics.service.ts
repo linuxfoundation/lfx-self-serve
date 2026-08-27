@@ -22,6 +22,7 @@ import {
   FoundationSoftwareValueResponse,
   FoundationValueConcentrationResponse,
   FoundationTotalMembersResponse,
+  FoundationProjectsDetailGroupedResponse,
   FoundationProjectsDetailResponse,
   FoundationProjectsLifecycleDistributionResponse,
   FoundationTotalProjectsResponse,
@@ -77,7 +78,11 @@ import {
   MarketingAttributionResponse,
   MultiFoundationSummaryResponse,
 } from '@lfx-one/shared/interfaces';
-import { DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT, HEALTH_METRICS_NPS_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
+  DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED,
+  HEALTH_METRICS_NPS_DEFAULT_SUMMARY,
+} from '@lfx-one/shared/constants';
 import { catchError, Observable, of, shareReplay, throwError } from 'rxjs';
 
 /**
@@ -94,6 +99,11 @@ export class AnalyticsService {
   // sidebar (Projects nav visibility check) and the Projects page share one
   // request per foundation instead of each firing its own.
   private readonly foundationProjectsDetailCache = new Map<string, Observable<FoundationProjectsDetailResponse>>();
+
+  // Per-slug request cache for the grouped (sub-foundation-aware) foundation projects detail
+  // response — same rationale as foundationProjectsDetailCache, kept separate since the two
+  // endpoints return different shapes (flat rows vs. grouped rows) and are consumed independently.
+  private readonly foundationProjectsDetailGroupedCache = new Map<string, Observable<FoundationProjectsDetailGroupedResponse>>();
 
   // Per-slug request cache for the foundation health-score distribution. Lets
   // the drawer chart reuse one request per foundation so navigating away and
@@ -325,6 +335,27 @@ export class AnalyticsService {
       this.foundationProjectsDetailCache.set(foundationSlug, req$);
     }
     return this.foundationProjectsDetailCache.get(foundationSlug)!;
+  }
+
+  /**
+   * Get per-project detail rows for the Foundation Projects page, grouped by foundation and every
+   * nested sub-foundation discovered beneath it (GH-1607).
+   * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'lfeurope')
+   */
+  public getFoundationProjectsDetailGrouped(foundationSlug: string): Observable<FoundationProjectsDetailGroupedResponse> {
+    if (!this.foundationProjectsDetailGroupedCache.has(foundationSlug)) {
+      const req$ = this.http
+        .get<FoundationProjectsDetailGroupedResponse>('/api/analytics/foundation-projects-detail-grouped', { params: { foundationSlug } })
+        .pipe(
+          catchError(() => {
+            this.foundationProjectsDetailGroupedCache.delete(foundationSlug);
+            return of(DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED);
+          }),
+          shareReplay(1)
+        );
+      this.foundationProjectsDetailGroupedCache.set(foundationSlug, req$);
+    }
+    return this.foundationProjectsDetailGroupedCache.get(foundationSlug)!;
   }
 
   /**

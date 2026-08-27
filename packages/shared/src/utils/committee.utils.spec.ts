@@ -13,7 +13,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { Committee, CommitteeMember, GroupsEngagementStats } from '../interfaces';
+import type { Committee, CommitteeMember, GroupsEngagementStats } from '../interfaces';
 import { FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL } from '../constants/committees.constants';
 import { CommitteeMemberRole } from '../enums/committee-member.enum';
 import {
@@ -133,6 +133,10 @@ describe('buildCommitteeCreateQueryParams', () => {
     expect(buildCommitteeCreateQueryParams(committee({ uid: 'cmte-9' }))).toEqual({ committee_uid: 'cmte-9' });
   });
 });
+
+// getGroupCommands has no dedicated spec block here: it delegates to getEntityCommands
+// (entity-route.utils.spec.ts already covers the 'groups' segment and both null-tier cases), so
+// duplicate route-building tests would test the delegation, not behavior.
 
 describe('canManageCommitteeMembers', () => {
   it('is true when the effective writer flag is set (covers inherited foundation Manage)', () => {

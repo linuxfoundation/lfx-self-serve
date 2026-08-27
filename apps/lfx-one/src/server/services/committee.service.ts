@@ -994,21 +994,28 @@ export class CommitteeService {
         committee_name: string;
         category?: string | null;
         project_name?: string | null;
+        project_slug?: string | null;
+        is_foundation?: boolean | null;
       }
     >();
 
     try {
       const committees = await this.getCommitteesByIds(req, committeeUids);
       const enriched = await this.projectService.enrichWithProjectData(req, Array.from(committees.values()));
-      const projectNameByCommittee = new Map(enriched.map((committee) => [committee.uid, committee.project_name]));
+      const enrichedByCommittee = new Map(enriched.map((committee) => [committee.uid, committee]));
 
       for (const uid of committeeUids) {
         const committee = committees.get(uid);
         if (committee) {
+          const enrichedCommittee = enrichedByCommittee.get(uid);
           committeeContext.set(uid, {
             committee_name: committee.name || uid,
             category: committee.category ?? null,
-            project_name: projectNameByCommittee.get(uid) || null,
+            project_name: enrichedCommittee?.project_name || null,
+            // Enrichment writes '' (not null) when the project lookup fails — normalize to null so
+            // consumers treat it as "no slug", never as an empty-string slug.
+            project_slug: enrichedCommittee?.project_slug || null,
+            is_foundation: enrichedCommittee?.is_foundation ?? null,
           });
         }
       }
@@ -1029,6 +1036,8 @@ export class CommitteeService {
         committee_uid: invite.committee_uid,
         committee_name: committeeName,
         project_name: context?.project_name ?? null,
+        project_slug: context?.project_slug ?? null,
+        is_foundation: context?.is_foundation ?? null,
         category: context?.category ?? null,
         role: invite.role ?? null,
         invitee_email: invite.invitee_email,

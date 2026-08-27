@@ -379,13 +379,21 @@ environment:
   # It is NOT a live switch. This is a container environment variable, so changing it edits the
   # pod template and takes effect only as pods are replaced; with the default replica count and
   # a RollingUpdate, flag-on and flag-off pods serve side by side for the length of the rollout.
-  # That is safe for THIS flag because the source is chosen by the job id's shape as well as by
-  # the flag: a `job_...` id is answered from the in-process map on every pod, flag or no flag,
-  # and a UUID job id cannot exist until campaign creation is cut over too. Do not copy the
+  # The source is chosen by the job id's shape as well as by the flag: a `job_...` id is answered
+  # from the in-process map on every pod, flag or no flag. That made an overlapping rollout safe
+  # for THIS flag while no UUID job id could exist — but that premise EXPIRED when campaign
+  # creation shipped, and holds now only because CREATE below is still off. Once CREATE is on, a
+  # pod with JOBS off skips the id-shape check entirely and answers a terminal `not_found` for a
+  # campaign that is running and SPENDING. Enable JOBS everywhere before CREATE, and keep it on
+  # until outstanding UUID jobs drain; see the CREATE block for the full order. Do not copy the
   # "rollback is one value" line onto a future flag whose two paths could both claim the same
   # request — that one needs a no-overlap rollout or a shared runtime configuration source.
+  #
+  # With this flag on, a poll for a UUID job id requires `?project=` and is refused with a 400
+  # without it (campaign.controller.ts). The LFX One client always sends it; a direct API caller
+  # may not.
   LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS:
-    value:
+    value: "true"
 
   # Persist the generated campaign brief to campaign-service instead of holding it only in the
   # browser tab. Same accepted values and same default-deny as the flag above.
@@ -482,6 +490,53 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN:
     value:
 
+  # Gates FGA-based (marketing_auditor / campaign_manager) authorization on the marketing
+  # analytics routes (analytics.route.ts) and campaigns routes (campaigns.route.ts). Same
+  # accepted values and same default-deny as the campaign-service flags above.
+  #
+  # OFF (the default) establishes an executive_director-only baseline. Analytics routes
+  # already gated by LFXV2-3294 preserve their prior behavior exactly; campaigns routes
+  # that previously had no authorization middleware are intentionally tightened to ED-only.
+  # Deploying with the default value still tightens authorization for campaigns — every
+  # non-ED caller that was previously admitted is now denied. ON
+  # additionally admits a root-writer bypass plus a caller with an actual root- or
+  # project-scoped marketing_auditor / campaign_manager FGA grant. LF Staff are NOT part of
+  # what this flag adds: their bypass, where it exists at all, is wired per-endpoint
+  # (`allowLfStaff` on the specific analytics routes shared with the Marketing Overview
+  # widget — not on Campaigns) and fires regardless of this flag's state, on or off.
+  #
+  # Deliberately independent from the client-side OpenFeature flag (marketing-ops-fga-enabled):
+  # the Web SDK never runs server-side, so without this a direct API caller with an FGA
+  # marketing relation could not reach these routes even after the UI flag turns on the
+  # corresponding client guards. Both must be enabled for the feature to actually work.
+  #
+  # OFF by default is a hard requirement, not a convenience default. The reverted PR #1112
+  # caused a TOTAL LOCKOUT for all users when its UI guards shipped without a kill switch
+  # (LFXV2-2231 gap-analysis G2). This flag exists so a bad rollout can be reverted with an
+  # env var, not a revert PR — flip it back to unset/off and the ED-only baseline is
+  # restored (analytics routes to their pre-PR state; campaigns to the new ED-only default
+  # introduced by this PR, not the pre-PR open state), with no code path that can deny every user at once.
+  #
+  # It is NOT a live switch — same rollout caveat as every flag on this page: the chart
+  # injects this as a container environment variable, so flipping it edits the Deployment pod
+  # template and reaches a process only through a rolling restart. With the default replica
+  # count and a RollingUpdate, flag-on and flag-off pods overlap for the duration. That overlap
+  # is SAFE, not harmless: no caller can be locked out, but a caller who is ONLY an FGA
+  # marketing_auditor / campaign_manager (no ED or root-writer persona, and not covered by an
+  # `allowLfStaff` endpoint) will see a request succeed on a flag-on pod and 403 on a flag-off
+  # pod purely depending on which pod answers — a real, if temporary, inconsistency, not a
+  # no-op. ED/root-writer callers, and LF Staff on the endpoints that allow them, are
+  # unaffected either way, since those checks are reachable regardless of this flag.
+  #
+  # Rollout ordering across this flag and the client-side marketing-ops-fga-enabled OpenFeature
+  # flag (this order matters — the overlap above is safe but not consequence-free): set this flag
+  # true and confirm the rolling update has fully converged (no pod still on the old pod template)
+  # BEFORE enabling the client flag — otherwise the UI can advertise Campaigns/Analytics links
+  # that a not-yet-converged pod still 403s on. To roll back, reverse it: disable the client flag
+  # first, confirm it, then unset/disable this flag.
+  LFX_MARKETING_OPS_FGA_ENABLED:
+    value:
+
   # Serves PATCH /api/campaigns/:campaignId/status from campaign-service instead of the
   # per-platform SDK calls in campaign-proxy.service.ts (LFXV2-3226).
   #
@@ -534,6 +589,20 @@ environment:
     value:
 
   GUILD_WORKSPACE_NAME:
+    value:
+
+  # Transport for the Message Foundation batch intake payload. Default "false"
+  # sends the BFF-rendered form text; set to "true" (no redeploy needed beyond
+  # this value) once Guild delivers structured agent inputs verbatim.
+  GUILD_STRUCTURED_AGENT_INPUT:
+    value: "false"
+
+  # Optional GitHub token for the server-side README fetch that grounds the
+  # Message Foundation agent. Unauthenticated GitHub REST is capped at 60/hour
+  # PER SOURCE IP, so a deployment behind one egress IP silently degrades to
+  # README-less generations under load; any token with public-repo read access
+  # raises the cap to 5,000/hour. Unset = unauthenticated (still functional).
+  GITHUB_API_TOKEN:
     value:
 
   # Public Intercom Messenger workspace App ID. Identity verification rides on the

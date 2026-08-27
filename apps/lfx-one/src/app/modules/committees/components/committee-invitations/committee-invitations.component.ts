@@ -5,10 +5,10 @@ import { computed, Component, DestroyRef, inject, output, Signal } from '@angula
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PendingInvitation } from '@lfx-one/shared/interfaces';
+import { PendingInvitation, PendingInvitationRowVm } from '@lfx-one/shared/interfaces';
 import { RouterLink } from '@angular/router';
 import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
-import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import { getEntityCommands, invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
 import { InvitationService } from '@services/invitation.service';
 import { MessageService } from 'primeng/api';
@@ -53,6 +53,20 @@ export class CommitteeInvitationsComponent {
   /** Pending invitations not yet resolved (accepted/declined) this session. */
   public readonly invitations: Signal<PendingInvitation[]> = computed(() =>
     this.invitationService.pendingInvitations().filter((invitation) => !this.invitationService.resolvedInviteUids().has(invitation.uid))
+  );
+
+  /**
+   * Rows decorated with their canonical view link (GH-1566): the invited group's own
+   * `is_foundation` picks `/foundation` vs `/project`; rows without tier data keep the flat
+   * `/groups/:uid` fallback, and `?project=` rides along when a slug resolved. Pre-computed per
+   * row so the template stays binding-only (mirror: `MyGroupsCardGridComponent.initCards`).
+   */
+  protected readonly invitationRows: Signal<PendingInvitationRowVm[]> = computed(() =>
+    this.invitations().map((invitation) => ({
+      ...invitation,
+      viewCommands: getEntityCommands('groups', invitation.committee_uid, invitation.is_foundation) ?? ['/groups', invitation.committee_uid],
+      viewQueryParams: invitation.project_slug ? { project: invitation.project_slug } : null,
+    }))
   );
 
   /**

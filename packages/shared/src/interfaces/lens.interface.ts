@@ -28,6 +28,8 @@ export interface LensGrantInputs {
   isOrgLensEnabled: boolean;
   /** LF Staff team member — grants foundation-lens access without a board persona. */
   isLFStaff: boolean;
+  /** Holds a root- or project-scoped `marketing_auditor`/`campaign_manager` FGA grant, gated behind the marketing-ops-fga-enabled flag by the caller (LFXV2-2235/LFXV2-2236). Grants foundation-lens access without a board persona. */
+  hasMarketingGrant: boolean;
 }
 
 /**

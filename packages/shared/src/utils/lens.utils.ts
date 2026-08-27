@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Lens, LensGrantInputs } from '../interfaces/lens.interface';
+import type { Lens, LensGrantInputs } from '../interfaces/lens.interface';
 
 /**
  * The lenses a user is authorised to use, from their persona roles and `writer` grants.
@@ -22,9 +22,9 @@ import { Lens, LensGrantInputs } from '../interfaces/lens.interface';
  * reimplementing it.
  */
 export function deriveAllowedLenses(inputs: LensGrantInputs): Lens[] {
-  const { hasBoardRole, hasProjectRole, isRootWriter, hasWriterFoundation, hasWriterProject, isOrgLensEnabled, isLFStaff } = inputs;
+  const { hasBoardRole, hasProjectRole, isRootWriter, hasWriterFoundation, hasWriterProject, isOrgLensEnabled, isLFStaff, hasMarketingGrant } = inputs;
 
-  const showFoundation = hasBoardRole || isRootWriter || hasWriterFoundation || isLFStaff;
+  const showFoundation = hasBoardRole || isRootWriter || hasWriterFoundation || isLFStaff || hasMarketingGrant;
   const showProject = hasProjectRole || isRootWriter || hasWriterProject;
 
   const lenses: Lens[] = ['me'];

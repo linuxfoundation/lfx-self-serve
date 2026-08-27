@@ -90,7 +90,7 @@ export class PlanningTabComponent implements OnInit {
    * restored one came out of storage and must NOT be written back. Emitting both through one
    * channel would leave the parent guessing which it received.
    */
-  public readonly restoreSavedBriefRequested = output<{ brief: CampaignBriefOutput; briefId: string; approved: boolean }>();
+  public readonly restoreSavedBriefRequested = output<{ brief: CampaignBriefOutput; briefId: string; etag: string | null; approved: boolean }>();
 
   // === Constants ===
   protected readonly platforms: CampaignPlatformOption[] = [...CAMPAIGN_PLATFORMS];
@@ -176,6 +176,17 @@ export class PlanningTabComponent implements OnInit {
 
   /** The id of the brief `savedBrief` holds. Kept in step with it; see `applySavedBrief`. */
   private savedBriefId: string | null = null;
+
+  /**
+   * The ETag the lookup observed for that brief, carried so the restore can hand the parent a
+   * LAST-SEEN validator rather than none (LFXV2-3204).
+   *
+   * Kept in step with `savedBrief` exactly as the id is, so there is no state where a brief is
+   * offered alongside a validator belonging to a different row. May legitimately be `null` — a
+   * read that produced no ETag still yields a restorable brief — so the restore stays possible
+   * without one and the parent decides what an absent validator permits.
+   */
+  private savedBriefEtag: string | null = null;
 
   /**
    * Whether that stored brief is APPROVED, carried alongside its id.
@@ -334,6 +345,7 @@ export class PlanningTabComponent implements OnInit {
     this.activeFoundationSlug$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.savedBrief.set(null);
       this.savedBriefId = null;
+      this.savedBriefEtag = null;
       this.savedBriefApproved = false;
       this.savedBriefWarning.set(null);
     });
@@ -367,9 +379,10 @@ export class PlanningTabComponent implements OnInit {
     // same trap the comment in `onUrlInput` already warns about. The next Proceed then created a
     // second row and hit the unowned-brief conflict.
     //
-    // `savedBriefId` is left in step with `savedBrief` by saying nothing about either — the pair
-    // is only ever written together, which is what `restoreSavedBrief`'s both-or-neither guard
-    // depends on.
+    // `savedBriefId` and `savedBriefEtag` are left in step with `savedBrief` by saying nothing
+    // about any of them — the three are only ever written together, which is what
+    // `restoreSavedBrief`'s both-or-neither guard depends on, and what stops a validator
+    // outliving the brief it was read for.
     this.isEditing.set(false);
     this.isRefining.set(false);
     this.isRefineStreaming.set(false);
@@ -442,6 +455,7 @@ export class PlanningTabComponent implements OnInit {
         this.currentSlug = slug;
         this.savedBrief.set(null);
         this.savedBriefId = null;
+        this.savedBriefEtag = null;
         this.savedBriefApproved = false;
         this.savedBriefWarning.set(null);
       }
@@ -468,7 +482,7 @@ export class PlanningTabComponent implements OnInit {
     // Both, or neither. A restore without its id would reach the parent as an unowned save and
     // be refused — a worse outcome than not offering the button, so the guard covers the pair.
     if (brief !== null && this.savedBriefId !== null) {
-      this.restoreSavedBriefRequested.emit({ brief, briefId: this.savedBriefId, approved: this.savedBriefApproved });
+      this.restoreSavedBriefRequested.emit({ brief, briefId: this.savedBriefId, etag: this.savedBriefEtag, approved: this.savedBriefApproved });
     }
   }
 
@@ -482,7 +496,7 @@ export class PlanningTabComponent implements OnInit {
     this.hsCreating.set(true);
     this.hsStatus.set(null);
     this.campaignService
-      .createHubSpotUtm(this.lastLookedUpEvent)
+      .createHubSpotUtm(this.activeFoundationSlug(), this.lastLookedUpEvent)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
@@ -539,7 +553,7 @@ export class PlanningTabComponent implements OnInit {
     };
 
     this.briefSubscription = this.campaignService
-      .generateBrief(request)
+      .generateBrief(this.activeFoundationSlug(), request)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (event: SSEEvent<CampaignSSEEventType>) => this.handleSSEEvent(event),
@@ -753,7 +767,7 @@ export class PlanningTabComponent implements OnInit {
 
     this.briefSubscription?.unsubscribe();
     this.briefSubscription = this.campaignService
-      .refineBrief(request)
+      .refineBrief(this.activeFoundationSlug(), request)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (event: SSEEvent<CampaignSSEEventType>) => this.handleRefineSSEEvent(event, capturedFeedback),
@@ -857,6 +871,7 @@ export class PlanningTabComponent implements OnInit {
     if (result === null) {
       this.savedBrief.set(null);
       this.savedBriefId = null;
+      this.savedBriefEtag = null;
       this.savedBriefApproved = false;
       this.savedBriefWarning.set('Could not check whether this event already has a saved brief.');
       return;
@@ -867,6 +882,14 @@ export class PlanningTabComponent implements OnInit {
     // there is no state where an offer exists without the id that authorises replacing its row.
     this.savedBrief.set(result.status === 'loaded' ? result.brief : null);
     this.savedBriefId = result.status === 'loaded' ? result.briefId : null;
+    // `?? null` NORMALISES, it does not merely satisfy the type. `etag` crosses an HTTP
+    // boundary, so the declared `string | null` is a claim about the CURRENT server: during a
+    // rolling deploy an older pod omits the field entirely and JSON yields `undefined`. That
+    // value would then fail the restore path's `etag === null` test, withholding the
+    // overwrite licence a validator-less restore is supposed to get and refusing the first
+    // save after every restore as `unverified-validator` — the main path, broken for the
+    // length of a deploy. Collapse absence to one spelling here, at the boundary.
+    this.savedBriefEtag = result.status === 'loaded' ? (result.etag ?? null) : null;
     this.savedBriefApproved = result.status === 'loaded' && result.approved;
 
     this.savedBriefWarning.set(this.warningFor(result));
@@ -932,7 +955,7 @@ export class PlanningTabComponent implements OnInit {
 
     const capturedEvent = eventName;
     this.campaignService
-      .lookupHubSpotUtm(eventName)
+      .lookupHubSpotUtm(this.activeFoundationSlug(), eventName)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result: HubSpotUtmLookupResult | null) => {

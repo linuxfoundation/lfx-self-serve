@@ -1,0 +1,135 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div #listContainer class="flex flex-col gap-4">
+  <!-- Header row -->
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <h2 class="text-xs font-bold tracking-wide text-gray-500">LATEST MENTIONS</h2>
+      @if (!loading() && totalMentions() > 0 && mentions().length > 0) {
+        <span class="text-xs text-gray-400" data-testid="mentions-list-count"
+          >{{ first() + 1 }}–{{ first() + mentions().length }} of {{ totalMentions() }}</span
+        >
+      }
+    </div>
+    <div class="flex items-center gap-2">
+      @if (!loading() && totalMentions() > 0) {
+        <lfx-button
+          label="Mark all as read"
+          icon="fa-light fa-check-double"
+          [text]="true"
+          styleClass="mark-all-btn"
+          (onClick)="markAllRead.emit()"
+          data-testid="mentions-list-mark-all-read" />
+        <lfx-button
+          label="Mark all as unread"
+          icon="fa-light fa-eye-slash"
+          [text]="true"
+          styleClass="mark-all-btn"
+          (onClick)="markAllUnread.emit()"
+          data-testid="mentions-list-mark-all-unread" />
+        <span class="text-xs text-gray-300">&middot;</span>
+      }
+      @if (dataComputedAt(); as computedAt) {
+        <span class="text-xs text-gray-400" data-testid="mentions-list-computed-at">Data as of {{ computedAt | date: 'short' }}</span>
+      }
+    </div>
+  </div>
+
+  <!-- Cards + paginator (lfx-table is the confirmed paginator wrapper; one card per single-cell row) -->
+  <!-- The page report interpolates the capped paginatorTotalRecords — suppress it above the cap so the header's true total stays authoritative. -->
+  <lfx-table
+    [value]="mentions()"
+    [loading]="loading()"
+    [lazy]="true"
+    [lazyLoadOnInit]="false"
+    [paginator]="true"
+    [rows]="rows()"
+    [first]="first()"
+    [totalRecords]="paginatorTotalRecords()"
+    [rowsPerPageOptions]="rowsPerPageOptions()"
+    [showCurrentPageReport]="paginatorTotalRecords() >= totalMentions()"
+    currentPageReportTemplate="Showing {first} to {last} of {totalRecords} mentions"
+    [alwaysShowPaginator]="totalMentions() > 0 || countError()"
+    [skeletonColumns]="1"
+    [skeletonRows]="3"
+    styleClass="mentions-table"
+    (onPage)="onTablePage($event)"
+    data-testid="mentions-list-table">
+    <ng-template #body let-mention>
+      <tr>
+        <td class="border-0 p-0 pb-3">
+          <lfx-mention-card
+            [mention]="mention"
+            [timeTick]="timeTick()"
+            [isBookmarked]="isBookmarkedFn()(mention.id)"
+            [isRead]="isReadFn()(mention.id)"
+            (bookmarkToggled)="bookmarkToggled.emit($event)"
+            (readToggled)="readToggled.emit($event)" />
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template #loadingbody let-rowData>
+      <tr class="lfx-skeleton-row" [style.animation-delay]="rowData.delay">
+        <td class="border-0 p-0 pb-3">
+          <div class="flex gap-5 rounded-lg border border-gray-200 bg-white p-5">
+            <div class="min-w-0 flex-1">
+              <div class="mb-2 flex items-center gap-1.5">
+                <p-skeleton width="1rem" height="1rem" shape="circle" />
+                <p-skeleton width="4rem" height="0.75rem" />
+                <p-skeleton width="3rem" height="0.75rem" />
+                <p-skeleton width="5rem" height="0.75rem" />
+                <p-skeleton width="5rem" height="0.75rem" />
+              </div>
+              <p-skeleton width="70%" height="1rem" styleClass="mb-1" />
+              <p-skeleton width="100%" height="0.75rem" styleClass="mb-1" />
+              <p-skeleton width="90%" height="0.75rem" styleClass="mb-1" />
+              <p-skeleton width="60%" height="0.75rem" styleClass="mb-3" />
+              <p-skeleton width="80%" height="0.625rem" styleClass="mb-3" />
+              <div class="flex items-center gap-2">
+                <p-skeleton width="5rem" height="1.25rem" borderRadius="9999px" />
+                <p-skeleton width="6.5rem" height="1.25rem" borderRadius="9999px" />
+              </div>
+            </div>
+            <div class="flex shrink-0 flex-col items-end gap-3">
+              <div class="flex items-center gap-2">
+                <p-skeleton width="1.5rem" height="1.5rem" borderRadius="0.25rem" />
+                <p-skeleton width="1.5rem" height="1.5rem" borderRadius="0.25rem" />
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template #emptymessage>
+      <tr>
+        <td class="border-0 p-0">
+          @if (phase2Failed()) {
+            <lfx-empty-state
+              icon="fa-light fa-triangle-exclamation"
+              title="Couldn't load this page"
+              subtitle="This page of mentions failed to load. Try again."
+              ctaLabel="Retry"
+              ctaIcon="fa-light fa-arrow-rotate-left"
+              (ctaClick)="retry.emit()"
+              data-testid="mentions-list-window-error" />
+          } @else if (unreadView()) {
+            <lfx-empty-state
+              icon="fa-light fa-circle-check"
+              title="You're all caught up"
+              subtitle="No unread mentions match the current filters."
+              data-testid="mentions-list-all-read-state" />
+          } @else {
+            <lfx-empty-state
+              icon="fa-light fa-ear-listen"
+              title="No mentions found"
+              subtitle="No mentions match the current scope and filters. Try widening the period or clearing the search."
+              data-testid="mentions-list-empty-state" />
+          }
+        </td>
+      </tr>
+    </ng-template>
+  </lfx-table>
+</div>

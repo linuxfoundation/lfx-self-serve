@@ -44,15 +44,17 @@ export class CampaignService {
   private readonly http = inject(HttpClient);
   private readonly sse = inject(SseService);
 
-  public generateBrief(request: CampaignBriefRequest): Observable<SSEEvent<CampaignSSEEventType>> {
-    return this.sse.connect<CampaignSSEEventType>('/api/campaigns/brief/generate', {
+  public generateBrief(projectSlug: string, request: CampaignBriefRequest): Observable<SSEEvent<CampaignSSEEventType>> {
+    const url = `/api/campaigns/brief/generate?project=${encodeURIComponent(projectSlug)}`;
+    return this.sse.connect<CampaignSSEEventType>(url, {
       method: 'POST',
       body: request,
     });
   }
 
-  public refineBrief(request: CampaignBriefRefineRequest): Observable<SSEEvent<CampaignSSEEventType>> {
-    return this.sse.connect<CampaignSSEEventType>('/api/campaigns/brief/refine', {
+  public refineBrief(projectSlug: string, request: CampaignBriefRefineRequest): Observable<SSEEvent<CampaignSSEEventType>> {
+    const url = `/api/campaigns/brief/refine?project=${encodeURIComponent(projectSlug)}`;
+    return this.sse.connect<CampaignSSEEventType>(url, {
       method: 'POST',
       body: request,
     });
@@ -95,9 +97,11 @@ export class CampaignService {
       if (knownEtag !== null && knownEtag !== '') {
         params = params.set('etag', knownEtag);
       } else if (allowEtagFallback) {
-        // No validator BY CHOICE: the user saw the stale-brief warning and proceeded. Without
-        // this the server cannot tell that from "the write returned no ETag", and substituting a
-        // freshly read validator for the second would bypass the precondition silently.
+        // No validator BY CHOICE: either the user saw the stale-brief warning and proceeded, or
+        // they restored a brief whose read carried no ETag. Both are decisions taken on content
+        // that was displayed. Without this the server cannot tell either from "the write returned
+        // no ETag", and substituting a freshly read validator for THAT would bypass the
+        // precondition silently.
         params = params.set('etag_fallback', '1');
       }
     }
@@ -186,40 +190,40 @@ export class CampaignService {
     );
   }
 
-  public getMonitorData(days: number = 30): Observable<CampaignMonitorResponse> {
-    return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { days } });
+  public getMonitorData(projectSlug: string, days: number = 30): Observable<CampaignMonitorResponse> {
+    return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { project: projectSlug, days } });
   }
 
-  public getLinkedInAccounts(): Observable<LinkedInAccount[]> {
-    return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts');
+  public getLinkedInAccounts(projectSlug: string): Observable<LinkedInAccount[]> {
+    return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts', { params: { project: projectSlug } });
   }
 
-  public getLinkedInMonitorData(accountKey: string, days: number = 30): Observable<LinkedInMonitorResponse> {
-    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', { params: { days, accountKey } });
+  public getLinkedInMonitorData(projectSlug: string, accountKey: string, days: number = 30): Observable<LinkedInMonitorResponse> {
+    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', { params: { project: projectSlug, days, accountKey } });
   }
 
-  public getRedditAccounts(): Observable<RedditAccountOption[]> {
-    return this.http.get<RedditAccountOption[]>('/api/campaigns/reddit/accounts');
+  public getRedditAccounts(projectSlug: string): Observable<RedditAccountOption[]> {
+    return this.http.get<RedditAccountOption[]>('/api/campaigns/reddit/accounts', { params: { project: projectSlug } });
   }
 
-  public getRedditMonitorData(accountKey: string, days: number = 30): Observable<RedditMonitorResponse> {
-    return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', { params: { days, accountKey } });
+  public getRedditMonitorData(projectSlug: string, accountKey: string, days: number = 30): Observable<RedditMonitorResponse> {
+    return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', { params: { project: projectSlug, days, accountKey } });
   }
 
-  public getMetaAccounts(): Observable<MetaAccountOption[]> {
-    return this.http.get<MetaAccountOption[]>('/api/campaigns/meta/accounts');
+  public getMetaAccounts(projectSlug: string): Observable<MetaAccountOption[]> {
+    return this.http.get<MetaAccountOption[]>('/api/campaigns/meta/accounts', { params: { project: projectSlug } });
   }
 
-  public getMetaMonitorData(accountKey: string, days: number = 30): Observable<MetaMonitorResponse> {
-    return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', { params: { days, accountKey } });
+  public getMetaMonitorData(projectSlug: string, accountKey: string, days: number = 30): Observable<MetaMonitorResponse> {
+    return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', { params: { project: projectSlug, days, accountKey } });
   }
 
-  public getKeywords(days: number = 30): Observable<KeywordMetricsResponse> {
-    return this.http.get<KeywordMetricsResponse>('/api/campaigns/keywords', { params: { days } });
+  public getKeywords(projectSlug: string, days: number = 30): Observable<KeywordMetricsResponse> {
+    return this.http.get<KeywordMetricsResponse>('/api/campaigns/keywords', { params: { project: projectSlug, days } });
   }
 
-  public getAudience(days: number = 30): Observable<AudienceDemographics> {
-    return this.http.get<AudienceDemographics>('/api/campaigns/audience', { params: { days } });
+  public getAudience(projectSlug: string, days: number = 30): Observable<AudienceDemographics> {
+    return this.http.get<AudienceDemographics>('/api/campaigns/audience', { params: { project: projectSlug, days } });
   }
 
   /**
@@ -283,16 +287,16 @@ export class CampaignService {
     });
   }
 
-  public lookupHubSpotUtm(eventName: string): Observable<HubSpotUtmLookupResult> {
-    return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', { params: { event_name: eventName } });
+  public lookupHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmLookupResult> {
+    return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', { params: { project: projectSlug, event_name: eventName } });
   }
 
-  public createHubSpotUtm(eventName: string): Observable<HubSpotUtmCreateResult> {
-    return this.http.post<HubSpotUtmCreateResult>('/api/campaigns/hubspot/utm/create', {}, { params: { event_name: eventName } });
+  public createHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmCreateResult> {
+    return this.http.post<HubSpotUtmCreateResult>('/api/campaigns/hubspot/utm/create', {}, { params: { project: projectSlug, event_name: eventName } });
   }
 
-  public executeKeywordActions(request: BulkKeywordActionRequest): Observable<BulkKeywordActionResponse> {
-    return this.http.post<BulkKeywordActionResponse>('/api/campaigns/keywords/actions', request);
+  public executeKeywordActions(projectSlug: string, request: BulkKeywordActionRequest): Observable<BulkKeywordActionResponse> {
+    return this.http.post<BulkKeywordActionResponse>('/api/campaigns/keywords/actions', request, { params: { project: projectSlug } });
   }
 
   /**

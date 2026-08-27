@@ -14,8 +14,10 @@ import {
   FOCUS_VISIBLE_TABS,
   MARKETING_IMPACT_FOCUS_OPTIONS,
   MARKETING_IMPACT_TABS,
+  MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import { buildMarketingImpactPeriodOptions, getDefaultMarketingImpactPeriod } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { startWith } from 'rxjs';
@@ -57,8 +59,12 @@ export class MarketingImpactComponent {
   // === Services ===
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly fb = inject(FormBuilder);
   private readonly platformId = inject(PLATFORM_ID);
+  protected readonly isBrowser = isPlatformBrowser(this.platformId);
+  /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — see LFXV2-2235/LFXV2-2236. */
+  private readonly marketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
   private readonly defaultPeriod = getDefaultMarketingImpactPeriod();
 
   // === Forms ===
@@ -84,7 +90,9 @@ export class MarketingImpactComponent {
   protected readonly selectedPeriod: Signal<string> = this.initSelectedPeriod();
   protected readonly contextLabel: Signal<string> = this.initContextLabel();
   protected readonly visibleTabs: Signal<MarketingImpactTabOption[]> = this.initVisibleTabs();
-  protected readonly isExecutiveDirector: Signal<boolean> = this.initIsExecutiveDirector();
+  protected readonly hasFullMarketingAccess: Signal<boolean> = this.initHasFullMarketingAccess();
+  /** Gates the Social-Listening-only fallback — must not render for a viewer who is merely not full-access (LFXV2-2236). */
+  protected readonly isLFStaff = computed(() => this.personaService.isLFStaff());
   /** True when the selected Campaign Type has no dashboard content built yet. */
   protected readonly isComingSoon = computed(() => COMING_SOON_FOCUS_PROGRAMS.has(this.selectedFocus()));
   /**
@@ -172,9 +180,44 @@ export class MarketingImpactComponent {
     });
   }
 
-  // Uses currentPersona() not canViewExecutiveDashboards() — LF Staff keep their contributor persona and fall into the !isExecutiveDirector() Social-Listening-only branch.
-  private initIsExecutiveDirector(): Signal<boolean> {
-    return computed(() => this.personaService.currentPersona() === 'executive-director');
+  // Full tabs for ED, and — while marketing-ops-fga-enabled is on — marketing_auditor grants (the
+  // entire purpose of that role). LF Staff deliberately stay on currentPersona(), not
+  // canViewExecutiveDashboards(): they keep their contributor persona and fall into the
+  // Social-Listening-only branch (LFXV2-2236 gap-analysis G4).
+  private initHasFullMarketingAccess(): Signal<boolean> {
+    return computed(() => {
+      if (this.personaService.currentPersona() === 'executive-director') {
+        return true;
+      }
+      if (!isPlatformBrowser(this.platformId) || !this.featureFlagService.providerReady()) {
+        return true;
+      }
+      if (!this.marketingOpsFgaEnabled()) {
+        return false;
+      }
+      const slug = this.foundationSlug();
+      // Read from the per-scope grant map: each scope's result is stored independently, so a
+      // newer cross-scope probe cannot overwrite this foundation's confirmed answer (Copilot
+      // finding, PR #1835: confirmActiveGrant force-write overwritten by later probe).
+      // Check this foundation's entry first, then fall back to a confirmed ROOT grant (null key).
+      const grants = this.personaService.grantsByScope();
+      const scopedGrant = slug ? grants.get(slug) : undefined;
+      if (scopedGrant?.isMarketingAuditor) return true;
+      const rootGrant = grants.get(null);
+      if (rootGrant?.isMarketingAuditor) return true;
+      // An authoritative `false` at either scope key must win over the legacy global signal below,
+      // which can be stale `true` from a different scope's earlier probe (Copilot/Cursor finding,
+      // PR #1835: legacy fallback overrides an authoritative map denial).
+      if (scopedGrant !== undefined || rootGrant !== undefined) {
+        return false;
+      }
+      // No per-scope entry yet — fall back to the global signal with the slug gate.
+      const grantSlug = this.personaService.marketingGrantSlug();
+      if (slug && grantSlug !== null && grantSlug !== slug) {
+        return false;
+      }
+      return this.personaService.isMarketingAuditor();
+    });
   }
 
   private initContextLabel(): Signal<string> {

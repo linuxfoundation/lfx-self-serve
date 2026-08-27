@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
-import { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
-import { CommitteeMember } from '../interfaces/member.interface';
-import { BadgeSeverity } from '../interfaces/components.interface';
-import { StatCardItem } from '../interfaces/stat-card.interface';
+import type { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
+import type { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
+import type { CommitteeMember } from '../interfaces/member.interface';
+import type { BadgeSeverity } from '../interfaces/components.interface';
+import type { StatCardItem } from '../interfaces/stat-card.interface';
 import {
   CATEGORY_BEHAVIORAL_CLASS,
   FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL,
@@ -14,6 +14,7 @@ import {
   OTHER_GROUPS_LABEL,
 } from '../constants/committees.constants';
 import { formatRelativeTime } from './date-time.utils';
+import { getEntityCommands } from './entity-route.utils';
 import { slugify } from './string.utils';
 
 /**
@@ -68,6 +69,22 @@ export function getGroupBehavioralClass(category: string | undefined): GroupBeha
   }
 
   return 'other';
+}
+
+/**
+ * Builds the canonical Angular router commands for a group's view or edit page, prefixing the
+ * path with the GROUP's own project tier (`is_foundation`) rather than the viewer's transient
+ * active lens: foundation-owned groups live under `/foundation/groups/{uid}`, all other
+ * projects under `/project/groups/{uid}`. Returns null when `is_foundation` is absent
+ * (unenriched payload) so callers can fall back to the flat `/groups/{uid}` path handled by
+ * `lensRedirectGuard`. Pass `leaf: 'edit'` for the edit route.
+ *
+ * Thin committee-shaped wrapper over {@link getEntityCommands} — the tier/edit/fallback contract
+ * lives there alone so the two can never drift (this copy once diverged on null-tier handling);
+ * its spec covers the `groups` segment, so no duplicate route-building tests live here.
+ */
+export function getGroupCommands(committee: Pick<Committee, 'uid' | 'is_foundation'>, leaf?: 'edit'): string[] | null {
+  return getEntityCommands('groups', committee.uid, committee.is_foundation, leaf);
 }
 
 /**

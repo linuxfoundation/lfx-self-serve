@@ -444,13 +444,101 @@ describe('ClasController.createClaManagerRequest', () => {
     });
   });
 
-  it.each(['contact', '', 'approve', undefined])('rejects %p as a request type', async (requestType) => {
+  it.each(['', 'approve', 'CONTACT', undefined])('rejects %p as a request type', async (requestType) => {
     const res = buildRes();
 
     await new ClasController().createClaManagerRequest({ params: { signatureId: SIGNATURE_ID }, body: body({ requestType }) } as any, res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(createClaManagerRequest).not.toHaveBeenCalled();
+  });
+
+  it('forwards a contact request carrying a message', async () => {
+    createClaManagerRequest.mockResolvedValue({ ...receipt, requestType: 'contact' as const });
+
+    await new ClasController().createClaManagerRequest(
+      { params: { signatureId: SIGNATURE_ID }, body: body({ requestType: 'contact', message: '  who owns our list?  ' }) } as any,
+      buildRes(),
+      vi.fn()
+    );
+
+    expect(createClaManagerRequest).toHaveBeenCalledWith(expect.anything(), SIGNATURE_ID, resolvedIdentity, {
+      requestType: 'contact',
+      recipients: ['jdoe'],
+      message: 'who owns our list?',
+    });
+  });
+
+  // The producer refuses a blank contact message; answering here keeps it a usable 400. The
+  // control-character case is blank only after sanitization, which is what the producer validates.
+  it.each([undefined, '', '   \n\t ', '\x07\x1b', ' \r\n \x07 \t '])('rejects a contact request whose message is %j', async (message) => {
+    const res = buildRes();
+
+    await new ClasController().createClaManagerRequest(
+      { params: { signatureId: SIGNATURE_ID }, body: body({ requestType: 'contact', message }) } as any,
+      res,
+      vi.fn()
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(createClaManagerRequest).not.toHaveBeenCalled();
+  });
+
+  // `String({})` is "[object Object]" — that would pass the contact blank check and then fail
+  // the producer's string schema after a gateway round trip.
+  it.each([{}, 12, true, ['hi']])('rejects a contact message that is not a string (%j)', async (message) => {
+    const res = buildRes();
+
+    await new ClasController().createClaManagerRequest(
+      { params: { signatureId: SIGNATURE_ID }, body: body({ requestType: 'contact', message }) } as any,
+      res,
+      vi.fn()
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(createClaManagerRequest).not.toHaveBeenCalled();
+  });
+
+  it('still accepts approval and removal with no message at all', async () => {
+    createClaManagerRequest.mockResolvedValue(receipt);
+
+    for (const requestType of ['approval', 'removal'] as const) {
+      createClaManagerRequest.mockClear();
+      await new ClasController().createClaManagerRequest({ params: { signatureId: SIGNATURE_ID }, body: body({ requestType }) } as any, buildRes(), vi.fn());
+
+      expect(createClaManagerRequest).toHaveBeenCalledWith(expect.anything(), SIGNATURE_ID, resolvedIdentity, { requestType, recipients: ['jdoe'] });
+    }
+  });
+
+  // Emoji are two UTF-16 units each; counting units would reject at half the producer's rune cap.
+  it('measures the message cap in code points, matching the producer rune limit', async () => {
+    createClaManagerRequest.mockResolvedValue(receipt);
+
+    await new ClasController().createClaManagerRequest(
+      { params: { signatureId: SIGNATURE_ID }, body: body({ message: '🙂'.repeat(4096) }) } as any,
+      buildRes(),
+      vi.fn()
+    );
+
+    expect(createClaManagerRequest).toHaveBeenCalled();
+  });
+
+  // The producer strips control characters before it measures, so they must not consume the cap.
+  it('does not count stripped control characters against the message cap', async () => {
+    createClaManagerRequest.mockResolvedValue(receipt);
+
+    await new ClasController().createClaManagerRequest(
+      { params: { signatureId: SIGNATURE_ID }, body: body({ message: `${'x'.repeat(4096)}${'\x07'.repeat(50)}` }) } as any,
+      buildRes(),
+      vi.fn()
+    );
+
+    expect(createClaManagerRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      SIGNATURE_ID,
+      expect.anything(),
+      expect.objectContaining({ message: 'x'.repeat(4096) })
+    );
   });
 
   it('rejects an empty recipient list', async () => {

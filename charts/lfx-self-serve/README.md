@@ -191,13 +191,26 @@ Campaign endpoints are being moved off this application's vendor-direct integrat
 lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
 changing a value here rather than by shipping a revert.
 
-| Parameter                                                | Description                                                                                                                         | Required | Default |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`          | Serves campaign job status from campaign-service; see the accepted values below                                                     | No       | off     |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`        | Persists the generated brief in campaign-service instead of only in the browser tab                                                 | No       | off     |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`        | Creates campaigns through campaign-service instead of the per-platform Express services                                             | No       | off     |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`    | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below | No       | off     |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                | No       | off     |
+| Parameter                                                | Description                                                                                                                         | Required | Default  |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`          | Serves campaign job status from campaign-service; see the accepted values below                                                     | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`        | Persists the generated brief in campaign-service instead of only in the browser tab                                                 | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`        | Creates campaigns through campaign-service instead of the per-platform Express services                                             | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`    | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                | No       | off      |
+
+`..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
+**While `..._CREATE` remains off** — the state this chart ships — no UUID job id can exist, so
+every poll is answered by the store that holds it and this flip is inert for job polling.
+**That inertness ends when `..._CREATE` is enabled.** From then on JOBS must be on every pod
+before CREATE, and must stay on until outstanding UUID jobs drain; a pod with JOBS off skips the
+id-shape check entirely and answers a terminal `not_found` for a campaign that is running and
+spending. `..._BRIEFS` and `..._CREATE` stay off and are enabled in later changes, each only once
+the previous has converged — see **Rollout ordering** below, which governs.
+
+One behaviour does change today: with JOBS on, a poll for a UUID job id requires `?project=` and
+is refused with a 400 without it. The LFX One client always sends it, so in-product polling is
+unaffected; a direct API caller or a saved script may not.
 
 Every cutover flag in the table above is ON for `true`, `1`, `yes`, or `on` — trimmed and matched
 case-insensitively, so `"True"` and `" on "` also enable it. Every other value is OFF, including
@@ -316,6 +329,57 @@ still fine: the container treats it as unset and the application resolves it to 
 deployment that genuinely needs a direct address should drop the variable from that list in a
 reviewed chart commit — a values override is invisible to review, a chart change is not.
 
+#### Marketing Ops FGA Enforcement
+
+| Parameter                                   | Description                                                                                    | Required | Default |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------- | ------- |
+| `environment.LFX_MARKETING_OPS_FGA_ENABLED` | Gates FGA-based `marketing_auditor` / `campaign_manager` authorization on the marketing routes | No       | off     |
+
+Same accepted-values and default-deny rules as the campaign-service cutover flags above. OFF (the
+default) establishes an `executive_director`-only baseline: analytics routes already gated by
+LFXV2-3294 preserve their prior behavior, while campaigns routes that previously had no
+authorization middleware are intentionally tightened to ED-only. Deploying with the default value
+still tightens authorization for campaigns — this is not a no-op rollback. ON adds a
+root-writer bypass plus a root- or project-scoped `marketing_auditor` / `campaign_manager` FGA
+grant as additional ways to pass — it never removes the existing ED path. LF Staff are not part
+of what this flag adds: their bypass, where it exists at all, is wired per-endpoint (only the
+analytics routes shared with the Marketing Overview widget, not Campaigns) and fires the same way
+whether this flag is on or off.
+
+This flag is deliberately independent of the client-side `marketing-ops-fga-enabled` OpenFeature
+flag: the Web SDK never runs server-side, so a direct API caller with an FGA marketing relation
+never executes the client-side UI guards at all — this server flag alone is what decides whether
+that caller reaches the route. The client flag only controls whether a browser session shows the
+Campaigns/Analytics affordance and lets its own route guards through; it has no effect on server
+enforcement or on any non-browser caller. Both flags must be enabled for the feature to work
+end-to-end through the UI, but the server flag is the only one that matters for a direct API call.
+
+OFF by default is a hard requirement here, not a convenience default — the reverted PR #1112
+caused a **total lockout for all users** when its UI guards shipped with no kill switch
+(LFXV2-2231 gap-analysis G2). This flag lets a bad rollout be reverted with a value change, not a
+revert PR. Unlike the campaign-service cutover flags, an overlapping rollout of THIS flag alone is
+safe — no caller can be locked out — but it is not harmless: a caller who is ONLY an FGA
+`marketing_auditor` / `campaign_manager` (no ED or root-writer persona, and not covered by an
+`allowLfStaff` endpoint) will see a request succeed on a flag-on pod and get denied on a
+flag-off pod purely depending on which pod answers. ED/root-writer callers, and LF Staff on the
+endpoints that allow them, are unaffected either way, since those checks are reachable
+regardless of this flag.
+
+**Rollout ordering across the two flags (this order matters):**
+
+1. Enable `LFX_MARKETING_OPS_FGA_ENABLED` and confirm the rolling update has fully converged — no
+   pod still answering on the pre-flip image/config. A marketing-relation caller hitting a
+   not-yet-converged pod during that window still falls back to the `executive_director`-only
+   gate, which is a safe denial, not a lockout — but it does mean the client flag would be turning
+   on a UI affordance (Campaigns/Analytics nav links) that some pods will still 403 on.
+2. Only once the server flag has fully converged, enable the client-side
+   `marketing-ops-fga-enabled` OpenFeature flag.
+
+**Roll back in the opposite order:** disable the client flag first, confirm it, then disable the
+server flag. Rolling the server flag back while the client flag is still on leaves the UI
+advertising Campaigns/Analytics access to marketing-ops users that the BFF will now reject —
+broken UX, not a security hazard, but avoidable by sequencing the rollback.
+
 #### AI Service Configuration
 
 | Parameter                  | Description                              | Required | Default |
@@ -327,12 +391,14 @@ reviewed chart commit — a values override is invisible to review, a chart chan
 
 Server-side credentials for the Marketing OS agents proxy. Consumed only by the SSR server — never exposed to the browser.
 
-| Parameter                           | Description                            | Required | Default                |
-| ----------------------------------- | -------------------------------------- | -------- | ---------------------- |
-| `environment.GUILD_API_URL`         | Guild API base URL                     | No       | `https://app.guild.ai` |
-| `environment.GUILD_API_KEY`         | API key for Guild workspace operations | **Yes**  | -                      |
-| `environment.GUILD_WORKSPACE_OWNER` | Guild workspace owner identifier       | **Yes**  | -                      |
-| `environment.GUILD_WORKSPACE_NAME`  | Guild workspace name                   | **Yes**  | -                      |
+| Parameter                                  | Description                                                                                                                                            | Required | Default                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ---------------------- |
+| `environment.GUILD_API_URL`                | Guild API base URL                                                                                                                                     | No       | `https://app.guild.ai` |
+| `environment.GUILD_API_KEY`                | API key for Guild workspace operations                                                                                                                 | **Yes**  | -                      |
+| `environment.GUILD_WORKSPACE_OWNER`        | Guild workspace owner identifier                                                                                                                       | **Yes**  | -                      |
+| `environment.GUILD_WORKSPACE_NAME`         | Guild workspace name                                                                                                                                   | **Yes**  | -                      |
+| `environment.GUILD_STRUCTURED_AGENT_INPUT` | Send the Message Foundation intake as a structured Guild `agent_input` instead of BFF-rendered text                                                    | No       | `"false"`              |
+| `environment.GITHUB_API_TOKEN`             | Token for the server-side README fetch. Unset uses unauthenticated GitHub (60 req/hour **per egress IP**); a public-repo token raises it to 5,000/hour | No       | -                      |
 
 #### Runtime Client Configuration
 
