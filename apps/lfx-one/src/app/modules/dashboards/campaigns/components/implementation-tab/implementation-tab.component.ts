@@ -152,6 +152,20 @@ export class ImplementationTabComponent implements OnInit {
   public readonly sourceEmailId = input<string>('');
 
   /**
+   * Whether this deployment can create a Demand Gen Google campaign.
+   *
+   * The create route refuses `demand-gen` unless `LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` is on,
+   * and the chart leaves that flag unset — so without this the tab renders a checkbox whose every
+   * submission is refused. The two refusals also disagree: picking Search AND Demand Gen is told
+   * to "deselect one and create it", and doing so lands on the capability refusal saying Demand
+   * Gen is unavailable entirely. The first message walks the user into the second.
+   *
+   * Defaults to `false`, matching `statusToggleEnabled`: withholding a control for one request is
+   * cheap, offering one that cannot succeed is not.
+   */
+  public readonly demandGenEnabled = input<boolean>(false);
+
+  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *
@@ -1608,7 +1622,11 @@ export class ImplementationTabComponent implements OnInit {
       startDate: draft.startDate,
       endDate: draft.endDate,
       includeSearch: draft.includeSearch,
-      includeDemandGen: draft.includeDemandGen,
+      // Forced false where the deployment cannot serve it. A draft saved when Demand Gen was
+      // available — or under the old `true` default — would otherwise restore a hidden `true`
+      // and submit it, which the create route refuses. Hiding the control is not enough on its
+      // own because this path writes the value without it.
+      includeDemandGen: this.demandGenEnabled() && draft.includeDemandGen,
       // The three LinkedIn controls (LFXV2-3230), restored in the SAME patch as everything else —
       // which is the entire benefit of having moved them onto the form: no extra signal writes and
       // no second emission. This runs AFTER `populateFromBrief`, so it deliberately overwrites the

@@ -361,7 +361,12 @@ export class CampaignServiceClient {
       // programming error, and it is exactly the false absence this field exists to prevent. The
       // HTTP path never reaches this (the controller refuses both blanks first), so this guards
       // direct callers, where an unqualified "no campaigns" is the most expensive thing to say.
-      return { campaigns: [], possiblyStale: true, statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle) };
+      return {
+        campaigns: [],
+        possiblyStale: true,
+        statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle),
+        demandGenEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceDemandGen),
+      };
     }
 
     const docs = await fetchAllQueryResources<CampaignIndexDoc>(
@@ -400,12 +405,17 @@ export class CampaignServiceClient {
     // toggle route refuses every UUID when the flag is off. The chart now ships the flag on, but
     // it is read per request from the environment, so a values override or a not-yet-rolled pod
     // still answers off — and that deployment would render controls that can only fail. Read at
-    // request time rather than cached, so a flag flip does
-    // not need a redeploy of this process to take effect on the next list.
+    // request time rather than cached, so a flag flip does not need a redeploy of this process to
+    // take effect on the next list.
+    //
+    // `demandGenEnabled` rides along for the same reason and is read the same way: the create
+    // route refuses `demand-gen` unless its own flag is on, and nothing in the create request
+    // tells the client that in advance.
     return {
       campaigns,
       possiblyStale: campaigns.length === 0,
       statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle),
+      demandGenEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceDemandGen),
     };
   }
 

@@ -142,10 +142,15 @@
               <input type="checkbox" formControlName="includeSearch" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
               Search Campaign
             </label>
-            <label class="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" formControlName="includeDemandGen" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-              Demand Gen Campaign
-            </label>
+            <!-- Hidden, not disabled, when the deployment cannot create Demand Gen: a disabled
+                 checkbox still advertises a capability and invites a support question, and the
+                 create is refused either way. Search stays available, so the section is not empty. -->
+            @if (demandGenEnabled()) {
+              <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" formControlName="includeDemandGen" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                Demand Gen Campaign
+              </label>
+            }
           </div>
         }
       </div>

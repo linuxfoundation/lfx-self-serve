@@ -3139,3 +3139,106 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(c.metaVariants()).toHaveLength(1);
   });
 });
+
+describe('ImplementationTabComponent demand gen capability gate', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  function checkbox(): HTMLInputElement | null {
+    return fixture.nativeElement.querySelector('input[formControlName="includeDemandGen"]');
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /**
+   * Asserted in BOTH directions on the RENDERED output, not on the input signal.
+   *
+   * A test that only checked the disabled case would pass against a template that never renders
+   * the control at all, and one that only read `demandGenEnabled()` would pass against a template
+   * that ignores it entirely.
+   */
+  it('hides the Demand Gen control when the deployment cannot create it', () => {
+    fixture.componentRef.setInput('demandGenEnabled', false);
+    fixture.detectChanges();
+    expect(checkbox()).toBeNull();
+  });
+
+  it('shows the Demand Gen control when the deployment can create it', () => {
+    fixture.componentRef.setInput('demandGenEnabled', true);
+    fixture.detectChanges();
+    expect(checkbox()).not.toBeNull();
+  });
+
+  it('defaults to hidden, so a deployment that never reports the capability cannot offer it', () => {
+    expect(checkbox()).toBeNull();
+  });
+
+  /**
+   * Order matters, and getting it wrong makes the negative case pass for the wrong reason.
+   *
+   * The seeding effect depends only on `briefData` and reads `draft` inside `untracked()`, so the
+   * draft must already be set when the brief lands — setting the brief first runs the effect with
+   * no draft, and a later `setInput('draft', ...)` never re-triggers it. `applyDraft` also returns
+   * early unless the draft's `eventSlug` matches the form's, which the brief is what populates.
+   *
+   * With either mistake the control keeps its `[false]` default and the "forces to Search" test
+   * passes without the guard existing at all.
+   */
+  function restoreDraft(enabled: boolean, includeDemandGen: boolean): void {
+    fixture.componentRef.setInput('demandGenEnabled', enabled);
+    fixture.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://example.com',
+      includeSearch: true,
+      includeDemandGen,
+      // Required: `applyDraft` calls `replaceCopyArray` on both unconditionally, so a draft
+      // without them throws "values is not iterable" before it reaches the checkbox.
+      headlines: ['Join us at KubeCon'],
+      descriptions: ['Register today for KubeCon EU 2026.'],
+    } as unknown as CampaignImplementationDraft);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+  }
+
+  function demandGenValue(): boolean {
+    return (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].controls['includeDemandGen'].value;
+  }
+
+  /**
+   * Hiding the control is not enough on its own: the draft restore writes `includeDemandGen`
+   * directly, so a draft saved when the capability was available would put a hidden `true` on the
+   * form and submit it into a refusal. Asserts the VALUE, not merely that the path ran.
+   */
+  it('forces a restored draft to Search when the deployment cannot create Demand Gen', () => {
+    restoreDraft(false, true);
+    expect(demandGenValue()).toBe(false);
+  });
+
+  /**
+   * The paired positive case. Without it the guard could be `includeDemandGen: false` outright
+   * and the negative test above would still pass, so this is what proves the gate reads the
+   * capability rather than discarding the draft value unconditionally.
+   */
+  it('preserves a restored draft Demand Gen selection where the deployment supports it', () => {
+    restoreDraft(true, true);
+    expect(demandGenValue()).toBe(true);
+  });
+});

@@ -470,6 +470,15 @@ export class CampaignsComponent {
    * about the response those rows came from.
    */
   protected readonly briefCampaignsToggleEnabled = signal(false);
+  /**
+   * Whether this deployment can create a Demand Gen Google campaign
+   * (`CampaignListResult.demandGenEnabled`).
+   *
+   * Set from the SAME four places as `briefCampaignsToggleEnabled` above — both reset arms, the
+   * success arm and the error arm. Setting only the success arm leaves it true after a foundation
+   * switch into a deployment that cannot serve it, which is the state it exists to prevent.
+   */
+  protected readonly briefCampaignsDemandGenEnabled = signal(false);
 
   /**
    * Generation counter for the campaign-list read — the same mechanism as `emailSearchGeneration`,
@@ -783,6 +792,7 @@ export class CampaignsComponent {
         this.briefCampaigns.set(null);
         this.briefCampaignsStale.set(false);
         this.briefCampaignsToggleEnabled.set(false);
+        this.briefCampaignsDemandGenEnabled.set(false);
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
         // set would report the previous foundation's outage against a foundation never queried.
         this.briefCampaignsUnavailable.set(false);
@@ -1275,6 +1285,7 @@ export class CampaignsComponent {
     this.briefCampaignsStale.set(false);
     this.briefCampaignsUnavailable.set(false);
     this.briefCampaignsToggleEnabled.set(false);
+    this.briefCampaignsDemandGenEnabled.set(false);
 
     if (projectSlug === '' || briefId === null || briefId === '') {
       // No brief id means nothing was persisted this session and no restore supplied one, so
@@ -1296,6 +1307,7 @@ export class CampaignsComponent {
           this.briefCampaignsStale.set(result.possiblyStale);
           this.briefCampaignsUnavailable.set(false);
           this.briefCampaignsToggleEnabled.set(result.statusToggleEnabled);
+          this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
         },
         error: () => {
           if (!isCurrent()) {
@@ -1307,6 +1319,7 @@ export class CampaignsComponent {
           this.briefCampaignsStale.set(false);
           this.briefCampaignsUnavailable.set(true);
           this.briefCampaignsToggleEnabled.set(false);
+          this.briefCampaignsDemandGenEnabled.set(false);
         },
       });
   }

@@ -1710,6 +1710,23 @@ export interface CampaignListResult {
    * that would drift from the deployment it describes.
    */
   statusToggleEnabled: boolean;
+  /**
+   * Whether THIS deployment can actually create a Demand Gen Google campaign.
+   *
+   * Same reasoning as `statusToggleEnabled`, for a different capability: the create route refuses
+   * `demand-gen` unless `LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` is on, and the chart leaves that
+   * flag unset. Nothing in the create request tells the client that in advance, so without this
+   * field the Implementation tab offers a Demand Gen checkbox whose every submission is refused.
+   *
+   * Worse than a plain dead end, because the two refusals disagree: selecting Search AND Demand
+   * Gen is refused with "deselect one and create it", and following that advice lands on the
+   * capability refusal saying Demand Gen is not available at all. The first message walks the
+   * user into the second.
+   *
+   * Defaults to `false` on every error and pre-load path. Withholding a control for one request
+   * is cheap; offering one that cannot succeed is not.
+   */
+  demandGenEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------
