@@ -1698,10 +1698,13 @@ export interface CampaignListResult {
    *
    * Returned with the list because the two routes are gated differently and the client cannot
    * infer it: `/list` is ungated (it reads the Query Service index), while the toggle route
-   * refuses every UUID unless `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` is on — and the chart
-   * leaves that flag unset by default. Without this field a default deployment renders a row of
-   * buttons whose every click fails, which reads to an operator as the campaign refusing to stop
-   * rather than as a capability that was never switched on.
+   * refuses every UUID unless `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` is on. The chart now
+   * ships that flag `"true"`, but the field is not therefore redundant: the flag is read per
+   * request from the environment, so any deployment that overrides it — a values override, a
+   * chart that has not rolled yet, local dev — still turns the toggle off underneath a client
+   * that cannot see the change. Without this field such a deployment renders a row of buttons
+   * whose every click fails, which reads to an operator as the campaign refusing to stop rather
+   * than as a capability that was never switched on.
    *
    * A server fact, so it is reported by the server rather than mirrored into a client-side flag
    * that would drift from the deployment it describes.
