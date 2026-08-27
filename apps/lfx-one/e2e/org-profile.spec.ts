@@ -16,9 +16,6 @@
  * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  */
 
-// Deep-imported, not from the barrel — the barrel pulls in Angular-dependent modules that fail to
-// load outside the app (same trap as org-roi.helper.ts).
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import type { CascadingRoleGrant } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
@@ -189,19 +186,6 @@ async function stubCanonicalAndAddresses(page: Page, canonicalStatus: number = 2
 async function gotoProfileWithStubs(page: Page, writers: string[]): Promise<void> {
   await stubOrgProfileContext(page, { writers });
   await stubCanonicalAndAddresses(page);
-
-  // LFXV2-3288 / PR #1583 — pin `org_lens_private_release` for the whole suite. The Company Logo
-  // Upload affordance (button + hidden file input, S7/S8's target) sits behind this flag via the
-  // `isOrgLensUploadLogoEnabled` wrapper; the SDK evaluates against an anonymous context first, so
-  // without a pin the input never mounts and `setInputFiles` times out. Mirrors the pattern in
-  // `helpers/org-roi.helper.ts:stubFeatureFlags` (same FEATURE_FLAG_OVERRIDE_STORAGE_KEY contract),
-  // inlined here to avoid pulling in the ROI helper file just for one call. Pinned at the shared
-  // helper because the flag governs an edit-view element every writer-scoped scenario touches — a
-  // per-S7/S8 opt-in would leave the flag off in S3 the moment we extend that test to click Upload.
-  await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
-    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-    JSON.stringify({ [ORG_LENS_PRIVATE_RELEASE_FLAG]: true }),
-  ] as const);
 
   // Install stubs before reload so client-side persona + role-grant fetches are intercepted (mirrors org-selector S9).
   await suppressCookieBanner(page);
