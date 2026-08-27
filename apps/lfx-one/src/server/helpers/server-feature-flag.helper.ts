@@ -178,7 +178,7 @@ export enum ServerFeatureFlag {
    * Microsoft — and a number here goes stale silently. See
    * `CAMPAIGN_SERVICE_STATUS_PLATFORMS` for why the narrowing is deliberate.
    *
-   * ROLLOUT OVERLAP IS SAFE HERE, unlike `CampaignServiceJobs`, and the reason is worth stating
+   * MISROUTING IS IMPOSSIBLE HERE, unlike `CampaignServiceJobs`, and the reason is worth stating
    * because that flag's hazard looks identical. Routing depends on the campaign id's SHAPE as
    * well as the flag, and the two id spaces are disjoint: campaign-service keys campaigns by
    * UUID, while the legacy path's ids are the ad platform's own numeric ids (`NUMERIC_ID_RE`).
@@ -188,9 +188,15 @@ export enum ServerFeatureFlag {
    * refuses with a clear error instead of dispatching to the wrong backend; it does not answer
    * a confident falsehood the way an off-pod job poll did.
    *
-   * The dependency that IS real: a campaign only has a UUID if it was created through
-   * campaign-service, so this is only useful once `CampaignServiceCreate` has been on long
-   * enough to produce rows. Enabling it earlier is harmless but inert.
+   * That is NARROWER than "an overlapping rollout is safe", which an earlier revision of this
+   * comment claimed. A refusal is well-formed and still a failure: the pod returns 400 from
+   * `campaign.controller.ts`, and pause is the primary cost-control lever on a spending
+   * campaign. So this flag must not share a rollout with `CampaignServiceCreate`.
+   *
+   * The dependency that makes the ordering free: a campaign only has a UUID if it was created
+   * through campaign-service, so this flag is INERT until `CampaignServiceCreate` has produced
+   * rows. Enabling it first therefore changes nothing observable, which is exactly why it ships
+   * first — and why the reverse order is the one that costs.
    */
   CampaignServiceStatusToggle = 'LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE',
 

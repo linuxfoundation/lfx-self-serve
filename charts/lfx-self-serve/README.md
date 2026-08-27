@@ -348,7 +348,11 @@ all.
 
 1. Turn **JOBS** on first and leave it on.
 2. Then **BRIEFS**.
-3. Then **CREATE**.
+3. Then **STATUS_TOGGLE**, and let it converge before the next step. It is inert until CREATE
+   exists, so this step changes nothing observable — that is what makes it safe to roll alone,
+   and enabling it _after_ CREATE is the ordering that opens a window where a new pod mints a
+   UUID campaign an old pod refuses to pause.
+4. Then **CREATE**.
 
 To roll back, reverse it: turn **CREATE** off first, and keep **JOBS** on until every outstanding
 UUID job has drained.
