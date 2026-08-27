@@ -233,11 +233,11 @@ Placement decision trees ("where does my component go?", "do I need a new module
 ### Post-commit (pre-PR phase, after every commit except the final one — see step 6; parallel, asynchronous)
 
 1. **Commit your work.** `git commit --signoff -S`. Do not wait for any prior review to finish.
-2. **Immediately pin the review range, then launch all three reviewer children in parallel.** Compute once, right after the commit:
+2. **Pin the review range immediately; launch all three reviewer children in parallel as soon as no batch is active** (see step 7 — if the previous commit's trio is still running, hold the pinned SHAs and launch this batch when it returns). Compute and print once, right after the commit, and record the printed pair (in your task notes or todo list) — shell variables do not survive between tool calls, so a batch deferred behind a running trio must be launched from the recorded values, never from a fresh `git rev-parse`:
 
    ```bash
-   TARGET_SHA=$(git rev-parse HEAD)
-   BASE_SHA=$(git rev-parse HEAD~1)
+   TARGET_SHA=$(git rev-parse HEAD); BASE_SHA=$(git rev-parse HEAD~1)
+   echo "target_sha: $TARGET_SHA"; echo "base_sha: $BASE_SHA"
    ```
 
    Then issue three **Agent tool calls in a single message** — all `subagent_type: general-purpose`, `model: opus`, `run_in_background: true`. Each child explicitly loads exactly one review skill, and all three receive the same target repo and the same immutable `target_sha` / `base_sha` / diff range:
@@ -255,6 +255,7 @@ Placement decision trees ("where does my component go?", "do I need a new module
    The pinned range below is authoritative: audit target_sha against base_sha exactly, even if HEAD has moved since launch — never re-derive the range from a moving HEAD.
 
    target repo: lfx-self-serve
+   repo root: <REPO_ROOT>
    target_sha: <TARGET_SHA>
    base_sha: <BASE_SHA>
    diff range: git diff <BASE_SHA> <TARGET_SHA> (the single commit target_sha)
@@ -265,7 +266,7 @@ Placement decision trees ("where does my component go?", "do I need a new module
 
    where `<skill>` is `lfx-skills:lfx-general-code-review`, `lfx-self-serve-code-review`, or `lfx-self-serve-learnings-review` respectively. Append `extra: <focus>` on a new line only when there's a priority hint to add. Do NOT pass `branch` here.
 
-   The `diff range:` / `review exactly:` pair states the same range under each child's input vocabulary, and the `branch` keyword is parsed only by the two repo-owned skills — the general child relies on the pinned lines alone. The Read fallback applies to the two repo-owned skills (the plugin skill has no repo-root path, so an unlistable plugin skill correctly falls through to `INCOMPLETE`). Skills added or renamed in the current session may be absent from a child's skill roster — the Read fallback is the expected path there, and an `INCOMPLETE — could not load <skill>` means relaunch (a fresh session picks the skill up), not that the review found a problem.
+   The `diff range:` / `review exactly:` pair states the same range under each child's input vocabulary, and the `branch` keyword is parsed only by the two repo-owned skills — the general child relies on the pinned lines alone. `repo root:` is the absolute path of the checkout to review (the same value as the Read-fallback's `<repo-root>`): the skills locate the repo by directory _name_, which mis-resolves when the working tree is a git worktree with a different directory name — the explicit root binds the child to the exact tree whose files and rules it must read. The Read fallback applies to the two repo-owned skills (the plugin skill has no repo-root path, so an unlistable plugin skill correctly falls through to `INCOMPLETE`). Skills added or renamed in the current session may be absent from a child's skill roster — the Read fallback is the expected path there, and an `INCOMPLETE — could not load <skill>` means relaunch (a fresh session picks the skill up), not that the review found a problem.
 
 3. **Keep working.** Start the next commit while the reviewers run. Do not block on them.
 4. **When the reviewers return:** read all three reports. Roll every Critical finding and every reasonable Important finding into the next commit (a separate `fix(review): address findings` commit is fine; squashing is not required — the history shows review-driven iteration).
@@ -283,9 +284,11 @@ When the work is "done" — no more code commits planned:
 
    ```bash
    git fetch origin
-   TARGET_SHA=$(git rev-parse HEAD)
-   BASE_SHA=$(git merge-base origin/main HEAD)
+   TARGET_SHA=$(git rev-parse HEAD); BASE_SHA=$(git merge-base origin/main HEAD)
+   echo "target_sha: $TARGET_SHA"; echo "base_sha: $BASE_SHA"
    ```
+
+   Record the printed pair before launching, same as in post-commit step 2.
 
    The prompt for each child must include the `branch` keyword so the loaded skill audits the branch's diff against `origin/main` instead of just the latest commit. **Full-branch mode prompt (exact, all three children — substitute the child's skill name, the repo root, and the pinned SHAs):**
 
@@ -295,6 +298,7 @@ When the work is "done" — no more code commits planned:
    The pinned range below is authoritative: audit target_sha against base_sha exactly, even if HEAD or origin/main has moved since launch — never re-derive the range from a moving HEAD or re-fetch the base.
 
    target repo: lfx-self-serve
+   repo root: <REPO_ROOT>
    branch
    target_sha: <TARGET_SHA>
    base_sha: <BASE_SHA>
@@ -310,6 +314,9 @@ When the work is "done" — no more code commits planned:
 
 4. **Run `/lfx-self-serve-pr-readiness`** against the target base branch. PR-shape sanity: branch name, ticket reference (JIRA or GitHub Issue), conventional commits, rebase, DCO + GPG per commit, diff size. Does NOT audit code (covered by the post-commit trio and the full-branch sweep). Address every Critical; address or document every SHOULD_FIX. Rerun until the verdict is `READY` or `READY WITH CHANGES` with explicit trade-offs.
 5. **Run `/preflight`** for license / format / lint / build / protected-file mechanical checks.
+
+   Any commit created while addressing step 4 or step 5 findings (readiness or preflight remediation) re-enters at step 3: rerun the full-branch sweep on the new tip — never a per-commit trio — then rerun steps 4–5. Every pre-PR commit has exactly one defined audit.
+
 6. **Only then push and open the PR.** (Reviewers run `/lfx-review-pr` against the open PR — that should not be your first standards check.)
 
 ### Post-PR iteration (responding to bot feedback on an open PR)
