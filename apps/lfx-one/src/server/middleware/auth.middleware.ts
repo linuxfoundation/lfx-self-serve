@@ -50,10 +50,10 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // impersonation session never leaks here; anchored regex prevents `startsWith` fail-open onto `/u/...`.
   { pattern: /^\/u\/[^/]+\/?$/, type: 'ssr', auth: 'public' },
 
-  // Public foundation and project group directories — unauthenticated discovery (LFXV2-2010)
-  // Regex-anchored to /:identifier/groups so the prefix cannot fail-open on unrelated paths
-  { pattern: /^\/foundations\/[^/]+\/groups(?:\/.*)?$/, type: 'ssr', auth: 'optional' },
-  { pattern: /^\/projects\/[^/]+\/groups(?:\/.*)?$/, type: 'ssr', auth: 'optional' },
+  // Public foundation and project group directories — unauthenticated discovery (LFXV2-2010).
+  // Anchored to a single trailing segment (no deeper route exists) so a nested path fails closed to `required`.
+  { pattern: /^\/foundations\/[^/]+\/groups\/?$/, type: 'ssr', auth: 'optional' },
+  { pattern: /^\/projects\/[^/]+\/groups\/?$/, type: 'ssr', auth: 'optional' },
 
   // Flow C callback via /passwordless/callback — needs session auth but no bearer token
   { pattern: '/passwordless/callback', type: 'ssr', auth: 'required', tokenRequired: false },
@@ -77,8 +77,9 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // shape so a malformed/undecodable API path fails closed the same way — keep the two in sync.
   { pattern: '/api', type: 'api', auth: 'required', tokenRequired: true },
 
-  // Invite error page — public so unauthenticated users see the error instead of being redirected to login
-  { pattern: '/invite/error', type: 'ssr', auth: 'public' },
+  // Invite error page — public so unauthenticated users see the error instead of a login redirect.
+  // Anchored regex (not a bare string) so `startsWith` can't fail-open on `/invite/error-extra`.
+  { pattern: /^\/invite\/error\/?$/, type: 'ssr', auth: 'public' },
 
   // Auth error page — public so a failed/cleared session doesn't bounce the visitor to /login
   // instead of showing the branded error (the whole point of the redirect in server.ts). Anchored
