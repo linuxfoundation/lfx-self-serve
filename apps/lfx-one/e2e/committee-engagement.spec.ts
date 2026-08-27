@@ -95,6 +95,13 @@ test.describe('Committee engagement — members table (flag on)', () => {
     await expect(page.getByTestId('members-engagement-chip-m-emeritus')).toContainText('Emeritus');
     await expect(page.getByTestId('members-engagement-chip-m-lf-staff')).toContainText('LF Staff');
     await expect(page.getByTestId('members-engagement-chip-m-lf-staff-none')).toContainText('LF Staff');
+    // The chip text alone doesn't prove the reported bug's second symptom stays fixed — the tooltip
+    // (resolveEngagementContext) is a separate code path that could regress to the generic
+    // "attended X of Y invited meetings" role-context branch while classification still renders
+    // correctly. Hover and assert the actual exclusion tooltip text.
+    await page.getByTestId('members-engagement-chip-m-lf-staff-none').hover();
+    await expect(page.locator('.p-tooltip')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.locator('.p-tooltip')).toContainText('LF Staff seat — excluded from engagement metrics; attendance expectations do not apply');
     // An LF Staff member who is a real Voting Rep classifies on real attendance, NOT the neutral
     // LF Staff tier.
     await expect(page.getByTestId('members-engagement-chip-m-lf-staff-rep')).toContainText('High');
