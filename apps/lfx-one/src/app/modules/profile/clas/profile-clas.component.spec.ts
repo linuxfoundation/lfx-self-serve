@@ -372,7 +372,7 @@ describe('ProfileClasComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="agreement-signed-as-${id}"]`);
   }
 
-  it('renders Signed as {identity} (GitHub) / (GitLab) / no suffix under the date', async () => {
+  it('renders Signed as {identity} (GitHub) / (GitLab) / (Gerrit) under the date', async () => {
     await render([
       agreement({ id: 's-gh', signedVia: 'github', signedAs: 'jellis' }),
       agreement({ id: 's-gl', signedVia: 'gitlab', signedAs: 'jellis' }),
@@ -381,7 +381,7 @@ describe('ProfileClasComponent', () => {
 
     expect(signedAs('s-gh')?.textContent?.trim()).toBe('Signed as jellis (GitHub)');
     expect(signedAs('s-gl')?.textContent?.trim()).toBe('Signed as jellis (GitLab)');
-    expect(signedAs('s-email')?.textContent?.trim()).toBe('Signed as jellis@acme-motors.example');
+    expect(signedAs('s-email')?.textContent?.trim()).toBe('Signed as jellis@acme-motors.example (Gerrit)');
     expect(headers()).toEqual(['Project', 'Type', 'Status', 'Signed', 'Actions']);
   });
 
