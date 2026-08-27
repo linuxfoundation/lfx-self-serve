@@ -1206,7 +1206,29 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       /**
-       * The read is best-effort: a failure must leave the capability UNKNOWN rather than `false`,
+       * When brief persistence is disabled (`enabled: false`), `result.briefId` is '' and the
+       * old `!briefId` guard would exit before dispatching. But `canCreateDemandGen()` returns
+       * `true` on the legacy path, and the server returns that capability even on an empty-id
+       * read — the client must not skip the request just because no brief row exists yet.
+       *
+       * Asserted through the parent for the same reason as the first-create test above: an input
+       * set by hand passes against exactly this bug.
+       */
+      it('loads the demand-gen capability when brief persistence is disabled', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true })
+        );
+
+        persistBrief.mockReturnValue(of({ enabled: false, briefId: '', etag: null, created: false, approved: false }));
+        proceed();
+        await fixture.whenStable();
+
+        expect(
+          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
+        ).toBe(true);
+      });
+
+      /**
        * because the tab's draft restore clears a saved Demand Gen selection on an explicit `false`
        * and a failed read has established nothing.
        */

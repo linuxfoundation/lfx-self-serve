@@ -199,6 +199,41 @@ describe('ImplementationTabComponent submit gate', () => {
 
     expect(canSubmit()).toBe(true);
   });
+
+  /**
+   * `applyDraft` runs under `untracked` during mount, so it reads `demandGenEnabled` once.
+   * If the tab mounts while the request is pending (`null`), it preserves the draft's
+   * `includeDemandGen: true`. A later `false` hides the checkbox but `applyDraft` does not
+   * re-run — so without this guard a hidden `true` would still satisfy the "Google needs at
+   * least one sub-type" check and let the user submit with `demand-gen` silently appended.
+   */
+  it('blocks submit when Google is selected with only a hidden DemandGen checked', async () => {
+    const c = fixture.componentInstance as unknown as {
+      selectedPlatforms: { set(v: string[]): void };
+      campaignForm: {
+        controls: Record<string, { setValue(v: unknown): void }>;
+        get(name: string): { controls: { setValue(v: unknown): void }[] } | null;
+      };
+    };
+    c.selectedPlatforms.set(['google-ads']);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    c.campaignForm.controls['includeSearch'].setValue(false);
+    // DemandGen is checked in the form (draft restored before capability arrived)
+    c.campaignForm.controls['includeDemandGen'].setValue(true);
+    c.campaignForm.get('headlines')?.controls.forEach((ctrl) => ctrl.setValue('Attend KubeCon'));
+    c.campaignForm.get('descriptions')?.controls.forEach((ctrl) => ctrl.setValue('Join us in September'));
+    fixture.detectChanges();
+
+    // Capability now resolves to false — the checkbox is hidden.
+    fixture.componentRef.setInput('demandGenEnabled', false);
+    fixture.detectChanges();
+
+    // A hidden DemandGen must not satisfy the "at least one Google sub-type" requirement.
+    expect(canSubmit()).toBe(false);
+  });
 });
 
 /**
