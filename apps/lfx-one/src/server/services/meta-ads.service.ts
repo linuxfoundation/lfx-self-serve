@@ -16,6 +16,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 import {
+  CAMPAIGN_ALERT_THRESHOLDS,
   CAMPAIGN_PACING_THRESHOLDS,
   META_DEFAULT_PLACEMENTS,
   META_NUMERIC_ID_PATTERN,
@@ -24,6 +25,9 @@ import {
   META_INELIGIBLE_COUNTRIES,
   normalizeGeoTargets,
 } from '@lfx-one/shared/constants';
+
+// Named so the two rules below read as one platform's tuning rather than loose literals.
+const META_ALERTS = CAMPAIGN_ALERT_THRESHOLDS['meta-ads'];
 import type { Request } from 'express';
 
 import { META_ACCOUNTS, META_ADS_MANAGER_URL, META_BASE_URL, META_REQUEST_TIMEOUT_MS } from '../constants';
@@ -574,7 +578,7 @@ function buildMetaActionItems(campaigns: MetaCampaignMetrics[]): MetaActionItem[
         action: 'Check ad set targeting, budget, and creative approval status in Meta Ads Manager',
       });
     }
-    if (c.ctr < 0.5 && c.impressions > 500) {
+    if (c.ctr < META_ALERTS.lowCtrPct && c.impressions > META_ALERTS.minImpressions) {
       items.push({
         priority: 'MED',
         campaignName: c.campaignName,
@@ -582,7 +586,7 @@ function buildMetaActionItems(campaigns: MetaCampaignMetrics[]): MetaActionItem[
         action: 'Refresh creative assets, test new ad formats, or narrow audience targeting',
       });
     }
-    if (c.clicks > 20 && c.conversions === 0) {
+    if (c.clicks > META_ALERTS.clicksWithoutConversions && c.conversions === 0) {
       items.push({
         priority: 'MED',
         campaignName: c.campaignName,

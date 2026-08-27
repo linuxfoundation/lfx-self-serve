@@ -111,6 +111,31 @@ export const CAMPAIGN_PACING_THRESHOLDS = {
   overspending: 130,
 } as const;
 
+/**
+ * Per-platform thresholds for the Optimize tab's action items.
+ *
+ * These values are EXACTLY what each platform's service used before they were named — this
+ * constant changes no behaviour. It exists because the same two rules carry three different
+ * numbers, and the divergence is accidental: nothing in the code or the tickets states a reason
+ * why LinkedIn should flag a click-through rate Meta considers healthy, or why Reddit should
+ * tolerate five times as many unconverted clicks as Meta.
+ *
+ * Naming them here makes the drift greppable and reviewable in one place. Converging them is a
+ * separate decision (LFXV2-3314) precisely because it CHANGES which alerts fire on live
+ * campaigns, and that is not a change to make silently while extracting constants.
+ *
+ * `minImpressions` is the floor below which the CTR rule is suppressed, because a click-through
+ * rate over a handful of impressions is noise. LinkedIn has no floor today and instead requires
+ * `ctr > 0`; the two are not equivalent — a campaign with 12 impressions and one click reads as
+ * 8.3% and is silently trusted — but recording `null` states what is there rather than
+ * inventing a value.
+ */
+export const CAMPAIGN_ALERT_THRESHOLDS = {
+  'linkedin-ads': { lowCtrPct: 0.3, clicksWithoutConversions: 50, minImpressions: null },
+  'meta-ads': { lowCtrPct: 0.5, clicksWithoutConversions: 20, minImpressions: 500 },
+  'reddit-ads': { lowCtrPct: 0.3, clicksWithoutConversions: 100, minImpressions: 1000 },
+} as const;
+
 /** Official vendor brand colors — external to the LFX design system (not in lfxColors). */
 export const PLATFORM_BRAND_COLORS: Readonly<Record<CampaignPlatform, string>> = {
   'google-ads': '#4285F4',

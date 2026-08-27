@@ -13,7 +13,10 @@ import type {
   RedditPacingLabel,
 } from '@lfx-one/shared/interfaces';
 
-import { REDDIT_OBJECTIVE_LABELS, REDDIT_OBJECTIVE_PARAMS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_ALERT_THRESHOLDS, REDDIT_OBJECTIVE_LABELS, REDDIT_OBJECTIVE_PARAMS } from '@lfx-one/shared/constants';
+
+// Named so the two rules below read as one platform's tuning rather than loose literals.
+const REDDIT_ALERTS = CAMPAIGN_ALERT_THRESHOLDS['reddit-ads'];
 import type { Request } from 'express';
 
 import { REDDIT_ACCOUNTS, REDDIT_REQUEST_TIMEOUT_MS, REDDIT_TOKEN_EXPIRY_BUFFER_SECONDS } from '../constants';
@@ -673,7 +676,7 @@ function buildRedditActionItems(campaigns: RedditCampaignMetrics[]): RedditActio
       });
     }
 
-    if (c.impressions > 1000 && c.ctr < 0.3 && c.status === 'ACTIVE') {
+    if (c.impressions > REDDIT_ALERTS.minImpressions && c.ctr < REDDIT_ALERTS.lowCtrPct && c.status === 'ACTIVE') {
       items.push({
         priority: 'MED',
         campaignName: c.campaignName,
@@ -682,7 +685,7 @@ function buildRedditActionItems(campaigns: RedditCampaignMetrics[]): RedditActio
       });
     }
 
-    if (c.clicks > 100 && c.conversions === 0) {
+    if (c.clicks > REDDIT_ALERTS.clicksWithoutConversions && c.conversions === 0) {
       items.push({
         priority: 'MED',
         campaignName: c.campaignName,
