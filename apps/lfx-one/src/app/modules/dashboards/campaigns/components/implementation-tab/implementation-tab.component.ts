@@ -2039,27 +2039,33 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   private initCampaignName(): Signal<string> {
-    return toSignal(
-      this.campaignForm.valueChanges.pipe(
-        startWith(this.campaignForm.getRawValue()),
-        map((form) => {
-          const name = form.eventName;
-          const region = form.countryCode || 'NA';
-          const startDate = form.startDate || '';
-          const includeSearch = form.includeSearch;
-          // Capability-gated exactly as the request builder is. The form can carry a hidden
-          // `includeDemandGen: true` — a draft restored before the capability resolved — and
-          // reading it raw would preview `Multi` or `DG Display` for a request that sends only
-          // `search`, naming a campaign that will not be created.
-          const includeDemandGen = this.demandGenAvailable() && form.includeDemandGen;
-          let channel = 'Search';
-          if (includeSearch && includeDemandGen) channel = 'Multi';
-          else if (includeDemandGen) channel = 'DG Display';
-          return name ? `Events | ${name} | ${region} | Conversions | Prospecting | ${channel} | Linux Foundation | BoFU | ${startDate}` : '';
-        })
-      ),
-      { initialValue: '' }
-    );
+    // A `computed` over the form stream, not a `map` inside it, because the name depends on the
+    // CAPABILITY as well as the form. A signal read inside that `map` is not a reactive
+    // dependency — `toSignal` re-emits only when `valueChanges` fires — so gating the preview on
+    // `demandGenAvailable()` there froze it at whatever the capability was at mount: a tab that
+    // mounts before the capability resolves would preview Search for ever while submit sent
+    // `demand-gen`. Reading it in the outer `computed` makes it a real dependency, so the name
+    // recomputes when either the form or the capability changes.
+    const formValue = toSignal(this.campaignForm.valueChanges.pipe(startWith(this.campaignForm.getRawValue())), {
+      initialValue: this.campaignForm.getRawValue(),
+    });
+    return computed(() => {
+      const demandGenAvailable = this.demandGenAvailable();
+      const form = formValue();
+      const name = form.eventName;
+      const region = form.countryCode || 'NA';
+      const startDate = form.startDate || '';
+      const includeSearch = form.includeSearch;
+      // Capability-gated exactly as the request builder is. The form can carry a hidden
+      // `includeDemandGen: true` — a draft restored before the capability resolved — and reading
+      // it raw would preview `Multi` or `DG Display` for a request that sends only `search`,
+      // naming a campaign that will not be created.
+      const includeDemandGen = demandGenAvailable && form.includeDemandGen;
+      let channel = 'Search';
+      if (includeSearch && includeDemandGen) channel = 'Multi';
+      else if (includeDemandGen) channel = 'DG Display';
+      return name ? `Events | ${name} | ${region} | Conversions | Prospecting | ${channel} | Linux Foundation | BoFU | ${startDate}` : '';
+    });
   }
   /**
    * Shape only: two uppercase letters, the form campaign-service requires before it consults its

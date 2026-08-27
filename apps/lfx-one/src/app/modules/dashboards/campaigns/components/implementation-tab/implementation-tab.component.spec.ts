@@ -3275,6 +3275,35 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
     expect(c['campaignName']()).not.toContain('| Multi |');
   });
 
+  /**
+   * The preview must follow the capability, not just the form.
+   *
+   * `campaignName` is `toSignal` over `valueChanges`, so a signal read inside its `map` is NOT a
+   * reactive dependency — it re-evaluates only when the form changes. Gating the preview on the
+   * capability therefore froze it at whatever the capability was AT MOUNT: a tab that mounts with
+   * the capability still `null` previews Search, and a later `true` leaves the name saying Search
+   * while submit sends `demand-gen`.
+   */
+  it('updates the previewed name when the capability arrives after mount', () => {
+    fixture.componentRef.setInput('demandGenEnabled', null);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    c['campaignForm'].patchValue({ includeSearch: true, includeDemandGen: true });
+    fixture.detectChanges();
+    expect(c['campaignName']()).toContain('| Search |');
+
+    // The capability resolves AFTER mount, with no further form edit.
+    fixture.componentRef.setInput('demandGenEnabled', true);
+    fixture.detectChanges();
+
+    expect(c['campaignName']()).toContain('| Multi |');
+  });
+
   it('hides the Demand Gen control when the deployment cannot create it', () => {
     fixture.componentRef.setInput('demandGenEnabled', false);
     fixture.detectChanges();
