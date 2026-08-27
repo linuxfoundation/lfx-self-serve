@@ -94,12 +94,11 @@ tree as evidence about the pinned target.
   and quote what you actually read as the finding's excerpt.
 - Do not open files that hold secrets or key material.
 
-You run with an ordinary local-user trust posture, the same under every host.
-Local shell and git are available, you may run ordinary **non-fixing** builds,
-tests, linters and checks that genuinely help you judge the change, and you may
-inspect GitHub read-only. Nothing here is a sandbox and nothing about your
-tools is read-only. Disposable by-products are expected and are not "touching
-the code": caches, built artifacts, coverage files and the like are fine.
+Running ordinary **non-fixing** builds, tests, linters and checks that
+genuinely help you judge the change is fine, and so is reading GitHub for
+context — a linked issue, an upstream API, a referenced PR. Disposable
+by-products are expected and are not "touching the code": caches, built
+artifacts, coverage files and the like are fine.
 
 In this repo `yarn build`, `yarn lint:check`, `yarn check-types`,
 `yarn format:check`, `yarn test` and `yarn e2e` are safe to run.
