@@ -1394,6 +1394,38 @@ describe('CampaignsComponent brief persistence', () => {
         expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBeNull();
       });
 
+      /**
+       * A failure must not take the success ordering with it.
+       *
+       * Stamping the shared token on the ERROR arm looked symmetrical and was wrong: two reads
+       * dispatched together, the first failing, would advance the token and make the second's
+       * valid answer fail its own write check — a failure suppressing a success, which is the one
+       * thing the ordering exists to prevent.
+       */
+      it('lets a success land after an earlier read has already failed', async () => {
+        const first = new Subject<CampaignListResult>();
+        const second = new Subject<CampaignListResult>();
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(first.asObservable());
+
+        await withSavedBrief();
+
+        // A second read dispatches while the first is still open.
+        list.mockReturnValue(second.asObservable());
+        (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
+        await fixture.whenStable();
+
+        // The FIRST fails...
+        first.error(new Error('query service down'));
+        await fixture.whenStable();
+
+        // ...and the second still succeeds. Its answer must land.
+        second.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true });
+        second.complete();
+        await fixture.whenStable();
+
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+      });
+
       it('clears the previous brief campaigns when the foundation changes', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')

@@ -525,9 +525,11 @@ export class CampaignsComponent {
    * if another answer has landed since it dispatched.
    *
    * It does NOT cover a foundation switch: that clears the capability but dispatches nothing, so
-   * it never bumps this. The separate slug comparison in each reader is what rejects a response
-   * from the previous foundation — two mechanisms, stated apart so neither is removed on the
-   * strength of the other.
+   * it never bumps this. The two readers reject the previous foundation's response by different
+   * means, and both are load-bearing: `loadCreateCapabilitiesFor` compares the slug it dispatched
+   * against the active one, while `loadBriefCampaigns` relies on the switch handler incrementing
+   * `briefCampaignsGeneration`, which its own `isCurrent` checks. Stated apart from the ordering
+   * above so neither is removed on the strength of the other.
    */
   private capabilityGeneration = 0;
 
@@ -1345,9 +1347,11 @@ export class CampaignsComponent {
         // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
         // draft's selection on evidence a failed read does not have; leaving the previous value
         // keeps offering the control on the strength of a read that has since started failing.
+        // Clears WITHOUT stamping. A failure establishes no capability value, so it must not
+        // take the success ordering with it: two reads dispatched together, the first failing,
+        // would otherwise advance the token and make the second's valid answer fail `mayWrite`.
         error: () => {
           if (!mayWrite()) return;
-          this.capabilityGeneration++;
           this.briefCampaignsDemandGenEnabled.set(null);
         },
       });
@@ -1441,8 +1445,9 @@ export class CampaignsComponent {
           this.briefCampaignsStale.set(false);
           this.briefCampaignsUnavailable.set(true);
           this.briefCampaignsToggleEnabled.set(false);
+          // Cleared WITHOUT stamping, for the reason the sibling reader's error arm gives: a
+          // failure has established nothing and must not suppress an in-flight success.
           if (mayWriteCapability()) {
-            this.capabilityGeneration++;
             this.briefCampaignsDemandGenEnabled.set(null);
           }
         },
