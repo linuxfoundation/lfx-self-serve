@@ -293,7 +293,7 @@ When the work is "done" — no more code commits planned:
    branch
    target_sha: <TARGET_SHA>
    base_sha: <BASE_SHA>
-   diff range: git diff <BASE_SHA>...<TARGET_SHA>
+   diff range: git diff <BASE_SHA> <TARGET_SHA>
 
    Review the branch's diff against origin/main.
    ```
