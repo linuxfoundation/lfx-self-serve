@@ -1,13 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants';
 import type { OrgCanonicalRecord } from '@lfx-one/shared/interfaces';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgProfileService } from '@services/org-profile.service';
 import { MessageService } from 'primeng/api';
 import { Observable, Subject, take } from 'rxjs';
@@ -59,18 +56,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
 
     await TestBed.configureTestingModule({
       imports: [OrgProfileEditComponent],
-      providers: [
-        provideNoopAnimations(),
-        { provide: OrgProfileService, useValue: { uploadLogo: uploadLogoMock } },
-        // PR #1583 — gate the Upload Logo affordance on `org_lens_private_release`. Default the
-        // flag to `true` in this suite because every existing test exercises the upload path; the
-        // dedicated "flag disabled" describe below re-configures TestBed with the same mock
-        // returning `false` for the gating test.
-        {
-          provide: FeatureFlagService,
-          useValue: { getBooleanFlag: vi.fn((key: string) => signal(key === ORG_LENS_PRIVATE_RELEASE_FLAG ? true : false)) },
-        },
-      ],
+      providers: [provideNoopAnimations(), { provide: OrgProfileService, useValue: { uploadLogo: uploadLogoMock } }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(OrgProfileEditComponent);
@@ -317,71 +303,5 @@ describe('OrgProfileEditComponent — logo upload', () => {
 
     fixture.componentInstance['onCancel']();
     expect(cancelled).toEqual([undefined]);
-  });
-
-  /**
-   * PR #1583 — Company Logo Upload is gated on the per-feature wrapper `isOrgLensUploadLogoEnabled`,
-   * which today reads `org_lens_private_release` but is expected to graduate to its own key later.
-   * Assertions target the wrapper (the API surface the template and handlers consume), not the raw
-   * private flag reader — that way this suite still passes when the underlying key gets swapped.
-   * When the wrapper is on the Upload Logo button and hidden file input render and the dropzone
-   * accepts drops; when it's off the whole affordance collapses to a static preview so a general
-   * Org Lens viewer only sees the logo, not the write path.
-   */
-  describe('isOrgLensUploadLogoEnabled wrapper gating', () => {
-    it('renders the Upload Logo button and hidden file input when the wrapper is enabled (default suite mock)', () => {
-      fixture.detectChanges();
-      const root: HTMLElement = fixture.nativeElement;
-
-      expect(fixture.componentInstance['isOrgLensUploadLogoEnabled']()).toBe(true);
-      expect(root.querySelector('[data-testid="org-profile-edit-upload-logo-button"]')).not.toBeNull();
-      expect(root.querySelector('[data-testid="org-profile-edit-logo-input"]')).not.toBeNull();
-    });
-
-    it('hides the Upload Logo button and file input and neutralizes drop-handling when the wrapper is disabled', async () => {
-      // Fresh TestBed with the SAME mock shape but returning `false` for the gating flag — mirrors
-      // the pattern in weekly-brief-card.component.spec.ts's flag-off block.
-      TestBed.resetTestingModule();
-      await TestBed.configureTestingModule({
-        imports: [OrgProfileEditComponent],
-        providers: [
-          provideNoopAnimations(),
-          { provide: OrgProfileService, useValue: { uploadLogo: uploadLogoMock } },
-          {
-            provide: FeatureFlagService,
-            useValue: { getBooleanFlag: vi.fn((key: string) => signal(key === ORG_LENS_PRIVATE_RELEASE_FLAG ? false : false)) },
-          },
-        ],
-      }).compileComponents();
-
-      const disabledFixture = TestBed.createComponent(OrgProfileEditComponent);
-      disabledFixture.componentRef.setInput('record', record);
-      await disabledFixture.whenStable();
-      disabledFixture.detectChanges();
-      const root: HTMLElement = disabledFixture.nativeElement;
-
-      expect(disabledFixture.componentInstance['isOrgLensUploadLogoEnabled']()).toBe(false);
-      expect(root.querySelector('[data-testid="org-profile-edit-upload-logo-button"]')).toBeNull();
-      expect(root.querySelector('[data-testid="org-profile-edit-logo-input"]')).toBeNull();
-
-      // The static-preview shell still renders the logo image itself so read-only viewers keep the
-      // context; only the write affordance is stripped.
-      expect(root.querySelector('[data-testid="org-profile-edit-logo-image"]')).not.toBeNull();
-
-      // Defense-in-depth: even if a synthetic drop / click / file-select reaches the handlers, the
-      // component-level gate must not call through to the service.
-      uploadLogoMock.mockClear();
-      const file = pngFile();
-      disabledFixture.componentInstance['onLogoDrop']({
-        preventDefault: vi.fn(),
-        dataTransfer: { files: [file] } as unknown as DataTransfer,
-      } as unknown as DragEvent);
-      disabledFixture.componentInstance['triggerLogoUpload']();
-      const input = { files: [file], value: 'logo.png' } as unknown as HTMLInputElement;
-      disabledFixture.componentInstance['onLogoFileSelected']({ target: input } as unknown as Event);
-      await disabledFixture.whenStable();
-
-      expect(uploadLogoMock).not.toHaveBeenCalled();
-    });
   });
 });
