@@ -140,8 +140,12 @@ export const CAMPAIGN_PACING_THRESHOLDS = {
  *                              over a handful of impressions is noise.
  *
  * LinkedIn has no impression floor today and instead requires `ctr > 0`; the two are not
- * equivalent — a campaign with 12 impressions and one click reads as 8.3% and is silently
- * trusted — but recording `null` states what is there rather than inventing a value.
+ * equivalent, and the difference is visible on any campaign whose CTR is genuinely low on thin
+ * volume. One click on 400 impressions is 0.25%: under LinkedIn's rule that clears `ctr > 0` and
+ * sits below `lowCtrPct`, so it alerts on a sample of 400; under Meta's it never reaches the
+ * predicate, because 400 is not `> 500`. Neither is wrong — they are different bets about when a
+ * rate is worth believing — and recording `null` states what LinkedIn actually has rather than
+ * inventing a floor for it.
  */
 export const CAMPAIGN_ALERT_THRESHOLDS = {
   'linkedin-ads': { lowCtrPct: 0.3, clicksWithoutConversions: 50, minImpressions: null },
