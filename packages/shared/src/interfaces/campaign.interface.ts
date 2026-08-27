@@ -551,6 +551,24 @@ export interface CampaignBriefLoadResult {
   briefId: string | null;
   brief: CampaignBriefOutput | null;
   /**
+   * The ETag of the row this read observed, carried so a save can send it as `If-Match`.
+   *
+   * This is the LAST-SEEN validator, and carrying it is the whole point: `replaceBrief` prefers
+   * a caller-supplied ETag over the one its own find reads, so a validator from here produces a
+   * 412 when another writer moved the row since this page loaded it. Re-reading at save time
+   * cannot do that -- the find runs inside the save, so its validator always matches.
+   *
+   * Guaranteed `null` on `off` and `none` — nothing was read, so there is no validator to
+   * report. `loaded` and `unreadable` both carry whatever the read observed, which may itself
+   * be `null` when the response had no ETag header. `unreadable` carries one deliberately: the
+   * row exists and was observed, it simply could not be mapped back, so its validator is as
+   * real as a loaded one.
+   *
+   * Null is NOT permission to overwrite: it is an absent validator, and what a caller may do
+   * without one is decided by the `absence` it records alongside, never by the null itself.
+   */
+  etag: string | null;
+  /**
    * Whether the STORED row is already approved.
    *
    * campaign-service creates every brief as `draft` and approval is a second call, so a save

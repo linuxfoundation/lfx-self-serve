@@ -619,8 +619,9 @@ export class CampaignController {
       // Paired with brief_id: an ETag without the id it belongs to cannot be checked against
       // anything, and the id without the ETag is the ceremonial-header case this fixes.
       const knownEtag = typeof req.query['etag'] === 'string' && req.query['etag'].trim() !== '' ? req.query['etag'] : null;
-      // Only meaningful without an etag: it says the absence is deliberate (the user was shown a
-      // stale-brief warning and proceeded) rather than "the write returned no validator".
+      // Only meaningful without an etag: it says the absence is DELIBERATE — the user proceeded
+      // past a stale-brief warning, or restored a brief whose read carried no validator — rather
+      // than "the write returned no validator", where nothing was shown and nothing was chosen.
       const allowEtagFallback = req.query['etag_fallback'] === '1';
       const result = await this.campaignServiceClient.saveBrief(req, brief, eventSlug, projectSlug, knownBriefId, knownEtag, allowEtagFallback);
       logger.success(req, 'campaign_persist_brief', startTime, {
@@ -653,7 +654,7 @@ export class CampaignController {
       // `approved: false` is not a claim about any stored row -- with the flag off nothing was
       // read. It is the safe default the field documents: never assert approval that was not
       // observed.
-      res.json({ status: 'off', briefId: null, brief: null, approved: false } satisfies CampaignBriefLoadResult);
+      res.json({ status: 'off', briefId: null, brief: null, etag: null, approved: false } satisfies CampaignBriefLoadResult);
       return;
     }
 

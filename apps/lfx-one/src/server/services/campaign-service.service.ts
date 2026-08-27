@@ -631,25 +631,30 @@ export class CampaignServiceClient {
     const found = await this.findBrief(req, basePath, eventSlug);
 
     if (found === null) {
-      return { status: 'none', briefId: null, brief: null, approved: false };
+      return { status: 'none', briefId: null, brief: null, etag: null, approved: false };
     }
 
-    // `found.etag` is dropped, and the cost of that is worth naming rather than eliding.
+    // `found.etag` is CARRIED, and the reason is the hazard it closes (LFXV2-3204).
     //
-    // The reason for dropping it: this read hands its result to a component that may sit on it
-    // for minutes before the user restores anything, so a carried validator would usually be
-    // stale by the time it was used, and `replaceBrief` re-reads the current one anyway.
+    // An earlier revision dropped it, reasoning that this read hands its result to a component
+    // which may sit on it for minutes, so the validator would usually be stale by the time it
+    // was used — and `replaceBrief` re-reads the current one anyway. The second half is what
+    // made dropping it unsafe: re-reading means the PUT carries whatever version is current at
+    // SAVE time, not the one the user was shown. That find runs inside the save, so its
+    // validator always matches and the precondition can never fire. A concurrent editor's change
+    // was therefore overwritten rather than rejected — last-write-wins between two people
+    // editing the same brief.
     //
-    // The cost: re-reading means the PUT carries whatever version is current at SAVE time, not
-    // the one the user was shown. A concurrent editor's change is therefore overwritten rather
-    // than rejected — last-write-wins between two people editing the same brief, where a
-    // carried validator would have produced a 412 and a chance to reconcile.
+    // Staleness was never the failure mode to design against: a validator that is stale because
+    // someone else moved the row is exactly the case that SHOULD 412. `replaceBrief` prefers a
+    // caller-supplied ETag over its own read for this reason, and the restore path now supplies
+    // this one, so the first save after a restore is refused as `stale-brief` instead of
+    // silently replacing the other writer's content.
     //
-    // That is a NARROWER hazard than the one LFXV2-3200 closes, and deliberately left open here:
-    // the ownership guard stops a caller replacing a brief it never saw at all, which is the
-    // case a reload or a second tab reaches. Two editors who have both LOADED the same brief are
-    // a rarer situation and want a real conflict UI — an If-Match plumbed end to end plus a
-    // reconcile path — not a validator quietly threaded through. Tracked as LFXV2-3204.
+    // This remains NARROWER than the hazard LFXV2-3200 closes. That ownership guard stops a
+    // caller replacing a brief it never saw at all — the case a reload or a second tab reaches
+    // with no coordination. This one needs two editors who have both deliberately loaded the
+    // same brief, and layers on top of that guard rather than replacing it.
     const brief = fromBriefResponse(found.brief);
     // Only the exact `approved` token counts. A brief left in `draft` by a failed approve step is
     // stored but unusable -- `build-audience` and campaign creation both gate on `approved` -- and
@@ -658,8 +663,8 @@ export class CampaignServiceClient {
     // is the one answer that silently strands the brief.
     const approved = found.brief.status === 'approved';
     return brief === null
-      ? { status: 'unreadable', briefId: found.brief.id, brief: null, approved }
-      : { status: 'loaded', briefId: found.brief.id, brief, approved };
+      ? { status: 'unreadable', briefId: found.brief.id, brief: null, etag: found.etag, approved }
+      : { status: 'loaded', briefId: found.brief.id, brief, etag: found.etag, approved };
   }
 
   /**
@@ -1281,8 +1286,11 @@ export class CampaignServiceClient {
     // detect", which is true for one of the two reasons a validator can be missing and false for
     // the other.
     //
-    // `allowEtagFallback` — the caller was shown a stale-brief warning and proceeded. It has no
-    // validator BY CHOICE, and taking the freshly read one is exactly what proceeding means.
+    // `allowEtagFallback` — the caller has no validator BY CHOICE, and taking the freshly read
+    // one is exactly what that choice means. Two client paths set it: the user proceeded past a
+    // stale-brief warning, or they restored a brief whose read carried no ETag. This layer does
+    // not distinguish them, and must not start to: both assert that stored content was displayed
+    // and acted on, which is the whole of what the flag claims.
     //
     // Without it, the absence is UNKNOWN: the write returned no ETag, or its approval outcome was
     // indeterminate. Nobody was warned and nothing was decided, so substituting a validator this
