@@ -150,7 +150,8 @@ describe('CampaignsComponent brief persistence', () => {
    * The flag lives on the server and there is no channel that tells the browser its value before
    * a request is made. So the first save cannot know whether the cutover is on — and rendering
    * "Saving this brief…" while it finds out would put a persistence banner in front of every user
-   * in every environment where the cutover is dark, which is the default in all of them.
+   * in an environment where the cutover is dark — no longer the chart default since #1881, but
+   * still any override or un-rolled deployment.
    */
   it('shows no in-flight banner while the cutover state is still unknown', async () => {
     persistBrief.mockReturnValue(NEVER);
@@ -213,8 +214,9 @@ describe('CampaignsComponent brief persistence', () => {
     proceed();
     await fixture.whenStable();
 
-    // Not 'saved' with an empty id: the flag being off is the default everywhere, so it has to
-    // look like the ordinary case rather than like a save that returned nothing.
+    // Not 'saved' with an empty id: the flag being off is an ordinary deployment state, not a
+    // fault, so it has to look like the ordinary case rather than like a save that returned
+    // nothing.
     expect(state().status).toBe('off');
     expect(tab()).toBe('implementation');
   });
@@ -1181,13 +1183,13 @@ describe('CampaignsComponent brief persistence', () => {
       it('clears the previous brief campaigns when the foundation changes', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true }));
+          .mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false }));
         await withSavedBrief();
         load();
         await fixture.whenStable();
         expect(campaigns()).toHaveLength(1);
 
-        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true }));
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false }));
         selectFoundation('cncf');
         await fixture.whenStable();
 
@@ -1207,7 +1209,7 @@ describe('CampaignsComponent brief persistence', () => {
 
         // The response the switch invalidated. Clearing the signal alone cannot stop this — the
         // request was already in flight and lands afterwards.
-        late.next({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true });
+        late.next({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false });
         await fixture.whenStable();
 
         expect(campaigns()).toBeNull();
@@ -1229,7 +1231,9 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       it('does not mark a genuinely empty list as unavailable', async () => {
-        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true }));
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false })
+        );
         await withSavedBrief();
         load();
         await fixture.whenStable();
@@ -1252,7 +1256,9 @@ describe('CampaignsComponent brief persistence', () => {
       it('stops rendering the previous brief campaigns while the next brief is still loading', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(of({ campaigns: [indexed({ campaign_name: 'Brief A campaign' })], possiblyStale: false, statusToggleEnabled: true }));
+          .mockReturnValue(
+            of({ campaigns: [indexed({ campaign_name: 'Brief A campaign' })], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false })
+          );
         await withSavedBrief();
         openOptimize();
         await fixture.whenStable();
@@ -1277,7 +1283,12 @@ describe('CampaignsComponent brief persistence', () => {
         expect(campaigns()).toBeNull();
 
         // And the new brief's own answer still lands, so the clear is a window, not a wipe.
-        pending.next({ campaigns: [indexed({ id: 'c-2', campaign_name: 'Brief B campaign' })], possiblyStale: false, statusToggleEnabled: true });
+        pending.next({
+          campaigns: [indexed({ id: 'c-2', campaign_name: 'Brief B campaign' })],
+          possiblyStale: false,
+          statusToggleEnabled: true,
+          demandGenEnabled: false,
+        });
         await fixture.whenStable();
         expect(optimizeText()).toContain('Brief B campaign');
         expect(toggleButtonIds()).toEqual(['c-2']);
@@ -1333,7 +1344,7 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
         expect(unavailable()).toBe(true);
 
-        list.mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true }));
+        list.mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false }));
         load();
         await fixture.whenStable();
 
