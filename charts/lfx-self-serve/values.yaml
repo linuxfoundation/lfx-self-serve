@@ -420,7 +420,7 @@ environment:
   #
   # Turning it off again leaves the saved briefs in place; they simply stop being offered.
   LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS:
-    value:
+    value: "true"
 
   # Route campaign CREATION to lfx-v2-campaign-service instead of the per-platform Express
   # services. Same accepted values and same default-deny as the two flags above.
