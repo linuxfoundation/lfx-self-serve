@@ -934,61 +934,6 @@ export class CampaignsComponent {
   }
 
   /**
-   * Read the create-time capabilities the Implementation tab gates controls on.
-   *
-   * Separate from `loadBriefCampaigns` deliberately, even though both read the same response
-   * today. That one is an Optimize concern: it needs a persisted `briefId`, it re-fetches on
-   * every entry because a status can go stale, and it clears its rows first. None of that is
-   * true here — the capability is a deployment fact, it is needed BEFORE a campaign exists, and
-   * on the first-create path there may be no brief id at all.
-   *
-   * So this asks only when it can, and stays silent otherwise: the tab treats an unanswered
-   * capability as `null` and withholds the control without touching the user's draft. That is
-   * the correct reading of "not known", and it is why this is safe to skip.
-   */
-  private loadCreateCapabilities(): void {
-    this.loadCreateCapabilitiesFor(this.briefPersistence().briefId);
-  }
-
-  /**
-   * The same read against an explicitly supplied brief id.
-   *
-   * Needed because the first-create path has no id on the signal yet: the Implementation tab is
-   * opened before `persistBrief` resolves, so reading `briefPersistence()` at entry finds `null`
-   * and the entry-time call guards itself out. The persist success arm passes its own id here.
-   */
-  private loadCreateCapabilitiesFor(briefId: string | null): void {
-    const projectSlug = this.activeFoundationSlug();
-    if (projectSlug === '' || !briefId) return;
-
-    // Ordered by this reader's OWN generation, and checked against the foundation too — see
-    // `createCapabilitiesGeneration`. The counter gives ordering among repeated Implementation
-    // entries; the slug is what makes a response from the previous foundation inapplicable
-    // rather than merely old.
-    const generation = ++this.createCapabilitiesGeneration;
-    const isCurrent = (): boolean => generation === this.createCapabilitiesGeneration && projectSlug === this.activeFoundationSlug();
-    this.campaignService
-      .listBriefCampaigns(projectSlug, briefId)
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        // ONLY the capability. This must not touch `briefCampaigns` or the staleness flag —
-        // those belong to Optimize's own read, and writing them from here would render a list
-        // the operator did not ask for and cannot see.
-        next: (result) => {
-          if (!isCurrent()) return;
-          this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
-        },
-        // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
-        // draft's selection on evidence a failed read does not have; leaving the previous value
-        // keeps offering the control on the strength of a read that has since started failing.
-        error: () => {
-          if (!isCurrent()) return;
-          this.briefCampaignsDemandGenEnabled.set(null);
-        },
-      });
-  }
-
-  /**
    * Roving-tabindex keyboard navigation over one tablist.
    *
    * The owner is passed in for the same reason `selectTab` takes it, plus one specific to this
@@ -1328,6 +1273,61 @@ export class CampaignsComponent {
       this.knownBriefIds.set(key, { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) });
     }
     this.onProceedToImplementation(brief, true, approved);
+  }
+
+  /**
+   * Read the create-time capabilities the Implementation tab gates controls on.
+   *
+   * Separate from `loadBriefCampaigns` deliberately, even though both read the same response
+   * today. That one is an Optimize concern: it needs a persisted `briefId`, it re-fetches on
+   * every entry because a status can go stale, and it clears its rows first. None of that is
+   * true here — the capability is a deployment fact, it is needed BEFORE a campaign exists, and
+   * on the first-create path there may be no brief id at all.
+   *
+   * So this asks only when it can, and stays silent otherwise: the tab treats an unanswered
+   * capability as `null` and withholds the control without touching the user's draft. That is
+   * the correct reading of "not known", and it is why this is safe to skip.
+   */
+  private loadCreateCapabilities(): void {
+    this.loadCreateCapabilitiesFor(this.briefPersistence().briefId);
+  }
+
+  /**
+   * The same read against an explicitly supplied brief id.
+   *
+   * Needed because the first-create path has no id on the signal yet: the Implementation tab is
+   * opened before `persistBrief` resolves, so reading `briefPersistence()` at entry finds `null`
+   * and the entry-time call guards itself out. The persist success arm passes its own id here.
+   */
+  private loadCreateCapabilitiesFor(briefId: string | null): void {
+    const projectSlug = this.activeFoundationSlug();
+    if (projectSlug === '' || !briefId) return;
+
+    // Ordered by this reader's OWN generation, and checked against the foundation too — see
+    // `createCapabilitiesGeneration`. The counter gives ordering among repeated Implementation
+    // entries; the slug is what makes a response from the previous foundation inapplicable
+    // rather than merely old.
+    const generation = ++this.createCapabilitiesGeneration;
+    const isCurrent = (): boolean => generation === this.createCapabilitiesGeneration && projectSlug === this.activeFoundationSlug();
+    this.campaignService
+      .listBriefCampaigns(projectSlug, briefId)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        // ONLY the capability. This must not touch `briefCampaigns` or the staleness flag —
+        // those belong to Optimize's own read, and writing them from here would render a list
+        // the operator did not ask for and cannot see.
+        next: (result) => {
+          if (!isCurrent()) return;
+          this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
+        },
+        // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
+        // draft's selection on evidence a failed read does not have; leaving the previous value
+        // keeps offering the control on the strength of a read that has since started failing.
+        error: () => {
+          if (!isCurrent()) return;
+          this.briefCampaignsDemandGenEnabled.set(null);
+        },
+      });
   }
 
   /**
