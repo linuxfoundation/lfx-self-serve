@@ -112,6 +112,11 @@ export class IntercomService {
       this.isBootRequested = false;
       script.remove();
       this.scriptElement = null;
+      // Drop the stub and settings so a retry boots from a genuinely fresh queue — otherwise the
+      // failed attempt's boot/show commands replay alongside the retry's (the queue is unreachable
+      // anyway once the only script that would drain it has failed).
+      delete window.Intercom;
+      delete window.intercomSettings;
       console.error('Intercom: failed to load widget script', error);
       // Surface to RUM so sessions where the Fin messenger cannot open are dashboardable.
       this.dataDogRumService.addError(new Error('Intercom script failed to load'), { context: 'intercom_load' });

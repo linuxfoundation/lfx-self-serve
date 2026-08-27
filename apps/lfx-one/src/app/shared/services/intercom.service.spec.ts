@@ -85,6 +85,8 @@ describe('IntercomService', () => {
 
     expect(service.isBootRequested).toBe(true);
     expect(document.querySelectorAll('script[src^="https://widget.intercom.io/"]')).toHaveLength(1);
+    // The failed attempt's stub queue is discarded, so the retry queues exactly one boot + show.
+    expect(queuedCommands()).toEqual([['boot', { app_id: 'test-app-id' }], ['show']]);
   });
 
   it('should clear the load-error callback once the widget script loads', () => {
