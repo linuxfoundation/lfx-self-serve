@@ -141,6 +141,9 @@ export class MyEventsDashboardComponent {
             detail: 'Your account is missing the required Salesforce ID. Please contact support.',
             data: { showSupport: true },
             closable: true,
+            // Sticky: the Contact Support CTA is the only remediation path — a 3s auto-dismiss
+            // (PrimeNG default life) would remove it before most users finish reading.
+            sticky: true,
           });
           return false;
         }),
