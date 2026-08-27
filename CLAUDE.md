@@ -226,11 +226,11 @@ Placement decision trees ("where does my component go?", "do I need a new module
 
 ## Work cycle — post-commit and pre-PR reviews
 
-> **CRITICAL — while the branch is pre-PR, post-commit reviews are mandatory.** After every commit on the local branch, launch the reviewer trio — **exactly three generic background subagents in one parallel batch** via the Agent tool (all `subagent_type: general-purpose`, `model: opus`, `run_in_background: true`), each loading exactly one review skill: `lfx-skills:lfx-general-code-review`, `lfx-self-serve-code-review`, and `lfx-self-serve-learnings-review` — then keep working while they run. If Claude displays the plugin skill without the `lfx-skills:` namespace, use the displayed name. Before opening a PR, every running review must return clean (or remaining findings explicitly documented as trade-offs), the **full-branch sweep** must run clean if the branch has more than one commit (`branch` arg), AND `/lfx-self-serve-pr-readiness` must clear every CRITICAL finding, with any SHOULD_FIX findings addressed or documented. The reviewers' time is the most expensive resource in this workflow — never skip, save for later, or assume changes are "small enough" to bypass.
+> **CRITICAL — while the branch is pre-PR, post-commit reviews are mandatory.** After every commit on the local branch — except the final planned commit when moving straight into pre-PR, where the mandatory branch sweep substitutes (Post-commit step 6) — launch the reviewer trio — **exactly three generic background subagents in one parallel batch** via the Agent tool (all `subagent_type: general-purpose`, `model: opus`, `run_in_background: true`), each loading exactly one review skill: `lfx-skills:lfx-general-code-review`, `lfx-self-serve-code-review`, and `lfx-self-serve-learnings-review` — then keep working while they run. If Claude displays the plugin skill without the `lfx-skills:` namespace, use the displayed name. Before opening a PR, every running review must return clean (or remaining findings explicitly documented as trade-offs), the **full-branch sweep** must run clean if the branch has more than one commit (`branch` arg), AND `/lfx-self-serve-pr-readiness` must clear every CRITICAL finding, with any SHOULD_FIX findings addressed or documented. The reviewers' time is the most expensive resource in this workflow — never skip, save for later, or assume changes are "small enough" to bypass.
 >
 > **Once the PR is open, do NOT invoke the reviewer trio on iteration commits.** CodeRabbit + Copilot auto-trigger on every push and own the audit surface from that point — stacking subagent audits on top adds latency without proportional signal. The trio is pre-PR insurance only. (For substantive new work pushed to an open PR, judgment applies; default is still to skip.)
 
-### Post-commit (pre-PR phase, after every commit, parallel, asynchronous)
+### Post-commit (pre-PR phase, after every commit except the final one — see step 6; parallel, asynchronous)
 
 1. **Commit your work.** `git commit --signoff -S`. Do not wait for any prior review to finish.
 2. **Immediately pin the review range, then launch all three reviewer children in parallel.** Compute once, right after the commit:
@@ -269,15 +269,16 @@ Placement decision trees ("where does my component go?", "do I need a new module
 
 3. **Keep working.** Start the next commit while the reviewers run. Do not block on them.
 4. **When the reviewers return:** read all three reports. Roll every Critical finding and every reasonable Important finding into the next commit (a separate `fix(review): address findings` commit is fine; squashing is not required — the history shows review-driven iteration).
-5. **It's fine to keep committing while reviews are still running.** Each trio audits its own commit (not cumulative). If you've committed N+1 before the review for N returns, you'll get separate reports — one trio per commit. Read them as they arrive and address findings in subsequent commits.
+5. **It's fine to keep committing while reviews are still running — but only one batch runs at a time.** Each trio audits its own commit (not cumulative): the pinned SHAs make that exact, so commit N+1 freely while commit N's trio runs, and launch N+1's trio once N's batch has returned. You'll get separate reports — one trio per commit. Read them as they arrive and address findings in subsequent commits.
 6. **Final-commit optimization.** Normal development commits always launch the post-commit trio — but when the commit you just made is the final planned commit and you are moving immediately into pre-PR, skip that commit's post-commit trio: drain the earlier reviews, then run only the full-branch trio (Pre-PR step 3). In that case the branch sweep is mandatory even on a single-commit branch — it is what covers the final commit. If sweep findings require a fix commit, do not also run a per-commit trio on it — rerun the full-branch trio. If development resumes instead, return to normal per-commit review.
+7. **Batch invariant.** At most ONE review batch may be active at a time, and every batch is exactly THREE children — never six reviewers in flight. You MUST drain the active trio before starting another batch. You MUST NEVER launch a full-branch trio while any post-commit trio is running, and MUST NEVER launch both a post-commit trio and a full-branch trio for the same final commit — in the final-commit path, launch no post-commit batch at all: only the three-child full-branch batch.
 
 ### Pre-PR (drain the queue, sweep cumulative state, then open)
 
 When the work is "done" — no more code commits planned:
 
 1. **Wait for every running review to complete.** Each trio audits one commit, so the trio invoked by every recent commit needs to have returned before you continue.
-2. **If any returned review flags Critical or reasonable Important:** add a fix commit, launch the reviewer trio again on the new state, wait. Loop until the trio returns clean (or remaining findings are explicitly documented in the PR description with a stated trade-off).
+2. **If any returned review flags Critical or reasonable Important:** add a fix commit, launch the reviewer trio again on the new state (post-commit mode here; once the sweep phase has begun, fix commits go straight to a sweep rerun instead — never both), wait. Loop until the trio returns clean (or remaining findings are explicitly documented in the PR description with a stated trade-off).
 3. **Full-branch sweep — if the branch has more than one commit, or the final commit's post-commit trio was skipped under the final-commit optimization (mandatory then, even on a single-commit branch).** Launch the same three reviewer children again in one parallel batch via the Agent tool (all `subagent_type: general-purpose`, `model: opus`, `run_in_background: true`, each loading its same single skill). Pin the range first:
 
    ```bash
@@ -325,9 +326,9 @@ After `/compact`, re-invoke `/self-serve-dev` or the relevant convention skill i
 - ❌ Hard-code brand hex values (reference `lfxColors` scales)
 - ❌ Reference browser-only APIs without `isPlatformBrowser`
 - ❌ Mix module concerns in one change
-- ❌ Open a PR without launching the post-commit reviewer trio (three generic background children in one parallel batch, loading `lfx-skills:lfx-general-code-review` + `lfx-self-serve-code-review` + `lfx-self-serve-learnings-review`) after every pre-PR commit and draining the queue clean — all three reviews are non-negotiable pre-PR
+- ❌ Open a PR without launching the post-commit reviewer trio (three generic background children in one parallel batch, loading `lfx-skills:lfx-general-code-review` + `lfx-self-serve-code-review` + `lfx-self-serve-learnings-review`) after every pre-PR commit — the sole sanctioned exception is the final-commit optimization, where the mandatory full-branch sweep covers the final commit instead — and draining the queue clean; all three reviews are non-negotiable pre-PR
 - ❌ Push the pre-PR queue before every running review has returned and every Critical finding is addressed (the queue must be drained at the PR boundary; once the PR is open, the bots become the audit surface and the trio is no longer invoked)
-- ❌ Open a multi-commit PR without running the pre-PR full-branch sweep (`branch` arg) — per-commit reviews can miss cross-commit drift
+- ❌ Open a PR without running the pre-PR full-branch sweep (`branch` keyword) when the branch has more than one commit OR the final commit's trio was skipped under the final-commit optimization — per-commit reviews can miss cross-commit drift, and in the optimization path the sweep is the final commit's only audit
 - ❌ Open a PR without running `/lfx-self-serve-pr-readiness`, clearing every CRITICAL finding, and addressing or documenting every SHOULD_FIX — also non-negotiable
 - ❌ Open a PR without DCO sign-off + GPG (`--signoff -S`)
 - ❌ Commit and claim "done" before `yarn build` passes
