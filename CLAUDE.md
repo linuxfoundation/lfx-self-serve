@@ -14,7 +14,7 @@ LFX One is a Turborepo monorepo containing an Angular 20 SSR application with st
 
 You have full file-edit authority in this session — different from a Cowork session where you generate prompts for someone else to execute. For pre-edit hygiene checks (re-read files, type-check after multi-file changes, etc.) invoke the `/self-serve-dev` skill.
 
-**Lean on subagents.** Use the `Agent` tool for broad searches (`Explore`), independent parallel investigations (multiple Agent calls in one message), and context-heavy reads that would bloat the main thread. For the LFX post-commit audit, launch the central `lfx-skills` reviewer trio in parallel (`subagent_type: lfx-skills:lfx-general-code-reviewer`, `subagent_type: lfx-skills:lfx-self-serve-code-reviewer`, and `subagent_type: lfx-skills:lfx-self-serve-learnings-reviewer`, all with `run_in_background: true`). If Claude displays plugin agents without a namespace, use the equivalent displayed names. This repo's local `CLAUDE.md`, `.claude/rules/`, `.claude/skills/`, architecture docs, review checklists, and KB remain the review source of truth. Default to delegating when the task is wide, parallel, or read-heavy.
+**Lean on subagents.** Use the `Agent` tool for broad searches (`Explore`), independent parallel investigations (multiple Agent calls in one message), and context-heavy reads that would bloat the main thread. For the LFX post-commit audit, launch the reviewer trio — three generic background subagents in one parallel batch (all `subagent_type: general-purpose`, `model: opus`, `run_in_background: true`), each loading exactly one review skill: `lfx-skills:lfx-general-code-review`, `lfx-self-serve-code-review`, and `lfx-self-serve-learnings-review` (see the work cycle below for the canonical launch). This repo's local `CLAUDE.md`, `.claude/rules/`, `.claude/skills/`, architecture docs, review checklists, and KB remain the review source of truth. Default to delegating when the task is wide, parallel, or read-heavy.
 
 ## Domain language
 
@@ -226,21 +226,41 @@ Placement decision trees ("where does my component go?", "do I need a new module
 
 ## Work cycle — post-commit and pre-PR reviews
 
-> **CRITICAL — while the branch is pre-PR, post-commit reviews are mandatory.** After every commit on the local branch, launch the `lfx-skills:lfx-general-code-reviewer`, `lfx-skills:lfx-self-serve-code-reviewer`, AND `lfx-skills:lfx-self-serve-learnings-reviewer` subagents in parallel via the Agent tool (`subagent_type: lfx-skills:lfx-general-code-reviewer` / `subagent_type: lfx-skills:lfx-self-serve-code-reviewer` / `subagent_type: lfx-skills:lfx-self-serve-learnings-reviewer`, all `run_in_background: true`) — then keep working while they run. If Claude displays plugin agents without the `lfx-skills:` namespace, use the equivalent displayed names. Before opening a PR, every running review must return clean (or remaining findings explicitly documented as trade-offs), the **full-branch sweep** must run clean if the branch has more than one commit (`branch` arg), AND `/lfx-self-serve-pr-readiness` must clear every CRITICAL finding, with any SHOULD_FIX findings addressed or documented. The reviewers' time is the most expensive resource in this workflow — never skip, save for later, or assume changes are "small enough" to bypass.
+> **CRITICAL — while the branch is pre-PR, post-commit reviews are mandatory.** After every commit on the local branch, launch the reviewer trio — **exactly three generic background subagents in one parallel batch** via the Agent tool (all `subagent_type: general-purpose`, `model: opus`, `run_in_background: true`), each loading exactly one review skill: `lfx-skills:lfx-general-code-review`, `lfx-self-serve-code-review`, and `lfx-self-serve-learnings-review` — then keep working while they run. If Claude displays the plugin skill without the `lfx-skills:` namespace, use the displayed name. Before opening a PR, every running review must return clean (or remaining findings explicitly documented as trade-offs), the **full-branch sweep** must run clean if the branch has more than one commit (`branch` arg), AND `/lfx-self-serve-pr-readiness` must clear every CRITICAL finding, with any SHOULD_FIX findings addressed or documented. The reviewers' time is the most expensive resource in this workflow — never skip, save for later, or assume changes are "small enough" to bypass.
 >
 > **Once the PR is open, do NOT invoke the reviewer trio on iteration commits.** CodeRabbit + Copilot auto-trigger on every push and own the audit surface from that point — stacking subagent audits on top adds latency without proportional signal. The trio is pre-PR insurance only. (For substantive new work pushed to an open PR, judgment applies; default is still to skip.)
 
 ### Post-commit (pre-PR phase, after every commit, parallel, asynchronous)
 
 1. **Commit your work.** `git commit --signoff -S`. Do not wait for any prior review to finish.
-2. **Immediately launch all three reviewer subagents in parallel.** Issue three **Agent tool calls in a single message**:
-   - **`lfx-skills:lfx-general-code-reviewer`** (`subagent_type: lfx-skills:lfx-general-code-reviewer`, `run_in_background: true`) — general senior code review for correctness, security, error handling, maintainability, tests, performance, and code truthfulness. Carries no repo-specific Self Serve rulebook.
-   - **`lfx-skills:lfx-self-serve-code-reviewer`** (`subagent_type: lfx-skills:lfx-self-serve-code-reviewer`, `run_in_background: true`) — Self Serve convention audit against the documented rule surface (`.claude/rules/`, the four `docs/reviews/` checklists, architecture docs) and upstream API contracts. Renders a markdown review with Upstream API / data-layer validation and Repo conventions sections.
-   - **`lfx-skills:lfx-self-serve-learnings-reviewer`** (`subagent_type: lfx-skills:lfx-self-serve-learnings-reviewer`, `run_in_background: true`) — empirical-pattern matching against `docs/reviews/knowledge-base/` (patterns sampled from past PR review comments on this repo). Renders a markdown review.
+2. **Immediately pin the review range, then launch all three reviewer children in parallel.** Compute once, right after the commit:
 
-   **Why a required prompt:** the Agent tool needs a non-empty prompt to launch reliably, so we standardize on one canonical string per mode rather than leave it ambiguous. The string itself doesn't drive subagent behavior — each subagent's playbook only parses for `target repo:`, `branch`, and `extra:` and otherwise defaults to `git show HEAD`. The canonical strings are operator plumbing, not instructions to the model. If this work cycle is launched from the LFX workspace parent, the prompt must specify the target review repo so the reviewer operates in `lfx-self-serve`; the canonical prompts below include that line and are also safe when already inside this repo.
+   ```bash
+   TARGET_SHA=$(git rev-parse HEAD)
+   BASE_SHA=$(git rev-parse HEAD~1)
+   ```
 
-   **Post-commit mode prompt (exact, all three subagents):** `target repo: lfx-self-serve\n\nReview the latest commit.` Append `extra: <focus>` on a new line only when there's a priority hint to add. Do NOT pass `branch` here.
+   Then issue three **Agent tool calls in a single message** — all `subagent_type: general-purpose`, `model: opus`, `run_in_background: true`. Each child explicitly loads exactly one review skill, and all three receive the same target repo and the same immutable `target_sha` / `base_sha` / diff range:
+   - **General review child** — loads **`lfx-skills:lfx-general-code-review`**: general senior code review for correctness, security, error handling, maintainability, tests, performance, and code truthfulness. Carries no repo-specific Self Serve rulebook.
+   - **Self Serve convention child** — loads **`lfx-self-serve-code-review`** (`.claude/skills/lfx-self-serve-code-review/`): Self Serve convention audit against the documented rule surface (`.claude/rules/`, the four `docs/reviews/` checklists, architecture docs) and upstream API contracts. Renders a markdown review with Upstream API / data-layer validation and Repo conventions sections.
+   - **Self Serve learnings child** — loads **`lfx-self-serve-learnings-review`** (`.claude/skills/lfx-self-serve-learnings-review/`): empirical-pattern matching against `docs/reviews/knowledge-base/` (patterns sampled from past PR review comments on this repo). Renders a markdown review.
+
+   **Why a canonical prompt:** the Agent tool needs a non-empty prompt to launch reliably, so we standardize on one canonical string per mode rather than leave it ambiguous. Each skill's playbook only parses for `target repo:`, `branch`, and `extra:` and otherwise defaults to `git show HEAD`; the pinned `target_sha` / `base_sha` / diff-range lines make the audited state immutable — all three children audit the same exact range even if you commit again while the reviews run. The `model: opus` pin lives here in the caller (the skill files carry no model frontmatter). The canonical strings are operator plumbing, not instructions to the model. If this work cycle is launched from the LFX workspace parent, the prompt must specify the target review repo so the reviewer operates in `lfx-self-serve`; the canonical prompts below include that line and are also safe when already inside this repo.
+
+   **Post-commit mode prompt (exact, all three children — substitute the child's skill name and the pinned SHAs):**
+
+   ```text
+   Load exactly one skill and follow it end to end as your complete review playbook: <skill>. Do not load any other review skill.
+
+   target repo: lfx-self-serve
+   target_sha: <TARGET_SHA>
+   base_sha: <BASE_SHA>
+   diff range: git show <TARGET_SHA> (the single commit target_sha)
+
+   Review the latest commit.
+   ```
+
+   where `<skill>` is `lfx-skills:lfx-general-code-review`, `lfx-self-serve-code-review`, or `lfx-self-serve-learnings-review` respectively. Append `extra: <focus>` on a new line only when there's a priority hint to add. Do NOT pass `branch` here.
 
 3. **Keep working.** Start the next commit while the reviewers run. Do not block on them.
 4. **When the reviewers return:** read all three reports. Roll every Critical finding and every reasonable Important finding into the next commit (a separate `fix(review): address findings` commit is fine; squashing is not required — the history shows review-driven iteration).
@@ -252,10 +272,27 @@ When the work is "done" — no more code commits planned:
 
 1. **Wait for every running review to complete.** Each trio audits one commit, so the trio invoked by every recent commit needs to have returned before you continue.
 2. **If any returned review flags Critical or reasonable Important:** add a fix commit, launch the reviewer trio again on the new state, wait. Loop until the trio returns clean (or remaining findings are explicitly documented in the PR description with a stated trade-off).
-3. **Full-branch sweep — only if the branch has more than one commit.** Launch all three reviewer subagents again in parallel via the Agent tool. The Agent `prompt` parameter for each subagent must include the `branch` keyword so the subagent audits the branch's diff against `origin/main` instead of just the latest commit:
-   - **`lfx-skills:lfx-general-code-reviewer`**, prompt: **`target repo: lfx-self-serve\nbranch\n\nReview the branch's diff against origin/main.`**
-   - **`lfx-skills:lfx-self-serve-code-reviewer`**, prompt: **`target repo: lfx-self-serve\nbranch\n\nReview the branch's diff against origin/main.`**
-   - **`lfx-skills:lfx-self-serve-learnings-reviewer`**, prompt: **`target repo: lfx-self-serve\nbranch\n\nReview the branch's diff against origin/main.`**
+3. **Full-branch sweep — only if the branch has more than one commit.** Launch the same three reviewer children again in one parallel batch via the Agent tool (all `subagent_type: general-purpose`, `model: opus`, `run_in_background: true`, each loading its same single skill). Pin the range first:
+
+   ```bash
+   git fetch origin
+   TARGET_SHA=$(git rev-parse HEAD)
+   BASE_SHA=$(git merge-base origin/main HEAD)
+   ```
+
+   The prompt for each child must include the `branch` keyword so the loaded skill audits the branch's diff against `origin/main` instead of just the latest commit. **Full-branch mode prompt (exact, all three children):**
+
+   ```text
+   Load exactly one skill and follow it end to end as your complete review playbook: <skill>. Do not load any other review skill.
+
+   target repo: lfx-self-serve
+   branch
+   target_sha: <TARGET_SHA>
+   base_sha: <BASE_SHA>
+   diff range: git diff <BASE_SHA>...<TARGET_SHA>
+
+   Review the branch's diff against origin/main.
+   ```
 
    Per-commit reviews can miss cross-commit drift (an issue introduced in commit N and only made dangerous by commit N+2's changes wouldn't surface in either's individual review); the sweep catches it. Single-commit branches skip — already covered by the post-commit trio. Address any new findings, then re-run the sweep until clean.
 
@@ -279,7 +316,7 @@ After `/compact`, re-invoke `/self-serve-dev` or the relevant convention skill i
 - ❌ Hard-code brand hex values (reference `lfxColors` scales)
 - ❌ Reference browser-only APIs without `isPlatformBrowser`
 - ❌ Mix module concerns in one change
-- ❌ Open a PR without launching the post-commit reviewer trio (`lfx-skills:lfx-general-code-reviewer` + `lfx-skills:lfx-self-serve-code-reviewer` + `lfx-skills:lfx-self-serve-learnings-reviewer`, in parallel via the Agent tool) after every pre-PR commit and draining the queue clean — all three reviews are non-negotiable pre-PR
+- ❌ Open a PR without launching the post-commit reviewer trio (three generic background children in one parallel batch, loading `lfx-skills:lfx-general-code-review` + `lfx-self-serve-code-review` + `lfx-self-serve-learnings-review`) after every pre-PR commit and draining the queue clean — all three reviews are non-negotiable pre-PR
 - ❌ Push the pre-PR queue before every running review has returned and every Critical finding is addressed (the queue must be drained at the PR boundary; once the PR is open, the bots become the audit surface and the trio is no longer invoked)
 - ❌ Open a multi-commit PR without running the pre-PR full-branch sweep (`branch` arg) — per-commit reviews can miss cross-commit drift
 - ❌ Open a PR without running `/lfx-self-serve-pr-readiness`, clearing every CRITICAL finding, and addressing or documenting every SHOULD_FIX — also non-negotiable
