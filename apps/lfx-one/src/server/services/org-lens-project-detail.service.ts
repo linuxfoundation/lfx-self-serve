@@ -453,7 +453,7 @@ export class OrgLensProjectDetailService {
       ecoDataSource: 'LFX',
     },
     'event-sponsorships': {
-      text: 'Events where your organization sponsored, co-sponsored, or provided in-kind support.',
+      text: 'Attendees reached through events your organization sponsored, weighted by sponsorship level. Each row is one sponsored event and the reach it contributed.',
       totalType: 'count',
       columns: ['Event name', 'Date', 'Sponsorship level', 'Reach'],
       totalField: 'ECO_EVENT_SPONSORSHIPS_TOTAL',
@@ -2020,7 +2020,7 @@ export class OrgLensProjectDetailService {
       ),
       this.card(
         'event-sponsorships',
-        'Event Sponsorships',
+        'Event sponsorship - attendees reached',
         foundation,
         this.pctCaption(cards?.ECO_EVENT_SPONSORSHIPS_PCT, 'Our company reached ', ' of attendees through sponsorship.'),
         index,

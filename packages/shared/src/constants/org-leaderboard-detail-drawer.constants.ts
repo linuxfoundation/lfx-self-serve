@@ -31,7 +31,7 @@ export const ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES: OrgLeaderboardDetailCa
   { key: 'board', name: 'Board Members' },
   { key: 'speakers', name: 'Event Speakers' },
   { key: 'meetup', name: 'Meetup Attendance' },
-  { key: 'sponsor', name: 'Event Sponsorships' },
+  { key: 'sponsor', name: 'Event sponsorship - attendees reached' },
   { key: 'certified', name: 'Certified Individuals' },
   { key: 'tier', name: 'Membership Tier' },
 ];
@@ -99,7 +99,7 @@ export const ORG_LEADERBOARD_DETAIL_METHODOLOGY: Record<'technical' | 'ecosystem
       },
       { label: 'Board Members', text: '— 1 pt if the company has 1+ foundation board members, else 0.' },
       {
-        label: 'Event Attendance, Event Sponsorships, Meetup Attendance, Certified Individuals',
+        label: 'Event Attendance, Meetup Attendance, Certified Individuals, Event sponsorship - attendees reached',
         text: '— tiered by share: 0 / 0.33 / 0.66 / 1 pt for none / up to 25% / up to 50% / over 50%.',
       },
       { label: 'Membership Tier', text: '— 1 pt for Premier, 0.66 pt for Strategic, else 0. No activity count applies.' },
