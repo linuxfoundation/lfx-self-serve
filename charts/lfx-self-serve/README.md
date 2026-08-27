@@ -200,9 +200,9 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                | No       | `"true"` |
 
 `..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
-**`..._JOBS` must stay on, and comes off LAST.** Once `..._CREATE` is enabled campaign-service
-mints UUID job ids, and the earlier "no UUID can exist" argument stops applying: a pod with JOBS
-off skips the id-shape check entirely and answers a terminal `not_found` for a campaign that is
+**`..._JOBS` must stay on, and comes off LAST.** With `..._CREATE` enabled campaign-service mints
+UUID job ids, so the earlier "no UUID can exist" argument no longer applies: a pod with JOBS off
+skips the id-shape check entirely and answers a terminal `not_found` for a campaign that is
 running and spending. On rollback, turn `..._CREATE` off first and keep `..._JOBS` on until
 outstanding UUID jobs have drained.
 
@@ -373,8 +373,15 @@ then drop one override per release, confirming every pod has rolled before the n
    UUID campaign an old pod refuses to pause.
 4. Then **CREATE**.
 
-To roll back, reverse it: turn **CREATE** off first, and keep **JOBS** on until every outstanding
-UUID job has drained.
+To roll back, turn **CREATE** off first, and keep **JOBS** on until every outstanding UUID job has
+drained.
+
+**It is not a clean reverse, because `..._STATUS_TOGGLE` does not come off with the rest.** Turning
+CREATE off stops NEW UUID campaigns; it does nothing about the ones that already exist, and a UUID
+is permanent. `campaign.controller.ts:1156` refuses a pause for any UUID while the flag is off, so
+disabling it removes the primary cost-control lever from campaigns that may still be spending.
+JOBS has a drain condition — outstanding polls finish — and this one does not: keep it enabled for
+as long as any campaign-service campaign can still spend, independently of the JOBS decision.
 
 The reason is the id-shape backstop. A poll reaches campaign-service only when the job id is a
 UUID, which is the shape campaign-service mints; the legacy path mints `job_<epoch>_<rand>`. A pod

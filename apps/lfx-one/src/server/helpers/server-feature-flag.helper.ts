@@ -197,6 +197,12 @@ export enum ServerFeatureFlag {
    * through campaign-service, so this flag is INERT until `CampaignServiceCreate` has produced
    * rows. Enabling it first therefore changes nothing observable, which is exactly why it ships
    * first — and why the reverse order is the one that costs.
+   *
+   * IT DOES NOT COME BACK OFF. Once UUID campaigns exist the inertness above is spent: a UUID is
+   * permanent, and `campaign.controller.ts` refuses a pause for any UUID while this flag is off.
+   * Disabling CREATE stops NEW campaign-service campaigns but does nothing about the existing
+   * ones, so unlike `CampaignServiceJobs` there is no drain condition to wait out — turning this
+   * off removes the primary cost-control lever from campaigns that may still be spending.
    */
   CampaignServiceStatusToggle = 'LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE',
 
