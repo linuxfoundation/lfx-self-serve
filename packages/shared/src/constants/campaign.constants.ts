@@ -111,6 +111,48 @@ export const CAMPAIGN_PACING_THRESHOLDS = {
   overspending: 130,
 } as const;
 
+/**
+ * Per-platform thresholds for the Optimize tab's action items.
+ *
+ * These values are EXACTLY what each platform's service used before they were named — this
+ * constant changes no behaviour. It exists because the same two rules carry three different
+ * numbers, and the divergence is accidental: nothing in the code or the tickets states a reason
+ * why LinkedIn should flag a click-through rate Meta considers healthy, or why Reddit should
+ * tolerate five times as many unconverted clicks as Meta.
+ *
+ * Naming them here makes the drift greppable and reviewable in one place. Converging them is a
+ * separate decision (LFXV2-3314) precisely because it CHANGES which alerts fire on live
+ * campaigns, and that is not a change to make silently while extracting constants.
+ *
+ * Units, since the three fields are not in the same kind of quantity:
+ *
+ *   lowCtrPct                — PERCENTAGE POINTS, not a ratio. `0.3` means 0.3%, and the rule
+ *                              fires when a campaign's `ctr` is below it. Each service builds
+ *                              that `ctr` itself as `(clicks / impressions) * 100` — it is not
+ *                              read from the platform — so the scale is set locally and a
+ *                              builder switching to the raw ratio would silence every one of
+ *                              these rules rather than error.
+ *   clicksWithoutConversions — a COUNT of clicks. The rule fires above it, with zero
+ *                              conversions.
+ *   minImpressions           — a COUNT of impressions. Consumers guard with `impressions >
+ *                              minImpressions`, so a campaign AT the value is suppressed too —
+ *                              the rule needs strictly more. Exists because a click-through rate
+ *                              over a handful of impressions is noise.
+ *
+ * LinkedIn has no impression floor today and instead requires `ctr > 0`; the two are not
+ * equivalent, and the difference is visible on any campaign whose CTR is genuinely low on thin
+ * volume. One click on 400 impressions is 0.25%: under LinkedIn's rule that clears `ctr > 0` and
+ * sits below `lowCtrPct`, so it alerts on a sample of 400; under Meta's it never reaches the
+ * predicate, because 400 is not `> 500`. Neither is wrong — they are different bets about when a
+ * rate is worth believing — and recording `null` states what LinkedIn actually has rather than
+ * inventing a floor for it.
+ */
+export const CAMPAIGN_ALERT_THRESHOLDS = {
+  'linkedin-ads': { lowCtrPct: 0.3, clicksWithoutConversions: 50, minImpressions: null },
+  'meta-ads': { lowCtrPct: 0.5, clicksWithoutConversions: 20, minImpressions: 500 },
+  'reddit-ads': { lowCtrPct: 0.3, clicksWithoutConversions: 100, minImpressions: 1000 },
+} as const;
+
 /** Official vendor brand colors — external to the LFX design system (not in lfxColors). */
 export const PLATFORM_BRAND_COLORS: Readonly<Record<CampaignPlatform, string>> = {
   'google-ads': '#4285F4',
