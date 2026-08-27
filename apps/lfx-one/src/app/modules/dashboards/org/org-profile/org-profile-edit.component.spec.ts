@@ -334,4 +334,53 @@ describe('OrgProfileEditComponent — logo upload', () => {
     fixture.componentInstance['triggerLogoUpload']();
     expect(clickSpy).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    [413, 'Logo too large', 'Logo must be 2MB or smaller.'],
+    [403, 'Permission denied', 'You no longer have permission to edit this organization.'],
+  ])('maps status %i to non-retryable copy', async (status, summary, detail) => {
+    fixture.detectChanges();
+    fixture.componentInstance['onLogoFileSelected']({
+      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+    } as unknown as Event);
+    await fixture.whenStable();
+
+    uploadLogo$.error(new HttpErrorResponse({ status }));
+    await fixture.whenStable();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary, detail }));
+  });
+
+  it('surfaces the upstream reason when the sanitizer rejects an SVG', async () => {
+    fixture.detectChanges();
+    fixture.componentInstance['onLogoFileSelected']({
+      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+    } as unknown as Event);
+    await fixture.whenStable();
+
+    // A permanently-rejected file must not be described as retryable — the same bytes fail forever.
+    uploadLogo$.error(new HttpErrorResponse({ status: 400, error: { message: 'SVG upload cannot be processed: unsupported CSS selector "rect"' } }));
+    await fixture.whenStable();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary: 'Logo rejected',
+        detail: 'SVG upload cannot be processed: unsupported CSS selector "rect"',
+      })
+    );
+    expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('Please try again') }));
+  });
+
+  it('still prompts a retry for a server-side failure', async () => {
+    fixture.detectChanges();
+    fixture.componentInstance['onLogoFileSelected']({
+      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+    } as unknown as Event);
+    await fixture.whenStable();
+
+    uploadLogo$.error(new HttpErrorResponse({ status: 502 }));
+    await fixture.whenStable();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Upload failed', detail: 'Unable to upload logo. Please try again.' }));
+  });
 });

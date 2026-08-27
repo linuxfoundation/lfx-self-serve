@@ -67,7 +67,7 @@
           [loading]="logoUploading()"
           (onClick)="triggerLogoUpload()"
           data-testid="org-profile-edit-upload-logo-button" />
-        <p class="text-xs text-gray-500">PNG, JPEG, or SVG, not more than 2MB.</p>
+        <p class="text-xs text-gray-500">PNG, JPEG, or SVG, not more than 2MB. SVGs are sanitized, so scripts and embedded styles are removed.</p>
       </div>
     </header>
 
