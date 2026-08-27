@@ -11,7 +11,6 @@ const { gatewayFetch, getEffectiveUsername, isImpersonating } = vi.hoisted(() =>
 
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
 vi.mock('@lfx-one/shared/constants', () => ({
-  REWARD_SUBJECT_LOOKUP_PAGE_SIZE: 2,
   SALESFORCE_ID_PATTERN: /^[A-Za-z0-9]{15}([A-Za-z0-9]{3})?$/,
 }));
 vi.mock('../helpers/api-gateway.helper', () => ({
@@ -20,6 +19,7 @@ vi.mock('../helpers/api-gateway.helper', () => ({
 vi.mock('./auth-helper', () => ({
   getEffectiveUsername,
   isImpersonating,
+  stripAuthPrefix: (username: string) => username.replace(/^.*\|/, ''),
   usernameMatches: (expected: string, actual: string) => expected.replace(/^.*\|/, '') === actual.replace(/^.*\|/, ''),
 }));
 
@@ -51,13 +51,13 @@ describe('resolveRewardsSubject', () => {
 
     await expect(resolveRewardsSubject(req)).resolves.toEqual({
       mode: 'impersonated',
-      username: 'auth0|target-user',
+      username: 'target-user',
       salesforceId: '003000000000001AAA',
       readOnly: true,
     });
     expect(gatewayFetch).toHaveBeenCalledWith(
       req,
-      'https://gateway.example.test/user-service/v1/users?username=auth0%7Ctarget-user&pageSize=2&offset=0',
+      'https://gateway.example.test/user-service/v1/users?username=target-user&pageSize=2&offset=0',
       expect.objectContaining({ operation: 'resolve_rewards_subject', service: 'rewards_service', redactResponseBody: true })
     );
   });

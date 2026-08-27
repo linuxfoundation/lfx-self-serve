@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import type { RewardPromotion, RewardsSummaryResponse } from '@lfx-one/shared/interfaces';
 
 export const REWARDS_URL = '/me/training';
@@ -71,5 +71,10 @@ export async function mockRewardsSummary(page: Page, summary: RewardsSummaryResp
 
 export async function openRewards(page: Page): Promise<void> {
   await page.goto(REWARDS_URL, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Rewards', exact: true }).click();
+  const rewardsTab = page.getByRole('button', { name: 'Rewards', exact: true });
+
+  await expect(async () => {
+    await rewardsTab.click();
+    await expect(page.getByTestId('rewards-tab')).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 10_000 });
 }

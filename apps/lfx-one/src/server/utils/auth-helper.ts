@@ -159,6 +159,11 @@ export function isImpersonating(req: Request): boolean {
     return req.impersonationActive;
   }
 
+  return hasActiveImpersonationSession(req);
+}
+
+/** Checks live session state before auth middleware freezes the decision on the request. */
+export function hasActiveImpersonationSession(req: Request): boolean {
   const token = req.appSession?.['impersonationToken'];
   const expiresAt = req.appSession?.['impersonationExpiresAt'];
   return typeof token === 'string' && !!token && typeof expiresAt === 'number' && Date.now() < expiresAt && !!req.appSession?.['impersonationUser'];

@@ -1,22 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { REWARD_SUBJECT_LOOKUP_PAGE_SIZE, SALESFORCE_ID_PATTERN } from '@lfx-one/shared/constants';
-import type { RewardUserLookupPage, RewardUserLookupRow, RewardsSubject } from '@lfx-one/shared/interfaces';
+import { SALESFORCE_ID_PATTERN } from '@lfx-one/shared/constants';
+import type { RewardUserLookupPage, RewardsSubject } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
-import { REWARDS_SERVICE_NAME } from '../constants';
+import { REWARDS_SERVICE_NAME, REWARD_SUBJECT_LOOKUP_PAGE_SIZE } from '../constants';
 import { AuthenticationError, MicroserviceError } from '../errors';
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
-import { getEffectiveUsername, isImpersonating, usernameMatches } from './auth-helper';
+import { getEffectiveUsername, isImpersonating, stripAuthPrefix, usernameMatches } from './auth-helper';
 
+/**
+ * Resolves one immutable rewards subject from trusted request state.
+ *
+ * Rewards uses the operator's API Gateway token, and compatibility between the target's
+ * impersonation bearer token and user-service v1 is not established. Impersonated reads therefore
+ * resolve the target to a validated Salesforce ID for the staff-authorized user-service endpoints.
+ */
 export async function resolveRewardsSubject(req: Request): Promise<RewardsSubject> {
   if (!isImpersonating(req)) {
     return { mode: 'self', readOnly: false };
   }
 
-  const username = getEffectiveUsername(req)?.trim();
+  const effectiveUsername = getEffectiveUsername(req);
+  const username = effectiveUsername ? stripAuthPrefix(effectiveUsername).trim() : '';
   if (!username) {
     throw new AuthenticationError('Impersonation target identity is unavailable', {
       operation: 'resolve_rewards_subject',
@@ -38,16 +46,16 @@ export async function resolveRewardsSubject(req: Request): Promise<RewardsSubjec
     redactResponseBody: true,
   });
 
-  const target = selectExactTarget(response, username);
+  const salesforceId = resolveTargetSalesforceId(response, username);
   return {
     mode: 'impersonated',
     username,
-    salesforceId: target.ID!.trim(),
+    salesforceId,
     readOnly: true,
   };
 }
 
-function selectExactTarget(response: RewardUserLookupPage | null, username: string): RewardUserLookupRow {
+function resolveTargetSalesforceId(response: RewardUserLookupPage | null, username: string): string {
   const rows = response?.Data;
   const totalSize = response?.Metadata?.TotalSize;
   const hasOneResult = Array.isArray(rows) && rows.length === 1 && totalSize === 1;
@@ -62,5 +70,5 @@ function selectExactTarget(response: RewardUserLookupPage | null, username: stri
     });
   }
 
-  return target;
+  return salesforceId;
 }

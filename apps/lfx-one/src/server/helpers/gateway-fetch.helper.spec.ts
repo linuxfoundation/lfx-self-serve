@@ -31,15 +31,17 @@ describe('gatewayFetch sensitive response redaction', () => {
   });
 
   it('does not log or serialize a non-OK upstream body', async () => {
+    const upstream = new Response(JSON.stringify({ CouponCode: 'SECRET-COUPON' }), { status: 409, statusText: 'Conflict' });
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ CouponCode: 'SECRET-COUPON' }), { status: 409, statusText: 'Conflict' }))
+      vi.fn(async () => upstream)
     );
 
     const error = (await gatewayFetch(req, 'https://gateway.example.test/redeem', options).catch((caught: unknown) => caught)) as MicroserviceError;
 
     expect(error).toMatchObject({ code: 'COUPON_GENERATION_FAILED' });
     expect(error.errorBody).toBeUndefined();
+    expect(upstream.bodyUsed).toBe(true);
     expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('SECRET-COUPON');
     expect(logger.warning).toHaveBeenCalledWith(req, 'redeem_promotion', 'Upstream returned non-OK response', expect.objectContaining({ body_redacted: true }));
   });

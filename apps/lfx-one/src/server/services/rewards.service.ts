@@ -9,13 +9,14 @@ import {
   RewardPromotionGroups,
   RewardPromotionRaw,
   RewardPromotionsPage,
+  RewardUserProfileRaw,
   RewardsProfileProjection,
   RewardsSubject,
   RewardsSummaryResponse,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { NEVER_EXPIRES_YEAR_PREFIX, REWARDS_SERVICE_NAME } from '../constants';
+import { NEVER_EXPIRES_YEAR_PREFIX, REWARDS_SERVICE_NAME, REWARD_PROMOTIONS_PAGE_SIZE } from '../constants';
 import { AuthorizationError, MicroserviceError } from '../errors';
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
@@ -29,11 +30,8 @@ export class RewardsService {
     logger.debug(req, 'get_rewards_summary', 'Fetching rewards profile and promotions', { subject_mode: subject.mode });
 
     const [profileResult, promotionsResult] = await Promise.allSettled([this.fetchUserProfile(req, subject), this.fetchPromotions(req, subject)]);
-    this.assertNoCriticalSourceFailure(profileResult, promotionsResult);
-    const profile = profileResult.status === 'fulfilled' ? profileResult.value : null;
-    const promotions = promotionsResult.status === 'fulfilled' ? promotionsResult.value : null;
-    this.logUnavailableSource(req, 'profile', profileResult);
-    this.logUnavailableSource(req, 'promotions', promotionsResult);
+    const profile = this.unwrapSource(req, 'profile', profileResult);
+    const promotions = this.unwrapSource(req, 'promotions', promotionsResult);
 
     const groupedPromotions = this.groupPromotions(promotions ?? []);
 
@@ -92,7 +90,7 @@ export class RewardsService {
 
     const baseUrl = getUserServiceBaseUrl('fetch_user_profile', REWARDS_SERVICE_NAME);
     const path = subject.mode === 'self' ? '/me' : `/users/${encodeURIComponent(subject.salesforceId)}`;
-    const profile = await gatewayFetch<Record<string, unknown>>(req, `${baseUrl}${path}`, {
+    const profile = await gatewayFetch<RewardUserProfileRaw>(req, `${baseUrl}${path}`, {
       operation: 'fetch_user_profile',
       service: REWARDS_SERVICE_NAME,
       errorMessage: 'User profile fetch failed',
@@ -122,13 +120,17 @@ export class RewardsService {
     let offset = 0;
 
     while (true) {
-      const response = await gatewayFetch<RewardPromotionsPage>(req, `${baseUrl}${subjectPath}/promotions?Offset=${offset}&PageSize=${REWARD_STEP_SIZE}`, {
-        operation: 'fetch_promotions',
-        service: REWARDS_SERVICE_NAME,
-        errorMessage: 'Promotions fetch failed',
-        errorCode: 'PROMOTIONS_FETCH_FAILED',
-        redactResponseBody: true,
-      });
+      const response = await gatewayFetch<RewardPromotionsPage>(
+        req,
+        `${baseUrl}${subjectPath}/promotions?offset=${offset}&pageSize=${REWARD_PROMOTIONS_PAGE_SIZE}`,
+        {
+          operation: 'fetch_promotions',
+          service: REWARDS_SERVICE_NAME,
+          errorMessage: 'Promotions fetch failed',
+          errorCode: 'PROMOTIONS_FETCH_FAILED',
+          redactResponseBody: true,
+        }
+      );
       const { data, nextOffset, totalSize } = this.validatePromotionPage(response, offset);
       promotions.push(...data);
 
@@ -140,42 +142,39 @@ export class RewardsService {
   private validatePromotionPage(response: RewardPromotionsPage | null, requestedOffset: number) {
     const data = response?.Data;
     const metadata = response?.Metadata;
-    const validMetadata =
-      metadata !== undefined &&
-      typeof metadata.Offset === 'number' &&
-      Number.isInteger(metadata.Offset) &&
-      metadata.Offset === requestedOffset &&
-      typeof metadata.PageSize === 'number' &&
-      Number.isInteger(metadata.PageSize) &&
-      metadata.PageSize === REWARD_STEP_SIZE &&
-      typeof metadata.TotalSize === 'number' &&
-      Number.isInteger(metadata.TotalSize) &&
-      metadata.TotalSize >= 0;
-    const validData = Array.isArray(data) && data.every((item) => Boolean(item) && typeof item === 'object');
 
-    if (!validMetadata || !validData) {
+    if (
+      !metadata ||
+      !isNonNegativeInteger(metadata.Offset) ||
+      metadata.Offset !== requestedOffset ||
+      !isNonNegativeInteger(metadata.PageSize) ||
+      metadata.PageSize !== REWARD_PROMOTIONS_PAGE_SIZE ||
+      !isNonNegativeInteger(metadata.TotalSize) ||
+      !Array.isArray(data) ||
+      !data.every(isValidPromotion)
+    ) {
       throw this.invalidResponse('fetch_promotions', 'Promotions response was malformed');
     }
 
     const nextOffset = requestedOffset + data.length;
-    const totalSize = metadata.TotalSize as number;
-    const incomplete = nextOffset > totalSize || (nextOffset < totalSize && data.length < REWARD_STEP_SIZE);
+    const totalSize = metadata.TotalSize;
+    const incomplete = nextOffset > totalSize || (nextOffset < totalSize && data.length < REWARD_PROMOTIONS_PAGE_SIZE);
     if (incomplete) {
       throw this.invalidResponse('fetch_promotions', 'Promotions pagination was incomplete');
     }
 
-    return { data: data as RewardPromotionRaw[], nextOffset, totalSize };
+    return { data, nextOffset, totalSize };
   }
 
-  private projectProfile(profile: Record<string, unknown>): RewardsProfileProjection {
-    const rawPoints = profile['TuxRewards'];
+  private projectProfile(profile: RewardUserProfileRaw): RewardsProfileProjection {
+    const rawPoints = profile.TuxRewards;
     if (typeof rawPoints !== 'number' || !Number.isFinite(rawPoints) || rawPoints < 0) {
       throw this.invalidResponse('fetch_user_profile', 'User profile reward points were malformed');
     }
 
     const points = Math.floor(rawPoints);
     const nextRewardPoints = this.calculateNextThreshold(points);
-    const programStartDate = this.normalizeProgramStartDate(profile['TuxProgramStartDate']);
+    const programStartDate = this.normalizeProgramStartDate(profile.TuxProgramStartDate);
     return {
       points,
       nextRewardPoints,
@@ -186,8 +185,8 @@ export class RewardsService {
     };
   }
 
-  private profileMatchesSubject(profile: Record<string, unknown>, username: string): boolean {
-    const returnedUsername = profile['Username'];
+  private profileMatchesSubject(profile: RewardUserProfileRaw, username: string): boolean {
+    const returnedUsername = profile.Username;
     return typeof returnedUsername === 'string' && usernameMatches(username, returnedUsername.trim());
   }
 
@@ -202,23 +201,24 @@ export class RewardsService {
     });
   }
 
-  private assertNoCriticalSourceFailure(...results: PromiseSettledResult<unknown>[]): void {
-    const failure = results.find((result) => result.status === 'rejected' && this.isCriticalSourceFailure(result.reason));
-    if (failure?.status === 'rejected') throw failure.reason;
-  }
-
   private isCriticalSourceFailure(reason: unknown): boolean {
+    const statusCode = (reason as { statusCode?: unknown } | null)?.statusCode;
+    if (statusCode === 401 || statusCode === 403) return true;
+
     const code = (reason as { code?: unknown } | null)?.code;
     return code === 'API_GATEWAY_UNAVAILABLE' || code === 'API_GATEWAY_MISCONFIGURED' || code === 'REWARDS_SUBJECT_MISMATCH';
   }
 
-  private logUnavailableSource(req: Request, source: 'profile' | 'promotions', result: PromiseSettledResult<unknown>): void {
-    if (result.status === 'fulfilled') return;
+  private unwrapSource<T>(req: Request, source: 'profile' | 'promotions', result: PromiseSettledResult<T>): T | null {
+    if (result.status === 'fulfilled') return result.value;
+    if (this.isCriticalSourceFailure(result.reason)) throw result.reason;
+
     const code = result.reason instanceof MicroserviceError ? result.reason.code : 'UNKNOWN';
     logger.warning(req, 'get_rewards_summary', 'Rewards source unavailable', {
       source,
       error_code: code,
     });
+    return null;
   }
 
   private groupPromotions(promotions: RewardPromotionRaw[]): RewardPromotionGroups {
@@ -337,14 +337,6 @@ export class RewardsService {
     return REWARD_CATEGORIES.flatMap((cat) => groups[cat][type]);
   }
 
-  private parsePoints(value: unknown): number {
-    // Negative values from upstream are treated as 0 (defensive — TuxRewards
-    // is always >= 0 in practice, but a malformed payload should not surface
-    // a negative point balance to the UI).
-    const points = Number(value);
-    return Number.isFinite(points) && points >= 0 ? Math.floor(points) : 0;
-  }
-
   private calculateNextThreshold(points: number): number {
     return Math.floor(points / REWARD_STEP_SIZE) * REWARD_STEP_SIZE + REWARD_STEP_SIZE;
   }
@@ -362,4 +354,16 @@ export class RewardsService {
     date.setUTCFullYear(date.getUTCFullYear() + 1);
     return date.toISOString();
   }
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+function isValidPromotion(value: unknown): value is RewardPromotionRaw {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+
+  const promotion = value as RewardPromotionRaw;
+  const category = promotion.Category?.toLowerCase();
+  return Boolean(promotion.PromotionID?.trim()) && REWARD_CATEGORIES.some((candidate) => candidate.toLowerCase() === category);
 }

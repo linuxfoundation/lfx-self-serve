@@ -81,18 +81,13 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
   }
 
   if (!upstream.ok) {
-    const logContext: Record<string, unknown> = {
+    const rawBody = await upstream.text().catch(() => '');
+    const body = options.redactResponseBody ? undefined : rawBody.slice(0, UPSTREAM_ERROR_BODY_LIMIT);
+    const logContext = {
       status: upstream.status,
       status_text: upstream.statusText,
+      ...(body === undefined ? { body_redacted: true } : { body }),
     };
-    let body: string | undefined;
-
-    if (options.redactResponseBody) {
-      logContext['body_redacted'] = true;
-    } else {
-      body = (await upstream.text().catch(() => '')).slice(0, UPSTREAM_ERROR_BODY_LIMIT);
-      logContext['body'] = body;
-    }
 
     logger.warning(req, options.operation, 'Upstream returned non-OK response', logContext);
 
@@ -125,19 +120,12 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
     return JSON.parse(rawBody) as T;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    const logContext: Record<string, unknown> = {
+    const truncatedBody = options.redactResponseBody ? undefined : rawBody.slice(0, UPSTREAM_ERROR_BODY_LIMIT);
+    const logContext = {
       status: upstream.status,
       status_text: upstream.statusText,
+      ...(truncatedBody === undefined ? { body_redacted: true } : { body: truncatedBody, error: message }),
     };
-    let truncatedBody: string | undefined;
-
-    if (options.redactResponseBody) {
-      logContext['body_redacted'] = true;
-    } else {
-      truncatedBody = rawBody.slice(0, UPSTREAM_ERROR_BODY_LIMIT);
-      logContext['body'] = truncatedBody;
-      logContext['error'] = message;
-    }
 
     logger.warning(req, options.operation, 'Upstream returned invalid JSON response', logContext);
 

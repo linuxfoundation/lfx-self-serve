@@ -3,14 +3,14 @@
 
 import { Clipboard } from '@angular/cdk/clipboard';
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, Signal, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RewardPromotion, RewardsState, RewardsSummaryResponse } from '@lfx-one/shared/interfaces';
 import { EMPTY_REWARD_PROMOTIONS } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, firstValueFrom, map, Observable, of, startWith, Subject, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, firstValueFrom, map, merge, Observable, of, startWith, Subject, switchMap, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { RewardsService } from '@shared/services/rewards.service';
@@ -66,24 +66,6 @@ export class RewardsComponent {
   public readonly formattedPoints = computed(() => this.points()?.toLocaleString('en-US') ?? 'Unavailable');
   public readonly formattedNextRewardPoints = computed(() => this.nextRewardPoints()?.toLocaleString('en-US') ?? 'Unavailable');
 
-  private previousUsername = this.userService.user()?.username ?? null;
-  private previousImpersonating = this.userService.impersonating();
-
-  public constructor() {
-    effect(() => {
-      const username = this.userService.user()?.username ?? null;
-      const impersonating = this.userService.impersonating();
-      if (username === this.previousUsername && impersonating === this.previousImpersonating) return;
-
-      this.previousUsername = username;
-      this.previousImpersonating = impersonating;
-      this.lastSummary.set(null);
-      this.redeemingUids.set({});
-      this.pendingConfirmationUids.clear();
-      this.reloadTrigger$.next();
-    });
-  }
-
   // ─── Public Methods ────────────────────────────────────────────────────────
   public onRefresh(): void {
     this.reloadTrigger$.next();
@@ -137,10 +119,21 @@ export class RewardsComponent {
   // ─── Private Initializers ──────────────────────────────────────────────────
   private initRewardsState(): Signal<RewardsState> {
     const initialState: RewardsState = { loading: true, error: null, data: null };
+    const subjectChanges$ = combineLatest([toObservable(this.userService.user), toObservable(this.userService.impersonating)]).pipe(
+      map(([user, impersonating]) => [user?.username ?? null, impersonating] as const),
+      distinctUntilChanged(([previousUsername, previousImpersonating], [username, impersonating]) => {
+        return previousUsername === username && previousImpersonating === impersonating;
+      }),
+      tap(() => {
+        this.lastSummary.set(null);
+        this.redeemingUids.set({});
+        this.pendingConfirmationUids.clear();
+      }),
+      map(() => undefined)
+    );
 
     return toSignal(
-      this.reloadTrigger$.pipe(
-        startWith(void 0),
+      merge(subjectChanges$, this.reloadTrigger$).pipe(
         switchMap(() =>
           this.rewardsService.getSummary().pipe(
             tap((data) => this.lastSummary.set(data)),

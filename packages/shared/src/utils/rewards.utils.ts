@@ -103,11 +103,11 @@ export function decorateAvailableIncentives(
 
 // ─── Coupon decoration ───────────────────────────────────────────────────────
 
-function getCouponStatusLabel(p: RewardPromotion, isExpired: boolean, hasPointsShortfall: boolean | null): string {
+function getCouponStatusLabel(p: RewardPromotion, isExpired: boolean, pointsUnknown: boolean, hasPointsShortfall: boolean): string {
   if (p.redeemed) return 'Redeemed';
   if (isExpired) return 'Expired';
   if (p.coupon) return 'Available';
-  if (p.redeemPoints > 0 && hasPointsShortfall === null) return 'Points unavailable';
+  if (pointsUnknown) return 'Points unavailable';
   // Upstream may flag a coupon `eligible: true` while the user is still short
   // on points; in that case the redeem button is disabled, so the badge must
   // not advertise "Ready to redeem".
@@ -115,19 +115,19 @@ function getCouponStatusLabel(p: RewardPromotion, isExpired: boolean, hasPointsS
   return 'Locked';
 }
 
-function getCouponStatusColorClass(p: RewardPromotion, isExpired: boolean, hasPointsShortfall: boolean | null): string {
+function getCouponStatusColorClass(p: RewardPromotion, isExpired: boolean, pointsUnknown: boolean, hasPointsShortfall: boolean): string {
   if (p.redeemed) return 'bg-gray-100 text-gray-700';
   if (isExpired) return 'bg-gray-100 text-gray-500';
   if (p.coupon) return 'bg-white text-blue-700 border border-blue-300';
-  if (p.redeemPoints > 0 && hasPointsShortfall === null) return 'bg-gray-100 text-gray-700';
+  if (pointsUnknown) return 'bg-gray-100 text-gray-700';
   if (p.eligible && !hasPointsShortfall) return 'bg-green-100 text-green-700';
   return 'bg-amber-100 text-amber-700';
 }
 
-function getCouponDescription(p: RewardPromotion, isExpired: boolean, pointsAvailable: boolean): string {
+function getCouponDescription(p: RewardPromotion, isExpired: boolean, pointsUnknown: boolean): string {
   if (isExpired) return 'This coupon has expired and can no longer be used.';
   if (p.coupon) return 'Use this coupon during checkout on eligible training and certification purchases.';
-  if (p.redeemPoints > 0 && !pointsAvailable) return 'Reward points are unavailable, so this coupon status cannot be determined.';
+  if (pointsUnknown) return 'Reward points are unavailable, so this coupon status cannot be determined.';
   if (p.eligibilityComment) return p.eligibilityComment;
   return `${p.redeemPoints} points required to unlock this coupon.`;
 }
@@ -152,7 +152,8 @@ export function decorateCoupons(
   const decorated: DecoratedCoupon[] = coupons.map((p) => {
     const hasCouponCode = p.coupon.length > 0;
     const pointsShortfall = rewardPoints === null ? null : Math.max(0, p.redeemPoints - rewardPoints);
-    const hasPointsShortfall = pointsShortfall === null ? null : pointsShortfall > 0;
+    const pointsUnknown = rewardPoints === null && p.redeemPoints > 0;
+    const hasPointsShortfall = pointsShortfall !== null && pointsShortfall > 0;
     const resolvedExpiryDate = resolvePromotionExpiryDate(p, programStartDate, { skipIfPointsRequired: true });
     const expiryTime = resolvedExpiryDate ? new Date(resolvedExpiryDate).getTime() : Number.NaN;
     const isExpired = !Number.isNaN(expiryTime) && expiryTime < now;
@@ -163,9 +164,9 @@ export function decorateCoupons(
       pointsShortfall,
       resolvedExpiryDate,
       isExpired,
-      statusLabel: getCouponStatusLabel(p, isExpired, hasPointsShortfall),
-      statusColorClass: getCouponStatusColorClass(p, isExpired, hasPointsShortfall),
-      description: getCouponDescription(p, isExpired, rewardPoints !== null),
+      statusLabel: getCouponStatusLabel(p, isExpired, pointsUnknown, hasPointsShortfall),
+      statusColorClass: getCouponStatusColorClass(p, isExpired, pointsUnknown, hasPointsShortfall),
+      description: getCouponDescription(p, isExpired, pointsUnknown),
     };
   });
 

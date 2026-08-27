@@ -92,7 +92,7 @@ describe('RewardsService', () => {
     });
     expect(gatewayFetch.mock.calls.map((call) => call[1])).toEqual([
       'https://gateway.example.test/user-service/v1/me',
-      'https://gateway.example.test/user-service/v1/me/promotions?Offset=0&PageSize=500',
+      'https://gateway.example.test/user-service/v1/me/promotions?offset=0&pageSize=500',
     ]);
     expect(gatewayFetch.mock.calls.every((call) => call[2]?.redactResponseBody === true)).toBe(true);
   });
@@ -107,7 +107,7 @@ describe('RewardsService', () => {
     expect(summary.points).toBe(360);
     expect(gatewayFetch.mock.calls.map((call) => call[1])).toEqual([
       'https://gateway.example.test/user-service/v1/users/003-target',
-      'https://gateway.example.test/user-service/v1/users/003-target/promotions?Offset=0&PageSize=500',
+      'https://gateway.example.test/user-service/v1/users/003-target/promotions?offset=0&pageSize=500',
     ]);
     expect(gatewayFetch.mock.calls.some((call) => String(call[1]).includes('/me'))).toBe(false);
   });
@@ -176,6 +176,32 @@ describe('RewardsService', () => {
     });
   });
 
+  it.each([401, 403])('propagates upstream authorization status %s instead of returning a degraded summary', async (statusCode) => {
+    gatewayFetch.mockRejectedValue(
+      Object.assign(new Error('upstream authorization failed'), {
+        code: 'USER_PROFILE_FETCH_FAILED',
+        statusCode,
+      })
+    );
+
+    await expect(service.getSummary(req)).rejects.toMatchObject({
+      code: 'USER_PROFILE_FETCH_FAILED',
+      statusCode,
+    });
+  });
+
+  it('marks malformed promotion entries unavailable instead of reporting an authoritative empty list', async () => {
+    gatewayFetch.mockImplementation(async (_req: Request, url: string) =>
+      url.endsWith('/me') ? profile : { Data: [{}], Metadata: { Offset: 0, PageSize: 500, TotalSize: 1 } }
+    );
+
+    await expect(service.getSummary(req)).resolves.toMatchObject({
+      availability: { profile: 'available', promotions: 'unavailable' },
+      availableIncentives: [],
+      coupons: [],
+    });
+  });
+
   it('retrieves every promotion page before marking the source available', async () => {
     const firstPage = Array.from({ length: 500 }, (_, index) => ({
       PromotionID: `promotion-${index}`,
@@ -188,7 +214,7 @@ describe('RewardsService', () => {
     const finalPromotion = { ...firstPage[0], PromotionID: 'promotion-500', Description: 'Promotion 500' };
     gatewayFetch.mockImplementation(async (_req: Request, url: string) => {
       if (url.endsWith('/me')) return profile;
-      if (url.includes('Offset=0')) return { Data: firstPage, Metadata: { Offset: 0, PageSize: 500, TotalSize: 501 } };
+      if (url.includes('offset=0')) return { Data: firstPage, Metadata: { Offset: 0, PageSize: 500, TotalSize: 501 } };
       return { Data: [finalPromotion], Metadata: { Offset: 500, PageSize: 500, TotalSize: 501 } };
     });
 
@@ -196,7 +222,7 @@ describe('RewardsService', () => {
 
     expect(summary.availability.promotions).toBe('available');
     expect(summary.availableIncentives).toHaveLength(501);
-    expect(gatewayFetch.mock.calls.map((call) => call[1])).toContain('https://gateway.example.test/user-service/v1/me/promotions?Offset=500&PageSize=500');
+    expect(gatewayFetch.mock.calls.map((call) => call[1])).toContain('https://gateway.example.test/user-service/v1/me/promotions?offset=500&pageSize=500');
   });
 
   it.each([
