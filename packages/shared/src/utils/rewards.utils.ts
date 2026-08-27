@@ -126,9 +126,9 @@ function getCouponStatusColorClass(p: RewardPromotion, isExpired: boolean, point
 
 function getCouponDescription(p: RewardPromotion, isExpired: boolean, pointsUnknown: boolean): string {
   if (isExpired) return 'This coupon has expired and can no longer be used.';
+  if (p.eligibilityComment) return p.eligibilityComment;
   if (p.coupon) return 'Use this coupon during checkout on eligible training and certification purchases.';
   if (pointsUnknown) return 'Reward points are unavailable, so this coupon status cannot be determined.';
-  if (p.eligibilityComment) return p.eligibilityComment;
   return `${p.redeemPoints} points required to unlock this coupon.`;
 }
 

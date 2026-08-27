@@ -53,4 +53,10 @@ describe('decorateCoupons with unavailable reward points', () => {
       coupon: 'EXISTING-CODE',
     });
   });
+
+  it('preserves an issued coupon eligibility restriction in its description', () => {
+    const [decorated] = decorateCoupons([{ ...pointsCoupon, coupon: 'EXISTING-CODE', eligibilityComment: 'Only valid for selected courses.' }], 500, null);
+
+    expect(decorated.description).toBe('Only valid for selected courses.');
+  });
 });

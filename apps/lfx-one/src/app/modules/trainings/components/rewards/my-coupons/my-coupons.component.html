@@ -67,7 +67,13 @@
                     size="small"
                     severity="primary"
                     [outlined]="true"
-                    [disabled]="readOnly() || !coupon.eligible || coupon.pointsShortfall === null || coupon.pointsShortfall > 0 || coupon.redeemed"
+                    [disabled]="
+                      readOnly() ||
+                      !coupon.eligible ||
+                      (coupon.redeemPoints > 0 && coupon.pointsShortfall === null) ||
+                      (coupon.pointsShortfall !== null && coupon.pointsShortfall > 0) ||
+                      coupon.redeemed
+                    "
                     [loading]="redeemingUids()[coupon.uid] || false"
                     [tooltip]="readOnly() ? 'Rewards are read-only while impersonating.' : undefined"
                     [ariaLabel]="readOnly() ? 'Redeem unavailable: rewards are read-only while impersonating' : 'Redeem coupon'"

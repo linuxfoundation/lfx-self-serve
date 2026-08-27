@@ -81,8 +81,9 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
   }
 
   if (!upstream.ok) {
-    const rawBody = await upstream.text().catch(() => '');
-    const body = options.redactResponseBody ? undefined : rawBody.slice(0, UPSTREAM_ERROR_BODY_LIMIT);
+    const body = options.redactResponseBody
+      ? await upstream.body?.cancel().catch(() => undefined)
+      : (await upstream.text().catch(() => '')).slice(0, UPSTREAM_ERROR_BODY_LIMIT);
     const logContext = {
       status: upstream.status,
       status_text: upstream.statusText,
