@@ -195,7 +195,7 @@ changing a value here rather than by shipping a revert.
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`          | Serves campaign job status from campaign-service; see the accepted values below                                                     | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`        | Persists the generated brief in campaign-service instead of only in the browser tab                                                 | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`        | Creates campaigns through campaign-service instead of the per-platform Express services                                             | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`        | Creates campaigns through campaign-service instead of the per-platform Express services — enable only after STATUS_TOGGLE converges | No       | _unset_  |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`    | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                | No       | `"true"` |
 
@@ -285,17 +285,26 @@ It remains inert for campaigns the legacy path created: pausing needs a campaign
 a campaign-service create produces. So the control appears for campaigns made after `..._CREATE`
 was enabled, and not retroactively for older ones.
 
-An overlapping rollout is SAFE here, and it is worth saying why, because the hazard recorded for
-`LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` looks identical and is not. Routing runs a campaign-id SHAPE
-check BEFORE and INDEPENDENTLY of this flag — that is the actual safety property. The two id
-spaces are disjoint (campaign-service keys campaigns by UUID; the legacy path uses the ad
-platform's numeric id), so no request can be claimed by both paths and a flag-on pod and a
-flag-off pod cannot disagree about where one belongs. A flag-off pod handed a UUID refuses with a
-clear error instead of answering the confident `not_found` that made the JOBS flag dangerous.
+MISROUTING during an overlapping rollout is impossible here, and it is worth saying why, because
+the hazard recorded for `LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS` looks identical and is not. Routing
+runs a campaign-id SHAPE check BEFORE and INDEPENDENTLY of this flag. The two id spaces are
+disjoint (campaign-service keys campaigns by UUID; the legacy path uses the ad platform's numeric
+id), so no request can be claimed by both paths and a flag-on pod and a flag-off pod cannot
+disagree about where one belongs. A flag-off pod handed a UUID refuses with a clear error instead
+of answering the confident `not_found` that made the JOBS flag dangerous.
 
-It is INERT until `LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE` has been on long enough to produce
-UUID-keyed campaigns, because a campaign only has a UUID if campaign-service created it. Enabling
-it earlier is harmless, just useless.
+That is a narrower guarantee than "an overlapping rollout is safe", which is what an earlier
+revision of this section claimed. A refusal is well-formed but it is still a failure: the pod
+returns 400 from `campaign.controller.ts:1156`, and an operator who cannot pause a spending
+campaign is not much comforted that the error named the right field.
+
+**Hence the ordering.** Enable `..._STATUS_TOGGLE` first and let it converge, then enable
+`..._CREATE`. This flag is INERT until CREATE has produced UUID-keyed campaigns, because a
+campaign only has a UUID if campaign-service created it — so shipping it first changes nothing
+observable, which is precisely what makes it the safe half to ship alone. The reverse order is
+the one that costs: with CREATE on first, a new pod can mint a UUID campaign while an old pod
+still refuses its pause, and with `replicaCount: 3`, `maxSurge: "100%"` and non-sticky requests
+that window lasts as long as the rollout.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` gates both halves of brief persistence: the write
 (`POST /api/campaigns/brief/persist`, called when a user approves a brief and moves to the

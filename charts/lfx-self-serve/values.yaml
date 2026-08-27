@@ -469,8 +469,15 @@ environment:
   # `POST /projects/{slug}/connection-{provider}` (singleton per provider — a second POST 409s).
   # Where neither a project row nor the fallback applies, the failure surfaces per-campaign rather
   # than at startup, so nothing warns you at deploy time.
+  # Order: enable this ONLY after LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE below has been on
+  # and its rollout has fully converged. Turning both on in one rollout opens a window where a
+  # new pod mints a UUID campaign while an old pod, still without the toggle flag, refuses that
+  # campaign's pause/resume at campaign.controller.ts:1156. Requests are not sticky and this
+  # chart runs replicaCount: 3 with maxSurge: "100%", so during the overlap pause — the primary
+  # cost-control lever — can intermittently 400 on a campaign created moments earlier.
+  # Sequencing costs one extra deploy and closes the window outright.
   LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE:
-    value: "true"
+    value:
 
   # Gates whether a Demand Gen Google campaign may be requested at all (LFXV2-3257).
   #
@@ -554,16 +561,24 @@ environment:
   # campaign-service create mints. The control appears for campaigns made after CREATE was
   # enabled, not retroactively.
   #
-  # ROLLOUT OVERLAP IS SAFE, unlike LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS, whose hazard looks
-  # identical and is not. Routing runs a campaign-id SHAPE check BEFORE and INDEPENDENTLY of this
-  # flag, and the two id spaces are disjoint: campaign-service keys campaigns by UUID, the legacy
-  # path by the ad platform's numeric id. No request can be claimed by both paths, so a flag-on
-  # and a flag-off pod cannot disagree about where one belongs. A flag-off pod handed a UUID
-  # refuses with a clear error rather than answering a confident falsehood.
+  # MISROUTING during overlap is impossible, unlike LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS, whose
+  # hazard looks identical and is not. Routing runs a campaign-id SHAPE check BEFORE and
+  # INDEPENDENTLY of this flag, and the two id spaces are disjoint: campaign-service keys
+  # campaigns by UUID, the legacy path by the ad platform's numeric id. No request can be claimed
+  # by both paths, so a flag-on and a flag-off pod cannot disagree about where one belongs.
   #
-  # Order: this is INERT until LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE has been on long enough to
-  # produce UUID-keyed campaigns — a campaign only has a UUID if campaign-service created it.
-  # Enabling it earlier is harmless, just useless. Same accepted values as the flags above.
+  # That is a narrower claim than it first appears, and an earlier revision of this comment
+  # overstated it as "rollout overlap is safe". Disjoint id spaces mean a flag-off pod handed a
+  # UUID REFUSES rather than answering a confident falsehood — but a refusal is still a failure.
+  # It returns 400 at campaign.controller.ts:1156, and a caller that cannot pause a spending
+  # campaign is not much comforted that the error was well-formed. That is why CREATE above is
+  # sequenced AFTER this flag: no UUID-keyed campaign exists to be refused until CREATE is on.
+  #
+  # Order: enable this FIRST, before LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE. It is INERT until
+  # CREATE has produced UUID-keyed campaigns — a campaign only has a UUID if campaign-service
+  # created it — so switching it on early does nothing observable, which is exactly what makes it
+  # the safe half to ship first. Enabling it AFTER CREATE is the ordering that costs something:
+  # that is the overlap described above. Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE:
     value: "true"
 
