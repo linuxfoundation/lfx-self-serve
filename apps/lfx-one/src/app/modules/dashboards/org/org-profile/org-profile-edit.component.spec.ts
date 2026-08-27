@@ -81,7 +81,11 @@ describe('OrgProfileEditComponent — logo upload', () => {
     await fixture.whenStable();
 
     expect(uploadLogoMock).not.toHaveBeenCalled();
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Please choose a PNG, JPEG, or SVG image.' }));
+    // Summary matches the server-side wording for the same condition (415 -> 'Logo rejected'), so
+    // the user sees one voice whichever side catches it.
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: 'Logo rejected', detail: 'Please choose a PNG, JPEG, or SVG image.' })
+    );
   });
 
   it('accepts an SVG file and calls the service', async () => {
@@ -98,7 +102,8 @@ describe('OrgProfileEditComponent — logo upload', () => {
     await fixture.whenStable();
 
     expect(uploadLogoMock).not.toHaveBeenCalled();
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Logo must be 2MB or smaller.' }));
+    // Same wording as the server-side 413 branch for the identical condition.
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Logo too large', detail: 'Logo must be 2MB or smaller.' }));
   });
 
   it('clears the file input value so re-selecting the same file still fires change', () => {
