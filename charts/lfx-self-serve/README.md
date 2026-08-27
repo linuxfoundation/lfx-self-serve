@@ -195,34 +195,50 @@ changing a value here rather than by shipping a revert.
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`          | Serves campaign job status from campaign-service; see the accepted values below                                                     | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`        | Persists the generated brief in campaign-service instead of only in the browser tab                                                 | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`        | Creates campaigns through campaign-service instead of the per-platform Express services                                             | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`        | Creates campaigns through campaign-service instead of the per-platform Express services                                             | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`    | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                | No       | `"true"` |
 
 `..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
-**While `..._CREATE` remains off** — the state this chart ships — no UUID job id can exist, so
-every poll is answered by the store that holds it and this flip is inert for job polling.
-**That inertness ends when `..._CREATE` is enabled.** From then on JOBS must be on every pod
-before CREATE, and must stay on until outstanding UUID jobs drain; a pod with JOBS off skips the
-id-shape check entirely and answers a terminal `not_found` for a campaign that is running and
-spending. `..._CREATE` stays off and is enabled in a later change, only once `..._BRIEFS` has
-converged on every pod — see **Rollout ordering** below, which governs.
+**`..._JOBS` must stay on, and comes off LAST.** With `..._CREATE` on, campaign-service mints UUID
+job ids, so the earlier "no UUID can exist" argument no longer applies: a pod with JOBS off skips
+the id-shape check entirely and answers a terminal `not_found` for a campaign that is running and
+spending. On rollback, turn `..._CREATE` off first and keep `..._JOBS` on until outstanding UUID
+jobs have drained.
 
-`..._BRIEFS` now defaults to `"true"` as well. **`..._CREATE` is still off**, so campaign creation
-continues on the legacy path until a later change enables it — the cutover is three flags landed
-one at a time:
+The cutover landed as three flags, one at a time, each converging before the next:
 
 ```text
 JOBS  →  BRIEFS  →  CREATE
- done     here      later
 ```
 
-`..._BRIEFS` must converge **before** `..._CREATE` is enabled, and the reason is not symmetry:
-`createCampaigns` gates on all three flags together, so during a mixed rollout a brief save can
-land on a BRIEFS-off pod and answer `enabled: false` with no persisted brief id, while the create
-that follows lands on a pod where all three are on. That create is refused terminally —
-`createCampaigns` returns `enabled: true` with _"its brief has not been saved yet"_ rather than
-falling through to the legacy creator, so the user gets a dead end rather than a working campaign.
+They could not share a rollout. `createCampaigns` gates on all three together, so during a mixed
+deployment a brief save can land on a BRIEFS-off pod and answer `enabled: false` with no persisted
+brief id, while the create that follows lands on a pod where all three are on. That create is
+refused terminally — `createCampaigns` returns `enabled: true` with _"its brief has not been saved
+yet"_ rather than falling through to the legacy creator, so the user gets a dead end rather than a
+working campaign.
+
+`..._STATUS_TOGGLE` ships alongside `..._CREATE`. Its rollout overlap is safe where the others' is
+not: routing runs a campaign-id **shape** check before and independently of the flag, and the two
+id spaces are disjoint — campaign-service keys campaigns by UUID, the legacy path by the ad
+platform's numeric id — so no request can be claimed by both. It is also **inert** until
+`..._CREATE` has produced UUID-keyed campaigns, which is why it lands here rather than earlier.
+Without it, Google Ads and LinkedIn campaigns cannot be paused at all: the legacy pause path is a
+`switch` over `meta-ads`/`reddit-ads` whose `default` arm throws, and pause is the primary
+cost-control lever on a mis-targeted campaign.
+
+### Before enabling `..._CREATE`
+
+It changes where ad credentials come from. campaign-service reads them from its own encrypted
+connection tables, never from this application's `GADS_*` / `LINKEDIN_*` environment variables.
+Two things must be true per project, and neither fails at deploy time — both surface per-campaign
+at dispatch:
+
+- **A connection must exist.** A project with none falls back to the LF-owned system account, so
+  the spend lands on the LF's ad account rather than the project's.
+- **The project must not have DISCONNECTED.** A soft-deleted row is a statement, not an absence:
+  the fallback is refused and the dispatch fails closed.
 
 One behaviour does change today: with JOBS on, a poll for a UUID job id requires `?project=` and
 is refused with a 400 without it. The LFX One client always sends it, so in-product polling is

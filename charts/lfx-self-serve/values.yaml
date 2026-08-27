@@ -382,10 +382,10 @@ environment:
   # The source is chosen by the job id's shape as well as by the flag: a `job_...` id is answered
   # from the in-process map on every pod, flag or no flag. That made an overlapping rollout safe
   # for THIS flag while no UUID job id could exist — but that premise EXPIRED when campaign
-  # creation shipped, and holds now only because CREATE below is still off. Once CREATE is on, a
-  # pod with JOBS off skips the id-shape check entirely and answers a terminal `not_found` for a
-  # campaign that is running and SPENDING. Enable JOBS everywhere before CREATE, and keep it on
-  # until outstanding UUID jobs drain; see the CREATE block for the full order. Do not copy the
+  # creation shipped. CREATE below is now ON, so the premise does not hold at all: a pod with JOBS
+  # off skips the id-shape check entirely and answers a terminal `not_found` for a campaign that is
+  # running and SPENDING. JOBS must stay on, and on rollback it comes off LAST — turn CREATE off
+  # first and let outstanding UUID jobs drain. Do not copy the
   # "rollback is one value" line onto a future flag whose two paths could both claim the same
   # request — that one needs a no-overlap rollout or a shared runtime configuration source.
   #
@@ -470,7 +470,7 @@ environment:
   # Where neither a project row nor the fallback applies, the failure surfaces per-campaign rather
   # than at startup, so nothing warns you at deploy time.
   LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE:
-    value:
+    value: "true"
 
   # Gates whether a Demand Gen Google campaign may be requested at all (LFXV2-3257).
   #
@@ -561,7 +561,7 @@ environment:
   # produce UUID-keyed campaigns — a campaign only has a UUID if campaign-service created it.
   # Enabling it earlier is harmless, just useless. Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE:
-    value:
+    value: "true"
 
   # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).
   # The BFF refuses to serve mock brief data when NODE_ENV=production and this
