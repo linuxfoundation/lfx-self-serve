@@ -270,6 +270,7 @@ Placement decision trees ("where does my component go?", "do I need a new module
 3. **Keep working.** Start the next commit while the reviewers run. Do not block on them.
 4. **When the reviewers return:** read all three reports. Roll every Critical finding and every reasonable Important finding into the next commit (a separate `fix(review): address findings` commit is fine; squashing is not required — the history shows review-driven iteration).
 5. **It's fine to keep committing while reviews are still running.** Each trio audits its own commit (not cumulative). If you've committed N+1 before the review for N returns, you'll get separate reports — one trio per commit. Read them as they arrive and address findings in subsequent commits.
+6. **Final-commit optimization.** Normal development commits always launch the post-commit trio — but when the commit you just made is the final planned commit and you are moving immediately into pre-PR, skip that commit's post-commit trio: drain the earlier reviews, then run only the full-branch trio (Pre-PR step 3). In that case the branch sweep is mandatory even on a single-commit branch — it is what covers the final commit. If sweep findings require a fix commit, do not also run a per-commit trio on it — rerun the full-branch trio. If development resumes instead, return to normal per-commit review.
 
 ### Pre-PR (drain the queue, sweep cumulative state, then open)
 
@@ -277,7 +278,7 @@ When the work is "done" — no more code commits planned:
 
 1. **Wait for every running review to complete.** Each trio audits one commit, so the trio invoked by every recent commit needs to have returned before you continue.
 2. **If any returned review flags Critical or reasonable Important:** add a fix commit, launch the reviewer trio again on the new state, wait. Loop until the trio returns clean (or remaining findings are explicitly documented in the PR description with a stated trade-off).
-3. **Full-branch sweep — only if the branch has more than one commit.** Launch the same three reviewer children again in one parallel batch via the Agent tool (all `subagent_type: general-purpose`, `model: opus`, `run_in_background: true`, each loading its same single skill). Pin the range first:
+3. **Full-branch sweep — if the branch has more than one commit, or the final commit's post-commit trio was skipped under the final-commit optimization (mandatory then, even on a single-commit branch).** Launch the same three reviewer children again in one parallel batch via the Agent tool (all `subagent_type: general-purpose`, `model: opus`, `run_in_background: true`, each loading its same single skill). Pin the range first:
 
    ```bash
    git fetch origin
@@ -302,7 +303,7 @@ When the work is "done" — no more code commits planned:
    Review the branch's diff against origin/main.
    ```
 
-   Per-commit reviews can miss cross-commit drift (an issue introduced in commit N and only made dangerous by commit N+2's changes wouldn't surface in either's individual review); the sweep catches it. Single-commit branches skip — already covered by the post-commit trio. Address any new findings, then re-run the sweep until clean.
+   Per-commit reviews can miss cross-commit drift (an issue introduced in commit N and only made dangerous by commit N+2's changes wouldn't surface in either's individual review); the sweep catches it. A single-commit branch skips the sweep only when its commit already had a post-commit trio — under the final-commit optimization the sweep is what covers the final commit, so it runs regardless. Address any new findings, then re-run the sweep until clean (fix commits go straight to a sweep rerun, not a per-commit trio).
 
 4. **Run `/lfx-self-serve-pr-readiness`** against the target base branch. PR-shape sanity: branch name, ticket reference (JIRA or GitHub Issue), conventional commits, rebase, DCO + GPG per commit, diff size. Does NOT audit code (covered by the post-commit trio and the full-branch sweep). Address every Critical; address or document every SHOULD_FIX. Rerun until the verdict is `READY` or `READY WITH CHANGES` with explicit trade-offs.
 5. **Run `/preflight`** for license / format / lint / build / protected-file mechanical checks.
