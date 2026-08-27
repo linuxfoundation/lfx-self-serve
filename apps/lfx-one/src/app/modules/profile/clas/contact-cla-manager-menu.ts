@@ -14,8 +14,12 @@ import { ContactClaManagerComponent } from './contact-cla-manager.component';
  *
  * Returns `[]` for ICLA and Revoked, so it is safe to spread onto every row. Does not read
  * LaunchDarkly — invoke only when `my-clas-m2-enabled` is on. Does not edit profile-clas.
+ *
+ * All three are writes, so `impersonating` renders them disabled rather than withheld: the
+ * administrator sees the action exists and that it is unavailable, and the server refuses it
+ * anyway (`blockDuringImpersonation` on `POST /api/me/clas/:signatureId/cla-manager-requests`).
  */
-export function buildContactClaManagerMenuItems(agreement: MyClaAgreement, dialog: DialogService): MenuItem[] {
+export function buildContactClaManagerMenuItems(agreement: MyClaAgreement, dialog: DialogService, impersonating: boolean): MenuItem[] {
   const items: MenuItem[] = [];
   const projectName = agreement.projectName || agreement.claGroupName;
   const open = (mode: ContactClaManagerDialogData['mode']): void => {
@@ -34,6 +38,7 @@ export function buildContactClaManagerMenuItems(agreement: MyClaAgreement, dialo
     items.push({
       label: CLA_MANAGER_MODAL_COPY.approval.title,
       icon: 'fa-light fa-circle-check',
+      disabled: impersonating,
       command: () => open('approval'),
     });
   }
@@ -41,6 +46,7 @@ export function buildContactClaManagerMenuItems(agreement: MyClaAgreement, dialo
     items.push({
       label: CLA_MANAGER_MODAL_COPY.removal.title,
       icon: 'fa-light fa-user-slash',
+      disabled: impersonating,
       command: () => open('removal'),
     });
   }
@@ -48,6 +54,7 @@ export function buildContactClaManagerMenuItems(agreement: MyClaAgreement, dialo
     items.push({
       label: CLA_MANAGER_MODAL_COPY.contact.title,
       icon: 'fa-light fa-address-book',
+      disabled: impersonating,
       command: () => open('contact'),
     });
   }
