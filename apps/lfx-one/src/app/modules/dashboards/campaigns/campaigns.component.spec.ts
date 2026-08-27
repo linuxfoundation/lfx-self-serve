@@ -1332,6 +1332,34 @@ describe('CampaignsComponent brief persistence', () => {
         ).toBe(true);
       });
 
+      /**
+       * The half the generation counter cannot cover.
+       *
+       * A foundation switch clears the capability but dispatches no capability read of its own,
+       * so it never bumps `createCapabilitiesGeneration`. An in-flight read from the previous
+       * foundation therefore still looks current BY GENERATION, and only the slug check stops it
+       * writing foundation A's answer onto foundation B — a capability claim about a deployment
+       * the user is no longer looking at.
+       */
+      it('drops a capability answer that arrives after the foundation changed', async () => {
+        const pending = new Subject<CampaignListResult>();
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(pending.asObservable());
+
+        await withSavedBrief();
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        // The previous foundation's read answers only now.
+        pending.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true });
+        pending.complete();
+        await fixture.whenStable();
+
+        expect(
+          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
+        ).toBeNull();
+      });
+
       it('clears the previous brief campaigns when the foundation changes', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
