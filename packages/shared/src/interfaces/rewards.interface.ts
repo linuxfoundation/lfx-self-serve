@@ -157,6 +157,7 @@ export interface DecoratedAvailableIncentive extends RewardPromotion {
  */
 export interface DecoratedCoupon extends RewardPromotion {
   hasCouponCode: boolean;
+  canRedeem: boolean;
   pointsShortfall: number | null;
   resolvedExpiryDate: string | null;
   isExpired: boolean;

@@ -18,10 +18,7 @@ vi.mock('../helpers/api-gateway.helper', () => ({
   getUserServiceBaseUrl: vi.fn(() => 'https://gateway.example.test/user-service/v1'),
 }));
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
-vi.mock('../utils/auth-helper', () => ({
-  isImpersonating,
-  usernameMatches: (expected: string, actual: string) => expected.replace(/^.*\|/, '') === actual.replace(/^.*\|/, ''),
-}));
+vi.mock('../utils/auth-helper', () => ({ isImpersonating }));
 vi.mock('../utils/rewards-subject', () => ({ resolveRewardsSubject }));
 vi.mock('./logger.service', () => ({ logger }));
 
@@ -155,6 +152,17 @@ describe('RewardsService', () => {
     resolveRewardsSubject.mockResolvedValue(targetSubject);
     gatewayFetch.mockImplementation(async (_req: Request, url: string) =>
       url.endsWith('/users/003-target') ? { ...profile, Username: 'actor-user' } : promotionPage
+    );
+
+    await expect(service.getSummary(req)).rejects.toMatchObject({
+      code: 'REWARDS_SUBJECT_MISMATCH',
+    });
+  });
+
+  it('fails closed when compound profile usernames only share their final segment', async () => {
+    resolveRewardsSubject.mockResolvedValue({ ...targetSubject, username: 'tenant|target-user' });
+    gatewayFetch.mockImplementation(async (_req: Request, url: string) =>
+      url.endsWith('/users/003-target') ? { ...profile, Username: 'other-tenant|target-user' } : promotionPage
     );
 
     await expect(service.getSummary(req)).rejects.toMatchObject({

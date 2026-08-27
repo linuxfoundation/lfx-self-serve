@@ -103,6 +103,12 @@ export function decorateAvailableIncentives(
 
 // ─── Coupon decoration ───────────────────────────────────────────────────────
 
+export function isCouponRedeemable(promotion: RewardPromotion, rewardPoints: number | null): boolean {
+  if (!promotion.id || !promotion.eligible || promotion.redeemed || promotion.coupon) return false;
+  if (promotion.redeemPoints <= 0) return true;
+  return rewardPoints !== null && rewardPoints >= promotion.redeemPoints;
+}
+
 function getCouponStatusLabel(p: RewardPromotion, isExpired: boolean, pointsUnknown: boolean, hasPointsShortfall: boolean): string {
   if (p.redeemed) return 'Redeemed';
   if (isExpired) return 'Expired';
@@ -161,6 +167,7 @@ export function decorateCoupons(
     return {
       ...p,
       hasCouponCode,
+      canRedeem: isCouponRedeemable(p, rewardPoints),
       pointsShortfall,
       resolvedExpiryDate,
       isExpired,

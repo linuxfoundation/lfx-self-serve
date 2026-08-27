@@ -4,7 +4,7 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, output, Signal } from '@angular/core';
 import { DecoratedCoupon, RewardPromotion, RewardSourceAvailability } from '@lfx-one/shared/interfaces';
-import { decorateCoupons } from '@lfx-one/shared/utils';
+import { decorateCoupons, isCouponRedeemable } from '@lfx-one/shared/utils';
 
 import { ButtonComponent } from '@components/button/button.component';
 
@@ -32,7 +32,7 @@ export class MyCouponsComponent {
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
   protected onRedeem(coupon: RewardPromotion): void {
-    if (this.readOnly() || (coupon.redeemPoints > 0 && this.rewardPoints() === null)) return;
+    if (this.readOnly() || !isCouponRedeemable(coupon, this.rewardPoints())) return;
     this.redeem.emit(coupon);
   }
 

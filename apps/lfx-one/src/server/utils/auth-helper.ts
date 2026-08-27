@@ -60,14 +60,6 @@ export async function getUsernameFromAuth(req: Request): Promise<string | null> 
 }
 
 /**
- * Checks if two usernames match, stripping any auth provider prefix before comparing.
- * e.g. "auth0|asitha" matches "asitha".
- */
-export function usernameMatches(authUsername: string, storedUsername: string): boolean {
-  return stripAuthPrefix(authUsername) === stripAuthPrefix(storedUsername);
-}
-
-/**
  * Gets the effective email for the current request context.
  * During impersonation, returns the target user's email from the impersonation session,
  * or null when the target has no stored email — it never falls back to the impersonator's

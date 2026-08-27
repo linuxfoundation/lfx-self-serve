@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { RewardPromotion } from '../interfaces/rewards.interface';
-import { decorateCoupons } from './rewards.utils';
+import { decorateCoupons, isCouponRedeemable } from './rewards.utils';
 
 const pointsCoupon: RewardPromotion = {
   id: 'tux-500',
@@ -21,6 +21,21 @@ const pointsCoupon: RewardPromotion = {
   eligibilityComment: '',
   logo: '',
 };
+
+describe('isCouponRedeemable', () => {
+  it.each([
+    ['sufficient points', pointsCoupon, 500, true],
+    ['insufficient points', pointsCoupon, 499, false],
+    ['unavailable required points', pointsCoupon, null, false],
+    ['a zero-point coupon with unavailable points', { ...pointsCoupon, redeemPoints: 0 }, null, true],
+    ['a missing ID', { ...pointsCoupon, id: '' }, 500, false],
+    ['an ineligible coupon', { ...pointsCoupon, eligible: false }, 500, false],
+    ['a redeemed coupon', { ...pointsCoupon, redeemed: true }, 500, false],
+    ['an issued coupon', { ...pointsCoupon, coupon: 'EXISTING-CODE' }, 500, false],
+  ])('returns the expected result for %s', (_caseName, coupon, rewardPoints, expected) => {
+    expect(isCouponRedeemable(coupon, rewardPoints)).toBe(expected);
+  });
+});
 
 describe('decorateCoupons with unavailable reward points', () => {
   it('suppresses point shortfall and point-derived status when points are unavailable', () => {

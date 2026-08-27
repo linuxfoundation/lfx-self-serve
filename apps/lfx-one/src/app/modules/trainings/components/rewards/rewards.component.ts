@@ -6,7 +6,7 @@ import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RewardPromotion, RewardsState, RewardsSummaryResponse } from '@lfx-one/shared/interfaces';
-import { EMPTY_REWARD_PROMOTIONS } from '@lfx-one/shared/utils';
+import { EMPTY_REWARD_PROMOTIONS, isCouponRedeemable } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -166,14 +166,7 @@ export class RewardsComponent {
   }
 
   private canRedeem(promotion: RewardPromotion): boolean {
-    if (!promotion.id || this.readOnly()) return false;
-    if (promotion.redeemPoints > 0 && this.points() === null) return false;
-
-    if (!promotion.eligible || promotion.redeemed || promotion.coupon || this.redeemingUids()[promotion.uid]) {
-      return false;
-    }
-
-    return true;
+    return !this.readOnly() && !this.redeemingUids()[promotion.uid] && isCouponRedeemable(promotion, this.points());
   }
 
   private async performRedeem(promotion: RewardPromotion, successSummary: string, successDetail: string, errorFallback: string): Promise<void> {

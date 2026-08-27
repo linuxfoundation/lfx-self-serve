@@ -4,7 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { RewardPromotion } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ButtonComponent } from '@components/button/button.component';
 
@@ -48,5 +48,19 @@ describe('MyCouponsComponent', () => {
     const redeemButton = fixture.debugElement.query((element) => element.componentInstance instanceof ButtonComponent).componentInstance as ButtonComponent;
 
     expect(redeemButton.disabled()).toBe(false);
+  });
+
+  it('does not emit a coupon redemption when reward points are insufficient', () => {
+    const coupon = { ...zeroPointCoupon, redeemPoints: 500 };
+    const redeem = vi.fn();
+    fixture.componentRef.setInput('coupons', [coupon]);
+    fixture.componentRef.setInput('rewardPoints', 499);
+    fixture.componentRef.setInput('availability', 'available');
+    fixture.componentInstance.redeem.subscribe(redeem);
+
+    const component = fixture.componentInstance as unknown as { onRedeem(value: RewardPromotion): void };
+    component.onRedeem(coupon);
+
+    expect(redeem).not.toHaveBeenCalled();
   });
 });

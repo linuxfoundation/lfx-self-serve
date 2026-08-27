@@ -20,7 +20,7 @@ import { NEVER_EXPIRES_YEAR_PREFIX, REWARDS_SERVICE_NAME, REWARD_PROMOTIONS_PAGE
 import { AuthorizationError, MicroserviceError } from '../errors';
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
-import { isImpersonating, usernameMatches } from '../utils/auth-helper';
+import { isImpersonating } from '../utils/auth-helper';
 import { resolveRewardsSubject } from '../utils/rewards-subject';
 import { logger } from './logger.service';
 
@@ -150,6 +150,8 @@ export class RewardsService {
       !isNonNegativeInteger(metadata.Offset) ||
       metadata.Offset !== requestedOffset ||
       !isNonNegativeInteger(metadata.PageSize) ||
+      // User-service echoes the requested page size. Exact equality verifies the
+      // query contract before trusting collection completeness.
       metadata.PageSize !== REWARD_PROMOTIONS_PAGE_SIZE ||
       !isNonNegativeInteger(metadata.TotalSize) ||
       !Array.isArray(data) ||
@@ -189,7 +191,7 @@ export class RewardsService {
 
   private profileMatchesSubject(profile: RewardUserProfileRaw, username: string): boolean {
     const returnedUsername = profile.Username;
-    return typeof returnedUsername === 'string' && usernameMatches(username, returnedUsername.trim());
+    return typeof returnedUsername === 'string' && username === returnedUsername.trim();
   }
 
   private normalizeProgramStartDate(value: unknown): string | null {

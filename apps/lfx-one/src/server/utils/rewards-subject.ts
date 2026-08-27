@@ -9,7 +9,7 @@ import { REWARDS_SERVICE_NAME, REWARD_SUBJECT_LOOKUP_PAGE_SIZE } from '../consta
 import { AuthenticationError, MicroserviceError } from '../errors';
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
-import { getEffectiveUsername, isImpersonating, stripAuthPrefix, usernameMatches } from './auth-helper';
+import { getEffectiveUsername, isImpersonating, stripAuthPrefix } from './auth-helper';
 
 /**
  * Resolves one immutable rewards subject from trusted request state.
@@ -63,7 +63,7 @@ function resolveTargetSalesforceId(response: RewardUserLookupPage | null, userna
   const returnedUsername = typeof target?.Username === 'string' ? target.Username.trim() : '';
   const salesforceId = typeof target?.ID === 'string' ? target.ID.trim() : '';
 
-  if (!target || !returnedUsername || !salesforceId || !SALESFORCE_ID_PATTERN.test(salesforceId) || !usernameMatches(username, returnedUsername)) {
+  if (!target || !returnedUsername || !salesforceId || !SALESFORCE_ID_PATTERN.test(salesforceId) || username !== returnedUsername) {
     throw new MicroserviceError('Rewards target could not be resolved safely', 502, 'REWARDS_SUBJECT_RESOLUTION_FAILED', {
       operation: 'resolve_rewards_subject',
       service: REWARDS_SERVICE_NAME,

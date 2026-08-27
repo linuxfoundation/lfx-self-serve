@@ -3,6 +3,9 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as RegexConstantsModule from '../../../../../packages/shared/src/constants/regex.constants';
+import type * as AuthHelperModule from './auth-helper';
+
 const { gatewayFetch, getEffectiveUsername, isImpersonating } = vi.hoisted(() => ({
   gatewayFetch: vi.fn(),
   getEffectiveUsername: vi.fn(),
@@ -10,17 +13,17 @@ const { gatewayFetch, getEffectiveUsername, isImpersonating } = vi.hoisted(() =>
 }));
 
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
-vi.mock('@lfx-one/shared/constants', () => ({
-  SALESFORCE_ID_PATTERN: /^[A-Za-z0-9]{15}([A-Za-z0-9]{3})?$/,
-}));
+vi.mock('@lfx-one/shared/constants', async () => {
+  const regex = await vi.importActual<typeof RegexConstantsModule>('../../../../../packages/shared/src/constants/regex.constants');
+  return { SALESFORCE_ID_PATTERN: regex.SALESFORCE_ID_PATTERN };
+});
 vi.mock('../helpers/api-gateway.helper', () => ({
   getUserServiceBaseUrl: vi.fn(() => 'https://gateway.example.test/user-service/v1'),
 }));
-vi.mock('./auth-helper', () => ({
+vi.mock('./auth-helper', async (importOriginal) => ({
+  ...(await importOriginal<typeof AuthHelperModule>()),
   getEffectiveUsername,
   isImpersonating,
-  stripAuthPrefix: (username: string) => username.replace(/^.*\|/, ''),
-  usernameMatches: (expected: string, actual: string) => expected.replace(/^.*\|/, '') === actual.replace(/^.*\|/, ''),
 }));
 
 import type { Request } from 'express';
@@ -62,6 +65,20 @@ describe('resolveRewardsSubject', () => {
     );
   });
 
+  it('uses the production first-prefix semantics for compound usernames', async () => {
+    isImpersonating.mockReturnValue(true);
+    getEffectiveUsername.mockReturnValue('auth0|tenant|target-user');
+    gatewayFetch.mockResolvedValue({
+      Data: [{ ID: '003000000000001AAA', Username: 'tenant|target-user' }],
+      Metadata: { TotalSize: 1 },
+    });
+
+    await expect(resolveRewardsSubject(req)).resolves.toMatchObject({
+      username: 'tenant|target-user',
+      salesforceId: '003000000000001AAA',
+    });
+  });
+
   it.each([
     ['a missing target username', null, { Data: [] }],
     ['a malformed lookup response', 'target-user', {}],
@@ -79,6 +96,11 @@ describe('resolveRewardsSubject', () => {
       },
     ],
     ['a mismatched username echo', 'target-user', { Data: [{ ID: '003000000000001AAA', Username: 'other-user' }], Metadata: { TotalSize: 1 } }],
+    [
+      'a compound username echo with a different prefix',
+      'auth0|tenant|target-user',
+      { Data: [{ ID: '003000000000001AAA', Username: 'other-tenant|target-user' }], Metadata: { TotalSize: 1 } },
+    ],
     ['an empty Salesforce ID', 'target-user', { Data: [{ ID: ' ', Username: 'target-user' }], Metadata: { TotalSize: 1 } }],
     ['an invalid Salesforce ID', 'target-user', { Data: [{ ID: '003-target', Username: 'target-user' }], Metadata: { TotalSize: 1 } }],
     ['a non-string Salesforce ID', 'target-user', { Data: [{ ID: 123, Username: 'target-user' }], Metadata: { TotalSize: 1 } }],
