@@ -3,7 +3,7 @@
 
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, output, Signal } from '@angular/core';
-import { DecoratedCoupon, RewardPromotion } from '@lfx-one/shared/interfaces';
+import { DecoratedCoupon, RewardPromotion, RewardSourceAvailability } from '@lfx-one/shared/interfaces';
 import { decorateCoupons } from '@lfx-one/shared/utils';
 
 import { ButtonComponent } from '@components/button/button.component';
@@ -17,9 +17,11 @@ import { ButtonComponent } from '@components/button/button.component';
 export class MyCouponsComponent {
   // ─── Inputs ────────────────────────────────────────────────────────────────
   public readonly coupons = input.required<readonly RewardPromotion[]>();
-  public readonly rewardPoints = input.required<number>();
+  public readonly rewardPoints = input.required<number | null>();
   public readonly programStartDate = input<string | null>(null);
   public readonly redeemingUids = input<Record<string, boolean>>({});
+  public readonly availability = input.required<RewardSourceAvailability>();
+  public readonly readOnly = input(false);
 
   // ─── Outputs ───────────────────────────────────────────────────────────────
   public readonly copy = output<string>();
@@ -30,6 +32,7 @@ export class MyCouponsComponent {
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
   protected onRedeem(coupon: RewardPromotion): void {
+    if (this.readOnly() || (coupon.redeemPoints > 0 && this.rewardPoints() === null)) return;
     this.redeem.emit(coupon);
   }
 

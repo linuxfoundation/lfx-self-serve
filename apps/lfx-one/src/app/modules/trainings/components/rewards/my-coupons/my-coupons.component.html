@@ -7,7 +7,11 @@
     My Coupons
   </h3>
 
-  @if (decoratedCoupons().length === 0) {
+  @if (availability() === 'unavailable') {
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-6 text-center shadow-[0_1px_1px_rgba(9,30,66,.1)]" data-testid="my-coupons-unavailable">
+      <p class="text-sm text-amber-800">Coupons are temporarily unavailable.</p>
+    </div>
+  } @else if (decoratedCoupons().length === 0) {
     <div class="rounded-xl border bg-white p-6 text-center flex flex-col gap-2 shadow-[0_1px_1px_rgba(9,30,66,.1)]">
       <p class="text-sm text-[#6b7380]">You do not have redeemable coupons yet. Earn more points to unlock them.</p>
       <a
@@ -54,19 +58,24 @@
                   }
                 </div>
               } @else if (!coupon.isExpired) {
-                <div class="flex items-center gap-2" [class.justify-between]="coupon.pointsShortfall > 0">
-                  @if (coupon.pointsShortfall > 0) {
-                    <span class="text-sm text-[#6b7380]">Need {{ coupon.pointsShortfall }} more points</span>
+                <div class="flex items-center gap-2" [class.justify-between]="coupon.pointsShortfall !== null && coupon.pointsShortfall > 0">
+                  @if (coupon.pointsShortfall !== null && coupon.pointsShortfall > 0) {
+                    <span class="text-sm text-[#6b7380]" data-testid="coupon-points-shortfall">Need {{ coupon.pointsShortfall }} more points</span>
                   }
                   <lfx-button
                     [label]="redeemingUids()[coupon.uid] ? 'Redeeming...' : 'Redeem'"
                     size="small"
                     severity="primary"
                     [outlined]="true"
-                    [disabled]="!coupon.eligible || coupon.pointsShortfall > 0 || coupon.redeemed"
+                    [disabled]="readOnly() || !coupon.eligible || coupon.pointsShortfall === null || coupon.pointsShortfall > 0 || coupon.redeemed"
                     [loading]="redeemingUids()[coupon.uid] || false"
+                    [tooltip]="readOnly() ? 'Rewards are read-only while impersonating.' : undefined"
+                    [ariaLabel]="readOnly() ? 'Redeem unavailable: rewards are read-only while impersonating' : 'Redeem coupon'"
                     (onClick)="onRedeem(coupon)"
                     data-testid="coupon-redeem-button" />
+                  @if (readOnly()) {
+                    <span class="text-xs text-[#6b7380]">Read-only while impersonating</span>
+                  }
                 </div>
               }
 

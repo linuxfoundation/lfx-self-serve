@@ -29,9 +29,12 @@ export function blockDuringImpersonation(req: Request, _res: Response, next: Nex
     return;
   }
 
+  const action = req.path.split('/').filter(Boolean).at(-1) ?? req.method.toLowerCase();
   logger.warning(req, 'impersonation_readonly', 'Blocked write during impersonation', {
     path: req.path,
     method: req.method,
+    action,
+    outcome: 'blocked',
     impersonator_sub: req.appSession?.['impersonator']?.sub,
     target_sub: req.appSession?.['impersonationUser']?.sub,
   });

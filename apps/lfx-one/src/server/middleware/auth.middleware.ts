@@ -204,6 +204,7 @@ function checkAuthentication(req: Request): boolean {
  */
 async function extractBearerToken(req: Request, isOptionalRoute: boolean = false): Promise<TokenExtractionResult> {
   const startTime = Date.now();
+  req.impersonationActive = false;
 
   try {
     if (req.oidc?.isAuthenticated()) {
@@ -221,6 +222,7 @@ async function extractBearerToken(req: Request, isOptionalRoute: boolean = false
           clearImpersonationSession(req);
         } else {
           req.bearerToken = impersonationToken;
+          req.impersonationActive = true;
 
           logger.debug(req, 'impersonation_request', 'Request under impersonation', {
             path: req.path,

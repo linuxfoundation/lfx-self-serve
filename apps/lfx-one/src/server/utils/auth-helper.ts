@@ -148,14 +148,17 @@ export function getEffectiveName(req: Request): string | null {
 /**
  * Returns true when the current request is running under an active impersonation session.
  *
- * Mirrors the validity check the auth middleware uses to set `req.bearerToken` to the
- * impersonation token: a non-expired `impersonationToken` plus the resolved `impersonationUser`.
- * Checking token+expiry here (rather than relying on the middleware having cleared a stale
- * session) keeps this consistent with `req.bearerToken` for callers that route reads by identity.
+ * Uses the authentication-time decision when the auth middleware has populated it, keeping
+ * identity and write guards stable if the session expiry passes later in the same request.
+ * Direct unit callers without the marker fall back to validating the session.
  * Use this to switch profile reads to the target's identity and to block profile writes (which
  * can only ever act on the real user's account).
  */
 export function isImpersonating(req: Request): boolean {
+  if (typeof req.impersonationActive === 'boolean') {
+    return req.impersonationActive;
+  }
+
   const token = req.appSession?.['impersonationToken'];
   const expiresAt = req.appSession?.['impersonationExpiresAt'];
   return typeof token === 'string' && !!token && typeof expiresAt === 'number' && Date.now() < expiresAt && !!req.appSession?.['impersonationUser'];

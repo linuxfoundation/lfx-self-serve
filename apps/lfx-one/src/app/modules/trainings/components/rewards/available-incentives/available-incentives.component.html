@@ -7,7 +7,13 @@
     Available Incentives
   </h3>
 
-  @if (decoratedIncentives().length === 0) {
+  @if (availability() === 'unavailable') {
+    <div
+      class="rounded-xl border border-amber-200 bg-amber-50 p-6 text-center shadow-[0_1px_1px_rgba(9,30,66,.1)]"
+      data-testid="available-incentives-unavailable">
+      <p class="text-sm text-amber-800">Available incentives are temporarily unavailable.</p>
+    </div>
+  } @else if (decoratedIncentives().length === 0) {
     <div class="rounded-xl border bg-white p-6 text-center shadow-[0_1px_1px_rgba(9,30,66,.1)]">
       <p class="text-sm text-[#6b7380]">No available incentives right now. Check back soon for new offers.</p>
     </div>
@@ -59,10 +65,15 @@
                     size="small"
                     severity="primary"
                     [outlined]="true"
-                    [disabled]="!incentive.canClaim"
+                    [disabled]="!incentive.canClaim || readOnly()"
                     [loading]="redeemingUids()[incentive.uid] || false"
+                    [tooltip]="readOnly() ? 'Rewards are read-only while impersonating.' : undefined"
+                    [ariaLabel]="readOnly() ? 'Claim unavailable: rewards are read-only while impersonating' : 'Claim coupon'"
                     (onClick)="onClaim(incentive)"
                     data-testid="available-incentive-claim-button" />
+                  @if (readOnly()) {
+                    <span class="text-xs text-[#6b7380]">Read-only while impersonating</span>
+                  }
                 </div>
               }
 

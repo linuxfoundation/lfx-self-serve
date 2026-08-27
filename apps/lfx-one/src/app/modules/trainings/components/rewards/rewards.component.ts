@@ -3,9 +3,8 @@
 
 import { Clipboard } from '@angular/cdk/clipboard';
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { REWARD_STEP_SIZE } from '@lfx-one/shared/constants';
 import { RewardPromotion, RewardsState, RewardsSummaryResponse } from '@lfx-one/shared/interfaces';
 import { EMPTY_REWARD_PROMOTIONS } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -14,8 +13,9 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, firstValueFrom, map, Observable, of, startWith, Subject, switchMap, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
-import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { RewardsService } from '@shared/services/rewards.service';
+import { UserService } from '@shared/services/user.service';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 
 import { AvailableIncentivesComponent } from './available-incentives/available-incentives.component';
 import { MyCouponsComponent } from './my-coupons/my-coupons.component';
@@ -34,6 +34,7 @@ export class RewardsComponent {
   private readonly clipboard = inject(Clipboard);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly userService = inject(UserService);
 
   // ─── Imperative reload trigger ─────────────────────────────────────────────
   private readonly reloadTrigger$ = new Subject<void>();
@@ -51,16 +52,37 @@ export class RewardsComponent {
   public readonly loaded = computed(() => this.summary() !== null);
 
   // ─── Computed Signals ──────────────────────────────────────────────────────
-  public readonly points = computed(() => this.summary()?.points ?? 0);
-  public readonly nextRewardPoints = computed(() => this.summary()?.nextRewardPoints ?? REWARD_STEP_SIZE);
-  public readonly progressPercentage = computed(() => this.summary()?.progressPercentage ?? 0);
-  public readonly pointsToNextReward = computed(() => this.summary()?.pointsToNextReward ?? 0);
+  public readonly points = computed(() => this.summary()?.points ?? null);
+  public readonly nextRewardPoints = computed(() => this.summary()?.nextRewardPoints ?? null);
+  public readonly progressPercentage = computed(() => this.summary()?.progressPercentage ?? null);
+  public readonly pointsToNextReward = computed(() => this.summary()?.pointsToNextReward ?? null);
   public readonly programExpiryDate = computed(() => this.summary()?.programExpiryDate ?? null);
   public readonly programStartDate = computed(() => this.summary()?.programStartDate ?? null);
+  public readonly profileAvailability = computed(() => this.summary()?.availability.profile ?? 'unavailable');
+  public readonly promotionsAvailability = computed(() => this.summary()?.availability.promotions ?? 'unavailable');
+  public readonly readOnly = computed(() => this.summary()?.readOnly ?? false);
   public readonly availableIncentives = computed<readonly RewardPromotion[]>(() => this.summary()?.availableIncentives ?? EMPTY_REWARD_PROMOTIONS);
   public readonly coupons = computed<readonly RewardPromotion[]>(() => this.summary()?.coupons ?? EMPTY_REWARD_PROMOTIONS);
-  public readonly formattedPoints = computed(() => this.points().toLocaleString('en-US'));
-  public readonly formattedNextRewardPoints = computed(() => this.nextRewardPoints().toLocaleString('en-US'));
+  public readonly formattedPoints = computed(() => this.points()?.toLocaleString('en-US') ?? 'Unavailable');
+  public readonly formattedNextRewardPoints = computed(() => this.nextRewardPoints()?.toLocaleString('en-US') ?? 'Unavailable');
+
+  private previousUsername = this.userService.user()?.username ?? null;
+  private previousImpersonating = this.userService.impersonating();
+
+  public constructor() {
+    effect(() => {
+      const username = this.userService.user()?.username ?? null;
+      const impersonating = this.userService.impersonating();
+      if (username === this.previousUsername && impersonating === this.previousImpersonating) return;
+
+      this.previousUsername = username;
+      this.previousImpersonating = impersonating;
+      this.lastSummary.set(null);
+      this.redeemingUids.set({});
+      this.pendingConfirmationUids.clear();
+      this.reloadTrigger$.next();
+    });
+  }
 
   // ─── Public Methods ────────────────────────────────────────────────────────
   public onRefresh(): void {
@@ -151,7 +173,8 @@ export class RewardsComponent {
   }
 
   private canRedeem(promotion: RewardPromotion): boolean {
-    if (!promotion.id) return false;
+    if (!promotion.id || this.readOnly()) return false;
+    if (promotion.redeemPoints > 0 && this.points() === null) return false;
 
     if (!promotion.eligible || promotion.redeemed || promotion.coupon || this.redeemingUids()[promotion.uid]) {
       return false;

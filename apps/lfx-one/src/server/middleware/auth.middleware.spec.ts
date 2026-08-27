@@ -33,6 +33,23 @@ function buildRes(): Response {
 describe('authMiddleware route classification', () => {
   const middleware = createAuthMiddleware();
 
+  it('captures impersonation as immutable request state during authentication', async () => {
+    const req = buildReq({ path: '/api/rewards/summary', authenticated: true });
+    req.appSession = {
+      impersonationToken: 'eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0YXJnZXQifQ.',
+      impersonationExpiresAt: Date.now() + 60_000,
+      impersonationUser: { username: 'targetuser' },
+    };
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(req.impersonationActive).toBe(true);
+    expect(req.bearerToken).toBe('eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0YXJnZXQifQ.');
+    expect(next).toHaveBeenCalledWith();
+  });
+
   it('allows an anonymous GET to a public contributor profile (/u/:username)', async () => {
     const req = buildReq({ path: '/u/johndoe' });
     const res = buildRes();
