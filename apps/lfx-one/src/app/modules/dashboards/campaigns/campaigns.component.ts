@@ -83,8 +83,9 @@ export class CampaignsComponent {
    * No brief in flight, and nothing to say about one.
    *
    * Shared by the pre-handoff state and the flag-off response on purpose: both mean "render no
-   * persistence UI at all". A disabled cutover is the default in every environment, so it must
-   * look exactly like the ordinary case rather than like a degraded one.
+   * persistence UI at all". A disabled cutover is an ordinary deployment state — the chart
+   * enables it since #1881, but any override or un-rolled pod still reports off — so it must look
+   * exactly like the ordinary case rather than like a degraded one.
    *
    * Declared before briefPersistence because a class field cannot read one declared after it.
    */
@@ -1414,8 +1415,9 @@ export class CampaignsComponent {
       // previous brief's failure over the new save until its own request finished.
       //
       // Idle, not `saving`: the reason this branch shows no in-flight banner is unchanged — with
-      // the cutover dark, which is the default everywhere, a spinner would appear for every user
-      // in an environment where nothing is being saved at all.
+      // the cutover dark, a spinner would appear for every user in an environment where nothing is
+      // being saved at all. No longer the chart default since #1881, but still the state of any
+      // override or un-rolled deployment.
       this.briefPersistence.set(this.idlePersistence);
     }
 

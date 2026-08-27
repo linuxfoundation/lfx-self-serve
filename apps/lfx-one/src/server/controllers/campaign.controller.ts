@@ -511,8 +511,8 @@ export class CampaignController {
    * `/briefs/{brief_id}` and cannot be cut over until a persisted brief id exists.
    *
    * With the flag off this answers `{ enabled: false }` at 200 rather than 404 or 501. It is not
-   * an error for the cutover to be dark — that is the default in every environment until it is
-   * switched on — and a non-2xx would make the client's error arm fire on the normal case,
+   * an error for the cutover to be dark — an ordinary deployment state, not a fault — and a
+   * non-2xx would make the client's error arm fire on that case,
    * training whoever sees it to ignore the one signal that matters.
    *
    * A FAILURE, by contrast, is reported as one. The temptation is to swallow it, because the

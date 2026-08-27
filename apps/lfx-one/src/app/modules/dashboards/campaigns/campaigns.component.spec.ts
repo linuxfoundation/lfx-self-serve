@@ -150,7 +150,8 @@ describe('CampaignsComponent brief persistence', () => {
    * The flag lives on the server and there is no channel that tells the browser its value before
    * a request is made. So the first save cannot know whether the cutover is on — and rendering
    * "Saving this brief…" while it finds out would put a persistence banner in front of every user
-   * in every environment where the cutover is dark, which is the default in all of them.
+   * in an environment where the cutover is dark — no longer the chart default since #1881, but
+   * still any override or un-rolled deployment.
    */
   it('shows no in-flight banner while the cutover state is still unknown', async () => {
     persistBrief.mockReturnValue(NEVER);
@@ -213,8 +214,9 @@ describe('CampaignsComponent brief persistence', () => {
     proceed();
     await fixture.whenStable();
 
-    // Not 'saved' with an empty id: the flag being off is the default everywhere, so it has to
-    // look like the ordinary case rather than like a save that returned nothing.
+    // Not 'saved' with an empty id: the flag being off is an ordinary deployment state, not a
+    // fault, so it has to look like the ordinary case rather than like a save that returned
+    // nothing.
     expect(state().status).toBe('off');
     expect(tab()).toBe('implementation');
   });

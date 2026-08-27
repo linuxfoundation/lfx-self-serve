@@ -144,8 +144,8 @@ describe('CampaignController.persistBrief', () => {
 
     expect(saveBrief).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
-    // 200 with a body, not a 4xx/5xx: the flag being off is the default in every environment, so
-    // an error status here would fire the client's error arm on the ordinary case.
+    // 200 with a body, not a 4xx/5xx: the flag being off is an ordinary deployment state rather
+    // than a fault, so an error status here would fire the client's error arm on that case.
     expect(res.json).toHaveBeenCalledWith({ enabled: false, briefId: '', etag: null, created: false, approved: false });
   });
 
@@ -262,7 +262,7 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
-    // The flag being off is the default in every environment and warrants no error. A 4xx/5xx
+    // The flag being off is an ordinary deployment state and warrants no error. A 4xx/5xx
     // would fire the client's error arm on the ordinary case and train whoever sees it to ignore
     // a UI that should never fire.
     expect(loadBrief).not.toHaveBeenCalled();

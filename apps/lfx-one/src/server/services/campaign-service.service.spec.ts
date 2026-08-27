@@ -1860,10 +1860,12 @@ describe('CampaignServiceClient.createCampaigns', () => {
   });
 
   it('does not refuse a non-Google create that happens to carry demand-gen', async () => {
-    // `campaignTypes` is a GOOGLE concept, but the Implementation tab sends it unconditionally:
-    // `includeDemandGen` defaults to true and nothing clears it when Google is deselected. So a
-    // LinkedIn-only create arrives carrying `demand-gen`, and refusing on the type alone gave a
-    // Google error for a request Google was never part of.
+    // `campaignTypes` is a GOOGLE concept, but the Implementation tab sends it unconditionally
+    // and nothing clears it when Google is deselected. The form defaults `includeDemandGen` to
+    // false now, so the way it arrives set is RETAINED state — ticked and then Google deselected,
+    // or restored from a draft saved under the old default. So a LinkedIn-only create still
+    // arrives carrying `demand-gen`, and refusing on the type alone gave a Google error for a
+    // request Google was never part of.
     bothFlagsOn();
     proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000c' } });
 
@@ -2379,7 +2381,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
   });
 
   // The list read is UNGATED while the toggle route refuses every UUID with the flag off, so the
-  // client cannot infer this — a default deployment would render controls that can only 400.
+  // client cannot infer this. The chart ships the flag on, but an override or un-rolled pod still
+  // answers off, and that deployment would render controls that can only 400.
   // Asserted in BOTH directions: a field hardcoded to either constant would pass one of these.
   it.each([
     [true, true],

@@ -191,8 +191,8 @@ export interface CampaignBriefOutput {
  * What `POST /api/campaigns/brief/persist` reports back.
  *
  * `enabled: false` is a first-class outcome, not a failure: it is what the endpoint returns
- * when `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` is off, which is the default everywhere until the
- * cutover is turned on per environment. The client must distinguish it from a failure, because
+ * when `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` is off. The chart enables it since #1881, but the
+ * flag is read per request, so any override or un-rolled deployment still answers this way. The client must distinguish it from a failure, because
  * the two want opposite treatment — a disabled flag is the expected steady state and warrants
  * no UI at all, while a failure means the user's brief is NOT durable and they should be told
  * before they spend an afternoon on it.
@@ -532,8 +532,8 @@ export interface CampaignImplementationDraft {
  * `CampaignBriefPersistResult` uses, because there are FOUR outcomes here and only two of them
  * are "no brief". Collapsing them loses the distinction that matters:
  *
- * - `off` — the cutover flag is not set. Nothing was looked up. This is the default in every
- *   environment and warrants no UI.
+ * - `off` — the cutover flag is not set. Nothing was looked up. An ordinary deployment state,
+ *   not a fault, and warrants no UI.
  * - `none` — campaign-service was asked and has no brief for this event slug. The ordinary
  *   first-time case; the user generates one.
  * - `loaded` — a brief was found and reconstructed. `brief` is non-null.

@@ -397,8 +397,10 @@ export class CampaignServiceClient {
     // yet" and "none exist" are the same answer here. Say so rather than letting the caller read
     // absence as proof.
     // Reported with the list because the client cannot infer it: this read is ungated, while the
-    // toggle route refuses every UUID when the flag is off — so a default deployment would render
-    // controls that can only fail. Read at request time rather than cached, so a flag flip does
+    // toggle route refuses every UUID when the flag is off. The chart now ships the flag on, but
+    // it is read per request from the environment, so a values override or a not-yet-rolled pod
+    // still answers off — and that deployment would render controls that can only fail. Read at
+    // request time rather than cached, so a flag flip does
     // not need a redeploy of this process to take effect on the next list.
     return {
       campaigns,
@@ -781,10 +783,13 @@ export class CampaignServiceClient {
     // actually serve the request until this BFF can send both channels in one envelope.
     //
     // Gated on google-ads being SELECTED, not on `campaignTypes` alone. `campaignTypes` is a
-    // Google concept but the Implementation tab sends it unconditionally — `includeDemandGen`
-    // defaults to true in the form and nothing clears it when Google is deselected — so a
-    // LinkedIn-only create arrives carrying `demand-gen`. Refusing on the type alone rejected
-    // creates that have no Google campaign in them at all.
+    // Google concept but the Implementation tab sends it unconditionally (implementation-tab
+    // :1327-1338), and nothing clears it when Google is deselected. The form now defaults
+    // `includeDemandGen` to false, so this is no longer the untouched-form case — it is RETAINED
+    // state: a user who ticks Demand Gen and then deselects Google, or a saved draft restoring
+    // the old default through `:1611`. Either way a LinkedIn-only create arrives carrying
+    // `demand-gen`, and refusing on the type alone rejected creates that have no Google campaign
+    // in them at all.
     if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen') && campaignTypes.includes('search')) {
       return {
         enabled: true,
