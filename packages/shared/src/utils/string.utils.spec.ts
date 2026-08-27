@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { capCodePointEdit, codePointLength, sanitizePlainText, slugify, splitIntoParagraphs } from './string.utils';
+import { capCodePointEdit, codePointLength, sanitizePlainText, slugify, splitIntoParagraphs, stripMarkdown } from './string.utils';
 
 describe('codePointLength', () => {
   it('counts ASCII the same as String.length', () => {
@@ -152,5 +152,21 @@ describe('splitIntoParagraphs', () => {
   it('returns an empty array for empty or whitespace-only input', () => {
     expect(splitIntoParagraphs('')).toEqual([]);
     expect(splitIntoParagraphs('  \n\n  ')).toEqual([]);
+  });
+});
+
+describe('stripMarkdown', () => {
+  it('keeps inline and fenced code content, dropping only the backtick markers', () => {
+    expect(stripMarkdown('Run `kubectl get pods` first')).toBe('Run kubectl get pods first');
+    expect(stripMarkdown('```\nhelm install\n```')).toBe('helm install');
+  });
+
+  it('drops images but collapses links to their label', () => {
+    expect(stripMarkdown('![alt](https://x.test/img.png) see [docs](https://x.test)')).toBe('see docs');
+  });
+
+  it('strips headings only at line start, preserving mid-text # sequences', () => {
+    expect(stripMarkdown('# Title\nbody')).toBe('Title\nbody');
+    expect(stripMarkdown('C# developer')).toBe('C# developer');
   });
 });
