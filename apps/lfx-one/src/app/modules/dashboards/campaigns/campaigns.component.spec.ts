@@ -1243,6 +1243,34 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       /**
+       * The return-entry trigger — the second of the two triggers at lines 947-949.
+       *
+       * A first-create persist calls `loadCreateCapabilitiesFor` on success, but if that read
+       * fails the user has no way to retry except by leaving and re-entering the tab. That
+       * re-entry goes through `selectTab`, which is the path under test here. Removing the
+       * `tab === 'implementation'` branch from `selectTab` leaves the tests above green — the
+       * persist-success path still fires its own read — but this case stays broken.
+       */
+      it('retries the capability read when the user re-enters Implementation via the tab bar', async () => {
+        const list = vi
+          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
+          .mockReturnValue(throwError(() => new Error('query service down')));
+
+        // First create: persist succeeds, capability read fails.
+        await withSavedBrief();
+        await fixture.whenStable();
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBeNull();
+
+        // User navigates away and comes back via the tab bar.
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+        (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('planning', 'paid-marketing');
+        (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('implementation', 'paid-marketing');
+        await fixture.whenStable();
+
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+      });
+
+      /**
        * An Optimize visit landing on top of a capability read must not lose the answer.
        *
        * The guard shared Optimize's list counter at first, which `loadBriefCampaigns` increments
