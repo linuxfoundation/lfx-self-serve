@@ -550,8 +550,8 @@ export class AnalyticsService {
             return of({
               excellent: 0,
               healthy: 0,
-              stable: 0,
-              unsteady: 0,
+              fair: 0,
+              concerning: 0,
               critical: 0,
               unscored: 0,
             });

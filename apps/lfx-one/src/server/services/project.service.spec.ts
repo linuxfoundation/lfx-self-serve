@@ -1425,3 +1425,24 @@ describe('ProjectService — getProjectsByIds', () => {
     });
   });
 });
+
+describe('ProjectService — getHealthMetricsDaily', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  it('reports the v2 health score, not the v1 score, for a project-level query', async () => {
+    // Fixture row carries both v1 and v2 columns with deliberately different values.
+    // The service must surface HEALTH_SCORE_V2 (80), not the legacy HEALTH_SCORE (50).
+    execute.mockResolvedValueOnce({
+      rows: [{ HEALTH_SCORE: 50, HEALTH_SCORE_V2: 80, HEALTH_SCORE_CATEGORY: 'Fair', HEALTH_SCORE_CATEGORY_V2: 'Good' }],
+    });
+
+    const result = await service.getHealthMetricsDaily('some-project', 'project');
+
+    expect(result.currentAvgHealthScore).toBe(80);
+  });
+});
