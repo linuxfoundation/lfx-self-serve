@@ -202,6 +202,21 @@ describe('RewardsService', () => {
     });
   });
 
+  it.each([
+    ['a numeric description', { ...promotionPage.Data![0], Description: 42 }],
+    ['a null product', { ...promotionPage.Data![0], Products: [null] }],
+  ])('marks promotions unavailable when mapping encounters %s', async (_caseName, malformedPromotion) => {
+    gatewayFetch.mockImplementation(async (_req: Request, url: string) =>
+      url.endsWith('/me') ? profile : { Data: [malformedPromotion], Metadata: { Offset: 0, PageSize: 500, TotalSize: 1 } }
+    );
+
+    await expect(service.getSummary(req)).resolves.toMatchObject({
+      availability: { profile: 'available', promotions: 'unavailable' },
+      availableIncentives: [],
+      coupons: [],
+    });
+  });
+
   it('retrieves every promotion page before marking the source available', async () => {
     const firstPage = Array.from({ length: 500 }, (_, index) => ({
       PromotionID: `promotion-${index}`,

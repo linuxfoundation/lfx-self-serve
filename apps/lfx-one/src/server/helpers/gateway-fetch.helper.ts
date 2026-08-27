@@ -82,7 +82,7 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
 
   if (!upstream.ok) {
     const body = options.redactResponseBody
-      ? await upstream.body?.cancel().catch(() => undefined)
+      ? await discardResponseBody(upstream.body)
       : (await upstream.text().catch(() => '')).slice(0, UPSTREAM_ERROR_BODY_LIMIT);
     const logContext = {
       status: upstream.status,
@@ -135,5 +135,20 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
       service: options.service,
       ...(truncatedBody === undefined ? {} : { errorBody: truncatedBody }),
     });
+  }
+}
+
+async function discardResponseBody(body: ReadableStream<Uint8Array> | null): Promise<void> {
+  if (!body) return;
+
+  const reader = body.getReader();
+  try {
+    while (!(await reader.read()).done) {
+      // Drain without retaining response content so the connection can be reused.
+    }
+  } catch {
+    await reader.cancel().catch(() => undefined);
+  } finally {
+    reader.releaseLock();
   }
 }

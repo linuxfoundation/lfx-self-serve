@@ -119,8 +119,8 @@ export class RewardsComponent {
   // ─── Private Initializers ──────────────────────────────────────────────────
   private initRewardsState(): Signal<RewardsState> {
     const initialState: RewardsState = { loading: true, error: null, data: null };
-    const subjectChanges$ = combineLatest([toObservable(this.userService.user), toObservable(this.userService.impersonating)]).pipe(
-      map(([user, impersonating]) => [user?.username ?? null, impersonating] as const),
+    const subjectChanges$ = combineLatest([toObservable(this.userService.viewerUsername), toObservable(this.userService.impersonating)]).pipe(
+      map(([username, impersonating]) => [username, impersonating] as const),
       distinctUntilChanged(([previousUsername, previousImpersonating], [username, impersonating]) => {
         return previousUsername === username && previousImpersonating === impersonating;
       }),

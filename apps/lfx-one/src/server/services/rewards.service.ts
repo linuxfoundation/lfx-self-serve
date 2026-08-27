@@ -29,16 +29,18 @@ export class RewardsService {
     const subject = await resolveRewardsSubject(req);
     logger.debug(req, 'get_rewards_summary', 'Fetching rewards profile and promotions', { subject_mode: subject.mode });
 
-    const [profileResult, promotionsResult] = await Promise.allSettled([this.fetchUserProfile(req, subject), this.fetchPromotions(req, subject)]);
+    const [profileResult, promotionsResult] = await Promise.allSettled([
+      this.fetchUserProfile(req, subject),
+      this.fetchPromotions(req, subject).then((promotions) => this.groupPromotions(promotions)),
+    ]);
     const profile = this.unwrapSource(req, 'profile', profileResult);
-    const promotions = this.unwrapSource(req, 'promotions', promotionsResult);
-
-    const groupedPromotions = this.groupPromotions(promotions ?? []);
+    const promotionGroups = this.unwrapSource(req, 'promotions', promotionsResult);
+    const groupedPromotions = promotionGroups ?? this.groupPromotions([]);
 
     return {
       availability: {
         profile: profile ? 'available' : 'unavailable',
-        promotions: promotions ? 'available' : 'unavailable',
+        promotions: promotionGroups ? 'available' : 'unavailable',
       },
       readOnly: subject.readOnly,
       points: profile?.points ?? null,

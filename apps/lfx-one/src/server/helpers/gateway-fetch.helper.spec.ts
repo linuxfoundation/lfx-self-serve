@@ -31,7 +31,17 @@ describe('gatewayFetch sensitive response redaction', () => {
   });
 
   it('does not log or serialize a non-OK upstream body', async () => {
-    const upstream = new Response(JSON.stringify({ CouponCode: 'SECRET-COUPON' }), { status: 409, statusText: 'Conflict' });
+    const cancel = vi.fn();
+    const upstream = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(JSON.stringify({ CouponCode: 'SECRET-COUPON' })));
+          controller.close();
+        },
+        cancel,
+      }),
+      { status: 409, statusText: 'Conflict' }
+    );
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => upstream)
@@ -42,8 +52,36 @@ describe('gatewayFetch sensitive response redaction', () => {
     expect(error).toMatchObject({ code: 'COUPON_GENERATION_FAILED' });
     expect(error.errorBody).toBeUndefined();
     expect(upstream.bodyUsed).toBe(true);
+    expect(cancel).not.toHaveBeenCalled();
     expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('SECRET-COUPON');
     expect(logger.warning).toHaveBeenCalledWith(req, 'redeem_promotion', 'Upstream returned non-OK response', expect.objectContaining({ body_redacted: true }));
+  });
+
+  it('cancels a redacted response when draining fails', async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const releaseLock = vi.fn();
+    const upstream = {
+      ok: false,
+      status: 502,
+      statusText: 'Bad Gateway',
+      body: {
+        getReader: () => ({
+          read: vi.fn().mockRejectedValue(new Error('stream failed')),
+          cancel,
+          releaseLock,
+        }),
+      },
+    } as unknown as Response;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => upstream)
+    );
+
+    await expect(gatewayFetch(req, 'https://gateway.example.test/redeem', options)).rejects.toMatchObject({
+      code: 'COUPON_GENERATION_FAILED',
+    });
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(releaseLock).toHaveBeenCalledOnce();
   });
 
   it('does not log or serialize an invalid successful response body', async () => {
