@@ -6,6 +6,7 @@ import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   AddUserToProjectRequest,
   CreateProjectDocumentRequest,
+  Meeting,
   PublicProjectMeetingsResponse,
   UpdateUserRoleRequest,
   UploadProjectDocumentRequest,
@@ -973,7 +974,13 @@ export class ProjectController {
       return;
     }
 
+    if (committeeUid && !isUuid(committeeUid)) {
+      next(ServiceValidationError.forField('committee', 'Invalid committee ID', { operation: 'get_project_meetings' }));
+      return;
+    }
+
     try {
+      // Public route has no session — obtain M2M token so meeting/project service calls succeed.
       if (!req.bearerToken) {
         req.bearerToken = await generateM2MToken(req);
       }
@@ -989,7 +996,16 @@ export class ProjectController {
 
       // Filter PRIVATE meetings from the public feed. Restricted (invited-guests-only) public meetings are
       // still listed so their existence is discoverable; join authorization is enforced separately at join time.
-      const meetings = [...upcoming, ...past].filter((m) => m.visibility === MeetingVisibility.PUBLIC);
+      // created_by/owner carry organizer PII (name/email) — authenticated-visible only, per the same
+      // strip applied to anonymous callers in PublicMeetingController.getMeetingById (LFXV2-2802).
+      const meetings = [...upcoming, ...past]
+        .filter((m) => m.visibility === MeetingVisibility.PUBLIC)
+        .map((m) => {
+          const meeting = { ...m };
+          delete (meeting as Partial<Meeting>).created_by;
+          delete (meeting as Partial<Meeting>).owner;
+          return meeting;
+        });
       const response: PublicProjectMeetingsResponse = { meetings, total: meetings.length, project: { uid: project.uid, name: project.name } };
 
       logger.success(req, 'get_project_meetings', startTime, {

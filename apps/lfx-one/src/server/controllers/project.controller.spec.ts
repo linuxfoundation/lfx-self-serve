@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Project } from '@lfx-one/shared/interfaces';
+import type { Meeting, Project } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const SLUG = 'cncf';
@@ -11,9 +11,13 @@ const PROJECT_UID = 'project-2222';
 // into vitest (see vitest.config.ts), so the shared barrels the controller imports at
 // module load are stubbed here. `computeIsFoundation` is mocked so each test can drive
 // the foundation-vs-project branch without constructing a full Project graph.
-const { computeIsFoundationMock, generateM2MTokenMock, projectSvc } = vi.hoisted(() => ({
+const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, projectSvc } = vi.hoisted(() => ({
   computeIsFoundationMock: vi.fn(),
   generateM2MTokenMock: vi.fn(),
+  isUuidMock: vi.fn(),
+  meetingSvc: {
+    getMeetings: vi.fn(),
+  },
   projectSvc: {
     getProjectIdBySlug: vi.fn(),
     getProjectById: vi.fn(),
@@ -23,7 +27,7 @@ const { computeIsFoundationMock, generateM2MTokenMock, projectSvc } = vi.hoisted
 vi.mock('@lfx-one/shared/utils', () => ({
   computeIsFoundation: computeIsFoundationMock,
   isFileTypeAllowed: vi.fn(),
-  isUuid: vi.fn(),
+  isUuid: isUuidMock,
 }));
 vi.mock('@lfx-one/shared/constants', async () => {
   // Deep-import the real allowlist so the drift guard below asserts the production
@@ -41,7 +45,10 @@ vi.mock('@lfx-one/shared/constants', async () => {
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
 // validation.helper pulls in a heavy shared/constants + shared/enums graph; stub it
 // wholesale so only the controller's getLensRedirect path loads.
-vi.mock('../helpers/validation.helper', () => ({ getStringQueryParam: vi.fn(), validateUidParameter: vi.fn(() => true) }));
+vi.mock('../helpers/validation.helper', () => ({
+  getStringQueryParam: vi.fn((req: any, key: string) => (typeof req.query?.[key] === 'string' ? req.query[key] : undefined)),
+  validateUidParameter: vi.fn(() => true),
+}));
 
 vi.mock('../services/project.service', () => ({
   ProjectService: vi.fn(function () {
@@ -50,7 +57,7 @@ vi.mock('../services/project.service', () => ({
 }));
 vi.mock('../services/meeting.service', () => ({
   MeetingService: vi.fn(function () {
-    return {};
+    return meetingSvc;
   }),
 }));
 vi.mock('../services/logger.service', () => ({
@@ -97,6 +104,37 @@ function buildProject(overrides: Partial<Project> = {}): Project {
     mailing_list_count: 0,
     ...overrides,
   } as Project;
+}
+
+function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
+  return {
+    id: 'meeting-1',
+    project_uid: PROJECT_UID,
+    visibility: 'public',
+    restricted: false,
+    committees: [],
+    start_time: new Date().toISOString(),
+    duration: 60,
+    timezone: 'America/New_York',
+    title: 'Meeting',
+    description: '',
+    created_by: { name: 'Organizer', email: 'organizer@example.com' },
+    owner: { name: 'Owner', email: 'owner@example.com' },
+    ...overrides,
+  } as Meeting;
+}
+
+function buildMeetingsReqRes(id: string = PROJECT_UID, query: Record<string, string> = {}) {
+  const req = {
+    params: { id },
+    query,
+    headers: {},
+    bearerToken: undefined,
+    path: `/public/api/projects/${id}/meetings`,
+  } as any;
+  const res = { json: vi.fn(), setHeader: vi.fn() } as any;
+  const next = vi.fn();
+  return { req, res, next };
 }
 
 function buildReqRes(slug: string = SLUG, resource: string = 'votes') {
@@ -219,6 +257,103 @@ describe('ProjectController.getLensRedirect', () => {
     await controller.getLensRedirect(req, res, next);
 
     expect(res.redirect).toHaveBeenCalledWith(302, '/project/votes?project=my-project_1');
+  });
+});
+
+describe('ProjectController.getProjectMeetings', () => {
+  let controller: ProjectController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    isUuidMock.mockImplementation((value: string) => value === PROJECT_UID || value === 'committee-uid-1234');
+    projectSvc.getProjectById.mockResolvedValue(buildProject());
+    meetingSvc.getMeetings.mockResolvedValue({ data: [], page_token: undefined });
+  });
+
+  it('strips created_by/owner PII from public meetings and returns the project envelope', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({ data: resourceType === 'v1_meeting' ? [buildMeeting()] : [], page_token: undefined })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledTimes(1);
+    const response = res.json.mock.calls[0][0];
+    expect(response.meetings).toHaveLength(1);
+    expect(response.meetings[0]).not.toHaveProperty('created_by');
+    expect(response.meetings[0]).not.toHaveProperty('owner');
+    expect(response.total).toBe(1);
+    expect(response.project).toEqual({ uid: PROJECT_UID, name: 'CNCF' });
+  });
+
+  it('filters out PRIVATE meetings from the public feed', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({ data: resourceType === 'v1_meeting' ? [buildMeeting({ id: 'private-1', visibility: 'private' as any })] : [], page_token: undefined })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    const response = res.json.mock.calls[0][0];
+    expect(response.meetings).toHaveLength(0);
+  });
+
+  it('resolves a slug identifier to a UID before querying meetings', async () => {
+    isUuidMock.mockReturnValue(false);
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: SLUG, exists: true });
+    const { req, res, next } = buildMeetingsReqRes(SLUG);
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(projectSvc.getProjectIdBySlug).toHaveBeenCalledWith(req, SLUG);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes next() a not-found error when the slug is unresolvable', async () => {
+    isUuidMock.mockReturnValue(false);
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: '', slug: SLUG, exists: false });
+    const { req, res, next } = buildMeetingsReqRes(SLUG);
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses tags_all with both project and committee tags when committee query param is a valid UUID', async () => {
+    const { req, res, next } = buildMeetingsReqRes(PROJECT_UID, { committee: 'committee-uid-1234' });
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const [, query] = meetingSvc.getMeetings.mock.calls[0];
+    expect(query).toEqual({ tags_all: [`project_uid:${PROJECT_UID}`, 'committee_uid:committee-uid-1234'] });
+  });
+
+  it('rejects an invalid committee query param via next() without calling meeting service', async () => {
+    const { req, res, next } = buildMeetingsReqRes(PROJECT_UID, { committee: 'not-a-uuid' });
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(meetingSvc.getMeetings).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('rejects an invalid project id via next() without an M2M call', async () => {
+    const { req, res, next } = buildMeetingsReqRes('bad id!');
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(generateM2MTokenMock).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
   });
 });
 

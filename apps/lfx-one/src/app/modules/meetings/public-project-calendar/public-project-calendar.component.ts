@@ -29,10 +29,6 @@ export class PublicProjectCalendarComponent {
 
   private readonly calendarData: Signal<PublicProjectMeetingsResponse | null> = this.initCalendarData();
 
-  protected readonly committeeUid: Signal<string | undefined> = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('committee') ?? undefined)), {
-    initialValue: undefined,
-  });
-
   protected readonly initialView: Signal<string> = toSignal(
     this.route.queryParamMap.pipe(map((params) => (params.get('view') === 'week' ? 'timeGridWeek' : 'dayGridMonth'))),
     { initialValue: 'dayGridMonth' }
