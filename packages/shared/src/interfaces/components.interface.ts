@@ -264,7 +264,7 @@ export interface ButtonProps {
 
 /** PrimeNG `pt` (passthrough) shape accepted for a Button's root slot. */
 export interface ButtonRootPassThrough {
-  root: { 'aria-pressed': boolean };
+  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean };
 }
 
 /**

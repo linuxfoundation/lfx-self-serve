@@ -333,13 +333,13 @@ describe('CampaignController.loadBrief', () => {
   it('returns a "none" status when campaign-service has no brief for this slug', async () => {
     // The ordinary first-time case: the user has not generated a brief yet, so campaign-service
     // returns nothing. This is not an error, just an empty result that tells the UI "generate one".
-    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, approved: false });
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
     expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ status: 'none', briefId: null, brief: null, approved: false });
+    expect(res.json).toHaveBeenCalledWith({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
   });
 
   it('returns a "loaded" status with the brief when campaign-service reconstructs it successfully', async () => {
@@ -350,13 +350,13 @@ describe('CampaignController.loadBrief', () => {
       structuredCopy: null,
       keywords: [],
     } as unknown as CampaignBriefOutput;
-    loadBrief.mockResolvedValue({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, approved: true });
+    loadBrief.mockResolvedValue({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, etag: 'W/"7"', approved: true });
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
     expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, approved: true });
+    expect(res.json).toHaveBeenCalledWith({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, etag: 'W/"7"', approved: true });
   });
 
   it('returns an "unreadable" status with the brief ID when a row exists but cannot be reconstructed', async () => {
@@ -365,13 +365,13 @@ describe('CampaignController.loadBrief', () => {
     // UI from treating this as "no brief" and silently overwriting the orphaned row with a new save.
     // The client learns "a saved brief exists but could not be opened" and can prompt the user
     // rather than pretending the slate is clean.
-    loadBrief.mockResolvedValue({ status: 'unreadable', briefId: 'brief-def456', brief: null, approved: false });
+    loadBrief.mockResolvedValue({ status: 'unreadable', briefId: 'brief-def456', brief: null, etag: 'W/"9"', approved: false });
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
     expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ status: 'unreadable', briefId: 'brief-def456', brief: null, approved: false });
+    expect(res.json).toHaveBeenCalledWith({ status: 'unreadable', briefId: 'brief-def456', brief: null, etag: 'W/"9"', approved: false });
   });
 
   it('sends a failed load to the error middleware instead of returning a degraded result', async () => {

@@ -3,7 +3,6 @@
 
 import { computed, inject, Injectable, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { environment } from '@environments/environment';
 import {
   AKRITES_ENABLED_FLAG,
   COMMITTEE_LABEL,
@@ -393,21 +392,13 @@ export class SidebarNavService {
             routerLink: '/foundation/health-metrics',
             testId: 'sidebar-metrics-health-metrics',
           },
-        ];
-
-        const foundationSfid = this.projectContextService.selectedFoundationSfid();
-        if (foundationSfid) {
-          const pccBaseUrl = environment.urls.pcc;
-          const baseUrl = pccBaseUrl.endsWith('/') ? pccBaseUrl.slice(0, -1) : pccBaseUrl;
-          metricsItems.push({
+          {
             label: 'Social Listening',
             icon: 'fa-light fa-ear-listen',
-            url: `${baseUrl}/project/${foundationSfid}/reports/social-listening`,
-            target: '_blank',
-            rel: 'noopener noreferrer',
+            routerLink: '/foundation/social-listening',
             testId: 'sidebar-metrics-social-listening',
-          });
-        }
+          },
+        ];
 
         items.push({
           label: 'Metrics',

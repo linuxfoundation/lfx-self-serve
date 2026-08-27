@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
+import type { CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
 
 // ---------------------------------------------------------------------------
 // Platform & Phase

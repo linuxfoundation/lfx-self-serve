@@ -79,7 +79,7 @@ Emit each finding:
 Reference Phase 2 outputs:
 
 - Branch name → `git rev-parse --abbrev-ref HEAD`
-- Ticket reference → `grep -oE 'LFXV2-[0-9]+|GH-[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+'` over commit subjects + bodies (JIRA, GitHub Issue, or fully-qualified `org/repo#issue`)
+- Ticket reference → `grep -oE 'LFXV2-[0-9]+|#[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+'` over commit subjects + bodies (JIRA, GitHub Issue, or fully-qualified `org/repo#issue`)
 - Conventional commits → check each commit subject against the regex in `pr-shape.md`
 - Rebase → `git merge-base --is-ancestor <base> HEAD` exit code (0 = rebased)
 - DCO + GPG → `%G?` codes + `Signed-off-by:` trailer presence per commit

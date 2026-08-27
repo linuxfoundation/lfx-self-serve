@@ -5,7 +5,7 @@
 // Framework-free so the branching is unit-testable without an Angular harness. The menu
 // factories map these to PrimeNG MenuItems; they do not re-derive the rules.
 
-import { MyClaAgreement } from '../interfaces/cla.interface';
+import type { MyClaAgreement } from '../interfaces/cla.interface';
 
 /** Request approval — ECLA that is off the current Approved List (#1372). */
 export function canRequestClaApproval(agreement: MyClaAgreement): boolean {
