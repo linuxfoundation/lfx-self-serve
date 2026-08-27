@@ -351,24 +351,62 @@ describe('OrgProfileEditComponent — logo upload', () => {
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary, detail }));
   });
 
-  it('surfaces the upstream reason when the sanitizer rejects an SVG', async () => {
+  // The BFF serialises errors as `{ error, code, ... }` (BaseApiError.toResponse) and
+  // ServiceValidationError adds `errors[]` — there is no top-level `message` key, so these
+  // fixtures mirror the real contract rather than a convenient one.
+  it.each([
+    ['top-level error string', { error: 'SVG upload cannot be processed: unsupported CSS selector "rect"', code: 'VALIDATION_ERROR' }],
+    [
+      'field-level validation detail',
+      {
+        error: 'Validation failed for body',
+        code: 'VALIDATION_ERROR',
+        errors: [{ field: 'body', message: 'SVG upload cannot be processed: unsupported CSS property "d"' }],
+      },
+    ],
+    ['plain string body', 'SVG upload cannot be processed: unterminated rule'],
+  ])('surfaces the upstream reason (%s) when the sanitizer rejects an SVG', async (_label, body) => {
     fixture.detectChanges();
     fixture.componentInstance['onLogoFileSelected']({
       target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
     } as unknown as Event);
     await fixture.whenStable();
 
-    // A permanently-rejected file must not be described as retryable — the same bytes fail forever.
-    uploadLogo$.error(new HttpErrorResponse({ status: 400, error: { message: 'SVG upload cannot be processed: unsupported CSS selector "rect"' } }));
+    uploadLogo$.error(new HttpErrorResponse({ status: 400, error: body }));
     await fixture.whenStable();
 
     expect(toastAdd).toHaveBeenCalledWith(
-      expect.objectContaining({
-        summary: 'Logo rejected',
-        detail: 'SVG upload cannot be processed: unsupported CSS selector "rect"',
-      })
+      expect.objectContaining({ summary: 'Logo rejected', detail: expect.stringContaining('SVG upload cannot be processed') })
     );
     expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('Please try again') }));
+  });
+
+  it('falls back to generic guidance when a rejection carries no usable reason', async () => {
+    fixture.detectChanges();
+    fixture.componentInstance['onLogoFileSelected']({
+      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+    } as unknown as Event);
+    await fixture.whenStable();
+
+    uploadLogo$.error(new HttpErrorResponse({ status: 415 }));
+    await fixture.whenStable();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Logo rejected' }));
+  });
+
+  it.each([[408], [429], [0]])('keeps the retry prompt for transient status %i', async (status) => {
+    fixture.detectChanges();
+    fixture.componentInstance['onLogoFileSelected']({
+      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+    } as unknown as Event);
+    await fixture.whenStable();
+
+    // 408 and 429 are 4xx but retryable — this server mints 408 for its own upstream abort, so
+    // labelling either "Logo rejected" would tell the user a fine file is permanently broken.
+    uploadLogo$.error(new HttpErrorResponse({ status }));
+    await fixture.whenStable();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Upload failed', detail: 'Unable to upload logo. Please try again.' }));
   });
 
   it('still prompts a retry for a server-side failure', async () => {

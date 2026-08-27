@@ -16,6 +16,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type { OrgCanonicalRecord, OrgProfileEditableFields, OrgUpdateRequest } from '@lfx-one/shared/interfaces';
 import { httpsUrlValidator } from '@lfx-one/shared/validators';
+import { extractErrorMessage, isTransientHttpError } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { InputNumberModule } from 'primeng/inputnumber';
@@ -311,14 +312,15 @@ export class OrgProfileEditComponent implements OnInit {
       });
   }
 
-  /** FR-010-equivalent for the logo upload — mirrors toastForError's status mapping with upload-specific copy. */
   /**
    * Error copy for the logo upload, split by whether retrying can plausibly help.
    *
    * The sanitizer upstream rejects an SVG it cannot reproduce faithfully — an unsupported selector,
    * an @media block, an unknown vendor prefix — and returns the reason on a 4xx. Telling the user to
    * try again there is actively wrong: the same file fails every time. Those surface the upstream
-   * reason instead, and only transport/server failures keep the retry prompt.
+   * reason instead. Transient statuses are excluded first via `isTransientHttpError`, so a timeout
+   * (408, which this server mints for its own upstream abort) or a rate limit (429) still reads as
+   * retryable rather than as a permanently rejected file.
    */
   private toastForLogoError(error: unknown): { severity: string; summary: string; detail: string; life: number } {
     const status = error instanceof HttpErrorResponse ? error.status : 0;
@@ -328,17 +330,15 @@ export class OrgProfileEditComponent implements OnInit {
     if (status === 413) {
       return { severity: 'error', summary: 'Logo too large', detail: 'Logo must be 2MB or smaller.', life: 5000 };
     }
-    if (status >= 400 && status < 500) {
-      return { severity: 'error', summary: 'Logo rejected', detail: this.logoRejectionDetail(error), life: 8000 };
+    if (!isTransientHttpError(error) && status >= 400 && status < 500) {
+      return {
+        severity: 'error',
+        summary: 'Logo rejected',
+        detail: extractErrorMessage(error, 'This image could not be used. Try a different file.'),
+        life: 8000,
+      };
     }
     return { severity: 'error', summary: 'Upload failed', detail: 'Unable to upload logo. Please try again.', life: 5000 };
-  }
-
-  /** Upstream reason for a rejected logo, falling back to generic guidance when none is supplied. */
-  private logoRejectionDetail(error: unknown): string {
-    const body = error instanceof HttpErrorResponse ? error.error : null;
-    const message = typeof body === 'string' ? body : body?.message;
-    return typeof message === 'string' && message.trim() ? message : 'This image could not be used. Try a different file.';
   }
 
   private refreshFieldFlags(): void {
