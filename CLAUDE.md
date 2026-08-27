@@ -258,13 +258,14 @@ Placement decision trees ("where does my component go?", "do I need a new module
    target_sha: <TARGET_SHA>
    base_sha: <BASE_SHA>
    diff range: git diff <BASE_SHA> <TARGET_SHA> (the single commit target_sha)
+   review exactly: git diff <BASE_SHA> <TARGET_SHA>
 
    Review the latest commit.
    ```
 
    where `<skill>` is `lfx-skills:lfx-general-code-review`, `lfx-self-serve-code-review`, or `lfx-self-serve-learnings-review` respectively. Append `extra: <focus>` on a new line only when there's a priority hint to add. Do NOT pass `branch` here.
 
-   The Read fallback applies to the two repo-owned skills (the plugin skill has no repo-root path, so an unlistable plugin skill correctly falls through to `INCOMPLETE`). Skills added or renamed in the current session may be absent from a child's skill roster — the Read fallback is the expected path there, and an `INCOMPLETE — could not load <skill>` means relaunch (a fresh session picks the skill up), not that the review found a problem.
+   The `diff range:` / `review exactly:` pair states the same range under each child's input vocabulary, and the `branch` keyword is parsed only by the two repo-owned skills — the general child relies on the pinned lines alone. The Read fallback applies to the two repo-owned skills (the plugin skill has no repo-root path, so an unlistable plugin skill correctly falls through to `INCOMPLETE`). Skills added or renamed in the current session may be absent from a child's skill roster — the Read fallback is the expected path there, and an `INCOMPLETE — could not load <skill>` means relaunch (a fresh session picks the skill up), not that the review found a problem.
 
 3. **Keep working.** Start the next commit while the reviewers run. Do not block on them.
 4. **When the reviewers return:** read all three reports. Roll every Critical finding and every reasonable Important finding into the next commit (a separate `fix(review): address findings` commit is fine; squashing is not required — the history shows review-driven iteration).
@@ -296,6 +297,7 @@ When the work is "done" — no more code commits planned:
    target_sha: <TARGET_SHA>
    base_sha: <BASE_SHA>
    diff range: git diff <BASE_SHA> <TARGET_SHA>
+   review exactly: git diff <BASE_SHA> <TARGET_SHA>
 
    Review the branch's diff against origin/main.
    ```
