@@ -1,6 +1,6 @@
 ---
 name: lfx-self-serve-code-review
-description: "Post-commit code-convention audit for lfx-self-serve. Audits the latest commit in the lfx-self-serve repo against the repo documented rule surface: `.claude/rules/`, the four `docs/reviews/` checklists, architecture docs, and upstream API contracts. May be launched from the LFX workspace root, but always operates in `lfx-self-serve`. Every repo-convention finding quotes a loaded source. Pass the keyword `branch` to switch to full-branch mode (audits the branch's diff against main — used for the pre-PR full-branch sweep and by `/lfx-review-pr`). Renders a markdown review with Upstream API / data-layer validation and Repo conventions sections. Invoke after every commit while pre-PR, in parallel with `lfx-skills:lfx-general-code-review` and `lfx-self-serve-learnings-review`."
+description: "Post-commit code-convention audit for lfx-self-serve. Audits the latest commit in the lfx-self-serve repo against the repo documented rule surface: `.claude/rules/`, the four `docs/reviews/` checklists, architecture docs, and upstream API contracts. May be launched from the LFX workspace root, but always operates in `lfx-self-serve`. Every repo-convention finding quotes a loaded source. Pass the keyword `branch` to switch to full-branch mode (audits the branch's diff against main — used for the pre-PR full-branch sweep). Renders a markdown review with Upstream API / data-layer validation and Repo conventions sections. Invoke after every commit while pre-PR, in parallel with `lfx-skills:lfx-general-code-review` and `lfx-self-serve-learnings-review`."
 ---
 
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
@@ -34,7 +34,7 @@ Before diffing, locate the `lfx-self-serve` repo root:
 
 Parse the caller's prompt for:
 
-- **`branch`** — OPTIONAL keyword. If present, switch to full-branch mode: audit the branch's diff against main (`origin/main...HEAD`) instead of just the latest commit. Used by the pre-PR full-branch sweep and `/lfx-review-pr`.
+- **`branch`** — OPTIONAL keyword. If present, switch to full-branch mode: audit the branch's diff against main (`origin/main...HEAD`) instead of just the latest commit. Used by the pre-PR full-branch sweep.
 - **`extra: <free text>`** — optional priority hint.
 
 ## Step 1 — Compute the diff

@@ -245,17 +245,19 @@ Placement decision trees ("where does my component go?", "do I need a new module
    - **Self Serve convention child** — loads **`lfx-self-serve-code-review`** (`.claude/skills/lfx-self-serve-code-review/`): Self Serve convention audit against the documented rule surface (`.claude/rules/`, the four `docs/reviews/` checklists, architecture docs) and upstream API contracts. Renders a markdown review with Upstream API / data-layer validation and Repo conventions sections.
    - **Self Serve learnings child** — loads **`lfx-self-serve-learnings-review`** (`.claude/skills/lfx-self-serve-learnings-review/`): empirical-pattern matching against `docs/reviews/knowledge-base/` (patterns sampled from past PR review comments on this repo). Renders a markdown review.
 
-   **Why a canonical prompt:** the Agent tool needs a non-empty prompt to launch reliably, so we standardize on one canonical string per mode rather than leave it ambiguous. Each skill's playbook only parses for `target repo:`, `branch`, and `extra:` and otherwise defaults to `git show HEAD`; the pinned `target_sha` / `base_sha` / diff-range lines make the audited state immutable — all three children audit the same exact range even if you commit again while the reviews run. The `model: opus` pin lives here in the caller (the skill files carry no model frontmatter). The canonical strings are operator plumbing, not instructions to the model. If this work cycle is launched from the LFX workspace parent, the prompt must specify the target review repo so the reviewer operates in `lfx-self-serve`; the canonical prompts below include that line and are also safe when already inside this repo.
+   **Why a canonical prompt:** the Agent tool needs a non-empty prompt to launch reliably, so we standardize on one canonical string per mode rather than leave it ambiguous. Each skill's playbook parses for `target repo:`, `branch`, and `extra:` and, when given no pins, defaults to `git show HEAD` — a moving reference. The canonical prompt therefore pins `target_sha` / `base_sha` / the exact diff range and declares them authoritative, so all three children audit the same exact range even if you commit again while the reviews run; the prompt's pinned-range line is what binds the child, so never omit it. The `model: opus` pin lives here in the caller (the skill files carry no model frontmatter). If this work cycle is launched from the LFX workspace parent, the prompt must specify the target review repo so the reviewer operates in `lfx-self-serve`; the canonical prompts below include that line and are also safe when already inside this repo. If a skill is displayed with a namespace or directory-scope prefix (e.g. `work:lfx-self-serve-code-review`), use the displayed name.
 
    **Post-commit mode prompt (exact, all three children — substitute the child's skill name and the pinned SHAs):**
 
    ```text
    Load exactly one skill and follow it end to end as your complete review playbook: <skill>. Do not load any other review skill.
 
+   The pinned range below is authoritative: audit target_sha against base_sha exactly, even if HEAD has moved since launch — never re-derive the range from a moving HEAD.
+
    target repo: lfx-self-serve
    target_sha: <TARGET_SHA>
    base_sha: <BASE_SHA>
-   diff range: git show <TARGET_SHA> (the single commit target_sha)
+   diff range: git diff <BASE_SHA> <TARGET_SHA> (the single commit target_sha)
 
    Review the latest commit.
    ```
@@ -284,6 +286,8 @@ When the work is "done" — no more code commits planned:
 
    ```text
    Load exactly one skill and follow it end to end as your complete review playbook: <skill>. Do not load any other review skill.
+
+   The pinned range below is authoritative: audit target_sha against base_sha exactly, even if HEAD or origin/main has moved since launch — never re-derive the range from a moving HEAD or re-fetch the base.
 
    target repo: lfx-self-serve
    branch

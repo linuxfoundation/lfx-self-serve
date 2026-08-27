@@ -4,7 +4,7 @@ description: >
   Mechanical pre-PR pipeline, license headers, format, lint, build, protected
   file check, commit verification, and PR change summary. Run after the
   post-commit reviewer trio has been drained and `/lfx-self-serve-pr-readiness`
-  has passed. Pattern/convention auditing is owned by the central reviewer
+  has passed. Pattern/convention auditing is owned by the reviewer
   trio (see `.claude/rules/skill-guidance.md` for canonical post-commit
   reviewer-trio launch instructions), not by this skill.
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion

@@ -1,6 +1,6 @@
 ---
 name: lfx-self-serve-learnings-review
-description: "Post-commit empirical-pattern review for lfx-self-serve. Audits the latest commit in the lfx-self-serve repo against `docs/reviews/knowledge-base/` — patterns extracted from past PR review comments on this repo. May be launched from the LFX workspace root, but always operates in `lfx-self-serve`. Findings are gated by KB matches: every finding must quote a pattern entry; unsourced findings are dropped. Pass the keyword `branch` to switch to full-branch mode (audits the branch's diff against main — used for the pre-PR full-branch sweep and by `/lfx-review-pr`). Renders a markdown review. Invoke after every commit while pre-PR, in parallel with `lfx-self-serve-code-review`."
+description: "Post-commit empirical-pattern review for lfx-self-serve. Audits the latest commit in the lfx-self-serve repo against `docs/reviews/knowledge-base/` — patterns extracted from past PR review comments on this repo. May be launched from the LFX workspace root, but always operates in `lfx-self-serve`. Findings are gated by KB matches: every finding must quote a pattern entry; unsourced findings are dropped. Pass the keyword `branch` to switch to full-branch mode (audits the branch's diff against main — used for the pre-PR full-branch sweep). Renders a markdown review. Invoke after every commit while pre-PR, in parallel with `lfx-self-serve-code-review`."
 ---
 
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
@@ -35,7 +35,7 @@ Before diffing, locate the `lfx-self-serve` repo root:
 
 Parse the caller's prompt for:
 
-- **`branch`** — OPTIONAL keyword. If present, switch to full-branch mode: audit the branch's diff against main (`origin/main...HEAD`) instead of just the latest commit. Used by the pre-PR full-branch sweep and `/lfx-review-pr`.
+- **`branch`** — OPTIONAL keyword. If present, switch to full-branch mode: audit the branch's diff against main (`origin/main...HEAD`) instead of just the latest commit. Used by the pre-PR full-branch sweep.
 - **`extra: <free text>`** — optional priority hint.
 
 ## Step 1 — Compute the diff
