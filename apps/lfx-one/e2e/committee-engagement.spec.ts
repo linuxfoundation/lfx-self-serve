@@ -87,12 +87,23 @@ test.describe('Committee engagement — members table (flag on)', () => {
     await expect(page.getByTestId('members-engagement-chip-m-medium')).toContainText('Medium');
     await expect(page.getByTestId('members-engagement-chip-m-low')).toContainText('Low');
     await expect(page.getByTestId('members-engagement-chip-m-inactive-invited')).toContainText('Inactive');
-    // Emeritus and LF Staff + Observer both render their own neutral tier — never
-    // Low/Inactive/at-risk styling.
+    // Emeritus, LF Staff + Observer, and LF Staff + no voting status all render their own neutral
+    // tier — never Low/Inactive/at-risk styling. m-lf-staff-none's classification is fixture-mocked
+    // ('LF Staff' hardcoded below), so this only proves the UI renders it correctly, not that the
+    // tenure-grace decision is right — that's covered directly in
+    // committee-engagement-classifier.utils.spec.ts's classifyCommitteeEngagement cases.
     await expect(page.getByTestId('members-engagement-chip-m-emeritus')).toContainText('Emeritus');
     await expect(page.getByTestId('members-engagement-chip-m-lf-staff')).toContainText('LF Staff');
+    await expect(page.getByTestId('members-engagement-chip-m-lf-staff-none')).toContainText('LF Staff');
+    // The chip text alone doesn't prove the reported bug's second symptom stays fixed — the tooltip
+    // (resolveEngagementContext) is a separate code path that could regress to the generic
+    // "attended X of Y invited meetings" role-context branch while classification still renders
+    // correctly. Hover and assert the actual exclusion tooltip text.
+    await page.getByTestId('members-engagement-chip-m-lf-staff-none').hover();
+    await expect(page.locator('.p-tooltip')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.locator('.p-tooltip')).toContainText('LF Staff seat — excluded from engagement metrics; attendance expectations do not apply');
     // An LF Staff member who is a real Voting Rep classifies on real attendance, NOT the neutral
-    // LF Staff tier (LFXV2-3101 follow-up, Jordan Evans review).
+    // LF Staff tier.
     await expect(page.getByTestId('members-engagement-chip-m-lf-staff-rep')).toContainText('High');
 
     // computed_at is null in the fixture → the daily-refresh freshness fallback.
@@ -120,6 +131,7 @@ test.describe('Committee engagement — members table (flag on)', () => {
     await expect(page.getByText('Nova Neverasked')).toHaveCount(0);
     await expect(page.getByText('Evan Emeritus')).toHaveCount(0);
     await expect(page.getByText('Sam Staffer')).toHaveCount(0);
+    await expect(page.getByText('Alex Nonstatus')).toHaveCount(0);
     // Real 80% attendance — not at-risk, filtered out same as any other well-engaged member.
     await expect(page.getByText('Priya Repstaff')).toHaveCount(0);
   });
@@ -151,6 +163,13 @@ test.describe('Committee engagement — members table (flag on)', () => {
 
     await expect(page.getByTestId('members-engagement-meetings-m-high')).toHaveText('—', { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('members-engagement-chip-m-high')).toHaveText('—');
+    // `engagementDataAvailable()` gates the chip render for every row (committee-members.component.
+    // html), so every classification — including m-lf-staff-none's — renders the same em-dash here
+    // regardless of what degradedClassification computed; that delegation isn't observable on this
+    // path or the live path above (both fixture-mock the classification directly rather than
+    // deriving it). isLfStaffNonVotingSeat's own decision table is covered directly in
+    // committee-engagement-classifier.utils.spec.ts's classifyCommitteeEngagement cases.
+    await expect(page.getByTestId('members-engagement-chip-m-lf-staff-none')).toHaveText('—');
     // A degraded response zeroes every row, so the At Risk chip would be a permanent "(0)" — hidden.
     await expect(page.getByTestId('members-chip-atRisk')).toHaveCount(0);
     // The roster stays fully functional.
@@ -202,12 +221,37 @@ test.describe('Committee engagement — overview summary (flag on)', () => {
     test.skip(!flagOn, 'wg-engagement-metrics flag appears OFF for this test user — see file header for the LD precondition');
 
     await expect(summary.getByTestId('committee-engagement-summary-attendance-rate')).toContainText('78%', { timeout: ELEMENT_TIMEOUT });
-    // 4/6, not 4/8 — the denominator is eligible_count (roster minus Emeritus/LF Staff+Observer),
+    // 4/6, not 4/9 — the denominator is eligible_count (roster minus Emeritus/non-voting LF Staff),
     // not total_count. active_count is 4 (m-high, m-medium, m-low, m-lf-staff-rep — the real Voting
     // Rep LF Staff member counts like any other real member).
     await expect(summary.getByTestId('committee-engagement-summary-active-members')).toContainText('4/6');
     await expect(summary.getByTestId('committee-engagement-summary-at-risk')).toContainText('2');
     await expect(summary.getByTestId('committee-engagement-summary-freshness')).toHaveText('Updated daily');
+  });
+
+  test('renders an em-dash, not "0/0", for a committee whose roster is entirely excluded from active_count (GH-1848)', async ({ page }) => {
+    await mockCommitteeShell(page);
+    // Only `summary` is overridden — the active-members row this assertion targets reads only
+    // `summary.eligible_count`/`active_count`, not `members[]`, so the roster itself can stay the
+    // default mixed fixture (the rest of the response, notably `data_available: true`, also stays
+    // default, which is what keeps the metrics block rendered at all instead of falling into the
+    // coming-soon state). The attendance-rate row is a different story — it re-derives its own gate
+    // from `members[]` (`hasInvitedRateEligibleMember`), and the default fixture's roster still has
+    // an invited rate-eligible member, so it renders a real percentage here rather than an em-dash;
+    // that's fine, this test doesn't assert on it. `eligible_count: 0` here stands in for the real-world
+    // shape GH-1848 makes reachable: a committee without voting where every seat is Emeritus or
+    // non-voting LF Staff, so the ratio's denominator is genuinely 0.
+    await mockEngagementApi(page, (window) => {
+      const base = buildEngagementResponse(window);
+      return { ...base, summary: { ...base.summary, attendance_rate: 0, active_count: 0, eligible_count: 0, at_risk_count: 0 } };
+    });
+    await gotoEngagementCommitteeTab(page, 'overview');
+
+    const summary = page.getByTestId('committee-overview-engagement-summary');
+    const flagOn = await appearsWithin(summary, ELEMENT_TIMEOUT);
+    test.skip(!flagOn, 'wg-engagement-metrics flag appears OFF for this test user — see file header for the LD precondition');
+
+    await expect(summary.getByTestId('committee-engagement-summary-active-members')).toContainText('—', { timeout: ELEMENT_TIMEOUT });
   });
 
   test('degraded response shows the calm coming-soon state, not an error', async ({ page }) => {

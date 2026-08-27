@@ -529,8 +529,10 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
   });
 
   // The list read is UNGATED while the toggle route refuses every UUID unless
-  // LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE is on — and the chart leaves it unset. So the
-  // default deployment is precisely the one that would render controls that can only 400.
+  // LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE is on. The chart now ships it "true", but the flag
+  // is read per request from the environment, so a values override or a not-yet-rolled pod still
+  // produces the off case — and that deployment is precisely the one that would otherwise render
+  // controls that can only 400.
   // The binding assertion is that the click DISPATCHES NOTHING, not merely that a flag is set.
   it('disables every toggle when the deployment has not enabled status changes', () => {
     render([doc({ status: 'created' }), doc({ id: 'c-2', status: 'paused' })], false, false, false);

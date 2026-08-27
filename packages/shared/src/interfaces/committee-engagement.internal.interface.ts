@@ -26,9 +26,9 @@ export interface CommitteeEngagementWarehouseRow {
   MEMBER_USER_ID: string;
   /** When the member joined the committee roster — used for tenure clipping (see the classifier). */
   MEMBER_JOINED_AT: string | Date | null;
-  /** e.g. `'Chair'`, `'Vice Chair'`, `'None'` — `'LF Staff'` together with `MEMBER_VOTING_STATUS === 'Observer'` short-circuits classification and excludes the row from the rate/active sums (LFXV2-3101; `role` alone is not enough — a real Voting Rep who happens to be LF Staff is not excluded). */
+  /** e.g. `'Chair'`, `'Vice Chair'`, `'None'` — `'LF Staff'` together with `MEMBER_VOTING_STATUS` being `'Observer'` or `'None'` short-circuits classification and excludes the row from the rate/active sums (`role` alone is not enough — a real Voting Rep who happens to be LF Staff is not excluded). */
   MEMBER_ROLE: string;
-  /** e.g. `'Voting Rep'`, `'Observer'`, `'Emeritus'` — `'Emeritus'` short-circuits classification. */
+  /** e.g. `'Voting Rep'`, `'Observer'`, `'Emeritus'`, `'None'` — `'Emeritus'` short-circuits classification; `'None'` (the norm on committees without voting) is load-bearing for the LF Staff exclusion above, not just a display passthrough — may also come back blank/falsy from the warehouse, which callers normalize to the `'None'` sentinel (see `committee-engagement.service.ts` and `groups-engagement-stats.service.ts`). */
   MEMBER_VOTING_STATUS: string;
   INVITED_COUNT_30D: number;
   ATTENDED_COUNT_30D: number;

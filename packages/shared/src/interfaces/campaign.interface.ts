@@ -191,8 +191,8 @@ export interface CampaignBriefOutput {
  * What `POST /api/campaigns/brief/persist` reports back.
  *
  * `enabled: false` is a first-class outcome, not a failure: it is what the endpoint returns
- * when `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` is off, which is the default everywhere until the
- * cutover is turned on per environment. The client must distinguish it from a failure, because
+ * when `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` is off. The chart enables it since #1881, but the
+ * flag is read per request, so any override or un-rolled deployment still answers this way. The client must distinguish it from a failure, because
  * the two want opposite treatment — a disabled flag is the expected steady state and warrants
  * no UI at all, while a failure means the user's brief is NOT durable and they should be told
  * before they spend an afternoon on it.
@@ -532,8 +532,8 @@ export interface CampaignImplementationDraft {
  * `CampaignBriefPersistResult` uses, because there are FOUR outcomes here and only two of them
  * are "no brief". Collapsing them loses the distinction that matters:
  *
- * - `off` — the cutover flag is not set. Nothing was looked up. This is the default in every
- *   environment and warrants no UI.
+ * - `off` — the cutover flag is not set. Nothing was looked up. An ordinary deployment state,
+ *   not a fault, and warrants no UI.
  * - `none` — campaign-service was asked and has no brief for this event slug. The ordinary
  *   first-time case; the user generates one.
  * - `loaded` — a brief was found and reconstructed. `brief` is non-null.
@@ -1698,15 +1698,35 @@ export interface CampaignListResult {
    *
    * Returned with the list because the two routes are gated differently and the client cannot
    * infer it: `/list` is ungated (it reads the Query Service index), while the toggle route
-   * refuses every UUID unless `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` is on — and the chart
-   * leaves that flag unset by default. Without this field a default deployment renders a row of
-   * buttons whose every click fails, which reads to an operator as the campaign refusing to stop
-   * rather than as a capability that was never switched on.
+   * refuses every UUID unless `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` is on. The chart now
+   * ships that flag `"true"`, but the field is not therefore redundant: the flag is read per
+   * request from the environment, so any deployment that overrides it — a values override, a
+   * chart that has not rolled yet, local dev — still turns the toggle off underneath a client
+   * that cannot see the change. Without this field such a deployment renders a row of buttons
+   * whose every click fails, which reads to an operator as the campaign refusing to stop rather
+   * than as a capability that was never switched on.
    *
    * A server fact, so it is reported by the server rather than mirrored into a client-side flag
    * that would drift from the deployment it describes.
    */
   statusToggleEnabled: boolean;
+  /**
+   * Whether THIS deployment can actually create a Demand Gen Google campaign.
+   *
+   * Same reasoning as `statusToggleEnabled`, for a different capability: the create route refuses
+   * `demand-gen` unless `LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` is on, and the chart leaves that
+   * flag unset. Nothing in the create request tells the client that in advance, so without this
+   * field the Implementation tab offers a Demand Gen checkbox whose every submission is refused.
+   *
+   * Worse than a plain dead end, because the two refusals disagree: selecting Search AND Demand
+   * Gen is refused with "deselect one and create it", and following that advice lands on the
+   * capability refusal saying Demand Gen is not available at all. The first message walks the
+   * user into the second.
+   *
+   * Defaults to `false` on every error and pre-load path. Withholding a control for one request
+   * is cheap; offering one that cannot succeed is not.
+   */
+  demandGenEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------

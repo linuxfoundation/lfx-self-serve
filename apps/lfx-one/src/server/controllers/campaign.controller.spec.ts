@@ -144,8 +144,8 @@ describe('CampaignController.persistBrief', () => {
 
     expect(saveBrief).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
-    // 200 with a body, not a 4xx/5xx: the flag being off is the default in every environment, so
-    // an error status here would fire the client's error arm on the ordinary case.
+    // 200 with a body, not a 4xx/5xx: the flag being off is an ordinary deployment state rather
+    // than a fault, so an error status here would fire the client's error arm on that case.
     expect(res.json).toHaveBeenCalledWith({ enabled: false, briefId: '', etag: null, created: false, approved: false });
   });
 
@@ -262,7 +262,7 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
-    // The flag being off is the default in every environment and warrants no error. A 4xx/5xx
+    // The flag being off is an ordinary deployment state and warrants no error. A 4xx/5xx
     // would fire the client's error arm on the ordinary case and train whoever sees it to ignore
     // a UI that should never fire.
     expect(loadBrief).not.toHaveBeenCalled();
@@ -1685,7 +1685,7 @@ describe('CampaignController.listBriefCampaigns', () => {
     // Carries `statusToggleEnabled` because the real `listBriefCampaigns` always returns it and
     // `CampaignListResult` declares it required. A fixture omitting it stands in for a payload the
     // service cannot produce, and this suite is the only place the /list HTTP contract is exercised.
-    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, statusToggleEnabled: false });
+    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: false });
   });
 
   it('passes both scopes through, trimmed', async () => {
@@ -1722,11 +1722,11 @@ describe('CampaignController.listBriefCampaigns', () => {
    * here because this is the only test of the /list response shape.
    */
   it('forwards statusToggleEnabled through the passthrough', async () => {
-    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: false, statusToggleEnabled: true });
+    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false });
 
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ statusToggleEnabled: true }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ statusToggleEnabled: true, demandGenEnabled: false }));
   });
 
   it('lets a query-service failure reach the error middleware', async () => {

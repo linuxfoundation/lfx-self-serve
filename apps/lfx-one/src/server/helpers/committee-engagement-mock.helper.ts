@@ -3,6 +3,7 @@
 
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import type { CommitteeEngagementWarehouseRow, CommitteeMember } from '@lfx-one/shared/interfaces';
+import { isLfStaffNonVotingSeat } from '@lfx-one/shared/utils';
 import crypto from 'crypto';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -35,15 +36,16 @@ const ORLIN_FORCED_COUNTS = { invited: 5, attended: 5 };
  * `MEMBER_VOTING_STATUS` prefers the real `voting.status` too — including a real `'None'`, which is
  * itself a recorded status and never overwritten — falling back to a hash-derived placeholder only
  * for members with no usable real status (no `voting` recorded, or a blank/falsy `status`). Any
- * real `role: 'LF Staff'` member with `voting.status: 'Observer'` (LFXV2-3101) is excluded from the Emeritus-fallback promotion, the
- * Orlin slot, and the reserved Inactive/Low/Medium demo-pattern pool, the same way a real (or
- * promoted) `Emeritus` member is excluded from the Orlin/demo pools — both roster facts always
- * short-circuit `classifyCommitteeEngagement` regardless of fabricated numbers, so assigning either
- * one a reserved slot would silently swallow it rather than render it. Two scenarios (`Emeritus`,
- * "the Orlin case" — see below) are guaranteed visible somewhere in the roster whenever that's
- * possible without overriding a real, known value; when every member's real data already rules a
- * scenario out (e.g. every member has a real non-`Emeritus` status), that scenario simply isn't
- * demonstrated for this specific committee rather than being faked.
+ * real `role: 'LF Staff'` member whose `voting.status` is `'Observer'` (real or organically
+ * hash-derived) or a real `'None'` is excluded from the
+ * Emeritus-fallback promotion, the Orlin slot, and the reserved Inactive/Low/Medium demo-pattern pool,
+ * the same way a real (or promoted) `Emeritus` member is excluded from the Orlin/demo pools — both
+ * roster facts always short-circuit `classifyCommitteeEngagement` regardless of fabricated numbers,
+ * so assigning either one a reserved slot would silently swallow it rather than render it. Two
+ * scenarios (`Emeritus`, "the Orlin case" — see below) are guaranteed visible somewhere in the roster
+ * whenever that's possible without overriding a real, known value; when every member's real data
+ * already rules a scenario out (e.g. every member has a real non-`Emeritus` status), that scenario
+ * simply isn't demonstrated for this specific committee rather than being faked.
  *
  * Every number is derived from stable inputs only — `committeeUid`, `member.uid`, `window`,
  * the member's real `created_at`/`voting.status` where present, the rest of the roster's identity
@@ -68,13 +70,14 @@ interface MemberIdentity {
 
 interface RosterPlan {
   identities: MemberIdentity[];
-  /** Sorted index of the member demonstrating the "Orlin case" (forced low-but-100%-rate counts); `null` when no member (excluding any `Emeritus` or real `LF Staff` + `Observer`, LFXV2-3101) can take the role without contradicting real tenure data. */
+  /** Sorted index of the member demonstrating the "Orlin case" (forced low-but-100%-rate counts); `null` when no member (excluding any `Emeritus` or `LF Staff`-role member whose voting status is Observer (real or organic) or a real None) can take the role without contradicting real tenure data. */
   orlinIndex: number | null;
   /** Tenure (days) to use for `orlinIndex` when that member has no real join date — computed per committee so the forced counts stay plausible against this committee's own real 30-day meeting cadence; unused when `orlinIndex` is `null` or has real tenure data. */
   orlinFallbackJoinedDaysAgo: number;
   /**
-   * Every sorted index except `orlinIndex`, any `Emeritus` member (real or promoted), and any real
-   * `LF Staff` + `Observer` member (LFXV2-3101), in order — i.e. every member eligible for a reserved pattern.
+   * Every sorted index except `orlinIndex`, any `Emeritus` member (real or promoted), and any
+   * `LF Staff`-role member whose voting status is Observer (real or organic) or a real None
+   * in order — i.e. every member eligible for a reserved pattern.
    * Only the first `DEMO_ATTENDANCE_PROFILES.length` of these actually receive one
    * (Inactive/Low/Medium); the rest are organic. Kept as a plain eligibility list rather than
    * pre-sliced so `buildAttendanceProfile` can compute the same boundary once, from `indexOf`, for
@@ -90,25 +93,27 @@ interface RosterPlan {
  * - `Emeritus`: real `voting.status` wins for every member — including a real `None`, which is a
  *   recorded status like any other, not an absence of one; if nothing on the roster is naturally
  *   `Emeritus`, the first member with no usable real status (no `voting` recorded, or a blank/falsy
- *   `status`) is promoted — but only that one case, and never a real `LF Staff` + `Observer` member
- *   (LFXV2-3101, narrowed to this two-part condition in a follow-up review): promoting one to a
- *   fabricated Emeritus profile would render the wrong chip (`Emeritus` instead of `LF Staff`) and,
- *   since Emeritus is deliberately not rate-excluded, feed its fabricated high-invite/
- *   near-zero-attendance numbers into `attendance_rate` — the exact depression the LF Staff
- *   carve-out exists to prevent. (A real `LF Staff` member with no real voting status who gets
- *   organically hash-assigned a non-`Observer` status — e.g. `Voting Rep` — is NOT excluded from
- *   this promotion: they'd never have classified `LF Staff` anyway under the narrowed rule, so
- *   nothing is silently swallowed by promoting them.) If every member already has a real, known
- *   status (including a committee where everyone is `None` — the common case for a committee
- *   without voting enabled), no member is promoted; this committee's mock output just won't
- *   include an `Emeritus` row. This trades away some demo value (Emeritus is what proves the
- *   classifier's Emeritus short-circuit and the `active_count` exclusion) for the stronger
- *   guarantee of never relabeling a real, recorded status — the same trade this file makes for
- *   tenure data (see the "Known trade-off" note below).
+ *   `status`) is promoted — but only that one case, and never a real `LF Staff` member whose voting
+ *   status is `Observer` or `None`: promoting one to a fabricated Emeritus
+ *   profile would render the wrong chip (`Emeritus` instead of `LF Staff`) and, since Emeritus is
+ *   deliberately not rate-excluded, feed its fabricated high-invite/near-zero-attendance numbers
+ *   into `attendance_rate` — the exact depression the LF Staff carve-out exists to prevent. (A real
+ *   `LF Staff` member with no real voting status who gets organically hash-assigned a real voting
+ *   seat — `Voting Rep` or `Alternate Voting Rep`, never `Observer` (`organicVotingStatus` can still
+ *   land on `Observer`, which stays excluded here just like a real one) — is NOT excluded from this
+ *   promotion: they'd never have classified `LF Staff` anyway under the narrowed rule, so nothing is
+ *   silently swallowed by promoting them.)
+ *   If every member already has a real, known status (including a committee where everyone is
+ *   `None` — the common case for a committee without voting enabled), no member is promoted; this
+ *   committee's mock output just won't include an `Emeritus` row. This trades away some demo value
+ *   (Emeritus is what proves the classifier's Emeritus short-circuit and the `active_count`
+ *   exclusion) for the stronger guarantee of never relabeling a real, recorded status — the same
+ *   trade this file makes for tenure data (see the "Known trade-off" note below).
  * - "The Orlin case": eligible candidates exclude every `Emeritus` member (real or promoted) and
- *   every real `LF Staff` + `Observer` member (LFXV2-3101) — the Emeritus and LF Staff profiles
- *   both always take precedence in `classifyCommitteeEngagement`, so either candidate would
- *   silently swallow the slot without ever rendering it as the intended demo tier. Among the rest,
+ *   every `LF Staff`-role member whose voting status is `Observer` (real or organic) or a real
+ *   `None` — the Emeritus and LF Staff profiles both always take
+ *   precedence in `classifyCommitteeEngagement`, so either candidate would silently swallow the slot
+ *   without ever rendering it as the intended demo tier. Among the rest,
  *   the most-recently real-joined member is used *only* if their tenure is at least `minOrlinTenureDays` *and* less
  *   than `WINDOW_30D_DAYS` — the upper bound keeps this specifically the "joined *recently*" case
  *   (the ticket's literal example) rather than any tenured member who happens to clear the lower
@@ -148,49 +153,53 @@ function planRosterIdentities(committeeUid: string, sortedMembers: CommitteeMemb
   const votingStatuses = realVotingStatuses.map(
     (real, index) => real ?? organicVotingStatus(hashToUnitInterval(`${committeeUid}:${sortedMembers[index]?.uid}:voting-status`))
   );
-  // `LF Staff` + `Observer` voting status (LFXV2-3101, narrowed in a follow-up review per Jordan
-  // Evans — a real Voting Rep or Alternate Voting Rep who happens to be LF Staff is a genuine
-  // participant and must NOT be excluded here) always classifies `LF Staff` regardless of
-  // attendance numbers, exactly like Emeritus always classifies `Emeritus` — a matching member
-  // assigned the Emeritus-fallback promotion, the Orlin slot, or a reserved Inactive/Low/Medium
-  // demo pattern would silently swallow whichever one it's assigned to (and, for the Emeritus
-  // promotion specifically, would also let a fabricated high-invite/near-zero-attendance Emeritus
-  // profile feed the rate sum, since Emeritus is deliberately NOT rate-excluded — the exact
-  // depression this ticket exists to prevent). Hoisted above the Emeritus-fallback block below so
-  // that block can exclude it too. `MEMBER_ROLE` is always the roster's real role (see the module
-  // doc), so this is a real exclusion, not a hash-derived one — `votingStatuses[index]` may still
-  // be organic/hash-derived when the member has no real recorded status, exactly like the
-  // production check (`isLfStaffObserverSeat` in `committee-engagement-classifier.utils.ts`) treats
-  // a real-or-fallback `MEMBER_VOTING_STATUS` identically either way.
-  const isLfStaffObserver = (index: number): boolean =>
-    sortedMembers[index]?.role?.name === CommitteeMemberRole.LF_STAFF && votingStatuses[index] === CommitteeMemberVotingStatus.OBSERVER;
+  // `LF Staff` + no real voting seat (Observer, or no voting status at all; a real Voting Rep or
+  // Alternate Voting Rep who happens to be LF Staff is a genuine participant and must NOT be
+  // excluded here) always classifies `LF Staff` regardless of attendance numbers, exactly like
+  // Emeritus always classifies `Emeritus` — a matching member assigned the Emeritus-fallback
+  // promotion, the Orlin slot, or a reserved Inactive/Low/Medium demo pattern would silently
+  // swallow whichever one it's assigned to (and, for the Emeritus promotion specifically, would
+  // also let a fabricated high-invite/near-zero-attendance Emeritus profile feed the rate sum,
+  // since Emeritus is deliberately NOT rate-excluded — the exact depression this ticket exists to
+  // prevent). Hoisted above the Emeritus-fallback block below so that block can exclude it too.
+  // `MEMBER_ROLE` is always the roster's real role (see the module doc), so this is a real
+  // exclusion, not a hash-derived one — `votingStatuses[index]` may still be organic/hash-derived
+  // when the member has no real recorded status, exactly like the production check
+  // (`isLfStaffNonVotingSeat`, imported from `committee-engagement-classifier.utils.ts` rather than
+  // re-derived here so the two can't drift apart again) treats a real-or-fallback
+  // `MEMBER_VOTING_STATUS` identically either way — `Observer` (real or organic, per
+  // `organicVotingStatus` below) or a real `None` (never organic — `organicVotingStatus` never
+  // produces it).
+  const isLfStaffNonVoting = (index: number): boolean =>
+    isLfStaffNonVotingSeat({ role: sortedMembers[index]?.role?.name, votingStatus: votingStatuses[index] });
 
   // The two fallback assignments below both prefer "the first member with no real data of the
   // relevant kind" — on a roster with no real data at all (e.g. a bare test fixture), that's the
   // same index for both, so the second fallback must skip whichever index the first one already
   // claimed, or one member would need to simultaneously be Emeritus and the Orlin case. Both also
-  // skip any real LF Staff + Observer member — see the comment on `isLfStaffObserver` above.
+  // skip any LF Staff-role member whose voting status (real or organic) is non-voting — see the
+  // comment on `isLfStaffNonVoting` above.
   let emeritusFallbackIndex = -1;
   if (!votingStatuses.includes(CommitteeMemberVotingStatus.EMERITUS)) {
-    emeritusFallbackIndex = realVotingStatuses.findIndex((real, index) => real === null && !isLfStaffObserver(index));
+    emeritusFallbackIndex = realVotingStatuses.findIndex((real, index) => real === null && !isLfStaffNonVoting(index));
     if (emeritusFallbackIndex !== -1) votingStatuses[emeritusFallbackIndex] = CommitteeMemberVotingStatus.EMERITUS;
   }
 
   const isEmeritus = (index: number): boolean => votingStatuses[index] === CommitteeMemberVotingStatus.EMERITUS;
 
   let orlinIndex = realJoinedDaysAgo.reduce<number | null>((mostRecentIndex, days, index) => {
-    if (days === null || days < minOrlinTenureDays || days >= WINDOW_30D_DAYS || isEmeritus(index) || isLfStaffObserver(index)) return mostRecentIndex;
+    if (days === null || days < minOrlinTenureDays || days >= WINDOW_30D_DAYS || isEmeritus(index) || isLfStaffNonVoting(index)) return mostRecentIndex;
     if (mostRecentIndex === null || days < (realJoinedDaysAgo[mostRecentIndex] as number)) return index;
     return mostRecentIndex;
   }, null);
   if (orlinIndex === null) {
-    const fallbackIndex = realJoinedDaysAgo.findIndex((days, index) => days === null && !isEmeritus(index) && !isLfStaffObserver(index));
+    const fallbackIndex = realJoinedDaysAgo.findIndex((days, index) => days === null && !isEmeritus(index) && !isLfStaffNonVoting(index));
     orlinIndex = fallbackIndex === -1 ? null : fallbackIndex;
   }
 
   const demoAttendanceIndices = sortedMembers
     .map((_, index) => index)
-    .filter((index) => index !== orlinIndex && !isEmeritus(index) && !isLfStaffObserver(index));
+    .filter((index) => index !== orlinIndex && !isEmeritus(index) && !isLfStaffNonVoting(index));
 
   return {
     identities: sortedMembers.map((_, index) => ({
@@ -245,8 +254,8 @@ interface AttendanceProfile {
 /**
  * The three attendance *patterns* (never identity) demonstrating Inactive/Low/Medium, assigned in
  * `RosterPlan.demoAttendanceIndices` order (not fixed sorted positions — see `planRosterIdentities`
- * for why the assignable set excludes the Orlin slot, any real-Emeritus member, and any real
- * `LF Staff` + `Observer` member).
+ * for why the assignable set excludes the Orlin slot, any real-Emeritus member, and any `LF Staff`-
+ * role member whose voting status is `Observer` (real or organic) or a real `None`).
  */
 const DEMO_ATTENDANCE_PROFILES: Omit<AttendanceProfile, 'joinedDaysAgo'>[] = [
   { invitationRate: 0.8, attendanceRateOverride: 0 }, // Inactive: invited but never attends.

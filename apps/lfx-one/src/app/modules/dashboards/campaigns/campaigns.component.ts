@@ -83,8 +83,9 @@ export class CampaignsComponent {
    * No brief in flight, and nothing to say about one.
    *
    * Shared by the pre-handoff state and the flag-off response on purpose: both mean "render no
-   * persistence UI at all". A disabled cutover is the default in every environment, so it must
-   * look exactly like the ordinary case rather than like a degraded one.
+   * persistence UI at all". A disabled cutover is an ordinary deployment state — the chart
+   * enables it since #1881, but any override or un-rolled pod still reports off — so it must look
+   * exactly like the ordinary case rather than like a degraded one.
    *
    * Declared before briefPersistence because a class field cannot read one declared after it.
    */
@@ -469,6 +470,22 @@ export class CampaignsComponent {
    * about the response those rows came from.
    */
   protected readonly briefCampaignsToggleEnabled = signal(false);
+  /**
+   * Whether this deployment can create a Demand Gen Google campaign — `null` while unknown.
+   *
+   * Unlike `briefCampaignsToggleEnabled` above this is NOT reset to `false` on the error and
+   * pre-request arms, and the asymmetry is deliberate. That flag guards a control the user has
+   * not touched, so a false negative merely withholds a button. This one is read by the
+   * Implementation tab's draft restore, where a false negative REWRITES the user's saved
+   * selection — so the arms that mean "no answer" must say `null`, not "off".
+   *
+   * It also stays `null` on the whole Planning → Implementation path, because the only writer is
+   * `loadBriefCampaigns` and that runs on Optimize entry. The tab treats `null` as "withhold the
+   * control but preserve the draft", which is the correct behaviour for an unanswered question;
+   * the server-side predicate reports `true` whenever the legacy creator still owns creation, so
+   * the common case is not a silently missing control.
+   */
+  protected readonly briefCampaignsDemandGenEnabled = signal<boolean | null>(null);
 
   /**
    * Generation counter for the campaign-list read — the same mechanism as `emailSearchGeneration`,
@@ -782,6 +799,7 @@ export class CampaignsComponent {
         this.briefCampaigns.set(null);
         this.briefCampaignsStale.set(false);
         this.briefCampaignsToggleEnabled.set(false);
+        this.briefCampaignsDemandGenEnabled.set(null);
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
         // set would report the previous foundation's outage against a foundation never queried.
         this.briefCampaignsUnavailable.set(false);
@@ -1274,6 +1292,7 @@ export class CampaignsComponent {
     this.briefCampaignsStale.set(false);
     this.briefCampaignsUnavailable.set(false);
     this.briefCampaignsToggleEnabled.set(false);
+    this.briefCampaignsDemandGenEnabled.set(null);
 
     if (projectSlug === '' || briefId === null || briefId === '') {
       // No brief id means nothing was persisted this session and no restore supplied one, so
@@ -1295,6 +1314,7 @@ export class CampaignsComponent {
           this.briefCampaignsStale.set(result.possiblyStale);
           this.briefCampaignsUnavailable.set(false);
           this.briefCampaignsToggleEnabled.set(result.statusToggleEnabled);
+          this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
         },
         error: () => {
           if (!isCurrent()) {
@@ -1306,6 +1326,7 @@ export class CampaignsComponent {
           this.briefCampaignsStale.set(false);
           this.briefCampaignsUnavailable.set(true);
           this.briefCampaignsToggleEnabled.set(false);
+          this.briefCampaignsDemandGenEnabled.set(null);
         },
       });
   }
@@ -1401,7 +1422,8 @@ export class CampaignsComponent {
     // Only once persistence is KNOWN to be on. The flag lives on the server, so the first save
     // of a session cannot know its state until the response arrives — and showing "Saving this
     // brief…" in the meantime would put a persistence banner in front of every user in every
-    // environment where the cutover is still dark, which is all of them by default. The cost is
+    // environment where the cutover is still dark — no longer the chart default since #1881, but
+    // still the state of any override or un-rolled deployment. The cost is
     // that the first save shows no in-flight banner, only its outcome; every later one in the
     // same session shows both.
     if (this.briefPersistenceEnabled()) {
@@ -1413,8 +1435,9 @@ export class CampaignsComponent {
       // previous brief's failure over the new save until its own request finished.
       //
       // Idle, not `saving`: the reason this branch shows no in-flight banner is unchanged — with
-      // the cutover dark, which is the default everywhere, a spinner would appear for every user
-      // in an environment where nothing is being saved at all.
+      // the cutover dark, a spinner would appear for every user in an environment where nothing is
+      // being saved at all. No longer the chart default since #1881, but still the state of any
+      // override or un-rolled deployment.
       this.briefPersistence.set(this.idlePersistence);
     }
 

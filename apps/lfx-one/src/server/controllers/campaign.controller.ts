@@ -450,7 +450,8 @@ export class CampaignController {
     // The client therefore sees one `CampaignJobStatus` either way, with `result` set on the
     // in-process path and `platformResults` on the campaign-service path.
     //
-    // The flag is necessary but NOT sufficient to route. With CREATE off — still the default —
+    // The flag is necessary but NOT sufficient to route. With CREATE off — an ordinary
+    // deployment state, whether from a staged rollout override or a pod that has not rolled yet —
     // `createCampaign` above mints `job_<epoch>_<rand>` into the in-process map, and
     // campaign-service's `get-job` declares `Format(FormatUUID)` on `job_id`, so it would answer
     // 400 for every one of them. Flag-only routing would therefore break all polling the moment
@@ -510,8 +511,8 @@ export class CampaignController {
    * `/briefs/{brief_id}` and cannot be cut over until a persisted brief id exists.
    *
    * With the flag off this answers `{ enabled: false }` at 200 rather than 404 or 501. It is not
-   * an error for the cutover to be dark — that is the default in every environment until it is
-   * switched on — and a non-2xx would make the client's error arm fire on the normal case,
+   * an error for the cutover to be dark — an ordinary deployment state, not a fault — and a
+   * non-2xx would make the client's error arm fire on that case,
    * training whoever sees it to ignore the one signal that matters.
    *
    * A FAILURE, by contrast, is reported as one. The temptation is to swallow it, because the

@@ -94,10 +94,15 @@ export enum ServerFeatureFlag {
    * "id-shape backstop" here, which is what an earlier version of this doc called it — for CREATE
    * it is a hard prerequisite.
    *
-   * That id-shape distinction is what makes an OVERLAPPING rollout safe: campaign-service mints
-   * UUID job ids and the legacy path mints `job_...`, so a poll is answered by whichever system
-   * actually owns that job regardless of which pod serves it. A CREATE-flag-on pod creating and a
-   * CREATE-flag-off pod polling still works.
+   * That id-shape distinction is what makes an overlapping rollout safe FOR JOB POLLING, and only
+   * for that: campaign-service mints UUID job ids and the legacy path mints `job_...`, so a poll
+   * is answered by whichever system actually owns that job regardless of which pod serves it. A
+   * CREATE-flag-on pod creating and a CREATE-flag-off pod polling still works.
+   *
+   * It says NOTHING about the rest of a campaign's life. The same overlap mints a UUID campaign
+   * that a pod without `CampaignServiceStatusToggle` refuses to pause — see that flag's doc below.
+   * Do not read this paragraph as "an overlapping CREATE rollout is safe"; it covers the poll and
+   * nothing else.
    *
    * That safety holds only while JOBS is on everywhere, and it is an ORDERING requirement, not
    * just a set of prerequisites: a pod with JOBS off does not apply the id-shape check at all and
@@ -178,7 +183,7 @@ export enum ServerFeatureFlag {
    * Microsoft — and a number here goes stale silently. See
    * `CAMPAIGN_SERVICE_STATUS_PLATFORMS` for why the narrowing is deliberate.
    *
-   * ROLLOUT OVERLAP IS SAFE HERE, unlike `CampaignServiceJobs`, and the reason is worth stating
+   * MISROUTING IS IMPOSSIBLE HERE, unlike `CampaignServiceJobs`, and the reason is worth stating
    * because that flag's hazard looks identical. Routing depends on the campaign id's SHAPE as
    * well as the flag, and the two id spaces are disjoint: campaign-service keys campaigns by
    * UUID, while the legacy path's ids are the ad platform's own numeric ids (`NUMERIC_ID_RE`).
@@ -188,9 +193,21 @@ export enum ServerFeatureFlag {
    * refuses with a clear error instead of dispatching to the wrong backend; it does not answer
    * a confident falsehood the way an off-pod job poll did.
    *
-   * The dependency that IS real: a campaign only has a UUID if it was created through
-   * campaign-service, so this is only useful once `CampaignServiceCreate` has been on long
-   * enough to produce rows. Enabling it earlier is harmless but inert.
+   * That is NARROWER than "an overlapping rollout is safe", which an earlier revision of this
+   * comment claimed. A refusal is well-formed and still a failure: the pod returns 400 from
+   * `campaign.controller.ts`, and pause is the primary cost-control lever on a spending
+   * campaign. So this flag must not share a rollout with `CampaignServiceCreate`.
+   *
+   * The dependency that makes the ordering free: a campaign only has a UUID if it was created
+   * through campaign-service, so this flag is INERT until `CampaignServiceCreate` has produced
+   * rows. Enabling it first therefore changes nothing observable, which is exactly why it ships
+   * first — and why the reverse order is the one that costs.
+   *
+   * IT DOES NOT COME BACK OFF. Once UUID campaigns exist the inertness above is spent: a UUID is
+   * permanent, and `campaign.controller.ts` refuses a pause for any UUID while this flag is off.
+   * Disabling CREATE stops NEW campaign-service campaigns but does nothing about the existing
+   * ones, so unlike `CampaignServiceJobs` there is no drain condition to wait out — turning this
+   * off removes the primary cost-control lever from campaigns that may still be spending.
    */
   CampaignServiceStatusToggle = 'LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE',
 

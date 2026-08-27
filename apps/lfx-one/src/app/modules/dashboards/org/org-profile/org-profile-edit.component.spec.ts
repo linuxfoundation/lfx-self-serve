@@ -1,13 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants';
 import type { OrgCanonicalRecord } from '@lfx-one/shared/interfaces';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgProfileService } from '@services/org-profile.service';
 import { MessageService } from 'primeng/api';
 import { Observable, Subject, take } from 'rxjs';
@@ -59,18 +56,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
 
     await TestBed.configureTestingModule({
       imports: [OrgProfileEditComponent],
-      providers: [
-        provideNoopAnimations(),
-        { provide: OrgProfileService, useValue: { uploadLogo: uploadLogoMock } },
-        // PR #1583 — gate the Upload Logo affordance on `org_lens_private_release`. Default the
-        // flag to `true` in this suite because every existing test exercises the upload path; the
-        // dedicated "flag disabled" describe below re-configures TestBed with the same mock
-        // returning `false` for the gating test.
-        {
-          provide: FeatureFlagService,
-          useValue: { getBooleanFlag: vi.fn((key: string) => signal(key === ORG_LENS_PRIVATE_RELEASE_FLAG ? true : false)) },
-        },
-      ],
+      providers: [provideNoopAnimations(), { provide: OrgProfileService, useValue: { uploadLogo: uploadLogoMock } }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(OrgProfileEditComponent);
@@ -95,7 +81,11 @@ describe('OrgProfileEditComponent — logo upload', () => {
     await fixture.whenStable();
 
     expect(uploadLogoMock).not.toHaveBeenCalled();
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Please choose a PNG, JPEG, or SVG image.' }));
+    // Summary matches the server-side wording for the same condition (415 -> 'Logo rejected'), so
+    // the user sees one voice whichever side catches it.
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: 'Logo rejected', detail: 'Please choose a PNG, JPEG, or SVG image.' })
+    );
   });
 
   it('accepts an SVG file and calls the service', async () => {
@@ -112,7 +102,8 @@ describe('OrgProfileEditComponent — logo upload', () => {
     await fixture.whenStable();
 
     expect(uploadLogoMock).not.toHaveBeenCalled();
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Logo must be 2MB or smaller.' }));
+    // Same wording as the server-side 413 branch for the identical condition.
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Logo too large', detail: 'Logo must be 2MB or smaller.' }));
   });
 
   it('clears the file input value so re-selecting the same file still fires change', () => {
@@ -181,16 +172,21 @@ describe('OrgProfileEditComponent — logo upload', () => {
     expect(status).not.toBeNull();
     expect(status?.getAttribute('aria-live')).toBe('polite');
     expect(status?.textContent).toContain('Uploading logo');
+    // The live region must sit outside the dropzone: an element with role="button" flattens its
+    // descendants in the accessibility tree, so a nested region is not reliably announced.
+    expect(root.querySelector('[data-testid="org-profile-edit-logo-dropzone"] [role="status"]')).toBeNull();
     // The spinner glyph carries no meaning of its own — it must not be read out alongside the copy.
-    expect(status?.querySelector('i')?.getAttribute('aria-hidden')).toBe('true');
+    expect(root.querySelector('[data-testid="org-profile-edit-logo-dropzone"] i')?.closest('[aria-hidden="true"]')).not.toBeNull();
     expect(root.querySelector('[data-testid="org-profile-edit-upload-logo-button"]')?.textContent).toContain('Uploading');
 
     uploadLogo$.next({ ...record, logoUrl: 'https://cdn.example.com/logo.png?v=2' });
     await fixture.whenStable();
     fixture.detectChanges();
 
-    // Region is removed once settled, so the next upload re-inserts it and is announced afresh.
-    expect(root.querySelector('[role="status"]')).toBeNull();
+    // The region itself persists — a live region has to be in the DOM before its content changes to
+    // be announced reliably — so it is the text that clears, and the next upload refills it.
+    expect(root.querySelector('[role="status"]')).not.toBeNull();
+    expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe('');
     expect(root.querySelector('[data-testid="org-profile-edit-upload-logo-button"]')?.textContent).toContain('Upload Logo');
   });
 
@@ -319,69 +315,143 @@ describe('OrgProfileEditComponent — logo upload', () => {
     expect(cancelled).toEqual([undefined]);
   });
 
-  /**
-   * PR #1583 — Company Logo Upload is gated on the per-feature wrapper `isOrgLensUploadLogoEnabled`,
-   * which today reads `org_lens_private_release` but is expected to graduate to its own key later.
-   * Assertions target the wrapper (the API surface the template and handlers consume), not the raw
-   * private flag reader — that way this suite still passes when the underlying key gets swapped.
-   * When the wrapper is on the Upload Logo button and hidden file input render and the dropzone
-   * accepts drops; when it's off the whole affordance collapses to a static preview so a general
-   * Org Lens viewer only sees the logo, not the write path.
-   */
-  describe('isOrgLensUploadLogoEnabled wrapper gating', () => {
-    it('renders the Upload Logo button and hidden file input when the wrapper is enabled (default suite mock)', () => {
-      fixture.detectChanges();
-      const root: HTMLElement = fixture.nativeElement;
+  it('renders the Upload Logo button, the hidden file input and the logo image', () => {
+    fixture.detectChanges();
+    const root: HTMLElement = fixture.nativeElement;
 
-      expect(fixture.componentInstance['isOrgLensUploadLogoEnabled']()).toBe(true);
-      expect(root.querySelector('[data-testid="org-profile-edit-upload-logo-button"]')).not.toBeNull();
-      expect(root.querySelector('[data-testid="org-profile-edit-logo-input"]')).not.toBeNull();
-    });
+    expect(root.querySelector('[data-testid="org-profile-edit-upload-logo-button"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="org-profile-edit-logo-input"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="org-profile-edit-logo-image"]')).not.toBeNull();
+  });
 
-    it('hides the Upload Logo button and file input and neutralizes drop-handling when the wrapper is disabled', async () => {
-      // Fresh TestBed with the SAME mock shape but returning `false` for the gating flag — mirrors
-      // the pattern in weekly-brief-card.component.spec.ts's flag-off block.
-      TestBed.resetTestingModule();
-      await TestBed.configureTestingModule({
-        imports: [OrgProfileEditComponent],
-        providers: [
-          provideNoopAnimations(),
-          { provide: OrgProfileService, useValue: { uploadLogo: uploadLogoMock } },
-          {
-            provide: FeatureFlagService,
-            useValue: { getBooleanFlag: vi.fn((key: string) => signal(key === ORG_LENS_PRIVATE_RELEASE_FLAG ? false : false)) },
-          },
-        ],
-      }).compileComponents();
+  it('does not reopen the file picker while an upload is already in flight', async () => {
+    fixture.detectChanges();
+    const clickSpy = vi.spyOn(fixture.componentInstance['logoInput']()!.nativeElement, 'click');
 
-      const disabledFixture = TestBed.createComponent(OrgProfileEditComponent);
-      disabledFixture.componentRef.setInput('record', record);
-      await disabledFixture.whenStable();
-      disabledFixture.detectChanges();
-      const root: HTMLElement = disabledFixture.nativeElement;
+    fixture.componentInstance['onLogoFileSelected']({
+      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+    } as unknown as Event);
+    await fixture.whenStable();
+    clickSpy.mockClear();
 
-      expect(disabledFixture.componentInstance['isOrgLensUploadLogoEnabled']()).toBe(false);
-      expect(root.querySelector('[data-testid="org-profile-edit-upload-logo-button"]')).toBeNull();
-      expect(root.querySelector('[data-testid="org-profile-edit-logo-input"]')).toBeNull();
+    // busy() is true while uploadLogo is pending, so the trigger must be inert.
+    fixture.componentInstance['triggerLogoUpload']();
+    expect(clickSpy).not.toHaveBeenCalled();
 
-      // The static-preview shell still renders the logo image itself so read-only viewers keep the
-      // context; only the write affordance is stripped.
-      expect(root.querySelector('[data-testid="org-profile-edit-logo-image"]')).not.toBeNull();
+    uploadLogo$.next({ ...record, logoUrl: 'https://cdn.example.com/logo.png?v=3' });
+    await fixture.whenStable();
 
-      // Defense-in-depth: even if a synthetic drop / click / file-select reaches the handlers, the
-      // component-level gate must not call through to the service.
-      uploadLogoMock.mockClear();
-      const file = pngFile();
-      disabledFixture.componentInstance['onLogoDrop']({
-        preventDefault: vi.fn(),
-        dataTransfer: { files: [file] } as unknown as DataTransfer,
-      } as unknown as DragEvent);
-      disabledFixture.componentInstance['triggerLogoUpload']();
-      const input = { files: [file], value: 'logo.png' } as unknown as HTMLInputElement;
-      disabledFixture.componentInstance['onLogoFileSelected']({ target: input } as unknown as Event);
-      await disabledFixture.whenStable();
+    fixture.componentInstance['triggerLogoUpload']();
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+  });
 
-      expect(uploadLogoMock).not.toHaveBeenCalled();
-    });
+  it.each([
+    [413, 'Logo too large', 'Logo must be 2MB or smaller.'],
+    [403, 'Permission denied', 'You no longer have permission to edit this organization.'],
+  ])('maps status %i to non-retryable copy', async (status, summary, detail) => {
+    fixture.detectChanges();
+    fixture.componentInstance['onLogoFileSelected']({
+      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+    } as unknown as Event);
+    await fixture.whenStable();
+
+    uploadLogo$.error(new HttpErrorResponse({ status }));
+    await fixture.whenStable();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary, detail }));
+  });
+
+  // The BFF serialises errors as `{ error, code, ... }` (BaseApiError.toResponse) and
+  // ServiceValidationError adds `errors[]` — there is no top-level `message` key, so these
+  // fixtures mirror the real contract rather than a convenient one.
+  it.each([
+    ['top-level error string', { error: 'SVG upload cannot be processed: unsupported CSS selector "rect"', code: 'VALIDATION_ERROR' }],
+    [
+      'field-level validation detail',
+      {
+        error: 'Validation failed for body',
+        code: 'VALIDATION_ERROR',
+        errors: [{ field: 'body', message: 'SVG upload cannot be processed: unsupported CSS property "d"' }],
+      },
+    ],
+    ['plain string body', 'SVG upload cannot be processed: unterminated rule'],
+  ])('surfaces the upstream reason (%s) when the sanitizer rejects an SVG', async (_label, body) => {
+    fixture.detectChanges();
+    fixture.componentInstance['onLogoFileSelected']({
+      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+    } as unknown as Event);
+    await fixture.whenStable();
+
+    uploadLogo$.error(new HttpErrorResponse({ status: 400, error: body }));
+    await fixture.whenStable();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: 'Logo rejected', detail: expect.stringContaining('SVG upload cannot be processed') })
+    );
+    expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('Please try again') }));
+  });
+
+  it('falls back to actionable guidance when a rejection carries no usable reason', async () => {
+    fixture.detectChanges();
+    fixture.componentInstance['onLogoFileSelected']({
+      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+    } as unknown as Event);
+    await fixture.whenStable();
+
+    // Angular synthesizes a non-empty `error.message` ("Http failure response for …"), which must
+    // not reach the toast — the user needs guidance, not an HTTP debugging string.
+    uploadLogo$.error(new HttpErrorResponse({ status: 415 }));
+    await fixture.whenStable();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Logo rejected', detail: 'This image could not be used. Try a different file.' }));
+    expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('Http failure response') }));
+  });
+
+  // The BFF gives these their own actionable copy, so routing them through the rejection branch
+  // would print a summary that contradicts the detail and send the user off to swap a file that
+  // was never at fault (org-identity.controller.ts).
+  it.each([
+    [409, 'This organization was updated elsewhere. Refresh the page and try again.'],
+    [404, 'Organization not found'],
+  ])('does not label status %i as a rejected logo', async (status, serverMessage) => {
+    fixture.detectChanges();
+    fixture.componentInstance['onLogoFileSelected']({
+      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+    } as unknown as Event);
+    await fixture.whenStable();
+
+    uploadLogo$.error(new HttpErrorResponse({ status, error: { error: serverMessage } }));
+    await fixture.whenStable();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Upload failed', detail: serverMessage }));
+    expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Logo rejected' }));
+  });
+
+  it.each([[408], [429], [0]])('keeps the retry prompt for transient status %i', async (status) => {
+    fixture.detectChanges();
+    fixture.componentInstance['onLogoFileSelected']({
+      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+    } as unknown as Event);
+    await fixture.whenStable();
+
+    // 408 and 429 are 4xx but retryable — this server mints 408 for its own upstream abort, so
+    // labelling either "Logo rejected" would tell the user a fine file is permanently broken.
+    uploadLogo$.error(new HttpErrorResponse({ status }));
+    await fixture.whenStable();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Upload failed', detail: 'Unable to upload logo. Please try again.' }));
+  });
+
+  it('still prompts a retry for a server-side failure', async () => {
+    fixture.detectChanges();
+    fixture.componentInstance['onLogoFileSelected']({
+      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+    } as unknown as Event);
+    await fixture.whenStable();
+
+    uploadLogo$.error(new HttpErrorResponse({ status: 502 }));
+    await fixture.whenStable();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Upload failed', detail: 'Unable to upload logo. Please try again.' }));
   });
 });
