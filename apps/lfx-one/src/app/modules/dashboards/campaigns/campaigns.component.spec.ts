@@ -1180,6 +1180,47 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
       }
 
+      /**
+       * The first-create path, which is the one that was broken.
+       *
+       * `onProceedToImplementation` sets the tab DIRECTLY rather than through `selectTab`, so the
+       * Optimize-entry load never ran and the capability stayed `null` — the Implementation tab
+       * then withheld Demand Gen on every deployment, including ones that support it.
+       *
+       * Asserted through the PARENT rather than by setting the tab's input, because the input
+       * always worked; nothing populated it. A test that sets `demandGenEnabled` by hand passes
+       * against exactly the bug this covers.
+       */
+      it('loads the demand-gen capability on a first-create Planning to Implementation flow', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        // The real value, not `null`: the tab renders the control only on an explicit `true`.
+        expect(
+          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
+        ).toBe(true);
+      });
+
+      /**
+       * The read is best-effort: a failure must leave the capability UNKNOWN rather than `false`,
+       * because the tab's draft restore clears a saved Demand Gen selection on an explicit `false`
+       * and a failed read has established nothing.
+       */
+      it('leaves the capability unknown when the capability read fails', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        expect(
+          (fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()
+        ).toBeNull();
+      });
+
       it('clears the previous brief campaigns when the foundation changes', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')

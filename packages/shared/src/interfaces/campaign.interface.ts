@@ -1713,10 +1713,18 @@ export interface CampaignListResult {
   /**
    * Whether THIS deployment can actually create a Demand Gen Google campaign.
    *
-   * Same reasoning as `statusToggleEnabled`, for a different capability: the create route refuses
-   * `demand-gen` unless `LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` is on, and the chart leaves that
-   * flag unset. Nothing in the create request tells the client that in advance, so without this
-   * field the Implementation tab offers a Demand Gen checkbox whose every submission is refused.
+   * Same reasoning as `statusToggleEnabled`, for a different capability. Nothing in the create
+   * request tells the client in advance, so without this field the Implementation tab offers a
+   * Demand Gen checkbox whose every submission is refused.
+   *
+   * NOT the `LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` flag, and the difference matters. That flag
+   * gates the campaign-service create path only; while the CREATE/BRIEFS/JOBS cutover is dark the
+   * legacy creator owns creation and makes Demand Gen campaigns regardless of it. So this is
+   * `true` across the whole staged CREATE-off rollout, and `false` only in the narrow window
+   * where campaign-service owns creation and has not been told it understands
+   * `googleAdsConfig.channel`. See `canCreateDemandGen` in `campaign-service.service.ts`, which
+   * is the authoritative computation — simplifying this back to the raw flag would hide a
+   * working legacy option for the entire rollout.
    *
    * Worse than a plain dead end, because the two refusals disagree: selecting Search AND Demand
    * Gen is refused with "deselect one and create it", and following that advice lands on the

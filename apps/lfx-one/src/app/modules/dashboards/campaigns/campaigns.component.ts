@@ -910,6 +910,55 @@ export class CampaignsComponent {
       // since the last look — must not render with a stale status the user then acts on.
       this.loadBriefCampaigns();
     }
+    if (tab === 'implementation') {
+      this.loadCreateCapabilities();
+    }
+  }
+
+  /**
+   * Read the create-time capabilities the Implementation tab gates controls on.
+   *
+   * Separate from `loadBriefCampaigns` deliberately, even though both read the same response
+   * today. That one is an Optimize concern: it needs a persisted `briefId`, it re-fetches on
+   * every entry because a status can go stale, and it clears its rows first. None of that is
+   * true here — the capability is a deployment fact, it is needed BEFORE a campaign exists, and
+   * on the first-create path there may be no brief id at all.
+   *
+   * So this asks only when it can, and stays silent otherwise: the tab treats an unanswered
+   * capability as `null` and withholds the control without touching the user's draft. That is
+   * the correct reading of "not known", and it is why this is safe to skip.
+   */
+  private loadCreateCapabilities(): void {
+    this.loadCreateCapabilitiesFor(this.briefPersistence().briefId);
+  }
+
+  /**
+   * The same read against an explicitly supplied brief id.
+   *
+   * Needed because the first-create path has no id on the signal yet: the Implementation tab is
+   * opened before `persistBrief` resolves, so reading `briefPersistence()` at entry finds `null`
+   * and the entry-time call guards itself out. The persist success arm passes its own id here.
+   */
+  private loadCreateCapabilitiesFor(briefId: string | null): void {
+    const projectSlug = this.activeFoundationSlug();
+    if (projectSlug === '' || !briefId) return;
+
+    const generation = this.briefCampaignsGeneration;
+    this.campaignService
+      .listBriefCampaigns(projectSlug, briefId)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        // ONLY the capability. This must not touch `briefCampaigns` or the staleness flag —
+        // those belong to Optimize's own read, and writing them from here would render a list
+        // the operator did not ask for and cannot see.
+        next: (result) => {
+          if (generation !== this.briefCampaignsGeneration) return;
+          this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
+        },
+        // Left `null` rather than set `false`: a failed read has not established that the
+        // capability is off, and `false` would clear a restored draft's selection.
+        error: () => undefined,
+      });
   }
 
   /**
@@ -973,6 +1022,9 @@ export class CampaignsComponent {
     this.implementationDraft.set(null);
     this.briefOutput.set(brief);
     this.selectedTab.set('implementation');
+    // Also here, because this path sets the tab DIRECTLY rather than through `selectTab` — which
+    // is exactly why the capability never loaded on a first create.
+    this.loadCreateCapabilities();
     if (alreadyPersisted) {
       // Bump the generation even though nothing is being saved. `persistBrief` normally does
       // this as its first act, and skipping the save must not also skip the INVALIDATION: a
@@ -1607,6 +1659,10 @@ export class CampaignsComponent {
           // as a `message` on the SAVED state rather than a new status or an `error`: describing a
           // durable write as failed would be its own lie, and the banner already renders a message
           // in this state.
+          // The capability read needs a brief id, and THIS is where a first create gets one — the
+          // Implementation tab opened before the persist resolved, so the entry-time attempt was
+          // guarded out. Without this the first-create path never learns the capability at all.
+          this.loadCreateCapabilitiesFor(result.briefId);
           this.briefPersistence.set({
             status: 'saved',
             briefId: result.briefId,
