@@ -119,58 +119,6 @@ export class PublicMeetingController {
       // client. m2mToken is still active on req.bearerToken.
       const parent = await this.resolveParentProject(req, project);
 
-      // Resolve host-key visibility (organizer OR project writer OR committee writer). This sets
-      // meeting.organizer (used for the registrant counts below) and meeting.can_view_host_key,
-      // and strips host_key when the user isn't authorized — the single source of truth for the
-      // gate across every response branch.
-      //
-      // Guard on originalToken, not just isAuthenticated: this is an optional-auth route, so a
-      // token-refresh failure can leave isAuthenticated() true with NO user token captured
-      // (originalToken === undefined) while req.bearerToken still holds the M2M token. Running the
-      // access check in that state would evaluate the application identity — which may hold writer
-      // relations — and leak the host key. Fail closed unless we hold the user's own token.
-      if (isAuthenticated && originalToken !== undefined) {
-        // Temporarily restore user's original token for the access check
-        req.bearerToken = originalToken;
-
-        try {
-          await applyHostKeyVisibility(req, this.accessCheckService, meeting);
-
-          // host_key is no longer on the v2 meeting API response — fetch it from the
-          // separately indexed v1_meeting_host_credentials object (FGA-gated by host relation).
-          // Must run while the user's own token is active, before restoring M2M below.
-          if (meeting.can_view_host_key) {
-            try {
-              const hostKey = await this.meetingService.getMeetingHostKey(req, id);
-              if (hostKey) {
-                meeting.host_key = hostKey;
-              }
-            } catch (error) {
-              logger.warning(req, 'get_public_meeting_by_id', 'Failed to fetch host key credentials, continuing without host key', {
-                meeting_id: id,
-                err: error,
-              });
-            }
-          }
-        } catch (error) {
-          // If the access check fails, log but fail closed (no organizer, no host key)
-          logger.warning(req, 'get_public_meeting_by_id', 'Failed to check host key access, continuing with no access', {
-            err: error,
-            meeting_id: id,
-          });
-          meeting.organizer = false;
-          meeting.can_view_host_key = false;
-          stripHostKey(meeting);
-        }
-
-        // Restore M2M token for subsequent operations (e.g., fetching public join URL)
-        req.bearerToken = m2mToken;
-      } else {
-        meeting.organizer = false;
-        meeting.can_view_host_key = false;
-        stripHostKey(meeting);
-      }
-
       // Registrant counts are no longer derived here — the full roster read was purely to derive
       // two integers with no consumer once the join page holds its own roster (GH-1731).
 
