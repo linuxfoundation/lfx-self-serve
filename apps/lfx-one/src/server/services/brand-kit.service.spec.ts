@@ -15,7 +15,9 @@ const guildMocks = vi.hoisted(() => ({
   getRawEventPayloads: vi.fn(),
 }));
 const objectStoreMocks = vi.hoisted(() => ({
-  putObjectIfAbsent: vi.fn(),
+  putContentAddressedObject: vi.fn(),
+  listObjects: vi.fn(),
+  getObject: vi.fn(),
 }));
 const loggerMocks = vi.hoisted(() => ({
   startOperation: vi.fn(() => 0),
@@ -24,6 +26,9 @@ const loggerMocks = vi.hoisted(() => ({
   warning: vi.fn(),
   debug: vi.fn(),
   info: vi.fn(),
+}));
+const projectMocks = vi.hoisted(() => ({
+  getProjectById: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/utils', async () => {
@@ -43,11 +48,18 @@ vi.mock('./guild.service', () => ({
 }));
 vi.mock('./object-store.service', () => ({
   ObjectStoreService: class {
-    public putObjectIfAbsent = objectStoreMocks.putObjectIfAbsent;
+    public putContentAddressedObject = objectStoreMocks.putContentAddressedObject;
+    public listObjects = objectStoreMocks.listObjects;
+    public getObject = objectStoreMocks.getObject;
   },
 }));
 vi.mock('./logger.service', () => ({
   logger: loggerMocks,
+}));
+vi.mock('./project.service', () => ({
+  ProjectService: class {
+    public getProjectById = projectMocks.getProjectById;
+  },
 }));
 
 import type { Request } from 'express';
@@ -99,12 +111,17 @@ function buildEnvelope(overrides: Record<string, unknown> = {}): Record<string, 
   };
 }
 
+/** The run's LFX project uid — the storage partition, resolved server-side. */
+const PROJECT_UID = 'proj-uid-1';
+
 describe('BrandKitService', () => {
   let service: BrandKitService;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    objectStoreMocks.putObjectIfAbsent.mockResolvedValue(true);
+    objectStoreMocks.putContentAddressedObject.mockResolvedValue(true);
+    // Default: the caller holds the writer grant on the run's project.
+    projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT_UID, slug: 'testorbit', writer: true });
     service = new BrandKitService();
   });
 
@@ -134,18 +151,21 @@ describe('BrandKitService', () => {
   });
 
   describe('getResult', () => {
-    it('returns pending when no envelope is present in the events', async () => {
+    it('returns pending when no envelope is present in the events — and resolves no project', async () => {
       guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'runtime_start' })]);
 
-      await expect(service.getResult(req, 's')).resolves.toEqual({ status: 'pending' });
-      expect(objectStoreMocks.putObjectIfAbsent).not.toHaveBeenCalled();
+      await expect(service.getResult(req, 's', PROJECT_UID)).resolves.toEqual({ status: 'pending' });
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+      // A pending poll must cost no upstream lookups — the entitlement check
+      // runs only when there is something to persist.
+      expect(projectMocks.getProjectById).not.toHaveBeenCalled();
     });
 
     it('returns ready with the validated document from a tool-result envelope', async () => {
       const envelope = buildEnvelope();
       guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: { envelope_json: JSON.stringify(envelope) } })]);
 
-      const result = await service.getResult(req, 's');
+      const result = await service.getResult(req, 's', PROJECT_UID);
 
       expect(result.status).toBe('ready');
       expect(result.documentMarkdown).toBe(envelope['document_markdown']);
@@ -155,37 +175,128 @@ describe('BrandKitService', () => {
       expect(result.intakeMode).toBe('form');
     });
 
-    it('persists the ready document under the content-addressed key and returns the receipt', async () => {
+    it('persists the ready document under the SERVER-resolved project partition and returns the receipt', async () => {
       const envelope = buildEnvelope();
       guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: { envelope_json: JSON.stringify(envelope) } })]);
 
-      const result = await service.getResult(req, 's');
+      const result = await service.getResult(req, 's', PROJECT_UID);
 
-      const expectedKey = `brand-kit/testorbit/${envelope['content_sha256']}.md`;
-      expect(objectStoreMocks.putObjectIfAbsent).toHaveBeenCalledOnce();
-      const [, purpose, key, body, contentType, cacheControl] = objectStoreMocks.putObjectIfAbsent.mock.calls[0];
+      // The partition is the resolved LFX project uid — NEVER the envelope's
+      // own `project` slug ('testorbit'), which the read path never lists.
+      const expectedKey = `brand-kit/${PROJECT_UID}/${envelope['content_sha256']}.md`;
+      expect(projectMocks.getProjectById).toHaveBeenCalledWith(req, PROJECT_UID, true);
+      expect(objectStoreMocks.putContentAddressedObject).toHaveBeenCalledOnce();
+      const [, purpose, key, body, contentType, cacheControl, metadata] = objectStoreMocks.putContentAddressedObject.mock.calls[0];
       expect(purpose).toBe('marketing-os-artifacts');
       expect(key).toBe(expectedKey);
       expect(Buffer.isBuffer(body)).toBe(true);
       expect(body.toString('utf8')).toBe(envelope['document_markdown']);
       expect(contentType).toBe('text/markdown; charset=utf-8');
       expect(cacheControl).toBe('private');
+      // Receipt fields ride as object metadata so the stored-document read
+      // path can rebuild the receipt without re-parsing the envelope.
+      expect(metadata).toEqual({ version: '1', 'intake-mode': 'form' });
 
       expect(result.persistence).toEqual({
         s3_key: expectedKey,
         content_sha256: envelope['content_sha256'],
-        project: 'testorbit',
+        project: PROJECT_UID,
         version: 1,
         intake_mode: 'form',
       });
     });
 
-    it('degrades gracefully when persistence fails: ready without a receipt, document intact', async () => {
-      objectStoreMocks.putObjectIfAbsent.mockRejectedValue(new Error('storage down'));
+    it('rewrites an identical document only for a STRICTLY newer draft, so its stored label and store timestamp follow the latest draft', async () => {
+      const v3Doc = buildDocument();
+      const v3 = buildEnvelope({ version: 3, document_markdown: v3Doc, content_sha256: createHash('sha256').update(v3Doc, 'utf8').digest('hex') });
+      guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: v3 })]);
+
+      await service.getResult(req, 's', PROJECT_UID);
+
+      const [, , , , , , , options] = objectStoreMocks.putContentAddressedObject.mock.calls[0];
+      const refresh = options.refreshMetadataWhen as (stored: Record<string, string>) => boolean;
+      // A draft that reproduces an earlier draft's bytes verbatim would
+      // otherwise be a silent no-op: the object would keep the FIRST draft's
+      // label and write time, and the read path orders by write time.
+      expect(refresh({ version: '1', 'intake-mode': 'form' })).toBe(true);
+      // Equal is not newer — the repeat write of every subsequent poll must
+      // stay a HEAD-only no-op instead of re-uploading the document each tick.
+      expect(refresh({ version: '3', 'intake-mode': 'form' })).toBe(false);
+      // And a label never moves backwards when an older run re-emits the same
+      // document (versions are per-run, so a second writer restarts at 1).
+      expect(refresh({ version: '7', 'intake-mode': 'form' })).toBe(false);
+      // An object stored before metadata existed counts as the documented
+      // default (v1) — the oldest possible draft, never a newer one.
+      expect(refresh({})).toBe(true);
+    });
+
+    it('never writes into a partition the caller cannot write: no writer grant, no persistence', async () => {
+      projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT_UID, slug: 'testorbit', writer: false });
+      const envelope = buildEnvelope();
+      guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: envelope })]);
+
+      const result = await service.getResult(req, 's', PROJECT_UID);
+
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+      // The document was already validated for its creator — they still get it.
+      expect(result.status).toBe('ready');
+      expect(result.persistence).toBeUndefined();
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_persist', expect.stringContaining('writer grant'), expect.any(Object));
+      expect(loggerMocks.error).not.toHaveBeenCalled();
+    });
+
+    it('does not persist a run with no project scope — a document can only land in a project it belongs to', async () => {
       const envelope = buildEnvelope();
       guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: envelope })]);
 
       const result = await service.getResult(req, 's');
+
+      expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+      expect(result.status).toBe('ready');
+      expect(result.persistence).toBeUndefined();
+    });
+
+    it.each(['../projects/other', 'proj/../../admin', 'proj-uid-1?access=all', 'proj-uid-1#frag'])(
+      'never spends the caller’s token resolving %j — a run scope is one path segment',
+      async (scope) => {
+        const envelope = buildEnvelope();
+        guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: envelope })]);
+
+        const result = await service.getResult(req, 's', scope);
+
+        // `getProjectById` interpolates the uid unencoded into
+        // `/projects/{uid}`; the shape gate runs BEFORE that request so a
+        // delimiter can never reshape the authenticated upstream lookup.
+        expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+        expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+        // Same degrade as every other persistence refusal: document intact.
+        expect(result.status).toBe('ready');
+        expect(result.persistence).toBeUndefined();
+        expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_persist', expect.stringContaining('single-segment'), expect.any(Object));
+        expect(loggerMocks.error).not.toHaveBeenCalled();
+      }
+    );
+
+    it('degrades an unresolvable project to no receipt at WARN, document intact', async () => {
+      projectMocks.getProjectById.mockRejectedValue(new Error('project service unavailable'));
+      const envelope = buildEnvelope();
+      guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: envelope })]);
+
+      const result = await service.getResult(req, 's', PROJECT_UID);
+
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+      expect(result.status).toBe('ready');
+      expect(result.persistence).toBeUndefined();
+      expect(loggerMocks.error).not.toHaveBeenCalled();
+    });
+
+    it('degrades gracefully when persistence fails: ready without a receipt, document intact', async () => {
+      objectStoreMocks.putContentAddressedObject.mockRejectedValue(new Error('storage down'));
+      const envelope = buildEnvelope();
+      guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: envelope })]);
+
+      const result = await service.getResult(req, 's', PROJECT_UID);
 
       expect(result.status).toBe('ready');
       expect(result.documentMarkdown).toBe(envelope['document_markdown']);
@@ -193,11 +304,11 @@ describe('BrandKitService', () => {
     });
 
     it('logs a persistence failure at WARN (graceful degradation), never ERROR', async () => {
-      objectStoreMocks.putObjectIfAbsent.mockRejectedValue(new Error('storage down'));
+      objectStoreMocks.putContentAddressedObject.mockRejectedValue(new Error('storage down'));
       const envelope = buildEnvelope();
       guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: envelope })]);
 
-      await service.getResult(req, 's');
+      await service.getResult(req, 's', PROJECT_UID);
 
       expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_persist', expect.stringContaining('Object-store write failed'), expect.any(Object));
       expect(loggerMocks.error).not.toHaveBeenCalled();
@@ -242,6 +353,122 @@ describe('BrandKitService', () => {
       guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'runtime_done', content: abridged })]);
 
       await expect(service.getResult(req, 's')).resolves.toEqual({ status: 'pending' });
+    });
+  });
+
+  describe('getStoredBrandKit', () => {
+    const doc = 'Stored Brand Kit document body';
+    const docSha = createHash('sha256').update(doc, 'utf8').digest('hex');
+    const key = `brand-kit/${PROJECT_UID}/${docSha}.md`;
+
+    it('returns null without listing when the partition is not a single safe key segment', async () => {
+      await expect(service.getStoredBrandKit(req, '../escape')).resolves.toBeNull();
+      expect(objectStoreMocks.listObjects).not.toHaveBeenCalled();
+    });
+
+    it('returns null when the partition holds no objects', async () => {
+      objectStoreMocks.listObjects.mockResolvedValue([]);
+
+      await expect(service.getStoredBrandKit(req, PROJECT_UID)).resolves.toBeNull();
+      expect(objectStoreMocks.listObjects).toHaveBeenCalledWith(req, 'marketing-os-artifacts', `brand-kit/${PROJECT_UID}/`);
+    });
+
+    it('returns the newest content-addressed object with its receipt rebuilt from metadata', async () => {
+      const olderDoc = 'Older stored document';
+      const olderSha = createHash('sha256').update(olderDoc, 'utf8').digest('hex');
+      const olderKey = `brand-kit/${PROJECT_UID}/${olderSha}.md`;
+      objectStoreMocks.listObjects.mockResolvedValue([
+        { key: olderKey, lastModified: new Date('2026-08-01T00:00:00Z') },
+        { key, lastModified: new Date('2026-08-15T00:00:00Z') },
+        // Non-document keys in the partition are ignored, whatever their date.
+        { key: `brand-kit/${PROJECT_UID}/notes.txt`, lastModified: new Date('2026-08-19T00:00:00Z') },
+      ]);
+      objectStoreMocks.getObject.mockResolvedValue({ body: doc, metadata: { version: '3', 'intake-mode': 'conversational' } });
+
+      const stored = await service.getStoredBrandKit(req, PROJECT_UID);
+
+      expect(objectStoreMocks.getObject).toHaveBeenCalledOnce();
+      expect(objectStoreMocks.getObject).toHaveBeenCalledWith(req, 'marketing-os-artifacts', key);
+      expect(stored).toEqual({
+        documentMarkdown: doc,
+        receipt: { s3_key: key, content_sha256: docSha, project: PROJECT_UID, version: 3, intake_mode: 'conversational' },
+        storedAt: '2026-08-15T00:00:00.000Z',
+      });
+    });
+
+    it('serves the most recently WRITTEN kit even when an older object carries a higher draft version', async () => {
+      // Regression guard for a tempting "fix": ordering this partition by the
+      // envelope `version` in object metadata. Versions are scoped to one run
+      // (contract: per session lifecycle; carried across sessions only by a
+      // browser-local stored run), while the partition is project-scoped and
+      // shared — a second writer, a second browser or an expired stored run
+      // restarts at 1. Ordering by version would let this stale v5 outrank
+      // every kit anyone stores afterwards, forever.
+      const staleDoc = 'Kit stored months ago by another writer, revised five times';
+      const staleSha = createHash('sha256').update(staleDoc, 'utf8').digest('hex');
+      const staleKey = `brand-kit/${PROJECT_UID}/${staleSha}.md`;
+      objectStoreMocks.listObjects.mockResolvedValue([
+        { key: staleKey, lastModified: new Date('2026-06-01T00:00:00Z') },
+        { key, lastModified: new Date('2026-08-15T00:00:00Z') },
+      ]);
+      objectStoreMocks.getObject.mockResolvedValue({ body: doc, metadata: { version: '1', 'intake-mode': 'form' } });
+
+      const stored = await service.getStoredBrandKit(req, PROJECT_UID);
+
+      expect(objectStoreMocks.getObject).toHaveBeenCalledOnce();
+      expect(objectStoreMocks.getObject).toHaveBeenCalledWith(req, 'marketing-os-artifacts', key);
+      expect(stored?.receipt.s3_key).toBe(key);
+      expect(stored?.receipt.version).toBe(1);
+    });
+
+    it('defaults version/intake_mode for objects persisted before metadata was written', async () => {
+      objectStoreMocks.listObjects.mockResolvedValue([{ key, lastModified: new Date('2026-08-15T00:00:00Z') }]);
+      objectStoreMocks.getObject.mockResolvedValue({ body: doc, metadata: {} });
+
+      const stored = await service.getStoredBrandKit(req, PROJECT_UID);
+
+      expect(stored?.receipt.version).toBe(1);
+      expect(stored?.receipt.intake_mode).toBe('form');
+    });
+
+    it('skips an object whose bytes do not hash to its content-addressed key and serves the next candidate', async () => {
+      const tamperedKey = `brand-kit/${PROJECT_UID}/${'a'.repeat(64)}.md`;
+      objectStoreMocks.listObjects.mockResolvedValue([
+        { key: tamperedKey, lastModified: new Date('2026-08-16T00:00:00Z') },
+        { key, lastModified: new Date('2026-08-15T00:00:00Z') },
+      ]);
+      objectStoreMocks.getObject.mockResolvedValueOnce({ body: 'tampered bytes', metadata: { version: '9', 'intake-mode': 'form' } });
+      objectStoreMocks.getObject.mockResolvedValueOnce({ body: doc, metadata: { version: '2', 'intake-mode': 'form' } });
+
+      const stored = await service.getStoredBrandKit(req, PROJECT_UID);
+
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_stored', expect.stringContaining('do not match'), expect.any(Object));
+      expect(stored?.receipt.content_sha256).toBe(docSha);
+      expect(stored?.receipt.version).toBe(2);
+    });
+
+    it('lists the exact partition the write path wrote to — a persisted kit is never invisible to its project', async () => {
+      const envelope = buildEnvelope();
+      guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: envelope })]);
+      const written = await service.getResult(req, 's', PROJECT_UID);
+      const writtenKey = written.persistence?.s3_key as string;
+
+      objectStoreMocks.listObjects.mockResolvedValue([{ key: writtenKey, lastModified: new Date('2026-08-20T00:00:00Z') }]);
+      objectStoreMocks.getObject.mockResolvedValue({ body: envelope['document_markdown'], metadata: { version: '1', 'intake-mode': 'form' } });
+
+      const stored = await service.getStoredBrandKit(req, PROJECT_UID);
+
+      const [, , listedPrefix] = objectStoreMocks.listObjects.mock.calls[0];
+      expect(writtenKey.startsWith(listedPrefix)).toBe(true);
+      expect(stored?.receipt.s3_key).toBe(writtenKey);
+    });
+
+    it('degrades a storage failure to null at WARN (graceful degradation), never ERROR', async () => {
+      objectStoreMocks.listObjects.mockRejectedValue(new Error('bucket unreachable'));
+
+      await expect(service.getStoredBrandKit(req, PROJECT_UID)).resolves.toBeNull();
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'brand_kit_stored', expect.stringContaining('Object-store read failed'), expect.any(Object));
+      expect(loggerMocks.error).not.toHaveBeenCalled();
     });
   });
 });

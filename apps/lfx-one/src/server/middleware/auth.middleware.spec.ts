@@ -226,6 +226,76 @@ describe('authMiddleware route classification', () => {
     expect(res.oidc.login).toHaveBeenCalledTimes(1);
   });
 
+  it('allows an anonymous GET to a public foundation group directory (/foundations/:slug/groups)', async () => {
+    const req = buildReq({ path: '/foundations/acme/groups' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith();
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a nested /foundations/:slug/groups/<sub> path as public (anchored regex, no fail-open)', async () => {
+    const req = buildReq({ path: '/foundations/acme/groups/extra' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    // No `/foundations/:slug/groups/<sub>` route exists in app.routes.ts — the anchor is now a single
+    // trailing segment, so this falls through to the catch-all `required` row and redirects to login.
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows an anonymous GET to a public project group directory (/projects/:slug/groups)', async () => {
+    const req = buildReq({ path: '/projects/acme/groups' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith();
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a nested /projects/:slug/groups/<sub> path as public (anchored regex, no fail-open)', async () => {
+    const req = buildReq({ path: '/projects/acme/groups/extra' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows an anonymous GET to the invite error page (/invite/error)', async () => {
+    const req = buildReq({ path: '/invite/error' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith();
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
+  it('does not treat /invite/error-extra as public (anchored regex, no fail-open)', async () => {
+    const req = buildReq({ path: '/invite/error-extra' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    // A bare-string pattern would `startsWith`-match this; the anchored regex requires an exact
+    // (optionally trailing-slash) path, so this falls through to the catch-all and redirects to login.
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
   it('still redirects an anonymous GET to a protected SSR route', async () => {
     const req = buildReq({ path: '/foundation/overview' });
     const res = buildRes();

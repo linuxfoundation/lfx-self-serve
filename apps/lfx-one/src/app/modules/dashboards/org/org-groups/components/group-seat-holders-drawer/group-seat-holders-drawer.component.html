@@ -1,0 +1,130 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [ariaCloseLabel]="'Close panel'"
+  [pt]="{
+    root: {
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-labelledby': 'group-seat-holders-drawer-title',
+      'data-testid': 'group-seat-holders-drawer',
+    },
+    pcCloseButton: { root: { 'data-testid': 'group-seat-holders-drawer-close' } },
+  }"
+  (onShow)="onDrawerShow()"
+  (onHide)="onDrawerHide()"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full">
+  <ng-template #header>
+    <div class="flex items-start gap-3 w-full">
+      <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
+        <i class="fa-light fa-user-check text-lg" aria-hidden="true"></i>
+      </div>
+      <div class="flex flex-col gap-0.5 min-w-0">
+        <!-- tabindex="-1": not in Tab order, but focusable via onDrawerShow() moving focus here on
+             open — it's also the element aria-labelledby points at, so a screen reader announces
+             the group name immediately on focus, the way a dialog title normally would. -->
+        <h2
+          #titleRef
+          id="group-seat-holders-drawer-title"
+          tabindex="-1"
+          class="text-base font-semibold text-gray-900 break-words"
+          data-testid="group-seat-holders-drawer-title">
+          {{ groupName() }}
+        </h2>
+        <p class="text-sm text-gray-500 truncate" data-testid="group-seat-holders-drawer-subtitle">
+          @if (displayedCount() === null) {
+            Seat holders
+          } @else {
+            {{ displayedCount() }} {{ displayedCount() === 1 ? 'seat holder' : 'seat holders' }}
+          }
+        </p>
+        <a
+          [routerLink]="['/groups', committeeUid()]"
+          class="w-fit text-xs font-medium text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+          [attr.aria-label]="'View group page for ' + groupName()"
+          data-testid="group-seat-holders-drawer-view-group-link">
+          View group page
+          <i class="fa-light fa-arrow-up-right-from-square ml-0.5 text-[10px]" aria-hidden="true"></i>
+        </a>
+      </div>
+    </div>
+  </ng-template>
+
+  <!-- Inside <p-drawer>, deliberately not hoisted out: the panel is aria-modal="true" (via [pt]
+       above), and content outside a modal's subtree is unreliable for AT to reach while it's open
+       — a sibling live region would be announced inconsistently at best. That means this node IS
+       destroyed and recreated on every open; contentRevealed (see its own comment in the .ts)
+       handles what that implies for the first paint. -->
+  <p class="sr-only" role="status" aria-live="polite" data-testid="group-seat-holders-drawer-status">{{ contentRevealed() ? statusMessage() : '' }}</p>
+
+  <div class="flex flex-col gap-4 h-full">
+    @if (loading()) {
+      <div class="flex items-center justify-center py-16" data-testid="group-seat-holders-drawer-loading">
+        <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
+      </div>
+    } @else if (error()) {
+      <div class="flex flex-col items-center justify-center py-16 text-center" data-testid="group-seat-holders-drawer-error">
+        <i class="fa-light fa-triangle-exclamation text-3xl text-amber-500 mb-3" aria-hidden="true"></i>
+        <p class="text-sm text-gray-700">Unable to load seat holders.</p>
+        <button
+          type="button"
+          class="mt-3 text-sm font-medium text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+          (click)="retry()"
+          data-testid="group-seat-holders-drawer-retry">
+          Try again
+        </button>
+      </div>
+    } @else if (seatHolderVms().length === 0) {
+      <div class="flex flex-col items-center justify-center py-16 text-center" data-testid="group-seat-holders-drawer-empty">
+        <i class="fa-light fa-users text-3xl text-gray-300 mb-3" aria-hidden="true"></i>
+        <p class="text-sm text-gray-500">No seat holders found for this group.</p>
+      </div>
+    } @else {
+      <ul class="flex flex-col divide-y divide-gray-100" data-testid="group-seat-holders-list">
+        @for (assignment of seatHolderVms(); track assignment.seatId) {
+          <li class="flex items-center gap-3 py-3" [attr.data-testid]="'group-seat-holder-' + assignment.seatId">
+            <lfx-person-avatar
+              [avatarUrl]="assignment.person.avatarUrl"
+              [name]="assignment.person.fullName"
+              [initials]="assignment.person.initials"
+              [identity]="assignment.person.email" />
+            <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+              <!-- Opens the shared person-detail drawer stacked on top (drawer-over-drawer, see
+                   onPersonClick()). Wraps the name only, not the avatar above or the role line below
+                   — a real <button>, not a div with a click handler, so it's keyboard-reachable and
+                   announces as a button. Name-only, not avatar+name (unlike the
+                   training-employees-drawer precedent this pattern is otherwise copied from): the
+                   role line and pill must stay outside the button, and pulling the avatar in too would
+                   either drag the role line in with it or leave the role line starting under the
+                   avatar instead of aligned with the name — this keeps the original two-line layout.
+                   A row with no usable identity (no name AND no email — the 'Unknown member' fallback)
+                   stays plain text: there is nothing to open a drawer on. -->
+              @if (assignment.person.fullName || assignment.person.email) {
+                <button
+                  type="button"
+                  class="w-fit min-w-0 bg-transparent p-0 text-left"
+                  [attr.aria-label]="'View details for ' + (assignment.person.fullName || assignment.person.email)"
+                  [attr.data-testid]="'seat-holder-person-' + assignment.seatId"
+                  (click)="onPersonClick(assignment)">
+                  <span class="text-sm font-medium text-gray-900 break-words hover:underline">
+                    {{ assignment.person.fullName || assignment.person.email }}
+                  </span>
+                </button>
+              } @else {
+                <span class="text-sm font-medium text-gray-900 break-words">Unknown member</span>
+              }
+              <span class="text-xs text-gray-500 break-words">{{ assignment.role || '—' }}</span>
+            </div>
+            <span class="inline-block rounded-full border px-2 py-0.5 text-xs font-medium flex-shrink-0" [class]="assignment.votingStatusPillClass">
+              {{ assignment.votingStatus || 'Non-voting' }}
+            </span>
+          </li>
+        }
+      </ul>
+    }
+  </div>
+</p-drawer>

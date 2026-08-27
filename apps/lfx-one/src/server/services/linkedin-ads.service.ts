@@ -18,7 +18,7 @@ import type {
   LinkedInTargetingProfileConfig,
 } from '@lfx-one/shared/interfaces';
 
-import { LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
+import { CAMPAIGN_ALERT_THRESHOLDS, CAMPAIGN_PACING_THRESHOLDS, LINKEDIN_API_VERSION, LINKEDIN_GEO_RESOLVE_MAP } from '@lfx-one/shared/constants';
 
 import type { Request } from 'express';
 
@@ -1010,14 +1010,23 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
     const hasBudget = totalBudget > 0 || dailyBudget > 0;
     let pacingLabel: LinkedInPacingLabel = 'normal';
     if (hasBudget) {
-      if (pacingPct < 40) {
+      // Bands come from the shared constants rather than LinkedIn-local literals: the pacing bar
+      // in `PacingClassPipe` colours the same campaign off CAMPAIGN_PACING_THRESHOLDS, so local
+      // numbers here made the label and the bar disagree (e.g. 45% read "underspending" red in
+      // the bar but "normal" in the label).
+      //
+      // The comparison form deliberately mirrors meta-ads.service.ts and reddit-ads.service.ts
+      // exactly. Because the tests are `>` rather than `>=`, a value EQUAL to a threshold does not
+      // advance a band: each threshold is an INCLUSIVE upper bound of the band below it, so 90%
+      // stays `normal` and 100% stays `constrained`. A strict-less chain here would have put those
+      // two boundaries one band above the other platforms — and Meta and Reddit both `Math.round`
+      // pacingPct, which makes integers like 90 and 100 the common case rather than an edge case.
+      if (pacingPct < CAMPAIGN_PACING_THRESHOLDS.underspending) {
         pacingLabel = 'underspending';
-      } else if (pacingPct < 90) {
-        pacingLabel = 'normal';
-      } else if (pacingPct < 105) {
-        pacingLabel = 'constrained';
-      } else {
+      } else if (pacingPct > CAMPAIGN_PACING_THRESHOLDS.constrained) {
         pacingLabel = 'overspending';
+      } else if (pacingPct > CAMPAIGN_PACING_THRESHOLDS.normal) {
+        pacingLabel = 'constrained';
       }
     }
     const startMs = camp.runSchedule?.start ?? 0;
@@ -1056,7 +1065,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
       actionItems.push({
         priority: 'HIGH',
         campaignName: c.campaignName,
-        issue: 'Underspending — pacing below 40%',
+        issue: `Underspending — pacing below ${CAMPAIGN_PACING_THRESHOLDS.underspending}%`,
         action: 'Check targeting breadth, bid strategy, or budget floor',
       });
     }
@@ -1064,11 +1073,11 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
       actionItems.push({
         priority: 'MED',
         campaignName: c.campaignName,
-        issue: 'Budget constrained — pacing above 90%',
+        issue: `Budget constrained — pacing above ${CAMPAIGN_PACING_THRESHOLDS.normal}%`,
         action: 'Consider increasing budget if event is in peak registration period',
       });
     }
-    if (c.ctr > 0 && c.ctr < 0.3) {
+    if (c.ctr > 0 && c.ctr < CAMPAIGN_ALERT_THRESHOLDS['linkedin-ads'].lowCtrPct) {
       actionItems.push({
         priority: 'MED',
         campaignName: c.campaignName,
@@ -1076,7 +1085,7 @@ export async function getLinkedInAnalytics(req: Request | undefined, accountId: 
         action: 'Refresh ad copy or images; review audience targeting',
       });
     }
-    if (c.clicks > 50 && c.conversions === 0) {
+    if (c.clicks > CAMPAIGN_ALERT_THRESHOLDS['linkedin-ads'].clicksWithoutConversions && c.conversions === 0) {
       actionItems.push({
         priority: 'MED',
         campaignName: c.campaignName,

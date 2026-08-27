@@ -36,6 +36,8 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./logger.service', () => ({ logger }));
 
 import { JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import { readFileSync } from 'node:fs';
+
 import type { Request } from 'express';
 
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
@@ -1347,6 +1349,26 @@ describe('CampaignServiceClient.loadBrief', () => {
     expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs', 'GET', { event_slug: 'kubecon-eu-2026' });
   });
 
+  // LFXV2-3204. The read has to HAND BACK the validator it observed, because `replaceBrief`
+  // prefers a caller-supplied ETag over the one its own find reads — and only a carried,
+  // load-time validator can produce a 412 when another writer moved the row in between. An
+  // earlier revision dropped it here, which made the precondition ceremonial: the find inside
+  // the save always matched itself, so a concurrent editor was overwritten rather than refused.
+  it('carries the ETag it observed, so a save can send it as If-Match', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), { etag: 'W/"7"' }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toMatchObject({ status: 'loaded', etag: 'W/"7"' });
+  });
+
+  // A read that produced no validator still yields a restorable brief. `null` here is an ABSENT
+  // validator, not permission to overwrite — what an absent one licenses is decided by the
+  // `absence` the caller records alongside it, never by the null itself.
+  it('reports a null ETag rather than inventing one when the response carried none', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), {}));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toMatchObject({ status: 'loaded', etag: null });
+  });
+
   // campaign-service creates every brief as `draft` and approval is a SECOND call, so a save whose
   // approve step failed leaves a durable row that campaign creation and audience building both
   // refuse (they gate on `approved`). The restore path suppresses the next save, so nothing
@@ -1381,7 +1403,13 @@ describe('CampaignServiceClient.loadBrief', () => {
   it('reports none when campaign-service says the slug has no brief', async () => {
     proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND);
 
-    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toEqual({ status: 'none', briefId: null, brief: null, approved: false });
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toEqual({
+      status: 'none',
+      briefId: null,
+      brief: null,
+      etag: null,
+      approved: false,
+    });
   });
 
   // `unreadable` must stay distinct from `none`, and this is the test that pins it. The save
@@ -1394,6 +1422,7 @@ describe('CampaignServiceClient.loadBrief', () => {
       status: 'unreadable',
       briefId: 'b-1',
       brief: null,
+      etag: '"3"',
       approved: false,
     });
   });
@@ -1739,6 +1768,43 @@ describe('CampaignServiceClient.createCampaigns', () => {
   });
 
   /**
+   * LFXV2-3312, the Microsoft equivalent of the pair above and added for the same reason: nothing
+   * else pins this map entry. The CONTROLLER specs mock `createCampaigns` and inspect the envelope
+   * it was handed, so they never execute `hasPlatformConfig` — deleting or misspelling
+   * `'microsoft-ads': 'microsoftConfig'` would leave every one of them green while every real
+   * Microsoft create was refused as unconfigured.
+   *
+   * Run with the cutover flags ON, which is the only state in which this guard executes at all.
+   */
+  it('dispatches a Microsoft campaign once microsoftConfig is present', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000f' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['microsoft-ads'], {
+      microsoftConfig: { budget: 300, keywords: [{ text: 'kubernetes', matchType: 'Exact' }], geoTargets: ['US'] },
+    });
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000f');
+    expect(res.error).toBeNull();
+  });
+
+  it('still refuses a Microsoft campaign whose microsoftConfig is missing', async () => {
+    // A non-empty envelope carrying the WRONG key — the shape a half-built builder produces.
+    // `unmarshalPlatformConfig` reads the absent `microsoftConfig` as a ZERO VALUE, which would
+    // dispatch a campaign with no budget, no keywords and no geo targeting: unservable, and
+    // serving everywhere the moment anyone enabled it.
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['microsoft-ads'], { hsToken: 'tok' });
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.enabled).toBe(true);
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('microsoft-ads');
+  });
+
+  /**
    * campaign-service DOES have a Demand Gen path as of #130, and the slot key is
    * `(brief_id, platform, variant)` — so a brief can hold a Search row and a Demand Gen row at
    * once and the database does not forbid the pair. What is refused here is a MIXED selection,
@@ -1794,10 +1860,12 @@ describe('CampaignServiceClient.createCampaigns', () => {
   });
 
   it('does not refuse a non-Google create that happens to carry demand-gen', async () => {
-    // `campaignTypes` is a GOOGLE concept, but the Implementation tab sends it unconditionally:
-    // `includeDemandGen` defaults to true and nothing clears it when Google is deselected. So a
-    // LinkedIn-only create arrives carrying `demand-gen`, and refusing on the type alone gave a
-    // Google error for a request Google was never part of.
+    // `campaignTypes` is a GOOGLE concept, but the Implementation tab sends it unconditionally
+    // and nothing clears it when Google is deselected. The form defaults `includeDemandGen` to
+    // false now, so the way it arrives set is RETAINED state — ticked and then Google deselected,
+    // or restored from a draft saved under the old default. So a LinkedIn-only create still
+    // arrives carrying `demand-gen`, and refusing on the type alone gave a Google error for a
+    // request Google was never part of.
     bothFlagsOn();
     proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000c' } });
 
@@ -2290,7 +2358,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
 
     const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
 
-    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false });
+    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true });
   });
 
   // The index stores `version`; a write needs `If-Match`. campaign-service's ETag is exactly
@@ -2313,7 +2381,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
   });
 
   // The list read is UNGATED while the toggle route refuses every UUID with the flag off, so the
-  // client cannot infer this — a default deployment would render controls that can only 400.
+  // client cannot infer this. The chart ships the flag on, but an override or un-rolled pod still
+  // answers off, and that deployment would render controls that can only 400.
   // Asserted in BOTH directions: a field hardcoded to either constant would pass one of these.
   it.each([
     [true, true],
@@ -2330,6 +2399,46 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // `vi.clearAllMocks()` in this file's beforeEach clears CALLS but not IMPLEMENTATIONS, so a
       // stray mockImplementation here would silently re-answer every later flag question in the
       // suite. Restored to the file's default rather than left for the next test to discover.
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The capability is NOT the raw `CampaignServiceDemandGen` flag.
+   *
+   * While the create cutover is dark the controller falls through to the legacy creator, which
+   * creates demand-gen campaigns perfectly well — so reporting the raw flag would hide a working
+   * option for the whole of the staged CREATE-off rollout this chart prescribes.
+   *
+   * The staged-rollout row is the one that matters and the one a naive implementation fails: all
+   * three create prerequisites on is NOT the same as CREATE alone, and demand-gen off only bites
+   * once campaign-service actually owns creation.
+   */
+  it.each([
+    // cutover fully on + capability on  -> campaign-service can serve it
+    [{ create: true, briefs: true, jobs: true, demandGen: true }, true],
+    // cutover fully on + capability off -> the one case that is genuinely unavailable
+    [{ create: true, briefs: true, jobs: true, demandGen: false }, false],
+    // the staged CREATE-off rollout: legacy owns creation and supports demand gen
+    [{ create: false, briefs: true, jobs: true, demandGen: false }, true],
+    // a PARTIAL flag set is equivalent to "cutover off" in createCampaigns; it must match here
+    [{ create: true, briefs: false, jobs: true, demandGen: false }, true],
+    [{ create: true, briefs: true, jobs: false, demandGen: false }, true],
+  ])('reports the demand-gen capability from the create path that will actually run (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceDemandGen) return flags.demandGen;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.demandGenEnabled).toBe(expected);
+    } finally {
       isServerFeatureEnabled.mockImplementation(() => false);
     }
   });
@@ -2356,6 +2465,196 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     expect(proxyRequest).not.toHaveBeenCalled();
     // possiblyStale TRUE on a refusal: nothing was queried, so the empty list must not assert
     // that the brief has no campaigns.
-    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false });
+    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true });
+  });
+});
+
+describe('CampaignServiceClient.getBriefMetrics', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * The window is the proxy's FIFTH argument, which is `query`. The SIXTH is the request body.
+   * Passing it in the body position sends NO query string and raises no type error — both
+   * parameters are optional and loosely typed — so campaign-service would apply per-platform
+   * defaults while the caller believed it had asked for a window.
+   *
+   * Asserted positionally rather than with `objectContaining`, because the defect this pins is
+   * entirely about WHICH position the value lands in.
+   */
+  it('sends the window as a query parameter, not a body', async () => {
+    proxyRequest.mockResolvedValue({ brief_id: 'b-1', window: 'last_7_days', rows: [], ok_count: 0, action_items: [] });
+
+    await new CampaignServiceClient().getBriefMetrics(req, 'cncf', 'b-1', 'last_7_days');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/briefs/b-1/metrics', 'GET', { window: 'last_7_days' });
+    // The body position must be EMPTY. Without this the previous assertion still passes when a
+    // future edit adds a body, and the query would keep working while the body silently shipped.
+    expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+  });
+
+  /**
+   * Omitted, not defaulted to `last_30_days`. campaign-service resolves the default PER ROW —
+   * `last_7_days` for X Ads, `last_30_days` elsewhere — and an explicit window overrides that for
+   * every row, so defaulting here would DISCARD the fallback and turn a servable X row into an
+   * `unsupported` one rather than failing outright.
+   */
+  it('sends no window at all when the caller specifies none', async () => {
+    proxyRequest.mockResolvedValue({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] });
+
+    await new CampaignServiceClient().getBriefMetrics(req, 'cncf', 'b-1');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/briefs/b-1/metrics', 'GET', undefined);
+  });
+
+  /** Both segments are encoded: an unencoded slug would silently change the path. */
+  it('encodes both path segments', async () => {
+    proxyRequest.mockResolvedValue({ brief_id: 'b/1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] });
+
+    await new CampaignServiceClient().getBriefMetrics(req, 'a b', 'b/1');
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b/briefs/b%2F1/metrics');
+  });
+
+  /**
+   * An empty segment makes `/projects//briefs//metrics` — a DIFFERENT route that 404s at the
+   * gateway. A caller cannot tell that from campaign-service answering "no such brief", so the
+   * request is refused before it is sent rather than after.
+   */
+  it.each([
+    ['no project', '', 'b-1'],
+    ['no brief id', 'cncf', ''],
+  ])('refuses a request with %s without calling the proxy', async (_label, slug, brief) => {
+    await expect(new CampaignServiceClient().getBriefMetrics(req, slug, brief)).rejects.toThrow(/requires both the project and the brief/);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * `conversions` and the `no_conversions` rule are part of the contract and must survive the
+   * round trip. Both were MISSING from the first version of these types: the fidelity check that
+   * approved them compared against a campaign-service worktree parked on an older feature branch
+   * rather than against `origin/main`, so it confirmed an outdated contract.
+   *
+   * `conversions` is FRACTIONAL and OPTIONAL, and those two properties are the whole point.
+   * Absent means "this channel does not report it" — Meta, X, Reddit and email never do — which
+   * is not a measured 0, so a consumer must not default it. And 0.4 of a conversion is real under
+   * data-driven attribution, so it must not be rounded or floored to zero.
+   */
+  it('preserves a fractional conversions value and the no_conversions rule', async () => {
+    proxyRequest.mockResolvedValue({
+      brief_id: 'b-1',
+      window: 'last_30_days',
+      rows: [
+        {
+          campaign_id: 'c-1',
+          platform: 'google-ads',
+          status: 'ok',
+          metrics: {
+            campaign_id: 'c-1',
+            platform_campaign_id: 'p-1',
+            window: 'last_30_days',
+            impressions: 1840,
+            clicks: 212,
+            cost_micros: 1284000,
+            ctr: 0.1152,
+            conversions: 0.4,
+          },
+          pacing: { pct: 94.2, label: 'normal' },
+        },
+        // Reddit never reports a campaign-level conversion count, so the field is ABSENT here —
+        // not zero. The two rows together are what make the distinction assertable.
+        {
+          campaign_id: 'c-2',
+          platform: 'reddit-ads',
+          status: 'ok',
+          metrics: { campaign_id: 'c-2', platform_campaign_id: 'p-2', window: 'last_30_days', impressions: 10, clicks: 1, cost_micros: 0, ctr: 0.1 },
+          pacing: { label: 'unknown' },
+        },
+      ],
+      ok_count: 2,
+      action_items: [
+        {
+          rule: 'no_conversions',
+          priority: 'MED',
+          campaign_id: 'c-1',
+          platform: 'google-ads',
+          issue: 'No conversions recorded',
+          action: 'Check conversion tracking',
+        },
+      ],
+    });
+
+    const result = await new CampaignServiceClient().getBriefMetrics(req, 'cncf', 'b-1');
+
+    // Neither rounded nor floored to 0 — 0.4 of a conversion is a real value.
+    expect(result.rows[0].metrics?.conversions).toBe(0.4);
+    // ABSENT stays absent. Defaulting it to 0 would claim Reddit measured zero conversions.
+    expect(result.rows[1].metrics?.conversions).toBeUndefined();
+    expect(result.action_items[0].rule).toBe('no_conversions');
+  });
+
+  /**
+   * Pins the two fields against the SHARED TYPES rather than against this file's own fixture.
+   *
+   * The test above cannot do that job: server specs are typechecked by nothing — `tsconfig.spec.json`
+   * includes only `src/app/**` — and `proxyRequest` is an untyped `vi.fn()`, so deleting
+   * `conversions` and `no_conversions` from the interfaces leaves it green. That is precisely how
+   * both fields went missing in the first place, and a test that cannot detect their removal is
+   * not coverage.
+   *
+   * So this reads the declarations as TEXT. Crude, but it is the only assertion here that fails
+   * when the type loses the field, and the failure names what to restore.
+   */
+  it('keeps conversions and the no_conversions rule declared in the shared types', () => {
+    const declarations = readFileSync(new URL('../../../../../packages/shared/src/interfaces/campaign.interface.ts', import.meta.url), 'utf8');
+
+    // Optional, because ABSENT means "this channel does not report it" and is not a measured 0.
+    expect(declarations).toContain('conversions?: number;');
+    // The fifth rule. campaign-service can return it, so an exhaustive consumer that has never
+    // heard of it would drop or mishandle a real action item.
+    expect(declarations).toMatch(/rule: .*'no_conversions'/);
+  });
+
+  /**
+   * The row shape is returned VERBATIM. A failed row carries no `metrics`, and this client must
+   * not zero-fill it on the way through — that substitution is what turns an outage into a
+   * measured zero, and it is the whole reason the row carries a status.
+   */
+  it('passes a failed row through without inventing metrics for it', async () => {
+    proxyRequest.mockResolvedValue({
+      brief_id: 'b-1',
+      window: 'last_30_days',
+      rows: [
+        {
+          campaign_id: 'c-1',
+          platform: 'linkedin-ads',
+          status: 'ok',
+          metrics: {
+            campaign_id: 'c-1',
+            platform_campaign_id: 'p-1',
+            window: 'last_30_days',
+            impressions: 1840,
+            clicks: 212,
+            cost_micros: 1284000,
+            ctr: 0.1152,
+          },
+          pacing: { pct: 94.2, label: 'normal' },
+        },
+        { campaign_id: 'c-2', platform: 'reddit-ads', status: 'failed', reason: 'the platform read failed' },
+      ],
+      ok_count: 1,
+      action_items: [],
+    });
+
+    const result = await new CampaignServiceClient().getBriefMetrics(req, 'cncf', 'b-1');
+
+    expect(result.rows[1].metrics).toBeUndefined();
+    expect(result.rows[1].status).toBe('failed');
+    // ok_count must survive too: it is what tells a consumer that an empty action_items list
+    // covers only 1 of the 2 campaigns.
+    expect(result.ok_count).toBe(1);
+    expect(result.rows).toHaveLength(2);
   });
 });

@@ -656,6 +656,24 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * `Object.keys(META_OBJECTIVE_LABELS)`, which agreed with whatever that map contained and so
    * could never have caught an objective appearing or disappearing from the picker.
    */
+
+  /**
+   * The untouched form must submit successfully once the cutover is live.
+   *
+   * `createCampaigns` refuses a Google request carrying BOTH `search` and `demand-gen` and does
+   * not fall back to the legacy creator, so defaulting both to true handed a user a terminal
+   * failure on their very first create. `canSubmit` does not catch it either — it only blocks
+   * when NEITHER is selected.
+   *
+   * Pinned as a default rather than as a rule, because that is what regressed: someone restoring
+   * `includeDemandGen: [true]` for symmetry would reintroduce the dead end silently.
+   */
+  it('defaults Google to Search only, the combination the server accepts', () => {
+    const c = component() as unknown as Record<string, any>;
+    expect(c['campaignForm'].controls['includeSearch'].value).toBe(true);
+    expect(c['campaignForm'].controls['includeDemandGen'].value).toBe(false);
+  });
+
   it('renders exactly the selectable objectives, in order', () => {
     const select = require<HTMLSelectElement>('implementation-meta-objective');
     const rendered = Array.from(select.options).map((o) => o.value);
@@ -964,6 +982,518 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     // campaign back to $500/day, a spend decision the operator did not make.
     expect(metaConfig['budgetUsd']).toBe(1234);
     expect(metaConfig['lifetimeBudget']).toBe(true);
+  });
+
+  /**
+   * LFXV2-3312, the Microsoft equivalent of the Meta case above and asserted the same way: what
+   * the REMOUNTED component would SUBMIT, not that the draft object carries the fields. The two
+   * ARRAYS are the ones most likely to be missed — they need a draft field, an `emitDraft()` in
+   * their handler AND an `applyDraft` restore arm, and losing either of them is silent.
+   */
+  it('carries the user Microsoft edits through a destroy/remount and into the request', async () => {
+    let draft: Record<string, any> | null = null;
+    component()['draftChange'].subscribe((d: Record<string, any>) => (draft = d));
+
+    component()['addMicrosoftGeoTarget']('jp');
+    component()['addMicrosoftKeyword']('service mesh');
+    component()['microsoftBudgetUsd'].set(1234);
+    component()['microsoftCpcBid'].set('2.5');
+    component()['emitDraft']();
+    await fixture.whenStable();
+
+    expect(draft).not.toBeNull();
+    const draftSlug = (draft as unknown as Record<string, any>)['eventSlug'];
+
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    restored.componentRef.setInput('draft', draft);
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: draftSlug, registrationUrl: 'https://events.example.com/kubecon-eu-2026' },
+      selectedPlatforms: ['microsoft-ads'],
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+
+    const c = restored.componentInstance as unknown as Record<string, any>;
+    c['campaignForm'].controls['startDate'].setValue('2026-09-01');
+    c['campaignForm'].controls['endDate'].setValue('2026-09-30');
+    await restored.whenStable();
+
+    createCampaign.mockClear();
+    c['submit']();
+    await restored.whenStable();
+
+    expect(createCampaign).toHaveBeenCalled();
+    const microsoftConfig = createCampaign.mock.calls[0][0].microsoftConfig;
+    expect(microsoftConfig['geoTargets']).toContain('JP');
+    expect(microsoftConfig['keywords']).toContainEqual({ text: 'service mesh', matchType: 'Phrase' });
+    expect(microsoftConfig['budgetUsd']).toBe(1234);
+    expect(microsoftConfig['cpcBid']).toBe(2.5);
+  });
+
+  /**
+   * The add handlers refuse at the door, so the over-cap state is unreachable through the UI —
+   * asserted by DRIVING the handler rather than writing the signal, because a test that sets the
+   * signal directly would pass against a handler that does no checking at all.
+   */
+  it('refuses to add a keyword past the cap, or one longer than the limit', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['microsoftKeywords'].set(Array.from({ length: 60 }, (_, i) => ({ text: `kw-${i}`, matchType: 'Exact' })));
+    await fixture.whenStable();
+
+    c['addMicrosoftKeyword']('one-too-many');
+    expect(c['microsoftKeywords']().length).toBe(60);
+    expect(c['microsoftKeywords']().some((k: { text: string }) => k.text === 'one-too-many')).toBe(false);
+
+    c['microsoftKeywords'].set([]);
+    c['addMicrosoftKeyword']('k'.repeat(101));
+    expect(c['microsoftKeywords']()).toEqual([]);
+
+    // The boundary itself is accepted — an off-by-one here would silently cost a keyword.
+    c['addMicrosoftKeyword']('k'.repeat(100));
+    expect(c['microsoftKeywords']().length).toBe(1);
+  });
+
+  /**
+   * The box carries NO native `maxlength`: it counts UTF-16 units while every guard here counts
+   * runes, so a cap of 100 would stop the field at 50 emoji and make a keyword the BFF accepts
+   * impossible to type. The live counter is what provides the feedback instead.
+   */
+  it('accepts a 100-rune emoji keyword the UTF-16 length would have blocked', async () => {
+    const c = component() as unknown as Record<string, any>;
+    const emoji = '\u{1F600}'.repeat(100);
+    expect(emoji.length).toBe(200); // UTF-16 units — what a native maxlength would have counted
+
+    c['microsoftKeywords'].set([]);
+    c['addMicrosoftKeyword'](emoji);
+
+    expect(c['microsoftKeywords']().length).toBe(1);
+  });
+
+  it('flags an over-length in-progress keyword by rune count', async () => {
+    const c = component() as unknown as Record<string, any>;
+
+    c['microsoftKeywordDraft'].set('\u{1F600}'.repeat(100));
+    await fixture.whenStable();
+    expect(c['microsoftKeywordDraftLength']()).toBe(100);
+    expect(c['microsoftKeywordDraftTooLong']()).toBe(false);
+
+    c['microsoftKeywordDraft'].set('k'.repeat(101));
+    await fixture.whenStable();
+    expect(c['microsoftKeywordDraftTooLong']()).toBe(true);
+  });
+
+  /**
+   * Regression: the add handler is bound to `(change)` as well as Enter, so simply BLURRING the
+   * box ran it. Clearing unconditionally discarded the over-length text the warning was asking the
+   * operator to shorten — and took the warning with it. Driven through the DOM event rather than
+   * by calling the handler, because the `(change)`-on-blur path is the one that made it reachable.
+   */
+  it('keeps a refused keyword in the box instead of wiping it on blur', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('[data-testid="implementation-microsoft-keyword-add"]');
+    expect(input).not.toBeNull();
+
+    const tooLong = 'k'.repeat(101);
+    input.value = tooLong;
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    // Not added, and NOT discarded — the operator can still shorten what they typed.
+    expect(c['microsoftKeywords']()).toEqual([]);
+    expect(input.value).toBe(tooLong);
+    expect(c['microsoftKeywordDraft']()).toBe(tooLong);
+    expect(c['microsoftKeywordDraftTooLong']()).toBe(true);
+  });
+
+  /**
+   * Uniqueness is `(matchType, case-folded text)`, matching the client's `validateKeywords`
+   * (`internal/platform/microsoft/targeting.go`, key `matchType + "\x00" + strings.ToLower(text)`).
+   *
+   * A text-ONLY check rejected configurations campaign-service accepts, and the operator had no
+   * way around it: new rows are added at `MICROSOFT_NEW_KEYWORD_MATCH_TYPE` and the match type is
+   * only changeable AFTER the row exists, so a seeded or restored `kubernetes/Exact` made
+   * `kubernetes/Phrase` permanently unreachable — the add was refused before its match type could
+   * be changed.
+   *
+   * The case fold must SURVIVE the change: same text, same match type, different casing is still
+   * one keyword upstream, and admitting it would overstate coverage.
+   */
+  it('scopes the duplicate check to the match type the new row will carry', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+
+    // Seeded at Exact — the match type a new row does NOT get.
+    c['microsoftKeywords'].set([{ text: 'kubernetes', matchType: 'Exact' }]);
+    expect(c['addMicrosoftKeyword']('kubernetes')).toBe(true);
+    expect(c['microsoftKeywords']()).toEqual([
+      { text: 'kubernetes', matchType: 'Exact' },
+      { text: 'kubernetes', matchType: 'Phrase' },
+    ]);
+
+    // Now the Phrase row exists, so the same text at Phrase IS a duplicate — including a case
+    // variant, which is one keyword upstream.
+    expect(c['addMicrosoftKeyword']('kubernetes')).toBe(false);
+    expect(c['addMicrosoftKeyword']('KUBERNETES')).toBe(false);
+    expect(c['microsoftKeywords']().length).toBe(2);
+  });
+
+  /**
+   * The add-time guard can only refuse a NEW row. `onMicrosoftKeywordMatchTypeChange` can move an
+   * EXISTING row onto another's `(matchType, text)` afterwards — start at `kubernetes/Exact`, add
+   * `kubernetes/Phrase`, then switch the second row back to `Exact`.
+   *
+   * The client does not reject that: `validateKeywords` drops the duplicate with `continue`, so
+   * the create SUCCEEDS having made one keyword while the form still showed two. The failure is a
+   * silent undercount, not a failed job — which is why the fix is de-duping the effective list
+   * (the signal every count and the payload derive from) rather than only refusing the edit.
+   */
+  it('does not let a match-type edit smuggle a duplicate past the effective list', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftKeywords'].set([
+      { text: 'kubernetes', matchType: 'Exact' },
+      { text: 'kubernetes', matchType: 'Phrase' },
+    ]);
+    expect(c['microsoftEffectiveKeywords']().length).toBe(2);
+    expect(c['microsoftDuplicateKeywordCount']()).toBe(0);
+
+    // Move row 1 onto row 0's pair, the way the <select> does.
+    c['onMicrosoftKeywordMatchTypeChange'](1, { target: { value: 'Exact' } } as unknown as Event);
+
+    // The operator's rows are kept intact...
+    expect(c['microsoftKeywords']().length).toBe(2);
+    // ...but only ONE keyword is actually sent, and the form says so rather than claiming two.
+    expect(c['microsoftEffectiveKeywords']()).toEqual([{ text: 'kubernetes', matchType: 'Exact' }]);
+    expect(c['microsoftDuplicateKeywordCount']()).toBe(1);
+  });
+
+  /**
+   * The case fold has to survive into the effective list too: `Kubernetes/Exact` and
+   * `kubernetes/Exact` are ONE keyword upstream, so a restore carrying both must not report two.
+   * `populateFromBrief` applies no uniqueness filter, so this arrives from the server, not the UI.
+   */
+  it('folds case when de-duping the effective keyword list', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftKeywords'].set([
+      { text: 'Kubernetes', matchType: 'Exact' },
+      { text: 'kubernetes', matchType: 'Exact' },
+      { text: 'kubernetes', matchType: 'Phrase' },
+    ]);
+
+    // First occurrence wins, keeping the operator's original casing — as the client does.
+    expect(c['microsoftEffectiveKeywords']()).toEqual([
+      { text: 'Kubernetes', matchType: 'Exact' },
+      { text: 'kubernetes', matchType: 'Phrase' },
+    ]);
+    expect(c['microsoftDuplicateKeywordCount']()).toBe(1);
+  });
+
+  /**
+   * The cap has to count what the REQUEST carries, not how many rows are on screen. Once the
+   * effective list de-dupes, a duplicate row consumes cap the request never spends: 60 raw rows
+   * containing one duplicate are 59 keywords upstream, so refusing the 60th unique keyword
+   * blocks a configuration Microsoft would accept — and no removal short of deleting the
+   * duplicate ever unblocks it.
+   *
+   * The label and the add-box visibility already read the effective length, so the raw count
+   * also disagreed with what the operator was being shown: 59/60 with the box open, and the add
+   * silently refused.
+   */
+  it('counts the cap on the keywords the request will carry', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+
+    // 60 rows, but two share a (matchType, text) pair — so only 59 are sent.
+    const rows = Array.from({ length: 59 }, (_, i) => ({ text: `kw-${i}`, matchType: 'Exact' as const }));
+    rows.push({ text: 'kw-0', matchType: 'Exact' as const });
+    c['microsoftKeywords'].set(rows);
+    expect(c['microsoftKeywords']().length).toBe(60);
+    expect(c['microsoftEffectiveKeywords']().length).toBe(59);
+
+    // There is room for one more, and the operator is being told so.
+    expect(c['addMicrosoftKeyword']('one-more')).toBe(true);
+    expect(c['microsoftEffectiveKeywords']().length).toBe(60);
+
+    // Now genuinely full: the next add is refused on the effective count.
+    expect(c['addMicrosoftKeyword']('over-the-line')).toBe(false);
+    expect(c['microsoftEffectiveKeywords']().length).toBe(60);
+  });
+
+  it('clears the box once a keyword is actually added', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('[data-testid="implementation-microsoft-keyword-add"]');
+    input.value = 'service mesh';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(c['microsoftKeywords']().some((k: { text: string }) => k.text === 'service mesh')).toBe(true);
+    expect(input.value).toBe('');
+    expect(c['microsoftKeywordDraft']()).toBe('');
+  });
+
+  /**
+   * The add handler refuses the same control characters the BFF and the client do, across the FULL
+   * C0/DEL/C1 range — U+0085 is the one an earlier version missed. U+00A0 must still be accepted:
+   * Go reports `IsControl(U+00A0) == false`, so refusing it would block a valid keyword.
+   */
+  it.each([
+    ['a C0 tab', 'kuber\tnetes', false],
+    ['DEL U+007F', 'kuber\u007Fnetes', false],
+    ['C1 NEL U+0085', 'kuber\u0085netes', false],
+    ['C1 APC U+009F', 'kuber\u009Fnetes', false],
+    ['a non-breaking space U+00A0', 'kuber\u00A0netes', true],
+  ])('handles %s in a keyword', async (_label, text, shouldAdd) => {
+    const c = component() as unknown as Record<string, any>;
+    c['microsoftKeywords'].set([]);
+
+    c['addMicrosoftKeyword'](text);
+
+    expect(c['microsoftKeywords']().length).toBe(shouldAdd ? 1 : 0);
+  });
+
+  /**
+   * Brief-generated keywords carry the model's RAW `match_type` (both streams copy it through), so
+   * `EXACT` reaches the seed. It must be canonicalised: the `<select>` offers only PascalCase, so a
+   * raw value rendered the dropdown with NOTHING selected on a keyword that would dispatch fine.
+   * Anything not canonicalisable is dropped, since the BFF would refuse the whole config for it.
+   */
+  it('canonicalises brief match types and drops ones Microsoft rejects', async () => {
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026' },
+      keywords: [
+        { term: 'kubernetes', matchType: 'EXACT', intentLevel: 'High', notes: '' },
+        { term: 'service mesh', matchType: '  broad  ', intentLevel: 'High', notes: '' },
+        { term: 'observability', matchType: 'BROAD_MATCH', intentLevel: 'High', notes: '' },
+      ],
+      selectedPlatforms: ['microsoft-ads'],
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+
+    const c = restored.componentInstance as unknown as Record<string, any>;
+    expect(c['microsoftKeywords']()).toEqual([
+      { text: 'kubernetes', matchType: 'Exact' },
+      { text: 'service mesh', matchType: 'Broad' },
+    ]);
+  });
+
+  /**
+   * The Microsoft geo box must NOT apply Meta's assigned-country allowlist. That list is derived
+   * from this app's own COUNTRIES and genuinely diverges from the table Microsoft validates
+   * against — `AN` is in Microsoft's and not in ours. Dropping it silently meant the request fell
+   * back to the event country and targeted a DIFFERENT market than the operator typed.
+   *
+   * Membership stays campaign-service's call: it checks Microsoft's own table and fails the create
+   * before anything is created. This asserts shape-only handling, not that AN is targetable.
+   */
+  it('keeps a geo code Meta excludes but Microsoft supports', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['microsoftGeoTargets'].set([]);
+
+    c['addMicrosoftGeoTarget']('an');
+
+    expect(c['microsoftGeoTargets']()).toEqual(['AN']);
+    expect(c['microsoftEffectiveGeoTargets']()).toEqual(['AN']);
+  });
+
+  it('still refuses a malformed geo code', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['microsoftGeoTargets'].set([]);
+
+    c['addMicrosoftGeoTarget']('USA');
+
+    expect(c['microsoftGeoTargets']()).toEqual([]);
+  });
+
+  it('refuses to add a geo target past the cap', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['microsoftGeoTargets'].set(Array.from({ length: 30 }, (_, i) => `G${i}`));
+    await fixture.whenStable();
+
+    c['addMicrosoftGeoTarget']('JP');
+    expect(c['microsoftGeoTargets']().length).toBe(30);
+  });
+
+  /**
+   * A RESTORED DRAFT can carry an over-cap list the add handlers never saw — a draft written
+   * before these caps existed, replayed verbatim by `applyDraft` (which must replay verbatim, so
+   * an emptied list stays emptied). Without the backstop the form looks valid and the BFF refuses.
+   */
+  it('blocks submit when a restored draft carries an over-cap Microsoft list', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftBudgetUsd'].set(100);
+    c['microsoftGeoTargets'].set(['US']);
+    c['microsoftKeywords'].set(Array.from({ length: 61 }, (_, i) => ({ text: `kw-${i}`, matchType: 'Exact' })));
+    await fixture.whenStable();
+
+    expect(c['microsoftBoundsValid']()).toBe(false);
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The match-type half of the same backstop, and it needs its own test: the over-cap case above
+   * returns at the LENGTH check, so it never evaluates this branch. Deleting the match-type guard
+   * left the whole app suite green — an unreached guard is not coverage.
+   *
+   * `BROAD_MATCH` rather than `EXACT`: `isMicrosoftMatchType` folds case, so `EXACT` is VALID and
+   * a test built on it would assert the opposite of the contract. Google's SCREAMING_CASE
+   * vocabulary is the realistic source, since the brief's keyword stage is shared with Google Ads
+   * and a draft written from a Google-shaped brief can carry it.
+   *
+   * The list is within every cap, so nothing else can be what fails.
+   */
+  it('blocks submit when a restored draft carries a match type Microsoft has no name for', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftBudgetUsd'].set(100);
+    c['microsoftGeoTargets'].set(['US']);
+    c['microsoftKeywords'].set([
+      { text: 'kubernetes', matchType: 'Exact' },
+      { text: 'service mesh', matchType: 'BROAD_MATCH' },
+    ]);
+    await fixture.whenStable();
+
+    expect(c['microsoftBoundsValid']()).toBe(false);
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The same draft with the match type CORRECTED submits, so the test above cannot pass for an
+   * unrelated reason — without this, a form broken for any other cause would look like coverage.
+   */
+  it('allows submit once that draft carries a match type Microsoft accepts', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftBudgetUsd'].set(100);
+    c['microsoftGeoTargets'].set(['US']);
+    c['microsoftKeywords'].set([
+      { text: 'kubernetes', matchType: 'Exact' },
+      // Upper case on purpose: it is ACCEPTED, because the predicate folds case.
+      { text: 'service mesh', matchType: 'BROAD' },
+    ]);
+    await fixture.whenStable();
+
+    expect(c['microsoftBoundsValid']()).toBe(true);
+    // canSubmit too, not just the bounds: without it an unrelated prerequisite being false would
+    // leave BOTH cases green, and the pair would no longer prove the match type was what blocked
+    // submission in the negative case above.
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /**
+   * Microsoft refuses a supplied CpcBid outside [0.01, 1000] during dispatch, which surfaces as a
+   * failed job rather than an error on the click. BLANK stays valid — unset means Microsoft applies
+   * the account-currency minimum, a documented serve-capable floor — so an untouched box must not
+   * block the submit.
+   */
+  it.each([
+    ['blank, which means unset', '', true],
+    ['at the minimum', '0.01', true],
+    ['at the maximum', '1000', true],
+    ['below the minimum', '0.001', false],
+    ['above the maximum', '1001', false],
+    ['not a number', 'abc', false],
+  ])('treats a Microsoft CPC bid %s as submittable=%s', async (_label, bid, expected) => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftKeywords'].set([{ text: 'kubernetes', matchType: 'Exact' }]);
+    c['microsoftGeoTargets'].set(['US']);
+    c['microsoftBudgetUsd'].set(100);
+    c['microsoftCpcBid'].set(bid);
+    await fixture.whenStable();
+
+    expect(c['canSubmit']()).toBe(expected);
+  });
+
+  /**
+   * The out-of-range value must BLOCK, not be silently dropped to "unset" — dispatching at the
+   * account minimum while the box still displays 1001 would substitute a spend decision the
+   * operator did make.
+   */
+  it('does not silently downgrade an out-of-range Microsoft CPC bid to unset', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['microsoftCpcBid'].set('1001');
+    await fixture.whenStable();
+
+    expect(c['microsoftEffectiveCpcBid']()).toBeNull();
+    expect(c['microsoftCpcBidValid']()).toBe(false);
+  });
+
+  /**
+   * `NaN < 1` is FALSE, so a bare comparison would let a NaN budget through to a client that
+   * rejects it mid-dispatch — surfacing as a dead job rather than a blocked button. Pinned
+   * separately from the zero case because only the `Number.isFinite` half catches it.
+   */
+  it.each([
+    ['NaN', Number.NaN],
+    ['zero', 0],
+    ['negative', -5],
+    // Mirrors redditBudgetIsUsable — over the client's cap is a dead job, not a refused request.
+    ['over the maximum', 1_000_000_001],
+  ])('blocks a Microsoft submit on a %s budget', async (_label, budget) => {
+    const c = component() as unknown as Record<string, any>;
+    // The guards are scoped to a Microsoft selection, so the platform must be selected or the
+    // assertion would pass for the wrong reason — the arms would simply never be evaluated.
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftKeywords'].set([{ text: 'kubernetes', matchType: 'Exact' }]);
+    c['microsoftGeoTargets'].set(['US']);
+    await fixture.whenStable();
+
+    // Everything else valid, so only the budget can be what blocks it. Asserted first so a
+    // failure below cannot be mistaken for an unrelated invalid field.
+    c['microsoftBudgetUsd'].set(100);
+    await fixture.whenStable();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['microsoftBudgetUsd'].set(budget);
+    await fixture.whenStable();
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The empty-array case, which the `!== undefined` restore exists for and a truthiness check
+   * would break. Clearing every keyword is a DELIBERATE act the operator took; refilling it from
+   * the brief on remount would hand back a campaign they had emptied, and `canSubmit` would then
+   * pass on values they never re-chose.
+   */
+  it('treats a cleared Microsoft keyword list as a real value rather than refilling it', async () => {
+    let draft: Record<string, any> | null = null;
+    component()['draftChange'].subscribe((d: Record<string, any>) => (draft = d));
+
+    component()['microsoftKeywords'].set([]);
+    component()['emitDraft']();
+    await fixture.whenStable();
+
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    restored.componentRef.setInput('draft', draft);
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: (draft as unknown as Record<string, any>)['eventSlug'] },
+      keywords: [{ term: 'kubernetes', matchType: 'Exact', intentLevel: 'High', notes: '' }],
+      selectedPlatforms: ['microsoft-ads'],
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+
+    const c = restored.componentInstance as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    await restored.whenStable();
+
+    expect(c['microsoftEffectiveKeywords']()).toEqual([]);
+    // And the submit is blocked, naming the reason this matters rather than only the state.
+    expect(c['canSubmit']()).toBe(false);
   });
 
   /**
@@ -2607,5 +3137,124 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(c.redditVariants()).toEqual([{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }]);
     expect(c.linkedInVariants()).toHaveLength(1);
     expect(c.metaVariants()).toHaveLength(1);
+  });
+});
+
+describe('ImplementationTabComponent demand gen capability gate', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  function checkbox(): HTMLInputElement | null {
+    return fixture.nativeElement.querySelector('input[formControlName="includeDemandGen"]');
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /**
+   * Asserted in BOTH directions on the RENDERED output, not on the input signal.
+   *
+   * A test that only checked the disabled case would pass against a template that never renders
+   * the control at all, and one that only read `demandGenEnabled()` would pass against a template
+   * that ignores it entirely.
+   */
+  it('hides the Demand Gen control when the deployment cannot create it', () => {
+    fixture.componentRef.setInput('demandGenEnabled', false);
+    fixture.detectChanges();
+    expect(checkbox()).toBeNull();
+  });
+
+  it('shows the Demand Gen control when the deployment can create it', () => {
+    fixture.componentRef.setInput('demandGenEnabled', true);
+    fixture.detectChanges();
+    expect(checkbox()).not.toBeNull();
+  });
+
+  it('defaults to hidden, so a deployment that never reports the capability cannot offer it', () => {
+    expect(checkbox()).toBeNull();
+  });
+
+  it('withholds the control while the capability is still unknown', () => {
+    fixture.componentRef.setInput('demandGenEnabled', null);
+    fixture.detectChanges();
+    expect(checkbox()).toBeNull();
+  });
+
+  /**
+   * The distinction the tri-state exists for. `null` withholds the control exactly as `false`
+   * does, so this cannot be asserted through the DOM — only the draft outcome separates them,
+   * and getting it wrong destroys a user's saved selection rather than merely hiding a checkbox.
+   */
+  it('preserves a restored draft selection while the capability is unknown', () => {
+    restoreDraft(null, true);
+    expect(demandGenValue()).toBe(true);
+  });
+
+  /**
+   * Order matters, and getting it wrong makes the negative case pass for the wrong reason.
+   *
+   * The seeding effect depends only on `briefData` and reads `draft` inside `untracked()`, so the
+   * draft must already be set when the brief lands — setting the brief first runs the effect with
+   * no draft, and a later `setInput('draft', ...)` never re-triggers it. `applyDraft` also returns
+   * early unless the draft's `eventSlug` matches the form's, which the brief is what populates.
+   *
+   * With either mistake the control keeps its `[false]` default and the "forces to Search" test
+   * passes without the guard existing at all.
+   */
+  function restoreDraft(enabled: boolean | null, includeDemandGen: boolean): void {
+    fixture.componentRef.setInput('demandGenEnabled', enabled);
+    fixture.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://example.com',
+      includeSearch: true,
+      includeDemandGen,
+      // Required: `applyDraft` calls `replaceCopyArray` on both unconditionally, so a draft
+      // without them throws "values is not iterable" before it reaches the checkbox.
+      headlines: ['Join us at KubeCon'],
+      descriptions: ['Register today for KubeCon EU 2026.'],
+    } as unknown as CampaignImplementationDraft);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+  }
+
+  function demandGenValue(): boolean {
+    return (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].controls['includeDemandGen'].value;
+  }
+
+  /**
+   * Hiding the control is not enough on its own: the draft restore writes `includeDemandGen`
+   * directly, so a draft saved when the capability was available would put a hidden `true` on the
+   * form and submit it into a refusal. Asserts the VALUE, not merely that the path ran.
+   */
+  it('forces a restored draft to Search when the deployment cannot create Demand Gen', () => {
+    restoreDraft(false, true);
+    expect(demandGenValue()).toBe(false);
+  });
+
+  /**
+   * The paired positive case. Without it the guard could be `includeDemandGen: false` outright
+   * and the negative test above would still pass, so this is what proves the gate reads the
+   * capability rather than discarding the draft value unconditionally.
+   */
+  it('preserves a restored draft Demand Gen selection where the deployment supports it', () => {
+    restoreDraft(true, true);
+    expect(demandGenValue()).toBe(true);
   });
 });

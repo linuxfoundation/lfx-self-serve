@@ -1,7 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BucketLocationConstraint, CreateBucketCommand, HeadBucketCommand, HeadObjectCommand, NotFound, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  BucketLocationConstraint,
+  CreateBucketCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  NoSuchKey,
+  NotFound,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { Request } from 'express';
 
 import { buildAvatarUrl, getAvatarCdnPrefix, toAvatarKeySegment } from '../utils/avatar-url.util';
@@ -39,13 +50,13 @@ export class ObjectStoreService {
    * silently masked "not ready yet".
    *
    * `options.degradable` controls the failure log level: callers that catch and degrade
-   * gracefully (e.g. `putObjectIfAbsent` consumers like Brand Kit persistence) pass true so a
-   * readiness outage logs WARN instead of ERROR — the request still succeeds, so an ERROR here
+   * gracefully (e.g. `putContentAddressedObject` consumers like Brand Kit persistence) pass true
+   * so a readiness outage logs WARN instead of ERROR — the request still succeeds, so an ERROR here
    * would page on a recovered path. Non-degradable callers (avatar upload) keep ERROR. The
    * severity is captured when the memoized check is created; concurrent callers of the same
    * purpose share that promise and its single log line, which is exact today because each
    * purpose has a single caller class (avatars → uploadProfilePicture, marketing-os-artifacts →
-   * putObjectIfAbsent).
+   * putContentAddressedObject).
    */
   public async ensureBucket(purpose: ObjectStorePurpose = 'avatars', options: { degradable?: boolean } = {}): Promise<void> {
     if (!this.ensureBucketPromises[purpose]) {
@@ -73,23 +84,36 @@ export class ObjectStoreService {
   }
 
   /**
-   * Idempotent, content-addressed write into a purpose-keyed bucket. When the
-   * key already exists (same content by construction for content-addressed
-   * keys), the write is skipped and reported as a no-op success.
+   * Idempotent, content-addressed write into a purpose-keyed bucket. The key
+   * is derived from a hash of the bytes, so an object that already exists
+   * holds identical content by construction and its body is never rewritten —
+   * the write is skipped and reported as a no-op success.
+   *
+   * The object's user METADATA is not content-addressed, though: the same
+   * bytes can be produced again by a later, differently-labelled revision, and
+   * the stored labels (plus the store's last-modified stamp) would still
+   * describe the revision that happened to write them first. A caller that
+   * reads those labels back — or that treats last-modified as "last produced"
+   * — passes `options.refreshMetadataWhen` to re-PUT the identical bytes with
+   * fresh metadata. It receives the stored metadata and MUST be monotonic
+   * (true only for a strictly newer revision), or an idempotent no-op becomes
+   * a write on every repeat call.
    *
    * Note: HEAD-then-PUT is racy under concurrency, but the race is benign for
    * content-addressed keys — concurrent writers PUT identical bytes and the
    * last write is indistinguishable from the first.
    *
-   * @returns true when a new object was written, false when it already existed.
+   * @returns true when the object was written (absent, or metadata refreshed), false on the no-op.
    */
-  public async putObjectIfAbsent(
+  public async putContentAddressedObject(
     req: Request,
     purpose: ObjectStorePurpose,
     key: string,
     body: Buffer,
     contentType: string,
-    cacheControl: string
+    cacheControl: string,
+    metadata?: Record<string, string>,
+    options: { refreshMetadataWhen?: (storedMetadata: Record<string, string>) => boolean } = {}
   ): Promise<boolean> {
     // degradable: a readiness failure here rethrows to consumers that catch and degrade
     // gracefully (same rationale as the WARN in the catch below), so it must log WARN — not
@@ -98,13 +122,17 @@ export class ObjectStoreService {
 
     const bucket = this.getBucket(purpose);
     const client = this.getClient();
-    const startTime = logger.startOperation(req, 'object_store_put_if_absent', { purpose, key, content_type: contentType, size: body.length });
+    const startTime = logger.startOperation(req, 'object_store_put_content_addressed', { purpose, key, content_type: contentType, size: body.length });
 
     try {
+      let refreshed = false;
       try {
-        await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
-        logger.success(req, 'object_store_put_if_absent', startTime, { key, written: false });
-        return false;
+        const head = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+        refreshed = options.refreshMetadataWhen?.(head.Metadata ?? {}) === true;
+        if (!refreshed) {
+          logger.success(req, 'object_store_put_content_addressed', startTime, { key, written: false });
+          return false;
+        }
       } catch (error) {
         // Only a confirmed 404/NotFound means "object is missing" — anything else
         // (403, timeout, 5xx) must rethrow, never be treated as absent.
@@ -114,8 +142,17 @@ export class ObjectStoreService {
         }
       }
 
-      await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType, CacheControl: cacheControl }));
-      logger.success(req, 'object_store_put_if_absent', startTime, { key, written: true });
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+          CacheControl: cacheControl,
+          ...(metadata && { Metadata: metadata }),
+        })
+      );
+      logger.success(req, 'object_store_put_content_addressed', startTime, { key, written: true, metadata_refreshed: refreshed });
       return true;
     } catch (error) {
       // WARN, not ERROR: this idempotent write is a best-effort primitive whose
@@ -126,7 +163,88 @@ export class ObjectStoreService {
       // apiErrorHandler, which logs at ERROR. Logging ERROR here as well would
       // page on every transient outage of a path that returns a successful
       // response.
-      logger.warning(req, 'object_store_put_if_absent', 'Object HEAD/PUT failed — rethrowing for the caller to handle', {
+      logger.warning(req, 'object_store_put_content_addressed', 'Object HEAD/PUT failed — rethrowing for the caller to handle', {
+        purpose,
+        key,
+        duration: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * List the objects under a key prefix in a purpose-keyed bucket (key +
+   * last-modified only — enough for callers to pick a latest object without
+   * fetching bodies). Paginates through every ListObjectsV2 page; the
+   * consuming partitions (content-addressed artifact prefixes) stay small,
+   * so no page cap is needed.
+   *
+   * No ensureBucket first: reads never create buckets, and a missing bucket
+   * surfaces as an S3 error the caller handles like any other read failure
+   * (the Brand Kit stored-document consumer degrades it to "none stored").
+   */
+  public async listObjects(req: Request, purpose: ObjectStorePurpose, prefix: string): Promise<{ key: string; lastModified?: Date }[]> {
+    const bucket = this.getBucket(purpose);
+    const client = this.getClient();
+    const startTime = logger.startOperation(req, 'object_store_list_objects', { purpose, prefix });
+
+    try {
+      const objects: { key: string; lastModified?: Date }[] = [];
+      let continuationToken: string | undefined;
+      do {
+        const page = await client.send(
+          new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ...(continuationToken && { ContinuationToken: continuationToken }) })
+        );
+        for (const entry of page.Contents ?? []) {
+          if (entry.Key) {
+            objects.push({ key: entry.Key, lastModified: entry.LastModified });
+          }
+        }
+        continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+      } while (continuationToken);
+
+      logger.success(req, 'object_store_list_objects', startTime, { prefix, count: objects.length });
+      return objects;
+    } catch (error) {
+      // WARN, not ERROR: same graceful-degradation rationale as putContentAddressedObject —
+      // the consumers of this read primitive (Brand Kit stored lookup) catch and
+      // degrade to "none stored"; an unrecovered rethrow still reaches the
+      // centralized apiErrorHandler, which logs at ERROR.
+      logger.warning(req, 'object_store_list_objects', 'Object list failed — rethrowing for the caller to handle', {
+        purpose,
+        prefix,
+        duration: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch one object's UTF-8 body and user metadata from a purpose-keyed
+   * bucket. Returns null only on a CONFIRMED missing object (404/NoSuchKey) —
+   * anything else (403, timeout, 5xx) rethrows, never masquerades as absent.
+   */
+  public async getObject(req: Request, purpose: ObjectStorePurpose, key: string): Promise<{ body: string; metadata: Record<string, string> } | null> {
+    const bucket = this.getBucket(purpose);
+    const client = this.getClient();
+    const startTime = logger.startOperation(req, 'object_store_get_object', { purpose, key });
+
+    try {
+      const response = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+      const body = (await response.Body?.transformToString('utf-8')) ?? '';
+      logger.success(req, 'object_store_get_object', startTime, { key, size: body.length });
+      return { body, metadata: response.Metadata ?? {} };
+    } catch (error) {
+      const isConfirmedNotFound =
+        error instanceof NoSuchKey || error instanceof NotFound || (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode === 404;
+      if (isConfirmedNotFound) {
+        logger.success(req, 'object_store_get_object', startTime, { key, found: false });
+        return null;
+      }
+      // WARN, not ERROR — same graceful-degradation contract as listObjects.
+      logger.warning(req, 'object_store_get_object', 'Object GET failed — rethrowing for the caller to handle', {
         purpose,
         key,
         duration: Date.now() - startTime,

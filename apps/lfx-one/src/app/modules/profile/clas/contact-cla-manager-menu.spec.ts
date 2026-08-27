@@ -34,8 +34,8 @@ describe('buildContactClaManagerMenuItems', () => {
     expect(buildContactClaManagerMenuItems(agreement({ status: 'revoked' }), dialog)).toEqual([]);
   });
 
-  it('offers only Request Removal on a Valid ECLA', () => {
-    expect(labels(buildContactClaManagerMenuItems(agreement({ status: 'valid' }), dialog))).toEqual(['Request Removal']);
+  it('offers Request Removal and Contact CLA Manager on a Valid ECLA', () => {
+    expect(labels(buildContactClaManagerMenuItems(agreement({ status: 'valid' }), dialog))).toEqual(['Request Removal', 'Contact CLA Manager']);
   });
 
   it('offers approval, removal, and contact on Needs-attention + not_on_approval_list', () => {

@@ -479,10 +479,15 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(updateCampaignStatus).not.toHaveBeenCalled();
   });
 
-  // Platform, not just status. Microsoft and X are `disabled: true` in CAMPAIGN_PLATFORMS, so the
-  // BFF's CAMPAIGN_SERVICE_STATUS_PLATFORMS refuses them outright — a `created` row of theirs is
-  // pausable UPSTREAM but not through this app, and status alone would enable a doomed button.
-  it.each(['microsoft-ads', 'twitter-ads'])('disables the toggle for the unsupported platform %s', (platform) => {
+  // Platform, not just status. X is `disabled: true` in CAMPAIGN_PLATFORMS, so the BFF's
+  // CAMPAIGN_SERVICE_STATUS_PLATFORMS refuses it outright — a `created` row of X's is pausable
+  // UPSTREAM but not through this app, and status alone would enable a doomed button.
+  //
+  // Microsoft was the other example until LFXV2-3312 ENABLED it. `TOGGLEABLE_CAMPAIGN_PLATFORMS`
+  // is derived from the same `!p.disabled` flag, so Microsoft now belongs in the companion test
+  // below rather than here — keeping it in this list would have asserted the opposite of the
+  // shipped behaviour.
+  it.each(['twitter-ads'])('disables the toggle for the unsupported platform %s', (platform) => {
     render([doc({ platform, status: 'created' })]);
 
     const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
@@ -496,6 +501,18 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
 
     button.click();
     expect(updateCampaignStatus).not.toHaveBeenCalled();
+  });
+
+  // The other half of the derivation (LFXV2-3312): Microsoft is now an offered platform, so a
+  // `created` Microsoft row must be pausable from this tab. Re-adding `disabled: true` to the
+  // shared constant would silently strand the channel — selectable in Plan, unpausable here —
+  // and this fails if that happens.
+  it('enables the toggle for microsoft-ads, which this app now offers', () => {
+    render([doc({ platform: 'microsoft-ads', status: 'created' })]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.disabled).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-unavailable-c-1"]')).toBeNull();
   });
 
   // The platform guard must not swallow the platforms this app DOES offer — the mutation that
@@ -512,8 +529,10 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
   });
 
   // The list read is UNGATED while the toggle route refuses every UUID unless
-  // LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE is on — and the chart leaves it unset. So the
-  // default deployment is precisely the one that would render controls that can only 400.
+  // LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE is on. The chart now ships it "true", but the flag
+  // is read per request from the environment, so a values override or a not-yet-rolled pod still
+  // produces the off case — and that deployment is precisely the one that would otherwise render
+  // controls that can only 400.
   // The binding assertion is that the click DISPATCHES NOTHING, not merely that a flag is set.
   it('disables every toggle when the deployment has not enabled status changes', () => {
     render([doc({ status: 'created' }), doc({ id: 'c-2', status: 'paused' })], false, false, false);

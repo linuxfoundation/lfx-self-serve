@@ -125,7 +125,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
   it('offers a saved brief for restore when the lookup returns status=loaded', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }))
     );
 
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
@@ -156,6 +156,7 @@ describe('PlanningTabComponent brief read-back', () => {
           status: 'loaded',
           brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug: 'kubecon-europe-2026' } },
           briefId: 'brief-123',
+          etag: 'W/"v1"',
           approved: true,
         })
       )
@@ -184,7 +185,7 @@ describe('PlanningTabComponent brief read-back', () => {
     // building both gate on `approved`. Restoring suppresses the next save, so nothing retries,
     // and without this warning the user gets a brief that silently cannot proceed.
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: false }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: false }))
     );
 
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
@@ -200,7 +201,7 @@ describe('PlanningTabComponent brief read-back', () => {
     // half that says the brief cannot be used downstream, so a screen-reader user hears
     // "restore is available" and nothing about why it will not proceed.
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: false }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: false }))
     );
 
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
@@ -212,7 +213,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
   it('does not warn when the stored brief is approved', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }))
     );
 
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
@@ -229,7 +230,7 @@ describe('PlanningTabComponent brief read-back', () => {
     // had to fix once for `skip(1)`. Verified by deleting the eager clear: this fails, and the
     // debounce-waiting version did not.
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a', approved: true }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a', etag: 'W/"v1"', approved: true }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     expect(savedBrief()).toEqual(exampleBrief);
@@ -256,7 +257,7 @@ describe('PlanningTabComponent brief read-back', () => {
     // and restoring then hands Implementation a brief for the event the user is leaving.
     const emitted: unknown[] = [];
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a', approved: true }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a', etag: 'W/"v1"', approved: true }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     const component = fixture.componentInstance as unknown as {
@@ -283,9 +284,39 @@ describe('PlanningTabComponent brief read-back', () => {
     expect(emitted).toHaveLength(1);
   });
 
+  it('emits a null etag when the load response omitted the field entirely', async () => {
+    // `etag` crosses an HTTP boundary, so the declared `string | null` describes the CURRENT
+    // server. Mid-rolling-deploy an older pod omits the field and JSON yields `undefined` — a
+    // value the type forbids and the wire produces anyway. Normalising it HERE, at the
+    // boundary, gives absence one spelling; otherwise `undefined` reaches the parent, fails its
+    // `=== null` test, withholds the overwrite licence, and refuses the first save after every
+    // restore as `unverified-validator` for the length of the deploy.
+    //
+    // The fixture omits `etag` deliberately and casts, because a well-typed literal cannot
+    // express the shape an older pod actually sends.
+    const emitted: { etag: string | null }[] = [];
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) =>
+        s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true } as unknown as CampaignBriefLoadResult)
+      )
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+    const component = fixture.componentInstance as unknown as {
+      restoreSavedBrief(): void;
+      restoreSavedBriefRequested: { subscribe(fn: (v: { etag: string | null }) => void): void };
+    };
+    component.restoreSavedBriefRequested.subscribe((v) => emitted.push(v));
+
+    component.restoreSavedBrief();
+
+    expect(emitted).toHaveLength(1);
+    // `toBeNull`, not `toBeFalsy` — `undefined` is falsy too, and passing it through is the bug.
+    expect(emitted[0].etag).toBeNull();
+  });
+
   it('keeps the restore offer across Cancel', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     expect(savedBrief()).toEqual(exampleBrief);
@@ -308,7 +339,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
   it('warns about an unreadable brief when lookup returns status=unreadable', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'unreadable', brief: null, briefId: 'brief-456', approved: false }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'unreadable', brief: null, briefId: 'brief-456', etag: 'W/"v1"', approved: false }))
     );
 
     await typeEventUrl('https://events.example.com/old-event');
@@ -346,7 +377,9 @@ describe('PlanningTabComponent brief read-back', () => {
    */
   it('cancels a lookup that is still open when the slug changes', async () => {
     const oldLookup = new Subject<CampaignBriefLoadResult>();
-    const newLookup = new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-new', approved: true }));
+    const newLookup = new Observable<CampaignBriefLoadResult>((s) =>
+      s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-new', etag: 'W/"v1"', approved: true })
+    );
 
     // First URL: its lookup starts and stays open — `oldLookup` never emits yet.
     campaignService.loadBrief.mockReturnValueOnce(oldLookup);
@@ -365,6 +398,7 @@ describe('PlanningTabComponent brief read-back', () => {
       status: 'loaded',
       brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, name: 'Old Event' } },
       briefId: 'brief-old',
+      etag: 'W/"v1"',
       approved: true,
     });
     await fixture.whenStable();
@@ -379,7 +413,7 @@ describe('PlanningTabComponent brief read-back', () => {
    */
   it('clears the brief offer immediately when foundation changes, independent of re-lookup timing', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }))
     );
 
     // Seed a brief under foundation A.
@@ -412,6 +446,7 @@ describe('PlanningTabComponent brief read-back', () => {
       status: 'loaded',
       brief: { ...exampleBrief, selectedPlatforms: ['linkedin-ads'] },
       briefId: 'brief-under-b',
+      etag: 'W/"v1"',
       approved: true,
     });
     await fixture.whenStable();
@@ -427,7 +462,7 @@ describe('PlanningTabComponent brief read-back', () => {
    */
   it('does not clear on initial subscription to the foundation observable (skip(1) guards against replay)', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }))
     );
 
     // Type a URL; the lookup completes and sets the brief.
@@ -451,7 +486,7 @@ describe('PlanningTabComponent brief read-back', () => {
    */
   it('re-runs lookup when foundation changes even if the slug is the same', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }))
     );
 
     // Lookup under foundation A.
@@ -462,7 +497,7 @@ describe('PlanningTabComponent brief read-back', () => {
     // Switch foundation without changing the slug. This should trigger another lookup.
     campaignService.loadBrief.mockReturnValue(
       new Observable<CampaignBriefLoadResult>((s) =>
-        s.next({ status: 'loaded', brief: { ...exampleBrief, selectedPlatforms: ['linkedin-ads'] }, briefId: 'brief-under-b', approved: true })
+        s.next({ status: 'loaded', brief: { ...exampleBrief, selectedPlatforms: ['linkedin-ads'] }, briefId: 'brief-under-b', etag: 'W/"v1"', approved: true })
       )
     );
     await switchFoundation(foundationB);
@@ -491,7 +526,7 @@ describe('PlanningTabComponent brief read-back', () => {
     // wiped `savedBrief`, the comparer then drops the reverted pair as unchanged, and no lookup
     // runs -- the offer stranded for a brief that exists.
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a', approved: true }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-a', etag: 'W/"v1"', approved: true }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     expect(savedBrief()).toEqual(exampleBrief);
@@ -542,7 +577,7 @@ describe('PlanningTabComponent brief read-back', () => {
     component.onUrlInput();
 
     // The abandoned lookup answers late. Nothing must come of it.
-    slowFirstLookup.next({ status: 'loaded', brief: exampleBrief, briefId: 'stale-brief', approved: true });
+    slowFirstLookup.next({ status: 'loaded', brief: exampleBrief, briefId: 'stale-brief', etag: 'W/"v1"', approved: true });
     await fixture.whenStable();
 
     expect(savedBrief()).toBeNull();
@@ -558,7 +593,7 @@ describe('PlanningTabComponent brief read-back', () => {
    */
   it('keeps the restore offer when the url is cleared and the same one retyped', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     expect(savedBrief()).toEqual(exampleBrief);
@@ -581,7 +616,7 @@ describe('PlanningTabComponent brief read-back', () => {
    */
   it('emits a restored brief on the restore output, not the generate output', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', approved: true }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     expect(savedBrief()).toEqual(exampleBrief);
@@ -596,7 +631,7 @@ describe('PlanningTabComponent brief read-back', () => {
 
     // `approved` rides along with the id: campaign-service refuses a create from an unapproved
     // brief, and the parent files a restored brief as create-ready without it.
-    expect(restored).toEqual([{ brief: exampleBrief, briefId: 'brief-123', approved: true }]);
+    expect(restored).toEqual([{ brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }]);
     expect(generated).toEqual([]);
   });
 
@@ -610,7 +645,7 @@ describe('PlanningTabComponent brief read-back', () => {
    */
   it('carries the brief id with the restored brief', async () => {
     campaignService.loadBrief.mockReturnValue(
-      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-xyz', approved: true }))
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-xyz', etag: 'W/"v1"', approved: true }))
     );
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
 
@@ -804,13 +839,42 @@ describe('PlanningTabComponent delivery-type mode', () => {
 
   it('keeps the ad-copy actions in paid mode', async () => {
     await build('paid-marketing');
-    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
+    const inst = fixture.componentInstance as unknown as Record<string, any>;
+    inst['step'].set('review');
+    // Copy All is additionally gated on the buffer it copies, so a paid brief that HAS copy is
+    // what proves the actions survive. Without this the assertion below would pass for the wrong
+    // reason on a brief that simply had nothing to copy.
+    inst['copyBuffer'].set('{"google_search":{"headlines":["a"]}}');
     fixture.detectChanges();
 
     const host = fixture.nativeElement as HTMLElement;
     expect(host.querySelector('[data-testid="planning-refine-brief-btn"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="planning-edit-brief-btn"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="planning-copy-all-btn"]')).not.toBeNull();
+  });
+
+  /**
+   * A Microsoft-ONLY paid brief is not email, so `!isEmail()` admits it, but it has no ad copy:
+   * Microsoft contributes no copy keys, so `campaign-proxy` emits an empty `copy_structured` and
+   * streams no copy token, leaving `copyBuffer` empty. Copy All then wrote an EMPTY clipboard with
+   * no feedback — the same silent failure the email guard exists to prevent.
+   *
+   * Asserted on the buffer rather than on the platform name so the guard also covers any future
+   * copy-less platform. Refine and Edit deliberately SURVIVE here: unlike email, this brief has a
+   * non-null `structuredCopy` (the empty object), so both are functional.
+   */
+  it('hides Copy All on a paid brief that produced no ad copy', async () => {
+    await build('paid-marketing');
+    const inst = fixture.componentInstance as unknown as Record<string, any>;
+    inst['step'].set('review');
+    inst['copyBuffer'].set('');
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.querySelector('[data-testid="planning-copy-all-btn"]')).toBeNull();
+    // Not the email guard firing by accident: the other two ad-copy actions are still rendered.
+    expect(host.querySelector('[data-testid="planning-refine-brief-btn"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="planning-edit-brief-btn"]')).not.toBeNull();
   });
 
   it('hides the Budget & Assets card in email mode', async () => {

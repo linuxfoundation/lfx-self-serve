@@ -3,7 +3,13 @@
 
 import { Component, computed, input } from '@angular/core';
 import { CardComponent } from '@components/card/card.component';
-import { DELTA_DIRECTION_ICON, DELTA_DIRECTION_TEXT_CLASS, GRID_COLS_CLASS, GRID_DIVIDER_CLASS } from '@lfx-one/shared/constants';
+import {
+  DELTA_DIRECTION_ICON,
+  DELTA_DIRECTION_TEXT_CLASS,
+  GRID_COLS_CLASS,
+  GRID_DIVIDER_CLASS,
+  INVERTED_DELTA_DIRECTION_TEXT_CLASS,
+} from '@lfx-one/shared/constants';
 import { StatCardGridColumns, StatCardItem } from '@lfx-one/shared/interfaces';
 
 @Component({
@@ -21,4 +27,6 @@ export class StatCardGridComponent {
   protected readonly gridDividerClass = computed(() => GRID_DIVIDER_CLASS[this.columns()]);
   protected readonly deltaIcon = DELTA_DIRECTION_ICON;
   protected readonly deltaTextClass = DELTA_DIRECTION_TEXT_CLASS;
+  /** Flipped mapping for `StatCardDelta.inverted` deltas — an increase is bad (e.g. negative sentiment), so up renders red and down renders emerald. */
+  protected readonly invertedDeltaTextClass = INVERTED_DELTA_DIRECTION_TEXT_CLASS;
 }

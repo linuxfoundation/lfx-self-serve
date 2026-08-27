@@ -24,6 +24,7 @@ import { catchError, debounceTime, distinctUntilChanged, filter, map, of, skip, 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
@@ -31,14 +32,20 @@ import { OrgLensGroupsService } from '@services/org-lens-groups.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
+
+import { GroupSeatHoldersDrawerComponent } from './components/group-seat-holders-drawer/group-seat-holders-drawer.component';
 
 @Component({
   selector: 'lfx-org-groups',
   imports: [
     ButtonComponent,
     EmptyStateComponent,
+    GroupSeatHoldersDrawerComponent,
     InputTextComponent,
     NgTemplateOutlet,
+    OpenIntercomDirective,
+    PersonDetailDrawerComponent,
     RouterLink,
     SelectComponent,
     SkeletonModule,
@@ -70,6 +77,7 @@ export class OrgGroupsComponent {
   });
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName);
+  protected readonly orgUid = computed(() => this.accountContext.selectedAccount().uid ?? '');
 
   // Total Groups + Total Seats — the two fixed tiles in the template that visibleClassTiles()
   // doesn't cover. Keep in sync with the stat-strip markup.
@@ -156,6 +164,10 @@ export class OrgGroupsComponent {
   protected readonly hasNoRowsToExport: Signal<boolean> = computed(() => this.filteredGroups().length === 0);
   protected readonly noRowsToExportLabel = 'No rows to export';
 
+  // ── Seat holders drawer (GH-1780) ──────────────────────────────────────────
+  protected readonly seatHoldersDrawerVisible = signal(false);
+  protected readonly selectedGroup = signal<OrgLensGroupVm | null>(null);
+
   public constructor() {
     // State → URL, mirrors org-projects' filterForm.valueChanges → router.navigate pattern. `merge`
     // preserves unrelated params (e.g. ?project=, utm_*); null at default lets merge strip an owned key.
@@ -169,11 +181,23 @@ export class OrgGroupsComponent {
     // A filter value from the previous org (e.g. its foundation slug) would almost never match the
     // next org's roster. `skip(1)` so the URL-seeded initial filter survives first load — only an
     // actual org switch clears it, mirroring committee-members' resetAllState() on orgUid$.
-    this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => this.clearFilters());
+    // Also closes the seat-holders drawer: OrgGroupsComponent isn't destroyed on an org switch, so
+    // a drawer left open would otherwise keep the previous org's selectedGroup (and, via its own
+    // orgUid-keyed cache, would just show the new org's roster filtered by the old org's committeeUid).
+    this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => {
+      this.clearFilters();
+      this.seatHoldersDrawerVisible.set(false);
+      this.selectedGroup.set(null);
+    });
   }
 
   protected clearFilters(): void {
     this.filterForm.reset({ search: '', foundation: '', type: '' });
+  }
+
+  protected onSeatHoldersClick(group: OrgLensGroupVm): void {
+    this.selectedGroup.set(group);
+    this.seatHoldersDrawerVisible.set(true);
   }
 
   // Exports the currently filtered (not the full) roster, in the same order the list renders —
@@ -227,7 +251,8 @@ export class OrgGroupsComponent {
         const ariaLabel = `${g.name}, ${BEHAVIORAL_CLASS_CONFIG[cls].label}, ${g.org_seat_count} ${seatWord}` + (projectLabel ? `, ${projectLabel}` : '');
         // See org-groups.component.html for why this links to /org/memberships, not /org/projects.
         const projectAriaLabel = projectLabel ? `View ${projectLabel} membership details` : '';
-        return { ...g, cls, projectLabel, ariaLabel, projectAriaLabel };
+        const seatHoldersTriggerAriaLabel = `View ${g.org_seat_count} seat holder${g.org_seat_count === 1 ? '' : 's'} for ${g.name}`;
+        return { ...g, cls, projectLabel, ariaLabel, projectAriaLabel, seatHoldersTriggerAriaLabel };
       })
     );
   }

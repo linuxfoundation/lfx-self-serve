@@ -21,6 +21,14 @@ export interface ApiClientConfig {
 export interface ApiRequestOptions {
   /** Per-request timeout in milliseconds; falls back to the client's configured default (`ApiClientConfig.timeout`, default 30s) */
   timeoutMs?: number;
+  /**
+   * Per-request bearer token override. When set, this token is used for the Authorization header
+   * instead of `req.bearerToken`. Lets callers fan out parallel requests that need different
+   * identities (e.g. user token for FGA checks alongside M2M token for public data fetches)
+   * without mutating the shared `req.bearerToken` field — which would race across the parallel
+   * calls and silently attribute one call's identity to another.
+   */
+  bearerToken?: string;
 }
 
 /**

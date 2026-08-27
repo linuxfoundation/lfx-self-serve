@@ -140,7 +140,7 @@ export async function enrichMeetingsWithCreatedBy<T extends Meeting>(req: Reques
  * Removes the Zoom host key from a meeting response.
  *
  * The host key is a 6-digit credential that grants Zoom host privileges to whoever holds it,
- * so it must never reach a client that isn't authorized to see it (see {@link applyHostKeyVisibility}).
+ * so it must never reach a client that isn't authorized to see it (see {@link resolveOrganizerAndHostKey}).
  * Used directly on response paths where the host key is never surfaced (list views, past meetings,
  * anonymous callers, create echoes).
  *
@@ -177,42 +177,90 @@ export function isWithinHostKeyWindow(meeting: Pick<Meeting, 'start_time' | 'dur
 }
 
 /**
- * Resolves whether the current user may view a meeting's Zoom host key and mutates the meeting
- * accordingly. This is the single source of truth for host-key visibility on detail endpoints.
+ * Resolves whether the current user is a meeting organizer AND (if inside the host-key time
+ * window) attempts to fetch the meeting's Zoom host key. This is the single source of truth for
+ * host-key visibility on detail endpoints.
  *
- * `meeting.organizer` is always resolved via `v1_meeting#organizer` — it gates private-meeting
- * access and registrant-count fetches independently of host-key visibility.
+ * `organizer` is resolved via `v1_meeting#organizer` — it gates private-meeting access and
+ * registrant-count fetches independently of host-key visibility.
  *
- * `meeting.can_view_host_key` requires BOTH gates to pass:
- *   1. FGA `v1_meeting#host` — covers direct co-hosts (registrants with Host=true) AND anyone
- *      with the derived organizer relation (project writers, committee writers, meeting coordinators)
- *      via the FGA model: host = [user] or auditor, auditor = organizer or auditor from project
- *   2. Time window — current time is within [effective_start − 70 min, effective_start + duration + 40 min)
- *      where effective_start = next_occurrence_start_time ?? start_time  (mirrors PCC)
+ * `can_view_host_key` and `host_key` are derived from whether the host-key fetch returned a
+ * value. The query-service enforces the FGA `host` relation on `v1_meeting_host_credentials`
+ * (covering direct co-hosts AND anyone with the derived organizer relation — project writers,
+ * committee writers, meeting coordinators), so a separate local `host` access-check is
+ * redundant with the query-service's gate and is intentionally NOT performed here. This drops
+ * one round trip on every request that would otherwise fetch a host key.
  *
- * Both checks are batched into a single `/access-check` round-trip. The check is fail-closed:
- * on any upstream error the access-check service returns all-false, so the host key is stripped.
+ * Time-window check: current time must be within
+ * [effective_start − 70 min, effective_start + duration + 40 min), where
+ * effective_start = next_occurrence_start_time ?? start_time (mirrors PCC). Outside the window
+ * we skip the host-key fetch entirely — the key would be stripped anyway.
  *
- * MUST be called with the user's own bearer token active on `req` — NOT an M2M token — or the
- * access check evaluates against the application identity instead of the user.
+ * Runs the organizer check and the host-key fetch in parallel (both use the user's bearer
+ * token). The optional `bearerToken` parameter lets the caller fan this out alongside other
+ * calls that use a different identity (e.g. M2M) without racing on `req.bearerToken`. When
+ * omitted, the calls use `req.bearerToken`.
+ *
+ * Returns a plain result object — callers apply it to the meeting after other parallel work
+ * completes, avoiding races on shared object fields.
  *
  * @param req - Express request object with the user's auth context
  * @param accessCheckService - Access-check service instance
- * @param meeting - The meeting to gate (mutated in place)
+ * @param meetingService - Meeting service instance (used to fetch the host-key credentials doc)
+ * @param meeting - The meeting to gate (read-only here; not mutated)
+ * @param bearerToken - Optional per-call bearer token override (typically the user's token
+ *   captured before an M2M token swap on `req.bearerToken`)
  */
-export async function applyHostKeyVisibility(req: Request, accessCheckService: AccessCheckService, meeting: Meeting): Promise<void> {
-  const results = await accessCheckService.checkAccess(req, [
-    { resource: 'v1_meeting', id: meeting.id, access: 'organizer' },
-    { resource: 'v1_meeting', id: meeting.id, access: 'host' },
+export async function resolveOrganizerAndHostKey(
+  req: Request,
+  accessCheckService: AccessCheckService,
+  meetingService: MeetingService,
+  meeting: Pick<Meeting, 'id' | 'start_time' | 'duration' | 'next_occurrence_start_time'>,
+  bearerToken?: string
+): Promise<{ organizer: boolean; canViewHostKey: boolean; hostKey?: string }> {
+  const withinWindow = isWithinHostKeyWindow(meeting);
+  const callOptions = bearerToken ? { bearerToken } : undefined;
+
+  // Fire both the organizer FGA check and the host-key fetch in parallel. `checkSingleAccess`
+  // already degrades to `false` on upstream failure; the host-key fetch we wrap in Promise.allSettled
+  // so a query-service blip cannot fail the whole meeting response.
+  const [organizerResult, hostKeyResult] = await Promise.allSettled([
+    accessCheckService.checkSingleAccess(req, { resource: 'v1_meeting', id: meeting.id, access: 'organizer' }, callOptions),
+    withinWindow ? meetingService.getMeetingHostKey(req, meeting.id, callOptions) : Promise.resolve(null),
   ]);
 
-  // organizer gates private-meeting access and registrant counts independently of host-key.
-  meeting.organizer = results.get(`${meeting.id}#organizer`) ?? false;
+  if (organizerResult.status === 'rejected') {
+    // checkSingleAccess.degrades to false internally, so this branch is only for genuinely
+    // unexpected throws (e.g. code bug). Log and fail closed.
+    logger.warning(req, 'resolve_organizer_and_host_key', 'Organizer FGA check threw, failing closed', {
+      meeting_id: meeting.id,
+      err: organizerResult.reason,
+    });
+  }
+  if (hostKeyResult.status === 'rejected') {
+    logger.warning(req, 'resolve_organizer_and_host_key', 'Host key fetch failed, continuing without host key', {
+      meeting_id: meeting.id,
+      err: hostKeyResult.reason,
+    });
+  }
 
-  // can_view_host_key requires host relation AND time-window.
-  meeting.can_view_host_key = (results.get(`${meeting.id}#host`) ?? false) && isWithinHostKeyWindow(meeting);
+  const organizer = organizerResult.status === 'fulfilled' ? organizerResult.value : false;
+  const hostKey = hostKeyResult.status === 'fulfilled' ? hostKeyResult.value : null;
 
-  if (!meeting.can_view_host_key) {
+  return hostKey ? { organizer, canViewHostKey: true, hostKey } : { organizer, canViewHostKey: false };
+}
+
+/**
+ * Applies a {@link resolveOrganizerAndHostKey} result to a meeting object. Sets `organizer`,
+ * `can_view_host_key`, and either sets or strips `host_key` accordingly. Kept as a small helper
+ * so both consumer controllers apply the result the same way.
+ */
+export function applyOrganizerAndHostKeyResult(meeting: Meeting, result: { organizer: boolean; canViewHostKey: boolean; hostKey?: string }): void {
+  meeting.organizer = result.organizer;
+  meeting.can_view_host_key = result.canViewHostKey;
+  if (result.hostKey) {
+    meeting.host_key = result.hostKey;
+  } else {
     stripHostKey(meeting);
   }
 }

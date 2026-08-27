@@ -19,6 +19,7 @@ const {
   searchHubSpotEmails,
   toggleCampaignStatus,
   listBriefCampaigns,
+  getBriefMetrics,
   legacyUpdateStatus,
   isServerFeatureEnabled,
   logger,
@@ -32,6 +33,7 @@ const {
   searchHubSpotEmails: vi.fn(),
   toggleCampaignStatus: vi.fn(),
   listBriefCampaigns: vi.fn(),
+  getBriefMetrics: vi.fn(),
   legacyUpdateStatus: vi.fn(),
   isServerFeatureEnabled: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
@@ -52,6 +54,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public searchHubSpotEmails = searchHubSpotEmails;
       public toggleCampaignStatus = toggleCampaignStatus;
       public listBriefCampaigns = listBriefCampaigns;
+      public getBriefMetrics = getBriefMetrics;
     },
   };
 });
@@ -141,8 +144,8 @@ describe('CampaignController.persistBrief', () => {
 
     expect(saveBrief).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
-    // 200 with a body, not a 4xx/5xx: the flag being off is the default in every environment, so
-    // an error status here would fire the client's error arm on the ordinary case.
+    // 200 with a body, not a 4xx/5xx: the flag being off is an ordinary deployment state rather
+    // than a fault, so an error status here would fire the client's error arm on that case.
     expect(res.json).toHaveBeenCalledWith({ enabled: false, briefId: '', etag: null, created: false, approved: false });
   });
 
@@ -259,12 +262,12 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
-    // The flag being off is the default in every environment and warrants no error. A 4xx/5xx
+    // The flag being off is an ordinary deployment state and warrants no error. A 4xx/5xx
     // would fire the client's error arm on the ordinary case and train whoever sees it to ignore
     // a UI that should never fire.
     expect(loadBrief).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ status: 'off', briefId: null, brief: null, approved: false });
+    expect(res.json).toHaveBeenCalledWith({ status: 'off', briefId: null, brief: null, etag: null, approved: false });
   });
 
   it('refuses to look up a brief without an event_slug query param', async () => {
@@ -330,13 +333,13 @@ describe('CampaignController.loadBrief', () => {
   it('returns a "none" status when campaign-service has no brief for this slug', async () => {
     // The ordinary first-time case: the user has not generated a brief yet, so campaign-service
     // returns nothing. This is not an error, just an empty result that tells the UI "generate one".
-    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, approved: false });
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
     expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ status: 'none', briefId: null, brief: null, approved: false });
+    expect(res.json).toHaveBeenCalledWith({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
   });
 
   it('returns a "loaded" status with the brief when campaign-service reconstructs it successfully', async () => {
@@ -347,13 +350,13 @@ describe('CampaignController.loadBrief', () => {
       structuredCopy: null,
       keywords: [],
     } as unknown as CampaignBriefOutput;
-    loadBrief.mockResolvedValue({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, approved: true });
+    loadBrief.mockResolvedValue({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, etag: 'W/"7"', approved: true });
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
     expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, approved: true });
+    expect(res.json).toHaveBeenCalledWith({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, etag: 'W/"7"', approved: true });
   });
 
   it('returns an "unreadable" status with the brief ID when a row exists but cannot be reconstructed', async () => {
@@ -362,13 +365,13 @@ describe('CampaignController.loadBrief', () => {
     // UI from treating this as "no brief" and silently overwriting the orphaned row with a new save.
     // The client learns "a saved brief exists but could not be opened" and can prompt the user
     // rather than pretending the slate is clean.
-    loadBrief.mockResolvedValue({ status: 'unreadable', briefId: 'brief-def456', brief: null, approved: false });
+    loadBrief.mockResolvedValue({ status: 'unreadable', briefId: 'brief-def456', brief: null, etag: 'W/"9"', approved: false });
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
     expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ status: 'unreadable', briefId: 'brief-def456', brief: null, approved: false });
+    expect(res.json).toHaveBeenCalledWith({ status: 'unreadable', briefId: 'brief-def456', brief: null, etag: 'W/"9"', approved: false });
   });
 
   it('sends a failed load to the error middleware instead of returning a degraded result', async () => {
@@ -741,6 +744,300 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['budget']).toBe(250);
     expect(sent).not.toHaveProperty('budgetUsd');
     expect(sent['geoTargets']).toEqual(['US']);
+  });
+
+  /**
+   * LFXV2-3312. These assert the WIRE PAYLOAD — `envelopeFor` reads the fifth argument actually
+   * handed to `createCampaigns` — rather than the request object, because a shape-only assertion
+   * on the request would pass against a broken mapping. `unmarshalPlatformConfig` upstream reads a
+   * missing key as a ZERO VALUE rather than an error, so a wrong key name is silent.
+   */
+  const microsoftConfig = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    eventName: 'KubeCon',
+    eventSlug: 'kubecon',
+    registrationUrl: 'https://example.com',
+    budgetUsd: 300,
+    startDate: '2026-01-01',
+    endDate: '2026-02-01',
+    geoTargets: ['US'],
+    keywords: [{ text: 'kubernetes', matchType: 'Exact' }],
+    ...overrides,
+  });
+
+  const createWithMicrosoft = async (overrides: Record<string, unknown> = {}): Promise<void> => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+    await controller.createCampaign(
+      buildReq({ platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig(overrides) }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+  };
+
+  it('renames Microsoft budgetUsd to the budget key the dispatcher reads', async () => {
+    await createWithMicrosoft();
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    expect(sent['budget']).toBe(300);
+    expect(sent).not.toHaveProperty('budgetUsd');
+    expect(sent['keywords']).toEqual([{ text: 'kubernetes', matchType: 'Exact' }]);
+    expect(sent['geoTargets']).toEqual(['US']);
+  });
+
+  it('omits cpcBid and timeZone when unset, leaving Microsoft its serve-capable defaults', async () => {
+    // An explicit 0 would claim a bid the account does not have; omitted means Microsoft applies
+    // the account-currency minimum. A blank timeZone is the same non-answer as an absent one.
+    await createWithMicrosoft({ cpcBid: 0, timeZone: '   ' });
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('cpcBid');
+    expect(sent).not.toHaveProperty('timeZone');
+  });
+
+  /**
+   * The client refuses a supplied bid outside [0.01, 1000] (`targeting.go:263-268`), and because
+   * creation is async that refusal is a FAILED JOB, not an error on this request. Dropped rather
+   * than refused whole: unset is a valid serve-capable state, so the campaign still works.
+   */
+  it.each([
+    ['below the minimum', 0.001],
+    ['above the maximum', 1001],
+  ])('drops a cpcBid %s rather than dispatching one Microsoft rejects', async (_label, cpcBid) => {
+    await createWithMicrosoft({ cpcBid });
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('cpcBid');
+    // The rest of the config still dispatches — an out-of-range bid must not sink the campaign.
+    expect(sent['budget']).toBe(300);
+  });
+
+  it.each([
+    ['the minimum', 0.01],
+    ['the maximum', 1000],
+  ])('forwards a cpcBid at %s, which is in range', async (_label, cpcBid) => {
+    await createWithMicrosoft({ cpcBid });
+
+    expect((envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>)['cpcBid']).toBe(cpcBid);
+  });
+
+  /**
+   * The client refuses these BEFORE its first create call (`targeting.go:183`, `:195`,
+   * `geo.go:243`), so an over-cap list is an async dead job rather than a refusal of the request.
+   * Refused whole rather than TRUNCATED: silently dropping the 61st keyword would dispatch a
+   * campaign targeting less than the operator asked for, with nothing saying so.
+   */
+  it.each([
+    ['more than 60 keywords', { keywords: Array.from({ length: 61 }, (_, i) => ({ text: `kw-${i}`, matchType: 'Exact' })) }],
+    ['a keyword longer than 100 characters', { keywords: [{ text: 'k'.repeat(101), matchType: 'Exact' }] }],
+    [
+      'more than 30 geo targets',
+      { geoTargets: Array.from({ length: 31 }, (_, i) => String.fromCharCode(65 + Math.floor(i / 26)) + String.fromCharCode(65 + (i % 26))) },
+    ],
+  ])('refuses a Microsoft create with %s', async (_label, overrides) => {
+    await createWithMicrosoft(overrides);
+
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('microsoftConfig');
+  });
+
+  /**
+   * This route has NO body validator — `req.body` is asserted, not parsed — so a malformed body
+   * reaches the builder intact. Before these checks `keywords: {}` hit `.filter` and
+   * `geoTargets: [123]` hit `.trim`, answering with a 500 instead of the controlled refusal. Same
+   * reasoning as `buildHubSpotConfig`, which type-checks for exactly this.
+   */
+  it.each([
+    ['a non-array keywords value', { keywords: {} }],
+    ['a non-string keyword text', { keywords: [{ text: 123, matchType: 'Exact' }] }],
+    ['an unsupported match type', { keywords: [{ text: 'kubernetes', matchType: 'BROAD_MATCH' }] }],
+    ['a non-array geoTargets value', { geoTargets: {} }],
+    ['non-string geo entries', { geoTargets: [123] }],
+    ['a non-ISO geo code', { geoTargets: ['USA'] }],
+  ])('refuses a malformed Microsoft %s without throwing', async (_label, overrides) => {
+    await expect(createWithMicrosoft(overrides)).resolves.not.toThrow();
+
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('microsoftConfig');
+    // Not a 500: the refusal is the controlled "unconfigured" path, so nothing reaches `next`
+    // as an unexpected TypeError.
+    const forwarded = vi.mocked(next).mock.calls.flat() as unknown[];
+    expect(forwarded.some((e) => (e as { constructor?: { name?: string } })?.constructor?.name === 'TypeError')).toBe(false);
+  });
+
+  /**
+   * REJECT-ALL, not filter-and-continue. Upstream errors on the FIRST bad entry
+   * (`validateKeywords`, `validateGeoTargets`), and `resolveGeoTargets` states why: "returning the
+   * partial set would create a campaign targeted at some-but-not-all of the requested countries
+   * while reporting success, and a caller cannot tell that from a full result."
+   *
+   * Each case pairs a VALID entry with an invalid one, so a filtering implementation would build a
+   * config from the survivor and pass a mere "was it refused" assertion.
+   */
+  it.each([
+    [
+      'an unsupported match type beside a valid keyword',
+      {
+        keywords: [
+          { text: 'kubernetes', matchType: 'Exact' },
+          { text: 'mesh', matchType: 'Fuzzy' },
+        ],
+      },
+    ],
+    [
+      'a C0 control character beside a valid keyword',
+      {
+        keywords: [
+          { text: 'kubernetes', matchType: 'Exact' },
+          { text: 'me\tsh', matchType: 'Exact' },
+        ],
+      },
+    ],
+    // C1 (U+0080-U+009F) is rejected by Go's `unicode.IsControl` too. An earlier version of this
+    // guard stopped at DEL, so U+0085 passed the preflight, was queued, and was refused upstream
+    // only AFTER the campaign hierarchy may have been created — the partial create this prevents.
+    ['a C1 control character (U+0085 NEL)', { keywords: [{ text: 'kuber\u0085netes', matchType: 'Exact' }] }],
+    ['a C1 control character (U+009F APC)', { keywords: [{ text: 'kuber\u009Fnetes', matchType: 'Exact' }] }],
+    ['a DEL character (U+007F)', { keywords: [{ text: 'kuber\u007Fnetes', matchType: 'Exact' }] }],
+    [
+      'an over-length keyword beside a valid one',
+      {
+        keywords: [
+          { text: 'kubernetes', matchType: 'Exact' },
+          { text: 'k'.repeat(101), matchType: 'Exact' },
+        ],
+      },
+    ],
+    [
+      'a blank keyword beside a valid one',
+      {
+        keywords: [
+          { text: 'kubernetes', matchType: 'Exact' },
+          { text: '   ', matchType: 'Exact' },
+        ],
+      },
+    ],
+    ['a non-ISO code beside a valid geo', { geoTargets: ['US', 'USA'] }],
+    ['a blank code beside a valid geo', { geoTargets: ['US', '  '] }],
+  ])('refuses the WHOLE Microsoft config for %s rather than dropping the bad entry', async (_label, overrides) => {
+    await createWithMicrosoft(overrides);
+
+    // Not "a config with one keyword" — no config at all. A filtering implementation would have
+    // dispatched the valid survivor and reported success.
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('microsoftConfig');
+  });
+
+  /**
+   * Upstream `canonicalMatchType` does `strings.ToLower(strings.TrimSpace(in))`, so `EXACT` and
+   * ` exact ` are both valid. An exact-case `Set.has` was STRICTER than the service and refused a
+   * request it would have accepted, reporting the platform as unconfigured instead.
+   */
+  it.each([['EXACT'], ['exact'], ['  Exact  '], ['bRoAd']])('accepts the match type %s, which upstream canonicalises', async (matchType) => {
+    await createWithMicrosoft({ keywords: [{ text: 'kubernetes', matchType }] });
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    // Forwarded UNCHANGED — upstream canonicalises, so rewriting it here would be a second
+    // normalisation that could only drift.
+    expect((sent['keywords'] as { matchType: string }[])[0].matchType).toBe(matchType);
+  });
+
+  /**
+   * `microsoftConfig` declares no scheduling fields, so dates on the wire are silently discarded.
+   * Sending them implied a flight the operator never gets.
+   */
+  it('sends no flight dates, which microsoftConfig does not carry', async () => {
+    await createWithMicrosoft();
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('startDate');
+    expect(sent).not.toHaveProperty('endDate');
+  });
+
+  /**
+   * U+00A0 (NBSP) sits immediately above the C1 range, and Go reports `IsControl(U+00A0) == false`
+   * — verified by running it — so it must still dispatch. Without this case the obvious "widen to
+   * U+00FF" fix would look correct while silently refusing a keyword Microsoft accepts.
+   */
+  it('accepts a non-breaking space, which is not a control character', async () => {
+    await createWithMicrosoft({ keywords: [{ text: 'kuber\u00A0netes', matchType: 'Exact' }] });
+
+    expect(envelopeFor(createCampaigns)).toHaveProperty('microsoftConfig');
+  });
+
+  /**
+   * Optional chaining guards a NULLISH receiver, not a wrong-TYPED one — `(123)?.trim()` still
+   * throws. A direct caller sending `timeZone: 123` therefore answered with a 500 rather than the
+   * controlled path. The rest of the config is valid, so this asserts the create still SUCCEEDS
+   * with the key simply omitted: a bad optional field must not sink an otherwise good campaign.
+   */
+  it('omits a wrong-typed timeZone instead of throwing', async () => {
+    await createWithMicrosoft({ timeZone: 123 });
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('timeZone');
+    expect(sent['budget']).toBe(300);
+  });
+
+  it('uppercases geo codes so a lowercase entry still dispatches', async () => {
+    await createWithMicrosoft({ geoTargets: ['us', ' jp '] });
+
+    expect((envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>)['geoTargets']).toEqual(['US', 'JP']);
+  });
+
+  it.each([
+    ['exactly 60 keywords', { keywords: Array.from({ length: 60 }, (_, i) => ({ text: `kw-${i}`, matchType: 'Exact' })) }],
+    ['a keyword of exactly 100 characters', { keywords: [{ text: 'k'.repeat(100), matchType: 'Exact' }] }],
+    [
+      'exactly 30 geo targets',
+      { geoTargets: Array.from({ length: 30 }, (_, i) => String.fromCharCode(65 + Math.floor(i / 26)) + String.fromCharCode(65 + (i % 26))) },
+    ],
+  ])('accepts a Microsoft create with %s, which is at the limit', async (_label, overrides) => {
+    await createWithMicrosoft(overrides);
+
+    expect(envelopeFor(createCampaigns)).toHaveProperty('microsoftConfig');
+  });
+
+  /**
+   * Rune-counted, matching the client's `utf8.RuneCountInString`. `.length` counts UTF-16 units,
+   * so 60 astral-plane characters would measure 120 and be refused here while the client accepts
+   * them — rejecting a keyword that is actually valid.
+   */
+  it('measures keyword length in runes, not UTF-16 units', async () => {
+    await createWithMicrosoft({ keywords: [{ text: '\u{1F600}'.repeat(60), matchType: 'Exact' }] });
+
+    expect(envelopeFor(createCampaigns)).toHaveProperty('microsoftConfig');
+  });
+
+  it('forwards cpcBid and timeZone when they carry meaning', async () => {
+    await createWithMicrosoft({ cpcBid: 2.5, timeZone: 'PacificTimeUSCanadaTijuana' });
+
+    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+    expect(sent['cpcBid']).toBe(2.5);
+    expect(sent['timeZone']).toBe('PacificTimeUSCanadaTijuana');
+  });
+
+  /**
+   * Each arm below refuses the CREATE rather than building a config, and the reason differs per
+   * field — which is why they are asserted separately rather than as one "invalid input" case.
+   * `hasPlatformConfig` turns the null into a named refusal; without it the campaign is created
+   * and the failure surfaces at launch (keywords) or as uncontrolled spend (geo).
+   */
+  it.each([
+    ['zero keywords, which would create a campaign that can never serve', { keywords: [] }],
+    ['whitespace-only keywords, which are not terms Microsoft can match', { keywords: [{ text: '   ', matchType: 'Exact' }] }],
+    ['zero geo targets, which would serve everywhere once enabled', { geoTargets: [] }],
+    ['whitespace-only geo targets', { geoTargets: ['  '] }],
+    ['a non-positive budget the client rejects mid-dispatch', { budgetUsd: 0 }],
+    ['a NaN budget', { budgetUsd: Number.NaN }],
+    ['an infinite budget', { budgetUsd: Number.POSITIVE_INFINITY }],
+    // The client caps the DAILY budget and rejects anything larger during dispatch.
+    ['a budget over the maximum', { budgetUsd: 1_000_000_001 }],
+  ])('refuses a Microsoft create with %s', async (_case, overrides) => {
+    await createWithMicrosoft(overrides);
+
+    // The envelope carries NO microsoftConfig, which is what makes the platform "unconfigured".
+    // `hasPlatformConfig` then refuses the whole create in campaign-service.service (see its
+    // `unconfigured` guard) rather than dispatching a zero-value config. That refusal is asserted
+    // where it lives — the legacy fall-through is deliberately NOT asserted here, because these
+    // cases run with the cutover dark, where reaching the legacy path is correct behaviour.
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('microsoftConfig');
   });
 
   /**
@@ -1276,12 +1573,30 @@ describe('CampaignController.updateCampaignStatus', () => {
   // CAMPAIGN_SERVICE_STATUS_PLATFORMS left all 77 tests green, silently admitting microsoft-ads
   // and twitter-ads. The filter is the entire subject of that constant's doc block, so nothing
   // pinned the one thing it claims to do — this is the test that makes the claim binding.
-  it.each([['microsoft-ads'], ['twitter-ads']])('refuses %s, which this app does not offer', async (platform) => {
+  //
+  // Narrowed to twitter-ads by LFXV2-3312, which ENABLED Microsoft: the set is derived from
+  // `!p.disabled`, so dropping that flag in the shared constant admits microsoft-ads here by
+  // design. X stays disabled for a capability reason rather than a plumbing one, so it remains
+  // the subject — and the mutation this test was born from still fails, because admitting X is
+  // still wrong. The companion case below asserts the other half: that Microsoft is now ALLOWED,
+  // so a future re-disabling cannot pass silently either.
+  it.each([['twitter-ads']])('refuses %s, which this app does not offer', async (platform) => {
     await controller.updateCampaignStatus(statusReq(UUID, { platform, status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
 
     expect(toggleCampaignStatus).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
     expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('allows a Microsoft status toggle now that the channel is enabled', async () => {
+    // The other half of the narrowed allowlist spec above: CAMPAIGN_SERVICE_STATUS_PLATFORMS is
+    // DERIVED from `!p.disabled`, so re-adding `disabled: true` to the shared constant would make
+    // pause unreachable for a channel the UI offers. This fails if that happens.
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, status: 'paused', version: 2, etag: '2' });
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'microsoft-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(toggleCampaignStatus).toHaveBeenCalledTimes(1);
   });
 
   // Also found by mutation: dropping `.trim()` left these green. A whitespace-only etag then
@@ -1312,8 +1627,13 @@ describe('CampaignController.updateCampaignStatus', () => {
   // after the toggle returns, and by then the ad platform has already moved, so this is observed
   // and logged rather than refused. The response still reports the row's platform, so the caller
   // is not told their label was accepted.
+  //
+  // The example row platform is `twitter-ads` rather than `microsoft-ads` as of LFXV2-3312:
+  // Microsoft is now an OFFERED platform, so using it here would assert the warning on a row this
+  // app does offer and the test would be checking the opposite of its own name. X is still
+  // disabled, so it remains a true example of the case this guard describes.
   it('logs when the toggled row is a platform this app does not offer', async () => {
-    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'microsoft-ads', status: 'paused', version: 2, etag: '2' });
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'twitter-ads', status: 'paused', version: 2, etag: '2' });
 
     await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
 
@@ -1321,9 +1641,9 @@ describe('CampaignController.updateCampaignStatus', () => {
       expect.anything(),
       'campaign_status_update',
       expect.stringContaining('does not offer'),
-      expect.objectContaining({ requestedPlatform: 'google-ads', rowPlatform: 'microsoft-ads' })
+      expect.objectContaining({ requestedPlatform: 'google-ads', rowPlatform: 'twitter-ads' })
     );
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'microsoft-ads' }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'twitter-ads' }));
   });
 
   it('does not log the platform warning for an offered platform', async () => {
@@ -1365,7 +1685,7 @@ describe('CampaignController.listBriefCampaigns', () => {
     // Carries `statusToggleEnabled` because the real `listBriefCampaigns` always returns it and
     // `CampaignListResult` declares it required. A fixture omitting it stands in for a payload the
     // service cannot produce, and this suite is the only place the /list HTTP contract is exercised.
-    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, statusToggleEnabled: false });
+    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: false });
   });
 
   it('passes both scopes through, trimmed', async () => {
@@ -1402,11 +1722,11 @@ describe('CampaignController.listBriefCampaigns', () => {
    * here because this is the only test of the /list response shape.
    */
   it('forwards statusToggleEnabled through the passthrough', async () => {
-    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: false, statusToggleEnabled: true });
+    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false });
 
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ statusToggleEnabled: true }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ statusToggleEnabled: true, demandGenEnabled: false }));
   });
 
   it('lets a query-service failure reach the error middleware', async () => {
@@ -1416,5 +1736,106 @@ describe('CampaignController.listBriefCampaigns', () => {
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * What is only decidable at this layer: which query parameters are required, and whether a value
+ * the wire contract cannot represent is refused here rather than sent and silently reinterpreted.
+ */
+describe('CampaignController.getBriefMetrics', () => {
+  let controller: CampaignController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+  });
+
+  function metricsReq(query: Record<string, unknown>): Request {
+    return { query, path: '/api/campaigns/brief/metrics' } as unknown as Request;
+  }
+
+  it('reads the brief and passes a valid window through', async () => {
+    const payload = { brief_id: 'b-1', window: 'last_7_days', rows: [], ok_count: 0, action_items: [] };
+    getBriefMetrics.mockResolvedValue(payload);
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief_id: 'b-1', window: 'last_7_days' }), res, next);
+
+    expect(getBriefMetrics).toHaveBeenCalledWith(expect.anything(), 'cncf', 'b-1', 'last_7_days');
+    expect(res.json).toHaveBeenCalledWith(payload);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Omitted rather than defaulted here, so campaign-service applies its PER-PLATFORM default.
+   * Upstream resolves the default per row, per platform (`last_7_days` for X Ads, `last_30_days`
+   * elsewhere), and an explicit window overrides that for every row. Defaulting here would not
+   * fail — it would DISCARD the fallback, turning a servable X row into an `unsupported` one.
+   */
+  it('passes undefined when no window is given, rather than a default', async () => {
+    getBriefMetrics.mockResolvedValue({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] });
+
+    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief_id: 'b-1' }), buildRes(), vi.fn() as unknown as NextFunction);
+
+    expect(getBriefMetrics).toHaveBeenCalledWith(expect.anything(), 'cncf', 'b-1', undefined);
+  });
+
+  /**
+   * REFUSED, not dropped. Dropping an unrecognised window would serve a different period than the
+   * caller asked for, and the response's own `window` field would report the default as though it
+   * had been requested — so the caller could not detect the substitution from the response alone.
+   */
+  it('refuses an unrecognised window instead of dropping it', async () => {
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief_id: 'b-1', window: 'last_90_days' }), buildRes(), next);
+
+    expect(getBriefMetrics).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  /**
+   * `brief` is required because this read is brief-scoped, and `project` because
+   * `/foundation/campaigns` is reachable by an ED of any foundation — a default here would read
+   * another foundation's brief on their behalf.
+   */
+  it.each([
+    ['no brief_id', { project: 'cncf' }],
+    ['no project', { brief_id: 'b-1' }],
+    ['a blank brief_id', { project: 'cncf', brief_id: '   ' }],
+    ['a blank project', { project: '   ', brief_id: 'b-1' }],
+    // Repeated params, which Express parses as arrays. `project` and `brief` are covered by the
+    // blank guard above once an array collapses to `''`; `window` is NOT — it is legitimately
+    // optional, so "absent" is a valid state and a malformed value that reads as absent would
+    // fail OPEN, serving the per-platform default under a window the caller never chose.
+    ['a repeated project param, which Express parses as an array', { project: ['tlf', 'cncf'], brief_id: 'b-1' }],
+    ['a repeated brief_id param, which Express parses as an array', { project: 'cncf', brief_id: ['b-1', 'b-2'] }],
+    ['a repeated window param, which Express parses as an array', { project: 'cncf', brief_id: 'b-1', window: ['today', 'today'] }],
+    // PRESENT-BUT-EMPTY is malformed, not absent. `?window=` arrives as a string, so treating it
+    // as "no window given" would skip the enum check and serve the default — the same fail-open
+    // shape as the array case, one layer in. Only an OMITTED parameter may default.
+    ['an empty window param', { project: 'cncf', brief_id: 'b-1', window: '' }],
+    ['a whitespace-only window param', { project: 'cncf', brief_id: 'b-1', window: '   ' }],
+  ])('refuses a request with %s', async (_label, query) => {
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getBriefMetrics(metricsReq(query), buildRes(), next);
+
+    expect(getBriefMetrics).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  /** A failed upstream read reaches the error middleware, never a 200 the caller reads as data. */
+  it('forwards an upstream failure to next rather than answering with a body', async () => {
+    getBriefMetrics.mockRejectedValue(new Error('upstream exploded'));
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
   });
 });

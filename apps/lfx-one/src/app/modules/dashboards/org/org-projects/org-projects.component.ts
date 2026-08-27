@@ -65,6 +65,7 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
@@ -83,6 +84,7 @@ import { PersonaService } from '@shared/services/persona.service';
     InputTextComponent,
     MenuComponent,
     MultiSelectComponent,
+    OpenIntercomDirective,
     PopoverModule,
     RouterLink,
     SelectComponent,

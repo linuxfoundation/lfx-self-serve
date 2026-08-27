@@ -16,3 +16,10 @@ export const DELTA_DIRECTION_TEXT_CLASS: Record<StatCardDeltaDirection, string> 
   down: 'text-red-600',
   flat: 'text-gray-500',
 };
+
+/** Flipped color mapping for `StatCardDelta.inverted` deltas — an increase is bad (e.g. negative sentiment), so up renders red and down renders emerald. */
+export const INVERTED_DELTA_DIRECTION_TEXT_CLASS: Record<StatCardDeltaDirection, string> = {
+  up: DELTA_DIRECTION_TEXT_CLASS.down,
+  down: DELTA_DIRECTION_TEXT_CLASS.up,
+  flat: DELTA_DIRECTION_TEXT_CLASS.flat,
+};

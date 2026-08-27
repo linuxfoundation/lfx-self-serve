@@ -1,0 +1,73 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+:host {
+  @apply block;
+}
+
+.mention-card {
+  @apply relative rounded-lg border border-gray-200 bg-white shadow-sm transition-all;
+
+  &:hover {
+    @apply border-gray-400 shadow-md;
+  }
+
+  &--read {
+    // Full opacity keeps text contrast legal (WCAG) — the muted background carries the read/unread distinction instead.
+    @apply bg-gray-50;
+  }
+}
+
+// Stretched link: an invisible anchor covering the entire card, giving native link/keyboard
+// behavior without nesting interactive elements inside it.
+.card-link {
+  @apply absolute inset-0 z-0;
+}
+
+// Interactive elements (buttons, inner links) sit above the stretched link.
+.card-interactive {
+  @apply relative z-10;
+}
+
+// Lifted above the stretched link so the (clamped) mention text stays selectable — the overlay
+// would otherwise swallow every mousedown and make copying a quote impossible.
+.mention-body {
+  @apply relative z-10;
+}
+
+// Links inside the rendered markdown are plain <a> tags (no card-interactive class), so they
+// need the same lift to stay clickable above the stretched card link. ::ng-deep is required
+// because [innerHTML] content doesn't carry this component's view-encapsulation attribute.
+.mention-body ::ng-deep a {
+  @apply relative z-10 break-all text-blue-600 hover:underline;
+}
+
+// Fade the clamped body's tail so truncation reads visually, not just via the ellipsis.
+.mention-body--truncated {
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+}
+
+.action-icons {
+  // Always visible and operable so every action stays in the accessibility tree; on
+  // fine-pointer devices the cluster sits at reduced opacity at rest and lifts on
+  // card hover/focus. Touch devices (no hover) keep it at full strength.
+  @apply opacity-100 transition-opacity;
+
+  @media (hover: hover) and (pointer: fine) {
+    @apply opacity-60;
+
+    .mention-card:hover &,
+    .mention-card:focus-within & {
+      @apply opacity-100;
+    }
+  }
+}
+
+.icon-btn {
+  @apply flex h-6 w-6 cursor-pointer items-center justify-center rounded text-sm text-gray-400 transition-all;
+
+  &:hover {
+    @apply bg-gray-100 text-gray-600;
+  }
+}

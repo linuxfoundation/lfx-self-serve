@@ -15,6 +15,7 @@ import { OrgLensMembershipsService } from '@services/org-lens-memberships.servic
 import { CardComponent } from '@components/card/card.component';
 import { TableComponent } from '@components/table/table.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import type {
   OrgActiveMembershipsResponse,
   OrgDiscoverOpportunitiesResponse,
@@ -32,7 +33,7 @@ import { environment } from '@environments/environment';
 @Component({
   selector: 'lfx-org-memberships',
   standalone: true,
-  imports: [FormsModule, RouterLink, TableComponent, TooltipModule, SelectModule, InputTextModule, CardComponent, EmptyStateComponent],
+  imports: [FormsModule, RouterLink, TableComponent, TooltipModule, SelectModule, InputTextModule, CardComponent, EmptyStateComponent, OpenIntercomDirective],
   templateUrl: './org-memberships.component.html',
 })
 export class OrgMembershipsComponent {

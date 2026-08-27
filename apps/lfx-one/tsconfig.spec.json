@@ -11,5 +11,5 @@
     "outDir": "./out-tsc/spec",
     "types": ["node"]
   },
-  "include": ["src/app/**/*.spec.ts", "src/app/**/*.d.ts", "src/test-providers.ts"]
+  "include": ["src/app/**/*.spec.ts", "src/app/**/*.d.ts", "src/types/**/*.d.ts", "src/test-providers.ts"]
 }

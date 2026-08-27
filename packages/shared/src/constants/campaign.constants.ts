@@ -4,6 +4,7 @@
 import type {
   CampaignDeliveryTypeOption,
   CampaignGoalOption,
+  CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
@@ -32,7 +33,7 @@ export const CAMPAIGN_TABS: readonly CampaignTabOption[] = [
 
 export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'google-ads', label: 'Google Ads', icon: 'fa-brands fa-google' },
-  { id: 'microsoft-ads', label: 'Microsoft Ads', icon: 'fa-brands fa-microsoft', disabled: true },
+  { id: 'microsoft-ads', label: 'Microsoft Ads', icon: 'fa-brands fa-microsoft' },
   { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin' },
   { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta' },
   { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit' },
@@ -108,6 +109,48 @@ export const CAMPAIGN_PACING_THRESHOLDS = {
   normal: 90,
   constrained: 100,
   overspending: 130,
+} as const;
+
+/**
+ * Per-platform thresholds for the Optimize tab's action items.
+ *
+ * These values are EXACTLY what each platform's service used before they were named — this
+ * constant changes no behaviour. It exists because the same two rules carry three different
+ * numbers, and the divergence is accidental: nothing in the code or the tickets states a reason
+ * why LinkedIn should flag a click-through rate Meta considers healthy, or why Reddit should
+ * tolerate five times as many unconverted clicks as Meta.
+ *
+ * Naming them here makes the drift greppable and reviewable in one place. Converging them is a
+ * separate decision (LFXV2-3314) precisely because it CHANGES which alerts fire on live
+ * campaigns, and that is not a change to make silently while extracting constants.
+ *
+ * Units, since the three fields are not in the same kind of quantity:
+ *
+ *   lowCtrPct                — PERCENTAGE POINTS, not a ratio. `0.3` means 0.3%, and the rule
+ *                              fires when a campaign's `ctr` is below it. Each service builds
+ *                              that `ctr` itself as `(clicks / impressions) * 100` — it is not
+ *                              read from the platform — so the scale is set locally and a
+ *                              builder switching to the raw ratio would silence every one of
+ *                              these rules rather than error.
+ *   clicksWithoutConversions — a COUNT of clicks. The rule fires above it, with zero
+ *                              conversions.
+ *   minImpressions           — a COUNT of impressions. Consumers guard with `impressions >
+ *                              minImpressions`, so a campaign AT the value is suppressed too —
+ *                              the rule needs strictly more. Exists because a click-through rate
+ *                              over a handful of impressions is noise.
+ *
+ * LinkedIn has no impression floor today and instead requires `ctr > 0`; the two are not
+ * equivalent, and the difference is visible on any campaign whose CTR is genuinely low on thin
+ * volume. One click on 400 impressions is 0.25%: under LinkedIn's rule that clears `ctr > 0` and
+ * sits below `lowCtrPct`, so it alerts on a sample of 400; under Meta's it never reaches the
+ * predicate, because 400 is not `> 500`. Neither is wrong — they are different bets about when a
+ * rate is worth believing — and recording `null` states what LinkedIn actually has rather than
+ * inventing a floor for it.
+ */
+export const CAMPAIGN_ALERT_THRESHOLDS = {
+  'linkedin-ads': { lowCtrPct: 0.3, clicksWithoutConversions: 50, minImpressions: null },
+  'meta-ads': { lowCtrPct: 0.5, clicksWithoutConversions: 20, minImpressions: 500 },
+  'reddit-ads': { lowCtrPct: 0.3, clicksWithoutConversions: 100, minImpressions: 1000 },
 } as const;
 
 /** Official vendor brand colors — external to the LFX design system (not in lfxColors). */
@@ -276,7 +319,8 @@ export const CAMPAIGN_UNAVAILABLE_DEFAULT_REASON = 'This campaign is not in a st
  * platform joins by flipping `disabled` in the constant above, which is one edit rather than
  * three.
  *
- * `disabled: true` entries (currently Microsoft and X) have working toggle dispatchers upstream,
+ * `disabled: true` entries (currently X only, since LFXV2-3312 enabled Microsoft) have working
+ * toggle dispatchers upstream,
  * so status alone says a `created`/`active` row of theirs is pausable. It is not pausable HERE:
  * the BFF refuses the platform outright, so the row's Pause button could only ever fail. Status
  * and platform are therefore two independent reasons a toggle is unavailable, and the row must
@@ -557,6 +601,133 @@ export const META_MESSENGER_INBOX_RETIRED_REASON = 'Removed by Meta in November 
 /** Meta object ids (Pixel, Page) are numeric strings; mirrors campaign-service's `numericIDRE`. */
 export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
 
+/**
+ * Input bounds the Microsoft client enforces BEFORE its first create call, mirrored here so the
+ * form and the BFF refuse synchronously instead of enqueuing a job that cannot succeed.
+ *
+ * Verified against `origin/main` of campaign-service:
+ * - `maxKeywords = 60` (`internal/platform/microsoft/targeting.go:86`)
+ * - `maxKeywordTextRunes = 100` (`targeting.go:75`) — measured in RUNES, matching Microsoft's
+ *   character-based limit; a byte count would reject a valid CJK keyword.
+ * - `maxGeoTargets = 30` (`internal/platform/microsoft/geo.go:109`)
+ *
+ * Each is a hard error upstream, and because `CreateCampaigns` is asynchronous that error is a
+ * FAILED JOB the operator has to go and read rather than a refusal of the request they made — the
+ * same class as the CPC bid range below.
+ */
+export const MICROSOFT_MAX_KEYWORDS = 60;
+export const MICROSOFT_MAX_KEYWORD_TEXT_LENGTH = 100;
+export const MICROSOFT_MAX_GEO_TARGETS = 30;
+
+/**
+ * The match type a newly added keyword starts at.
+ *
+ * `Phrase` is the middle of Microsoft's three: `Broad` can spend on loosely related queries and
+ * `Exact` can starve a new campaign of volume, so the default is wrong in neither direction and
+ * the operator can change it on the row afterwards.
+ *
+ * Named rather than inlined because the add-time duplicate check has to agree with it. Uniqueness
+ * is `(matchType, case-folded text)` upstream, so the check can only refuse a new row against
+ * EXISTING rows at the match type the new row will actually carry — if the two drift apart, the
+ * check either refuses a keyword upstream accepts or admits one it rejects.
+ */
+export const MICROSOFT_NEW_KEYWORD_MATCH_TYPE = 'Phrase' as const;
+
+/**
+ * Upper bound on Microsoft's DAILY budget (`internal/platform/microsoft/campaign.go:59`,
+ * `maxBudget`), rejected during dispatch and therefore a dead job rather than a refused request —
+ * the same reasoning as `REDDIT_MAX_BUDGET_USD`, which caps the sibling platform for the same
+ * class of reason.
+ *
+ * The LOWER bound is deliberately not a constant. This app's floor is 1 across every paid
+ * platform (Meta, LinkedIn and Reddit all gate on `< 1`, and all five budget inputs declare
+ * `min="1"`), which is STRICTER than the client's `> 0`. A sub-unit daily budget is not a spend
+ * plan any of these channels can execute meaningfully, and diverging from the house floor for
+ * Microsoft alone would be a surprise rather than a feature.
+ */
+export const MICROSOFT_MAX_BUDGET = 1_000_000_000;
+
+/**
+ * Control characters Microsoft's `Keyword.Text` rejects, mirroring Go's `unicode.IsControl`
+ * (`internal/platform/microsoft/targeting.go` checks every keyword with it, PRE-trim).
+ *
+ * Covers C0 (U+0000-U+001F), DEL (U+007F) AND C1 (U+0080-U+009F). The C1 half is easy to miss and
+ * was: an earlier version stopped at DEL, so U+0085 (NEL) passed this preflight, was queued, and
+ * was then rejected upstream — after the campaign hierarchy may already have been created, which
+ * is the partial-create this guard exists to prevent.
+ *
+ * U+00A0 (NBSP) is deliberately OUTSIDE the range: Go reports `IsControl(U+00A0) == false`, so
+ * rejecting it here would refuse a keyword Microsoft accepts. Verified by running both.
+ */
+// eslint-disable-next-line no-control-regex
+export const MICROSOFT_CONTROL_CHAR_RE = /[\u0000-\u001F\u007F-\u009F]/;
+
+/**
+ * The match types Microsoft's `Keyword.MatchType` accepts, in the PascalCase vocabulary the client
+ * canonicalises (`canonicalMatchType`) — deliberately not Google's SCREAMING_CASE.
+ *
+ * DERIVED from a `Record` keyed by the union rather than written as a `Set` literal, and the
+ * difference is the whole point: `ReadonlySet<CampaignKeyword['matchType']>` only checks that the
+ * values listed BELONG to the union, so adding a member to the union and forgetting it here would
+ * compile silently and reject a keyword Microsoft accepts. A `Record<Union, true>` is exhaustive —
+ * omitting a member is a compile error — so the union stays the single source of truth.
+ */
+const MICROSOFT_MATCH_TYPE_MAP: Record<CampaignKeyword['matchType'], true> = { Exact: true, Phrase: true, Broad: true };
+
+const MICROSOFT_MATCH_TYPE_KEYS: ReadonlySet<string> = new Set(Object.keys(MICROSOFT_MATCH_TYPE_MAP).map((k) => k.toLowerCase()));
+
+/**
+ * Canonicalise a match type to the PascalCase vocabulary, or null when it is not one.
+ *
+ * Mirrors the client's `canonicalMatchType`, and exists for the UI rather than the wire: the
+ * match-type `<select>` offers only `Exact`/`Phrase`/`Broad`, so a chip seeded with the brief's raw
+ * `EXACT` rendered with NO option selected — the operator saw an empty dropdown on a keyword that
+ * would nonetheless dispatch fine.
+ *
+ * The BFF still forwards whatever it receives, since upstream canonicalises anyway. Canonicalising
+ * at the SEED is what keeps the rendered control and the stored value in agreement.
+ */
+export function canonicalMicrosoftMatchType(value: unknown): CampaignKeyword['matchType'] | null {
+  if (typeof value !== 'string') return null;
+  const key = value.trim().toLowerCase();
+  const match = (Object.keys(MICROSOFT_MATCH_TYPE_MAP) as CampaignKeyword['matchType'][]).find((k) => k.toLowerCase() === key);
+  return match ?? null;
+}
+
+/**
+ * Is `value` a match type Microsoft accepts?
+ *
+ * CASE-INSENSITIVE and trimming, mirroring the client's `canonicalMatchType`, which does
+ * `strings.ToLower(strings.TrimSpace(in))`. An exact-case `Set.has` was stricter than upstream and
+ * refused `EXACT` or ` exact ` — rejecting a request the service would have accepted, and reporting
+ * the platform as unconfigured rather than naming the real problem.
+ *
+ * The ORIGINAL value is still forwarded on the wire: upstream canonicalises it anyway, so rewriting
+ * it there would be a second normalisation that could only drift. Use `canonicalMicrosoftMatchType`
+ * when the PascalCase form is needed for DISPLAY.
+ */
+export function isMicrosoftMatchType(value: unknown): boolean {
+  return typeof value === 'string' && MICROSOFT_MATCH_TYPE_KEYS.has(value.trim().toLowerCase());
+}
+
+/**
+ * The inclusive bounds Microsoft's ad-group `CpcBid` must fall within when one is SUPPLIED
+ * (`internal/platform/microsoft/targeting.go:116-117`, `minCpcBid`/`maxCpcBid`).
+ *
+ * In whole units of the ad ACCOUNT's currency — no micros, no FX — the same unit rule as the
+ * budget. Out-of-range is a HARD refusal in the client, and because `CreateCampaigns` is
+ * asynchronous that refusal surfaces as a dead job rather than an error on the request, which is
+ * why both the UI and the BFF check it before dispatch.
+ *
+ * Note that ZERO is NOT in range and is still valid input: it means UNSET, and unset is a
+ * documented serve-capable state (Microsoft applies the account-currency minimum). So the test is
+ * "if a bid is supplied, it must be within these bounds", not "the value must be within them".
+ *
+ * Shared rather than duplicated per layer so the UI guard and `buildMicrosoftConfig` cannot drift.
+ */
+export const MICROSOFT_MIN_CPC_BID = 0.01;
+export const MICROSOFT_MAX_CPC_BID = 1000;
+
 /** ISO 3166-1 alpha-2 shape for a Meta geo target, after normalisation. */
 export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
 
@@ -640,6 +811,36 @@ export function normalizeGeoTargets(codes: readonly string[] | null | undefined)
   return normalized;
 }
 
+/**
+ * Normalise geo codes for MICROSOFT: trim, upper-case and de-duplicate, WITHOUT applying Meta's
+ * assigned-country allowlist.
+ *
+ * Separate from `normalizeGeoTargets` because that helper gates on `ASSIGNED_COUNTRY_CODES`, which
+ * is derived from this app's own `COUNTRIES` list and does NOT match the table Microsoft validates
+ * against (`internal/platform/microsoft/geo_countries.go`). The two genuinely diverge — `AN` is in
+ * Microsoft's table and not in ours, so typing it was silently dropped, and with no other chip the
+ * request fell back to the event country and targeted a DIFFERENT MARKET than the operator asked
+ * for. That silent substitution is the defect; the divergence itself is expected, since the lists
+ * have different owners.
+ *
+ * Membership is deliberately left to campaign-service, which checks Microsoft's own table and
+ * FAILS THE CREATE before anything is created when a code is unknown. Duplicating that list here
+ * could only drift from it. This helper therefore enforces SHAPE only, matching what
+ * `buildMicrosoftConfig` enforces on the same values.
+ */
+export function normalizeMicrosoftGeoTargets(codes: readonly string[] | null | undefined): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const code of codes ?? []) {
+    if (typeof code !== 'string') continue;
+    const upper = code.trim().toUpperCase();
+    if (!META_GEO_CODE_PATTERN.test(upper) || seen.has(upper)) continue;
+    seen.add(upper);
+    normalized.push(upper);
+  }
+  return normalized;
+}
+
 /** Valid statuses for the campaign status toggle endpoint. */
 export const VALID_CAMPAIGN_TOGGLE_STATUSES: ReadonlySet<CampaignToggleStatus> = new Set<CampaignToggleStatus>(['ACTIVE', 'PAUSED']);
 
@@ -717,3 +918,16 @@ export const JOB_LOST_MESSAGE = 'Lost connection to the campaign creation proces
  * user actually wants — scrolling 4,000 rows is not.
  */
 export const HUBSPOT_TEMPLATE_RENDER_LIMIT = 100;
+
+/**
+ * Every reporting window campaign-service accepts, as a runtime list.
+ *
+ * `CampaignMetricsWindow` is a compile-time type and cannot check a query string, so a BFF route
+ * taking `?window=` needs this to reject a value before it reaches the wire. Kept beside the type
+ * and derived from the same source (`metricsWindowEnum`, `design/brief.go`) so the two cannot
+ * drift: a value accepted here but absent from the type — or the reverse — would be a 400 the
+ * caller cannot predict from the published contract.
+ *
+ * Order is the enum's, widening then calendar-relative; nothing depends on it.
+ */
+export const CAMPAIGN_METRICS_WINDOWS = ['today', 'yesterday', 'last_7_days', 'last_14_days', 'last_30_days', 'this_month', 'last_month'] as const;

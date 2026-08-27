@@ -61,6 +61,13 @@ export const routes: Routes = [
         canActivate: [campaignAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/campaigns/campaigns.component').then((m) => m.CampaignsComponent),
       },
+      // Foundation Lens — Social Listening page (ED + LF Staff)
+      {
+        path: 'foundation/social-listening',
+        data: { lens: 'foundation' },
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
+        loadComponent: () => import('./modules/dashboards/social-listening/social-listening.component').then((m) => m.SocialListeningComponent),
+      },
       // Foundation Lens — Projects page
       {
         path: 'foundation/projects',
