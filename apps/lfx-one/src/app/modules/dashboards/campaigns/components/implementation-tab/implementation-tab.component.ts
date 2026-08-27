@@ -2047,7 +2047,11 @@ export class ImplementationTabComponent implements OnInit {
           const region = form.countryCode || 'NA';
           const startDate = form.startDate || '';
           const includeSearch = form.includeSearch;
-          const includeDemandGen = form.includeDemandGen;
+          // Capability-gated exactly as the request builder is. The form can carry a hidden
+          // `includeDemandGen: true` — a draft restored before the capability resolved — and
+          // reading it raw would preview `Multi` or `DG Display` for a request that sends only
+          // `search`, naming a campaign that will not be created.
+          const includeDemandGen = this.demandGenAvailable() && form.includeDemandGen;
           let channel = 'Search';
           if (includeSearch && includeDemandGen) channel = 'Multi';
           else if (includeDemandGen) channel = 'DG Display';

@@ -3251,6 +3251,30 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
     expect(c['canSubmit']()).toBe(false);
   });
 
+  /**
+   * The generated campaign name must describe the request that will actually be sent.
+   *
+   * The preview reads the same form value the builder does, so a hidden `includeDemandGen: true`
+   * would render `Multi` while the request carries only `search` — naming a campaign that will
+   * not be created, in a name operators use to find it in the ad platform later.
+   */
+  it('previews a Search-only name when a hidden Demand Gen selection cannot be created', () => {
+    fixture.componentRef.setInput('demandGenEnabled', false);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    c['campaignForm'].patchValue({ includeSearch: true, includeDemandGen: true });
+    fixture.detectChanges();
+
+    // `Multi` is what the raw form value would produce; `Search` is what will be created.
+    expect(c['campaignName']()).toContain('| Search |');
+    expect(c['campaignName']()).not.toContain('| Multi |');
+  });
+
   it('hides the Demand Gen control when the deployment cannot create it', () => {
     fixture.componentRef.setInput('demandGenEnabled', false);
     fixture.detectChanges();
