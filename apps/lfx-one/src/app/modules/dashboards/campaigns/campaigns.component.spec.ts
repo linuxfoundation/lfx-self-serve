@@ -1252,9 +1252,7 @@ describe('CampaignsComponent brief persistence', () => {
        * persist-success path still fires its own read — but this case stays broken.
        */
       it('retries the capability read when the user re-enters Implementation via the tab bar', async () => {
-        const list = vi
-          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(throwError(() => new Error('query service down')));
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
 
         // First create: persist succeeds, capability read fails.
         await withSavedBrief();
@@ -1264,7 +1262,10 @@ describe('CampaignsComponent brief persistence', () => {
         // User navigates away and comes back via the tab bar.
         list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
         (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('planning', 'paid-marketing');
-        (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('implementation', 'paid-marketing');
+        (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab(
+          'implementation',
+          'paid-marketing'
+        );
         await fixture.whenStable();
 
         expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
