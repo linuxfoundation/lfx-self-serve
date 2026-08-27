@@ -31,6 +31,14 @@ export const MEETING_PASSWORD_HEADER = 'x-meeting-password';
 export const QUERY_SERVICE_FILTERS_OR_BATCH_SIZE = 100;
 
 /**
+ * Upstream ceiling for `page_size` on query-service `/query/resources` requests.
+ * @description The query-service rejects `page_size` above 1000 (`InvalidRangeError`). Passing
+ * this on every paginated walk (registrant rosters, RSVP lists) fetches the fewest possible pages
+ * per walk instead of relying on the service's smaller unstated default.
+ */
+export const QUERY_SERVICE_MAX_PAGE_SIZE = 1000;
+
+/**
  * NATS configuration constants
  * @description Configuration for NATS messaging system used for inter-service communication
  * @readonly
