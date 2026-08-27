@@ -36,7 +36,7 @@ import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -474,7 +474,7 @@ export class MeetingController {
       // with a different email now passes, widening the gate slightly from the previous
       // email-only check (getMeetingRegistrantsByEmail).
       const userEmail = getEffectiveEmail(req) ?? undefined;
-      const username = (await getUsernameFromAuth(req)) ?? undefined;
+      const username = getEffectiveUsername(req) ?? undefined;
 
       logger.debug(req, 'get_my_meeting_registrants', 'Checking user authentication', {
         meeting_id: uid,
@@ -563,11 +563,15 @@ export class MeetingController {
       // caller's own token — tracked separately in #1903.
       const originalToken = req.bearerToken;
       req.bearerToken = m2mToken;
-      const enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants);
-      if (originalToken !== undefined) {
-        req.bearerToken = originalToken;
-      } else {
-        delete req.bearerToken;
+      let enrichedRegistrants: MeetingRegistrant[];
+      try {
+        enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants);
+      } finally {
+        if (originalToken !== undefined) {
+          req.bearerToken = originalToken;
+        } else {
+          delete req.bearerToken;
+        }
       }
 
       logger.success(req, 'get_my_meeting_registrants', startTime, {
