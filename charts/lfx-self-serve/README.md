@@ -208,13 +208,21 @@ id-shape check entirely and answers a terminal `not_found` for a campaign that i
 spending. `..._CREATE` stays off and is enabled in a later change, only once `..._BRIEFS` has
 converged on every pod — see **Rollout ordering** below, which governs.
 
-`..._BRIEFS` now defaults to `"true"` as well (step two of three). It must converge **before**
-`..._CREATE` is enabled, and the reason is not symmetry: `createCampaigns` gates on all three
-flags together, so during a mixed rollout a brief save can land on a BRIEFS-off pod and answer
-`enabled: false` with no persisted brief id, while the create that follows lands on a pod where
-all three are on. That create is refused terminally — `createCampaigns` returns
-`enabled: true` with _"its brief has not been saved yet"_ rather than falling through to the
-legacy creator, so the user gets a dead end rather than a working campaign.
+`..._BRIEFS` now defaults to `"true"` as well. **`..._CREATE` is still off**, so campaign creation
+continues on the legacy path until a later change enables it — the cutover is three flags landed
+one at a time:
+
+```text
+JOBS  →  BRIEFS  →  CREATE
+ done     here      later
+```
+
+`..._BRIEFS` must converge **before** `..._CREATE` is enabled, and the reason is not symmetry:
+`createCampaigns` gates on all three flags together, so during a mixed rollout a brief save can
+land on a BRIEFS-off pod and answer `enabled: false` with no persisted brief id, while the create
+that follows lands on a pod where all three are on. That create is refused terminally —
+`createCampaigns` returns `enabled: true` with _"its brief has not been saved yet"_ rather than
+falling through to the legacy creator, so the user gets a dead end rather than a working campaign.
 
 One behaviour does change today: with JOBS on, a poll for a UUID job id requires `?project=` and
 is refused with a 400 without it. The LFX One client always sends it, so in-product polling is
