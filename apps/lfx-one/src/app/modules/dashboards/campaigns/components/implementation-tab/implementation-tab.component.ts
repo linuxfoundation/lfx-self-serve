@@ -3,7 +3,7 @@
 
 import { SlicePipe } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -16,17 +16,29 @@ import {
   META_DEFAULT_PLACEMENTS,
   META_MESSENGER_INBOX_RETIRED_REASON,
   META_NUMERIC_ID_PATTERN,
+  canonicalMicrosoftMatchType,
+  isMicrosoftMatchType,
+  MICROSOFT_CONTROL_CHAR_RE,
+  MICROSOFT_MAX_BUDGET,
+  MICROSOFT_MAX_CPC_BID,
+  MICROSOFT_MAX_GEO_TARGETS,
+  MICROSOFT_MAX_KEYWORDS,
+  MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
+  MICROSOFT_NEW_KEYWORD_MATCH_TYPE,
+  MICROSOFT_MIN_CPC_BID,
   META_OBJECTIVE_LABELS,
+  META_SELECTABLE_OBJECTIVES,
   META_PLACEMENT_LABELS,
   META_SELECTABLE_PLACEMENTS,
   META_INELIGIBLE_COUNTRIES,
   normalizeGeoTargets,
+  normalizeMicrosoftGeoTargets,
   CAMPAIGN_PLATFORMS,
   REDDIT_MAX_BUDGET_USD,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { map, startWith, Subscription, take } from 'rxjs';
+import { map, skip, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -46,6 +58,7 @@ import type {
   MetaAdVariant,
   MetaObjective,
   MetaPlacement,
+  MicrosoftKeyword,
   RedditAdVariant,
 } from '@lfx-one/shared/interfaces';
 
@@ -139,6 +152,23 @@ export class ImplementationTabComponent implements OnInit {
   public readonly sourceEmailId = input<string>('');
 
   /**
+   * Whether this deployment can create a Demand Gen Google campaign — `null` while unknown.
+   *
+   * THREE states, not two, and the distinction is load-bearing. `false` means the server said the
+   * capability is off; `null` means nothing has answered yet. Collapsing them makes the pre-load
+   * state indistinguishable from an explicit refusal, and `applyDraft` below would then rewrite a
+   * user's saved Demand Gen selection to `false` on a restore that merely raced the answer — a
+   * destructive edit to persisted state, from a value that was never a server fact.
+   *
+   * The control is withheld while `null` (offering one that may not submit is worse than a brief
+   * absence), but the DRAFT is preserved: hiding is reversible, and clearing is not.
+   */
+  public readonly demandGenEnabled = input<boolean | null>(null);
+
+  /** Render the control only on an explicit yes. `null` (unknown) withholds it. */
+  protected readonly demandGenAvailable = computed<boolean>(() => this.demandGenEnabled() === true);
+
+  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *
@@ -185,7 +215,32 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInCharLimits = LINKEDIN_CHAR_LIMITS;
   protected readonly metaCharLimits = META_CHAR_LIMITS;
   protected readonly metaObjectiveLabels = META_OBJECTIVE_LABELS;
-  protected readonly metaObjectiveOptions = Object.keys(META_OBJECTIVE_LABELS) as MetaObjective[];
+  /**
+   * Read from `META_SELECTABLE_OBJECTIVES`, NOT from the labels map's keys: the labels map stays
+   * total over `MetaObjective` so restored objectives still render a name, and `leads` is hidden
+   * from the picker only. See that constant for why.
+   */
+  protected readonly metaObjectiveOptions = META_SELECTABLE_OBJECTIVES;
+  /**
+   * True when the restored objective is one the picker no longer offers — today only `leads`.
+   *
+   * Without this the select does not go blank — it shows the FIRST selectable objective, which is
+   * worse. The template binds `[selected]` per `<option>` rather than `[value]` on the select, and
+   * Angular applies that binding before the restored option exists, so the browser falls back to
+   * index 0 and displays `awareness`. The stored `leads` survives in the signal and still reaches
+   * the wire, so the screen and the payload disagree: the operator sees a valid, selectable
+   * objective they never chose and can submit it without noticing, and the first touch of the
+   * control overwrites `leads` for good — the option they had is gone.
+   *
+   * Rendering it as a disabled option is what makes display and dispatch agree; disabled is what
+   * keeps it visible without letting anyone newly choose it.
+   *
+   * The widening cast is deliberate: `META_SELECTABLE_OBJECTIVES` is narrowed to
+   * `SelectableMetaObjective` so a hidden objective cannot be listed in it, which also makes
+   * `.includes()` reject the very value this asks about. Widening for the membership test is
+   * what keeps that narrowing — the guard against re-adding `leads` — intact.
+   */
+  protected readonly metaObjectiveIsUnavailable = computed(() => !(META_SELECTABLE_OBJECTIVES as readonly MetaObjective[]).includes(this.metaObjective()));
   protected readonly metaPlacementLabels = META_PLACEMENT_LABELS;
   protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
@@ -208,7 +263,13 @@ export class ImplementationTabComponent implements OnInit {
     startDate: ['', [Validators.required]],
     endDate: ['', [Validators.required]],
     includeSearch: [true],
-    includeDemandGen: [true],
+    // Search only by default. Both on is a REFUSED combination once the campaign-service cutover
+    // is live: `createCampaigns` rejects a Google request carrying both `search` and `demand-gen`
+    // and does NOT fall back to the legacy creator, so a user who accepted the old defaults got a
+    // terminal failure on their first create rather than a campaign. Search alone and Demand Gen
+    // alone are each servable; only the pair is not. Defaulting to the one that works means the
+    // untouched form submits successfully, and choosing Demand Gen stays one click away.
+    includeDemandGen: [false],
     headlines: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)])]),
     descriptions: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)])]),
     // The LinkedIn ad account, geo targets and targeting profile, on the FORM rather than in
@@ -307,6 +368,38 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditKeywords = signal<string[]>([]);
   protected readonly redditGeoTargets = signal<string[]>([]);
   protected readonly redditBudgetUsd = signal(500);
+  /**
+   * Microsoft's four editable inputs (LFXV2-3312). Signal-backed like the Meta and Reddit blocks,
+   * so `campaignForm.valueChanges` never sees them and each handler must `emitDraft()` by hand.
+   *
+   * `microsoftKeywords` seeds from the brief but is genuinely EDITABLE here, unlike Reddit's
+   * read-only recommendation lists — with none the campaign can never serve, so the operator must
+   * be able to fix an empty or bad list rather than only look at it.
+   *
+   * `microsoftCpcBid` is a STRING, not a number: '' is the meaningful "unset" the numeric type
+   * cannot express, and unset is the serve-capable default (Microsoft applies the account-currency
+   * minimum). A `number` signal would make an untouched field read 0, which `buildMicrosoftConfig`
+   * drops anyway — but only after the UI had shown the operator a bid of zero they never set.
+   */
+  protected readonly microsoftMaxBudget = MICROSOFT_MAX_BUDGET;
+  protected readonly microsoftMaxKeywords = MICROSOFT_MAX_KEYWORDS;
+  protected readonly microsoftMaxKeywordTextLength = MICROSOFT_MAX_KEYWORD_TEXT_LENGTH;
+  protected readonly microsoftMaxGeoTargets = MICROSOFT_MAX_GEO_TARGETS;
+  protected readonly microsoftMinCpcBid = MICROSOFT_MIN_CPC_BID;
+  protected readonly microsoftMaxCpcBid = MICROSOFT_MAX_CPC_BID;
+  /**
+   * The keyword box's in-progress text, held so the over-length warning can render live.
+   *
+   * NOT part of the draft: it is transient input, not a configured value, and a half-typed word
+   * surviving a tab switch would be surprising rather than helpful. Cleared by
+   * `onMicrosoftKeywordAdd` only when the keyword is actually ADDED, so a refused entry keeps the
+   * operator's text and the warning describing it.
+   */
+  protected readonly microsoftKeywordDraft = signal('');
+  protected readonly microsoftGeoTargets = signal<string[]>([]);
+  protected readonly microsoftKeywords = signal<MicrosoftKeyword[]>([]);
+  protected readonly microsoftBudgetUsd = signal(500);
+  protected readonly microsoftCpcBid = signal('');
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
@@ -330,6 +423,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaPixelId = signal('');
 
   // === Computed Signals ===
+  protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
   protected readonly showGoogleSection = computed(() => this.selectedPlatforms().includes('google-ads'));
   protected readonly showLinkedInSection = computed(() => this.selectedPlatforms().includes('linkedin-ads'));
   protected readonly showRedditSection = computed(() => this.selectedPlatforms().includes('reddit-ads'));
@@ -462,6 +556,160 @@ export class ImplementationTabComponent implements OnInit {
 
   protected readonly showMetaSection = computed(() => this.selectedPlatforms().includes('meta-ads'));
 
+  protected readonly showMicrosoftSection = computed(() => this.selectedPlatforms().includes('microsoft-ads'));
+
+  /**
+   * The geo list a Microsoft create would ACTUALLY send — one value for the preview and `submit()`,
+   * on the same rule as `metaEffectiveGeoTargets`, so the screen cannot claim one target while the
+   * request buys another.
+   *
+   * NO eligibility filter, and that difference from Meta is deliberate rather than an omission.
+   * Meta has a client-side ineligible set because Meta refuses those codes at the ad set, AFTER
+   * the campaign POST. Microsoft resolves every ISO-2 code against its own geographical-locations
+   * file at create time and fails BEFORE anything is created, so an unresolvable code costs a
+   * clear upstream error rather than a half-built campaign. Duplicating that resolution here would
+   * be a second list that could only drift from Microsoft's own.
+   *
+   * Empty is a real answer: it means nothing usable was supplied, and `canSubmit` blocks on it
+   * rather than letting Microsoft serve the campaign EVERYWHERE.
+   */
+  protected readonly microsoftEffectiveGeoTargets = computed<string[]>(() => {
+    const chips = normalizeMicrosoftGeoTargets(this.microsoftGeoTargets());
+    if (chips.length > 0) return chips;
+    return normalizeMicrosoftGeoTargets([this.countryCodeValue()]);
+  });
+
+  /**
+   * The keywords a Microsoft create would ACTUALLY send.
+   *
+   * Blank-text entries are dropped rather than counted: a whitespace-only term is not something
+   * Microsoft can match a query against, so letting one satisfy the "at least one" rule would
+   * produce exactly the unservable campaign the guard exists to prevent. The server applies the
+   * same filter — see `buildMicrosoftConfig` — so both doors agree.
+   *
+   * DE-DUPED by `(matchType, case-folded text)`, first occurrence wins, mirroring the client's
+   * `validateKeywords` exactly. The add-time guard alone was not enough: it can only refuse a NEW
+   * row, and `onMicrosoftKeywordMatchTypeChange` can move an existing row onto another's pair
+   * afterwards. The client drops such a duplicate silently (`continue`, not an error), so the
+   * count, the "at least one" gate and the dispatched payload would otherwise all overstate what
+   * Microsoft actually receives — the operator sees two keywords and one is created.
+   *
+   * De-duping HERE rather than refusing the match-type change keeps the operator's edit intact;
+   * the row list still shows what they typed, while every count derived from this signal is the
+   * truth about the request. `microsoftDuplicateKeywordCount` is what surfaces the difference.
+   */
+  protected readonly microsoftEffectiveKeywords = computed<MicrosoftKeyword[]>(() => {
+    const seen = new Set<string>();
+    return this.microsoftKeywords()
+      .filter((k) => k.text?.trim())
+      .map((k) => ({ text: k.text.trim(), matchType: k.matchType }))
+      .filter((k) => {
+        // Same key shape as the client: match type, NUL, case-folded text.
+        const key = `${k.matchType}\u0000${k.text.toLowerCase()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  });
+
+  /**
+   * How many keyword rows the request will DROP as duplicates, for the hint under the list.
+   *
+   * Counted against the blank-filtered raw list rather than the raw list itself, so a whitespace
+   * row is not reported as a duplicate — it is dropped for a different reason the label above
+   * already reflects.
+   */
+  protected readonly microsoftDuplicateKeywordCount = computed<number>(
+    () => this.microsoftKeywords().filter((k) => k.text?.trim()).length - this.microsoftEffectiveKeywords().length
+  );
+
+  /**
+   * The CPC bid the request will carry, or null for "unset".
+   *
+   * BLANK means unset, which is a valid, documented, serve-capable state — Microsoft applies the
+   * account-currency minimum.
+   *
+   * A non-blank value that is unparseable or out of range returns null HERE, but that does NOT mean
+   * "send the default": `microsoftCpcBidValid` blocks the submit for exactly that state, so the
+   * operator is told rather than quietly given a bid other than the one the box shows. An earlier
+   * version of this comment said such input "degrades to the safe default", which described the
+   * behaviour before that guard existed and would now read as licence to remove it.
+   */
+  protected readonly microsoftEffectiveCpcBid = computed<number | null>(() => {
+    const raw = this.microsoftCpcBid().trim();
+    if (raw === '') return null;
+    const parsed = Number(raw);
+    // Only an IN-RANGE bid is forwarded. Out-of-range values are not silently dropped to null and
+    // sent as "unset" — `microsoftCpcBidValid` blocks the submit for them, so the operator is told
+    // rather than quietly given a different bid from the one the box still shows.
+    if (!Number.isFinite(parsed) || parsed < MICROSOFT_MIN_CPC_BID || parsed > MICROSOFT_MAX_CPC_BID) return null;
+    return parsed;
+  });
+
+  /** Rune length of the in-progress keyword — `[...s].length`, never `.length`. */
+  protected readonly microsoftKeywordDraftLength = computed(() => [...this.microsoftKeywordDraft().trim()].length);
+
+  protected readonly microsoftKeywordDraftTooLong = computed(() => this.microsoftKeywordDraftLength() > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH);
+
+  /**
+   * The effective geo list as a display string. A computed rather than `.join()` in the template:
+   * `docs/reviews/frontend-checklist.md` permits signal reads, computeds and pipes in bindings but
+   * not logic-bearing calls, which re-run on every change-detection pass.
+   */
+  protected readonly microsoftEffectiveGeoLabel = computed(() => this.microsoftEffectiveGeoTargets().join(', '));
+
+  /**
+   * Whether the keyword and geo lists are within the bounds the Microsoft client enforces before
+   * its first create call. See the constants for the verified upstream values.
+   *
+   * Reads the EFFECTIVE lists, so blank-text keywords and whitespace geos are excluded from the
+   * counts exactly as the dispatched payload excludes them — counting the raw signals would block
+   * a form whose actual request is within bounds.
+   */
+  protected readonly microsoftBoundsValid = computed<boolean>(() => {
+    const keywords = this.microsoftEffectiveKeywords();
+    if (keywords.length > MICROSOFT_MAX_KEYWORDS) return false;
+    if (keywords.some((k) => [...k.text].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH)) return false;
+    // MATCH TYPE, for the same reason the caps above are here. The add handler and the `<select>`
+    // can only produce the three canonical values, but `applyDraft` replays a draft VERBATIM by
+    // design, so a draft can carry a value neither can produce.
+    //
+    // NOT a case problem: `isMicrosoftMatchType` folds case and trims, so `EXACT` and ` exact `
+    // are both accepted here exactly as they are upstream. What it rejects is a value outside
+    // {exact, phrase, broad} entirely — Google's `BROAD_MATCH` is the realistic one, since the
+    // brief's keyword stage is shared with Google Ads and a draft written from a Google-shaped
+    // brief can hold it.
+    //
+    // The BFF filters on the same predicate and refuses the WHOLE microsoftConfig when a keyword
+    // fails it, so without this check the form reported the campaign as ready and the create came
+    // back as a generic unconfigured platform. Checking it here makes the block visible instead.
+    if (keywords.some((k) => !isMicrosoftMatchType(k.matchType))) return false;
+    return this.microsoftEffectiveGeoTargets().length <= MICROSOFT_MAX_GEO_TARGETS;
+  });
+
+  /**
+   * Whether the CPC bid box holds something dispatchable.
+   *
+   * BLANK is valid and means unset — Microsoft then applies the account-currency minimum, a
+   * documented serve-capable floor, so an untouched box must not block anything.
+   *
+   * A non-blank value must parse AND fall within `[MICROSOFT_MIN_CPC_BID, MICROSOFT_MAX_CPC_BID]`.
+   * The client refuses anything outside that range (`targeting.go:263-268`), and because
+   * `CreateCampaigns` is asynchronous the refusal arrives as a FAILED JOB the operator has to go
+   * and read — not as an error on the click they just made. Catching it here converts a dead job
+   * into an inline message.
+   *
+   * Deliberately NOT folded into `microsoftEffectiveCpcBid` returning null: null means "send no
+   * bid", and treating `1001` as unset would dispatch a campaign at the account minimum while the
+   * form still displayed 1001 — a silent substitution of a spend decision the operator did make.
+   */
+  protected readonly microsoftCpcBidValid = computed<boolean>(() => {
+    const raw = this.microsoftCpcBid().trim();
+    if (raw === '') return true;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= MICROSOFT_MIN_CPC_BID && parsed <= MICROSOFT_MAX_CPC_BID;
+  });
+
   /** Whether the pixel field applies at all — only `conversions` carries a promoted pixel object. */
   protected readonly metaRequiresPixel = computed(() => this.metaObjective() === 'conversions');
 
@@ -524,7 +772,8 @@ export class ImplementationTabComponent implements OnInit {
     const linkedInSelected = platforms.includes('linkedin-ads');
     const redditSelected = platforms.includes('reddit-ads');
     const metaSelected = platforms.includes('meta-ads');
-    if (!googleSelected && !linkedInSelected && !redditSelected && !metaSelected) return false;
+    const microsoftSelected = platforms.includes('microsoft-ads');
+    if (!googleSelected && !linkedInSelected && !redditSelected && !metaSelected && !microsoftSelected) return false;
 
     const form = this.campaignForm.controls;
     const sharedFieldsValid = !!form.eventName.value?.trim() && !!form.registrationUrl.value?.trim() && !!form.startDate.value && !!form.endDate.value;
@@ -570,6 +819,40 @@ export class ImplementationTabComponent implements OnInit {
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
     if (metaSelected && !this.metaHasPlacement()) return false;
     if (metaSelected && !this.metaPixelValid()) return false;
+
+    // Microsoft's three blocking conditions (LFXV2-3312). Each is a SILENT failure upstream rather
+    // than a refusal, which is why they are caught here — the operator would otherwise learn at
+    // launch, or not at all:
+    //
+    //   - budget: the client rejects a non-positive value mid-dispatch, and because creation is
+    //     async that surfaces as a dead job rather than an error on this request.
+    //   - keywords: "the campaign is created but can NEVER SERVE, and ToggleStatus refuses to
+    //     activate it" — the create SUCCEEDS, so nothing fails until someone tries to launch.
+    //   - geo: "Microsoft serves it EVERYWHERE once enabled" — uncontrolled spend, and the create
+    //     succeeds just the same.
+    //
+    // `cpcBid` is deliberately NOT a gate: unset is a documented serve-capable default.
+    // `Number.isFinite` rather than only `< 1`, because `NaN < 1` is FALSE — a NaN budget would
+    // pass a bare comparison and reach the client, which rejects it mid-dispatch as a dead job.
+    // `onMicrosoftBudgetInput`'s `|| 0` happens to prevent that today, but that is the handler's
+    // incidental behaviour rather than this guard's, and the guard is what `canSubmit` promises.
+    //
+    // The upper bound mirrors `redditBudgetIsUsable`: the client caps the daily budget at
+    // `MICROSOFT_MAX_BUDGET` and rejects anything larger DURING dispatch, so an unguarded
+    // over-cap value is a dead job rather than a refused request.
+    //
+    // The floor of 1 is this app's, and it is deliberately stricter than the client's `> 0` —
+    // Meta, LinkedIn and Reddit all gate the same way and every budget input declares `min="1"`.
+    if (microsoftSelected && (!Number.isFinite(this.microsoftBudgetUsd()) || this.microsoftBudgetUsd() < 1 || this.microsoftBudgetUsd() > MICROSOFT_MAX_BUDGET))
+      return false;
+    if (microsoftSelected && this.microsoftEffectiveKeywords().length === 0) return false;
+    if (microsoftSelected && this.microsoftEffectiveGeoTargets().length === 0) return false;
+    if (microsoftSelected && !this.microsoftCpcBidValid()) return false;
+    // Backstop for a state the add handlers cannot produce but a RESTORED DRAFT can: a draft
+    // written before these caps existed carries whatever list it had, and `applyDraft` replays it
+    // verbatim by design (an emptied list must stay emptied). Without this the form would look
+    // valid and the BFF would refuse it.
+    if (microsoftSelected && !this.microsoftBoundsValid()) return false;
 
     // Blocked while a brief save is in flight, because the create needs the id that save produces.
     //
@@ -680,7 +963,24 @@ export class ImplementationTabComponent implements OnInit {
       // if one applied, the brief's copy otherwise. This is what keeps the parent's copy equal
       // to the form at rest, so a tab leave with no typing in between preserves rather than
       // reverts (the defect this line exists to close).
-      this.emitDraft();
+      //
+      // UNTRACKED, for the same reason the `applyDraft` call above is, and it became load-bearing
+      // the moment `emitDraft` started reading the platform signals. A tracked call here makes
+      // every signal `emitDraft` reads an effect DEPENDENCY, and today that is the Meta block
+      // (objective, placements, pixel id, geo targets, budget and its mode) plus the LinkedIn
+      // budget pair and the Reddit budget.
+      //
+      // The failure that buys: any of those set after mount re-runs the whole effect, which
+      // re-seeds from the brief and replays the draft over whatever the user has since changed.
+      // A user editing the Meta budget would lose their pixel id — a silent revert of exactly the
+      // kind this ticket exists to stop, in fields the triggering edit never touched.
+      //
+      // Found by measurement rather than review, on the wider emit an earlier revision of this
+      // ticket carried: adding an ad-variant array to the emit turned three unrelated LinkedIn
+      // tests red, all of them mutating a signal after mount. Those arrays are no longer emitted
+      // (they have no editor), but the hazard is a property of the TRACKING, not of which fields
+      // happen to be listed — so this stays regardless of what `emitDraft` reads next.
+      untracked(() => this.emitDraft());
     });
 
     // Emit as the user edits. `valueChanges` covers everything on `campaignForm` — copy, budget,
@@ -688,64 +988,30 @@ export class ImplementationTabComponent implements OnInit {
     // targets, targeting profile). Moving those three onto the form is what makes their restore
     // work: this subscription emits on every pick with no per-handler plumbing.
     //
-    // Still OUTSIDE it: the platform picks that remain signals — the LinkedIn budget pair and
-    // variants, and the Reddit fields — none of which `emitDraft` names, so they do not reach the
-    // draft at all. See the draft interface: the snapshot is scoped to the fields a user EDITS,
-    // which is broader than the ones they type, and excludes anything re-derived from a fetch.
+    // Still OUTSIDE it: the platform values that remain signals — the Meta block and the two
+    // budget groups. Described by shape rather than counted, since a count here is a claim the
+    // next control added to the template falsifies. `emitDraft` names each of them, so the draft
+    // carries them; what this subscription cannot do is NOTICE them changing. That is why each
+    // mutation handler calls `emitDraft` itself, and why adding a signal-backed control means
+    // touching both places rather than one.
+    //
+    // Excluded on purpose: `linkedInAccounts` and `linkedInAccountsLoading`, which are re-derived
+    // from a fetch on every mount rather than edited. The snapshot is scoped to what a user EDITS,
+    // which is broader than what they type.
     this.campaignForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       if (this.seeding) return;
       this.emitDraft();
     });
+
+    // skip(1) drops the emission toObservable fires immediately on subscribe — ngOnInit already
+    // runs the initial load, so only later foundation switches should refetch the ad-account list.
+    toObservable(this.activeFoundationSlug)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => this.loadLinkedInAccounts());
   }
 
   public ngOnInit(): void {
-    this.linkedInAccountsLoading.set(true);
-    this.campaignService
-      .getLinkedInAccounts()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (accounts) => {
-          this.linkedInAccounts.set(accounts);
-          // Keep the restored selection only if this catalog still CONTAINS it; otherwise fall
-          // back to the first account.
-          //
-          // A blank-only check was enough until this commit and is not any more. Persisting the id
-          // (LFXV2-3230) makes a STALE one reachable for the first time: the list is refetched on
-          // every mount and an account can be revoked or lose permission between them. A stale id
-          // then splits the page in two — `selectedLinkedInAccount` resolves the label and
-          // org/status line through `accounts.find(...) ?? accounts[0]`, and the `<select>` cannot
-          // render an unmatched value either, so both show the FIRST account, while `submit()`
-          // sends `linkedInAccountId()` verbatim. The operator reads one account and spends money
-          // on another, with nothing on screen to say so.
-          //
-          // That fallback pre-dates this change but was unreachable while the id was not carried
-          // on the draft, which is why closing it belongs here rather than in a follow-up.
-          //
-          // Correcting silently rather than prompting: the operator never chose this state, the
-          // first account is what every other surface is already showing, and the alternative is a
-          // modal on a path that is noisy enough. Membership also subsumes the first-visit case —
-          // '' is never in the list.
-          //
-          // Writes through the form rather than a signal, since that is where the value now lives.
-          // `emitEvent` is left ON deliberately — this assignment CHANGES what `submit()` would
-          // send, so the parent's draft has to learn about it; suppressing the event would leave
-          // the draft carrying a value the form and the request no longer agree with.
-          // An EMPTY catalog is a real answer, not a skip. `loadLinkedInConfig` falls back to
-          // `accounts: []` when the LinkedIn config is absent or malformed, so a successful
-          // response can carry nothing — and a restored id would then survive with no account to
-          // match it, dispatching a stale value while the selector shows an empty list. Clearing
-          // is the honest result, and `canSubmit`'s membership gate then BLOCKS the create rather
-          // than letting it reach LinkedIn: an empty catalog contains no id, including ''. The
-          // operator sees Create disabled with an empty account list, which is the true state.
-          if (!accounts.some((a) => a.accountId === this.linkedInAccountId())) {
-            this.campaignForm.controls.linkedInAccountId.setValue(accounts[0]?.accountId ?? '');
-          }
-          this.linkedInAccountsLoading.set(false);
-        },
-        error: () => {
-          this.linkedInAccountsLoading.set(false);
-        },
-      });
+    this.loadLinkedInAccounts();
   }
 
   // === Public Methods ===
@@ -804,13 +1070,12 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.linkedInTargetingProfile.setValue(profile);
   }
 
-  protected setLinkedInLifetimeBudget(value: boolean): void {
-    this.linkedInLifetimeBudget.set(value);
-  }
-
-  protected setLinkedInBudget(value: number): void {
-    this.linkedInBudgetUsd.set(value);
-  }
+  // `setLinkedInBudget` and `setLinkedInLifetimeBudget` were removed here (LFXV2-3230), for the
+  // same reason `setLinkedInAccount` was: nothing called them. The template binds `(input)` and
+  // `(change)` to `onLinkedInBudgetInput` / `onLinkedInLifetimeBudgetChange` below, and no spec
+  // reached the setters either. Adding this ticket's `emitDraft()` call to a dead method would
+  // have made the round-trip look covered while the LIVE handler stayed unfixed — the exact trap
+  // the `setLinkedInAccount` note describes, so the tests now drive the real bindings instead.
 
   // `setLinkedInAccount` was removed here (LFXV2-3230). Nothing in this component's template
   // called it — only a test did, which made the test pass against a broken `(change)` binding.
@@ -826,12 +1091,18 @@ export class ImplementationTabComponent implements OnInit {
     select.value = '';
   }
 
+  // Every handler below emits, on the same rule the Meta handlers state: these signals are
+  // invisible to `campaignForm.valueChanges`, so a mutation that does not call `emitDraft` never
+  // reaches the parent and the edit dies at the next tab switch. Naming the field in `emitDraft`
+  // is only half of it — a carried field whose handler never emits is still lost.
   protected onLinkedInBudgetInput(event: Event): void {
     this.linkedInBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+    this.emitDraft();
   }
 
   protected onLinkedInLifetimeBudgetChange(event: Event): void {
     this.linkedInLifetimeBudget.set((event.target as HTMLInputElement).checked);
+    this.emitDraft();
   }
 
   protected onMetaBudgetInput(event: Event): void {
@@ -861,6 +1132,10 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onRedditBudgetInput(event: Event): void {
     this.redditBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+    // The only Reddit control the template binds today, so this is the one door a Reddit edit
+    // comes through. Deliberately not enumerating the platform's other carried values — a count
+    // here is a claim the next editor added to the template falsifies.
+    this.emitDraft();
   }
 
   protected onMetaLifetimeBudgetChange(event: Event): void {
@@ -931,6 +1206,128 @@ export class ImplementationTabComponent implements OnInit {
     const input = event.target as HTMLInputElement;
     this.addMetaGeoTarget(input.value);
     input.value = '';
+  }
+
+  // Microsoft handlers (LFXV2-3312). Every one emits, on the rule the Meta handlers state: these
+  // signals are invisible to `campaignForm.valueChanges`, so a mutation that does not call
+  // `emitDraft` never reaches the parent and the edit dies at the next tab switch.
+  protected onMicrosoftBudgetInput(event: Event): void {
+    this.microsoftBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
+    this.emitDraft();
+  }
+
+  protected onMicrosoftCpcBidInput(event: Event): void {
+    this.microsoftCpcBid.set((event.target as HTMLInputElement).value);
+    this.emitDraft();
+  }
+
+  /**
+   * Add one Microsoft geo target, normalised through `normalizeMicrosoftGeoTargets` — the whole
+   * list, not just the new code, so a brief-seeded list is normalised on first add too and a `us`
+   * from the brief collapses with a typed `US`.
+   *
+   * NOT `normalizeGeoTargets`, which is Meta's: that helper gates on `ASSIGNED_COUNTRY_CODES`, and
+   * the two lists genuinely diverge — `AN` is in Microsoft's table and not in ours, so routing
+   * through it silently DROPPED a code Microsoft accepts, leaving the request to fall back to the
+   * event country and target a different market.
+   *
+   * No eligibility filter here at all, for the reason given on `microsoftEffectiveGeoTargets`:
+   * Microsoft resolves codes against its own table at create time and fails before creating
+   * anything, so membership is its call rather than a list this app would have to keep in step.
+   */
+  protected addMicrosoftGeoTarget(code: string): void {
+    // Same door-refusal as the keyword cap — the client bounds geo targets at 30.
+    if (this.microsoftGeoTargets().length >= MICROSOFT_MAX_GEO_TARGETS) return;
+    this.microsoftGeoTargets.update((targets) => normalizeMicrosoftGeoTargets([...targets, code]));
+    this.emitDraft();
+  }
+
+  protected onMicrosoftGeoTargetAdd(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.addMicrosoftGeoTarget(input.value);
+    input.value = '';
+  }
+
+  protected removeMicrosoftGeoTarget(index: number): void {
+    this.microsoftGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Add one keyword, reporting whether it was actually added.
+   *
+   * Blank input is ignored rather than added — an empty chip would be dropped by
+   * `microsoftEffectiveKeywords` anyway, so adding one would show the operator a keyword the
+   * request will not carry. New keywords start at `MICROSOFT_NEW_KEYWORD_MATCH_TYPE`; see that
+   * constant for why, and for why the duplicate check below has to be scoped to it.
+   *
+   * The BOOLEAN is what lets the caller keep the operator's text on a rejection. Every `return
+   * false` below is a refusal, and clearing the box unconditionally discarded the very text the
+   * over-length warning was asking them to shorten — the field is bound to `(change)`, so simply
+   * blurring it wiped the input and the warning with it. It also silently ate a duplicate or an
+   * at-cap entry, leaving no trace of what the operator typed.
+   */
+  protected addMicrosoftKeyword(text: string): boolean {
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+    // Refused at the door rather than accepted and rejected later: the client caps the list at 60
+    // and each term at 100 RUNES, and because dispatch is async a violation would surface as a
+    // failed job. Counted with the spread, matching the client's rune count — `.length` counts
+    // UTF-16 units and would reject a valid CJK or emoji keyword the client accepts.
+    // Counted on the EFFECTIVE list, matching the label, the add-box gate, `microsoftBoundsValid`
+    // and the payload — all five now agree on what "60 keywords" means. Counting the raw rows
+    // instead let a duplicate consume cap the request never spends: after a match-type edit made
+    // two rows collapse into one, the label could read 59/60 with the box open and the add still
+    // refused, and a duplicate row permanently blocked ever reaching 60 unique keywords.
+    if (this.microsoftEffectiveKeywords().length >= MICROSOFT_MAX_KEYWORDS) return false;
+    if ([...trimmed].length > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH) return false;
+    // Same control-character rule the BFF and the client apply. Checked on the RAW text, not the
+    // trimmed one, matching upstream's pre-trim check — a leading or trailing control char must be
+    // caught too, and trimming only strips whitespace.
+    if (MICROSOFT_CONTROL_CHAR_RE.test(text)) return false;
+    // De-duped by (matchType, case-folded text), matching the client's `validateKeywords`:
+    // Microsoft treats keyword text case-insensitively, so two chips differing only in case would
+    // be one keyword upstream and the list would overstate coverage — but the SAME text under a
+    // DIFFERENT match type is a genuinely distinct keyword that upstream accepts.
+    //
+    // Text alone was too strict in a way the operator could not work around. New rows are added at
+    // `Phrase` and the match type is only changeable AFTER the row exists, so a seeded or restored
+    // `kubernetes/Exact` made `kubernetes/Phrase` unreachable: the add was refused before its
+    // match type could be changed, and refusing at the door gave no way to get there.
+    const exists = this.microsoftKeywords().some(
+      (k) => k.matchType === MICROSOFT_NEW_KEYWORD_MATCH_TYPE && k.text.trim().toLowerCase() === trimmed.toLowerCase()
+    );
+    if (exists) return false;
+    this.microsoftKeywords.update((keywords) => [...keywords, { text: trimmed, matchType: MICROSOFT_NEW_KEYWORD_MATCH_TYPE }]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onMicrosoftKeywordDraftInput(event: Event): void {
+    // Draft text only — no `emitDraft()`, because this is transient input rather than a
+    // configured value. It reaches the draft when the keyword is ADDED.
+    this.microsoftKeywordDraft.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onMicrosoftKeywordAdd(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    // Cleared ONLY on success. On a refusal the text stays put so the operator can edit it — and
+    // the live warning stays visible rather than vanishing along with the value it described.
+    if (this.addMicrosoftKeyword(input.value)) {
+      input.value = '';
+      this.microsoftKeywordDraft.set('');
+    }
+  }
+
+  protected removeMicrosoftKeyword(index: number): void {
+    this.microsoftKeywords.update((keywords) => keywords.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  protected onMicrosoftKeywordMatchTypeChange(index: number, event: Event): void {
+    const matchType = (event.target as HTMLSelectElement).value as MicrosoftKeyword['matchType'];
+    this.microsoftKeywords.update((keywords) => keywords.map((k, i) => (i === index ? { ...k, matchType } : k)));
+    this.emitDraft();
   }
 
   protected submit(): void {
@@ -1035,6 +1432,28 @@ export class ImplementationTabComponent implements OnInit {
             },
           }
         : {}),
+      ...(platforms.includes('microsoft-ads')
+        ? {
+            microsoftConfig: {
+              eventName: form.eventName,
+              eventSlug: slug,
+              registrationUrl: form.registrationUrl,
+              hsToken: this.briefHsToken() ?? undefined,
+              budgetUsd: this.microsoftBudgetUsd(),
+              // No startDate/endDate: `microsoftConfig` declares no scheduling fields, so sending
+              // them put values on the wire that were silently discarded. See the interface note.
+
+              // The SAME computeds the section renders and `canSubmit` gates on, so the screen,
+              // the guard and the request cannot disagree — see `microsoftEffectiveGeoTargets`.
+              geoTargets: this.microsoftEffectiveGeoTargets(),
+              keywords: this.microsoftEffectiveKeywords(),
+              // Sent only when set. An explicit 0 would claim a bid the account does not have,
+              // whereas omitting it lets Microsoft apply the account-currency minimum.
+              ...(this.microsoftEffectiveCpcBid() !== null ? { cpcBid: this.microsoftEffectiveCpcBid() as number } : {}),
+              project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+            },
+          }
+        : {}),
       // Gated on the id, NOT on `platforms.includes('hubspot')`. `selectedPlatforms` is typed
       // `CampaignPlatform[]`, whose union has no 'hubspot' member, so a platform test here could
       // never be true and would silently drop the value the day a trigger appears.
@@ -1109,6 +1528,75 @@ export class ImplementationTabComponent implements OnInit {
     return normalizeGeoTargets(codes).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
   }
 
+  private loadLinkedInAccounts(): void {
+    // Stamp the slug this request was made for — a foundation switch fires a new request before
+    // the previous one resolves, and `takeUntilDestroyed` alone doesn't cancel it (the component
+    // survives the switch, per `activeFoundationSlug`). Without this, a slower response for the
+    // OLD foundation can arrive after a faster one for the new foundation and silently overwrite
+    // it with the wrong account catalog.
+    const requestedSlug = this.activeFoundationSlug();
+    // Drop the previous foundation's catalog before firing the new request — otherwise
+    // `canSubmit`'s membership check keeps passing against the OLD foundation's accounts for the
+    // whole in-flight window, and a Create during that window would dispatch the NEW foundation's
+    // project with the OLD foundation's LinkedIn account id. Sibling tabs clear selection/data at
+    // the start of their own `loadForActiveFoundation` for the same reason (see
+    // `monitoring-tab.component.ts`).
+    this.linkedInAccounts.set([]);
+    this.linkedInAccountsLoading.set(true);
+    this.campaignService
+      .getLinkedInAccounts(requestedSlug)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          if (requestedSlug !== this.activeFoundationSlug()) {
+            return;
+          }
+          this.linkedInAccounts.set(accounts);
+          // Keep the restored selection only if this catalog still CONTAINS it; otherwise fall
+          // back to the first account.
+          //
+          // A blank-only check was enough until this commit and is not any more. Persisting the id
+          // (LFXV2-3230) makes a STALE one reachable for the first time: the list is refetched on
+          // every mount and an account can be revoked or lose permission between them. A stale id
+          // then splits the page in two — `selectedLinkedInAccount` resolves the label and
+          // org/status line through `accounts.find(...) ?? accounts[0]`, and the `<select>` cannot
+          // render an unmatched value either, so both show the FIRST account, while `submit()`
+          // sends `linkedInAccountId()` verbatim. The operator reads one account and spends money
+          // on another, with nothing on screen to say so.
+          //
+          // That fallback pre-dates this change but was unreachable while the id was not carried
+          // on the draft, which is why closing it belongs here rather than in a follow-up.
+          //
+          // Correcting silently rather than prompting: the operator never chose this state, the
+          // first account is what every other surface is already showing, and the alternative is a
+          // modal on a path that is noisy enough. Membership also subsumes the first-visit case —
+          // '' is never in the list.
+          //
+          // Writes through the form rather than a signal, since that is where the value now lives.
+          // `emitEvent` is left ON deliberately — this assignment CHANGES what `submit()` would
+          // send, so the parent's draft has to learn about it; suppressing the event would leave
+          // the draft carrying a value the form and the request no longer agree with.
+          // An EMPTY catalog is a real answer, not a skip. `loadLinkedInConfig` falls back to
+          // `accounts: []` when the LinkedIn config is absent or malformed, so a successful
+          // response can carry nothing — and a restored id would then survive with no account to
+          // match it, dispatching a stale value while the selector shows an empty list. Clearing
+          // is the honest result, and `canSubmit`'s membership gate then BLOCKS the create rather
+          // than letting it reach LinkedIn: an empty catalog contains no id, including ''. The
+          // operator sees Create disabled with an empty account list, which is the true state.
+          if (!accounts.some((a) => a.accountId === this.linkedInAccountId())) {
+            this.campaignForm.controls.linkedInAccountId.setValue(accounts[0]?.accountId ?? '');
+          }
+          this.linkedInAccountsLoading.set(false);
+        },
+        error: () => {
+          if (requestedSlug !== this.activeFoundationSlug()) {
+            return;
+          }
+          this.linkedInAccountsLoading.set(false);
+        },
+      });
+  }
+
   private applyDraft(): void {
     const draft = this.draft();
     if (!draft) return;
@@ -1137,7 +1625,14 @@ export class ImplementationTabComponent implements OnInit {
       startDate: draft.startDate,
       endDate: draft.endDate,
       includeSearch: draft.includeSearch,
-      includeDemandGen: draft.includeDemandGen,
+      // Cleared only on an EXPLICIT `false`, never on `null`. A draft saved when Demand Gen was
+      // available would otherwise restore a hidden `true` and submit it into the create route's
+      // refusal — hiding the control does not stop that, because this path writes the value
+      // without it. But `null` means the capability answer has not arrived, and clearing on that
+      // rewrites the user's saved selection to `false` permanently: the emit below carries it
+      // back to the parent, so a later `true` reveals an unchecked box with the choice already
+      // destroyed. Withholding the control while unknown is reversible; this is not.
+      includeDemandGen: this.demandGenEnabled() === false ? false : draft.includeDemandGen,
       // The three LinkedIn controls (LFXV2-3230), restored in the SAME patch as everything else —
       // which is the entire benefit of having moved them onto the form: no extra signal writes and
       // no second emission. This runs AFTER `populateFromBrief`, so it deliberately overwrites the
@@ -1181,6 +1676,41 @@ export class ImplementationTabComponent implements OnInit {
     }
     if (draft.metaLifetimeBudget !== undefined) {
       this.metaLifetimeBudget.set(draft.metaLifetimeBudget);
+    }
+
+    // Same present-only rule, for the same reason: an older draft omits these, and absence there
+    // means "keep what the brief seeded".
+    //
+    // Only the per-platform budgets are restored, matching what `emitDraft` now carries. The
+    // brief-derived arrays are gone from both sides deliberately — see the note there. The
+    // `!== undefined` test is what makes dropping them safe rather than merely tidy: a draft
+    // written by an OLDER build still carries them, and this loop simply no longer looks, so the
+    // brief's own seed stands instead of a stale copy being replayed over it.
+    if (draft.linkedInBudgetUsd !== undefined) {
+      this.linkedInBudgetUsd.set(draft.linkedInBudgetUsd);
+    }
+    if (draft.linkedInLifetimeBudget !== undefined) {
+      this.linkedInLifetimeBudget.set(draft.linkedInLifetimeBudget);
+    }
+    if (draft.redditBudgetUsd !== undefined) {
+      this.redditBudgetUsd.set(draft.redditBudgetUsd);
+    }
+
+    // Microsoft (LFXV2-3312), on the same present-only rule. The arrays restore on `!== undefined`
+    // rather than on truthiness, which is the whole point: an EMPTY list is a deliberate clear the
+    // operator made, and `canSubmit` blocks on exactly that. Restoring on truthiness would silently
+    // refill it from the brief's seed and hand back a campaign the operator had emptied.
+    if (draft.microsoftBudgetUsd !== undefined) {
+      this.microsoftBudgetUsd.set(draft.microsoftBudgetUsd);
+    }
+    if (draft.microsoftGeoTargets !== undefined) {
+      this.microsoftGeoTargets.set([...draft.microsoftGeoTargets]);
+    }
+    if (draft.microsoftKeywords !== undefined) {
+      this.microsoftKeywords.set(draft.microsoftKeywords.map((k) => ({ ...k })));
+    }
+    if (draft.microsoftCpcBid !== undefined) {
+      this.microsoftCpcBid.set(draft.microsoftCpcBid);
     }
   }
 
@@ -1247,6 +1777,50 @@ export class ImplementationTabComponent implements OnInit {
       metaGeoTargets: [...this.metaGeoTargets()],
       metaBudgetUsd: this.metaBudgetUsd(),
       metaLifetimeBudget: this.metaLifetimeBudget(),
+      // Microsoft's four (LFXV2-3312), snapshotted rather than referenced for the same reason as
+      // the Meta block: the parent must hold a value, not a live view of a signal this component
+      // is about to destroy. The two ARRAYS are carried because they have a real editor here —
+      // see the field docs on `CampaignImplementationDraft`.
+      microsoftBudgetUsd: this.microsoftBudgetUsd(),
+      microsoftGeoTargets: [...this.microsoftGeoTargets()],
+      microsoftKeywords: this.microsoftKeywords().map((k) => ({ ...k })),
+      microsoftCpcBid: this.microsoftCpcBid(),
+      // The remaining signal-backed values, on the same terms as the Meta block above: snapshotted
+      // rather than referenced, and named explicitly rather than spread.
+      //
+      // Scoped to the per-platform BUDGETS, which is the whole of what this snapshot needs to
+      // carry, and the boundary is drawn by asking one question per field: can a user change it?
+      //
+      // These can. The template binds `(input)` and `(change)` on the LinkedIn budget pair,
+      // and `(input)` on the Reddit budget, so an operator types a number the brief did not
+      // recommend and that number exists nowhere but this component. Losing it is the money-shaped
+      // half of LFXV2-3315: the campaign silently reverts to the recommended spend, a decision the
+      // operator did not make and the form does not show them re-making.
+      //
+      // The brief-derived ARRAYS are deliberately NOT here — `metaVariants`, `linkedInVariants`,
+      // `redditVariants` and the four Reddit targeting lists. They have no editor: the full set of
+      // event bindings in this component's template contains no handler that writes any of them,
+      // and `populateFromBrief` is now their ONLY writer — `applyDraft` no longer has a restore
+      // arm for any of the seven, which is exactly what this change removed. Carrying them made
+      // the draft round-trip the brief's own recommendation back to itself.
+      //
+      // Removing them is not a loss, and that was MEASURED rather than reasoned about, because the
+      // reasoning goes the wrong way twice:
+      //
+      //   - `applyDraft` restores on `!== undefined`, and an empty array IS defined. So carrying
+      //     these made the restore overwrite the brief's fresh seed with a stale copy. Absent,
+      //     `populateFromBrief` re-seeds all seven from the brief the parent still holds.
+      //   - The "a brief with no redditCopy re-seeds nothing, so an unrestored value is gone"
+      //     argument does not survive being run: with no `redditCopy` the seed leaves the arrays
+      //     EMPTY, so the draft carried `[]` and there was never a value to lose.
+      //
+      // If a real editor is ever added for one of these, it belongs back here — and it needs a
+      // test that drives the new binding, not one that writes the signal and calls `emitDraft` by
+      // hand. That shape passes against a handler that never emits, which is how the LinkedIn
+      // budget pair stayed broken behind three green tests.
+      linkedInBudgetUsd: this.linkedInBudgetUsd(),
+      linkedInLifetimeBudget: this.linkedInLifetimeBudget(),
+      redditBudgetUsd: this.redditBudgetUsd(),
     });
   }
 
@@ -1368,6 +1942,54 @@ export class ImplementationTabComponent implements OnInit {
     }
 
     this.briefKeywords.set(brief.keywords);
+
+    // Microsoft's seed (LFXV2-3312). The brief's own keywords feed it DIRECTLY, with no
+    // translation: `CampaignKeyword.matchType` is already the PascalCase vocabulary
+    // `microsoftKeywordConfig` takes ('Exact' | 'Phrase' | 'Broad'), unlike Google Ads, which
+    // needs the SCREAMING_CASE rename. `term` becomes `text` — that is the only remapping.
+    //
+    // Seeded rather than left empty because an empty list BLOCKS the submit here (no keywords
+    // means a campaign that can never serve), so shipping the section empty would make Microsoft
+    // look broken on first render. The operator edits from a working starting point.
+    // Filtered to what the BFF will actually ACCEPT, not merely to non-blank terms.
+    //
+    // `brief.keywords` is compile-time typed but runtime-arbitrary: both brief streams copy the
+    // model's raw `match_type` string through (`campaign-proxy.service.ts:855`), so a generated
+    // `BROAD_MATCH`, an over-length term or one carrying a control character can reach here. Seeding
+    // those left Create ENABLED while `buildMicrosoftConfig` refused the whole config, and the
+    // operator saw "unconfigured" with no indication which row was at fault.
+    //
+    // Dropping them at the seed is the honest fix: the chip list then shows exactly the keywords
+    // that will dispatch, and the operator adds any others through the box, which applies the same
+    // rules. The required-keywords guard still blocks submit if nothing survives.
+    this.microsoftKeywords.set(
+      (brief.keywords ?? [])
+        .filter(
+          (k) =>
+            typeof k?.term === 'string' &&
+            k.term.trim() !== '' &&
+            [...k.term.trim()].length <= MICROSOFT_MAX_KEYWORD_TEXT_LENGTH &&
+            !MICROSOFT_CONTROL_CHAR_RE.test(k.term) &&
+            isMicrosoftMatchType(k.matchType)
+        )
+        .slice(0, MICROSOFT_MAX_KEYWORDS)
+        // CANONICALISED to the PascalCase vocabulary the `<select>` offers. The filter above accepts
+        // case variants because upstream does, but storing a raw `EXACT` here rendered the dropdown
+        // with no option selected on a keyword that would have dispatched fine. The `?? 'Phrase'`
+        // is unreachable — the filter already rejected anything `canonicalMicrosoftMatchType`
+        // returns null for — and exists only to satisfy the type without a cast.
+        .map((k) => ({ text: k.term.trim(), matchType: canonicalMicrosoftMatchType(k.matchType) ?? 'Phrase' }))
+    );
+    // Geo chips are left EMPTY here rather than seeded from the country code.
+    //
+    // `countryCodeValue` must not be read in this method: `populateFromBrief` runs inside the
+    // TRACKED `briefData` effect, and that signal is a `toSignal` over `campaignForm.valueChanges`.
+    // Reading it makes the seed's own `patchValue` a dependency of the effect performing the seed,
+    // which re-enters continuously — the spec suite hung before running a single test.
+    //
+    // Nothing is lost by leaving it empty: `microsoftEffectiveGeoTargets` already falls back to
+    // the country code, so the request still carries a target, and the template renders that
+    // fallback explicitly ("defaults to XX") rather than leaving it invisible.
     this.briefHsToken.set(brief.hsUtm);
     this.briefDriveFolderUrl.set(brief.driveFolderUrl);
   }

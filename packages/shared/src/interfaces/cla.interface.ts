@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { CLA_MANAGER_REQUEST_TYPES } from '../constants/cla.constants';
 import type { TagSeverity } from './components.interface';
 
 // UI-facing shapes for the read-only "CLAs" view (Me lens → Profile tab).
@@ -58,6 +59,29 @@ export interface MyClaAgreement {
   projectName?: string;
   /** Project (or foundation) logo URL, when upstream resolved one. Undefined ⇒ show the fallback icon. */
   projectLogo?: string;
+  /**
+   * Salesforce project id the CLA Group maps to (producer `projectSFID`). Omitted on a
+   * foundation-level group and when the mapping is unresolved. With `foundationSfid` this
+   * builds `/foundation/{foundationSfid}/project/{projectSfid}/cla`.
+   */
+  projectSfid?: string;
+  /**
+   * Salesforce foundation id (producer `foundationSFID`). A foundation-level group uses
+   * `/foundation/{foundationSfid}/cla`. Omitted when unresolved.
+   */
+  foundationSfid?: string;
+  /**
+   * CLA group UUID the agreement was signed against (producer `claGroupID`).
+   * Omitted when upstream sent none. Used to gate the CCLA Console item (#1575);
+   * display still uses `claGroupName`.
+   */
+  claGroupId?: string;
+  /**
+   * Whether the signed-in user is a CLA manager of the employer's CCLA for this CLA
+   * group (producer `claManager`), always false on ICLA. This is the producer's own
+   * manager resolution — do not re-derive it from the cla-managers endpoint (#1575).
+   */
+  claManager?: boolean;
   /** Employer company name — present for ECLA only. */
   companyName?: string;
   /** ISO date the agreement was signed. */
@@ -265,8 +289,13 @@ export interface PrepareSignResponse {
 /** Copy/API mode for the shared Contact CLA Manager modal (#1372 / #1574). */
 export type ClaManagerRequestMode = 'approval' | 'removal' | 'contact';
 
-/** Producer `requestType` — Contact is a UI mode only and is never sent. */
-export type ClaManagerRequestType = 'approval' | 'removal';
+/**
+ * Producer `requestType`, derived from `CLA_MANAGER_REQUEST_TYPES`. Kept separate from
+ * `ClaManagerRequestMode` even though the two currently coincide: one is the modal's copy
+ * set, the other is the wire contract, and a future copy mode must not silently become a
+ * request type the producer never promised to accept.
+ */
+export type ClaManagerRequestType = (typeof CLA_MANAGER_REQUEST_TYPES)[number];
 
 /** One CLA manager from the CCLA signature ACL covering an ECLA. */
 export interface ClaManager {
@@ -291,11 +320,15 @@ export interface ClaManagerRequest {
   requestType: ClaManagerRequestType;
   /** LF usernames of the checked managers. Must be non-empty. */
   recipients: string[];
-  /** Optional note included in the notification email (max 4096). */
+  /**
+   * Note included in the notification email, capped at `CLA_MANAGER_MESSAGE_MAX_LENGTH`.
+   * Optional for approval and removal; required and non-blank for contact, which asks for
+   * no change and so carries nothing else for the manager to read.
+   */
   message?: string;
 }
 
-/** Receipt for an approval/removal request. */
+/** Receipt for an approval, removal, or contact request. */
 export interface ClaManagerRequestResult {
   requestId: string;
   signatureId: string;

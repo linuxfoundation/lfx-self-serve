@@ -36,6 +36,196 @@
     </div>
   </div>
 
+  <!--
+    A FAILED read, stated. `campaignRows()` is null for this and for "not asked yet", so rendering
+    nothing for both made a Query Service outage look like a fresh page — no indication and no way
+    back, on campaigns that may still be spending. This arm is the one that distinguishes them, and
+    it offers the retry rather than requiring a tab round-trip. It still does NOT claim the brief
+    has no campaigns: that is a claim a failed read cannot support.
+  -->
+  @if (campaignsUnavailable()) {
+    <section class="flex flex-col gap-2 rounded-lg border border-red-200 bg-red-50 p-4" role="alert" data-testid="optimization-campaigns-unavailable">
+      <h3 class="text-sm font-semibold text-red-800">Campaigns could not be loaded</h3>
+      <p class="text-sm text-red-700">
+        This brief's campaigns are unavailable right now, so pause and resume cannot be offered. Any campaigns that are running are unaffected and may still be
+        spending.
+      </p>
+      <div>
+        <button
+          type="button"
+          (click)="retryCampaigns.emit()"
+          class="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+          data-testid="optimization-campaigns-retry">
+          Try again
+        </button>
+      </div>
+    </section>
+  }
+
+  <!--
+    A CONCURRENT EDIT, stated once for the whole list while ANY row remains conflicted. Reached
+    only after a toggle was refused with 412, which is proof this view was read before a write it
+    never saw — so the remedy is a re-read, not another click. It survives a refresh that advances
+    only some rows: `campaignsConflicted` is a computed over the conflicted-id set, so it lifts on
+    the delivery that clears the LAST one, not the first. It reuses the same `retryCampaigns` output as the failed-read banner above,
+    because "re-read this brief's campaigns" is exactly the action needed; inventing a second
+    refresh path would give the tab two ways to do one thing.
+
+    Rendered ALONGSIDE the rows rather than replacing them: the rows are stale, not wrong, and
+    blanking a list of possibly-spending campaigns to report a conflict would hide more than it
+    explains.
+  -->
+  @if (campaignsConflicted()) {
+    <section class="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4" role="alert" data-testid="optimization-campaigns-conflict">
+      <h3 class="text-sm font-semibold text-amber-900">This list is out of date</h3>
+      <!--
+        Scoped to the affected rows, because that is what the controls actually do. The copy used
+        to say "refresh before pausing or resuming anything" while only the conflicted rows are
+        disabled — every other row stays clickable by design, since their validators are untested
+        rather than disproved. An instruction broader than the enforcement reads as a broken page:
+        the operator is told to stop, sees live buttons, and cannot tell which the warning is about.
+
+        The reassurance about the other rows is CONDITIONAL on there being one that is genuinely
+        usable. Stated unconditionally it was false whenever the brief holds only the conflicted
+        row, every row is conflicted, or the siblings are already `unavailable` — promising live
+        controls that are not on screen, which is the same defect pointed the other way.
+      -->
+      <p class="text-sm text-amber-800">
+        {{ conflictedCount() === 1 ? 'A campaign below was' : conflictedCount() + ' campaigns below were' }} changed by someone else while this page was open,
+        so {{ conflictedCount() === 1 ? 'its status' : 'their statuses' }} may not match the ad platform.
+        {{ conflictedCount() === 1 ? 'Its toggle is' : 'Their toggles are' }} disabled until you refresh the list.
+        @if (hasActionableSiblings()) {
+          Other campaigns are unaffected and can still be paused or resumed.
+        }
+      </p>
+      <div>
+        <button
+          type="button"
+          (click)="retryCampaigns.emit()"
+          class="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+          data-testid="optimization-campaigns-refresh">
+          Refresh campaigns
+        </button>
+      </div>
+    </section>
+  }
+
+  <!--
+    Per-campaign pause/resume. `campaignRows()` is null until the list loads OR when the read
+    failed, and the section renders nothing at all for that — an empty state here would assert the
+    brief has no campaigns, which is a claim a failed read cannot support. The failed case is
+    reported by the block above rather than here.
+  -->
+  @if (campaignRows(); as rows) {
+    <section class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="optimization-campaign-controls">
+      <h3 class="text-sm font-semibold text-gray-900">Campaigns</h3>
+
+      @if (rows.length === 0) {
+        <!--
+          Only reachable when the read SUCCEEDED and returned nothing. The copy stays neutral about
+          whether campaigns exist, because indexing is asynchronous and a just-created campaign is
+          not visible here yet — see `campaignsPossiblyStale`.
+        -->
+        <p class="text-sm text-gray-500" data-testid="optimization-campaigns-empty">
+          @if (campaignsPossiblyStale()) {
+            No campaigns are listed yet. Ones created moments ago can take a little while to appear.
+          } @else {
+            No campaigns to show.
+          }
+        </p>
+      } @else {
+        <!--
+          The toggle's narration for assistive tech. A live region rather than attributes on the
+          button, because the button goes native-`disabled` the moment a toggle starts: it leaves
+          the focus order, and a screen reader will not reliably announce an `aria-label` or
+          `aria-busy` change on an unfocused, disabled element. A polite live region is announced
+          wherever focus is, so "Pausing X" / "Paused X" / a failure actually reaches the operator.
+
+          `aria-live` is on an element that is ALWAYS rendered, with only its text changing.
+          Wrapping it in an `@if` would create the region and its content in the same tick, and a
+          region that does not pre-exist its content is frequently not announced at all.
+
+          The text is COMPUTED from the per-row pending map, not assigned. It names every row
+          currently working, so one row finishing cannot silence a message still true of another,
+          and it carries no outcome text — outcomes belong to the toast, which is itself a live
+          region and would otherwise double-announce.
+        -->
+        <div class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="optimization-toggle-announcement">{{ toggleAnnouncement() }}</div>
+        <ul class="flex flex-col gap-2">
+          @for (row of rows; track row.campaign.id) {
+            <li class="flex items-center justify-between gap-3 rounded-md border border-gray-100 px-3 py-2">
+              <div class="flex min-w-0 flex-col gap-0.5">
+                <span class="truncate text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
+                <span class="text-xs text-gray-500">{{ row.campaign.platform }} · {{ row.status }}</span>
+                <!--
+                  NOT `role="alert"`. The failure is already announced by the toast, which is
+                  itself a live region — a second live role here made one failure speak twice.
+                  This text stays as the button's `aria-describedby` target (see `describedByFor`),
+                  so it is read WITH the control on demand rather than fired at the user again.
+                -->
+                @if (toggleError()[row.campaign.id]; as message) {
+                  <span
+                    class="text-xs text-red-600"
+                    [id]="'campaign-error-' + row.campaign.id"
+                    [attr.data-testid]="'optimization-campaign-error-' + row.campaign.id"
+                    >{{ message }}</span
+                  >
+                }
+                <!--
+                  Why the button is dead. A disabled control with no explanation reads as a broken
+                  page — the operator retries, then goes looking for a permissions problem. This
+                  names the actual state and, where it resolves itself, says so. Not `role="alert"`:
+                  it is a standing property of the row, not an event, and it is what
+                  `aria-describedby` points at so the button announces the reason with its name.
+                -->
+                @if (row.action === 'unavailable') {
+                  <span
+                    class="text-xs text-gray-500"
+                    [id]="'campaign-unavailable-' + row.campaign.id"
+                    [attr.data-testid]="'optimization-campaign-unavailable-' + row.campaign.id"
+                    >{{ row.unavailableReason }}</span
+                  >
+                }
+              </div>
+              <!--
+                The accessible name NAMES THE CAMPAIGN. The visible text is just "Pause", which is
+                unambiguous beside its row and useless out of context — a screen-reader user moving
+                by button hears "Pause" N times with no way to tell the rows apart. The label
+                CONTAINS the visible word rather than replacing it, so speech input ("click Pause")
+                still matches.
+
+                `aria-describedby` points at the row's error only when one exists; a dangling
+                reference to an element that renders conditionally is worse than none.
+              -->
+              <button
+                type="button"
+                (click)="toggleCampaign(row)"
+                [disabled]="togglePending()[row.campaign.id] || row.action === 'unavailable' || row.conflicted"
+                [attr.aria-label]="row.toggleLabel + ' ' + row.campaign.campaign_name"
+                [attr.aria-busy]="togglePending()[row.campaign.id] ? 'true' : null"
+                [attr.aria-describedby]="row.describedBy"
+                class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                [attr.data-testid]="'optimization-campaign-toggle-' + row.campaign.id">
+                <!--
+                  The visible label stays the ACTION word while pending, rather than becoming
+                  "Working". The accessible name is `row.toggleLabel + campaign`, so swapping the
+                  visible text broke label-in-name: a speech-input user says what they see
+                  ("click Pause") and it no longer matched the name. Progress is carried by the
+                  spinner for sighted users, `aria-busy` on the button, and the live region above
+                  for assistive tech — none of which change what the control is CALLED.
+                -->
+                @if (togglePending()[row.campaign.id]) {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                }
+                {{ row.toggleLabel }}
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+  }
+
   @if (loading() && !monitorData()) {
     <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-12" data-testid="optimization-loading">
       <div class="flex items-center gap-2 text-sm text-gray-500">

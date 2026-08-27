@@ -7,9 +7,9 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { BOARD_SCOPED_PERSONA_PRIORITY, PROJECT_SCOPED_PERSONA_PRIORITY } from '@lfx-one/shared/constants';
 import { DisplayLensItem, LensItem, NavLens, PersonaType, ProjectContext, SelectorTab } from '@lfx-one/shared/interfaces';
-import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
 import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
@@ -24,8 +24,8 @@ import { TooltipModule } from 'primeng/tooltip';
 })
 export class ProjectSelectorComponent {
   private readonly navigationService = inject(NavigationService);
-  private readonly lensService = inject(LensService);
   private readonly personaService = inject(PersonaService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly platformId = inject(PLATFORM_ID);
 
   private readonly popoverRef = viewChild<Popover>('popover');
@@ -190,14 +190,20 @@ export class ProjectSelectorComponent {
             return detected.isFoundation ? 'Foundation' : 'Project';
           }
           // Curated mode: the item's own `isFoundation` is authoritative for writer-reachable entries
-          // that aren't persona-detected — resolve it before falling back to the active lens, which
-          // would otherwise mislabel a foundation as "Project" (or vice versa) from the wrong page.
+          // that aren't persona-detected — resolve it before falling back to the active context's
+          // kind, which would otherwise mislabel a foundation as "Project" (or vice versa) from the
+          // wrong page.
           const curated = this.items()?.find((item) => item.uid === selectedUid);
           if (curated) {
             return curated.isFoundation ? 'Foundation' : 'Project';
           }
         }
-        return this.lensService.activeLens() === 'foundation' ? 'Foundation' : 'Project';
+        // Last resort: the *displayed* context's kind — isFoundationContext is kept in lockstep
+        // with the activeContext this selector renders. activeLens would mislabel a wrong-tier
+        // deep link (e.g. /project/groups/:uid on a foundation-owned group): the entity context
+        // sync re-points routeLensKind at the entity's kind while activeLens still follows the URL
+        // prefix, so the badge would read "Project" next to the corrected foundation (GH-1566).
+        return this.projectContextService.isFoundationContext() ? 'Foundation' : 'Project';
       }
       return this.lens() === 'foundation' ? 'Foundation' : 'Project';
     });
@@ -215,7 +221,9 @@ export class ProjectSelectorComponent {
       const uid = this.selectedProject()?.uid;
       if (!uid) return null;
       const detected = this.personaService.detectedProjects().find((p) => p.projectUid === uid);
-      const isFoundation = detected?.isFoundation ?? this.lensService.activeLens() === 'foundation';
+      // Same corrected-context fallback as the lens type label — the role tier must agree with the
+      // displayed context on wrong-tier deep links, not the URL-derived lens (GH-1566).
+      const isFoundation = detected?.isFoundation ?? this.projectContextService.isFoundationContext();
       const priority = isFoundation ? BOARD_SCOPED_PERSONA_PRIORITY : PROJECT_SCOPED_PERSONA_PRIORITY;
       const personaProjects = this.personaService.personaProjects();
       for (const persona of priority) {

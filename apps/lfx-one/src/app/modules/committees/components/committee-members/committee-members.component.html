@@ -227,7 +227,7 @@
                 <!-- Voting Status -->
                 <td>
                   @if (row.rowType === 'member') {
-                    <span class="text-sm font-inter text-gray-500">{{ row.data.voting?.status || 'None' }}</span>
+                    <span class="text-sm font-inter text-gray-500">{{ row.data.voting?.status || noVotingStatusLabel }}</span>
                   } @else {
                     <span class="text-sm font-inter text-gray-400">—</span>
                   }

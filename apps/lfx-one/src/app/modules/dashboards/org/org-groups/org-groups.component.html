@@ -22,7 +22,8 @@
       </div>
       <h2 class="text-base font-semibold text-gray-900" data-testid="org-groups-no-access-title">Organization Lens is not available</h2>
       <p class="max-w-md text-sm text-gray-600" data-testid="org-groups-no-access-description">
-        Organization Lens is only available for an organization's administrators. If you believe you should have access, please contact us.
+        Organization Lens is only available for an organization's administrators. If you believe you should have access, please
+        <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-groups-no-access-contact-support">contact us</button>.
       </p>
     </section>
   } @else if (!loaded()) {
@@ -85,6 +86,45 @@
             ariaLabel="Filter by type"
             dataTest="org-groups-type-filter" />
         </div>
+        <!-- pTooltip lives on this wrapper, not the button: a disabled element is removed from the
+             tab order, so a keyboard user could never focus the button to see a tooltip bound to
+             it directly. tabindex + role="note" + aria-label (only while the tooltip has content)
+             give screen-reader users the same explanation a mouse hover gets — mirrors the
+             public-group badge in modules/committees/components/my-groups-card-grid/
+             my-groups-card-grid.component.html (same tabindex="0" + role="note" + aria-label
+             triplet, on a non-focusable host). A sighted keyboard-only user (no screen reader)
+             still gets no visual explanation: deliberately NOT tooltipEvent="both" — PrimeNG
+             resolves its focus target via `querySelector('.p-component')` inside this host, which
+             finds the inner (disabled, unfocusable) <p-button> root rather than this wrapper (the
+             element tabindex="0" actually puts in the tab order), so that listener would never
+             fire. -->
+        <div
+          class="flex items-center gap-2"
+          [pTooltip]="hasNoRowsToExport() ? noRowsToExportLabel : undefined"
+          tooltipPosition="top"
+          [attr.role]="hasNoRowsToExport() ? 'note' : null"
+          [attr.tabindex]="hasNoRowsToExport() ? '0' : null"
+          [attr.aria-label]="hasNoRowsToExport() ? noRowsToExportLabel : null"
+          data-testid="org-groups-export-csv-wrapper">
+          <lfx-button
+            label="Export to CSV"
+            icon="fa-light fa-file-arrow-down"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            [disabled]="hasNoRowsToExport()"
+            (onClick)="exportCsv()"
+            data-testid="org-groups-export-csv" />
+        </div>
+        <!-- Always-visible fallback for the tooltip: closes the gap for a sighted keyboard-only
+             user (no screen reader), who would otherwise get no explanation at all — see the
+             comment above for why the tooltip itself can't be made to show on keyboard focus.
+             aria-hidden because the wrapper's aria-label already carries this to screen readers;
+             without it, a screen reader landing on the wrapper's role="note" region could read the
+             explanation twice. -->
+        @if (hasNoRowsToExport()) {
+          <span class="text-xs text-gray-500" aria-hidden="true" data-testid="org-groups-export-csv-hint">{{ noRowsToExportLabel }}</span>
+        }
       </div>
     }
 
@@ -254,11 +294,18 @@
                     [attr.data-testid]="'org-groups-item-class-chip-' + group.uid" />
                 </div>
 
-                <!-- Seat count -->
-                <div class="flex items-center gap-1 shrink-0 text-sm text-gray-600" [attr.data-testid]="'org-groups-item-seats-' + group.uid">
+                <!-- Seat-holders drawer trigger — needs the same pointer-events-auto/relative/z-10
+                     treatment as the foundation link (see the row's stretched-link comment) to stay
+                     independently clickable without firing the row's /groups/:uid link. -->
+                <button
+                  type="button"
+                  class="pointer-events-auto relative z-10 flex shrink-0 items-center gap-1 rounded text-sm text-gray-600 transition-colors hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                  [attr.aria-label]="group.seatHoldersTriggerAriaLabel"
+                  [attr.data-testid]="'org-groups-item-seats-' + group.uid"
+                  (click)="onSeatHoldersClick(group)">
                   <i class="fa-light fa-user-check text-gray-400 text-xs" aria-hidden="true"></i>
                   <span>{{ group.org_seat_count }}</span>
-                </div>
+                </button>
 
                 <i class="fa-light fa-chevron-right text-gray-300 text-xs shrink-0" aria-hidden="true"></i>
               </div>
@@ -291,4 +338,15 @@
       </div>
     }
   </ng-template>
+
+  <lfx-group-seat-holders-drawer
+    [(visible)]="seatHoldersDrawerVisible"
+    [orgUid]="orgUid()"
+    [committeeUid]="selectedGroup()?.uid ?? ''"
+    [groupName]="selectedGroup()?.name ?? ''" />
+
+  <!-- Not rendered by lfx-group-seat-holders-drawer itself — the training precedent mounts the
+       person drawer from the page, not the inner drawer, so it isn't torn down/rebuilt on every
+       seat-holders open/close and there's exactly one instance for the whole page to stack on. -->
+  <lfx-person-detail-drawer />
 </main>

@@ -2,23 +2,32 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
-import { CAMPAIGN_DELIVERY_TYPES, CAMPAIGN_PROGRAM_TYPES, CAMPAIGN_TABS, HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_PROGRAM_TYPES,
+  CAMPAIGN_TABS,
+  HUBSPOT_TEMPLATE_RENDER_LIMIT,
+  MARKETING_OPS_FGA_ENABLED_FLAG,
+} from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
   CampaignImplementationDraft,
   CampaignBriefPersistResult,
   CampaignDeliveryType,
+  CampaignIndexDoc,
   CampaignProgramType,
   CampaignTab,
   CampaignTabOption,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { firstValueFrom, skip, take } from 'rxjs';
 
@@ -49,6 +58,11 @@ export class CampaignsComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly campaignService = inject(CampaignService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly personaService = inject(PersonaService);
+  private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly destroyRef = inject(DestroyRef);
+  /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — see LFXV2-2235/LFXV2-2236. */
+  private readonly marketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
 
   protected readonly tabs = CAMPAIGN_TABS;
   protected readonly programTypes = CAMPAIGN_PROGRAM_TYPES;
@@ -69,8 +83,9 @@ export class CampaignsComponent {
    * No brief in flight, and nothing to say about one.
    *
    * Shared by the pre-handoff state and the flag-off response on purpose: both mean "render no
-   * persistence UI at all". A disabled cutover is the default in every environment, so it must
-   * look exactly like the ordinary case rather than like a degraded one.
+   * persistence UI at all". A disabled cutover is an ordinary deployment state — the chart
+   * enables it since #1881, but any override or un-rolled pod still reports off — so it must look
+   * exactly like the ordinary case rather than like a degraded one.
    *
    * Declared before briefPersistence because a class field cannot read one declared after it.
    */
@@ -238,8 +253,16 @@ export class CampaignsComponent {
    * `etag: null` alone cannot say WHY there is no validator, and the two reasons need opposite
    * treatment on the next save:
    *
-   * - `'overwrite'` — the user was shown a stale-brief warning and proceeded anyway. Permission
-   *   is real, so falling back to the freshly read validator is what they asked for.
+   * - `'overwrite'` — permission is real, so falling back to the freshly read validator is what
+   *   the user asked for. TWO paths set it, and both are explicit decisions taken on content the
+   *   user was actually shown:
+   *     1. The stale-brief warning was displayed and they proceeded anyway.
+   *     2. A restore whose read returned NO validator. They were shown the stored brief and chose
+   *        to work from it; there is simply no ETag to carry. Classifying that as `'unknown'`
+   *        would refuse the first save after any such restore — the feature's main path, and not
+   *        a conflict anyone can act on.
+   *   What separates both from `'unknown'` is that something was displayed and something was
+   *   chosen, NOT that a warning specifically appeared.
    * - `'unknown'` — the write returned no ETag, or its approval outcome was indeterminate. Nobody
    *   was warned and nothing was decided; falling back here would bypass the precondition
    *   silently and could overwrite an intervening writer without ever showing a conflict.
@@ -346,7 +369,135 @@ export class CampaignsComponent {
    * generation counter: a `saved` banner naming a brief in one foundation's table must not be
    * left sitting under another one, whether the response landed before the switch or after it.
    */
-  private readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
+  protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
+
+  /**
+   * Reactive re-check of the grant that put this page on screen, mirroring
+   * `marketing-impact.component.ts`'s `hasFullMarketingAccess`.
+   *
+   * `campaignAccessGuard` only runs once, on navigation — it never re-fires for the
+   * `Location.replaceState` foundation switch `activeFoundationSlug` documents. Without this,
+   * a campaign_manager grant scoped to foundation A stays rendering foundation A's campaigns
+   * (as far as this page can tell) after switching to foundation B, where the operator may hold
+   * no grant at all. Reading `isCampaignManager()` here re-evaluates against whatever
+   * `sidebar-nav.service.ts` last resolved for the active foundation, so the template gate
+   * tracks the switch instead of trusting the one-time guard result forever.
+   *
+   * Mirrors `campaign-access.guard.ts`'s SSR fast path (LFXV2-2236): the flag client never
+   * initializes server-side, so `marketingOpsFgaEnabled()` defaults `false` there regardless of
+   * the operator's real grant. Denying before the browser has a chance to resolve the flag would
+   * render `campaigns-no-access` for a legitimate FGA campaign manager on first paint, then flip
+   * to granted post-hydration — the guard already accepted that same window (it defers instead of
+   * denying), so mirroring it here avoids a hydration-mismatching flash the guard's own deferral
+   * doesn't otherwise prevent at the component level.
+   */
+  protected readonly hasCampaignAccess = computed(() => {
+    if (this.personaService.currentPersona() === 'executive-director') {
+      return true;
+    }
+    if (!isPlatformBrowser(this.platformId) || !this.featureFlagService.providerReady()) {
+      return true;
+    }
+    if (!this.marketingOpsFgaEnabled()) {
+      return false;
+    }
+    const slug = this.activeFoundationSlug();
+    // Read from the per-scope grant map: each scope's result is stored independently, so a newer
+    // cross-scope probe (e.g. sidebar-nav for a different foundation) cannot overwrite this
+    // foundation's confirmed answer — that probe writes into its own key, not this one
+    // (Copilot finding, PR #1835: confirmActiveGrant force-write overwritten by later probe).
+    // Check this foundation's entry first, then fall back to a confirmed ROOT grant (null key).
+    const grants = this.personaService.grantsByScope();
+    const scopedGrant = slug ? grants.get(slug) : undefined;
+    if (scopedGrant?.isCampaignManager) return true;
+    const rootGrant = grants.get(null);
+    if (rootGrant?.isCampaignManager) return true;
+    // An authoritative `false` at either scope key must win over the legacy global signal below,
+    // which can be stale `true` from a different scope's earlier probe (Copilot/Cursor finding,
+    // PR #1835: legacy fallback overrides an authoritative map denial).
+    if (scopedGrant !== undefined || rootGrant !== undefined) {
+      return false;
+    }
+    // No per-scope entry yet (before the guard's first probe for this scope has returned) —
+    // fall back to the global signal with the slug gate for the brief pre-resolve window.
+    const grantSlug = this.personaService.marketingGrantSlug();
+    if (slug && grantSlug !== null && grantSlug !== slug) {
+      return false;
+    }
+    return this.personaService.isCampaignManager();
+  });
+
+  /**
+   * The campaigns this brief created, as the platform's index currently reports them.
+   *
+   * Loaded rather than derived, because the create job's per-platform results only exist in the
+   * session that ran it — a reload leaves the page with no handle on the campaigns it just made.
+   * This is what gives the Optimize tab something to name (LFXV2-3099).
+   *
+   * `null` means NOT LOADED, which is deliberately distinct from an empty array. The Optimize tab
+   * renders nothing at all for `null` and an explicit empty state for `[]`, because "we have not
+   * asked yet" and "the brief has no campaigns" want opposite treatment on screen.
+   */
+  protected readonly briefCampaigns = signal<CampaignIndexDoc[] | null>(null);
+
+  /**
+   * Whether an empty `briefCampaigns` may simply not be indexed yet.
+   *
+   * Passed down rather than dropped: indexing is asynchronous, so an empty list moments after a
+   * create means "not visible yet", not "nothing was created". Rendering a bare "no campaigns"
+   * over that window would tell someone their spend does not exist.
+   */
+  protected readonly briefCampaignsStale = signal(false);
+
+  /**
+   * Whether the last campaign-list read FAILED, as opposed to never having run.
+   *
+   * `briefCampaigns` is `null` in both cases, and without this flag those two are the same pixel:
+   * an empty panel. That is the failure-as-absence shape — a Query Service outage rendered as
+   * "nothing here" over campaigns that may be live and spending, with nothing for the operator to
+   * act on. Carried as a separate flag rather than folded into the list, because `null` already
+   * carries a meaning ("not loaded") and overloading it would make absence signal a second thing.
+   */
+  protected readonly briefCampaignsUnavailable = signal(false);
+
+  /**
+   * Whether this DEPLOYMENT can service a pause/resume, as reported by the server with the list.
+   *
+   * Defaults to `false` — the safe direction. The list read is ungated while the toggle route is
+   * flag-gated, so assuming "enabled" until told otherwise is what renders buttons that can only
+   * fail; assuming "disabled" until the server confirms merely withholds a control for one
+   * request. Reset on a foundation switch alongside the rows it describes, because it is a fact
+   * about the response those rows came from.
+   */
+  protected readonly briefCampaignsToggleEnabled = signal(false);
+  /**
+   * Whether this deployment can create a Demand Gen Google campaign — `null` while unknown.
+   *
+   * Unlike `briefCampaignsToggleEnabled` above this is NOT reset to `false` on the error and
+   * pre-request arms, and the asymmetry is deliberate. That flag guards a control the user has
+   * not touched, so a false negative merely withholds a button. This one is read by the
+   * Implementation tab's draft restore, where a false negative REWRITES the user's saved
+   * selection — so the arms that mean "no answer" must say `null`, not "off".
+   *
+   * It also stays `null` on the whole Planning → Implementation path, because the only writer is
+   * `loadBriefCampaigns` and that runs on Optimize entry. The tab treats `null` as "withhold the
+   * control but preserve the draft", which is the correct behaviour for an unanswered question;
+   * the server-side predicate reports `true` whenever the legacy creator still owns creation, so
+   * the common case is not a silently missing control.
+   */
+  protected readonly briefCampaignsDemandGenEnabled = signal<boolean | null>(null);
+
+  /**
+   * Generation counter for the campaign-list read — the same mechanism as `emailSearchGeneration`,
+   * reused rather than reinvented.
+   *
+   * A foundation switch does not re-create this component (see `activeFoundationSlug`), so a list
+   * request dispatched for foundation A resolves after the user has moved to B and would write A's
+   * campaigns into B's panel. Clearing the signals on switch cannot stop that on its own: the
+   * response lands afterwards and overwrites the cleared state. Bumping this is what makes the
+   * clears stick — a response whose generation no longer matches writes nothing.
+   */
+  private briefCampaignsGeneration = 0;
 
   /**
    * Whether the server has told us the brief-persistence cutover is on.
@@ -634,6 +785,25 @@ export class CampaignsComponent {
         // previous foundation's slug must not survive into a message rendered under the new one.
         this.emailSearchProjectSlug.set('');
 
+        // The campaign list is per-(foundation, brief) and must not survive a switch either. It
+        // was written only by `loadBriefCampaigns` and cleared by nothing, so Optimize stayed
+        // mounted rendering the PREVIOUS brief's campaigns under the new foundation — with
+        // `projectSlug` already switched and `briefId` cleared to '', which is the address every
+        // row's pause/resume is sent to. Acting on one of those rows would aim a money-affecting
+        // write at a campaign under an address that does not describe it.
+        //
+        // The generation bump is what makes these clears stick, exactly as above: a list request
+        // already in flight for the previous foundation resolves afterwards and would repopulate
+        // the panel under the new one.
+        this.briefCampaignsGeneration++;
+        this.briefCampaigns.set(null);
+        this.briefCampaignsStale.set(false);
+        this.briefCampaignsToggleEnabled.set(false);
+        this.briefCampaignsDemandGenEnabled.set(null);
+        // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
+        // set would report the previous foundation's outage against a foundation never queried.
+        this.briefCampaignsUnavailable.set(false);
+
         // Reload if the operator is SITTING on the picker. The clears above are correct, but
         // on their own they leave a blank panel in front of someone who never navigated: the
         // entry load lives in `selectTab`, which only runs on a tab transition. Nothing else
@@ -642,6 +812,15 @@ export class CampaignsComponent {
         // renders that answer rather than looping on it.
         if (this.selectedDeliveryType() === 'email' && this.selectedEmailTab() === 'implementation') {
           this.loadEmailTemplatesIfNeverAnswered();
+        }
+
+        // Same reasoning for Optimize, and it is the same bug the picker had: the entry load lives
+        // in `selectTab`, which only runs on a tab transition, so an operator SITTING on Optimize
+        // through a switch would be left with the blank panel the clears above just produced until
+        // they navigated away and back. `loadBriefCampaigns` re-reads its own context and handles
+        // the no-brief case, so it is safe to call unconditionally here.
+        if (this.selectedDeliveryType() === 'paid-marketing' && this.selectedTab() === 'optimization') {
+          this.loadBriefCampaigns();
         }
       });
 
@@ -724,6 +903,13 @@ export class CampaignsComponent {
       return;
     }
     this.selectedTab.set(tab);
+    if (tab === 'optimization') {
+      // Loaded on ENTRY rather than eagerly: the list is only meaningful once someone is looking
+      // at per-campaign controls, and the read costs a query-service round trip. Re-fetched on
+      // every entry rather than cached, because a campaign paused in another tab — or indexed
+      // since the last look — must not render with a stale status the user then acts on.
+      this.loadBriefCampaigns();
+    }
   }
 
   /**
@@ -975,7 +1161,12 @@ export class CampaignsComponent {
     this.selectedEmailTemplateId.set(id);
   }
 
-  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, approved: boolean): void {
+  /** Retry a failed campaign list — the action the failure state exists to offer. */
+  protected retryBriefCampaigns(): void {
+    this.loadBriefCampaigns();
+  }
+
+  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, etag: string | null | undefined, approved: boolean): void {
     // Adopt the brief's OWN program first. The lookup is keyed on `(event_slug, project)` and
     // carries no program type, so an Events brief can be offered while the page sits on
     // Education, and restoring it would leave the selector describing one program while the brief
@@ -1013,28 +1204,131 @@ export class CampaignsComponent {
     // there — or, worse, accepted against a brief this session never loaded.
     const key = this.ownershipKey(this.activeFoundationSlug(), brief);
     if (key !== null) {
-      // No ETag from a restore: the read path deliberately drops the load-time validator
-      // (LFXV2-3204). Classified `'overwrite'` rather than `'unknown'`, and the distinction is
-      // the one the base branch draws — whether anyone DECIDED to save without a validator.
+      // The load-time validator is RECORDED when the read produced one (LFXV2-3204). A restore
+      // is the one path that knows exactly which version the user was shown, so it is the path
+      // that can hand the next save a last-seen ETag. `replaceBrief` prefers it over the ETag
+      // its own find reads, which is what lets the precondition actually fire: a concurrent
+      // editor who moved the row since this load now produces a `stale-brief` refusal instead of
+      // being silently overwritten.
       //
-      // A restore is a decision. The user was shown the stored brief's content and chose to work
-      // from it, so the page knows which version it is editing even though it was not handed the
-      // token for it. That is unlike an indeterminate write, where nothing was displayed and
-      // nothing was chosen. Marking it `'unknown'` would refuse the first save after every
-      // restore, which is this feature's main path.
+      // `absence` is recorded ONLY when there is no validator, because dropping the validator is
+      // not neutral bookkeeping like recording one: it LICENSES the next save to overwrite,
+      // since with no last-seen ETag the server falls back to its own fresh read and the
+      // precondition passes. Handing out that licence for free on every restore is precisely the
+      // last-write-wins bug. With an ETag present the save is verified, so no licence is needed
+      // and none is granted.
       //
-      // The residual risk is real and is what LFXV2-3204 closes: another writer changing the row
-      // between the load and the save is overwritten rather than producing a 412. That is a
-      // narrower window than the unknown case — it needs a concurrent editor, not merely a lost
-      // response — and the user has at least seen the content they are replacing.
+      // When the read yielded NO ETag the classification stays `'overwrite'`, and that is
+      // deliberate rather than an oversight. It is still a DECISION — the user was shown the
+      // stored content and chose to work from it — which is the distinction this field draws
+      // against `'unknown'`, where nothing was displayed and nothing was chosen. Marking it
+      // `'unknown'` would refuse the first save after any restore whose read returned no
+      // validator, which is this feature's main path and not a conflict anyone can act on.
+      //
+      // A 412 from the recorded ETag is a speed bump, not a wall: the conflict handler promotes
+      // the session to explicit overwrite permission, so the user is told someone else got there
+      // first and the next Proceed saves their version over it. That is the chosen behaviour —
+      // one honest refusal, then the existing proceed-again path.
       // Bumped for THIS key only. A single session counter would make a restore of event A
       // invalidate a queued save of event B, discarding an id B's own predecessor save created
       // and turning a correct save into an `unowned-brief-exists` refusal. Ownership is keyed by
       // `(project, event)`, so its epoch has to be too.
       this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
-      this.knownBriefIds.set(key, { id: briefId, etag: null, absence: 'overwrite' });
+      // NORMALISED with `?? null` first, then compared with a strict `=== null`, because the
+      // validator originates across an HTTP boundary: an older pod mid-rolling-deploy omits the
+      // field and JSON yields `undefined`, a value the declared `string | null` forbids and the
+      // wire produces anyway. Collapsing both spellings of absence to `null` up front is what
+      // lets the strict comparison below be correct — there is no loose-null invariant here to
+      // rely on. Treating `undefined` as "present" would withhold the overwrite licence and
+      // refuse the first save after a restore as `unverified-validator`.
+      const validator = etag ?? null;
+      this.knownBriefIds.set(key, { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) });
     }
     this.onProceedToImplementation(brief, true, approved);
+  }
+
+  /**
+   * Fetch the campaigns this brief created, for the Optimize tab's per-campaign controls.
+   *
+   * A failed read is REPORTED, not swallowed. An earlier revision left `briefCampaigns` at `null`
+   * on failure, reasoning that an error banner would fire on the ordinary empty case too — but
+   * `null` is also what "nothing has been asked yet" means, so a Query Service outage rendered as
+   * a blank panel with no indication and no retry, on campaigns that may still be spending. The
+   * `briefCampaignsUnavailable` flag is what separates the two: `null` + flag is a failure the tab
+   * states and offers a retry for, `null` alone stays "not loaded", and `[]` stays "genuinely
+   * empty". Same failure-as-absence class as the ED drawers' `dataUnavailable`.
+   *
+   * Guarded by a generation counter for the same reason `searchHubSpotEmails` is: the foundation
+   * is switchable while a response is in flight, and a late response would otherwise repopulate
+   * the list under whichever foundation the user has since moved to — campaigns from one
+   * foundation's brief, rendered as another's.
+   */
+  private loadBriefCampaigns(): void {
+    const projectSlug = this.activeFoundationSlug();
+    const briefId = this.briefPersistence().briefId;
+
+    // Bumped BEFORE the early return as well as before the request. The early return is itself a
+    // context change ("this context has no brief"), and leaving the counter alone there would let
+    // a request dispatched under the previous brief land afterwards and still pass `isCurrent()`.
+    const generation = ++this.briefCampaignsGeneration;
+    const isCurrent = (): boolean => generation === this.briefCampaignsGeneration;
+
+    // Cleared on EVERY entry, before dispatch — not only on the early return below.
+    //
+    // The generation counter fixes the LATE response; it does nothing about the window before any
+    // response. `briefId` is reachable from `onRestoreSavedBrief` → `onProceedToImplementation` →
+    // Optimize entry WITHOUT a foundation change, and the foundation-switch effect is the only
+    // other place that clears this state — so within one foundation nothing cleared it at all.
+    // For the whole round trip the tab rendered brief A's rows while the parent bound brief B's
+    // `briefId` beside them, and those rows are CLICKABLE: `campaignRows` derives `action` purely
+    // from the docs, so a toggle in that window sends A's campaignId against B's brief — a
+    // money-affecting write to an address that does not describe it.
+    //
+    // A brief blank panel on re-entry is the accepted cost. The list is re-fetched on every entry
+    // by design (see `selectTab`), so there was never a cached render to preserve; what changes is
+    // that the interim shows "not loaded" instead of the previous answer. Showing another brief's
+    // clickable rows is not a trade worth a flicker.
+    this.briefCampaigns.set(null);
+    this.briefCampaignsStale.set(false);
+    this.briefCampaignsUnavailable.set(false);
+    this.briefCampaignsToggleEnabled.set(false);
+    this.briefCampaignsDemandGenEnabled.set(null);
+
+    if (projectSlug === '' || briefId === null || briefId === '') {
+      // No brief id means nothing was persisted this session and no restore supplied one, so
+      // there is nothing to list. Left as `null` — not `[]` — so the tab says "not loaded"
+      // instead of asserting the brief has no campaigns. The clear above is what leaves it that
+      // way; this arm only stops here.
+      return;
+    }
+
+    this.campaignService
+      .listBriefCampaigns(projectSlug, briefId)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          if (!isCurrent()) {
+            return;
+          }
+          this.briefCampaigns.set(result.campaigns);
+          this.briefCampaignsStale.set(result.possiblyStale);
+          this.briefCampaignsUnavailable.set(false);
+          this.briefCampaignsToggleEnabled.set(result.statusToggleEnabled);
+          this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
+        },
+        error: () => {
+          if (!isCurrent()) {
+            return;
+          }
+          // `null` AND the flag. The list must not keep showing rows the read could not confirm,
+          // and the flag is what stops that `null` reading as "not loaded yet".
+          this.briefCampaigns.set(null);
+          this.briefCampaignsStale.set(false);
+          this.briefCampaignsUnavailable.set(true);
+          this.briefCampaignsToggleEnabled.set(false);
+          this.briefCampaignsDemandGenEnabled.set(null);
+        },
+      });
   }
 
   /**
@@ -1128,7 +1422,8 @@ export class CampaignsComponent {
     // Only once persistence is KNOWN to be on. The flag lives on the server, so the first save
     // of a session cannot know its state until the response arrives — and showing "Saving this
     // brief…" in the meantime would put a persistence banner in front of every user in every
-    // environment where the cutover is still dark, which is all of them by default. The cost is
+    // environment where the cutover is still dark — no longer the chart default since #1881, but
+    // still the state of any override or un-rolled deployment. The cost is
     // that the first save shows no in-flight banner, only its outcome; every later one in the
     // same session shows both.
     if (this.briefPersistenceEnabled()) {
@@ -1140,8 +1435,9 @@ export class CampaignsComponent {
       // previous brief's failure over the new save until its own request finished.
       //
       // Idle, not `saving`: the reason this branch shows no in-flight banner is unchanged — with
-      // the cutover dark, which is the default everywhere, a spinner would appear for every user
-      // in an environment where nothing is being saved at all.
+      // the cutover dark, a spinner would appear for every user in an environment where nothing is
+      // being saved at all. No longer the chart default since #1881, but still the state of any
+      // override or un-rolled deployment.
       this.briefPersistence.set(this.idlePersistence);
     }
 
@@ -1165,9 +1461,9 @@ export class CampaignsComponent {
       // user loaded a different brief for this event, and this payload never saw it.
       const known =
         ownershipKey === null || (this.ownershipEpochs.get(ownershipKey) ?? 0) !== ownershipEpochAtSend ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
-      // `allowFallback` says the caller has no validator BY CHOICE — the stale-brief warning was
-      // shown and the user proceeded. Without it, an absent validator means "unknown", and the
-      // server refuses rather than substituting one it read itself.
+      // `allowFallback` says the caller has no validator BY CHOICE — see `knownBriefIds` for the
+      // two paths that set `absence: 'overwrite'`. Without it, an absent validator means
+      // "unknown", and the server refuses rather than substituting one it read itself.
       return firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, known?.id ?? null, known?.etag ?? null, known?.absence === 'overwrite')).then(
         (result) => {
           // Latched BEFORE the generation check, unlike everything below it. The check exists to

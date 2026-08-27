@@ -11,7 +11,13 @@ import { TableComponent } from '@components/table/table.component';
 import { COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared';
 import { CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import { Committee, CommitteeMember, Meeting } from '@lfx-one/shared/interfaces';
-import { sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids } from '@lfx-one/shared/utils';
+import {
+  fromMeetingApiVotingStatuses,
+  normalizeMeetingApiVotingStatuses,
+  sanitizeMeetingCommittees,
+  sanitizeMeetingCommitteeUids,
+  toMeetingApiVotingStatuses,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -114,7 +120,7 @@ export class MeetingCommitteeModalComponent {
       const committeeIds = validCommittees.map((c) => c.uid);
       this.selectedCommitteeIds.set(committeeIds);
 
-      // Get initial voting statuses from meeting committees
+      // Get initial voting statuses from meeting committees (stored in the meeting API vocabulary)
       const existingVotingStatuses: string[] = [];
       validCommittees.forEach((committee) => {
         if (committee.allowed_voting_statuses) {
@@ -122,8 +128,8 @@ export class MeetingCommitteeModalComponent {
         }
       });
 
-      // Remove duplicates and set initial values
-      const uniqueVotingStatuses = [...new Set(existingVotingStatuses)];
+      // Map API values back to the display vocabulary the multiselect options use
+      const uniqueVotingStatuses = fromMeetingApiVotingStatuses(existingVotingStatuses);
       this.selectedVotingStatuses.set(uniqueVotingStatuses);
 
       this.form.patchValue({
@@ -171,12 +177,15 @@ export class MeetingCommitteeModalComponent {
 
   public onSave(): void {
     const selectedIds = sanitizeMeetingCommitteeUids(this.form.value.committees);
-    const selectedVotingStatuses = (this.form.value.votingStatuses as string[]) || [];
+    // Map to the meeting API vocabulary up front so the change-detection below compares like-for-like
+    const selectedVotingStatuses = toMeetingApiVotingStatuses((this.form.value.votingStatuses as string[]) || []);
 
     // If no changes, just close
     const currentCommittees = sanitizeMeetingCommittees(this.meeting.committees);
     const currentIds = currentCommittees.map((c) => c.uid);
-    const currentVotingStatuses = currentCommittees.flatMap((c) => c.allowed_voting_statuses || []);
+    // Canonicalize the stored side too: saves write the same list onto every committee, so a raw
+    // flatMap carries duplicates (and pre-migration display values) that would always look dirty.
+    const currentVotingStatuses = normalizeMeetingApiVotingStatuses(currentCommittees.flatMap((c) => c.allowed_voting_statuses || []));
     if (
       JSON.stringify(selectedIds.sort()) === JSON.stringify(currentIds.sort()) &&
       JSON.stringify(selectedVotingStatuses.sort()) === JSON.stringify(currentVotingStatuses.sort())

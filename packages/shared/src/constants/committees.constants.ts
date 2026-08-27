@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { BehavioralClassDisplayConfig, CommitteeCategoryInfo, CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
+import type { BehavioralClassDisplayConfig, CommitteeCategoryInfo, CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
+import type { MeetingAllowedVotingStatus } from '../interfaces/meeting.interface';
 import { lfxColors } from './colors.constants';
 
 // Re-export helper functions from utils for backward compatibility
@@ -281,12 +282,51 @@ export const VOTING_STATUSES = [
   { label: 'None', value: CommitteeMemberVotingStatus.NONE },
 ];
 
+/** VOTING_STATUSES minus the legacy None value — excluded by both surfaces below, for different reasons. */
+const VOTING_STATUSES_WITHOUT_NONE = VOTING_STATUSES.filter(({ value }) => value !== CommitteeMemberVotingStatus.NONE);
+
+/**
+ * Display label for a committee member with no recorded voting status (legacy null).
+ * @description 'None' and 'Observer' are real assignable statuses, so a legacy null must not
+ * render as either — a neutral missing-value label keeps null distinct from a recorded 'None'
+ * and matches the app-wide '—' convention for absent values (GH-1831).
+ */
+export const NO_VOTING_STATUS_LABEL = '—';
+
 /**
  * Voting status options for meeting committee filters.
  * Excludes None — it is not a selectable value in meeting forms but remains
  * a valid member status. None is treated as Observer for filtering purposes.
  */
-export const MEETING_VOTING_STATUSES = VOTING_STATUSES.filter(({ value }) => value !== CommitteeMemberVotingStatus.NONE);
+export const MEETING_VOTING_STATUSES = VOTING_STATUSES_WITHOUT_NONE;
+
+/** Meeting API voting-status vocabulary — snake_case, unlike the committee domain's display strings. */
+export const MEETING_ALLOWED_VOTING_STATUSES = ['voting_rep', 'alt_voting_rep', 'observer', 'emeritus', 'none'] as const;
+
+/** Display (committee domain) → meeting API voting status. */
+export const COMMITTEE_TO_MEETING_VOTING_STATUS: Record<CommitteeMemberVotingStatus, MeetingAllowedVotingStatus> = {
+  [CommitteeMemberVotingStatus.VOTING_REP]: 'voting_rep',
+  [CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP]: 'alt_voting_rep',
+  [CommitteeMemberVotingStatus.OBSERVER]: 'observer',
+  [CommitteeMemberVotingStatus.EMERITUS]: 'emeritus',
+  [CommitteeMemberVotingStatus.NONE]: 'none',
+};
+
+/** Meeting API → display voting status. 'none' hydrates as Observer: meeting filters treat None-status members as Observers. */
+export const MEETING_TO_COMMITTEE_VOTING_STATUS: Record<MeetingAllowedVotingStatus, CommitteeMemberVotingStatus> = {
+  voting_rep: CommitteeMemberVotingStatus.VOTING_REP,
+  alt_voting_rep: CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP,
+  observer: CommitteeMemberVotingStatus.OBSERVER,
+  emeritus: CommitteeMemberVotingStatus.EMERITUS,
+  none: CommitteeMemberVotingStatus.OBSERVER,
+};
+
+/**
+ * Voting status options for the committee member form.
+ * Excludes None — the committee service rejects it on voting-enabled committees
+ * (LFXV2-2075); it persists only as a legacy value on pre-existing members.
+ */
+export const MEMBER_FORM_VOTING_STATUSES = VOTING_STATUSES_WITHOUT_NONE;
 
 /**
  * Available appointment sources for committee members
@@ -644,6 +684,13 @@ export const OTHER_GROUPS_LABEL = 'Other Groups';
 
 /** Cards revealed per "Show more" click on the My Groups card grid — a grid-friendly count (divisible by 1/2/3/4 columns). */
 export const GROUPS_CARD_GRID_PAGE_SIZE = 12;
+
+/**
+ * Short TTL for the committee-detail cache — just long enough for the writerGuard
+ * project probe and CommitteeManageComponent's immediate refetch to share one request, without
+ * serving stale data across edits (write paths evict explicitly). Mirrors MEETING_DETAIL_CACHE_TTL_MS.
+ */
+export const COMMITTEE_DETAIL_CACHE_TTL_MS = 10 * 1000;
 
 /**
  * Icon-tile tints for the Groups dashboard engagement stat cards (LFXV2-1711). A dedicated constant

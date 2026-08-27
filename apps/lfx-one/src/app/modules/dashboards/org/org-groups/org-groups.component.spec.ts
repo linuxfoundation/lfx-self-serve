@@ -2,14 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import type { Account, OrgDropdownOption, OrgLensGroupSummary, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
+import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensGroupsService } from '@services/org-lens-groups.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { Tooltip } from 'primeng/tooltip';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { signal, type WritableSignal } from '@angular/core';
@@ -29,6 +34,31 @@ interface Rendered {
   selectedAccount: WritableSignal<Account>;
 }
 
+// <lfx-person-detail-drawer /> (GH-1780 follow-up — stacked on the seat-holders drawer) is
+// unconditionally mounted, so its injected PersonDetailDrawerService needs the full signal surface
+// it reads, not just `open` (see person-detail-drawer.component.ts/.html) — a bare `{ open: vi.fn() }`
+// stub, sufficient for group-seat-holders-drawer.component.spec.ts's own tests of the click-to-open
+// call, would leave every other read undefined and throw at render. Kept closed throughout (isOpen
+// false, activeContext null) — neither testing module in this file clicks a seat-holder row deep
+// enough to open it; that behavior is covered by group-seat-holders-drawer.component.spec.ts itself.
+// A shared factory, not one literal reused by reference, so each test module gets its own vi.fn()
+// spies instead of accumulating call history across tests.
+function personDrawerStub() {
+  return {
+    isOpen: signal(false),
+    activeContext: signal(null),
+    activeTab: signal('events'),
+    loading: signal(false),
+    error: signal(false),
+    emailError: signal(false),
+    detail: signal(null),
+    companyEmails: signal([]),
+    open: vi.fn(),
+    close: vi.fn(),
+    setTab: vi.fn(),
+  };
+}
+
 async function render(options: RenderOptions = {}): Promise<Rendered> {
   const { accountName = 'Acme Motors, Inc.', orgNavigationLoaded = true, getGroups = () => of(emptyGroupsResponse()), queryParams = {} } = options;
 
@@ -46,6 +76,15 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
       { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
       { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
       { provide: OrgLensGroupsService, useValue: { getGroups } },
+      // The seat-holders drawer (GH-1780) is unconditionally mounted, so its injected
+      // CommitteeMembersService needs a stub too — otherwise DI resolves the real service, which
+      // needs a real HttpClient this testing module never provides.
+      { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
+      { provide: PersonDetailDrawerService, useValue: personDrawerStub() },
+      // p-drawer's synthetic `@panelState` animation throws NG05105 without this — mirrors
+      // event-detail-drawer.component.spec.ts. Needed once a test actually opens the seat-holders
+      // drawer (setting seatHoldersDrawerVisible true), not for tests that never do.
+      provideNoopAnimations(),
       // Real Router (via provideRouter) so the rendered group rows' [routerLink] (createUrlTree, etc.)
       // keeps working; only `navigate` — the method the URL-sync subscription actually calls — is spied on.
       provideRouter([]),
@@ -133,11 +172,118 @@ function foundationOptions(fixture: ComponentFixture<OrgGroupsComponent>): OrgDr
   return (fixture.componentInstance as unknown as { foundationOptions: () => OrgDropdownOption[] }).foundationOptions();
 }
 
+/** seatHoldersDrawerVisible/selectedGroup are `protected` — same cast convention as filterForm above. */
+function seatHoldersDrawerState(fixture: ComponentFixture<OrgGroupsComponent>): { visible: boolean; selectedGroupUid: string | null } {
+  const instance = fixture.componentInstance as unknown as {
+    seatHoldersDrawerVisible: () => boolean;
+    selectedGroup: () => { uid: string } | null;
+  };
+  return { visible: instance.seatHoldersDrawerVisible(), selectedGroupUid: instance.selectedGroup()?.uid ?? null };
+}
+
+/** Row seat-count testid doubles as the drawer trigger — see org-groups.component.html. */
+async function clickSeatHoldersTrigger(fixture: ComponentFixture<OrgGroupsComponent>, uid: string): Promise<void> {
+  const el = fixture.nativeElement.querySelector(`[data-testid="org-groups-item-seats-${uid}"]`) as HTMLButtonElement | null;
+  if (!el) throw new Error(`no seat-holders trigger rendered for ${uid}`);
+  el.click();
+  await fixture.whenStable();
+  fixture.detectChanges();
+}
+
 /** Lets the real `debounceTime(150)` on the filter form settle, then flushes change detection. */
 async function flushFilterChange(fixture: ComponentFixture<OrgGroupsComponent>): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 200));
   fixture.detectChanges();
   await fixture.whenStable();
+}
+
+/** data-testid lands on <lfx-button>'s host element, two Angular component boundaries above the
+ *  native <button> PrimeNG's <p-button> actually renders internally — query the descendant. */
+function exportButton(fixture: ComponentFixture<OrgGroupsComponent>): HTMLButtonElement {
+  const el = fixture.nativeElement.querySelector('[data-testid="org-groups-export-csv"] button');
+  if (!el) throw new Error('no native button rendered inside org-groups-export-csv');
+  return el as HTMLButtonElement;
+}
+
+/** pTooltip lives on the wrapper div, not the button — see the template comment for why (a
+ *  disabled element can't be keyboard-focused, so the tooltip/aria explanation would be
+ *  unreachable without it) — rendered on hover via a dynamic overlay rather than a static DOM
+ *  attribute, so read the bound `content` off the Tooltip directive instance instead of asserting
+ *  on hover behavior. */
+function exportTooltip(fixture: ComponentFixture<OrgGroupsComponent>): string | undefined {
+  const content = fixture.debugElement.query(By.css('[data-testid="org-groups-export-csv-wrapper"]'))?.injector.get(Tooltip, null)?.content;
+  return typeof content === 'string' ? content : undefined;
+}
+
+/**
+ * Clicks the export button and captures what downloadCsv() (shared/utils/file.utils.ts) hands to
+ * the browser download APIs — the Blob passed to URL.createObjectURL and the filename set on the
+ * anchor's `download` attribute — without mocking the shared `@lfx-one/shared/utils` module
+ * specifier itself (this repo's Angular unit-test builder doesn't hoist `vi.mock` by specifier the
+ * way plain Vitest does, so a factory-based module mock silently never takes effect here).
+ */
+async function captureExportedCsv(fixture: ComponentFixture<OrgGroupsComponent>): Promise<{ filename: string; rows: string[][] }> {
+  let capturedBlob: Blob | undefined;
+  let capturedFilename: string | undefined;
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+  URL.createObjectURL = ((blob: Blob) => {
+    capturedBlob = blob;
+    return 'blob:mock-url';
+  }) as typeof URL.createObjectURL;
+  URL.revokeObjectURL = (() => undefined) as typeof URL.revokeObjectURL;
+  const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    capturedFilename = this.download;
+  });
+
+  try {
+    exportButton(fixture).click();
+  } finally {
+    clickSpy.mockRestore();
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+  }
+
+  if (!capturedBlob || capturedFilename === undefined) {
+    throw new Error('exportCsv() did not trigger a download');
+  }
+  const text = (await capturedBlob.text()).replace(new RegExp(String.fromCharCode(0xfeff)), '');
+  const rows = text
+    .split('\r\n')
+    .filter((line) => line.length > 0)
+    .map(parseCsvLine);
+  return { filename: capturedFilename, rows };
+}
+
+/** Quote-aware RFC 4180 cell split, matching escapeCsvCell's quoting (file.utils.ts) — a plain
+ *  `line.split(',')` would misalign columns the moment a cell (e.g. a comma-containing name) is
+ *  quoted. */
+function parseCsvLine(line: string): string[] {
+  const cells: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      cells.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  cells.push(cur);
+  return cells;
 }
 
 describe('OrgGroupsComponent', () => {
@@ -354,6 +500,39 @@ describe('OrgGroupsComponent', () => {
     await flushFilterChange(fixture);
 
     expect(renderedItemUids(fixture)).toEqual(['g1', 'g2', 'g3', 'g4']);
+  });
+
+  // OrgGroupsComponent isn't destroyed on an in-place org switch, so a seat-holders drawer left
+  // open (or its selected group left set) would otherwise mismatch the new org — see the drawer's
+  // own orgUid-keyed cache and group-seat-holders-drawer.component.ts for the other half of this.
+  it('closes the seat-holders drawer and clears the selected group when the selected org switches', async () => {
+    const { fixture, selectedAccount } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    await clickSeatHoldersTrigger(fixture, 'g1');
+    expect(seatHoldersDrawerState(fixture)).toEqual({ visible: true, selectedGroupUid: 'g1' });
+
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', accountSlug: 'vendor-corp', membershipTier: '', uid: 'org-uid-2' });
+    await flushFilterChange(fixture);
+
+    expect(seatHoldersDrawerState(fixture)).toEqual({ visible: false, selectedGroupUid: null });
+  });
+
+  // WCAG 2.5.3 Label in Name: the trigger's only visible text is the seat count, so its accessible
+  // name must include that number, not just the group name — otherwise a screen-reader user loses
+  // the count entirely and a voice-control user can't target the button by its visible label.
+  it('includes the seat count in the seat-holders trigger aria-label, not just the group name', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    const trigger = fixture.nativeElement.querySelector('[data-testid="org-groups-item-seats-g1"]');
+    expect(trigger?.getAttribute('aria-label')).toBe('View 10 seat holders for Committee Steering TAG');
+  });
+
+  it('uses the singular "seat holder" in the trigger aria-label for a single-seat group', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    // g4 (Committee Newsletter) has org_seat_count: 1 in buildGroups().
+    const trigger = fixture.nativeElement.querySelector('[data-testid="org-groups-item-seats-g4"]');
+    expect(trigger?.getAttribute('aria-label')).toBe('View 1 seat holder for Committee Newsletter');
   });
 
   it('clearing filters restores the full list in the original (seat-desc, name-asc) order', async () => {
@@ -753,6 +932,8 @@ describe('OrgGroupsComponent stat strip', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(orgLoaded) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(orgLoaded) } },
         { provide: OrgLensGroupsService, useValue: { getGroups: vi.fn(getGroups) } },
+        { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
+        { provide: PersonDetailDrawerService, useValue: personDrawerStub() },
       ],
     }).compileComponents();
 
@@ -911,5 +1092,135 @@ describe('OrgGroupsComponent stat strip', () => {
     // toBe(8) skeleton-card assertions in the top-level describe above).
     expect(classTiles()).toHaveLength(6);
     expect(section.style.getPropertyValue('--cols').trim()).toBe('8');
+  });
+});
+
+describe('OrgGroupsComponent — CSV export', () => {
+  function exportTooltipWrapper(fixture: ComponentFixture<OrgGroupsComponent>): HTMLElement {
+    const el = fixture.nativeElement.querySelector('[data-testid="org-groups-export-csv-wrapper"]');
+    if (!el) throw new Error('no export tooltip wrapper rendered');
+    return el as HTMLElement;
+  }
+
+  function exportHint(fixture: ComponentFixture<OrgGroupsComponent>): HTMLElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="org-groups-export-csv-hint"]');
+  }
+
+  it('enables the export button with no tooltip once there are rows to export', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    expect(exportButton(fixture).disabled).toBe(false);
+    expect(exportTooltip(fixture)).toBeUndefined();
+    // Not a keyboard stop when there's nothing to explain — a stray always-on tabindex/role would
+    // add a no-op tab stop, and wrap the enabled button in a stray "note" role, for no reason.
+    const wrapper = exportTooltipWrapper(fixture);
+    expect(wrapper.hasAttribute('tabindex')).toBe(false);
+    expect(wrapper.hasAttribute('role')).toBe(false);
+    expect(exportHint(fixture)).toBeNull();
+  });
+
+  it('disables the export button and shows "No rows to export" when the active filter matches nothing', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    filterForm(fixture).get('search')?.setValue('no-such-group-xyz');
+    await flushFilterChange(fixture);
+
+    expect(exportButton(fixture).disabled).toBe(true);
+    expect(exportTooltip(fixture)).toBe('No rows to export');
+    // Keyboard/screen-reader path: the disabled button itself can't carry focus or an accessible
+    // tooltip, so the always-hoverable wrapper picks up a tab stop + aria-label while it applies.
+    const wrapper = exportTooltipWrapper(fixture);
+    expect(wrapper.getAttribute('tabindex')).toBe('0');
+    expect(wrapper.getAttribute('role')).toBe('note');
+    expect(wrapper.getAttribute('aria-label')).toBe('No rows to export');
+    // Always-visible fallback for a sighted keyboard-only user, who gets no hover/focus tooltip —
+    // aria-hidden so a screen reader (already covered by the wrapper's aria-label) doesn't double-read it.
+    const hint = exportHint(fixture);
+    expect(hint?.textContent?.trim()).toBe('No rows to export');
+    expect(hint?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('exports only the rows the active filter leaves visible, not the full roster', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    filterForm(fixture).get('foundation')?.setValue('cncf');
+    await flushFilterChange(fixture);
+    expect(renderedItemUids(fixture)).toEqual(['g1', 'g4']);
+
+    const { rows } = await captureExportedCsv(fixture);
+
+    // header + 2 filtered rows only — g2/g3 (not in the 'cncf' foundation) must be excluded.
+    expect(rows).toHaveLength(3);
+    expect(rows.slice(1).map((row) => row[0])).toEqual(['Committee Steering TAG', 'Committee Newsletter']);
+  });
+
+  it('emits the BEHAVIORAL_CLASS_CONFIG label in the Type column, not the raw category string', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    const { rows } = await captureExportedCsv(fixture);
+
+    const [header, ...body] = rows;
+    expect(header).toEqual([COMMITTEE_LABEL.singular, 'Foundation', 'Type', 'Our Seats', `${COMMITTEE_LABEL.singular} UID`]);
+    // g2 (Zephyr Working Group) has raw category "Working Group" — the exported Type column must
+    // carry the display label ("Working Groups"), not that raw upstream string.
+    const zephyrRow = body.find((row) => row[4] === 'g2');
+    expect(zephyrRow?.[2]).toBe(BEHAVIORAL_CLASS_CONFIG['working-group'].label);
+    expect(zephyrRow?.[2]).not.toBe('Working Group');
+  });
+
+  it('names the download with the org slug and today’s date', async () => {
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    const { filename } = await captureExportedCsv(fixture);
+
+    expect(filename).toMatch(/^org-lens-groups-acme-\d{8}\.csv$/);
+  });
+
+  it('stamps the local date, not the UTC date, in the filename', async () => {
+    // \d{8} alone can't catch a UTC/local-date mismatch, and CI runs UTC (the GitHub-hosted-runner
+    // default — no workflow sets TZ), where local and UTC calendar dates always coincide — a
+    // comparison against the *host's* current TZ would be a permanent no-op there. Pin TZ for this
+    // test so the assertion is unconditional and deterministic on every machine, including CI.
+    // vi.stubEnv (not a hand-rolled save/restore) mirrors the repo's own TZ-pinning precedent
+    // (committee-activity-query.helper.spec.ts) and correctly restores "unset" — a plain
+    // `process.env.TZ = originalTz` would coerce an originally-unset TZ into the literal string
+    // "undefined" and pin the rest of the worker process to UTC instead.
+    try {
+      vi.stubEnv('TZ', 'America/Los_Angeles');
+      vi.useFakeTimers({ toFake: ['Date'] });
+      // 2026-08-25T02:30:00Z is still Aug 24 in America/Los_Angeles (UTC-7 in August).
+      vi.setSystemTime(new Date('2026-08-25T02:30:00Z'));
+      const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+      const { filename } = await captureExportedCsv(fixture);
+
+      expect(filename).toContain('20260824');
+      expect(filename).not.toContain('20260825');
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('falls back to the default slug when accountSlug is the empty-string placeholder (not just null/undefined)', async () => {
+    const { fixture, selectedAccount } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    // Mirrors AccountContextService's PLACEHOLDER_ACCOUNT / toAccount(), which normalize a missing
+    // Snowflake slug to '' rather than null/undefined during org-switch/enrichment windows —
+    // `?? 'org'` would miss this and produce a bare "org-lens-groups--<date>.csv".
+    selectedAccount.update((account) => ({ ...account, accountSlug: '' }));
+
+    const { filename } = await captureExportedCsv(fixture);
+
+    expect(filename).toMatch(/^org-lens-groups-org-\d{8}\.csv$/);
+  });
+
+  it('quotes a comma-containing cell per RFC 4180, and the export still reports the correct value', async () => {
+    const groups: OrgLensGroupSummary[] = [{ uid: 'h1', name: 'Steering, Governance & Ops', category: 'TSC', org_seat_count: 2 }];
+    const { fixture } = await render({ getGroups: () => of(groupsResponse(groups)) });
+
+    const { rows } = await captureExportedCsv(fixture);
+
+    expect(rows[1][0]).toBe('Steering, Governance & Ops');
   });
 });

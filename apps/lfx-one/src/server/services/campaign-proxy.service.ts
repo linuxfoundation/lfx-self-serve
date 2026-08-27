@@ -440,7 +440,18 @@ function buildCopySystemPrompt(platforms: string[], programType?: CampaignProgra
   return prompt;
 }
 
-const KEYWORD_SYSTEM_PROMPT = `You are a Google Ads keyword strategist. Return only a valid JSON array. No markdown fences, no explanation.`;
+// Names both search platforms, because both reach this stage: the keyword gate admits
+// `google-ads` OR `microsoft-ads` (and a platform-less brief, which defaults to google-ads).
+// Saying "Google Ads" alone described the caller inaccurately for a Microsoft-only brief and
+// biased the model toward one platform's conventions for keywords dispatched to the other.
+//
+// The three USER prompts that pair with it (`buildKeywordPrompt`'s two branches and
+// `buildRefineKeywordPrompt`) say "paid search keywords" for the same reason. Leaving them on
+// "Google Search keywords" would have put conflicting platform guidance in the same request —
+// a system message naming both and a user message naming one — which is worse than either
+// alone, since the model has to pick. Keywords are a search-intent concept and identical
+// across the two platforms, so neutral wording loses nothing.
+const KEYWORD_SYSTEM_PROMPT = `You are a paid search keyword strategist for Google Ads and Microsoft Advertising. Return only a valid JSON array. No markdown fences, no explanation.`;
 
 const LINKEDIN_STRATEGY_SYSTEM_PROMPT_EVENTS = `You are a LinkedIn Ads strategist specializing in developer and open-source technology events.
 Analyze the event details and generate a comprehensive targeting strategy for LinkedIn Sponsored Content campaigns.
@@ -495,7 +506,22 @@ function getExtractionPrompt(programType?: CampaignProgramType): string {
 // Validation constants
 // ---------------------------------------------------------------------------
 
-const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
+/**
+ * Platforms the BRIEF endpoints (generate + refine) accept.
+ *
+ * `microsoft-ads` is here without a copy key of its own (LFXV2-3312), which is the one entry that
+ * needs explaining. Every other platform in this set contributes a key to `buildCopyPrompt` —
+ * `meta_ads`, `reddit_promoted`, and so on — because the generator writes bespoke copy for it.
+ * Microsoft needs none: its dispatcher auto-composes a responsive search ad upstream, and the only
+ * brief-derived input it consumes is the KEYWORD list, which is generated for every paid brief
+ * regardless of platform. So it is a legitimate member of this set that adds nothing to the prompt.
+ *
+ * Kept as a hand-written list rather than derived from `CAMPAIGN_PLATFORMS`, unlike the two
+ * `!p.disabled` sets: this one answers "can the brief generator serve it", which is a property of
+ * THIS service, not of whether the channel is offered. `twitter-ads` is absent for that reason and
+ * would stay absent even if it were enabled.
+ */
+const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'microsoft-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
 const SUPPORTED_PROGRAM_TYPES: ReadonlySet<CampaignProgramType> = new Set<CampaignProgramType>(['events', 'education']);
 // DERIVED from the shared constant, not a second hand-written list. CLAUDE.md requires shared
 // constants to live in `@lfx-one/shared`, and the controller already validates against this one —
@@ -610,7 +636,7 @@ export class CampaignProxyService {
 
     const unsupported = (body.platforms ?? []).filter((p) => !SUPPORTED_PLATFORMS.has(p));
     if (unsupported.length > 0) {
-      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads, meta-ads.` };
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: ${[...SUPPORTED_PLATFORMS].join(', ')}.` };
       return;
     }
 
@@ -739,8 +765,23 @@ export class CampaignProxyService {
     // cheap one. The scrape, event details and HubSpot UTM above are what an email brief needs
     // from this stream today; generated subject/preview/sender copy arrives with the `email-copy`
     // endpoint (LFXV2-3198), which this path deliberately does not try to stand in for.
-    if (!isEmail) {
-      const platformList = selectedPlatforms.join(', ');
+    // `someContributesCopy` and not merely `!isEmail`: a Microsoft-ONLY selection reaches here with
+    // no copy keys to request. See `contributesAdCopy` for why skipping beats calling with an empty
+    // schema — the failure mode is not a wasted call but a dead-ended brief.
+    const someContributesCopy = selectedPlatforms.some(contributesAdCopy);
+    // A copy-less PAID brief still emits `copy_structured`, with an empty object.
+    //
+    // Skipping the stage without this left `structuredCopy` null on the client, and
+    // `submitRefine` returns silently at its own `currentCopy` guard when it is — so Refine did
+    // nothing at all for a Microsoft-only brief, with no message saying why. The empty object is
+    // the honest value: this brief genuinely has no ad copy, and it is distinguishable from
+    // `null`, which means "no brief was generated". Email deliberately keeps `null`, because its
+    // copy comes from a different endpoint entirely.
+    if (!isEmail && !someContributesCopy) {
+      yield { type: 'copy_structured', data: {} };
+    }
+    if (!isEmail && someContributesCopy) {
+      const platformList = selectedPlatforms.filter(contributesAdCopy).join(', ');
       yield { type: 'status', data: `Generating copy for ${platformList}...` };
 
       const copySystemPrompt = buildCopySystemPrompt(selectedPlatforms, body.programType);
@@ -799,11 +840,18 @@ export class CampaignProxyService {
       }
     }
 
-    // Keywords are a Google Ads concept. The `!body.platforms` arm opts an UNSPECIFIED list in on
-    // purpose — a paid caller that names no platform still gets the google-ads default above, so
-    // it still wants keywords. Email is the one case where absence does not mean the default, and
-    // it is excluded first rather than by adding another arm to that condition.
-    if (!isEmail && (body.platforms?.includes('google-ads') || !body.platforms || body.platforms.length === 0)) {
+    // Keywords are a SEARCH concept, not a Google-only one (LFXV2-3312). Microsoft Ads is the other
+    // search channel, and keywords are the one brief-derived input its config consumes: with none,
+    // `microsoftConfig` produces a campaign that "can NEVER SERVE" and cannot even be activated,
+    // and the implementation tab blocks the submit rather than let that be created. So a
+    // Microsoft-only brief that skipped this step would seed an empty keyword editor and dead-end
+    // the user at the very first step of the channel this ticket enabled.
+    //
+    // The `!body.platforms` arm opts an UNSPECIFIED list in on purpose — a paid caller that names
+    // no platform still gets the google-ads default above, so it still wants keywords. Email is the
+    // one case where absence does not mean the default, and it is excluded first rather than by
+    // adding another arm to that condition.
+    if (!isEmail && (body.platforms?.some((p) => p === 'google-ads' || p === 'microsoft-ads') || !body.platforms || body.platforms.length === 0)) {
       yield { type: 'status', data: 'Generating keyword list...' };
 
       try {
@@ -865,7 +913,7 @@ export class CampaignProxyService {
 
     const unsupported = (body.platforms ?? []).filter((p) => !SUPPORTED_PLATFORMS.has(p));
     if (unsupported.length > 0) {
-      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: google-ads, linkedin-ads, reddit-ads, meta-ads.` };
+      yield { type: 'error', data: `Unsupported platforms: ${unsupported.join(', ')}. Supported: ${[...SUPPORTED_PLATFORMS].join(', ')}.` };
       return;
     }
 
@@ -891,34 +939,41 @@ export class CampaignProxyService {
       return;
     }
 
-    yield { type: 'status', data: 'Refining brief based on your feedback...' };
-
-    const userPrompt = buildRefinePrompt(body);
-    let fullCopy = '';
     const refinePlatforms = body.platforms?.length ? body.platforms : ['google-ads'];
+    // Skipped for a selection that contributes no copy keys — the same rule as the generate path,
+    // and load-bearing for the same reason: this stage `return`s the whole stream on failure, so an
+    // empty-schema call could abort a Microsoft refinement before its keywords were regenerated.
+    if (refinePlatforms.some(contributesAdCopy)) {
+      yield { type: 'status', data: 'Refining brief based on your feedback...' };
 
-    try {
-      for await (const token of aiChatStream(buildCopySystemPrompt(refinePlatforms, body.programType), userPrompt, signal)) {
-        yield { type: 'copy_token', data: token };
-        fullCopy += token;
-      }
-      yield { type: 'copy_done', data: null };
+      const userPrompt = buildRefinePrompt(body);
+      let fullCopy = '';
 
       try {
-        const text = stripJsonFences(fullCopy);
-        const structured = JSON.parse(text) as Record<string, unknown>;
-        truncateAdCopy(structured);
-        yield { type: 'copy_structured', data: structured };
-      } catch {
-        yield { type: 'copy_structured', data: { raw: fullCopy } };
+        for await (const token of aiChatStream(buildCopySystemPrompt(refinePlatforms, body.programType), userPrompt, signal)) {
+          yield { type: 'copy_token', data: token };
+          fullCopy += token;
+        }
+        yield { type: 'copy_done', data: null };
+
+        try {
+          const text = stripJsonFences(fullCopy);
+          const structured = JSON.parse(text) as Record<string, unknown>;
+          truncateAdCopy(structured);
+          yield { type: 'copy_structured', data: structured };
+        } catch {
+          yield { type: 'copy_structured', data: { raw: fullCopy } };
+        }
+      } catch (error) {
+        if (signal.aborted) return;
+        yield { type: 'error', data: `Brief refinement failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        return;
       }
-    } catch (error) {
-      if (signal.aborted) return;
-      yield { type: 'error', data: `Brief refinement failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
-      return;
     }
 
-    if (refinePlatforms.includes('google-ads')) {
+    // Both SEARCH channels, matching the generate path above — a Microsoft brief whose keywords were
+    // never regenerated on refine would keep the pre-refine list while its copy moved on.
+    if (refinePlatforms.some((p) => p === 'google-ads' || p === 'microsoft-ads')) {
       yield { type: 'status', data: 'Regenerating keywords...' };
 
       try {
@@ -1088,6 +1143,17 @@ export class CampaignProxyService {
       }
     }
 
+    // The LEGACY create path's platforms, and `microsoft-ads` is deliberately ABSENT (LFXV2-3312).
+    //
+    // Every entry here has an `execute<Platform>Dispatch` below it; Microsoft has none, because it
+    // was never built on this path — its only implementation is `MicrosoftDispatcher` in
+    // campaign-service. Adding it to this list without a dispatcher would turn a clear
+    // "Unsupported platform(s)" error into a silent no-op create.
+    //
+    // That makes Microsoft the first channel that REQUIRES the cutover flags. The controller does
+    // NOT pre-refuse it: with the flags dark `createCampaigns` reports `enabled: false` and the
+    // request falls through to this path, so THIS list is the thing that answers — an explicit
+    // "Unsupported platform(s)" error rather than a create that quietly does nothing.
     const supportedPlatforms: CampaignPlatform[] = ['google-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads'];
     const platforms = effectiveBody.platforms?.length ? effectiveBody.platforms : ['google-ads'];
     const unsupported = platforms.filter((p) => !supportedPlatforms.includes(p as CampaignPlatform));
@@ -1593,6 +1659,28 @@ function extractEventNameFromUrl(url: string): string {
   }
 }
 
+/**
+ * Does this platform contribute an ad-copy KEY to the generated brief?
+ *
+ * `microsoft-ads` does NOT (LFXV2-3312), and it is the only paid platform that does not: its
+ * dispatcher auto-composes a responsive search ad upstream, so the generator writes no copy for
+ * it. The one brief-derived input it consumes is the KEYWORD list, which is produced by a separate
+ * stage.
+ *
+ * This exists so the copy stage can be SKIPPED for a selection that contributes no keys. Without
+ * that skip a Microsoft-only brief asked the model for "a JSON object with keys " — an empty
+ * schema — and, worse, a failure of that pointless call `return`s from the stream BEFORE keyword
+ * generation, so the one stage Microsoft actually needs never ran.
+ *
+ * Deliberately a predicate rather than a second list of keys: `buildCopyPrompt` and
+ * `buildRefinePrompt` each build their own key list, and a third copy here could disagree with
+ * both. Anything that is not Microsoft contributes copy today, so the rule is stated that way and
+ * a new copy-less platform is a one-line change here.
+ */
+function contributesAdCopy(platform: string): boolean {
+  return platform !== 'microsoft-ads';
+}
+
 function buildCopyPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
   // No email branch: only the GENERATE path reaches this function, and it skips the whole ad-copy
   // block for email before calling it. (Refine builds its prompt with `buildRefinePrompt`, not
@@ -1672,7 +1760,7 @@ function buildKeywordPrompt(body: CampaignBriefRequest, eventDetails: Record<str
   const eventYear = yearMatch ? yearMatch[0] : new Date().getFullYear().toString();
 
   if (isEducation) {
-    return `Generate 25-40 high-intent Google Search keywords for this training/certification program.
+    return `Generate 25-40 high-intent paid search keywords for this training/certification program.
 
 COURSE: ${name || body.url}
 Themes: ${themes}
@@ -1698,7 +1786,7 @@ CRITICAL RULES:
 - Avoid generic broad terms that waste budget (e.g. "training" alone).`;
   }
 
-  return `Generate 25-40 high-intent Google Search keywords for this event.
+  return `Generate 25-40 high-intent paid search keywords for this event.
 
 EVENT: ${name || body.url}
 Dates: ${dates}
@@ -1772,7 +1860,7 @@ CURRENT KEYWORDS: ${currentKws}
 
 USER FEEDBACK: ${body.feedback}
 
-Based on the feedback, generate 25-40 refined Google Search keywords.
+Based on the feedback, generate 25-40 refined paid search keywords.
 
 Return a JSON array where each object has EXACTLY these keys:
 - "term": the keyword string

@@ -94,10 +94,15 @@ export enum ServerFeatureFlag {
    * "id-shape backstop" here, which is what an earlier version of this doc called it — for CREATE
    * it is a hard prerequisite.
    *
-   * That id-shape distinction is what makes an OVERLAPPING rollout safe: campaign-service mints
-   * UUID job ids and the legacy path mints `job_...`, so a poll is answered by whichever system
-   * actually owns that job regardless of which pod serves it. A CREATE-flag-on pod creating and a
-   * CREATE-flag-off pod polling still works.
+   * That id-shape distinction is what makes an overlapping rollout safe FOR JOB POLLING, and only
+   * for that: campaign-service mints UUID job ids and the legacy path mints `job_...`, so a poll
+   * is answered by whichever system actually owns that job regardless of which pod serves it. A
+   * CREATE-flag-on pod creating and a CREATE-flag-off pod polling still works.
+   *
+   * It says NOTHING about the rest of a campaign's life. The same overlap mints a UUID campaign
+   * that a pod without `CampaignServiceStatusToggle` refuses to pause — see that flag's doc below.
+   * Do not read this paragraph as "an overlapping CREATE rollout is safe"; it covers the poll and
+   * nothing else.
    *
    * That safety holds only while JOBS is on everywhere, and it is an ORDERING requirement, not
    * just a set of prerequisites: a pod with JOBS off does not apply the id-shape check at all and
@@ -161,18 +166,24 @@ export enum ServerFeatureFlag {
    * and LinkedIn pausable at all — and pause is the primary cost-control lever on a mis-targeted
    * campaign.
    *
-   * REACH THE API GAINS, not a control the product grows. Turning this on exposes the server path
-   * only: no component calls `CampaignService.updateCampaignStatus`, because pausing needs a
-   * campaign UUID, brief id and ETag and nothing in the UI can obtain them until LFXV2-3099 lands.
+   * REACHES THE UI as of LFXV2-3224. This previously said the flag exposed the server path only,
+   * because no component could call `CampaignService.updateCampaignStatus` without a campaign
+   * UUID, brief id and ETag. The Optimize tab now obtains all three from `listBriefCampaigns` and
+   * renders a per-row Pause/Resume control (`optimization-tab.component.ts`), so turning this on
+   * is user-visible: it is what makes those buttons live rather than `Unavailable`. The flag is
+   * read into `statusToggleEnabled` on the list response and gates the control itself, so a
+   * flag-off deployment renders the rows with a stated reason instead of a doomed button.
    * Said here as well as in the chart because this doc is what a reader reaches from the code.
    *
-   * Two counts live here and conflating them invites deleting a guard that is doing its job:
-   * campaign-service implements SIX toggle dispatchers upstream, but what this flag exposes is
-   * the non-disabled entries of `CAMPAIGN_PLATFORMS` — four today, because Microsoft and X are
-   * dispatchable upstream and simply not offered by this app. See
+   * Two SETS live here and conflating them invites deleting a guard that is doing its job:
+   * campaign-service implements a toggle dispatcher for every paid platform upstream, but what
+   * this flag exposes is only the non-disabled entries of `CAMPAIGN_PLATFORMS` — a platform can be
+   * dispatchable upstream and simply not offered by this app (X is, today). Deliberately not
+   * stated as a count: the roster changes whenever a `disabled` flag flips — LFXV2-3312 enabled
+   * Microsoft — and a number here goes stale silently. See
    * `CAMPAIGN_SERVICE_STATUS_PLATFORMS` for why the narrowing is deliberate.
    *
-   * ROLLOUT OVERLAP IS SAFE HERE, unlike `CampaignServiceJobs`, and the reason is worth stating
+   * MISROUTING IS IMPOSSIBLE HERE, unlike `CampaignServiceJobs`, and the reason is worth stating
    * because that flag's hazard looks identical. Routing depends on the campaign id's SHAPE as
    * well as the flag, and the two id spaces are disjoint: campaign-service keys campaigns by
    * UUID, while the legacy path's ids are the ad platform's own numeric ids (`NUMERIC_ID_RE`).
@@ -182,9 +193,21 @@ export enum ServerFeatureFlag {
    * refuses with a clear error instead of dispatching to the wrong backend; it does not answer
    * a confident falsehood the way an off-pod job poll did.
    *
-   * The dependency that IS real: a campaign only has a UUID if it was created through
-   * campaign-service, so this is only useful once `CampaignServiceCreate` has been on long
-   * enough to produce rows. Enabling it earlier is harmless but inert.
+   * That is NARROWER than "an overlapping rollout is safe", which an earlier revision of this
+   * comment claimed. A refusal is well-formed and still a failure: the pod returns 400 from
+   * `campaign.controller.ts`, and pause is the primary cost-control lever on a spending
+   * campaign. So this flag must not share a rollout with `CampaignServiceCreate`.
+   *
+   * The dependency that makes the ordering free: a campaign only has a UUID if it was created
+   * through campaign-service, so this flag is INERT until `CampaignServiceCreate` has produced
+   * rows. Enabling it first therefore changes nothing observable, which is exactly why it ships
+   * first — and why the reverse order is the one that costs.
+   *
+   * IT DOES NOT COME BACK OFF. Once UUID campaigns exist the inertness above is spent: a UUID is
+   * permanent, and `campaign.controller.ts` refuses a pause for any UUID while this flag is off.
+   * Disabling CREATE stops NEW campaign-service campaigns but does nothing about the existing
+   * ones, so unlike `CampaignServiceJobs` there is no drain condition to wait out — turning this
+   * off removes the primary cost-control lever from campaigns that may still be spending.
    */
   CampaignServiceStatusToggle = 'LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE',
 
@@ -209,6 +232,26 @@ export enum ServerFeatureFlag {
    * flipping this on in any environment that isn't fully trusted content end-to-end.
    */
   WeeklyBriefSlack = 'LFX_WEEKLY_BRIEF_SLACK_ENABLED',
+
+  /**
+   * Gates FGA-based (`marketing_auditor` / `campaign_manager`) authorization on the marketing
+   * analytics routes (`analytics.route.ts`) and campaigns routes (`campaigns.route.ts`).
+   * OFF establishes an `executive_director`-only baseline: analytics routes that were already
+   * gated by LFXV2-3294 preserve their prior behavior exactly, while campaigns routes that
+   * previously had no authorization middleware are intentionally tightened to ED-only. Every
+   * non-ED request is denied when the flag is off, but this is not a no-op rollback for
+   * campaigns — it is a new, stricter default. Operators should expect this tightening.
+   *
+   * Deliberately independent from any client-side OpenFeature flag: the Web SDK never runs
+   * server-side, so without this, a direct API caller with a `marketing_auditor` or
+   * `campaign_manager` FGA relation could not reach these routes even after the UI flag turns
+   * on the corresponding client guards. Both must be enabled for the feature to actually work.
+   *
+   * OFF by default per the LFXV2-2231 gap-analysis design requirement: the reverted PR #1112
+   * caused a total lockout for all users when its UI guards shipped without a kill switch. This
+   * flag exists so a bad rollout can be reverted with an env var, not a revert PR.
+   */
+  MarketingOpsFga = 'LFX_MARKETING_OPS_FGA_ENABLED',
 }
 
 /**

@@ -729,10 +729,12 @@ export class CommitteeViewComponent {
 
     let pollSucceeded = false;
 
+    // skipCache: every poll must read fresh — a cached pre-membership payload (10s detail TTL
+    // vs this 2.4s window) would replay through all six attempts and never surface my_role.
     timer(400, 400)
       .pipe(
         take(6),
-        exhaustMap(() => this.committeeService.getCommittee(committeeId).pipe(catchError(() => of(null)))),
+        exhaustMap(() => this.committeeService.getCommittee(committeeId, { skipCache: true }).pipe(catchError(() => of(null)))),
         filter((committee) => !!committee?.my_role),
         take(1),
         takeUntilDestroyed(this.destroyRef)

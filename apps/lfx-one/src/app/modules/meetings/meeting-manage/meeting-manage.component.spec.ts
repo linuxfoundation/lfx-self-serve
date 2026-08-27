@@ -291,4 +291,25 @@ describe('MeetingManageComponent', () => {
       expect(component.prepareMeetingData().cancel_on_committee_removal).toBe(CancelOnCommitteeRemoval.INHERIT);
     });
   });
+
+  // GH-1796: the mapper specs cover the helpers in isolation; this pins the save-boundary wiring so
+  // dropping the normalization from prepareMeetingData() fails here instead of silently regressing.
+  describe('committees voting-status normalization (GH-1796)', () => {
+    const createPayloadComponent = async () => {
+      getMeetingDetail.mockReturnValue(of(unenrichedMeeting()));
+      getProject.mockReturnValue(of(null));
+      const fixture = await createComponent();
+      return fixture.componentInstance as any;
+    };
+
+    it('resubmits legacy display statuses in the meeting API snake_case vocabulary', async () => {
+      const component = await createPayloadComponent();
+      component.form().patchValue({
+        committees: [{ uid: 'committee-1', name: 'TSC', allowed_voting_statuses: ['Voting Rep', 'Alternate Voting Rep', 'Observer'] }],
+      });
+      expect(component.prepareMeetingData().committees).toEqual([
+        { uid: 'committee-1', name: 'TSC', allowed_voting_statuses: ['voting_rep', 'alt_voting_rep', 'observer'] },
+      ]);
+    });
+  });
 });

@@ -345,6 +345,10 @@ export function toMyClaAgreement(cla: EasyClaMyCla): MyClaAgreement {
     // empty strings to undefined so the Project cell falls back to claGroupName / the icon.
     projectName: cla.projectName || undefined,
     projectLogo: cla.projectLogo || undefined,
+    projectSfid: cla.projectSFID?.trim() || undefined,
+    foundationSfid: cla.foundationSFID?.trim() || undefined,
+    claGroupId: cla.claGroupID?.trim() || undefined,
+    claManager: cla.claManager === true,
     companyName: !isIcla ? cla.signingEntityName || cla.companyName || undefined : undefined,
     signedOn: cla.signedOn ?? '',
     signedVia: asSignedVia(cla.signedVia),
@@ -754,9 +758,13 @@ export class ClaService {
   }
 
   /**
-   * Records an approval or removal request and emails the selected CLA managers
+   * Records an approval, removal, or contact request and emails the selected CLA managers
    * (`POST /v4/my-clas/{id}/cla-manager-requests`). Does not change signature state.
    * 404 (unknown / not-owned / ICLA) becomes null, matching getClaManagers.
+   *
+   * The message is passed through as given. A contact request needs a non-blank one — the
+   * producer rejects an empty message for that type — and the controller enforces it, so a
+   * blank one is not quietly dropped here into a request the producer will refuse.
    *
    * No bearerToken override: this is a write, blocked at the route during impersonation,
    * so the default gateway token is the caller EasyCLA should attribute.
@@ -801,7 +809,7 @@ export class ClaService {
     const requestId = result?.requestID?.trim();
     const requestType = result?.requestType;
     const status = result?.status;
-    if (!requestId || (requestType !== 'approval' && requestType !== 'removal') || (status !== 'sent' && status !== 'recorded')) {
+    if (!requestId || requestType !== request.requestType || (status !== 'sent' && status !== 'recorded')) {
       throw new MicroserviceError('Upstream recorded no usable CLA manager request', 502, 'UPSTREAM_ERROR', { service: SERVICE });
     }
 

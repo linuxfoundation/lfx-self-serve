@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberStatus, CommitteeMemberVotingStatus } from '../enums';
-import { CommitteeInvite, CommitteePermissionLevel, CreateCommitteeInviteRequest } from './committee.interface';
+import type { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberStatus, CommitteeMemberVotingStatus } from '../enums';
+import type { CommitteeInvite, CommitteePermissionLevel, CreateCommitteeInviteRequest } from './committee.interface';
 
 /**
  * Committee member entity with complete profile and role information
@@ -129,6 +129,21 @@ export interface CreateCommitteeMemberRequest {
 export interface CreateCommitteeMemberOptions {
   /** When true, the BFF sends X-Skip-Notification upstream so the member gets no invite/notification email. */
   skipNotification?: boolean;
+}
+
+/**
+ * Voting-status option for the member form select
+ * @description Legacy values excluded from MEMBER_FORM_VOTING_STATUSES (e.g. None) are
+ * appended as disabled display-only options during edit so the select renders the
+ * member's current status instead of an empty placeholder
+ */
+export interface MemberFormVotingStatusOption {
+  /** Display label */
+  label: string;
+  /** Voting status value */
+  value: CommitteeMemberVotingStatus;
+  /** Display-only: rendered for legacy values but not selectable */
+  disabled?: boolean;
 }
 
 /**

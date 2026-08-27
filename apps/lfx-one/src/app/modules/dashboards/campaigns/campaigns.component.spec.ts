@@ -13,6 +13,8 @@ import type {
   CampaignBriefPersistenceState,
   CampaignImplementationDraft,
   CampaignDeliveryType,
+  CampaignIndexDoc,
+  CampaignListResult,
   CampaignProgramType,
   CampaignTab,
   CampaignTabOption,
@@ -20,6 +22,8 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { PersonaService } from '@services/persona.service';
 import { HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
@@ -51,9 +55,26 @@ describe('CampaignsComponent brief persistence', () => {
     (fixture.componentInstance as unknown as { onProceedToImplementation(b: CampaignBriefOutput): void }).onProceedToImplementation(b);
   }
 
-  /** `onRestoreSavedBrief` is protected; the spec drives it as the Planning tab's output would. */
-  function restore(b: CampaignBriefOutput, briefId: string): void {
-    (fixture.componentInstance as unknown as { onRestoreSavedBrief(b: CampaignBriefOutput, id: string): void }).onRestoreSavedBrief(b, briefId);
+  /**
+   * `onRestoreSavedBrief` is protected; the spec drives it as the Planning tab's output would.
+   *
+   * OMITTING `etag` means the validator-less restore, so the tests written before LFXV2-3204
+   * keep asserting exactly the behaviour they were written for. Tests about the carried
+   * validator pass one explicitly. It is a rest parameter rather than a defaulted one — see
+   * the note in the body for why that distinction is load-bearing.
+   */
+  function restore(b: CampaignBriefOutput, briefId: string, approved = false, ...etag: (string | null | undefined)[]): void {
+    // A REST parameter, not a default. A TS default fires on `undefined`, so
+    // `restore(b, id, true, undefined)` would silently become `null` — collapsing the
+    // absent-field case into the null case and making the rolling-deploy test pass against
+    // code that mishandles `undefined`. The rest form distinguishes "not passed" (length 0,
+    // legacy callers -> null) from "passed as undefined" (length 1, value preserved).
+    const validator = etag.length === 0 ? null : etag[0];
+    (
+      fixture.componentInstance as unknown as {
+        onRestoreSavedBrief(b: CampaignBriefOutput, id: string, etag: string | null | undefined, approved: boolean): void;
+      }
+    ).onRestoreSavedBrief(b, briefId, validator, approved);
   }
 
   function state(): CampaignBriefPersistenceState {
@@ -89,12 +110,30 @@ describe('CampaignsComponent brief persistence', () => {
       // calls a new one. Their requests simply stay pending here, which is the loading state.
       // A router is needed because a child tab renders a RouterLink — stubbing the children
       // instead would stop this spec from proving the handoff really mounts the tab.
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        // `providerReady: signal(true)` so `hasCampaignAccess` evaluates the real persona/flag
+        // check instead of deferring (its SSR/pre-hydration fast path, see campaigns.component.ts)
+        // — every test here runs in the browser and expects an immediate verdict. `getBooleanFlag`
+        // stays `false`, matching the real service's default before a provider ever initializes,
+        // so this changes nothing for the tests that don't care about the flag.
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false), providerReady: signal(true) } },
+      ],
     }).compileComponents();
     persistBrief = vi.fn();
     vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persistBrief);
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     await fixture.whenStable();
+  });
+
+  it('renders a no-access state for a contributor without a campaign_manager FGA grant', async () => {
+    TestBed.inject(PersonaService).currentPersona.set('contributor');
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-no-access"]')).not.toBeNull();
   });
 
   it('switches to the Implementation tab before the save resolves', async () => {
@@ -111,7 +150,8 @@ describe('CampaignsComponent brief persistence', () => {
    * The flag lives on the server and there is no channel that tells the browser its value before
    * a request is made. So the first save cannot know whether the cutover is on — and rendering
    * "Saving this brief…" while it finds out would put a persistence banner in front of every user
-   * in every environment where the cutover is dark, which is the default in all of them.
+   * in an environment where the cutover is dark — no longer the chart default since #1881, but
+   * still any override or un-rolled deployment.
    */
   it('shows no in-flight banner while the cutover state is still unknown', async () => {
     persistBrief.mockReturnValue(NEVER);
@@ -174,8 +214,9 @@ describe('CampaignsComponent brief persistence', () => {
     proceed();
     await fixture.whenStable();
 
-    // Not 'saved' with an empty id: the flag being off is the default everywhere, so it has to
-    // look like the ordinary case rather than like a save that returned nothing.
+    // Not 'saved' with an empty id: the flag being off is an ordinary deployment state, not a
+    // fault, so it has to look like the ordinary case rather than like a save that returned
+    // nothing.
     expect(state().status).toBe('off');
     expect(tab()).toBe('implementation');
   });
@@ -452,6 +493,109 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
     });
 
+    it('sends the LOAD-TIME validator as If-Match, so a concurrent edit is refused not overwritten', async () => {
+      // LFXV2-3204. The hazard: two people load the same brief, the other one saves first, and
+      // this page's save silently replaces their work. `replaceBrief` prefers a caller-supplied
+      // validator over the one its own find reads, so the refusal can only happen if the restore
+      // actually CARRIES the ETag it was shown. That carry is what this pins.
+      //
+      // Asserted at argument 4 (`knownEtag`) rather than through a mocked HTTP layer, because
+      // that is the boundary this change moves: everything downstream of it — If-Match, the 412,
+      // the `stale-brief` mapping — already shipped and is covered in the service spec.
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a', true, 'W/"v1"');
+      await fixture.whenStable();
+
+      proceed();
+      await fixture.whenStable();
+
+      // The validator the user was SHOWN, and no fallback licence. Passing `true` here would let
+      // the server substitute its own fresh read, which is the overwrite this ticket closes.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', 'W/"v1"', false);
+    });
+
+    it('surfaces a concurrent edit as stale-brief, then lets the next Proceed overwrite', async () => {
+      // The full chosen behaviour end to end: one honest refusal, then the existing
+      // proceed-again path. Both halves matter — a fix that produced the 412 but stranded the
+      // user would break a shipped flow, and a fix that kept proceeding silently would not be a
+      // fix at all.
+      //
+      // The concurrent edit is simulated at the seam the component owns: the stored row moved
+      // since this page loaded it, so the server answers the carried validator with 412 and the
+      // BFF maps it to `stale-brief`.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
+      restore(brief, 'restored-a', true, 'W/"v1"');
+      await fixture.whenStable();
+
+      proceed();
+      await fixture.whenStable();
+
+      // Refused, and SAID so — not a generic failure and not a silent overwrite.
+      expect(state().status).toBe('error');
+      expect(state().message).toContain('Someone else changed this brief while you were working');
+
+      // The promotion: the refusal granted this session explicit overwrite permission, so the
+      // next Proceed carries the fallback licence and replaces whatever is stored. This is the
+      // deliberate product choice (option 1) — the 412 is a speed bump, not a wall.
+      persistBrief.mockReturnValue(NEVER);
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
+    });
+
+    it('treats an ABSENT etag field like a null one, so a rolling deploy cannot block restores', async () => {
+      // `etag` crosses an HTTP boundary, so its declared `string | null` is a claim about the
+      // CURRENT server. Mid-rolling-deploy an older pod omits the field and JSON yields
+      // `undefined` — a value the type system says cannot occur and the wire produces anyway.
+      //
+      // A strict `=== null` test would call that "present", withhold the overwrite licence, and
+      // refuse the first save after every restore as `unverified-validator` for the length of the
+      // deploy. Absence has one meaning regardless of how it is spelled.
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a', true, undefined);
+      await fixture.whenStable();
+
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
+    });
+
+    it('still grants the overwrite licence when the read produced NO validator', async () => {
+      // The absence case, kept as it was — and the name has to say which way it goes, because
+      // the assertion below grants the licence (`allowEtagFallback: true`) rather than
+      // withholding it.
+      //
+      // A restore whose read returned no ETag is still a DECISION — the user saw the content and
+      // chose it — so it stays `'overwrite'` rather than refusing the first save after every such
+      // restore. What changed in LFXV2-3204 is only that the licence is no longer handed out for
+      // free when a validator IS available; the test above pins that half.
+      //
+      // Is `true` RIGHT here, or merely preserved? Right. `allowEtagFallback` separates an
+      // absence someone DECIDED from an absence that is UNKNOWN. A restore is a decision — the
+      // stored content was displayed and chosen — whereas an indeterminate write displayed
+      // nothing and decided nothing, which is why that path records `absence: 'unknown'` and is
+      // refused. Nobody was WARNED here, but the warning was never what the flag asserted.
+      //
+      // The contract comments used to say otherwise, describing `'overwrite'` as the stale-brief
+      // warning path alone; this test previously had to note that they did not cover it. They
+      // now document both explicit sources — see `knownBriefIds` in the component, and the
+      // matching comments on `persistBrief`, the controller and `saveBrief`.
+      //
+      // The cost is bounded and worth naming: this save takes the server's freshly read
+      // validator, so a concurrent editor who moved the row is overwritten rather than refused —
+      // exactly the hazard LFXV2-3204 closes for the case where a validator EXISTS. It is
+      // accepted only because the alternative refuses every restore whose read returned no ETag,
+      // which is this feature's main path, over a conflict the user cannot act on. If reads ever
+      // reliably carry an ETag, this branch should become `absence: 'unknown'`.
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a', true, null);
+      await fixture.whenStable();
+
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
+    });
+
     it('drops a save that resolves after the user restored a different brief', async () => {
       // `onProceedToImplementation(brief, true)` bumps `briefPersistenceGeneration` precisely so a
       // save still in flight for the brief the user just REPLACED cannot write its `saved` state
@@ -611,12 +755,14 @@ describe('CampaignsComponent brief persistence', () => {
       proceed(brief);
       await fixture.whenStable();
 
-      // `null` ETag alongside a real id: a restore has no load-time validator to carry
-      // (LFXV2-3204), so ownership is proven while the staleness check falls back to the
-      // freshly read one until this session's own save returns a validator.
-      // `true` — a restore is an explicit decision to work from the stored brief, so its absent
+      // `null` ETag alongside a real id: this restore was driven WITHOUT a load-time validator,
+      // which is the case where the read produced no ETag. Ownership is still proven, while the
+      // staleness check falls back to the freshly read validator until this session's own save
+      // returns one. A restore that DOES carry a validator sends it instead and can 412 —
+      // see the LFXV2-3204 tests above.
+      // `true` — a restore is an explicit decision to work from the stored brief, so an absent
       // validator is permission rather than an unknown. Marking it unknown would refuse the first
-      // save after every restore, which is this feature's main path.
+      // save after every validator-less restore, which is this feature's main path.
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
     });
 
@@ -966,6 +1112,246 @@ describe('CampaignsComponent brief persistence', () => {
       await fixture.whenStable();
       expect(persistBrief).toHaveBeenLastCalledWith(brief, 'tlf', 'tlf-1', '"1"', false);
     });
+
+    /**
+     * The campaign list is per-(foundation, brief), and Optimize stays mounted across a switch.
+     *
+     * Same defect class as the email picker's: a signal written by a load and cleared by nothing,
+     * on a component a foundation switch does not re-create. The consequence here is worse than a
+     * stale list — `projectSlug` and `briefId` are the address every row's pause/resume is sent
+     * to, and after a switch those name the NEW context while the rows describe the old one.
+     */
+    describe('the Optimize campaign list', () => {
+      function campaigns(): CampaignIndexDoc[] | null {
+        return (fixture.componentInstance as unknown as { briefCampaigns(): CampaignIndexDoc[] | null }).briefCampaigns();
+      }
+
+      function unavailable(): boolean {
+        return (fixture.componentInstance as unknown as { briefCampaignsUnavailable(): boolean }).briefCampaignsUnavailable();
+      }
+
+      function load(): void {
+        (fixture.componentInstance as unknown as { loadBriefCampaigns(): void }).loadBriefCampaigns();
+      }
+
+      const indexed = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc =>
+        ({
+          id: 'c-1',
+          project_id: 'tlf',
+          brief_id: 'brief-9',
+          platform: 'google-ads',
+          campaign_name: 'KubeCon EU',
+          status: 'created',
+          version: 1,
+          etag: '"1"',
+          ...over,
+        }) as CampaignIndexDoc;
+
+      /**
+       * Enter Optimize the way the tab bar does — `selectTab`, which is what calls
+       * `loadBriefCampaigns` on entry. Driving `loadBriefCampaigns` directly would skip the
+       * transition and, more importantly, never render the panel these assertions read.
+       */
+      function openOptimize(): void {
+        (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('optimization', 'paid-marketing');
+        fixture.detectChanges();
+      }
+
+      /** The Optimize panel's rendered text — what the operator can actually read. */
+      function optimizeText(): string {
+        return (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-optimization-panel"]')?.textContent ?? '';
+      }
+
+      /**
+       * The campaign ids that currently have a LIVE toggle button. The stale-render bug is only
+       * expensive because these exist: each one posts its id against whatever `briefId` the parent
+       * is binding at the time.
+       */
+      function toggleButtonIds(): string[] {
+        return Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid^="optimization-campaign-toggle-"]')).map((el) =>
+          (el.getAttribute('data-testid') ?? '').replace('optimization-campaign-toggle-', '')
+        );
+      }
+
+      /** Put a real brief id on the component so `loadBriefCampaigns` gets past its own guard. */
+      async function withSavedBrief(): Promise<void> {
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'brief-9', etag: '"1"', created: true, approved: true }));
+        proceed();
+        await fixture.whenStable();
+      }
+
+      it('clears the previous brief campaigns when the foundation changes', async () => {
+        const list = vi
+          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
+          .mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false }));
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+        expect(campaigns()).toHaveLength(1);
+
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false }));
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        // Not TLF's campaigns under CNCF: the rows would render against a projectSlug that is
+        // now 'cncf' and a briefId that is now '', which is the address a pause is sent to.
+        expect(campaigns()).not.toEqual([indexed()]);
+      });
+
+      it('drops a campaign list that resolves after the foundation changed', async () => {
+        const late = new Subject<CampaignListResult>();
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(late);
+        await withSavedBrief();
+        load();
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        // The response the switch invalidated. Clearing the signal alone cannot stop this — the
+        // request was already in flight and lands afterwards.
+        late.next({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false });
+        await fixture.whenStable();
+
+        expect(campaigns()).toBeNull();
+      });
+
+      /**
+       * Failure-as-absence. `null` already means "not loaded", so a failed read that also leaves
+       * `null` is indistinguishable from a page nobody has asked anything of — no indication and
+       * no retry, on campaigns that may still be spending.
+       */
+      it('marks a failed read as unavailable rather than leaving it as not-loaded', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+
+        expect(campaigns()).toBeNull();
+        expect(unavailable()).toBe(true);
+      });
+
+      it('does not mark a genuinely empty list as unavailable', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false })
+        );
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+
+        expect(campaigns()).toEqual([]);
+        expect(unavailable()).toBe(false);
+      });
+
+      /**
+       * A BRIEF switch inside ONE foundation. The foundation-switch effect is the only other
+       * clear, so nothing cleared this state on the path a user actually takes to change briefs:
+       * restore a saved brief → proceed → enter Optimize.
+       *
+       * Asserted on the RENDERED tab, not on the signal. `briefCampaigns` being null is a means;
+       * what makes the bug expensive is that the previous brief's rows stay on screen with live
+       * toggle buttons while the parent has already re-bound `briefId` to the new brief — so a
+       * click in that window sends brief A's campaignId to brief B's address. A signal-only
+       * assertion passes even if the template still paints the old rows.
+       */
+      it('stops rendering the previous brief campaigns while the next brief is still loading', async () => {
+        const list = vi
+          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
+          .mockReturnValue(
+            of({ campaigns: [indexed({ campaign_name: 'Brief A campaign' })], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false })
+          );
+        await withSavedBrief();
+        openOptimize();
+        await fixture.whenStable();
+        // The precondition the assertion below depends on: brief A really did render clickable
+        // rows. Without this the test would pass on a tab that never renders anything.
+        expect(optimizeText()).toContain('Brief A campaign');
+        expect(toggleButtonIds()).toEqual(['c-1']);
+
+        // Brief B, same foundation. The response is withheld so the assertion lands INSIDE the
+        // round trip — the window the fix is about.
+        const pending = new Subject<CampaignListResult>();
+        list.mockReturnValue(pending);
+        restore(otherBrief, 'brief-b');
+        await fixture.whenStable();
+        openOptimize();
+        await fixture.whenStable();
+
+        // Brief B's id is already the address on screen; brief A's rows must not be beside it.
+        expect(state().briefId).toBe('brief-b');
+        expect(optimizeText()).not.toContain('Brief A campaign');
+        expect(toggleButtonIds()).toEqual([]);
+        expect(campaigns()).toBeNull();
+
+        // And the new brief's own answer still lands, so the clear is a window, not a wipe.
+        pending.next({
+          campaigns: [indexed({ id: 'c-2', campaign_name: 'Brief B campaign' })],
+          possiblyStale: false,
+          statusToggleEnabled: true,
+          demandGenEnabled: false,
+        });
+        await fixture.whenStable();
+        expect(optimizeText()).toContain('Brief B campaign');
+        expect(toggleButtonIds()).toEqual(['c-2']);
+      });
+
+      it('clears a previous failure when the foundation changes', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+        expect(unavailable()).toBe(true);
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        // The banner belongs to the read that produced it. Leaving it set would report TLF's
+        // outage against CNCF, which was never queried.
+        expect(unavailable()).toBe(false);
+      });
+
+      /**
+       * `take(1)` satisfies the repo's stated convention (frontend-checklist §6 lists it beside
+       * `takeUntilDestroyed`), so this is not a rule violation — it is a correctness one. `take(1)`
+       * unsubscribes after the FIRST emission, which on a request that never answers is never: the
+       * subscription outlives the component and its handler writes into a destroyed instance.
+       *
+       * Asserted through the subscription's teardown rather than through a signal, because a write
+       * to a destroyed component's signal is not observable from here — the teardown running on
+       * destroy IS the mechanism, and `take(1)` alone does not run it.
+       */
+      it('tears down an unanswered campaign list read when the component is destroyed', async () => {
+        let torndown = false;
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          new Observable<CampaignListResult>(() => {
+            return () => {
+              torndown = true;
+            };
+          })
+        );
+        await withSavedBrief();
+        load();
+        expect(torndown).toBe(false);
+
+        fixture.destroy();
+
+        expect(torndown).toBe(true);
+      });
+
+      it('clears a stale failure when a later read succeeds', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+        expect(unavailable()).toBe(true);
+
+        list.mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false }));
+        load();
+        await fixture.whenStable();
+
+        expect(unavailable()).toBe(false);
+        expect(campaigns()).toHaveLength(1);
+      });
+    });
   });
 
   /**
@@ -1165,6 +1551,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     fixture.detectChanges();
   });
 
@@ -1526,6 +1913,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     fixture.detectChanges();
   });
 
@@ -1785,6 +2173,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
   });
@@ -2252,6 +2641,7 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
   });
@@ -2461,5 +2851,31 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
     expect(root.querySelectorAll('[data-testid="campaigns-email-template-list"] > li').length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
     expect(root.querySelector('[data-testid="campaigns-email-templates-render-capped"]')).toBeNull();
     expect(picker().emailTemplatesAnnouncement()).not.toContain('Showing the first');
+  });
+});
+
+describe('CampaignsComponent when the client flag is on and the user holds a campaign_manager FGA grant', () => {
+  let fgaFixture: ComponentFixture<CampaignsComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CampaignsComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true), providerReady: signal(true) } },
+      ],
+    }).compileComponents();
+    fgaFixture = TestBed.createComponent(CampaignsComponent);
+    const personas = TestBed.inject(PersonaService);
+    personas.currentPersona.set('contributor');
+    personas.isCampaignManager.set(true);
+    fgaFixture.detectChanges();
+  });
+
+  it('admits the contributor without requiring ED persona', () => {
+    expect((fgaFixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-no-access"]')).toBeNull();
   });
 });

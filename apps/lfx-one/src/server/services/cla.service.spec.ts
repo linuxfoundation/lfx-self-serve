@@ -246,7 +246,7 @@ describe('collectClaEmails', () => {
 describe('toMyClaAgreement', () => {
   it('maps an ICLA, trusting upstream valid=true ⇒ status valid, pdfAvailable', () => {
     const a = toMyClaAgreement(icla({ documentMajorVersion: 2, documentMinorVersion: 1 }));
-    expect(a).toMatchObject({ id: 's-icla', kind: 'ICLA', pdfAvailable: true, status: 'valid', documentVersion: '2.1' });
+    expect(a).toMatchObject({ id: 's-icla', kind: 'ICLA', pdfAvailable: true, status: 'valid', documentVersion: '2.1', claGroupId: 'cg-1' });
   });
 
   it('copies status and statusReason from the producer', () => {
@@ -271,6 +271,26 @@ describe('toMyClaAgreement', () => {
     const revoked = toMyClaAgreement(ecla({ status: 'revoked', approved: true, valid: false }));
 
     expect(revoked.status).toBe('revoked');
+  });
+
+  it('pins claGroupId from the producer and omits a blank value', () => {
+    expect(toMyClaAgreement(ecla()).claGroupId).toBe('cg-2');
+    expect(toMyClaAgreement(ecla({ claGroupID: '  ' })).claGroupId).toBeUndefined();
+    expect(toMyClaAgreement(ecla({ claGroupID: undefined })).claGroupId).toBeUndefined();
+  });
+
+  it('pins projectSfid and foundationSfid from the producer and omits blanks', () => {
+    const row = toMyClaAgreement(ecla({ projectSFID: 'proj-sfid-1', foundationSFID: 'found-parent' }));
+    expect(row.projectSfid).toBe('proj-sfid-1');
+    expect(row.foundationSfid).toBe('found-parent');
+    expect(toMyClaAgreement(ecla({ projectSFID: '  ', foundationSFID: '  ' })).projectSfid).toBeUndefined();
+    expect(toMyClaAgreement(ecla()).foundationSfid).toBeUndefined();
+  });
+
+  it('carries the producer claManager flag through as a boolean, false when omitted', () => {
+    expect(toMyClaAgreement(ecla({ claManager: true })).claManager).toBe(true);
+    expect(toMyClaAgreement(ecla({ claManager: false })).claManager).toBe(false);
+    expect(toMyClaAgreement(ecla()).claManager).toBe(false);
   });
 
   it('copies signedVia and signedAs from the producer', () => {
@@ -1276,6 +1296,63 @@ describe('ClaService.createClaManagerRequest', () => {
 
     const [, , opts] = gatewayFetch.mock.calls[0] as [unknown, string, { body?: Record<string, unknown> }];
     expect(opts.body).toEqual({ requestType: 'approval', recipients: ['jdoe'] });
+  });
+
+  it('posts contact with its message and returns the contact receipt', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      requestID: 'r-2',
+      signatureID: MANAGER_SIG,
+      requestType: 'contact',
+      status: 'sent',
+      recipients: ['jdoe'],
+    });
+
+    const result = await new ClaService().createClaManagerRequest(req, MANAGER_SIG, identity, {
+      requestType: 'contact',
+      recipients: ['jdoe'],
+      message: 'who owns our approved list?',
+    });
+
+    expect(result).toEqual({
+      requestId: 'r-2',
+      signatureId: MANAGER_SIG,
+      requestType: 'contact',
+      status: 'sent',
+      recipients: ['jdoe'],
+    });
+    const [, , opts] = gatewayFetch.mock.calls[0] as [unknown, string, { body?: Record<string, unknown>; bearerToken?: string }];
+    expect(opts.body).toEqual({ requestType: 'contact', recipients: ['jdoe'], message: 'who owns our approved list?' });
+    expect(opts.bearerToken).toBeUndefined();
+  });
+
+  it('refuses a receipt naming a request type outside the producer enum', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      requestID: 'r-3',
+      signatureID: MANAGER_SIG,
+      requestType: 'nudge',
+      status: 'sent',
+      recipients: ['jdoe'],
+    });
+
+    await expect(
+      new ClaService().createClaManagerRequest(req, MANAGER_SIG, identity, { requestType: 'contact', recipients: ['jdoe'], message: 'hi' })
+    ).rejects.toThrow('Upstream recorded no usable CLA manager request');
+  });
+
+  it('refuses a receipt for a different request type than the one sent', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      requestID: 'r-4',
+      signatureID: MANAGER_SIG,
+      requestType: 'approval',
+      status: 'sent',
+      recipients: ['jdoe'],
+    });
+
+    // An approval receipt for a contact request would otherwise be forwarded as success, and the
+    // modal picks its copy from the mode it asked for, hiding the mismatch from the contributor.
+    await expect(
+      new ClaService().createClaManagerRequest(req, MANAGER_SIG, identity, { requestType: 'contact', recipients: ['jdoe'], message: 'hi' })
+    ).rejects.toThrow('Upstream recorded no usable CLA manager request');
   });
 
   it('returns null on a 404', async () => {

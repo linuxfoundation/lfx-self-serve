@@ -15,6 +15,7 @@ import { MY_CLAS_M2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import type {
   ClaGroupOption,
   ClaGroupSearchResponse,
+  ClaManagerList,
   GithubAccountOptions,
   MyClaAgreement,
   MyClasResponse,
@@ -47,12 +48,16 @@ describe('ProfileClasComponent', () => {
   });
 
   let fixture: ComponentFixture<ProfileClasComponent>;
+  /** The list's own manager flags come from the row, so this stays uncalled unless the dialog opens. */
+  let getClaManagersSpy: ReturnType<typeof vi.fn>;
 
   async function render(agreements: MyClaAgreement[], options: { m2Enabled?: boolean } = {}): Promise<void> {
     const response: MyClasResponse = {
       agreements,
       identity: { matchedUserIds: agreements.length > 0 ? 1 : 0, unmatched: agreements.length === 0, githubLinked: true },
     };
+    const getClaManagers = vi.fn((id: string) => of<ClaManagerList>({ signatureId: id, managers: [], resultCount: 0 }));
+    getClaManagersSpy = getClaManagers;
 
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
@@ -60,7 +65,7 @@ describe('ProfileClasComponent', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: MyClasService, useValue: { getMyClas: () => of(response), getPdfUrl: vi.fn() } },
+        { provide: MyClasService, useValue: { getMyClas: () => of(response), getPdfUrl: vi.fn(), getClaManagers } },
         // Stubbed rather than real: the Sign CLA action reads impersonating(), and the real
         // service would drag HttpClient into a TestBed that has no reason to make requests.
         { provide: UserService, useValue: { impersonating: signal(false) } },
@@ -221,7 +226,7 @@ describe('ProfileClasComponent', () => {
   it('shows a disabled Download PDF item with a Covered by Corporate CLA line on an ECLA row', async () => {
     await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' })]);
 
-    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal']);
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Contact CLA Manager']);
     expect(menuItems('s-ecla')[0]).toMatchObject({ disabled: true, escape: false });
   });
 
@@ -240,12 +245,81 @@ describe('ProfileClasComponent', () => {
     expect(menuItems('s-attn').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request approval', 'Request Removal', 'Contact CLA Manager']);
   });
 
+  it('offers Manage in CCLA Console last on a manager-flagged row', async () => {
+    await render([
+      agreement({
+        id: 's-ecla',
+        kind: 'ECLA',
+        pdfAvailable: false,
+        companyName: 'Acme',
+        claGroupId: 'g-anuket-005',
+        claManager: true,
+        foundationSfid: 'a09P000000DsCE5IAN',
+      }),
+    ]);
+
+    const items = menuItems('s-ecla');
+    expect(items.map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Contact CLA Manager', 'Manage in CCLA Console']);
+
+    // PrimeNG's menu renders no `rel`, so the item opens through `command` to keep noopener/noreferrer.
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    items.at(-1)?.command?.({} as never);
+    expect(open).toHaveBeenCalledWith('https://lfx.dev.platform.linuxfoundation.org/foundation/a09P000000DsCE5IAN/cla', '_blank', 'noopener,noreferrer');
+    open.mockRestore();
+  });
+
+  it('hides Manage in CCLA Console on ICLA, on a missing CLA group id, and when the row is not manager-flagged', async () => {
+    await render([agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true, claGroupId: 'g-anuket-005', claManager: true })]);
+    expect(menuItems('s-icla').map((item) => item.label)).toEqual(['Download PDF']);
+
+    await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claManager: true })]);
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Contact CLA Manager']);
+
+    await render([agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-anuket-005', claManager: false })]);
+    expect(menuItems('s-ecla').map((item) => item.label)).toEqual([eclaDownloadLabel, 'Request Removal', 'Contact CLA Manager']);
+  });
+
+  it('reads manager status off the row rather than spending a managers GET per ECLA', async () => {
+    await render([
+      agreement({ id: 's-1', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme', claGroupId: 'g-1', claManager: true, foundationSfid: 'found-1' }),
+      agreement({ id: 's-2', kind: 'ECLA', pdfAvailable: false, companyName: 'Globex', claGroupId: 'g-2', claManager: true, foundationSfid: 'found-2' }),
+    ]);
+
+    // Both items are on the first paint — nothing is awaited, so no row can lag another.
+    expect(menuItems('s-1').map((item) => item.label)).toContain('Manage in CCLA Console');
+    expect(menuItems('s-2').map((item) => item.label)).toContain('Manage in CCLA Console');
+    expect(getClaManagersSpy).not.toHaveBeenCalled();
+  });
+
   it('keeps a stable menu model across change detection so the popup can open on the first click', async () => {
     await render([agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true })]);
 
     const first = menuItems('s-icla');
     fixture.detectChanges();
     expect(menuItems('s-icla')).toBe(first);
+  });
+
+  it('closes other row menus when opening a kebab', async () => {
+    await render([
+      agreement({ id: 's-a', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' }),
+      agreement({ id: 's-b', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' }),
+    ]);
+
+    const menuA = rowMenu('s-a');
+    const menuB = rowMenu('s-b');
+    if (!menuA || !menuB) {
+      throw new Error('expected both row menus');
+    }
+
+    const hideA = vi.spyOn(menuA, 'hide');
+    const hideB = vi.spyOn(menuB, 'hide');
+    const component = fixture.componentInstance as unknown as {
+      toggleRowMenu: (event: Event, menu: MenuComponent) => void;
+    };
+    component.toggleRowMenu(new MouseEvent('click'), menuB);
+
+    expect(hideA).toHaveBeenCalled();
+    expect(hideB).not.toHaveBeenCalled();
   });
 
   it('does not render a placeholder Invalidate item', async () => {
@@ -497,6 +571,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
             getGithubAccounts,
             prepareSign,
             buildSignUrlFor,
+            getClaManagers: vi.fn((id: string) => of({ signatureId: id, managers: [], resultCount: 0 })),
           },
         },
       ],

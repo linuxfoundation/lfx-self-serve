@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChartData, ChartOptions, ChartType } from 'chart.js';
+import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 
 import type { CommitteeOrganizationReference } from './committee.interface';
 import type { Meeting } from './meeting.interface';
@@ -264,7 +264,7 @@ export interface ButtonProps {
 
 /** PrimeNG `pt` (passthrough) shape accepted for a Button's root slot. */
 export interface ButtonRootPassThrough {
-  root: { 'aria-pressed': boolean };
+  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean };
 }
 
 /**
@@ -530,6 +530,10 @@ export interface PendingActionItem {
   committeeUid?: string;
   /** Committee/group display name (set on Invitation action types). Used for the "You've joined {Group}" toast and the accept/decline `aria-label`, so the copy doesn't have to be parsed back out of `text`. */
   inviteGroupName?: string;
+  /** Owning project slug for the invited group (set on Invitation action types) — drives the `?project=` query param on the view link (GH-1566). */
+  inviteProjectSlug?: string | null;
+  /** Whether the invited group's owning project is a foundation (set on Invitation action types) — drives the `/foundation` vs `/project` tier prefix on the view link; null/absent keeps the flat `/groups/:uid` fallback (GH-1566). */
+  inviteIsFoundation?: boolean | null;
   /** Invitation title text up to (and excluding) the group name (set on Invitation action types), e.g. "You've been invited to " — built alongside `text` so the UI can link just the group name without runtime string-splitting. */
   inviteTitlePrefix?: string;
   /** Suggested organization from the committee_invite (set on Invitation action types) */
@@ -575,6 +579,10 @@ export interface DecoratedPendingAction extends PendingActionItem {
   acceptAriaLabel: string;
   /** Precomputed `aria-label` for the Decline control ("Decline invite to {inviteGroupName}") — built in TS so the template never calls a method. */
   declineAriaLabel: string;
+  /** Precomputed canonical view link for the invited group (`getEntityCommands('groups', …)` with the flat `/groups/:uid` fallback folded in); null when the row carries no `committeeUid` (GH-1566). */
+  inviteViewCommands: string[] | null;
+  /** Precomputed `?project=` query params for the invitation view link; null when no project slug resolved. */
+  inviteViewQueryParams: { project: string } | null;
 }
 
 /** Pending action row for the right-side drawer — adds inline-RSVP flags and per-row meeting-fetch state. */

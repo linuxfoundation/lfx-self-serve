@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FoundationEventStatus } from '../enums';
-import {
+import type {
   AttendeeAccommodationPaidBy,
   AttendeeType,
   FilterOption,

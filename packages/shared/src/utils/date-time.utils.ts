@@ -11,7 +11,7 @@ import { fromZonedTime, getTimezoneOffset, toZonedTime } from 'date-fns-tz';
 import { DAYS_IN_WEEK, DEFAULT_REPEAT_INTERVAL, MINUTES_IN_HOUR, MS_IN_DAY, TIME_ROUNDING_MINUTES, WEEKDAY_CODES } from '../constants/meeting.constants';
 import { TIMEZONES } from '../constants/timezones.constants';
 import { RecurrenceType } from '../enums';
-import { MeetingRecurrence, TimezoneOption } from '../interfaces';
+import type { MeetingRecurrence, TimezoneOption } from '../interfaces';
 
 // ============================================================================
 // Date Formatting and Parsing Utilities
@@ -567,6 +567,18 @@ export function formatShortDate(date: Date): string {
 }
 
 /**
+ * Today's date as `YYYYMMDD` in the caller's local timezone — for stamping CSV/report export
+ * filenames. Deliberately local, not `toISOString()` (which reports the UTC date and stamps
+ * tomorrow's date for any viewer west of UTC exporting in the evening).
+ */
+export function localDateStamp(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}${month}${day}`;
+}
+
+/**
  * Short relative-time label for a future instant ("in 5 min", "in 2 hr", "in
  * 3 days") — the forward-looking counterpart to `formatRelativeTime`, which
  * only reads correctly for past instants (negative diffs there collapse to
@@ -662,4 +674,42 @@ export function formatHubSpotUpdatedAt(value: string | undefined): string {
   // text and its accessible label both change during hydration. Pinning also keeps the two
   // branches agreeing: `2026-08-14` and `2026-08-14T23:30:00Z` must not render different days.
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
+
+/**
+ * Snowflake `TIMESTAMP_NTZ` values arrive zone-less and space-separated (`2026-08-01 15:30:00`), which
+ * `new Date()` parses as browser-local — skewing display ages and any comparison against a real instant
+ * by the viewer's offset. Normalize that exact shape to explicit-UTC ISO; anything else (already-ISO,
+ * zoned, or invalid) passes through unchanged so `new Date()` keeps its native behavior for it.
+ */
+export function normalizeSnowflakeTimestamp(timestamp: string): string {
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?$/.test(timestamp)) return timestamp;
+  return `${timestamp.replace(' ', 'T')}Z`;
+}
+
+/** Long-form relative-time label ("Just now", "5 minutes ago", "3 weeks ago"). Returns '' for missing/invalid input; re-evaluate on a tick to refresh (e.g. MENTION_TIME_TICK_INTERVAL_MS). */
+export function timeAgo(timestamp: string): string {
+  if (!timestamp) return '';
+
+  const then = new Date(timestamp);
+  if (isNaN(then.getTime())) return '';
+
+  const diffMs = Math.max(0, Date.now() - then.getTime());
+  const diffMinutes = Math.floor(diffMs / 60_000);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  const diffWeeks = Math.floor(diffDays / 7);
+  const diffMonths = Math.floor(diffDays / 30);
+  const diffYears = Math.floor(diffDays / 365);
+
+  const pluralize = (value: number, unit: string): string => `${value} ${unit}${value === 1 ? '' : 's'} ago`;
+
+  if (diffMinutes < 1) return 'Just now';
+  if (diffMinutes < 60) return pluralize(diffMinutes, 'minute');
+  if (diffHours < 24) return pluralize(diffHours, 'hour');
+  if (diffDays < 7) return pluralize(diffDays, 'day');
+  if (diffDays < 30) return pluralize(diffWeeks, 'week');
+  // Gate on days, not months: 360–364 days is 12 "30-day months" but still 0 years.
+  if (diffDays < 365) return pluralize(diffMonths, 'month');
+  return pluralize(diffYears, 'year');
 }

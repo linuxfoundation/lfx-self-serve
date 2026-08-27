@@ -11,7 +11,14 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { SelectComponent } from '@components/select/select.component';
-import { APPOINTED_BY_OPTIONS, COMMITTEE_PERMISSION_OPTIONS, LINKEDIN_PROFILE_PATTERN, MEMBER_ROLES, VOTING_STATUSES } from '@lfx-one/shared/constants';
+import {
+  APPOINTED_BY_OPTIONS,
+  COMMITTEE_PERMISSION_OPTIONS,
+  LINKEDIN_PROFILE_PATTERN,
+  MEMBER_FORM_VOTING_STATUSES,
+  MEMBER_ROLES,
+  VOTING_STATUSES,
+} from '@lfx-one/shared/constants';
 import {
   Committee,
   CommitteeMember,
@@ -19,9 +26,11 @@ import {
   CommitteeUser,
   CreateCommitteeMemberRequest,
   MemberFormValue,
+  MemberFormVotingStatusOption,
   OrganizationResolveResult,
 } from '@lfx-one/shared/interfaces';
 import { buildCommitteeOrganizationPayload, formatDateToISOString, parseISODateString } from '@lfx-one/shared/utils';
+import { acceptedMemberVotingStatus } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -57,7 +66,7 @@ export class MemberFormComponent {
 
   // Member options
   public roleOptions = MEMBER_ROLES;
-  public votingStatusOptions = VOTING_STATUSES;
+  public votingStatusOptions: MemberFormVotingStatusOption[];
   public appointedByOptions = APPOINTED_BY_OPTIONS;
   public permissionOptions = [...COMMITTEE_PERMISSION_OPTIONS];
 
@@ -70,6 +79,9 @@ export class MemberFormComponent {
     this.member = this.config.data?.member;
     this.committee = this.config.data?.committee;
     this.wizardMode = this.config.data?.wizardMode || false;
+
+    // Surface a legacy voting status (excluded from the form options) as a display-only option
+    this.votingStatusOptions = this.buildVotingStatusOptions();
 
     // Create form group after committee is assigned so enable_voting validators work
     this.form = signal<FormGroup>(this.createMemberFormGroup());
@@ -256,6 +268,22 @@ export class MemberFormComponent {
     }
   }
 
+  /**
+   * When editing a member whose voting status is excluded from the form options
+   * (legacy `None`, which the committee service rejects on voting-enabled committees),
+   * prepend it as a disabled display-only option so the select renders the member's
+   * current status instead of an empty placeholder.
+   */
+  private buildVotingStatusOptions(): MemberFormVotingStatusOption[] {
+    const legacyStatus = this.isEditing ? this.member?.voting?.status : undefined;
+    if (!legacyStatus || MEMBER_FORM_VOTING_STATUSES.some(({ value }) => value === legacyStatus)) {
+      return [...MEMBER_FORM_VOTING_STATUSES];
+    }
+
+    const known = VOTING_STATUSES.find(({ value }) => value === legacyStatus);
+    return [{ label: known ? known.label : `${legacyStatus} (unrecognized)`, value: legacyStatus, disabled: true }, ...MEMBER_FORM_VOTING_STATUSES];
+  }
+
   private buildPermissionArrays(
     username: string,
     member: CommitteeMember,
@@ -309,7 +337,7 @@ export class MemberFormComponent {
         organization_url: new FormControl(''),
         organization_id: new FormControl<string | null>(null),
         role: new FormControl('', this.committee?.enable_voting ? [Validators.required] : []),
-        voting_status: new FormControl('', this.committee?.enable_voting ? [Validators.required] : []),
+        voting_status: new FormControl('', this.committee?.enable_voting ? [Validators.required, acceptedMemberVotingStatus()] : []),
         appointed_by: new FormControl(''),
         role_start: new FormControl(null),
         role_end: new FormControl(null),

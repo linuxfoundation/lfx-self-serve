@@ -21,6 +21,7 @@ import {
   COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW,
   COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS,
   COMMITTEE_LABEL,
+  NO_VOTING_STATUS_LABEL,
 } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus, CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import {
@@ -49,6 +50,7 @@ import {
   formatCommitteeEngagementFreshness,
   formatCommitteeEngagementMeetings,
   isCommitteeEngagementRowAtRisk,
+  isLfStaffNonVotingSeat,
   isVotingRep,
   resolveCommitteeMemberPermission,
   toCommitteeEngagementWindow,
@@ -161,6 +163,8 @@ export class CommitteeMembersComponent implements OnInit {
   public committeeLabel = COMMITTEE_LABEL;
   // Upstream "no role" sentinel for committee invites — kept in one place rather than inline in the template.
   public readonly noRoleSentinel = CommitteeMemberRole.NONE;
+  // Neutral label for legacy members with no recorded voting status (GH-1831).
+  public readonly noVotingStatusLabel = NO_VOTING_STATUS_LABEL;
   public readonly engagementWindowOptions = COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS;
 
   // Computed signals — inline per component-organization.md
@@ -936,9 +940,10 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   /**
-   * Tooltip context for the engagement chip. Emeritus and LF Staff+Observer (LFXV2-3101, narrowed
-   * to this two-part condition in a follow-up review — an LF Staff member who is a real Voting Rep
-   * or Alternate Voting Rep is a genuine participant, not excluded) both get a neutral explainer —
+   * Tooltip context for the engagement chip. Emeritus and LF Staff+non-voting (Observer, or no
+   * voting status at all — LFXV2-3101, narrowed to this two-part condition in a follow-up review
+   * and broadened to cover `None` in GH-1848 — an LF Staff member who is a real Voting Rep or
+   * Alternate Voting Rep is a genuine participant, not excluded) both get a neutral explainer —
    * neither renders with at-risk styling, and neither's classification is driven by their real
    * attendance numbers, so this tooltip states the exclusion rather than the numbers themselves
    * (the Meetings column still shows the real attended/invited count for every row, chip-neutral
@@ -950,7 +955,7 @@ export class CommitteeMembersComponent implements OnInit {
     if (row.voting_status === CommitteeMemberVotingStatus.EMERITUS) {
       return 'Emeritus seat — honorific status; attendance expectations do not apply';
     }
-    if (row.role === CommitteeMemberRole.LF_STAFF && row.voting_status === CommitteeMemberVotingStatus.OBSERVER) {
+    if (isLfStaffNonVotingSeat({ role: row.role, votingStatus: row.voting_status })) {
       return 'LF Staff seat — excluded from engagement metrics; attendance expectations do not apply';
     }
     if (row.role === CommitteeMemberRole.CHAIR || row.role === CommitteeMemberRole.VICE_CHAIR || row.role === CommitteeMemberRole.LF_STAFF) {

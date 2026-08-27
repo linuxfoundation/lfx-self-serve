@@ -142,10 +142,15 @@
               <input type="checkbox" formControlName="includeSearch" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
               Search Campaign
             </label>
-            <label class="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" formControlName="includeDemandGen" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-              Demand Gen Campaign
-            </label>
+            <!-- Hidden, not disabled, when the deployment cannot create Demand Gen: a disabled
+                 checkbox still advertises a capability and invites a support question, and the
+                 create is refused either way. Search stays available, so the section is not empty. -->
+            @if (demandGenAvailable()) {
+              <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" formControlName="includeDemandGen" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                Demand Gen Campaign
+              </label>
+            }
           </div>
         }
       </div>
@@ -389,12 +394,26 @@
               <label class="text-xs font-medium text-gray-700" for="meta-objective">Objective</label>
               <select
                 id="meta-objective"
-                [value]="metaObjective()"
                 (change)="onMetaObjectiveChange($event)"
                 class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 data-testid="implementation-meta-objective">
                 @for (objective of metaObjectiveOptions; track objective) {
-                  <option [value]="objective">{{ metaObjectiveLabels[objective] }}</option>
+                  <option [value]="objective" [selected]="objective === metaObjective()">{{ metaObjectiveLabels[objective] }}</option>
+                }
+                <!--
+                  A draft persisted before an objective was hidden restores a value with no
+                  matching option. Without this the select shows the FIRST option instead — a
+                  confidently wrong objective — and the next touch of the control writes that
+                  wrong value over the stored one. Rendered disabled so it shows what the
+                  campaign IS without letting anyone newly choose it.
+
+                  `[selected]` on each option, not `[value]` on the select: the select's value
+                  binding is applied while this `@if` option does not yet exist, so it cannot
+                  select it and silently falls back to index 0. `metaObjectiveLabels` is total
+                  over `MetaObjective`, so this can never print `undefined`.
+                -->
+                @if (metaObjectiveIsUnavailable()) {
+                  <option [value]="metaObjective()" [selected]="true" disabled>{{ metaObjectiveLabels[metaObjective()] }} (no longer available)</option>
                 }
               </select>
             </div>
@@ -539,6 +558,227 @@
               </div>
             </div>
           }
+        </div>
+      }
+
+      <!-- Microsoft Ads Section (LFXV2-3312) -->
+      @if (showMicrosoftSection()) {
+        <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="implementation-microsoft-section">
+          <div class="mb-4 flex items-center gap-2">
+            <i class="fa-brands fa-microsoft text-blue-600" aria-hidden="true"></i>
+            <h3 class="text-sm font-semibold text-gray-900">Microsoft Ads</h3>
+          </div>
+
+          <!--
+            Stated, not hidden. The flight dates above are NOT applied to Microsoft: `microsoftConfig`
+            carries no scheduling fields (unlike Meta), so the campaign is created with no start or
+            end. It is created PAUSED, so nothing spends until a human enables it — but there is no
+            automatic stop, and an operator who assumed the flight applied would find it still
+            spending after the end date. Naming that is the difference between a known limitation and
+            an unpleasant surprise.
+          -->
+          <p class="mb-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-microsoft-no-flight">
+            <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
+            Microsoft campaigns are created paused and ignore the flight dates above — Microsoft Advertising has no scheduling in this integration yet. Enable
+            and pause the campaign manually in the Optimize tab.
+          </p>
+
+          <!-- Budget + CPC bid -->
+          <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="microsoft-budget">Daily Budget</label>
+              <input
+                id="microsoft-budget"
+                type="number"
+                [value]="microsoftBudgetUsd()"
+                (input)="onMicrosoftBudgetInput($event)"
+                min="1"
+                [max]="microsoftMaxBudget"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-microsoft-budget" />
+              <!--
+                "account currency", not "USD": the client does NO FX conversion (LFXV2-3251), so
+                the number is spent in whatever currency the ad account is denominated in. Saying
+                USD here would be a claim this app cannot keep.
+              -->
+              <span class="text-xs text-gray-400">Whole units of the ad account's currency, charged daily.</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="microsoft-cpc-bid">Max CPC Bid (optional)</label>
+              <input
+                id="microsoft-cpc-bid"
+                type="number"
+                [value]="microsoftCpcBid()"
+                (input)="onMicrosoftCpcBidInput($event)"
+                [min]="microsoftMinCpcBid"
+                [max]="microsoftMaxCpcBid"
+                step="0.01"
+                placeholder="Account minimum"
+                [attr.aria-invalid]="microsoftCpcBidValid() ? null : 'true'"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-microsoft-cpc-bid" />
+              @if (microsoftCpcBidValid()) {
+                <span class="text-xs text-gray-400">Leave blank to use the account-currency minimum.</span>
+              } @else {
+                <!--
+                  Names the RANGE and the consequence rather than "invalid": Microsoft refuses an
+                  out-of-range bid during dispatch, and because creation is asynchronous that
+                  refusal arrives as a failed job rather than as an error on the click.
+                -->
+                <p role="alert" class="text-xs text-red-600" data-testid="implementation-microsoft-cpc-bid-error">
+                  Enter a bid between {{ microsoftMinCpcBid }} and {{ microsoftMaxCpcBid }}, or leave it blank — Microsoft rejects anything outside that range
+                  and the campaign would fail after submission.
+                </p>
+              }
+            </div>
+          </div>
+
+          <!-- Keywords -->
+          <div class="mb-4">
+            <label class="mb-2 block text-xs font-medium text-gray-700" for="microsoft-keyword-add">
+              Search Keywords ({{ microsoftEffectiveKeywords().length }}/{{ microsoftMaxKeywords }})
+            </label>
+            <div class="flex flex-col gap-2">
+              @for (keyword of microsoftKeywords(); track $index; let i = $index) {
+                <div class="flex items-center gap-2" [attr.data-testid]="'implementation-microsoft-keyword-' + i">
+                  <span class="flex-1 truncate rounded-md bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700">{{ keyword.text }}</span>
+                  <select
+                    [value]="keyword.matchType"
+                    (change)="onMicrosoftKeywordMatchTypeChange(i, $event)"
+                    class="rounded-md border border-gray-300 px-2 py-1.5 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    [attr.aria-label]="'Match type for ' + keyword.text"
+                    [attr.data-testid]="'implementation-microsoft-keyword-match-' + i">
+                    <option value="Exact">Exact</option>
+                    <option value="Phrase">Phrase</option>
+                    <option value="Broad">Broad</option>
+                  </select>
+                  <button
+                    type="button"
+                    (click)="removeMicrosoftKeyword(i)"
+                    class="text-blue-400 hover:text-blue-600"
+                    [attr.aria-label]="'Remove ' + keyword.text"
+                    [attr.data-testid]="'implementation-microsoft-keyword-remove-' + i">
+                    <i class="fa-light fa-xmark text-xs" aria-hidden="true"></i>
+                  </button>
+                </div>
+              }
+              <!--
+                Hidden rather than disabled once the cap is reached: a disabled box invites the
+                operator to keep typing into something inert.
+
+                NO native maxlength: it counts UTF-16 CODE UNITS, while the add handler,
+                `microsoftBoundsValid` and `buildMicrosoftConfig` all count RUNES — as Microsoft
+                does. An astral character costs two units, so a cap of 100 stopped the box at 50
+                emoji while every guard downstream accepts 100, making a keyword the BFF would
+                take impossible to type. Same reasoning as the profile bio field, which carries
+                the same comment. The live counter below supplies the feedback instead.
+              -->
+              @if (microsoftEffectiveKeywords().length < microsoftMaxKeywords) {
+                <input
+                  id="microsoft-keyword-add"
+                  type="text"
+                  placeholder="+ Add keyword"
+                  [value]="microsoftKeywordDraft()"
+                  (input)="onMicrosoftKeywordDraftInput($event)"
+                  (change)="onMicrosoftKeywordAdd($event)"
+                  (keydown.enter)="onMicrosoftKeywordAdd($event); $event.preventDefault()"
+                  [attr.aria-invalid]="microsoftKeywordDraftTooLong() ? 'true' : null"
+                  class="rounded-md border border-dashed border-blue-300 bg-white px-3 py-1.5 text-xs text-blue-600 placeholder:text-blue-400"
+                  data-testid="implementation-microsoft-keyword-add" />
+                @if (microsoftKeywordDraftTooLong()) {
+                  <p role="alert" class="text-xs text-red-600" data-testid="implementation-microsoft-keyword-too-long">
+                    Keyword is {{ microsoftKeywordDraftLength() }} characters — Microsoft's limit is {{ microsoftMaxKeywordTextLength }}.
+                  </p>
+                }
+              } @else {
+                <span class="text-xs text-gray-400" data-testid="implementation-microsoft-keyword-full">
+                  Maximum of {{ microsoftMaxKeywords }} keywords reached — remove one to add another.
+                </span>
+              }
+            </div>
+            <!--
+              Says WHICH rows are redundant, not just that some are. A duplicate here is not a
+              refusal: the client drops it silently, so without this the operator would see rows
+              they typed and a lower count with nothing connecting the two. Reachable by editing a
+              row's match type onto another row's — the add box refuses that pair, this does not.
+            -->
+            @if (microsoftDuplicateKeywordCount() > 0) {
+              <p class="mt-1 text-xs text-amber-700" data-testid="implementation-microsoft-keyword-duplicates">
+                {{ microsoftDuplicateKeywordCount() }} keyword{{ microsoftDuplicateKeywordCount() === 1 ? '' : 's' }} repeat a match type and text already
+                listed — Microsoft keeps one of each pair, so only {{ microsoftEffectiveKeywords().length }} will be created.
+              </p>
+            }
+            <!--
+              Names the CONSEQUENCE rather than saying "required". Without keywords Microsoft
+              creates the campaign and it can never serve — and ToggleStatus then refuses to
+              activate it — so an operator told only "required" would not know that submitting
+              anyway produces a campaign that silently never runs.
+            -->
+            @if (microsoftEffectiveKeywords().length === 0) {
+              <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-microsoft-keyword-none">
+                Add at least one keyword — without keywords the campaign is created but can never serve, and it cannot be activated.
+              </p>
+            }
+          </div>
+
+          <!-- Geo Targets -->
+          <div>
+            <label class="mb-2 block text-xs font-medium text-gray-700" for="microsoft-geo-add">
+              Geo Targets ({{ microsoftGeoTargets().length }}/{{ microsoftMaxGeoTargets }})
+            </label>
+            <div class="flex flex-wrap items-center gap-2">
+              @for (geo of microsoftGeoTargets(); track geo; let i = $index) {
+                <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                  {{ geo }}
+                  <button
+                    type="button"
+                    (click)="removeMicrosoftGeoTarget(i)"
+                    class="ml-0.5 text-blue-400 hover:text-blue-600"
+                    [attr.aria-label]="'Remove ' + geo"
+                    [attr.data-testid]="'implementation-microsoft-geo-remove-' + geo">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </span>
+              }
+              <!--
+                Free text, like Meta's, and for the same reason: these are ISO-2 country codes
+                rather than a fixed URN set a dropdown could enumerate. Microsoft resolves each
+                code to a LocationId at create time and fails BEFORE creating anything, so an
+                unresolvable code is reported rather than silently dropped — which is why there is
+                no local eligibility list here to drift from Microsoft's own.
+              -->
+              @if (microsoftGeoTargets().length < microsoftMaxGeoTargets) {
+                <!-- No maxlength: normalizeGeoTargets trims BEFORE it validates, so a browser-side
+                     cap would clip padded input into something the ISO-2 pattern then rejects. -->
+                <input
+                  id="microsoft-geo-add"
+                  type="text"
+                  placeholder="+ ISO code"
+                  (change)="onMicrosoftGeoTargetAdd($event)"
+                  (keydown.enter)="onMicrosoftGeoTargetAdd($event); $event.preventDefault()"
+                  class="w-24 rounded-md border border-dashed border-blue-300 bg-white px-2 py-1 text-xs uppercase text-blue-600 placeholder:normal-case placeholder:text-blue-400"
+                  data-testid="implementation-microsoft-geo-add" />
+              } @else {
+                <span class="text-xs text-gray-400" data-testid="implementation-microsoft-geo-full">
+                  Maximum of {{ microsoftMaxGeoTargets }} geo targets reached.
+                </span>
+              }
+            </div>
+            <!--
+              Two distinct states, and the difference matters to the operator. Chips cleared but a
+              country code still set is SAFE — the request falls back to it, and the line names the
+              country so it is not an invisible default. Nothing usable at all is the hazard.
+            -->
+            @if (microsoftGeoTargets().length === 0) {
+              @if (microsoftEffectiveGeoTargets().length > 0) {
+                <span class="mt-2 block text-xs text-gray-400">No geo targets selected — defaults to {{ microsoftEffectiveGeoLabel() }}</span>
+              } @else {
+                <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-microsoft-geo-none">
+                  Add at least one geo target — with none, Microsoft serves the campaign in every country once it is enabled.
+                </p>
+              }
+            }
+          </div>
         </div>
       }
 

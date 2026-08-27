@@ -5,7 +5,6 @@ export const environment = {
   production: false,
   urls: {
     home: 'https://app.dev.lfx.dev',
-    support: 'https://jira.linuxfoundation.org/plugins/servlet/desk',
     pcc: 'https://pcc.dev.platform.linuxfoundation.org',
     changelog: 'https://changelog.lfx.dev/',
     mentorship: 'https://people.dev.platform.linuxfoundation.org/#projects_all',
@@ -13,6 +12,8 @@ export const environment = {
     enrollment: 'https://joinnow.dev.platform.linuxfoundation.org/',
     // EasyCLA Contributor Console — sign-out target for new ICLAs/ECLAs (M1 read-only links out here).
     contributorConsole: 'https://easycla.dev.communitybridge.org/',
+    // LFX Corporate CLA Console — My CLAs "Manage in CCLA Console" (#1575).
+    corporateConsole: 'https://lfx.dev.platform.linuxfoundation.org/',
   },
   segment: {
     cdnUrl: 'https://lfx-segment.dev.platform.linuxfoundation.org/latest/lfx-segment-analytics.min.js?ver=1.0.1',

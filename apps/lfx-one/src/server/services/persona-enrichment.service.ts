@@ -26,8 +26,8 @@ export class PersonaEnrichmentService {
    * Returns a PersonaApiResponse with projects enriched from the project service.
    * On error or empty projects, returns the base response unchanged so callers degrade gracefully.
    */
-  public async getEnrichedPersonas(req: Request): Promise<PersonaApiResponse> {
-    const base = await this.personaDetectionService.getPersonas(req);
+  public async getEnrichedPersonas(req: Request, projectSlug?: string): Promise<PersonaApiResponse> {
+    const base = await this.personaDetectionService.getPersonas(req, projectSlug);
 
     if (base.error || base.projects.length === 0) {
       logger.debug(req, 'get_enriched_personas', 'Skipping enrichment — no projects or upstream error', {

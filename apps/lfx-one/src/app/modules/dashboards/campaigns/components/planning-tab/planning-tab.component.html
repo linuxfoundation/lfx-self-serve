@@ -971,6 +971,15 @@
             Copy All — copies the empty copy buffer, silently putting nothing on the clipboard.
 
           Proceed and New Brief stay: both are delivery-agnostic.
+
+          Copy All carries a SECOND guard on `copyBuffer()`, because email is not the only brief
+          that reaches here with nothing to copy. A Microsoft-ONLY paid brief skips the ad-copy
+          stage too — Microsoft contributes no copy keys, so `campaign-proxy` emits an empty
+          `copy_structured` and never streams a copy token (see `someContributesCopy` there).
+          That brief is NOT email, so `!isEmail()` admits it and the button wrote an empty
+          clipboard with no feedback. Guarding on the buffer the button actually copies covers
+          that case and any future copy-less platform, rather than naming Microsoft here and
+          needing the same fix again for the next one.
         -->
         @if (!isEmail()) {
           <lfx-button
@@ -989,14 +998,16 @@
             (onClick)="enterEditMode()"
             ariaLabel="Edit the generated brief"
             data-testid="planning-edit-brief-btn" />
-          <lfx-button
-            label="Copy All"
-            icon="fa-light fa-clipboard"
-            severity="secondary"
-            [outlined]="true"
-            (onClick)="copyToClipboard()"
-            ariaLabel="Copy all ad copy to clipboard"
-            data-testid="planning-copy-all-btn" />
+          @if (copyBuffer()) {
+            <lfx-button
+              label="Copy All"
+              icon="fa-light fa-clipboard"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="copyToClipboard()"
+              ariaLabel="Copy all ad copy to clipboard"
+              data-testid="planning-copy-all-btn" />
+          }
         }
         <lfx-button
           label="New Brief"

@@ -28,4 +28,6 @@ export class TextareaComponent {
   public describedBy = input<string>();
   /** Marks the control invalid for assistive tech (wired to aria-invalid). */
   public invalid = input<boolean>(false);
+  /** Marks the control mandatory for assistive tech (wired to aria-required). */
+  public required = input<boolean>(false);
 }

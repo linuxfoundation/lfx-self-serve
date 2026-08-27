@@ -21,7 +21,7 @@ import { PollType } from '@lfx-one/shared/enums';
 import { MeetingService } from '@services/meeting.service';
 import { VoteService } from '@services/vote.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
-import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import { getEntityCommands, invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { InvitationAcceptFlowService } from '@shared/services/invitation-accept-flow.service';
 import { InvitationService } from '@shared/services/invitation.service';
 import { MessageService } from 'primeng/api';
@@ -594,10 +594,16 @@ export class PendingActionsComponent {
         const isVoteLoading = !!item.voteUid && loadingVoteUids.has(item.voteUid);
         const isVoteInlineExpanded = isVoteInline && expandedVoteKey === rowKey;
         const voteUsesDrawerVal = !!vote && this.voteUsesDrawer(vote);
-        // Require committeeUid too — the invitation branch builds a routerLink to /groups/:committeeUid
+        // Require committeeUid too — the invitation branch builds a routerLink to the group
         // and calls accept/decline with it, so a row missing it would render /groups/undefined.
         const isInvitation = item.type === 'Invitation' && !!item.inviteUid && !!item.committeeUid;
         const inviteGroupName = item.inviteGroupName ?? item.badge;
+        // Canonical tier-prefixed view link (GH-1566): the invited group's own `inviteIsFoundation`
+        // picks /foundation vs /project; rows without tier data keep the flat /groups/:uid fallback.
+        const inviteViewCommands = item.committeeUid
+          ? (getEntityCommands('groups', item.committeeUid, item.inviteIsFoundation) ?? ['/groups', item.committeeUid])
+          : null;
+        const inviteViewQueryParams = item.inviteProjectSlug ? { project: item.inviteProjectSlug } : null;
         return {
           ...item,
           rowKey,
@@ -615,6 +621,8 @@ export class PendingActionsComponent {
           isInvitation,
           acceptAriaLabel: `Accept invite to ${inviteGroupName}`,
           declineAriaLabel: `Decline invite to ${inviteGroupName}`,
+          inviteViewCommands,
+          inviteViewQueryParams,
         };
       });
     });
