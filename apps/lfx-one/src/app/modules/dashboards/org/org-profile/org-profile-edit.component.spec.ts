@@ -167,16 +167,21 @@ describe('OrgProfileEditComponent — logo upload', () => {
     expect(status).not.toBeNull();
     expect(status?.getAttribute('aria-live')).toBe('polite');
     expect(status?.textContent).toContain('Uploading logo');
+    // The live region must sit outside the dropzone: an element with role="button" flattens its
+    // descendants in the accessibility tree, so a nested region is not reliably announced.
+    expect(root.querySelector('[data-testid="org-profile-edit-logo-dropzone"] [role="status"]')).toBeNull();
     // The spinner glyph carries no meaning of its own — it must not be read out alongside the copy.
-    expect(status?.querySelector('i')?.getAttribute('aria-hidden')).toBe('true');
+    expect(root.querySelector('[data-testid="org-profile-edit-logo-dropzone"] i')?.closest('[aria-hidden="true"]')).not.toBeNull();
     expect(root.querySelector('[data-testid="org-profile-edit-upload-logo-button"]')?.textContent).toContain('Uploading');
 
     uploadLogo$.next({ ...record, logoUrl: 'https://cdn.example.com/logo.png?v=2' });
     await fixture.whenStable();
     fixture.detectChanges();
 
-    // Region is removed once settled, so the next upload re-inserts it and is announced afresh.
-    expect(root.querySelector('[role="status"]')).toBeNull();
+    // The region itself persists — a live region has to be in the DOM before its content changes to
+    // be announced reliably — so it is the text that clears, and the next upload refills it.
+    expect(root.querySelector('[role="status"]')).not.toBeNull();
+    expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe('');
     expect(root.querySelector('[data-testid="org-profile-edit-upload-logo-button"]')?.textContent).toContain('Upload Logo');
   });
 
@@ -381,17 +386,40 @@ describe('OrgProfileEditComponent — logo upload', () => {
     expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('Please try again') }));
   });
 
-  it('falls back to generic guidance when a rejection carries no usable reason', async () => {
+  it('falls back to actionable guidance when a rejection carries no usable reason', async () => {
     fixture.detectChanges();
     fixture.componentInstance['onLogoFileSelected']({
       target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
     } as unknown as Event);
     await fixture.whenStable();
 
+    // Angular synthesizes a non-empty `error.message` ("Http failure response for …"), which must
+    // not reach the toast — the user needs guidance, not an HTTP debugging string.
     uploadLogo$.error(new HttpErrorResponse({ status: 415 }));
     await fixture.whenStable();
 
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Logo rejected' }));
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Logo rejected', detail: 'This image could not be used. Try a different file.' }));
+    expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('Http failure response') }));
+  });
+
+  // The BFF gives these their own actionable copy, so routing them through the rejection branch
+  // would print a summary that contradicts the detail and send the user off to swap a file that
+  // was never at fault (org-identity.controller.ts).
+  it.each([
+    [409, 'This organization was updated elsewhere. Refresh the page and try again.'],
+    [404, 'Organization not found'],
+  ])('does not label status %i as a rejected logo', async (status, serverMessage) => {
+    fixture.detectChanges();
+    fixture.componentInstance['onLogoFileSelected']({
+      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+    } as unknown as Event);
+    await fixture.whenStable();
+
+    uploadLogo$.error(new HttpErrorResponse({ status, error: { error: serverMessage } }));
+    await fixture.whenStable();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Upload failed', detail: serverMessage }));
+    expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Logo rejected' }));
   });
 
   it.each([[408], [429], [0]])('keeps the retry prompt for transient status %i', async (status) => {
