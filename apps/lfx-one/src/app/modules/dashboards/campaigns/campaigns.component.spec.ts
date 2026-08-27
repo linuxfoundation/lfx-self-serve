@@ -1243,29 +1243,56 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       /**
-       * The capability read must survive an Optimize visit landing on top of it.
+       * An Optimize visit landing on top of a capability read must not lose the answer.
        *
-       * It originally shared `briefCampaignsGeneration` with `loadBriefCampaigns`, which looked
-       * right — same endpoint, same staleness question — but that counter is INCREMENTED by
-       * `loadBriefCampaigns` itself. So entering Optimize while the capability request was in
-       * flight bumped it and the response was dropped as stale, leaving the capability `null`
-       * and the control hidden: exactly the defect this method exists to fix. Guarding on the
-       * foundation instead is what makes an unrelated read harmless.
+       * The guard shared Optimize's list counter at first, which `loadBriefCampaigns` increments
+       * on every entry — so an ordinary Optimize click discarded an in-flight capability response
+       * and left the control hidden.
+       *
+       * Both readers hit the same endpoint, so they cannot disagree about the deployment; the
+       * mock answers `true` on both. What is asserted is that the answer SURVIVES the overlap,
+       * whichever of the two happens to deliver it.
        */
-      it('keeps a capability response that an Optimize load raced', async () => {
+      it('keeps a capability answer when an Optimize load races it', async () => {
         const capability = new Subject<CampaignListResult>();
         const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(capability.asObservable());
 
         await withSavedBrief();
 
         // Optimize entry lands on top of the still-open capability request.
-        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: false }));
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
         load();
         await fixture.whenStable();
 
-        // ...and only now does the capability answer arrive.
+        // ...and the original request answers only now.
         capability.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true });
         capability.complete();
+        await fixture.whenStable();
+
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+      });
+
+      /**
+       * The reverse race, and the one a single-reader token cannot close: `loadBriefCampaigns`
+       * writes this signal too. An older list read failing AFTER a newer capability read
+       * succeeded must not reset a live answer to `null` — a failure has established nothing.
+       */
+      it('does not let an older failing list read wipe a newer capability answer', async () => {
+        const staleList = new Subject<CampaignListResult>();
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(staleList.asObservable());
+
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+
+        // A newer capability read answers while that list request is still open.
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+        (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
+        await fixture.whenStable();
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+
+        // The superseded list read now fails. It must not touch the newer answer.
+        staleList.error(new Error('query service down'));
         await fixture.whenStable();
 
         expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);

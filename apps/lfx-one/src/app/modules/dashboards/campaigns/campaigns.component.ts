@@ -511,11 +511,25 @@ export class CampaignsComponent {
    * entries within one foundation can land out of order and an older failure can wipe a newer
    * success back to `null`.
    *
-   * A counter owned by this reader answers both — bumped on every dispatch here, untouched by
-   * Optimize, and made stale by the foundation-switch effect for free because that dispatches
-   * nothing here. Only the newest capability read may write.
+   * Ordered by ANSWER, not by dispatch, and shared by every writer of the capability.
+   *
+   * Dispatch order is the obvious rule and it is wrong here, because the two readers race in both
+   * directions. `loadCreateCapabilitiesFor` can answer while an Optimize list is still open, and
+   * `loadBriefCampaigns` can answer while a capability read is still open — "last dispatched
+   * wins" drops a good answer in whichever direction happens to lose, which is how the first two
+   * versions of this guard each broke one case while fixing the other.
+   *
+   * What both cases actually want is the same invariant: a SUCCESS is authoritative from the
+   * moment it lands, and nothing older may overwrite it — least of all a failure, which has
+   * established nothing. So this is stamped when an answer is WRITTEN, and a writer defers to it
+   * if another answer has landed since it dispatched.
+   *
+   * It does NOT cover a foundation switch: that clears the capability but dispatches nothing, so
+   * it never bumps this. The separate slug comparison in each reader is what rejects a response
+   * from the previous foundation — two mechanisms, stated apart so neither is removed on the
+   * strength of the other.
    */
-  private createCapabilitiesGeneration = 0;
+  private capabilityGeneration = 0;
 
   /**
    * Whether the server has told us the brief-persistence cutover is on.
@@ -1310,12 +1324,12 @@ export class CampaignsComponent {
     const projectSlug = this.activeFoundationSlug();
     if (projectSlug === '' || !briefId) return;
 
-    // Ordered by this reader's OWN generation, and checked against the foundation too — see
-    // `createCapabilitiesGeneration`. The counter gives ordering among repeated Implementation
-    // entries; the slug is what makes a response from the previous foundation inapplicable
-    // rather than merely old.
-    const generation = ++this.createCapabilitiesGeneration;
-    const isCurrent = (): boolean => generation === this.createCapabilitiesGeneration && projectSlug === this.activeFoundationSlug();
+    // Ordered by the SHARED capability generation — see `capabilityGeneration` — and checked
+    // against the foundation too. The counter orders this against every other capability writer,
+    // `loadBriefCampaigns` included; the slug is what makes a response from the previous
+    // foundation inapplicable rather than merely old.
+    const dispatchedAt = this.capabilityGeneration;
+    const mayWrite = (): boolean => dispatchedAt === this.capabilityGeneration && projectSlug === this.activeFoundationSlug();
     this.campaignService
       .listBriefCampaigns(projectSlug, briefId)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
@@ -1324,14 +1338,16 @@ export class CampaignsComponent {
         // those belong to Optimize's own read, and writing them from here would render a list
         // the operator did not ask for and cannot see.
         next: (result) => {
-          if (!isCurrent()) return;
+          if (!mayWrite()) return;
+          this.capabilityGeneration++;
           this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
         },
         // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
         // draft's selection on evidence a failed read does not have; leaving the previous value
         // keeps offering the control on the strength of a read that has since started failing.
         error: () => {
-          if (!isCurrent()) return;
+          if (!mayWrite()) return;
+          this.capabilityGeneration++;
           this.briefCampaignsDemandGenEnabled.set(null);
         },
       });
@@ -1362,6 +1378,12 @@ export class CampaignsComponent {
     // a request dispatched under the previous brief land afterwards and still pass `isCurrent()`.
     const generation = ++this.briefCampaignsGeneration;
     const isCurrent = (): boolean => generation === this.briefCampaignsGeneration;
+    // The capability is written from here too, under the SHARED answer ordering — see
+    // `capabilityGeneration`. Without it an older list read failing after a newer capability read
+    // succeeded would still pass `isCurrent` above (its own list generation is untouched by that
+    // reader) and reset a live answer to `null`.
+    const capabilityDispatchedAt = this.capabilityGeneration;
+    const mayWriteCapability = (): boolean => capabilityDispatchedAt === this.capabilityGeneration;
 
     // Cleared on EVERY entry, before dispatch — not only on the early return below.
     //
@@ -1404,7 +1426,10 @@ export class CampaignsComponent {
           this.briefCampaignsStale.set(result.possiblyStale);
           this.briefCampaignsUnavailable.set(false);
           this.briefCampaignsToggleEnabled.set(result.statusToggleEnabled);
-          this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
+          if (mayWriteCapability()) {
+            this.capabilityGeneration++;
+            this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
+          }
         },
         error: () => {
           if (!isCurrent()) {
@@ -1416,7 +1441,10 @@ export class CampaignsComponent {
           this.briefCampaignsStale.set(false);
           this.briefCampaignsUnavailable.set(true);
           this.briefCampaignsToggleEnabled.set(false);
-          this.briefCampaignsDemandGenEnabled.set(null);
+          if (mayWriteCapability()) {
+            this.capabilityGeneration++;
+            this.briefCampaignsDemandGenEnabled.set(null);
+          }
         },
       });
   }
