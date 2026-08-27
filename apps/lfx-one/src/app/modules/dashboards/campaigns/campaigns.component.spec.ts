@@ -1278,9 +1278,10 @@ describe('CampaignsComponent brief persistence', () => {
        * on every entry — so an ordinary Optimize click discarded an in-flight capability response
        * and left the control hidden.
        *
-       * Both readers hit the same endpoint, so they cannot disagree about the deployment; the
-       * mock answers `true` on both. What is asserted is that the answer SURVIVES the overlap,
-       * whichever of the two happens to deliver it.
+       * Both mocked responses answer `true`, and the assertion is only that the answer SURVIVES
+       * the overlap — not that the two reads must agree. They can disagree: during a rolling
+       * deployment identical `/list` calls land on pods with different flag values, which is the
+       * pod-local hazard recorded on #1885. Ordering, not agreement, is what this pins.
        */
       it('keeps a capability answer when an Optimize load races it', async () => {
         const capability = new Subject<CampaignListResult>();
@@ -1401,7 +1402,7 @@ describe('CampaignsComponent brief persistence', () => {
        * The half the generation counter cannot cover.
        *
        * A foundation switch clears the capability but dispatches no capability read of its own,
-       * so it never bumps `createCapabilitiesGeneration`. An in-flight read from the previous
+       * so it never bumps `capabilityGeneration`. An in-flight read from the previous
        * foundation therefore still looks current BY GENERATION, and only the slug check stops it
        * writing foundation A's answer onto foundation B — a capability claim about a deployment
        * the user is no longer looking at.
