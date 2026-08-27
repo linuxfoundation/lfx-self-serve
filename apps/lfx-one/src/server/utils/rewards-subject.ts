@@ -60,8 +60,8 @@ function resolveTargetSalesforceId(response: RewardUserLookupPage | null, userna
   const totalSize = response?.Metadata?.TotalSize;
   const hasOneResult = Array.isArray(rows) && rows.length === 1 && totalSize === 1;
   const target = hasOneResult ? rows[0] : undefined;
-  const returnedUsername = target?.Username?.trim();
-  const salesforceId = target?.ID?.trim();
+  const returnedUsername = typeof target?.Username === 'string' ? target.Username.trim() : '';
+  const salesforceId = typeof target?.ID === 'string' ? target.ID.trim() : '';
 
   if (!target || !returnedUsername || !salesforceId || !SALESFORCE_ID_PATTERN.test(salesforceId) || !usernameMatches(username, returnedUsername)) {
     throw new MicroserviceError('Rewards target could not be resolved safely', 502, 'REWARDS_SUBJECT_RESOLUTION_FAILED', {

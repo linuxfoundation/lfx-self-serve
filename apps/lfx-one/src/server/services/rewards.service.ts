@@ -365,7 +365,38 @@ function isNonNegativeInteger(value: unknown): value is number {
 function isValidPromotion(value: unknown): value is RewardPromotionRaw {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
 
-  const promotion = value as RewardPromotionRaw;
-  const category = promotion.Category?.toLowerCase();
-  return Boolean(promotion.PromotionID?.trim()) && REWARD_CATEGORIES.some((candidate) => candidate.toLowerCase() === category);
+  const promotion = value as Record<string, unknown>;
+  const category = promotion['Category'];
+  const products = promotion['Products'];
+  const contentTypes = promotion['TIContentTypes'];
+  return (
+    typeof promotion['PromotionID'] === 'string' &&
+    Boolean(promotion['PromotionID'].trim()) &&
+    typeof category === 'string' &&
+    REWARD_CATEGORIES.some((candidate) => candidate.toLowerCase() === category.toLowerCase()) &&
+    ['Description', 'DiscountType', 'ExpiresAT', 'Coupon', 'EligiblityComment', 'LogoURL'].every((field) => isOptionalString(promotion[field])) &&
+    ['Discount', 'RequiredRewards', 'RelativeExpiryInterval'].every((field) => isOptionalNonNegativeNumber(promotion[field])) &&
+    ['Eligible', 'Redeemed'].every((field) => isOptionalBoolean(promotion[field])) &&
+    (products === undefined || (Array.isArray(products) && products.every(isValidPromotionProduct))) &&
+    (contentTypes === undefined || (Array.isArray(contentTypes) && contentTypes.every((item) => typeof item === 'string')))
+  );
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
+}
+
+function isOptionalNonNegativeNumber(value: unknown): boolean {
+  return value === undefined || (typeof value === 'number' && Number.isFinite(value) && value >= 0);
+}
+
+function isOptionalBoolean(value: unknown): boolean {
+  return value === undefined || typeof value === 'boolean';
+}
+
+function isValidPromotionProduct(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+
+  const product = value as Record<string, unknown>;
+  return ['ID', 'Name', 'LogoURL'].every((field) => isOptionalString(product[field]));
 }

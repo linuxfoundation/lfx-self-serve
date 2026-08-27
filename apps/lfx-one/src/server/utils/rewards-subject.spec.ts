@@ -81,6 +81,8 @@ describe('resolveRewardsSubject', () => {
     ['a mismatched username echo', 'target-user', { Data: [{ ID: '003000000000001AAA', Username: 'other-user' }], Metadata: { TotalSize: 1 } }],
     ['an empty Salesforce ID', 'target-user', { Data: [{ ID: ' ', Username: 'target-user' }], Metadata: { TotalSize: 1 } }],
     ['an invalid Salesforce ID', 'target-user', { Data: [{ ID: '003-target', Username: 'target-user' }], Metadata: { TotalSize: 1 } }],
+    ['a non-string Salesforce ID', 'target-user', { Data: [{ ID: 123, Username: 'target-user' }], Metadata: { TotalSize: 1 } }],
+    ['a non-string username echo', 'target-user', { Data: [{ ID: '003000000000001AAA', Username: 123 }], Metadata: { TotalSize: 1 } }],
   ])('fails closed for %s', async (_caseName, username, response) => {
     isImpersonating.mockReturnValue(true);
     getEffectiveUsername.mockReturnValue(username);

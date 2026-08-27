@@ -205,7 +205,19 @@ describe('RewardsService', () => {
   it.each([
     ['a numeric description', { ...promotionPage.Data![0], Description: 42 }],
     ['a null product', { ...promotionPage.Data![0], Products: [null] }],
-  ])('marks promotions unavailable when mapping encounters %s', async (_caseName, malformedPromotion) => {
+    ['negative required rewards', { ...promotionPage.Data![0], RequiredRewards: -1 }],
+    ['string eligibility', { ...promotionPage.Data![0], Eligible: 'false' }],
+    ['string redemption state', { ...promotionPage.Data![0], Redeemed: 'false' }],
+    ['a numeric coupon', { ...promotionPage.Data![0], Coupon: 123 }],
+    ['non-array content types', { ...promotionPage.Data![0], Products: undefined, TIContentTypes: 'Training' }],
+    ['a numeric discount type', { ...promotionPage.Data![0], DiscountType: 123 }],
+    ['a string discount', { ...promotionPage.Data![0], Discount: '40' }],
+    ['a numeric expiry', { ...promotionPage.Data![0], ExpiresAT: 123 }],
+    ['a string relative expiry', { ...promotionPage.Data![0], RelativeExpiryInterval: '30' }],
+    ['a numeric eligibility comment', { ...promotionPage.Data![0], EligiblityComment: 123 }],
+    ['a numeric promotion logo', { ...promotionPage.Data![0], LogoURL: 123 }],
+    ['a numeric product logo', { ...promotionPage.Data![0], Products: [{ ID: 'training', LogoURL: 123 }] }],
+  ])('marks promotions unavailable when a promotion contains %s', async (_caseName, malformedPromotion) => {
     gatewayFetch.mockImplementation(async (_req: Request, url: string) =>
       url.endsWith('/me') ? profile : { Data: [malformedPromotion], Metadata: { Offset: 0, PageSize: 500, TotalSize: 1 } }
     );
