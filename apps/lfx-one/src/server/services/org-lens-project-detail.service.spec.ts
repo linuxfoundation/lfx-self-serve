@@ -9,6 +9,8 @@ import {
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
+// Defaults to null so every suite here bypasses the cache; the cache-contract suite opts in.
+const { buildOrgCacheKey, getJson } = vi.hoisted(() => ({ buildOrgCacheKey: vi.fn(() => null as string | null), getJson: vi.fn() }));
 
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: class {
@@ -21,8 +23,8 @@ vi.mock('./snowflake.service', () => ({
   },
 }));
 vi.mock('./valkey.service', () => ({
-  buildOrgCacheKey: () => null,
-  valkeyService: { getJson: vi.fn(), setJson: vi.fn() },
+  buildOrgCacheKey,
+  valkeyService: { getJson, setJson: vi.fn() },
 }));
 // See org-lens-projects.service.spec.ts for why this delegates to the real classification utils instead of stubbing.
 vi.mock('@lfx-one/shared/utils', async () => {
@@ -431,5 +433,57 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
     expect(breakdown!.totalScore).toBe(expectedTotal);
     const summed = breakdown!.categories.reduce((total, figure) => total + figure.points, 0);
     expect(summed).toBeCloseTo(breakdown!.totalScore, 2);
+  });
+});
+
+/**
+ * The board is cached for an hour, so entries written before it began serving `organizationId`
+ * outlive the deploy that needs it. Those rows are structurally valid but cannot open the drawer:
+ * the row renders focusable and clickable while the click does nothing. The cache read is the only
+ * place that can catch it, so it has to validate the rows and not just the envelope.
+ */
+describe('OrgLensProjectDetailService board cache contract', () => {
+  const service = new OrgLensProjectDetailService();
+
+  function cachedPage(rows: unknown[]): void {
+    buildOrgCacheKey.mockReturnValue('board-key');
+    getJson.mockImplementation(async (_key: string, validate: (value: unknown) => boolean) => {
+      const page = { rows, total: rows.length, isNonLfProject: false };
+      return validate(page) ? page : null;
+    });
+  }
+
+  beforeEach(() => {
+    execute.mockReset();
+    getJson.mockReset();
+    buildOrgCacheKey.mockReset();
+    buildOrgCacheKey.mockReturnValue(null);
+    execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('PROJECT_NAME') ? [heroRow] : [] }));
+  });
+
+  it('serves a cached page whose rows carry an organization id', async () => {
+    cachedPage([{ organizationId: 'crowd-org-1', orgName: 'Acme' }]);
+
+    const page = await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '');
+
+    expect(page!.rows).toHaveLength(1);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('rejects a cached page whose rows predate the organization id, so the board re-fetches', async () => {
+    cachedPage([{ orgName: 'Acme' }]);
+
+    await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '');
+
+    expect(execute).toHaveBeenCalled();
+  });
+
+  it('still serves an empty cached page, which carries no rows to validate', async () => {
+    cachedPage([]);
+
+    const page = await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '');
+
+    expect(page!.rows).toEqual([]);
+    expect(execute).not.toHaveBeenCalled();
   });
 });

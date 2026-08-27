@@ -53,7 +53,11 @@ export interface OrgLeaderboardDetailBreakdown {
   rank: number | null;
   /** Organizations ranked on this board for the project and range, for the "#3 out of 41" phrasing. */
   totalOrganizations: number;
-  /** The organization's share of all project activity for this dimension; absent when the warehouse has no activity row for it. */
+  /**
+   * The organization's share of one activity board — contributions for technical, collaborations for
+   * ecosystem — not of everything the dimension scores, and not a driver of the total. Absent when
+   * the warehouse has no activity row for the organization.
+   */
   activitySharePercent?: number;
   /** In the drawer's display order, one entry per category the caller may see. */
   categories: OrgLeaderboardDetailCategoryFigure[];

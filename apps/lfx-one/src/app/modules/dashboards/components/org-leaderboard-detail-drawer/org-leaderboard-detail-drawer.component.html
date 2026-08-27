@@ -58,12 +58,11 @@
           <span class="font-semibold">{{ orgName() }}</span> has a
           <span class="font-semibold" [class]="levelTextClass()">{{ breakdown()?.level }}</span>
           {{ dimension() }} influence in {{ projectName() }}@if (breakdown()?.activitySharePercent !== undefined) {
-            <span>
-              due to contributing
+            <span>, with
               <span class="font-semibold text-blue-600">{{ breakdown()?.activitySharePercent }}%</span>
-              of all project {{ dimension() }} activities</span
+              of the project's {{ activityShareLabel() }} activity</span
             >
-          }. This yields a score of
+          }. Its score is
           <span class="font-semibold text-blue-600">{{ breakdown()?.totalScore }}</span>
           @if (breakdown()?.rank) {
             <span>

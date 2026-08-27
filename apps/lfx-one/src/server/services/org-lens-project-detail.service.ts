@@ -2297,10 +2297,18 @@ export class OrgLensProjectDetailService {
     return Array.isArray(periods) && periods.every((label) => typeof label === 'string');
   }
 
+  /**
+   * Rows must carry an organization id, not just be an array. Entries cached before the board
+   * started serving that id deserialize into a structurally valid page whose rows the drawer cannot
+   * be opened from — the row stays focusable and clickable while the click does nothing. Rejecting
+   * them here re-fetches from the warehouse and overwrites the entry, so the board self-heals on
+   * first read instead of staying inert for the rest of the cache lifetime.
+   */
   private static isLeaderboardPage(value: unknown): value is OrgLensLeaderboardPage {
     if (value === null || typeof value !== 'object') return false;
     const candidate = value as OrgLensLeaderboardPage;
-    return Array.isArray(candidate.rows) && typeof candidate.total === 'number' && typeof candidate.isNonLfProject === 'boolean';
+    if (!Array.isArray(candidate.rows) || typeof candidate.total !== 'number' || typeof candidate.isNonLfProject !== 'boolean') return false;
+    return candidate.rows.every((row) => typeof row?.organizationId === 'string' && row.organizationId.length > 0);
   }
 
   private static isCardDetailSection(value: unknown): value is OrgLensCardDetailSection {

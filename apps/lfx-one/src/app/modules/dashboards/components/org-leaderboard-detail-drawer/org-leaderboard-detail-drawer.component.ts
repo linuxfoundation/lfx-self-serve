@@ -58,6 +58,12 @@ export class OrgLeaderboardDetailDrawerComponent {
   protected readonly state: Signal<BlockState<OrgLeaderboardDetailBreakdown>> = this.initState();
   protected readonly breakdown: Signal<OrgLeaderboardDetailBreakdown | null> = computed(() => this.state().data);
   protected readonly subtitleLabel: Signal<string> = computed(() => (this.dimension() === 'technical' ? 'Technical Influence' : 'Ecosystem Influence'));
+  /**
+   * What the served activity share actually measures. The server reads one activity board per
+   * dimension — contributions for technical, collaborations for ecosystem — so the share covers that
+   * activity alone, not everything the dimension scores.
+   */
+  protected readonly activityShareLabel: Signal<string> = computed(() => (this.dimension() === 'technical' ? 'contribution' : 'collaboration'));
   protected readonly methodology = computed(() => ORG_LEADERBOARD_DETAIL_METHODOLOGY[this.dimension()]);
   protected readonly levelTextClass: Signal<string> = computed(() => {
     const band = this.breakdown()?.level.toLowerCase() as OrgLensProjectBand | undefined;

@@ -42,12 +42,18 @@ describe('OrgLeaderboardDetailDrawerComponent', () => {
       { key: 'tier', points: 0.66 },
     ],
     withheldCategories: ['meeting'],
+    activitySharePercent: 12.4,
   };
 
   async function open(range: OrgLeaderboardDetailBreakdown['range'] = '1y'): Promise<void> {
     fixture.componentRef.setInput('range', range);
     fixture.componentRef.setInput('visible', true);
     await fixture.whenStable();
+  }
+
+  function summaryText(): string {
+    const summary = document.querySelector('[data-testid="org-leaderboard-detail-summary"]');
+    return summary?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
   }
 
   function rowText(key: string): string {
@@ -93,6 +99,26 @@ describe('OrgLeaderboardDetailDrawerComponent', () => {
 
     expect(getLeaderboardBreakdown).toHaveBeenLastCalledWith(ORG_UID, SLUG, 'ecosystem', SUBJECT, '2y');
     expect(getLeaderboardBreakdown).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * The served share covers one activity board per dimension — collaborations for ecosystem — while
+   * the score combines ten categories. Naming it "ecosystem activity", or presenting it as what
+   * produces the score, would overclaim on both counts.
+   */
+  it('names the activity share by the board it comes from, without crediting it for the score', async () => {
+    await open();
+
+    expect(summaryText()).toContain("12.4% of the project's collaboration activity");
+    expect(summaryText()).not.toContain('ecosystem activity');
+    expect(summaryText()).not.toContain('due to contributing');
+    expect(summaryText()).not.toContain('yields');
+  });
+
+  it('punctuates the summary without a stray space before the share clause', async () => {
+    await open();
+
+    expect(summaryText()).toContain('influence in Kubernetes, with');
   });
 
   it('renders a served category with its points and ratio', async () => {
