@@ -72,10 +72,14 @@
           [outlined]="true"
           styleClass="feed-header__view-trigger w-44"
           [ariaExpanded]="viewsVisible()"
+          [pTooltip]="viewsLabel()"
+          [tooltipDisabled]="!showViewTooltip()"
+          tooltipPosition="top"
+          tooltipEvent="both"
           (onClick)="toggleViews()"
           data-testid="social-listening-views-button">
           <i class="fa-light fa-bookmark text-sm text-gray-400" aria-hidden="true"></i>
-          <span class="min-w-0 truncate" [pTooltip]="viewsLabel()" [tooltipDisabled]="!showViewTooltip()" tooltipPosition="top">{{ viewsLabel() }}</span>
+          <span class="min-w-0 truncate">{{ viewsLabel() }}</span>
           <i
             class="fa-light ml-auto text-xs text-gray-400"
             [class.fa-chevron-up]="viewsVisible()"
