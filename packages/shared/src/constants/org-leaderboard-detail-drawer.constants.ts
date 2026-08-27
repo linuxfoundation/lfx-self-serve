@@ -24,7 +24,7 @@ export const ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES: OrgLeaderboardDetailCa
 
 /** Ecosystem-influence categories, including the membership tier that also earns ecosystem points. */
 export const ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES: OrgLeaderboardDetailCategory[] = [
-  { key: 'collab', name: 'Collaboration Activity' },
+  { key: 'collab', name: 'Collaboration Activities' },
   { key: 'meeting', name: 'Meeting Attendance' },
   { key: 'event', name: 'Event Attendance' },
   { key: 'committee', name: 'Committee Members' },
@@ -94,7 +94,7 @@ export const ORG_LEADERBOARD_DETAIL_METHODOLOGY: Record<'technical' | 'ecosystem
       'Each category below earns points independently — there are no preset weights per category. Points from all categories are added together to get the total score.',
     bullets: [
       {
-        label: 'Collaboration Activity, Meeting Attendance, Committee Members, Event Speakers',
+        label: 'Collaboration Activities, Meeting Attendance, Committee Members, Event Speakers',
         text: '— each 0.1% share of the project/foundation total earns 0.1 pt, plus a +1 bonus for any share above 0%.',
       },
       { label: 'Board Members', text: '— 1 pt if the company has 1+ foundation board members, else 0.' },

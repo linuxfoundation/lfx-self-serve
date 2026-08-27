@@ -1964,7 +1964,7 @@ export class OrgLensProjectDetailService {
     return [
       this.card(
         'collaboration',
-        'Collaboration Activity',
+        'Collaboration Activities',
         projectName,
         this.pctCaption(cards?.ECO_COLLABORATION_PCT, 'Employees contributed ', ' of all collaboration activities.'),
         index,
