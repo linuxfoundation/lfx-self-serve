@@ -152,18 +152,21 @@ export class ImplementationTabComponent implements OnInit {
   public readonly sourceEmailId = input<string>('');
 
   /**
-   * Whether this deployment can create a Demand Gen Google campaign.
+   * Whether this deployment can create a Demand Gen Google campaign — `null` while unknown.
    *
-   * The create route refuses `demand-gen` unless `LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` is on,
-   * and the chart leaves that flag unset — so without this the tab renders a checkbox whose every
-   * submission is refused. The two refusals also disagree: picking Search AND Demand Gen is told
-   * to "deselect one and create it", and doing so lands on the capability refusal saying Demand
-   * Gen is unavailable entirely. The first message walks the user into the second.
+   * THREE states, not two, and the distinction is load-bearing. `false` means the server said the
+   * capability is off; `null` means nothing has answered yet. Collapsing them makes the pre-load
+   * state indistinguishable from an explicit refusal, and `applyDraft` below would then rewrite a
+   * user's saved Demand Gen selection to `false` on a restore that merely raced the answer — a
+   * destructive edit to persisted state, from a value that was never a server fact.
    *
-   * Defaults to `false`, matching `statusToggleEnabled`: withholding a control for one request is
-   * cheap, offering one that cannot succeed is not.
+   * The control is withheld while `null` (offering one that may not submit is worse than a brief
+   * absence), but the DRAFT is preserved: hiding is reversible, and clearing is not.
    */
-  public readonly demandGenEnabled = input<boolean>(false);
+  public readonly demandGenEnabled = input<boolean | null>(null);
+
+  /** Render the control only on an explicit yes. `null` (unknown) withholds it. */
+  protected readonly demandGenAvailable = computed<boolean>(() => this.demandGenEnabled() === true);
 
   /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
@@ -1622,11 +1625,14 @@ export class ImplementationTabComponent implements OnInit {
       startDate: draft.startDate,
       endDate: draft.endDate,
       includeSearch: draft.includeSearch,
-      // Forced false where the deployment cannot serve it. A draft saved when Demand Gen was
-      // available — or under the old `true` default — would otherwise restore a hidden `true`
-      // and submit it, which the create route refuses. Hiding the control is not enough on its
-      // own because this path writes the value without it.
-      includeDemandGen: this.demandGenEnabled() && draft.includeDemandGen,
+      // Cleared only on an EXPLICIT `false`, never on `null`. A draft saved when Demand Gen was
+      // available would otherwise restore a hidden `true` and submit it into the create route's
+      // refusal — hiding the control does not stop that, because this path writes the value
+      // without it. But `null` means the capability answer has not arrived, and clearing on that
+      // rewrites the user's saved selection to `false` permanently: the emit below carries it
+      // back to the parent, so a later `true` reveals an unchecked box with the choice already
+      // destroyed. Withholding the control while unknown is reversible; this is not.
+      includeDemandGen: this.demandGenEnabled() === false ? false : draft.includeDemandGen,
       // The three LinkedIn controls (LFXV2-3230), restored in the SAME patch as everything else —
       // which is the entire benefit of having moved them onto the form: no extra signal writes and
       // no second emission. This runs AFTER `populateFromBrief`, so it deliberately overwrites the

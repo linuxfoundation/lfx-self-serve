@@ -3187,6 +3187,22 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
     expect(checkbox()).toBeNull();
   });
 
+  it('withholds the control while the capability is still unknown', () => {
+    fixture.componentRef.setInput('demandGenEnabled', null);
+    fixture.detectChanges();
+    expect(checkbox()).toBeNull();
+  });
+
+  /**
+   * The distinction the tri-state exists for. `null` withholds the control exactly as `false`
+   * does, so this cannot be asserted through the DOM — only the draft outcome separates them,
+   * and getting it wrong destroys a user's saved selection rather than merely hiding a checkbox.
+   */
+  it('preserves a restored draft selection while the capability is unknown', () => {
+    restoreDraft(null, true);
+    expect(demandGenValue()).toBe(true);
+  });
+
   /**
    * Order matters, and getting it wrong makes the negative case pass for the wrong reason.
    *
@@ -3198,7 +3214,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
    * With either mistake the control keeps its `[false]` default and the "forces to Search" test
    * passes without the guard existing at all.
    */
-  function restoreDraft(enabled: boolean, includeDemandGen: boolean): void {
+  function restoreDraft(enabled: boolean | null, includeDemandGen: boolean): void {
     fixture.componentRef.setInput('demandGenEnabled', enabled);
     fixture.componentRef.setInput('draft', {
       eventSlug: 'kubecon-eu-2026',

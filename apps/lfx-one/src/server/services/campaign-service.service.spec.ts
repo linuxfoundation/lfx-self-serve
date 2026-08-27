@@ -2358,7 +2358,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
 
     const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
 
-    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: false });
+    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true });
   });
 
   // The index stores `version`; a write needs `If-Match`. campaign-service's ETag is exactly
@@ -2403,6 +2403,46 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /**
+   * The capability is NOT the raw `CampaignServiceDemandGen` flag.
+   *
+   * While the create cutover is dark the controller falls through to the legacy creator, which
+   * creates demand-gen campaigns perfectly well — so reporting the raw flag would hide a working
+   * option for the whole of the staged CREATE-off rollout this chart prescribes.
+   *
+   * The staged-rollout row is the one that matters and the one a naive implementation fails: all
+   * three create prerequisites on is NOT the same as CREATE alone, and demand-gen off only bites
+   * once campaign-service actually owns creation.
+   */
+  it.each([
+    // cutover fully on + capability on  -> campaign-service can serve it
+    [{ create: true, briefs: true, jobs: true, demandGen: true }, true],
+    // cutover fully on + capability off -> the one case that is genuinely unavailable
+    [{ create: true, briefs: true, jobs: true, demandGen: false }, false],
+    // the staged CREATE-off rollout: legacy owns creation and supports demand gen
+    [{ create: false, briefs: true, jobs: true, demandGen: false }, true],
+    // a PARTIAL flag set is equivalent to "cutover off" in createCampaigns; it must match here
+    [{ create: true, briefs: false, jobs: true, demandGen: false }, true],
+    [{ create: true, briefs: true, jobs: false, demandGen: false }, true],
+  ])('reports the demand-gen capability from the create path that will actually run (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceDemandGen) return flags.demandGen;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.demandGenEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   // A TRUNCATED list is worse than an error, which is what failOnPartial buys. The caller cannot
   // tell a short list from a complete one, and the campaigns missing from it are live and
   // spending — so a page-two failure must propagate rather than quietly return page one.
@@ -2425,7 +2465,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     expect(proxyRequest).not.toHaveBeenCalled();
     // possiblyStale TRUE on a refusal: nothing was queried, so the empty list must not assert
     // that the brief has no campaigns.
-    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: false });
+    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true });
   });
 });
 

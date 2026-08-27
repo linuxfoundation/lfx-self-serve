@@ -303,6 +303,32 @@ function fromMarketingEmail(email: CampaignServiceMarketingEmail): HubSpotMarket
  * is an addition here plus a branch at the call site, and a rollback is the flag alone —
  * rather than an edit tangled through the vendor code that has to be reverted by hand.
  */
+/**
+ * Whether this deployment can create a Demand Gen Google campaign.
+ *
+ * NOT simply `CampaignServiceDemandGen`. That flag gates the campaign-service create path only;
+ * while the create cutover is dark the controller falls through to the LEGACY creator, whose
+ * `includeGoogle` gates on platform membership alone and which creates demand-gen campaigns
+ * perfectly well (see the note above `unconfigured` in `createCampaigns`).
+ *
+ * So the capability is missing only in the narrow window where campaign-service owns creation and
+ * has not been told it understands `googleAdsConfig.channel`. Reporting the raw flag instead would
+ * hide a working legacy option — including for the whole of the staged CREATE-off rollout this
+ * chart prescribes, which is exactly the deployment state most likely to be in effect.
+ *
+ * Mirrors `createCampaigns`' own three-flag gate rather than restating it as two: a partial flag
+ * set is equivalent to "cutover off" there, and it has to mean the same here or the two disagree
+ * mid-rollout.
+ */
+function canCreateDemandGen(): boolean {
+  const cutoverOwnsCreate =
+    isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate) &&
+    isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs) &&
+    isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs);
+
+  return !cutoverOwnsCreate || isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceDemandGen);
+}
+
 export class CampaignServiceClient {
   private readonly microserviceProxy: MicroserviceProxyService;
 
@@ -365,7 +391,7 @@ export class CampaignServiceClient {
         campaigns: [],
         possiblyStale: true,
         statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle),
-        demandGenEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceDemandGen),
+        demandGenEnabled: canCreateDemandGen(),
       };
     }
 
@@ -415,7 +441,7 @@ export class CampaignServiceClient {
       campaigns,
       possiblyStale: campaigns.length === 0,
       statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle),
-      demandGenEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceDemandGen),
+      demandGenEnabled: canCreateDemandGen(),
     };
   }
 
