@@ -3206,6 +3206,51 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
    * the control at all, and one that only read `demandGenEnabled()` would pass against a template
    * that ignores it entirely.
    */
+  /**
+   * The gate that actually keeps `demand-gen` off the wire.
+   *
+   * Hiding the checkbox is not sufficient on its own: `applyDraft` runs once at mount under
+   * `untracked`, so a tab that mounts while the capability is still `null` restores
+   * `includeDemandGen: true` onto the form. When the capability later resolves `false` the
+   * control disappears, but the FORM value remains true — and `submit` builds `campaignTypes`
+   * from the form, not from the input. Without this gate a create carrying `demand-gen` reaches
+   * a server that refuses it, and the user gets an error for a control they cannot see.
+   *
+   * Asserted on `canSubmit` rather than by driving `submit`, because reaching the builder needs
+   * a fully valid Google form (headlines, descriptions, budget) and that scaffolding would test
+   * the validators rather than this gate.
+   *
+   * The matching guard in the request builder (`campaignTypes.push('demand-gen')` in `submit`) is
+   * NOT independently pinned by this test, and deleting it alone leaves the suite green — this
+   * assertion catches it only because `canSubmit` returns false first. That is weaker evidence
+   * than a direct test, and it is recorded rather than glossed: the builder guard is defence in
+   * depth for a path `canSubmit` already closes, kept because `submit` reads the FORM while the
+   * control reads the INPUT, and those can disagree.
+   */
+  it('does not treat a hidden Demand Gen selection as a submittable Google campaign', () => {
+    fixture.componentRef.setInput('demandGenEnabled', false);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    // Exactly the state a draft restore leaves behind: Demand Gen ticked, Search not, and the
+    // control hidden. Search alone would be submittable; a hidden Demand Gen alone must not be.
+    c['campaignForm'].patchValue({
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://example.com',
+      startDate: '2026-09-01',
+      endDate: '2026-09-30',
+      includeSearch: false,
+      includeDemandGen: true,
+    });
+    fixture.detectChanges();
+
+    expect(c['canSubmit']()).toBe(false);
+  });
+
   it('hides the Demand Gen control when the deployment cannot create it', () => {
     fixture.componentRef.setInput('demandGenEnabled', false);
     fixture.detectChanges();
