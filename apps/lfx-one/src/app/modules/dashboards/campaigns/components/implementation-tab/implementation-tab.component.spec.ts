@@ -3220,12 +3220,11 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
    * a fully valid Google form (headlines, descriptions, budget) and that scaffolding would test
    * the validators rather than this gate.
    *
-   * The matching guard in the request builder (`campaignTypes.push('demand-gen')` in `submit`) is
-   * NOT independently pinned by this test, and deleting it alone leaves the suite green — this
-   * assertion catches it only because `canSubmit` returns false first. That is weaker evidence
-   * than a direct test, and it is recorded rather than glossed: the builder guard is defence in
-   * depth for a path `canSubmit` already closes, kept because `submit` reads the FORM while the
-   * control reads the INPUT, and those can disagree.
+   * The matching guard in the request builder is pinned separately, by `sends only search when a
+   * hidden Demand Gen selection accompanies Search` below — which reaches `submit()` with
+   * `canSubmit()` true and asserts the payload. That distinction matters: `canSubmit` only
+   * rejects Google with NEITHER type selected, so it does not cover Search plus a stale hidden
+   * Demand Gen, and the builder guard is the only thing keeping that off the wire.
    */
   it('does not treat a hidden Demand Gen selection as a submittable Google campaign', () => {
     fixture.componentRef.setInput('demandGenEnabled', false);
