@@ -2,17 +2,16 @@
 name: preflight
 description: >
   Mechanical pre-PR pipeline, license headers, format, lint, build, protected
-  file check, commit verification, and PR change summary. Run after the
-  post-commit reviewer trio has been drained and `/lfx-self-serve-pr-readiness`
-  has passed. Pattern/convention auditing is owned by the reviewer
-  trio (see `.claude/rules/skill-guidance.md` for canonical post-commit
-  reviewer-trio launch instructions), not by this skill.
+  file check, commit verification, and PR change summary. Run after
+  `CLAUDE.md`'s pre-PR review gate and `/lfx-self-serve-pr-readiness` have
+  completed. Review protocol and pattern/convention auditing are not owned by
+  this skill.
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
 ---
 
 # Pre-Submission Preflight Check
 
-You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. Convention and pattern audits live in `docs/reviews/frontend-checklist.md` (sections 1-14) and run via the post-commit reviewer trio (see `.claude/rules/skill-guidance.md` for canonical post-commit reviewer-trio launch instructions).
+You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. `CLAUDE.md`'s work cycle owns the review protocol and must be complete before this skill runs; this skill owns only the checks below.
 
 Run each check in order, report results clearly, and help fix any issues found.
 
