@@ -260,6 +260,47 @@ describe('ProjectController.getLensRedirect', () => {
   });
 });
 
+describe('ProjectController.getProjectCalendar', () => {
+  let controller: ProjectController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    meetingSvc.getMeetings.mockResolvedValue({ data: [], page_token: undefined });
+  });
+
+  function buildCalendarReqRes(id: string = PROJECT_UID) {
+    const req = { params: { id }, headers: {}, bearerToken: undefined, path: `/public/api/projects/${id}/calendar.ics` } as any;
+    const res = { send: vi.fn(), setHeader: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  it('includes X-WR-CALNAME when the project name resolves', async () => {
+    projectSvc.getProjectById.mockResolvedValue(buildProject({ name: 'CNCF' }));
+    const { req, res, next } = buildCalendarReqRes();
+
+    await controller.getProjectCalendar(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const ics = res.send.mock.calls[0][0] as string;
+    expect(ics).toContain('X-WR-CALNAME:CNCF');
+  });
+
+  it('falls back to an unnamed calendar (200, no X-WR-CALNAME) when the project name lookup fails', async () => {
+    projectSvc.getProjectById.mockRejectedValue(new Error('upstream 503'));
+    const { req, res, next } = buildCalendarReqRes();
+
+    await controller.getProjectCalendar(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const ics = res.send.mock.calls[0][0] as string;
+    expect(ics).not.toContain('X-WR-CALNAME');
+    expect(ics).toContain('BEGIN:VCALENDAR');
+  });
+});
+
 describe('ProjectController.getProjectMeetings', () => {
   let controller: ProjectController;
 
