@@ -10,6 +10,7 @@ import {
   PD_MAX_SEARCH_LENGTH,
   PD_VALID_METRICS,
   PD_VALID_TIME_RANGES,
+  UUID_REGEX,
 } from '@lfx-one/shared/constants';
 import type { OrgLensLeaderboardMetric, OrgLensLeaderboardTimeRange } from '@lfx-one/shared/interfaces';
 
@@ -219,12 +220,14 @@ export class OrgLensProjectDetailController {
     }
   }
 
-  // crowd.dev organization ids are UUIDs, which the shared path-param shape already covers.
+  // crowd.dev organization ids are UUIDs, so validate the actual shape rather than the looser
+  // path-param one: anything else can only miss in the warehouse, and a 400 says that far more
+  // usefully than the 404 a doomed lookup would return.
   private assertOrganizationId(organizationId: string | undefined, operation: string): asserts organizationId is string {
     if (!organizationId || typeof organizationId !== 'string') {
       throw ServiceValidationError.forField('organizationId', 'organizationId path parameter is required', { operation });
     }
-    if (!FOUNDATION_ID_PATTERN.test(organizationId)) {
+    if (!UUID_REGEX.test(organizationId)) {
       throw ServiceValidationError.forField('organizationId', 'Invalid organizationId format', { operation });
     }
   }
