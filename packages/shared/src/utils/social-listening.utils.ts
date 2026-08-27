@@ -290,16 +290,27 @@ export function buildTagsChartData(tags: SocialListeningTagCount[]): ChartData<'
   };
 }
 
-/** Top-N platform rows (default `ANALYTICS_TOP_PLATFORMS_LIMIT`) with display config pre-resolved. */
+/** Top-N platform rows (default `ANALYTICS_TOP_PLATFORMS_LIMIT`) grouped by normalized key — raw duplicates (`X`/`twitter`, unsupported → other) would duplicate the template's `track row.config.label` keys. */
 export function mapPlatformDistributionRows(
   rows: SocialListeningPlatformDistribution[],
   limit: number = ANALYTICS_TOP_PLATFORMS_LIMIT
 ): SocialListeningPlatformRow[] {
-  return rows.slice(0, limit).map((row) => ({
-    config: MENTION_PLATFORM_CONFIG[normalizePlatformKey(row.SOURCE_PLATFORM || row.SOCIAL_NETWORK)],
-    mentionsCount: row.MENTIONS_COUNT,
-    percentOfTotal: row.PERCENT_OF_TOTAL || 0,
-  }));
+  const byKey = new Map<MentionPlatform, SocialListeningPlatformRow>();
+  for (const row of rows) {
+    const key = normalizePlatformKey(row.SOURCE_PLATFORM || row.SOCIAL_NETWORK);
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.mentionsCount += row.MENTIONS_COUNT;
+      existing.percentOfTotal += row.PERCENT_OF_TOTAL || 0;
+    } else {
+      byKey.set(key, {
+        config: MENTION_PLATFORM_CONFIG[key],
+        mentionsCount: row.MENTIONS_COUNT,
+        percentOfTotal: row.PERCENT_OF_TOTAL || 0,
+      });
+    }
+  }
+  return [...byKey.values()].sort((a, b) => b.mentionsCount - a.mentionsCount).slice(0, limit);
 }
 
 /** Sentiment share rows in fixed positive → neutral → negative display order; unknown upstream values are dropped. */

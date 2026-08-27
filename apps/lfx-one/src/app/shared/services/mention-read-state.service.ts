@@ -109,7 +109,9 @@ export class MentionReadStateService {
     this.store.commit({
       next,
       // Re-derive at dequeue time: if an earlier queued commit failed and rolled back, the eager snapshot would resurrect it.
-      rebase: (current) => computeReadToggle(current, mentionId, mentionTimestamp, currentlyRead),
+      // Source the cutoff from `lastPersisted` so a queued bulk's unpersisted optimistic cutoff can't leak into this write (a failed mark-all would then survive rollback).
+      rebase: (current) =>
+        computeReadToggle({ ...current, readBeforeTs: this.lastPersisted?.readBeforeTs ?? current.readBeforeTs }, mentionId, mentionTimestamp, currentlyRead),
       // Targeted rollback: strip this toggle's list contribution, then re-apply the pre-toggle status (`currentlyRead`) when stripping alone doesn't restore it.
       // Never key off `next` — a no-net-change toggle (mark-unread on a non-cutoff-covered id) makes `next` the broken state.
       rollback: () => {
