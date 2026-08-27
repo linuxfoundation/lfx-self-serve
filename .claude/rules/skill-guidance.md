@@ -6,7 +6,7 @@ paths:
 
 # Available Skills & Reviewer Children
 
-This project has guided skills for common workflows, plus two repo-owned Self Serve review skills — `lfx-self-serve-code-review` and `lfx-self-serve-learnings-review`, under `.claude/skills/` — that the work cycle has generic background subagents load after every pre-PR commit. **Proactively suggest the relevant one** when a user's request matches.
+This project has guided skills for common workflows, plus two repo-owned Self Serve review skills — `lfx-self-serve-code-review` and `lfx-self-serve-learnings-review`, under `.claude/skills/` — that the work cycle has generic background subagents load after pre-PR commits except when the final-commit optimization substitutes the mandatory branch sweep. **Proactively suggest the relevant one** when a user's request matches.
 
 ## Skills
 
@@ -62,7 +62,7 @@ Append `extra: <focus>` on a new line only when there's a priority hint to add. 
 - "What would CodeRabbit flag?", "What would Copilot say?", "Post-commit review"
 - Any "is this ready" question where no PR number is given
 
-Launch the trio in parallel via the Agent tool — three generic background children (all `subagent_type: general-purpose`, `model: opus`, `run_in_background: true`), each loading exactly one of `lfx-skills:lfx-general-code-review`, `lfx-self-serve-code-review`, and `lfx-self-serve-learnings-review`, with the canonical pinned-range prompts from `CLAUDE.md`'s work cycle. The work-cycle gate requires all three after every commit **while the branch is pre-PR**, drained clean before any PR opens. Once a PR is open, the bots are the audit surface — do not launch the trio on iteration commits.
+Launch the trio in parallel via the Agent tool — three generic background children (all `subagent_type: general-purpose`, `model: opus`, `run_in_background: true`), each loading exactly one of `lfx-skills:lfx-general-code-review`, `lfx-self-serve-code-review`, and `lfx-self-serve-learnings-review`, with the canonical pinned-range prompts from `CLAUDE.md`'s work cycle. The work-cycle gate requires all three after every commit **while the branch is pre-PR**, except the final planned commit when moving directly into pre-PR, where the mandatory full-branch sweep substitutes; drain every required batch clean before any PR opens. Once a PR is open, the bots are the audit surface — do not launch the trio on iteration commits.
 
 **`/lfx-self-serve-pr-readiness`** — pre-PR, shape focus (run once, before opening the PR). Match any of these intents:
 
