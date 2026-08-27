@@ -267,7 +267,7 @@ describe('CampaignController.loadBrief', () => {
     // a UI that should never fire.
     expect(loadBrief).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ status: 'off', briefId: null, brief: null, approved: false });
+    expect(res.json).toHaveBeenCalledWith({ status: 'off', briefId: null, brief: null, etag: null, approved: false });
   });
 
   it('refuses to look up a brief without an event_slug query param', async () => {
