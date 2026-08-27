@@ -36,7 +36,7 @@ import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -469,9 +469,44 @@ export class MeetingController {
         return;
       }
 
-      // Step 1: Get the meeting with access check to determine organizer status
-      logger.debug(req, 'get_my_meeting_registrants', 'Fetching meeting details with access check', { meeting_id: uid });
-      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: true });
+      // Step 1: Resolve the caller's identity up front. The registrant gate check below accepts
+      // email OR username (getMeetingRegistrantsForUser) — a registrant added under a username
+      // with a different email now passes, widening the gate slightly from the previous
+      // email-only check (getMeetingRegistrantsByEmail).
+      const userEmail = getEffectiveEmail(req) ?? undefined;
+      const username = (await getUsernameFromAuth(req)) ?? undefined;
+
+      logger.debug(req, 'get_my_meeting_registrants', 'Checking user authentication', {
+        meeting_id: uid,
+        has_email: !!userEmail,
+        has_username: !!username,
+        user_email: userEmail,
+      });
+
+      if (!userEmail && !username) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
+          meeting_id: uid,
+          no_email: true,
+          registrant_count: 0,
+        });
+        res.json([]);
+        return;
+      }
+
+      // Step 2: Fetch the meeting and run the registrant gate check in parallel — the gate check
+      // depends only on uid + caller identity, not on the meeting payload, so it needn't wait for
+      // the meeting fetch. The gate check runs under an M2M token (captured via `m2mToken`, not by
+      // mutating req.bearerToken) so it isn't gated by the caller's own FGA relations.
+      logger.debug(req, 'get_my_meeting_registrants', 'Fetching meeting and registrant gate check in parallel', { meeting_id: uid });
+      let m2mToken = '';
+      const [meeting, userRegistrantCheck] = await Promise.all([
+        this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: true }),
+        generateM2MToken(req).then((token) => {
+          m2mToken = token;
+          return this.meetingService.getMeetingRegistrantsForUser(req, uid, userEmail, username, token);
+        }),
+      ]);
+
       if (!meeting) {
         logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,
@@ -482,106 +517,53 @@ export class MeetingController {
         return;
       }
 
-      // TODO: Reimplement show_meeting_attendees check
-      // // All ITX meetings are treated as having show_meeting_attendees enabled
-      // const showMeetingAttendees = meeting.show_meeting_attendees ?? false;
-
-      // logger.debug(req, 'get_my_meeting_registrants', 'Meeting found, checking show_meeting_attendees', {
-      //   meeting_id: uid,
-      //   show_meeting_attendees: showMeetingAttendees,
-      // });
-
-      // // Step 2-4: Check if show_meeting_attendees is enabled
-      // if (!showMeetingAttendees) {
-      //   logger.success(req, 'get_my_meeting_registrants', startTime, {
-      //     meeting_id: uid,
-      //     show_meeting_attendees: false,
-      //     registrant_count: 0,
-      //   });
-      //   res.json([]);
-      //   return;
-      // }
-
-      // Step 5: Check if current user is a registrant (access control)
-      const userEmail = getEffectiveEmail(req) ?? undefined;
-
-      logger.debug(req, 'get_my_meeting_registrants', 'Checking user authentication', {
-        meeting_id: uid,
-        has_email: !!userEmail,
-        user_email: userEmail,
-      });
-
-      if (!userEmail) {
-        logger.success(req, 'get_my_meeting_registrants', startTime, {
-          meeting_id: uid,
-          no_email: true,
-          registrant_count: 0,
-        });
-        res.json([]);
-        return;
-      }
-
-      // Save original token and setup M2M token for privileged access
-      const originalToken = req.bearerToken;
-      const m2mToken = await generateM2MToken(req);
-      req.bearerToken = m2mToken;
-
-      // Use tags_all to filter by both meeting_id and email
-      logger.debug(req, 'get_my_meeting_registrants', 'Checking if user is a registrant', {
-        meeting_id: uid,
-        user_email: userEmail,
-      });
-      const userRegistrantCheck = await this.meetingService.getMeetingRegistrantsByEmail(req, uid, userEmail);
-
       logger.debug(req, 'get_my_meeting_registrants', 'User registrant check complete', {
         meeting_id: uid,
         user_email: userEmail,
         registrant_count: userRegistrantCheck.length,
       });
 
-      // Step 6: If user is not a registrant, check if they are an organizer
-      if (userRegistrantCheck.length === 0) {
-        if (!meeting.organizer) {
-          logger.success(req, 'get_my_meeting_registrants', startTime, {
-            meeting_id: uid,
-            user_email: userEmail,
-            is_registrant: false,
-            is_organizer: false,
-            registrant_count: 0,
-          });
-          res.json([]);
-          return;
-        }
-
-        logger.debug(req, 'get_my_meeting_registrants', 'User is not a registrant but is an organizer, granting access', {
+      // Step 3: If user is not a registrant, check if they are an organizer
+      if (userRegistrantCheck.length === 0 && !meeting.organizer) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,
           user_email: userEmail,
+          is_registrant: false,
+          is_organizer: false,
+          registrant_count: 0,
         });
+        res.json([]);
+        return;
       }
 
-      // Step 7: User is a registrant or organizer, fetch all registrants using M2M token
+      // Step 4: User is a registrant or organizer, fetch all registrants using the M2M token —
+      // passed via ApiRequestOptions.bearerToken (not a req.bearerToken mutation) so it can't race
+      // against the caller's own token on a shared req.
       logger.debug(req, 'get_my_meeting_registrants', 'Fetching registrants with M2M token', {
         meeting_id: uid,
         user_email: userEmail,
         include_rsvp: includeRsvp,
-      });
-
-      logger.debug(req, 'get_my_meeting_registrants', 'M2M token generated, fetching all registrants', {
-        meeting_id: uid,
         has_m2m_token: !!m2mToken,
       });
 
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId);
+      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, false, undefined, {
+        bearerToken: m2mToken,
+      });
 
       logger.debug(req, 'get_my_meeting_registrants', 'Fetched all registrants, enriching committee data', {
         meeting_id: uid,
         registrant_count: registrants.length,
       });
 
-      // Enrich committee registrant data with committee details and member info
+      // Enrich committee registrant data with committee details and member info. Kept on a
+      // narrowly-scoped req.bearerToken swap rather than threaded ApiRequestOptions: this call is
+      // sequential (nothing else is in flight on this req), so it carries none of the identity-race
+      // hazard the parallel fan-out above did. Fully re-plumbing CommitteeService's bearerToken
+      // would also need to exclude addAccessToResource/getCallerMembership, which must stay on the
+      // caller's own token — tracked separately in #1903.
+      const originalToken = req.bearerToken;
+      req.bearerToken = m2mToken;
       const enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants);
-
-      // Restore original token (delete if it was undefined to avoid leaving M2M token)
       if (originalToken !== undefined) {
         req.bearerToken = originalToken;
       } else {
