@@ -779,7 +779,8 @@ export class ImplementationTabComponent implements OnInit {
     const sharedFieldsValid = !!form.eventName.value?.trim() && !!form.registrationUrl.value?.trim() && !!form.startDate.value && !!form.endDate.value;
     if (!sharedFieldsValid) return false;
 
-    if (googleSelected && !this.campaignForm.controls.includeSearch.value && !(this.demandGenAvailable() && this.campaignForm.controls.includeDemandGen.value)) return false;
+    if (googleSelected && !this.campaignForm.controls.includeSearch.value && !(this.demandGenAvailable() && this.campaignForm.controls.includeDemandGen.value))
+      return false;
     if (googleSelected && this.campaignForm.invalid) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
