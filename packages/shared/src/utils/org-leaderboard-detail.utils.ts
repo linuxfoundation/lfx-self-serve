@@ -1,6 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import {
+  ORG_LEADERBOARD_DETAIL_UNCOUNTED_CATEGORY_TOOLTIPS,
+  ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIP_FALLBACK,
+  ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIPS,
+} from '../constants/org-leaderboard-detail-drawer.constants';
 import type {
   OrgLeaderboardDetailBreakdown,
   OrgLeaderboardDetailCategory,
@@ -40,6 +45,7 @@ export function orgLeaderboardDetailCategoryRows(
         projectTotal: null,
         notTrackedForProject: false,
         withheld: true,
+        tooltip: withheldTooltipFor(category.key),
       });
       continue;
     }
@@ -57,9 +63,22 @@ export function orgLeaderboardDetailCategoryRows(
       projectTotal: figure?.projectTotal ?? null,
       notTrackedForProject: figure?.projectAllTimeTotal === 0,
       withheld: false,
+      tooltip: uncountedTooltipFor(category.key),
     });
   }
 
   visible.sort((a, b) => b.points - a.points);
   return [...visible, ...hidden];
+}
+
+// Own-property guarded so an upstream key like `constructor` resolves to the fallback rather than to
+// an inherited Object.prototype member.
+function withheldTooltipFor(key: string): string {
+  return Object.hasOwn(ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIPS, key)
+    ? ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIPS[key]
+    : ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIP_FALLBACK;
+}
+
+function uncountedTooltipFor(key: string): string | null {
+  return Object.hasOwn(ORG_LEADERBOARD_DETAIL_UNCOUNTED_CATEGORY_TOOLTIPS, key) ? ORG_LEADERBOARD_DETAIL_UNCOUNTED_CATEGORY_TOOLTIPS[key] : null;
 }

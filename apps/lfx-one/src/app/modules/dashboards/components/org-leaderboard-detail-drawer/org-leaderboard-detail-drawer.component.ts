@@ -8,9 +8,6 @@ import {
   ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES,
   ORG_LEADERBOARD_DETAIL_METHODOLOGY,
   ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES,
-  ORG_LEADERBOARD_DETAIL_UNCOUNTED_CATEGORY_TOOLTIPS,
-  ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIP_FALLBACK,
-  ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIPS,
 } from '@lfx-one/shared/constants';
 import type {
   BlockState,
@@ -75,16 +72,6 @@ export class OrgLeaderboardDetailDrawerComponent {
   protected readonly categoryRows: Signal<OrgLeaderboardDetailCategoryRow[]> = this.initCategoryRows();
 
   // === Protected methods ===
-  /** Tooltip copy naming the non-public data source behind a withheld row's absent figures. */
-  protected withheldTooltipFor(key: string): string {
-    return ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIPS[key] ?? ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIP_FALLBACK;
-  }
-
-  /** Tooltip copy explaining why a category has points but no activity count behind it. */
-  protected uncountedTooltipFor(key: string): string | null {
-    return ORG_LEADERBOARD_DETAIL_UNCOUNTED_CATEGORY_TOOLTIPS[key] ?? null;
-  }
-
   protected onClose(): void {
     this.visible.set(false);
   }

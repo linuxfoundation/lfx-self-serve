@@ -1038,9 +1038,7 @@ export class OrgLensProjectDetailService {
 
   /** Warehouse columns backing one drawer category, per dimension, in the drawer's display order. */
   private categorySources(dimension: 'technical' | 'ecosystem'): readonly CategorySource[] {
-    return dimension === 'technical'
-      ? OrgLensProjectDetailService.technicalCategorySources
-      : OrgLensProjectDetailService.ecosystemCategorySources;
+    return dimension === 'technical' ? OrgLensProjectDetailService.technicalCategorySources : OrgLensProjectDetailService.ecosystemCategorySources;
   }
 
   private categoryColumns(source: CategorySource): string[] {

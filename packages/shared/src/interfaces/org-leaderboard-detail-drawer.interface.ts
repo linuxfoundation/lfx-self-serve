@@ -94,4 +94,6 @@ export interface OrgLeaderboardDetailCategoryRow {
   notTrackedForProject: boolean;
   /** True when the server withheld this category's figures, so only its name is rendered. */
   withheld: boolean;
+  /** Info-icon copy for this row — why its figures are withheld, or why it has points but no count. Null when the row needs no explanation. */
+  tooltip: string | null;
 }

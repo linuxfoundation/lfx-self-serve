@@ -17,10 +17,9 @@ import { OrgProjectDetailComponent } from './org-project-detail.component';
 
 /**
  * Covers the leaderboard row score-breakdown drawer's reactive close (GH-1798 Copilot finding):
- * `openLeaderboardDetail` only guards on `leaderboardDetailFeatureEnabled()` while opening, so a
- * LaunchDarkly config change that flips the flag off while the drawer is already open would
- * otherwise leave gated demo data on screen. The constructor's `toObservable` subscription in
- * org-project-detail.component.ts is what closes it.
+ * `openLeaderboardDetail` checks the flag only while opening, so a LaunchDarkly config change that
+ * flips the flag off while the drawer is already open would otherwise leave gated data on screen.
+ * The constructor's `toObservable` subscription in org-project-detail.component.ts is what closes it.
  */
 describe('OrgProjectDetailComponent — leaderboard detail drawer flag gating', () => {
   let fixture: ComponentFixture<OrgProjectDetailComponent>;
@@ -38,6 +37,7 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer flag gating', 
     bandLabel: '',
     bandSeverity: 'secondary',
     isViewingOrg: false,
+    organizationId: 'crowd-org-1',
     ...overrides,
   });
 
@@ -58,6 +58,8 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer flag gating', 
             getTrendBlock: vi.fn(() => of(null)),
             getTechnicalBoard: vi.fn(() => of({ rows: [], total: 0 })),
             getEcosystemBoard: vi.fn(() => of({ rows: [], total: 0 })),
+            // The drawer this suite opens injects the same service and fetches on becoming visible.
+            getLeaderboardBreakdown: vi.fn(() => of(null)),
           },
         },
         {

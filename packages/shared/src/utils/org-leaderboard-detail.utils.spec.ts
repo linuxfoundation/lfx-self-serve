@@ -7,6 +7,7 @@ import {
   ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES,
   ORG_LEADERBOARD_DETAIL_SCORED_COMPONENT_COUNTS,
   ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES,
+  ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIP_FALLBACK,
 } from '../constants/org-leaderboard-detail-drawer.constants';
 import type { OrgLeaderboardDetailBreakdown, OrgLeaderboardDetailCategoryFigure } from '../interfaces/org-leaderboard-detail-drawer.interface';
 import { orgLeaderboardDetailCategoryRows } from './org-leaderboard-detail.utils';
@@ -81,6 +82,11 @@ describe('orgLeaderboardDetailCategoryRows', () => {
   it('keeps withheld rows in their declared order instead of ranking them, which would leak their sizes', () => {
     const rows = orgLeaderboardDetailCategoryRows(categories, breakdown([{ key: 'a', points: 100, count: 1 }], 107, ['b', 'c']));
     expect(rows.map((row) => row.key)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('resolves a withheld row to the fallback explanation rather than an inherited Object member', () => {
+    const rows = orgLeaderboardDetailCategoryRows([{ key: 'constructor', name: 'Constructor' }], breakdown([], 0, ['constructor']));
+    expect(rows[0].tooltip).toBe(ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIP_FALLBACK);
   });
 
   it('flags a category the project never runs, so it renders differently from a zero count', () => {

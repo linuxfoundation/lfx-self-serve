@@ -47,7 +47,13 @@
     }
     @case ('ready') {
       <div class="flex flex-col gap-6 pb-2" data-testid="org-leaderboard-detail-content">
-        <!-- Summary sentence -->
+        <!--
+          Summary sentence. Formatting is pinned: the clauses are optional, so each `@if` sits inside
+          the sentence, and prettier would move the closing brace onto its own line. That turns the
+          following `. This yields` into a text node with a leading space, which Angular collapses to
+          "activities . This yields" rather than dropping. Keep the punctuation glued to the brace.
+        -->
+        <!-- prettier-ignore -->
         <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-relaxed text-gray-800" data-testid="org-leaderboard-detail-summary">
           <span class="font-semibold">{{ orgName() }}</span> has a
           <span class="font-semibold" [class]="levelTextClass()">{{ breakdown()?.level }}</span>
@@ -86,12 +92,12 @@
                       <span>({{ row.count | number }} of {{ row.projectTotal | number }})</span>
                     } @else if (row.count !== null) {
                       <span>({{ row.count | number }})</span>
-                    } @else if (uncountedTooltipFor(row.key)) {
+                    } @else if (row.tooltip) {
                       <i
                         class="fa-light fa-circle-info cursor-help text-xs text-gray-400"
-                        [pTooltip]="uncountedTooltipFor(row.key) ?? ''"
+                        [pTooltip]="row.tooltip"
                         tooltipPosition="right"
-                        [attr.aria-label]="uncountedTooltipFor(row.key)"
+                        [attr.aria-label]="row.tooltip"
                         tabindex="0"
                         data-testid="org-leaderboard-detail-category-uncounted-info"></i>
                     }
@@ -106,9 +112,9 @@
                       <span>pts</span>
                       <i
                         class="fa-light fa-circle-info cursor-help text-xs text-gray-400"
-                        [pTooltip]="withheldTooltipFor(row.key)"
+                        [pTooltip]="row.tooltip ?? ''"
                         tooltipPosition="left"
-                        [attr.aria-label]="withheldTooltipFor(row.key)"
+                        [attr.aria-label]="row.tooltip"
                         tabindex="0"
                         data-testid="org-leaderboard-detail-category-withheld-info"></i>
                     </span>
