@@ -216,7 +216,6 @@ interface CategorySource {
   projectTotal?: string;
   /** Lifetime project-wide total, which distinguishes "the project never runs this" from "nobody from this organization took part". */
   allTimeTotal?: string;
-  share?: string;
 }
 
 /**
@@ -276,10 +275,9 @@ export class OrgLensProjectDetailService {
       points: 'CONTRIBUTORS_POINTS',
       count: 'CONTRIBUTORS_COUNT',
       projectTotal: 'CONTRIBUTORS_PROJECT_TOTAL',
-      share: 'CONTRIBUTORS_SHARE_PCT',
     },
-    { key: 'commits', points: 'COMMITS_POINTS', count: 'COMMITS_COUNT', projectTotal: 'COMMITS_PROJECT_TOTAL', share: 'COMMITS_SHARE_PCT' },
-    { key: 'prs', points: 'PRS_OPENED_POINTS', count: 'PRS_OPENED_COUNT', projectTotal: 'PRS_OPENED_PROJECT_TOTAL', share: 'PRS_OPENED_SHARE_PCT' },
+    { key: 'commits', points: 'COMMITS_POINTS', count: 'COMMITS_COUNT', projectTotal: 'COMMITS_PROJECT_TOTAL' },
+    { key: 'prs', points: 'PRS_OPENED_POINTS', count: 'PRS_OPENED_COUNT', projectTotal: 'PRS_OPENED_PROJECT_TOTAL' },
   ];
 
   private static readonly ecosystemCategorySources: readonly CategorySource[] = [
@@ -289,7 +287,6 @@ export class OrgLensProjectDetailService {
       count: 'COLLABORATION_ACTIVITY_COUNT',
       projectTotal: 'COLLABORATION_ACTIVITY_PROJECT_TOTAL',
       allTimeTotal: 'COLLABORATION_ACTIVITY_ALL_TIME_TOTAL',
-      share: 'COLLABORATION_ACTIVITY_SHARE_PCT',
     },
     {
       key: 'meeting',
@@ -297,7 +294,6 @@ export class OrgLensProjectDetailService {
       count: 'MEETING_ATTENDANCE_COUNT',
       projectTotal: 'MEETING_ATTENDANCE_PROJECT_TOTAL',
       allTimeTotal: 'MEETING_ATTENDANCE_ALL_TIME_TOTAL',
-      share: 'MEETING_ATTENDANCE_SHARE_PCT',
     },
     // The seven categories below read *_FOUNDATION_TOTAL rather than *_PROJECT_TOTAL: the warehouse
     // rolls them up per foundation, so on a child project's page the denominator covers the whole
@@ -309,7 +305,6 @@ export class OrgLensProjectDetailService {
       count: 'EVENT_ATTENDANCE_COUNT',
       projectTotal: 'EVENT_ATTENDANCE_FOUNDATION_TOTAL',
       allTimeTotal: 'EVENT_ATTENDANCE_FOUNDATION_ALL_TIME_TOTAL',
-      share: 'EVENT_ATTENDANCE_SHARE_PCT',
     },
     {
       key: 'committee',
@@ -317,7 +312,6 @@ export class OrgLensProjectDetailService {
       count: 'COMMITTEE_MEMBERS_COUNT',
       projectTotal: 'COMMITTEE_MEMBERS_FOUNDATION_TOTAL',
       allTimeTotal: 'COMMITTEE_MEMBERS_FOUNDATION_ALL_TIME_TOTAL',
-      share: 'COMMITTEE_MEMBERS_SHARE_PCT',
     },
     {
       key: 'board',
@@ -332,7 +326,6 @@ export class OrgLensProjectDetailService {
       count: 'EVENT_SPEAKERS_COUNT',
       projectTotal: 'EVENT_SPEAKERS_FOUNDATION_TOTAL',
       allTimeTotal: 'EVENT_SPEAKERS_FOUNDATION_ALL_TIME_TOTAL',
-      share: 'EVENT_SPEAKERS_SHARE_PCT',
     },
     {
       key: 'meetup',
@@ -340,7 +333,6 @@ export class OrgLensProjectDetailService {
       count: 'MEETUP_ATTENDANCE_COUNT',
       projectTotal: 'MEETUP_ATTENDANCE_FOUNDATION_TOTAL',
       allTimeTotal: 'MEETUP_ATTENDANCE_FOUNDATION_ALL_TIME_TOTAL',
-      share: 'MEETUP_ATTENDANCE_SHARE_PCT',
     },
     {
       key: 'sponsor',
@@ -348,7 +340,6 @@ export class OrgLensProjectDetailService {
       count: 'SPONSORSHIP_EVENTS_COUNT',
       projectTotal: 'SPONSORSHIP_EVENTS_FOUNDATION_TOTAL',
       allTimeTotal: 'SPONSORSHIP_EVENTS_FOUNDATION_ALL_TIME_TOTAL',
-      share: 'SPONSORSHIP_EVENTS_SHARE_PCT',
     },
     {
       key: 'certified',
@@ -356,7 +347,6 @@ export class OrgLensProjectDetailService {
       count: 'CERTIFIED_INDIVIDUALS_COUNT',
       projectTotal: 'CERTIFIED_INDIVIDUALS_FOUNDATION_TOTAL',
       allTimeTotal: 'CERTIFIED_INDIVIDUALS_FOUNDATION_ALL_TIME_TOTAL',
-      share: 'CERTIFIED_INDIVIDUALS_SHARE_PCT',
     },
     { key: 'tier', points: 'MEMBERSHIP_TIER_POINTS' },
   ];
@@ -770,7 +760,10 @@ export class OrgLensProjectDetailService {
       organizationName: row.ORGANIZATION_NAME ?? '',
       dimension,
       range,
-      totalScore: this.round1(this.num(dimension === 'technical' ? row.TECHNICAL_INFLUENCE_SCORE : row.ECOSYSTEM_INFLUENCE_SCORE)),
+      // Two decimals so the drawer's category points sum to the total it prints. The board rounds the
+      // same score to one decimal; the drawer is the surface that has to reconcile, so it carries the
+      // finer precision.
+      totalScore: this.round2(this.num(dimension === 'technical' ? row.TECHNICAL_INFLUENCE_SCORE : row.ECOSYSTEM_INFLUENCE_SCORE)),
       level: this.mapDetailLevel(dimension === 'technical' ? row.TECHNICAL_INFLUENCE_LEVEL : row.ECOSYSTEM_INFLUENCE_LEVEL),
       isOwnOrganization,
       rank: position.rank,
@@ -1052,23 +1045,22 @@ export class OrgLensProjectDetailService {
   }
 
   private categoryColumns(source: CategorySource): string[] {
-    return [source.points, source.count, source.projectTotal, source.allTimeTotal, source.share].filter((column): column is string => !!column);
+    return [source.points, source.count, source.projectTotal, source.allTimeTotal].filter((column): column is string => !!column);
   }
 
   private mapCategoryFigure(source: CategorySource, row: BreakdownRow): OrgLeaderboardDetailCategoryFigure {
     const count = source.count ? this.numOrNull(this.column(row, source.count)) : null;
     const projectTotal = source.projectTotal ? this.numOrNull(this.column(row, source.projectTotal)) : null;
     const allTimeTotal = source.allTimeTotal ? this.numOrNull(this.column(row, source.allTimeTotal)) : null;
-    // A null share upstream means the project's lifetime total for the activity is zero — it does not
-    // run this activity at all. That is carried as an absent share, not as 0%.
-    const share = source.share ? this.numOrNull(this.column(row, source.share)) : null;
     return {
       key: source.key,
-      points: this.round1(this.num(this.column(row, source.points))),
+      // Two decimals, matching `totalScore`: the ecosystem methodology awards 0.33 and 0.66, so
+      // rounding each category to one decimal leaves the drawer's "Total score" row visibly short of
+      // its own column of points.
+      points: this.round2(this.num(this.column(row, source.points))),
       ...(count === null ? {} : { count: Math.round(count) }),
       ...(projectTotal === null ? {} : { projectTotal: Math.round(projectTotal) }),
       ...(allTimeTotal === null ? {} : { projectAllTimeTotal: Math.round(allTimeTotal) }),
-      ...(share === null ? {} : { sharePercent: this.round1(share) }),
     };
   }
 
@@ -2121,6 +2113,10 @@ export class OrgLensProjectDetailService {
 
   private round1(value: number): number {
     return Math.round(value * 10) / 10;
+  }
+
+  private round2(value: number): number {
+    return Math.round(value * 100) / 100;
   }
 
   private trendSeriesKey(accountId: string | null): string {

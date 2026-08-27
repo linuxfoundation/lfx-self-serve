@@ -28,8 +28,6 @@ export interface OrgLeaderboardDetailCategoryFigure {
    * did not participate in one that it does run.
    */
   projectAllTimeTotal?: number;
-  /** The organization's share of `projectTotal`, as a percentage. Absent for the binary awards. */
-  sharePercent?: number;
 }
 
 /**
