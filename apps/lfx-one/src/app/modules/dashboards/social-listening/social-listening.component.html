@@ -59,7 +59,7 @@
           <ng-container data-views-dropdown>
             <div class="fixed inset-0 z-10" aria-hidden="true" data-testid="social-listening-views-backdrop" (click)="viewsOpen.set(false)"></div>
             <lfx-views-dropdown
-              class="absolute right-0 top-full z-20 mt-1"
+              class="absolute right-0 top-full z-20 mt-1 max-sm:right-auto max-sm:left-0"
               [savedViews]="savedFilters()"
               [activeViewId]="activeViewId()"
               [canSaveCurrentView]="canSaveCurrentView()"
@@ -112,7 +112,7 @@
 
     <div class="flex flex-col gap-4">
       <!-- Active-filter summary on BOTH tabs: analytics applies the feed predicate too (M1), so the pills are the only on-tab indication. Click a pill to remove that filter -->
-      @if (activeFilterPills().length > 0) {
+      @if (activeFilterPills().length) {
         <div class="flex flex-wrap items-center gap-2" aria-label="Active filters" data-testid="social-listening-filter-pills">
           <lfx-filter-pills [options]="activeFilterPills()" selectedFilter="" (filterChange)="removeFilterPill($event)" />
           <button

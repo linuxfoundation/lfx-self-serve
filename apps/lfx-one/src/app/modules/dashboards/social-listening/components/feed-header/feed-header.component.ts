@@ -8,6 +8,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { buildMarketingImpactPeriodOptions } from '@lfx-one/shared/utils';
+import { VIEWS_DROPDOWN_NAME_TOOLTIP_THRESHOLD } from '@lfx-one/shared/constants';
+import { TooltipModule } from 'primeng/tooltip';
 
 import type { MarketingImpactPeriodOption, SocialListeningOption, SocialListeningTab } from '@lfx-one/shared/interfaces';
 
@@ -17,7 +19,7 @@ import type { MarketingImpactPeriodOption, SocialListeningOption, SocialListenin
  */
 @Component({
   selector: 'lfx-feed-header',
-  imports: [ReactiveFormsModule, ButtonComponent, SelectComponent, InputTextComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, SelectComponent, InputTextComponent, TooltipModule],
   templateUrl: './feed-header.component.html',
   styleUrl: './feed-header.component.scss',
 })
@@ -45,6 +47,7 @@ export class FeedHeaderComponent {
   public readonly activeViewName = input<string | null>(null);
 
   protected readonly viewsLabel = computed(() => this.activeViewName() ?? 'No Preset View');
+  protected readonly showViewTooltip = computed(() => this.viewsLabel().length > VIEWS_DROPDOWN_NAME_TOOLTIP_THRESHOLD);
 
   // === Analytics export (LFXV2-3018) — button renders on the Analytics tab only ===
   public readonly exporting = input(false);

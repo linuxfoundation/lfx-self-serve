@@ -19,7 +19,7 @@
 }
 
 // Sticky at the header's height so the scope selects, search, and Filters trigger stay reachable while
-// the feed scrolls. `position: sticky` also anchors the absolutely positioned filters/views panels.
+// the feed scrolls. `position: sticky` also anchors the absolutely positioned filters panel.
 // The fade sits at the bottom of the pinned stack so the feed dissolves as it scrolls underneath.
 .social-listening-filter-row {
   @apply sticky bg-gray-50;
