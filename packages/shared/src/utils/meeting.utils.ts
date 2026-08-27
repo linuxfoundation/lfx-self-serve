@@ -1404,3 +1404,26 @@ export function fromMeetingApiVotingStatuses(statuses: ReadonlyArray<string | nu
 export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string | null | undefined> | null | undefined): MeetingAllowedVotingStatus[] {
   return toMeetingApiVotingStatuses(fromMeetingApiVotingStatuses(statuses));
 }
+
+/**
+ * Reconciles an optimistic "additional registrants" pad against a freshly-refetched roster.
+ *
+ * The join page bumps `pad` immediately when a guest is added (before query-service indexing has
+ * caught up) and snapshots the pre-add roster length as `before`. Once the roster refetch lands,
+ * only the rows it has actually absorbed (`current - before`) should come off the pad — clearing
+ * the whole pad whenever *any* growth is observed double-counts rows the refetch hasn't indexed
+ * yet (GH-1731). `before` is rebased to `current` so a still-pending remainder converges on the
+ * next refetch instead of comparing against a stale snapshot.
+ */
+export function reconcileOptimisticPad(state: { pad: number; before: number | null; current: number }): {
+  pad: number;
+  before: number | null;
+} {
+  if (state.before === null) {
+    return { pad: state.pad, before: null };
+  }
+
+  const absorbed = Math.max(0, state.current - state.before);
+  const pad = Math.max(0, state.pad - absorbed);
+  return { pad, before: pad === 0 ? null : state.current };
+}

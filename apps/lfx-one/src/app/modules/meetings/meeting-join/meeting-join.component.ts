@@ -55,7 +55,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { getUserTimezone, isHostKeyVisible, isPastMeetingCompositeId } from '@lfx-one/shared/utils';
+import { getUserTimezone, isHostKeyVisible, isPastMeetingCompositeId, reconcileOptimisticPad } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -255,7 +255,10 @@ export class MeetingJoinComponent implements OnInit {
   // Registrant list, fetched only when the user is the meeting organizer or invited.
   // Pre-loaded with the meeting so the Show Members drawer renders instantly from cache.
   protected registrants: Signal<MeetingRegistrant[]>;
-  protected registrantsLoading: WritableSignal<boolean> = signal(false);
+  // Starts true so the RSVP card (which now derives its own `loading` from this signal) shows a
+  // skeleton on first paint instead of a premature "0 of 0" — cleared once the initial fetch
+  // resolves, including the early-return branches that never issue a request (GH-1731).
+  protected registrantsLoading: WritableSignal<boolean> = signal(true);
   // Re-fires the registrants fetch (e.g. after a guest is added from the drawer).
   private registrantsRefresh$ = new BehaviorSubject<void>(undefined);
   // Snapshot of the roster size immediately before a refresh was requested — lets the refetch
@@ -1384,19 +1387,24 @@ export class MeetingJoinComponent implements OnInit {
       ]).pipe(
         switchMap(([meeting, occurrence, authenticated, , optimisticInvited]) => {
           if (!meeting?.id || !authenticated || !(meeting.organizer || meeting.invited || optimisticInvited) || this.isPastMeeting()) {
+            // No fetch will happen on this branch (unauthenticated, not organizer/invited, or a
+            // past meeting) — clear the loading flag so the RSVP card doesn't hang on a skeleton.
+            this.registrantsLoading.set(false);
             return of([] as MeetingRegistrant[]);
           }
           this.registrantsLoading.set(true);
-          const before = this.rosterCountBeforeAdd();
           const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
           return this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId).pipe(
             tap((list) => {
-              // Once the refetch lands with the newly-added rows, drop the optimistic pad so it
-              // doesn't double-count on top of the now-current roster length.
-              if (before !== null && list.length - before >= this.optimisticAdditional()) {
-                this.optimisticAdditional.set(0);
-                this.rosterCountBeforeAdd.set(null);
-              }
+              // Only the rows the refetch has actually absorbed come off the pad — a partial
+              // catch-up must not zero out rows the query-service index hasn't reflected yet.
+              const next = reconcileOptimisticPad({
+                pad: this.optimisticAdditional(),
+                before: this.rosterCountBeforeAdd(),
+                current: list.length,
+              });
+              this.optimisticAdditional.set(next.pad);
+              this.rosterCountBeforeAdd.set(next.before);
             }),
             finalize(() => this.registrantsLoading.set(false))
           );
