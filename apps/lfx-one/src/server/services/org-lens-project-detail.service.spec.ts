@@ -1,6 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import {
+  ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES,
+  ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES,
+  ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_KEYS,
+} from '@lfx-one/shared/constants';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
@@ -246,5 +251,89 @@ describe('OrgLensProjectDetailService.getHeroBlock health mapping', () => {
     const block = await service.getHeroBlock(ORG, SLUG);
 
     expect(block?.hero.health).toBeNull();
+  });
+});
+
+describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
+  const service = new OrgLensProjectDetailService();
+  const SUBJECT = 'crowd-org-1';
+
+  const breakdownRow = {
+    ACCOUNT_ID: ORG,
+    ORGANIZATION_NAME: 'Red Hat',
+    TECHNICAL_INFLUENCE_SCORE: 42,
+    TECHNICAL_INFLUENCE_LEVEL: 'Leading',
+    ECOSYSTEM_INFLUENCE_SCORE: 17,
+    ECOSYSTEM_INFLUENCE_LEVEL: 'Participating',
+  };
+
+  function mockWarehouse(overrides: { hero?: unknown; breakdown?: unknown } = {}): void {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('LEADERBOARD_BREAKDOWN')) {
+        return { rows: 'breakdown' in overrides && overrides.breakdown === null ? [] : [overrides.breakdown ?? breakdownRow] };
+      }
+      if (sql.includes('PROJECT_NAME')) {
+        return { rows: 'hero' in overrides && overrides.hero === null ? [] : [overrides.hero ?? heroRow] };
+      }
+      return { rows: [] };
+    });
+  }
+
+  function keysOf(categories: readonly { key: string }[]): string[] {
+    return categories.map((category) => category.key);
+  }
+
+  beforeEach(() => {
+    execute.mockReset();
+  });
+
+  // The drawer renders the shared category lists while the server projects its own column map, so a
+  // key renamed on one side would otherwise surface as a silently missing row rather than a failure.
+  it.each([
+    ['technical', ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES],
+    ['ecosystem', ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES],
+  ] as const)('emits exactly the shared %s category keys, in the shared order', async (dimension, categories) => {
+    mockWarehouse();
+
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y');
+
+    expect(keysOf(breakdown!.categories)).toEqual(keysOf(categories));
+    expect(breakdown!.withheldCategories).toEqual([]);
+  });
+
+  it('omits the privately-sourced ecosystem categories for a caller outside the subject organization', async () => {
+    mockWarehouse({ breakdown: { ...breakdownRow, ACCOUNT_ID: 'a-different-account' } });
+
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', SUBJECT, '1y');
+
+    // Reported in the withheld list's own order, which is what the drawer's name-only rows key off.
+    const ecosystemKeys = keysOf(ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES);
+    const withheld = ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_KEYS.filter((key) => ecosystemKeys.includes(key));
+    expect(breakdown!.withheldCategories).toEqual(withheld);
+    expect(keysOf(breakdown!.categories)).toEqual(ecosystemKeys.filter((key) => !withheld.includes(key)));
+  });
+
+  it('withholds nothing on the technical dimension, whose categories are all publicly derivable', async () => {
+    mockWarehouse({ breakdown: { ...breakdownRow, ACCOUNT_ID: 'a-different-account' } });
+
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y');
+
+    expect(breakdown!.withheldCategories).toEqual([]);
+    expect(keysOf(breakdown!.categories)).toEqual(keysOf(ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES));
+  });
+
+  // The route middleware authorizes the viewing org only, so without this gate a grant on one
+  // organization would read any project slug.
+  it('returns null when the viewing organization has no catalog row for the project', async () => {
+    mockWarehouse({ hero: null });
+
+    await expect(service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y')).resolves.toBeNull();
+  });
+
+  it('returns null for the ecosystem dimension on a non-LF project, matching its empty board', async () => {
+    mockWarehouse({ hero: { ...heroRow, IS_LF_PROJECT: false } });
+
+    await expect(service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', SUBJECT, '1y')).resolves.toBeNull();
+    await expect(service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y')).resolves.not.toBeNull();
   });
 });

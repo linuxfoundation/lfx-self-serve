@@ -723,6 +723,11 @@ export class OrgLensProjectDetailService {
    * outside the subject organization, and named in `withheldCategories`. They are never zeroed,
    * banded, or rounded: a zero is a claim about the data, absence is not. Belonging is the same
    * account comparison the board uses for its own-row highlight, so the two cannot drift.
+   *
+   * The route middleware authorizes `:orgUid` only, so the (org, slug) catalog row is checked here
+   * for the same reason every other block on this page checks it: a grant on one organization must
+   * not read a project that organization has no association with. The ecosystem dimension is 404 for
+   * a non-LF project, matching the board it is opened from, which is empty in that case.
    */
   public async getLeaderboardBreakdown(
     orgUid: string,
@@ -733,6 +738,10 @@ export class OrgLensProjectDetailService {
   ): Promise<OrgLeaderboardDetailBreakdown | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
+
+    const heroRow = await this.fetchHeroRow(orgUid, slug);
+    if (!heroRow) return null;
+    if (dimension === 'ecosystem' && heroRow.IS_LF_PROJECT !== true) return null;
 
     const row = await this.fetchBreakdownRow(slug, timeRangeType, organizationId);
     if (row === null) return null;
