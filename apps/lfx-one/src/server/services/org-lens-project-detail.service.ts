@@ -739,6 +739,17 @@ export class OrgLensProjectDetailService {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
 
+    // Read before the warehouse work, as the board does. The key is namespaced by the viewing
+    // organization, so an entry can only exist for a caller that already passed the catalog gate
+    // below, and own-organization status needs no partition of its own: it is decided by the subject
+    // account this key already identifies, so every caller sharing the key shares the visibility.
+    const cacheKey = `project-detail-breakdown-${dimension}:${this.paramSignature([slug, range, organizationId])}`;
+    const key = buildOrgCacheKey(orgUid, cacheKey);
+    if (key !== null) {
+      const cached = await valkeyService.getJson<OrgLeaderboardDetailBreakdown>(key, OrgLensProjectDetailService.isLeaderboardBreakdown);
+      if (cached !== null) return cached;
+    }
+
     const heroRow = await this.fetchHeroRow(orgUid, slug);
     if (!heroRow) return null;
     if (dimension === 'ecosystem' && heroRow.IS_LF_PROJECT !== true) return null;
@@ -746,16 +757,6 @@ export class OrgLensProjectDetailService {
     const row = await this.fetchBreakdownRow(slug, timeRangeType, organizationId);
     if (row === null) return null;
     const isOwnOrganization = row.ACCOUNT_ID === orgUid;
-
-    // The cache key carries the caller's own-organization status: without it the first caller's
-    // visibility would be served to the next, and a member of the subject organization would
-    // populate the cache with the unwithheld response for everyone.
-    const cacheKey = `project-detail-breakdown-${dimension}:${this.paramSignature([slug, range, organizationId, isOwnOrganization])}`;
-    const key = buildOrgCacheKey(orgUid, cacheKey);
-    if (key !== null) {
-      const cached = await valkeyService.getJson<OrgLeaderboardDetailBreakdown>(key, OrgLensProjectDetailService.isLeaderboardBreakdown);
-      if (cached !== null) return cached;
-    }
 
     const [position, activitySharePercent] = await Promise.all([
       this.fetchBoardPosition(slug, timeRangeType, dimension, organizationId),
