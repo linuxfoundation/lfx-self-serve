@@ -7,7 +7,7 @@
 // agents/foundation-message-ts (src/envelope.ts, src/form.ts) — the agent's
 // zod schemas are normative; this must stay in sync (reviewed at PR).
 
-import { MktgRunGenerateBody, MktgRunResultBody, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
+import type { MktgRunGenerateBody, MktgRunResultBody, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
 
 /** One verbatim intake Q/A pair from the variable-length interview log. */
 export interface FoundationMessageIntakeAnswer {

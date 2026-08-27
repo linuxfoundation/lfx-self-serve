@@ -5,7 +5,7 @@
 // Framework-free so the branching is unit-testable without an Angular harness. The menu
 // factories map these to PrimeNG MenuItems; they do not re-derive the rules.
 
-import { MyClaAgreement } from '../interfaces/cla.interface';
+import type { MyClaAgreement } from '../interfaces/cla.interface';
 
 /** Request approval — ECLA that is off the current Approved List (#1372). */
 export function canRequestClaApproval(agreement: MyClaAgreement): boolean {
@@ -18,11 +18,12 @@ export function canRequestClaRemoval(agreement: MyClaAgreement): boolean {
 }
 
 /**
- * Contact CLA Manager — Needs-attention ECLA only (v17). Send is a no-op; this gate
- * only decides whether the item is offered.
+ * Contact CLA Manager — Valid or Needs-attention ECLA. Never ICLA: both endpoints the modal
+ * needs (`GET`/`POST /my-clas/{id}/cla-manager[-request]s`) 404 on an ICLA signature id,
+ * because an ICLA has no covering CCLA and so no managers to resolve.
  */
 export function canContactClaManager(agreement: MyClaAgreement): boolean {
-  return agreement.kind === 'ECLA' && agreement.status === 'needs_attention';
+  return agreement.kind === 'ECLA' && (agreement.status === 'valid' || agreement.status === 'needs_attention');
 }
 
 /**

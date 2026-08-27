@@ -117,6 +117,26 @@ export function codePointLength(value: string): number {
 }
 
 /**
+ * Mirror of the CLA backend's `utils.SanitizePlainText` for free-text a user sends upstream:
+ * CR and CRLF become LF, other control characters are dropped, and the result is trimmed.
+ * Validate the sanitized value, because the producer validates what it stores, not what was
+ * typed — a control-character-only message is blank to it, and its length cap counts the
+ * sanitized runes, so measuring the raw input rejects text the producer would accept.
+ * @param value - The raw user-supplied text
+ * @returns The text as the producer will store it
+ */
+export function sanitizePlainText(value: string): string {
+  return (
+    value
+      .replace(/\r\n?/gu, '\n')
+      // \p{Cc} is the Unicode control category, which is exactly what Go's `unicode.IsControl`
+      // matches; newline and tab survive because the producer keeps them.
+      .replace(/\p{Cc}/gu, (control) => (control === '\n' || control === '\t' ? control : ''))
+      .trim()
+  );
+}
+
+/**
  * Clip `next` to `max` code points by trimming only the region that changed vs `previous`, so a
  * mid-string insertion into a full field drops the excess input rather than unrelated trailing text.
  * @param previous - The last within-cap value (must itself be <= max code points)
@@ -159,4 +179,26 @@ export function splitDisplayName(name: string | null): [string | null, string | 
     return [parts[0], null];
   }
   return [parts[0], parts.slice(1).join(' ')];
+}
+
+/** Uppercases the first character only (unlike `toTitleCase`, the rest of the string is untouched). */
+export function capitalizeFirst(str: string): string {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+/** Strips markdown syntax for plain-text contexts (e.g. a mailto: body): images dropped, links collapse to their label, emphasis/list/quote markers flattened. */
+export function stripMarkdown(text: string): string {
+  return text
+    .replace(/!\[[^\][]*\]\([^()]*\)/g, '')
+    .replace(/\[([^\][]*)\]\([^()]*\)/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/(\*{1,3}|_{1,3})(.*?)\1/g, '$2')
+    .replace(/~~(.*?)~~/g, '$1')
+    .replace(/`{1,3}([^`]*)`{1,3}/g, '$1')
+    .replace(/^[\s]*[-*+]\s+/gm, '- ')
+    .replace(/^[\s]*\d+\.\s+/gm, '')
+    .replace(/^>\s+/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }

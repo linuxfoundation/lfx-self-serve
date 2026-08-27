@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
@@ -32,6 +33,7 @@ import {
   PD_HEALTH_TAG,
   PD_NON_LF_MARKER,
   PD_VALID_DRAWER_CARD_KEYS,
+  ORG_LENS_PRIVATE_RELEASE_FLAG,
   lfxColors,
   PD_METRIC_OPTIONS,
   PD_STACKED_PALETTE,
@@ -104,6 +106,7 @@ export class OrgProjectDetailComponent {
   protected readonly accountContext = inject(AccountContextService);
   private readonly detailService = inject(OrgLensProjectDetailService);
   private readonly drawer = inject(PersonDetailDrawerService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
@@ -130,7 +133,10 @@ export class OrgProjectDetailComponent {
   protected readonly drawerOpen = signal(false);
 
   // Leaderboard row detail drawer (LFXV2-2934) — opened by clicking a technical/ecosystem row;
-  // renders that org's category score breakdown, which the drawer fetches for itself.
+  // renders that org's category score breakdown, which the drawer fetches for itself. The drawer
+  // stays behind the private-release flag: real data replacing the placeholders is what the flag was
+  // waiting on, but flipping it on is a release decision rather than a consequence of this change.
+  protected readonly leaderboardDetailFeatureEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_PRIVATE_RELEASE_FLAG, false);
   protected readonly leaderboardDetailOpen = signal(false);
   protected readonly leaderboardDetailDimension = signal<LeaderboardDimension>('technical');
   protected readonly leaderboardDetailOrganizationId = signal('');
@@ -299,6 +305,15 @@ export class OrgProjectDetailComponent {
   protected readonly cardDetail = computed<OrgLensCardDetailSection | null>(() => this.drawerState().data);
 
   public constructor() {
+    // The flag can flip off (LaunchDarkly config change) while the drawer is already open — force it
+    // closed rather than leaving gated content on screen.
+    toObservable(this.leaderboardDetailFeatureEnabled)
+      .pipe(
+        filter((enabled) => !enabled),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.leaderboardDetailOpen.set(false));
+
     this.searchForm.controls.technical.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe((value) => this.techSearch.set(value));
     this.searchForm.controls.ecosystem.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe((value) => this.ecoSearch.set(value));
 
@@ -457,12 +472,13 @@ export class OrgProjectDetailComponent {
 
   /**
    * Opens the leaderboard row score-breakdown drawer for the clicked technical/ecosystem row. No-op
-   * in activity mode — the breakdown is influence-score only — and for a row with no organization
-   * id, since the breakdown is keyed by it and a display name cannot stand in (names are not unique
-   * within a project, so keying by one can open another company's figures).
+   * in activity mode — the breakdown is influence-score only — while `org-lens-private-release` is
+   * off (GH-1798), and for a row with no organization id, since the breakdown is keyed by it and a
+   * display name cannot stand in (names are not unique within a project, so keying by one can open
+   * another company's figures).
    */
   protected openLeaderboardDetail(dimension: LeaderboardDimension, row: BoardDisplayRow): void {
-    if (this.isActivityMode() || !row.organizationId) return;
+    if (this.isActivityMode() || !this.leaderboardDetailFeatureEnabled() || !row.organizationId) return;
     this.leaderboardDetailDimension.set(dimension);
     this.leaderboardDetailOrganizationId.set(row.organizationId);
     this.leaderboardDetailOrgName.set(row.orgName);

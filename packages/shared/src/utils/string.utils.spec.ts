@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { capCodePointEdit, codePointLength, slugify, splitIntoParagraphs } from './string.utils';
+import { capCodePointEdit, codePointLength, sanitizePlainText, slugify, splitIntoParagraphs, stripMarkdown } from './string.utils';
 
 describe('codePointLength', () => {
   it('counts ASCII the same as String.length', () => {
@@ -28,6 +28,35 @@ describe('codePointLength', () => {
   it('counts BMP characters (including surrogate-free CJK) as one each', () => {
     expect(codePointLength('café')).toBe(4);
     expect(codePointLength('日本語')).toBe(3);
+  });
+});
+
+// Cases mirror the CLA backend's own TestSanitizePlainText, so a producer change shows up as a
+// failure here rather than as an opaque upstream 400.
+describe('sanitizePlainText', () => {
+  it('returns an empty string for input that is only whitespace and control characters', () => {
+    expect(sanitizePlainText('')).toBe('');
+    expect(sanitizePlainText(' \r\n \x07\x1b \t ')).toBe('');
+  });
+
+  it('normalizes CR and CRLF to LF', () => {
+    expect(sanitizePlainText('one\r\ntwo\rthree')).toBe('one\ntwo\nthree');
+  });
+
+  it('keeps tabs and newlines', () => {
+    expect(sanitizePlainText('keep\ttabs\nand lines')).toBe('keep\ttabs\nand lines');
+  });
+
+  it('drops other control characters', () => {
+    expect(sanitizePlainText('bell\x07 stripped\x00')).toBe('bell stripped');
+  });
+
+  it('trims the result', () => {
+    expect(sanitizePlainText('  trimmed \n')).toBe('trimmed');
+  });
+
+  it('leaves an emoji intact, so the cap still counts it as one code point', () => {
+    expect(sanitizePlainText('hi 😀')).toBe('hi 😀');
   });
 });
 
@@ -123,5 +152,21 @@ describe('splitIntoParagraphs', () => {
   it('returns an empty array for empty or whitespace-only input', () => {
     expect(splitIntoParagraphs('')).toEqual([]);
     expect(splitIntoParagraphs('  \n\n  ')).toEqual([]);
+  });
+});
+
+describe('stripMarkdown', () => {
+  it('keeps inline and fenced code content, dropping only the backtick markers', () => {
+    expect(stripMarkdown('Run `kubectl get pods` first')).toBe('Run kubectl get pods first');
+    expect(stripMarkdown('```\nhelm install\n```')).toBe('helm install');
+  });
+
+  it('drops images but collapses links to their label', () => {
+    expect(stripMarkdown('![alt](https://x.test/img.png) see [docs](https://x.test)')).toBe('see docs');
+  });
+
+  it('strips headings only at line start, preserving mid-text # sequences', () => {
+    expect(stripMarkdown('# Title\nbody')).toBe('Title\nbody');
+    expect(stripMarkdown('C# developer')).toBe('C# developer');
   });
 });

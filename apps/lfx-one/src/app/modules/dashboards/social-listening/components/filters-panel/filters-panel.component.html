@@ -1,0 +1,213 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Click-outside backdrop (writes the visible model directly — the genuine two-way close path) -->
+<div class="fixed inset-0 z-10" aria-hidden="true" data-testid="social-listening-filters-backdrop" (click)="visible.set(false)"></div>
+
+<div
+  #panelContainer
+  class="filters-panel"
+  role="dialog"
+  aria-modal="true"
+  aria-label="Filters"
+  tabindex="-1"
+  data-testid="social-listening-filters-panel"
+  (keydown.escape)="visible.set(false)"
+  (keydown)="trapFocus($event)">
+  <div class="mb-5 flex items-center justify-between">
+    <h3 class="text-sm font-bold tracking-wide text-gray-800">FILTERS</h3>
+    <div class="flex items-center gap-3">
+      <button
+        type="button"
+        class="save-view-btn"
+        [disabled]="!canSaveCurrentView() || atSavedViewLimit()"
+        [pTooltip]="'Limit of ' + savedViewLimit() + ' reached. Remove a view to save a new one.'"
+        [tooltipDisabled]="!atSavedViewLimit()"
+        tooltipPosition="top"
+        data-testid="social-listening-filters-save-view"
+        (click)="saveViewRequested.emit()">
+        <i class="fa-light fa-bookmark-plus"></i>
+        <span>Save as View</span>
+      </button>
+      @if (activeFilterCount() > 0) {
+        <button type="button" class="clear-btn" data-testid="social-listening-filters-clear-all" (click)="clearFilters()">Clear all</button>
+      }
+    </div>
+  </div>
+
+  <!-- Sentiment -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-sentiment">Sentiment</label>
+    <lfx-select
+      [form]="filtersForm"
+      control="sentiment"
+      [options]="sentimentOptions"
+      optionLabel="label"
+      optionValue="value"
+      inputId="sl-filter-sentiment"
+      ariaLabel="Filter by sentiment"
+      styleClass="w-full"
+      data-testid="social-listening-filters-sentiment" />
+  </div>
+
+  <!-- Relevance -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-relevance">Relevance</label>
+    <lfx-select
+      [form]="filtersForm"
+      control="relevance"
+      [options]="relevanceOptions"
+      optionLabel="label"
+      optionValue="value"
+      inputId="sl-filter-relevance"
+      ariaLabel="Filter by relevance"
+      styleClass="w-full"
+      data-testid="social-listening-filters-relevance" />
+  </div>
+
+  <!-- Language (options scoped by foundation + period) -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-language">Language</label>
+    <lfx-select
+      [form]="filtersForm"
+      control="language"
+      [options]="languageOptions()"
+      optionLabel="label"
+      optionValue="value"
+      [loading]="languagesLoading()"
+      [emptyMessage]="languagesEmptyMessage()"
+      inputId="sl-filter-language"
+      ariaLabel="Filter by language"
+      styleClass="w-full"
+      data-testid="social-listening-filters-language" />
+  </div>
+
+  <!-- Has Title -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-has-title">Has Title</label>
+    <lfx-select
+      [form]="filtersForm"
+      control="hasTitle"
+      [options]="hasTitleOptions"
+      optionLabel="label"
+      optionValue="value"
+      inputId="sl-filter-has-title"
+      ariaLabel="Filter by title presence"
+      styleClass="w-full"
+      data-testid="social-listening-filters-has-title" />
+  </div>
+
+  <!-- Bookmarked -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-bookmarked">Bookmarked</label>
+    <lfx-select
+      [form]="filtersForm"
+      control="bookmarkFilter"
+      [options]="bookmarkFilterOptions"
+      optionLabel="label"
+      optionValue="value"
+      inputId="sl-filter-bookmarked"
+      ariaLabel="Filter by bookmark status"
+      styleClass="w-full"
+      data-testid="social-listening-filters-bookmarked" />
+  </div>
+
+  <!-- Read Status -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-read-status">Read Status</label>
+    <lfx-select
+      [form]="filtersForm"
+      control="readFilter"
+      [options]="readFilterOptions"
+      optionLabel="label"
+      optionValue="value"
+      inputId="sl-filter-read-status"
+      ariaLabel="Filter by read status"
+      styleClass="w-full"
+      data-testid="social-listening-filters-read-status" />
+  </div>
+
+  <!-- Authors (options cascade off every other filter) -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-authors">Authors</label>
+    @if (authorsLoading()) {
+      <p-skeleton height="2.625rem" styleClass="w-full" data-testid="social-listening-filters-authors-loading" />
+    } @else {
+      <lfx-multi-select
+        [form]="filtersForm"
+        control="authors"
+        [options]="availableAuthors()"
+        optionLabel="AUTHOR"
+        optionValue="AUTHOR"
+        filterBy="AUTHOR"
+        [showToggleAll]="false"
+        [selectionLimit]="mentionFilterUiMaxValues"
+        placeholder="Select authors"
+        [emptyMessage]="authorsEmptyMessage()"
+        [emptyFilterMessage]="authorsEmptyMessage()"
+        panelStyleClass="sl-author-multiselect-panel"
+        inputId="sl-filter-authors"
+        ariaLabel="Filter by author"
+        styleClass="w-full"
+        data-testid="social-listening-filters-authors">
+        <ng-template let-option #item>
+          <div class="flex w-full items-center gap-2">
+            <i [class]="option.platformIcon + ' shrink-0 text-sm ' + option.platformIconClass" aria-hidden="true"></i>
+            <span class="min-w-0 flex-1 truncate text-sm">{{ option.AUTHOR }}</span>
+            <span class="shrink-0 text-xs text-gray-400">{{ option.MENTION_COUNT }} mentions</span>
+          </div>
+        </ng-template>
+      </lfx-multi-select>
+    }
+  </div>
+
+  <!-- Keywords -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-keywords">Keywords</label>
+    @if (keywordsLoading()) {
+      <p-skeleton height="2.625rem" styleClass="w-full" data-testid="social-listening-filters-keywords-loading" />
+    } @else {
+      <lfx-multi-select
+        [form]="filtersForm"
+        control="keywords"
+        [options]="displayedKeywordOptions()"
+        optionLabel="label"
+        optionValue="value"
+        filterBy="label"
+        [showToggleAll]="false"
+        [selectionLimit]="mentionFilterUiMaxValues"
+        placeholder="Select keywords"
+        [emptyMessage]="keywordsEmptyMessage()"
+        [emptyFilterMessage]="keywordsEmptyMessage()"
+        inputId="sl-filter-keywords"
+        ariaLabel="Filter by keyword"
+        styleClass="w-full"
+        data-testid="social-listening-filters-keywords" />
+    }
+  </div>
+
+  <!-- Tags -->
+  <div class="filter-group">
+    <label class="filter-label" for="sl-filter-tags">Tags</label>
+    @if (tagsLoading()) {
+      <p-skeleton height="2.625rem" styleClass="w-full" data-testid="social-listening-filters-tags-loading" />
+    } @else {
+      <lfx-multi-select
+        [form]="filtersForm"
+        control="tags"
+        [options]="displayedTagOptions()"
+        optionLabel="label"
+        optionValue="value"
+        filterBy="label"
+        [showToggleAll]="false"
+        [selectionLimit]="mentionFilterUiMaxValues"
+        placeholder="Select tags"
+        [emptyMessage]="tagsEmptyMessage()"
+        [emptyFilterMessage]="tagsEmptyMessage()"
+        inputId="sl-filter-tags"
+        ariaLabel="Filter by tag"
+        styleClass="w-full"
+        data-testid="social-listening-filters-tags" />
+    }
+  </div>
+</div>

@@ -252,8 +252,16 @@ export class CampaignsComponent {
    * `etag: null` alone cannot say WHY there is no validator, and the two reasons need opposite
    * treatment on the next save:
    *
-   * - `'overwrite'` — the user was shown a stale-brief warning and proceeded anyway. Permission
-   *   is real, so falling back to the freshly read validator is what they asked for.
+   * - `'overwrite'` — permission is real, so falling back to the freshly read validator is what
+   *   the user asked for. TWO paths set it, and both are explicit decisions taken on content the
+   *   user was actually shown:
+   *     1. The stale-brief warning was displayed and they proceeded anyway.
+   *     2. A restore whose read returned NO validator. They were shown the stored brief and chose
+   *        to work from it; there is simply no ETag to carry. Classifying that as `'unknown'`
+   *        would refuse the first save after any such restore — the feature's main path, and not
+   *        a conflict anyone can act on.
+   *   What separates both from `'unknown'` is that something was displayed and something was
+   *   chosen, NOT that a warning specifically appeared.
    * - `'unknown'` — the write returned no ETag, or its approval outcome was indeterminate. Nobody
    *   was warned and nothing was decided; falling back here would bypass the precondition
    *   silently and could overwrite an intervening writer without ever showing a conflict.
@@ -389,7 +397,33 @@ export class CampaignsComponent {
     if (!isPlatformBrowser(this.platformId) || !this.featureFlagService.providerReady()) {
       return true;
     }
-    return this.marketingOpsFgaEnabled() && this.personaService.isCampaignManager();
+    if (!this.marketingOpsFgaEnabled()) {
+      return false;
+    }
+    const slug = this.activeFoundationSlug();
+    // Read from the per-scope grant map: each scope's result is stored independently, so a newer
+    // cross-scope probe (e.g. sidebar-nav for a different foundation) cannot overwrite this
+    // foundation's confirmed answer — that probe writes into its own key, not this one
+    // (Copilot finding, PR #1835: confirmActiveGrant force-write overwritten by later probe).
+    // Check this foundation's entry first, then fall back to a confirmed ROOT grant (null key).
+    const grants = this.personaService.grantsByScope();
+    const scopedGrant = slug ? grants.get(slug) : undefined;
+    if (scopedGrant?.isCampaignManager) return true;
+    const rootGrant = grants.get(null);
+    if (rootGrant?.isCampaignManager) return true;
+    // An authoritative `false` at either scope key must win over the legacy global signal below,
+    // which can be stale `true` from a different scope's earlier probe (Copilot/Cursor finding,
+    // PR #1835: legacy fallback overrides an authoritative map denial).
+    if (scopedGrant !== undefined || rootGrant !== undefined) {
+      return false;
+    }
+    // No per-scope entry yet (before the guard's first probe for this scope has returned) —
+    // fall back to the global signal with the slug gate for the brief pre-resolve window.
+    const grantSlug = this.personaService.marketingGrantSlug();
+    if (slug && grantSlug !== null && grantSlug !== slug) {
+      return false;
+    }
+    return this.personaService.isCampaignManager();
   });
 
   /**
@@ -1114,7 +1148,7 @@ export class CampaignsComponent {
     this.loadBriefCampaigns();
   }
 
-  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, approved: boolean): void {
+  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, etag: string | null | undefined, approved: boolean): void {
     // Adopt the brief's OWN program first. The lookup is keyed on `(event_slug, project)` and
     // carries no program type, so an Events brief can be offered while the page sits on
     // Education, and restoring it would leave the selector describing one program while the brief
@@ -1152,26 +1186,45 @@ export class CampaignsComponent {
     // there — or, worse, accepted against a brief this session never loaded.
     const key = this.ownershipKey(this.activeFoundationSlug(), brief);
     if (key !== null) {
-      // No ETag from a restore: the read path deliberately drops the load-time validator
-      // (LFXV2-3204). Classified `'overwrite'` rather than `'unknown'`, and the distinction is
-      // the one the base branch draws — whether anyone DECIDED to save without a validator.
+      // The load-time validator is RECORDED when the read produced one (LFXV2-3204). A restore
+      // is the one path that knows exactly which version the user was shown, so it is the path
+      // that can hand the next save a last-seen ETag. `replaceBrief` prefers it over the ETag
+      // its own find reads, which is what lets the precondition actually fire: a concurrent
+      // editor who moved the row since this load now produces a `stale-brief` refusal instead of
+      // being silently overwritten.
       //
-      // A restore is a decision. The user was shown the stored brief's content and chose to work
-      // from it, so the page knows which version it is editing even though it was not handed the
-      // token for it. That is unlike an indeterminate write, where nothing was displayed and
-      // nothing was chosen. Marking it `'unknown'` would refuse the first save after every
-      // restore, which is this feature's main path.
+      // `absence` is recorded ONLY when there is no validator, because dropping the validator is
+      // not neutral bookkeeping like recording one: it LICENSES the next save to overwrite,
+      // since with no last-seen ETag the server falls back to its own fresh read and the
+      // precondition passes. Handing out that licence for free on every restore is precisely the
+      // last-write-wins bug. With an ETag present the save is verified, so no licence is needed
+      // and none is granted.
       //
-      // The residual risk is real and is what LFXV2-3204 closes: another writer changing the row
-      // between the load and the save is overwritten rather than producing a 412. That is a
-      // narrower window than the unknown case — it needs a concurrent editor, not merely a lost
-      // response — and the user has at least seen the content they are replacing.
+      // When the read yielded NO ETag the classification stays `'overwrite'`, and that is
+      // deliberate rather than an oversight. It is still a DECISION — the user was shown the
+      // stored content and chose to work from it — which is the distinction this field draws
+      // against `'unknown'`, where nothing was displayed and nothing was chosen. Marking it
+      // `'unknown'` would refuse the first save after any restore whose read returned no
+      // validator, which is this feature's main path and not a conflict anyone can act on.
+      //
+      // A 412 from the recorded ETag is a speed bump, not a wall: the conflict handler promotes
+      // the session to explicit overwrite permission, so the user is told someone else got there
+      // first and the next Proceed saves their version over it. That is the chosen behaviour —
+      // one honest refusal, then the existing proceed-again path.
       // Bumped for THIS key only. A single session counter would make a restore of event A
       // invalidate a queued save of event B, discarding an id B's own predecessor save created
       // and turning a correct save into an `unowned-brief-exists` refusal. Ownership is keyed by
       // `(project, event)`, so its epoch has to be too.
       this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
-      this.knownBriefIds.set(key, { id: briefId, etag: null, absence: 'overwrite' });
+      // NORMALISED with `?? null` first, then compared with a strict `=== null`, because the
+      // validator originates across an HTTP boundary: an older pod mid-rolling-deploy omits the
+      // field and JSON yields `undefined`, a value the declared `string | null` forbids and the
+      // wire produces anyway. Collapsing both spellings of absence to `null` up front is what
+      // lets the strict comparison below be correct — there is no loose-null invariant here to
+      // rely on. Treating `undefined` as "present" would withhold the overwrite licence and
+      // refuse the first save after a restore as `unverified-validator`.
+      const validator = etag ?? null;
+      this.knownBriefIds.set(key, { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) });
     }
     this.onProceedToImplementation(brief, true, approved);
   }
@@ -1385,9 +1438,9 @@ export class CampaignsComponent {
       // user loaded a different brief for this event, and this payload never saw it.
       const known =
         ownershipKey === null || (this.ownershipEpochs.get(ownershipKey) ?? 0) !== ownershipEpochAtSend ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
-      // `allowFallback` says the caller has no validator BY CHOICE — the stale-brief warning was
-      // shown and the user proceeded. Without it, an absent validator means "unknown", and the
-      // server refuses rather than substituting one it read itself.
+      // `allowFallback` says the caller has no validator BY CHOICE — see `knownBriefIds` for the
+      // two paths that set `absence: 'overwrite'`. Without it, an absent validator means
+      // "unknown", and the server refuses rather than substituting one it read itself.
       return firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, known?.id ?? null, known?.etag ?? null, known?.absence === 'overwrite')).then(
         (result) => {
           // Latched BEFORE the generation check, unlike everything below it. The check exists to

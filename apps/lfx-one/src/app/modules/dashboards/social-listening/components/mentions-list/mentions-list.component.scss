@@ -1,0 +1,43 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Text-button treatment for the mark-all header actions (PCC port): subtle gray at rest, blue on hover.
+:host ::ng-deep .mark-all-btn {
+  @apply gap-1.5 whitespace-nowrap text-xs text-gray-400;
+  padding: 0 !important;
+
+  &:hover {
+    @apply text-blue-600;
+    background: transparent !important;
+  }
+
+  &:focus {
+    box-shadow: none !important;
+  }
+}
+
+// The mentions feed renders cards, not a data grid — strip the table chrome (borders, cell
+// padding, header row) so the wrapper reads as a stacked card list with a paginator.
+:host ::ng-deep .mentions-table {
+  .p-datatable-thead,
+  .p-datatable-tfoot {
+    display: none;
+  }
+
+  .p-datatable-tbody > tr {
+    background: transparent;
+
+    > td {
+      border: 0;
+      padding: 0 0 var(--spacing-3, 0.75rem);
+      background: transparent;
+    }
+  }
+
+  // The paginator is the only visible table chrome; align it with the card list.
+  .p-paginator {
+    border: 0;
+    background: transparent;
+    padding-inline: 0;
+  }
+}

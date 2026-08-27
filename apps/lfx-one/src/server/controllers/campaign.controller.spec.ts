@@ -19,6 +19,7 @@ const {
   searchHubSpotEmails,
   toggleCampaignStatus,
   listBriefCampaigns,
+  getBriefMetrics,
   legacyUpdateStatus,
   isServerFeatureEnabled,
   logger,
@@ -32,6 +33,7 @@ const {
   searchHubSpotEmails: vi.fn(),
   toggleCampaignStatus: vi.fn(),
   listBriefCampaigns: vi.fn(),
+  getBriefMetrics: vi.fn(),
   legacyUpdateStatus: vi.fn(),
   isServerFeatureEnabled: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
@@ -52,6 +54,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public searchHubSpotEmails = searchHubSpotEmails;
       public toggleCampaignStatus = toggleCampaignStatus;
       public listBriefCampaigns = listBriefCampaigns;
+      public getBriefMetrics = getBriefMetrics;
     },
   };
 });
@@ -264,7 +267,7 @@ describe('CampaignController.loadBrief', () => {
     // a UI that should never fire.
     expect(loadBrief).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ status: 'off', briefId: null, brief: null, approved: false });
+    expect(res.json).toHaveBeenCalledWith({ status: 'off', briefId: null, brief: null, etag: null, approved: false });
   });
 
   it('refuses to look up a brief without an event_slug query param', async () => {
@@ -922,17 +925,6 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * Optional chaining guards a NULLISH receiver, not a wrong-TYPED one — `(123)?.trim()` still
-   * throws. A direct caller sending `timeZone: 123` therefore answered with a 500 rather than the
-   * controlled path. The rest of the config is valid, so this asserts the create still SUCCEEDS
-   * with the key simply omitted: a bad optional field must not sink an otherwise good campaign.
-   */
-  /**
-   * U+00A0 (NBSP) sits immediately above the C1 range, and Go reports `IsControl(U+00A0) == false`
-   * — verified by running it — so it must still dispatch. Without this case the obvious "widen to
-   * U+00FF" fix would look correct while silently refusing a keyword Microsoft accepts.
-   */
-  /**
    * Upstream `canonicalMatchType` does `strings.ToLower(strings.TrimSpace(in))`, so `EXACT` and
    * ` exact ` are both valid. An exact-case `Set.has` was STRICTER than the service and refused a
    * request it would have accepted, reporting the platform as unconfigured instead.
@@ -958,12 +950,23 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent).not.toHaveProperty('endDate');
   });
 
+  /**
+   * U+00A0 (NBSP) sits immediately above the C1 range, and Go reports `IsControl(U+00A0) == false`
+   * — verified by running it — so it must still dispatch. Without this case the obvious "widen to
+   * U+00FF" fix would look correct while silently refusing a keyword Microsoft accepts.
+   */
   it('accepts a non-breaking space, which is not a control character', async () => {
     await createWithMicrosoft({ keywords: [{ text: 'kuber\u00A0netes', matchType: 'Exact' }] });
 
     expect(envelopeFor(createCampaigns)).toHaveProperty('microsoftConfig');
   });
 
+  /**
+   * Optional chaining guards a NULLISH receiver, not a wrong-TYPED one — `(123)?.trim()` still
+   * throws. A direct caller sending `timeZone: 123` therefore answered with a 500 rather than the
+   * controlled path. The rest of the config is valid, so this asserts the create still SUCCEEDS
+   * with the key simply omitted: a bad optional field must not sink an otherwise good campaign.
+   */
   it('omits a wrong-typed timeZone instead of throwing', async () => {
     await createWithMicrosoft({ timeZone: 123 });
 
@@ -1733,5 +1736,106 @@ describe('CampaignController.listBriefCampaigns', () => {
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * What is only decidable at this layer: which query parameters are required, and whether a value
+ * the wire contract cannot represent is refused here rather than sent and silently reinterpreted.
+ */
+describe('CampaignController.getBriefMetrics', () => {
+  let controller: CampaignController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+  });
+
+  function metricsReq(query: Record<string, unknown>): Request {
+    return { query, path: '/api/campaigns/brief/metrics' } as unknown as Request;
+  }
+
+  it('reads the brief and passes a valid window through', async () => {
+    const payload = { brief_id: 'b-1', window: 'last_7_days', rows: [], ok_count: 0, action_items: [] };
+    getBriefMetrics.mockResolvedValue(payload);
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief_id: 'b-1', window: 'last_7_days' }), res, next);
+
+    expect(getBriefMetrics).toHaveBeenCalledWith(expect.anything(), 'cncf', 'b-1', 'last_7_days');
+    expect(res.json).toHaveBeenCalledWith(payload);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Omitted rather than defaulted here, so campaign-service applies its PER-PLATFORM default.
+   * Upstream resolves the default per row, per platform (`last_7_days` for X Ads, `last_30_days`
+   * elsewhere), and an explicit window overrides that for every row. Defaulting here would not
+   * fail — it would DISCARD the fallback, turning a servable X row into an `unsupported` one.
+   */
+  it('passes undefined when no window is given, rather than a default', async () => {
+    getBriefMetrics.mockResolvedValue({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] });
+
+    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief_id: 'b-1' }), buildRes(), vi.fn() as unknown as NextFunction);
+
+    expect(getBriefMetrics).toHaveBeenCalledWith(expect.anything(), 'cncf', 'b-1', undefined);
+  });
+
+  /**
+   * REFUSED, not dropped. Dropping an unrecognised window would serve a different period than the
+   * caller asked for, and the response's own `window` field would report the default as though it
+   * had been requested — so the caller could not detect the substitution from the response alone.
+   */
+  it('refuses an unrecognised window instead of dropping it', async () => {
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief_id: 'b-1', window: 'last_90_days' }), buildRes(), next);
+
+    expect(getBriefMetrics).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  /**
+   * `brief` is required because this read is brief-scoped, and `project` because
+   * `/foundation/campaigns` is reachable by an ED of any foundation — a default here would read
+   * another foundation's brief on their behalf.
+   */
+  it.each([
+    ['no brief_id', { project: 'cncf' }],
+    ['no project', { brief_id: 'b-1' }],
+    ['a blank brief_id', { project: 'cncf', brief_id: '   ' }],
+    ['a blank project', { project: '   ', brief_id: 'b-1' }],
+    // Repeated params, which Express parses as arrays. `project` and `brief` are covered by the
+    // blank guard above once an array collapses to `''`; `window` is NOT — it is legitimately
+    // optional, so "absent" is a valid state and a malformed value that reads as absent would
+    // fail OPEN, serving the per-platform default under a window the caller never chose.
+    ['a repeated project param, which Express parses as an array', { project: ['tlf', 'cncf'], brief_id: 'b-1' }],
+    ['a repeated brief_id param, which Express parses as an array', { project: 'cncf', brief_id: ['b-1', 'b-2'] }],
+    ['a repeated window param, which Express parses as an array', { project: 'cncf', brief_id: 'b-1', window: ['today', 'today'] }],
+    // PRESENT-BUT-EMPTY is malformed, not absent. `?window=` arrives as a string, so treating it
+    // as "no window given" would skip the enum check and serve the default — the same fail-open
+    // shape as the array case, one layer in. Only an OMITTED parameter may default.
+    ['an empty window param', { project: 'cncf', brief_id: 'b-1', window: '' }],
+    ['a whitespace-only window param', { project: 'cncf', brief_id: 'b-1', window: '   ' }],
+  ])('refuses a request with %s', async (_label, query) => {
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getBriefMetrics(metricsReq(query), buildRes(), next);
+
+    expect(getBriefMetrics).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  /** A failed upstream read reaches the error middleware, never a 200 the caller reads as data. */
+  it('forwards an upstream failure to next rather than answering with a body', async () => {
+    getBriefMetrics.mockRejectedValue(new Error('upstream exploded'));
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
   });
 });

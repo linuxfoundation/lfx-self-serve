@@ -440,7 +440,18 @@ function buildCopySystemPrompt(platforms: string[], programType?: CampaignProgra
   return prompt;
 }
 
-const KEYWORD_SYSTEM_PROMPT = `You are a Google Ads keyword strategist. Return only a valid JSON array. No markdown fences, no explanation.`;
+// Names both search platforms, because both reach this stage: the keyword gate admits
+// `google-ads` OR `microsoft-ads` (and a platform-less brief, which defaults to google-ads).
+// Saying "Google Ads" alone described the caller inaccurately for a Microsoft-only brief and
+// biased the model toward one platform's conventions for keywords dispatched to the other.
+//
+// The three USER prompts that pair with it (`buildKeywordPrompt`'s two branches and
+// `buildRefineKeywordPrompt`) say "paid search keywords" for the same reason. Leaving them on
+// "Google Search keywords" would have put conflicting platform guidance in the same request —
+// a system message naming both and a user message naming one — which is worse than either
+// alone, since the model has to pick. Keywords are a search-intent concept and identical
+// across the two platforms, so neutral wording loses nothing.
+const KEYWORD_SYSTEM_PROMPT = `You are a paid search keyword strategist for Google Ads and Microsoft Advertising. Return only a valid JSON array. No markdown fences, no explanation.`;
 
 const LINKEDIN_STRATEGY_SYSTEM_PROMPT_EVENTS = `You are a LinkedIn Ads strategist specializing in developer and open-source technology events.
 Analyze the event details and generate a comprehensive targeting strategy for LinkedIn Sponsored Content campaigns.
@@ -1749,7 +1760,7 @@ function buildKeywordPrompt(body: CampaignBriefRequest, eventDetails: Record<str
   const eventYear = yearMatch ? yearMatch[0] : new Date().getFullYear().toString();
 
   if (isEducation) {
-    return `Generate 25-40 high-intent Google Search keywords for this training/certification program.
+    return `Generate 25-40 high-intent paid search keywords for this training/certification program.
 
 COURSE: ${name || body.url}
 Themes: ${themes}
@@ -1775,7 +1786,7 @@ CRITICAL RULES:
 - Avoid generic broad terms that waste budget (e.g. "training" alone).`;
   }
 
-  return `Generate 25-40 high-intent Google Search keywords for this event.
+  return `Generate 25-40 high-intent paid search keywords for this event.
 
 EVENT: ${name || body.url}
 Dates: ${dates}
@@ -1849,7 +1860,7 @@ CURRENT KEYWORDS: ${currentKws}
 
 USER FEEDBACK: ${body.feedback}
 
-Based on the feedback, generate 25-40 refined Google Search keywords.
+Based on the feedback, generate 25-40 refined paid search keywords.
 
 Return a JSON array where each object has EXACTLY these keys:
 - "term": the keyword string

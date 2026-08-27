@@ -55,13 +55,26 @@ describe('CampaignsComponent brief persistence', () => {
     (fixture.componentInstance as unknown as { onProceedToImplementation(b: CampaignBriefOutput): void }).onProceedToImplementation(b);
   }
 
-  /** `onRestoreSavedBrief` is protected; the spec drives it as the Planning tab's output would. */
-  function restore(b: CampaignBriefOutput, briefId: string, approved = false): void {
-    (fixture.componentInstance as unknown as { onRestoreSavedBrief(b: CampaignBriefOutput, id: string, approved: boolean): void }).onRestoreSavedBrief(
-      b,
-      briefId,
-      approved
-    );
+  /**
+   * `onRestoreSavedBrief` is protected; the spec drives it as the Planning tab's output would.
+   *
+   * OMITTING `etag` means the validator-less restore, so the tests written before LFXV2-3204
+   * keep asserting exactly the behaviour they were written for. Tests about the carried
+   * validator pass one explicitly. It is a rest parameter rather than a defaulted one — see
+   * the note in the body for why that distinction is load-bearing.
+   */
+  function restore(b: CampaignBriefOutput, briefId: string, approved = false, ...etag: (string | null | undefined)[]): void {
+    // A REST parameter, not a default. A TS default fires on `undefined`, so
+    // `restore(b, id, true, undefined)` would silently become `null` — collapsing the
+    // absent-field case into the null case and making the rolling-deploy test pass against
+    // code that mishandles `undefined`. The rest form distinguishes "not passed" (length 0,
+    // legacy callers -> null) from "passed as undefined" (length 1, value preserved).
+    const validator = etag.length === 0 ? null : etag[0];
+    (
+      fixture.componentInstance as unknown as {
+        onRestoreSavedBrief(b: CampaignBriefOutput, id: string, etag: string | null | undefined, approved: boolean): void;
+      }
+    ).onRestoreSavedBrief(b, briefId, validator, approved);
   }
 
   function state(): CampaignBriefPersistenceState {
@@ -478,6 +491,109 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
     });
 
+    it('sends the LOAD-TIME validator as If-Match, so a concurrent edit is refused not overwritten', async () => {
+      // LFXV2-3204. The hazard: two people load the same brief, the other one saves first, and
+      // this page's save silently replaces their work. `replaceBrief` prefers a caller-supplied
+      // validator over the one its own find reads, so the refusal can only happen if the restore
+      // actually CARRIES the ETag it was shown. That carry is what this pins.
+      //
+      // Asserted at argument 4 (`knownEtag`) rather than through a mocked HTTP layer, because
+      // that is the boundary this change moves: everything downstream of it — If-Match, the 412,
+      // the `stale-brief` mapping — already shipped and is covered in the service spec.
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a', true, 'W/"v1"');
+      await fixture.whenStable();
+
+      proceed();
+      await fixture.whenStable();
+
+      // The validator the user was SHOWN, and no fallback licence. Passing `true` here would let
+      // the server substitute its own fresh read, which is the overwrite this ticket closes.
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', 'W/"v1"', false);
+    });
+
+    it('surfaces a concurrent edit as stale-brief, then lets the next Proceed overwrite', async () => {
+      // The full chosen behaviour end to end: one honest refusal, then the existing
+      // proceed-again path. Both halves matter — a fix that produced the 412 but stranded the
+      // user would break a shipped flow, and a fix that kept proceeding silently would not be a
+      // fix at all.
+      //
+      // The concurrent edit is simulated at the seam the component owns: the stored row moved
+      // since this page loaded it, so the server answers the carried validator with 412 and the
+      // BFF maps it to `stale-brief`.
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
+      restore(brief, 'restored-a', true, 'W/"v1"');
+      await fixture.whenStable();
+
+      proceed();
+      await fixture.whenStable();
+
+      // Refused, and SAID so — not a generic failure and not a silent overwrite.
+      expect(state().status).toBe('error');
+      expect(state().message).toContain('Someone else changed this brief while you were working');
+
+      // The promotion: the refusal granted this session explicit overwrite permission, so the
+      // next Proceed carries the fallback licence and replaces whatever is stored. This is the
+      // deliberate product choice (option 1) — the 412 is a speed bump, not a wall.
+      persistBrief.mockReturnValue(NEVER);
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
+    });
+
+    it('treats an ABSENT etag field like a null one, so a rolling deploy cannot block restores', async () => {
+      // `etag` crosses an HTTP boundary, so its declared `string | null` is a claim about the
+      // CURRENT server. Mid-rolling-deploy an older pod omits the field and JSON yields
+      // `undefined` — a value the type system says cannot occur and the wire produces anyway.
+      //
+      // A strict `=== null` test would call that "present", withhold the overwrite licence, and
+      // refuse the first save after every restore as `unverified-validator` for the length of the
+      // deploy. Absence has one meaning regardless of how it is spelled.
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a', true, undefined);
+      await fixture.whenStable();
+
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
+    });
+
+    it('still grants the overwrite licence when the read produced NO validator', async () => {
+      // The absence case, kept as it was — and the name has to say which way it goes, because
+      // the assertion below grants the licence (`allowEtagFallback: true`) rather than
+      // withholding it.
+      //
+      // A restore whose read returned no ETag is still a DECISION — the user saw the content and
+      // chose it — so it stays `'overwrite'` rather than refusing the first save after every such
+      // restore. What changed in LFXV2-3204 is only that the licence is no longer handed out for
+      // free when a validator IS available; the test above pins that half.
+      //
+      // Is `true` RIGHT here, or merely preserved? Right. `allowEtagFallback` separates an
+      // absence someone DECIDED from an absence that is UNKNOWN. A restore is a decision — the
+      // stored content was displayed and chosen — whereas an indeterminate write displayed
+      // nothing and decided nothing, which is why that path records `absence: 'unknown'` and is
+      // refused. Nobody was WARNED here, but the warning was never what the flag asserted.
+      //
+      // The contract comments used to say otherwise, describing `'overwrite'` as the stale-brief
+      // warning path alone; this test previously had to note that they did not cover it. They
+      // now document both explicit sources — see `knownBriefIds` in the component, and the
+      // matching comments on `persistBrief`, the controller and `saveBrief`.
+      //
+      // The cost is bounded and worth naming: this save takes the server's freshly read
+      // validator, so a concurrent editor who moved the row is overwritten rather than refused —
+      // exactly the hazard LFXV2-3204 closes for the case where a validator EXISTS. It is
+      // accepted only because the alternative refuses every restore whose read returned no ETag,
+      // which is this feature's main path, over a conflict the user cannot act on. If reads ever
+      // reliably carry an ETag, this branch should become `absence: 'unknown'`.
+      persistBrief.mockReturnValue(NEVER);
+      restore(brief, 'restored-a', true, null);
+      await fixture.whenStable();
+
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
+    });
+
     it('drops a save that resolves after the user restored a different brief', async () => {
       // `onProceedToImplementation(brief, true)` bumps `briefPersistenceGeneration` precisely so a
       // save still in flight for the brief the user just REPLACED cannot write its `saved` state
@@ -637,12 +753,14 @@ describe('CampaignsComponent brief persistence', () => {
       proceed(brief);
       await fixture.whenStable();
 
-      // `null` ETag alongside a real id: a restore has no load-time validator to carry
-      // (LFXV2-3204), so ownership is proven while the staleness check falls back to the
-      // freshly read one until this session's own save returns a validator.
-      // `true` — a restore is an explicit decision to work from the stored brief, so its absent
+      // `null` ETag alongside a real id: this restore was driven WITHOUT a load-time validator,
+      // which is the case where the read produced no ETag. Ownership is still proven, while the
+      // staleness check falls back to the freshly read validator until this session's own save
+      // returns one. A restore that DOES carry a validator sends it instead and can 412 —
+      // see the LFXV2-3204 tests above.
+      // `true` — a restore is an explicit decision to work from the stored brief, so an absent
       // validator is permission rather than an unknown. Marking it unknown would refuse the first
-      // save after every restore, which is this feature's main path.
+      // save after every validator-less restore, which is this feature's main path.
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
     });
 

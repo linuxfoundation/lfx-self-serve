@@ -64,3 +64,5 @@ export * from './foundation-message.utils';
 export * from './mktg-envelope.utils';
 export * from './newsletter.utils';
 export * from './event.utils';
+export * from './social-listening.utils';
+export * from './social-listening-filter.utils';
