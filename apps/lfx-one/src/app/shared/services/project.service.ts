@@ -43,6 +43,14 @@ export class ProjectService {
   }
 
   /**
+   * Fetches project slugs without access-check overhead. Use when only slugs are needed
+   * (e.g. membership checks) — skips the OpenFGA POST that getProjects() incurs.
+   */
+  public getProjectSlugs(): Observable<string[]> {
+    return this.http.get<string[]>('/api/projects/slugs').pipe(retryTransientHttpError(), shareReplay(1));
+  }
+
+  /**
    * Fail-closed on error, mirroring getProjects. One retry, transient errors only — this is the
    * bootstrap-critical fast path (LFXV2-2857), so a bare blip shouldn't leave the caller's lens
    * set narrowed until the (much slower) deferred sweep eventually resolves it instead.

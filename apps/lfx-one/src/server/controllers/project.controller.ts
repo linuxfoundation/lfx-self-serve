@@ -61,6 +61,25 @@ export class ProjectController {
   }
 
   /**
+   * GET /projects/slugs
+   */
+  public async getProjectSlugs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_project_slugs');
+
+    try {
+      const slugs = await this.projectService.getProjectSlugs(req);
+
+      logger.success(req, 'get_project_slugs', startTime, {
+        slug_count: slugs.length,
+      });
+
+      res.json(slugs);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /projects/writer-summary
    */
   public async getWriterSummary(req: Request, res: Response, next: NextFunction): Promise<void> {

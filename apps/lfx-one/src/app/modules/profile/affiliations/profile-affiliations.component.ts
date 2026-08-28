@@ -419,7 +419,7 @@ export class ProfileAffiliationsComponent {
     return toSignal(
       forkJoin([
         this.userService.getCdpProjectAffiliations(),
-        this.projectService.getProjects(),
+        this.projectService.getProjectSlugs(),
         this.userService.getWorkExperiences(),
         this.userService.getIdentities().pipe(
           catchError(() => {
@@ -428,8 +428,8 @@ export class ProfileAffiliationsComponent {
           })
         ),
       ]).pipe(
-        map(([cdpAffiliations, lfxProjects, workExperiences, identities]) => {
-          const lfxSlugs = new Set(lfxProjects.map((p) => p.slug));
+        map(([cdpAffiliations, slugs, workExperiences, identities]) => {
+          const lfxSlugs = new Set(slugs);
           this.cdpAffiliations.set(cdpAffiliations);
           this.lfxSlugs.set(lfxSlugs);
           this.workExperience.set(workExperiences);

@@ -338,6 +338,27 @@ export class ProjectService {
   }
 
   /**
+   * Fetches slugs for all projects without an access-check round trip.
+   * Use this when the caller only needs slugs — it skips addAccessToResources
+   * entirely, eliminating the OpenFGA POST that getProjects() incurs.
+   */
+  public async getProjectSlugs(req: Request): Promise<string[]> {
+    const params = {
+      type: 'project',
+      page_size: QUERY_SERVICE_PAGE_SIZE,
+    };
+
+    const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+
+    return resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG).map((p) => p.slug);
+  }
+
+  /**
    * Fetches a single project by ID
    */
   public async getProjectById(req: Request, uid: string, access: boolean = true, includeMeetingCoordinator: boolean = false): Promise<Project> {
