@@ -264,11 +264,13 @@ export class MeetingJoinComponent implements OnInit {
   // Snapshot of the roster size immediately before a refresh was requested — lets the refetch
   // tell whether it has absorbed the newly-added rows without needing a separate counts fetch.
   private rosterCountBeforeAdd = signal<number | null>(null);
-  // Meeting+occurrence key the last successful registrants fetch belongs to. A failed refetch's
-  // catchError only falls back to the last-known roster when this still matches the meeting it
-  // was fetching for — otherwise `registrants()` holds a previous, unrelated meeting's roster
-  // (the component is reused across in-place `meetings/:id` navigations) and the fallback must
-  // be an empty list instead of leaking that stale roster into the new meeting's UI.
+  // Meeting id the last successful registrants fetch belongs to (not occurrence-scoped — the
+  // roster is the same across a recurring series' occurrences, only per-occurrence RSVP status
+  // varies). A failed refetch's catchError only falls back to the last-known roster when this
+  // still matches the meeting it was fetching for — otherwise `registrants()` holds a previous,
+  // unrelated meeting's roster (the component is reused across in-place `meetings/:id`
+  // navigations) and the fallback must be an empty list instead of leaking that stale roster
+  // into the new meeting's UI.
   private registrantsMeetingKey = signal<string | null>(null);
   // Counts from actual data
   protected totalInvitees = computed(() => this.registrants().length);
@@ -1417,18 +1419,19 @@ export class MeetingJoinComponent implements OnInit {
               });
               this.optimisticAdditional.set(next.pad);
               this.rosterCountBeforeAdd.set(next.before);
-              this.registrantsMeetingKey.set(`${meeting.id}:${occurrenceId ?? ''}`);
+              this.registrantsMeetingKey.set(meeting.id);
             }),
             catchError((error) => {
-              // A failed refetch for the SAME meeting/occurrence must not reach
-              // reconcileOptimisticPad as an empty list — that would look like "the roster shrank
-              // to zero" and zero out a pending pad for guests that were actually added. But if
-              // the last successful fetch belongs to a DIFFERENT meeting/occurrence (this
-              // component is reused across in-place `meetings/:id` navigations), `registrants()`
-              // is a stale, unrelated roster — falling back to it would leak the previous
-              // meeting's registrant names/emails into this one, so fall back to empty instead.
+              // A failed refetch for the SAME meeting must not reach reconcileOptimisticPad as an
+              // empty list — that would look like "the roster shrank to zero" and zero out a
+              // pending pad for guests that were actually added. But if the last successful fetch
+              // belongs to a DIFFERENT meeting (this component is reused across in-place
+              // `meetings/:id` navigations), `registrants()` is a stale, unrelated roster —
+              // falling back to it would leak the previous meeting's registrant names/emails into
+              // this one, so fall back to empty instead. Keyed on meeting id only (not occurrence)
+              // since switching occurrences within the same series doesn't change the roster.
               console.error(`Failed to refresh registrants for meeting ${meeting.id}:`, error);
-              const isSameMeeting = this.registrantsMeetingKey() === `${meeting.id}:${occurrenceId ?? ''}`;
+              const isSameMeeting = this.registrantsMeetingKey() === meeting.id;
               return of(isSameMeeting ? this.registrants() : []);
             }),
             finalize(() => this.registrantsLoading.set(false))
