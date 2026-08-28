@@ -546,8 +546,9 @@ export class PlanningTabComponent implements OnInit {
     // Without this, a create for event A writes A's token into event B's panel, or withdraws the
     // create offer B's own lookup just raised.
     const capturedEvent = this.lastLookedUpEvent;
+    const capturedFoundation = this.activeFoundationSlug();
     this.campaignService
-      .createHubSpotUtm(this.activeFoundationSlug(), capturedEvent)
+      .createHubSpotUtm(capturedFoundation, capturedEvent)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
@@ -556,7 +557,7 @@ export class PlanningTabComponent implements OnInit {
           // screen. Returning before it left the button disabled and the "Creating..." label
           // frozen on the new event's panel forever.
           this.hsCreating.set(false);
-          if (!this.panelStillShows(capturedEvent)) return;
+          if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
           // `created` alone decides success. HubSpot assigns the token, and not necessarily by
           // the time the create returns — so requiring hs_utm too would report a campaign that
           // WAS created as a failure, leave the Create button up, and invite a retry that writes
@@ -585,7 +586,7 @@ export class PlanningTabComponent implements OnInit {
         },
         error: () => {
           this.hsCreating.set(false);
-          if (!this.panelStillShows(capturedEvent)) return;
+          if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
           // The outcome is UNKNOWN, not failed. Upstream reports an id-less 2xx as an error
           // precisely because the campaign may already exist, and every other failure is
           // classified unconfirmed for the same reason — so leaving the button up would invite
@@ -1038,7 +1039,14 @@ export class PlanningTabComponent implements OnInit {
    * point at which the user's intent is visible, which is what makes it the right thing to
    * compare. Same reasoning as restoreSavedBrief's guard.
    */
-  private panelStillShows(capturedEvent: string): boolean {
+  private panelStillShows(capturedEvent: string, capturedFoundation: string): boolean {
+    // The FOUNDATION is part of the key, not just the event name. This component stays mounted
+    // when an ED switches foundations, campaign-service selects the HubSpot connection by
+    // project, and the url field does not change — so a lookup started for foundation A would
+    // otherwise populate foundation B's panel, and B's brief would carry A's token.
+    if (this.activeFoundationSlug() !== capturedFoundation) {
+      return false;
+    }
     const live = this.extractEventName(this.briefForm.controls.url.value.trim());
     // The url can be empty or half-typed mid-edit, and extractEventName then yields something
     // short that names no event. That is not evidence the user LEFT the event, so the captured
@@ -1063,12 +1071,13 @@ export class PlanningTabComponent implements OnInit {
     this.hsUtm.set(null);
 
     const capturedEvent = eventName;
+    const capturedFoundation = this.activeFoundationSlug();
     this.campaignService
-      .lookupHubSpotUtm(this.activeFoundationSlug(), eventName)
+      .lookupHubSpotUtm(capturedFoundation, eventName)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result: HubSpotUtmLookupResult | null) => {
-          if (!this.panelStillShows(capturedEvent)) return;
+          if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
           // THREE states, not two. A campaign that exists but has NO utm token configured is a
           // real match — treating it as not-found would offer to CREATE a campaign that already
           // exists, into a namespace shared by every foundation and with no duplicate check
@@ -1100,7 +1109,7 @@ export class PlanningTabComponent implements OnInit {
           // an OLDER request's failure declare a newer in-flight lookup finished, dropping the
           // spinner while a request is still running. So it is cleared only for the lookup
           // that still owns the panel.
-          if (!this.panelStillShows(capturedEvent)) return;
+          if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
           this.hsSearching.set(false);
           this.hsStatus.set('HubSpot lookup failed');
           // The control is restored, not left cleared. A lookup that FAILED established

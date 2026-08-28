@@ -1153,6 +1153,27 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   /**
+   * The component stays mounted when an ED switches foundations, and campaign-service selects
+   * the HubSpot connection BY PROJECT -- so the same event name under a different foundation is
+   * a different question. With the URL unchanged, an answer for foundation A must not populate
+   * foundation B's panel, or B's brief carries A's token.
+   */
+  it('drops a lookup answer once the foundation has changed', () => {
+    const pending = new Subject<unknown>();
+    lookup.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+
+    // The ED switches foundations while the lookup is in flight. The url field is untouched.
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+
+    pending.next({ found: true, hs_utm: 'foundation-a-token', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false });
+    fixture.detectChanges();
+
+    expect(instance()['hsUtm'](), "foundation A's token landed on foundation B's panel").toBeFalsy();
+  });
+
+  /**
    * hsSearching is shared across lookups, unlike hsCreating. An OLDER request's failure must not
    * declare a NEWER in-flight lookup finished -- that drops the spinner while a request is still
    * running, so the panel reads as settled when it is not.
