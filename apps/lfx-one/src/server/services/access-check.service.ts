@@ -244,9 +244,10 @@ export class AccessCheckService {
         failedChunks++;
         // Fail closed for the resources in this chunk — their keys are not in the result map,
         // so callers' downstream key lookups will return undefined and default to false.
+        // chunk_index is 0-based — "chunk 0" is the first batch, "chunk 1" the second, etc.
         logger.warning(req, operationName, `Access-check batch chunk ${i} failed, failing closed for its resources`, {
           chunk_index: i,
-          chunk_size: chunks[i]!.length,
+          chunk_size: chunks[i]?.length ?? 0,
           err: result.reason,
         });
       }
