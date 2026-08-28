@@ -112,9 +112,23 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly pulledAt = computed(() => this.monitorData()?.pulledAt ?? '');
   protected readonly hasCampaigns = computed(() => this.campaigns().length > 0);
 
-  protected readonly totalCtr = computed(() => {
+  /**
+   * Account CTR, or NULL when it cannot be computed.
+   *
+   * Returning 0 conflated two different facts: "no totals arrived" (the read failed, or has not
+   * loaded) and "there were impressions but no clicks" — a measured zero. The template rendered
+   * both as `0.0%`, so an outage displayed as a real measurement.
+   *
+   * `null` for both non-computable cases, which the template renders as an em dash. That is
+   * what the LinkedIn, Reddit and Meta panels in this same file already do — Google was the
+   * odd one out.
+   *
+   * Zero impressions stays non-computable rather than 0: clicks/0 is undefined, and reporting
+   * 0% for a campaign that served nothing states a click-through rate that was never measured.
+   */
+  protected readonly totalCtr = computed<number | null>(() => {
     const totals = this.accountTotals();
-    if (!totals || totals.impressions === 0) return 0;
+    if (!totals || totals.impressions === 0) return null;
     return (totals.clicks / totals.impressions) * 100;
   });
 

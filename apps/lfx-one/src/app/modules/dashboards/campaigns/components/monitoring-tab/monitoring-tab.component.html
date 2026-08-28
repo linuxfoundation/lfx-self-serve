@@ -126,28 +126,52 @@
       </div>
     } @else {
       <!-- KPI Strip -->
-      <div class="grid grid-cols-2 gap-4 md:grid-cols-5" data-testid="monitoring-kpis">
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-xs font-medium text-gray-500">Impressions</p>
-          <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-impressions">{{ formatNumber(accountTotals()!.impressions) }}</p>
+      <!--
+        The whole strip is guarded, not each cell. Every value here is read with a non-null
+        assertion, so a null `accountTotals` — a failed or not-yet-loaded read — threw inside
+        change detection and took the entire tab down, not just the KPI row. Guarding once at
+        the container is also what keeps the cells honest: four separate `?? 0` fallbacks would
+        have rendered an outage as four measured zeros.
+      -->
+      @if (accountTotals(); as totals) {
+        <div class="grid grid-cols-2 gap-4 md:grid-cols-5" data-testid="monitoring-kpis">
+          <div class="rounded-lg border border-gray-200 bg-white p-4">
+            <p class="text-xs font-medium text-gray-500">Impressions</p>
+            <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-impressions">{{ formatNumber(accountTotals()!.impressions) }}</p>
+          </div>
+          <div class="rounded-lg border border-gray-200 bg-white p-4">
+            <p class="text-xs font-medium text-gray-500">Clicks</p>
+            <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-clicks">{{ formatNumber(accountTotals()!.clicks) }}</p>
+          </div>
+          <div class="rounded-lg border border-gray-200 bg-white p-4">
+            <p class="text-xs font-medium text-gray-500">CTR</p>
+            <!--
+              An em dash, never 0.0%, when CTR is not computable. A rendered zero here is a claim
+              that the account served impressions and earned no clicks — which is a measurement,
+              not the absence of one. Matches the LinkedIn/Reddit/Meta panels below.
+            -->
+            <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-ctr">
+              @if (totalCtr() !== null) {
+                {{ formatPct(totalCtr()!) }}
+              } @else {
+                —
+              }
+            </p>
+          </div>
+          <div class="rounded-lg border border-gray-200 bg-white p-4">
+            <p class="text-xs font-medium text-gray-500">Spend</p>
+            <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-spend">{{ formatCurrency(accountTotals()!.spend) }}</p>
+          </div>
+          <div class="rounded-lg border border-gray-200 bg-white p-4">
+            <p class="text-xs font-medium text-gray-500">Conversions</p>
+            <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-conversions">{{ formatNumber(accountTotals()!.conversions) }}</p>
+          </div>
         </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-xs font-medium text-gray-500">Clicks</p>
-          <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-clicks">{{ formatNumber(accountTotals()!.clicks) }}</p>
+      } @else {
+        <div class="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8 text-center" data-testid="monitoring-kpis-unavailable">
+          <p class="text-sm text-gray-500">Account totals are not available for this period.</p>
         </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-xs font-medium text-gray-500">CTR</p>
-          <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-ctr">{{ formatPct(totalCtr()) }}</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-xs font-medium text-gray-500">Spend</p>
-          <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-spend">{{ formatCurrency(accountTotals()!.spend) }}</p>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-4">
-          <p class="text-xs font-medium text-gray-500">Conversions</p>
-          <p class="text-lg font-semibold text-gray-900" data-testid="monitoring-kpi-conversions">{{ formatNumber(accountTotals()!.conversions) }}</p>
-        </div>
-      </div>
+      }
 
       <!-- Campaign Table -->
       <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="monitoring-campaign-table">
