@@ -19,8 +19,6 @@ import type {
   FlushableResponse,
   MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
-  GenerateEmailCopyRequest,
-  GenerateEmailCopyResponse,
 } from '@lfx-one/shared/interfaces';
 import {
   CAMPAIGN_DELIVERY_TYPES,
@@ -525,18 +523,9 @@ export class CampaignController {
    * UI. A user who is not told keeps working on a brief they believe is saved.
    */
   /**
-   * Generate email copy for a brief — the `email-copy` endpoint LFXV2-3198 named.
-   *
-   * POST rather than GET because generation is not idempotent and a refine carries a body. It is
-   * also the refine route: `changeRequest` is the only thing that differs between a first
-   * generation and a regeneration, so one endpoint serves both and there is no second route to
-   * keep in step.
-   */
-  /**
    * Build the brief's send audience — the prerequisite the email channel cannot dispatch without.
    *
-   * `project` and `brief_id` travel as query params for the same reason creation does: both are
-   * PATH segments upstream and the server has no other source for them.
+   * `project` and `brief_id` travel as query params: both are PATH segments upstream.
    */
   public async buildAudience(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'] : '';
@@ -563,14 +552,19 @@ export class CampaignController {
     }
   }
 
+  /**
+   * Generate email copy for a brief.
+   *
+   * A thin proxy to campaign-service, which owns generation (LFXV2-2775). `project` and
+   * `brief_id` travel as query params because both are PATH segments upstream.
+   */
   public async generateEmailCopy(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const body = req.body as GenerateEmailCopyRequest;
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'] : '';
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'] : '';
 
-    // Validated here rather than trusted from the client: the prompt instructs the model to use
-    // ONLY supplied facts, so an absent event name would produce a confidently invented one.
-    if (!body?.eventName || !body?.eventUrl) {
+    if (projectSlug === '' || briefId === '') {
       next(
-        ServiceValidationError.forField('eventName', 'eventName and eventUrl are required', {
+        ServiceValidationError.forField('project', 'project and brief_id are required', {
           operation: 'generate_email_copy',
           service: 'campaign_controller',
         })
@@ -578,16 +572,17 @@ export class CampaignController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'generate_email_copy', { eventName: body.eventName });
+    const startTime = logger.startOperation(req, 'generate_email_copy', { projectSlug });
 
     try {
-      const copy = await this.aiService.generateEmailCopy(req, body);
-      logger.success(req, 'generate_email_copy', startTime, {});
-      res.json({ copy } satisfies GenerateEmailCopyResponse);
+      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId);
+      logger.success(req, 'generate_email_copy', startTime, { enabled: result.enabled });
+      res.json(result);
     } catch (error) {
       next(error);
     }
   }
+
 
   public async persistBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {

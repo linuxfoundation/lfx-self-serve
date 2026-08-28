@@ -34,8 +34,7 @@ import {
   RedditMonitorResponse,
   SSEEvent,
   BuildAudienceResult,
-  GenerateEmailCopyRequest,
-  GenerateEmailCopyResponse,
+  GenerateEmailCopyResult,
 } from '@lfx-one/shared/interfaces';
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
 import { exhaustMap, last, map, Observable, of, take, takeWhile, timer } from 'rxjs';
@@ -139,22 +138,23 @@ export class CampaignService {
    * user is told creation failed.
    */
   /**
-   * Generate — or regenerate — email copy for the brief on screen.
-   *
-   * One method for both because a refine differs only by `changeRequest`; a separate refine call
-   * would be the same request with one extra field and would drift from this one.
-   */
-  /**
-   * Build the brief's send audience. No body — the service derives it from the brief itself.
+   * Build the brief's send audience. No body — campaign-service derives it from the brief itself.
    */
   public buildAudience(projectSlug: string, briefId: string): Observable<BuildAudienceResult> {
-    return this.http.post<BuildAudienceResult>('/api/campaigns/audience/build', {}, {
-      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
-    });
+    return this.http.post<BuildAudienceResult>(
+      '/api/campaigns/audience/build',
+      {},
+      { params: new HttpParams().set('project', projectSlug).set('brief_id', briefId) }
+    );
   }
 
-  public generateEmailCopy(request: GenerateEmailCopyRequest): Observable<GenerateEmailCopyResponse> {
-    return this.http.post<GenerateEmailCopyResponse>('/api/campaigns/email-copy', request);
+  /**
+   * Generate email copy for a brief. Brief-scoped upstream, so both ids are required.
+   */
+  public generateEmailCopy(projectSlug: string, briefId: string): Observable<GenerateEmailCopyResult> {
+    return this.http.post<GenerateEmailCopyResult>('/api/campaigns/email-copy', {}, {
+      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+    });
   }
 
   public createCampaign(

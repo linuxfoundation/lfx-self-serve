@@ -737,9 +737,6 @@ export class CampaignsComponent {
   /** Message for a failed generation — empty while idle or in flight. */
   protected readonly emailCopyError = signal<string>('');
 
-  /** The operator's refine instruction, in their own words. */
-  protected readonly emailRefineText = signal<string>('');
-
   /**
    * Whether copy can be generated: a brief must exist, because the prompt is instructed to use
    * ONLY supplied event facts and has nothing to work from otherwise.
@@ -1230,39 +1227,51 @@ export class CampaignsComponent {
   }
 
   /**
-   * Generate email copy from the brief, or regenerate it with a refine instruction.
+   * Generate email copy for the brief.
    *
-   * The refine box is CLEARED on success but kept on failure: a failed refine leaves the operator
-   * with their instruction still typed, so they can retry without re-writing it.
+   * Brief-scoped upstream (`/briefs/{id}/email-copy`), so the brief must be persisted first —
+   * shared with the audience build and staging via `ensureEmailBriefId`, so all three actions
+   * write at most one brief for the event.
+   *
+   * Regeneration is just calling this again: upstream composes the prompt from the brief and does
+   * NOT persist the result, so a second call is safe and cheap.
    */
   protected async onGenerateEmailCopy(): Promise<void> {
     const brief = this.emailBriefOutput();
-    if (brief === null) {
+    const projectSlug = this.activeFoundationSlug();
+    if (brief === null || projectSlug === '') {
       return;
     }
 
-    const changeRequest = this.emailRefineText().trim();
     this.emailCopyState.set('generating');
     this.emailCopyError.set('');
 
     try {
-      const details = brief.eventDetails;
-      const response = await firstValueFrom(
-        this.campaignService.generateEmailCopy({
-          eventUrl: details.registrationUrl,
-          eventName: details.name,
-          campaignGoal: brief.campaignGoal ?? undefined,
-          targetAudience: details.audience,
-          ...(changeRequest === '' ? {} : { changeRequest }),
-        })
-      );
+      const briefId = await this.ensureEmailBriefId(brief, projectSlug);
+      if (briefId === '') {
+        this.emailCopyState.set('error');
+        this.emailCopyError.set('The brief could not be saved, so no copy was generated.');
+        return;
+      }
 
-      this.emailCopy.set(response.copy);
+      const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId));
+
+      // The cutover flag being off is a steady state, not a failure.
+      if (!result.enabled) {
+        this.emailCopyState.set('error');
+        this.emailCopyError.set('Email copy generation is not enabled for this deployment yet.');
+        return;
+      }
+
+      if (result.error || !result.copy) {
+        this.emailCopyState.set('error');
+        this.emailCopyError.set(result.error ?? 'The email copy could not be generated.');
+        return;
+      }
+
+      this.emailCopy.set(result.copy);
       this.emailCopyState.set('idle');
-      this.emailRefineText.set('');
     } catch {
-      // The upstream cause is not surfaced: a proxy failure can carry provider detail, and the
-      // operator's action is the same either way.
       this.emailCopyState.set('error');
       this.emailCopyError.set('Could not generate the email. Try again.');
     }

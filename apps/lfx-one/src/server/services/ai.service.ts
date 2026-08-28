@@ -12,7 +12,6 @@ import {
   WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH,
   WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH,
   WEEKLY_BRIEF_ACTION_ITEMS_MAX,
-  AI_EMAIL_COPY_SYSTEM_PROMPT,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
@@ -24,49 +23,10 @@ import {
   GenerateNewsletterResponse,
   OpenAIChatRequest,
   OpenAIChatResponse,
-  EmailBriefCopy,
-  EmailContentSection,
-  GenerateEmailCopyRequest,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
-
-/**
- * Render generated sections to an email body.
- *
- * Ports sectionsToHTML from the wizard. Text is HTML-ESCAPED on the button path but rich_text is
- * passed through: the model is asked for HTML there, and escaping it would print tags at the
- * reader. That asymmetry is the reason this lives in one function rather than at each call site —
- * a second copy would eventually escape the wrong one.
- *
- * An unrecognised section type renders nothing rather than throwing: a body that silently omits
- * one block is recoverable by a refine, while a 500 loses the whole generation.
- */
-function escapeHtml(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function renderEmailSections(sections: EmailContentSection[]): string {
-  return sections
-    .map((section) => {
-      switch (section.type) {
-        case 'rich_text':
-          return section.html ?? '';
-        case 'button': {
-          const label = escapeHtml(section.text ?? 'Register');
-          const href = encodeURI(section.url ?? '');
-          return href === ''
-            ? ''
-            : `<p><a href="${href}" style="display:inline-block;padding:12px 24px;background:#0868ac;color:#ffffff;text-decoration:none;border-radius:4px">${label}</a></p>`;
-        }
-        default:
-          return '';
-      }
-    })
-    .filter((html) => html !== '')
-    .join('\n');
-}
 
 export class AiService {
   private readonly model = AI_MODEL;
@@ -235,115 +195,6 @@ export class AiService {
    * other AiService caller. The "extraction failures degrade silently" requirement (LFXV2-3043)
    * is the caller's (WeeklyBriefService.getActionItems) responsibility, not AiService's.
    */
-  /**
-   * Generate marketing email copy for a campaign brief.
-   *
-   * The `email-copy` half of an email brief, which `campaign-proxy.service.ts` has always
-   * deferred to (LFXV2-3198): the Plan-tab scrape returns event details and never copy, so
-   * without this an email brief carries nothing to send.
-   *
-   * Ported from lf-marketing-ops' email-creation wizard, with two deliberate departures. It uses
-   * a JSON SCHEMA rather than the wizard's strip-fences-and-balance-braces parsing, because the
-   * proxy enforces the shape and a malformed response fails loudly instead of half-parsing. And
-   * it is SINGLE-SHOT rather than the wizard's multi-turn tool loop: a refine re-runs the whole
-   * generation with `changeRequest` attached, which needs no conversation state and cannot drift
-   * out of sync with a stored transcript.
-   */
-  public async generateEmailCopy(req: Request, request: GenerateEmailCopyRequest): Promise<EmailBriefCopy> {
-    this.assertConfigured();
-
-    const startTime = logger.startOperation(req, 'generate_email_copy', {
-      eventName: request.eventName,
-      isRefine: Boolean(request.changeRequest),
-    });
-
-    // The event facts the model may use. Assembled here rather than interpolated inline so the
-    // "use only these facts" rule in the system prompt has one visible referent.
-    const facts = [
-      `Event: ${request.eventName}`,
-      `Registration URL: ${request.eventUrl}`,
-      request.campaignGoal ? `Goal: ${request.campaignGoal}` : '',
-      request.targetAudience ? `Audience: ${request.targetAudience}` : '',
-      request.valueProp ? `Value proposition: ${request.valueProp}` : '',
-    ]
-      .filter((line) => line !== '')
-      .join('\n');
-
-    const userContent = request.changeRequest
-      ? `${facts}\n\nChange request from the operator — apply it and regenerate the whole email:\n${request.changeRequest}`
-      : facts;
-
-    try {
-      const chatRequest: OpenAIChatRequest = {
-        model: this.model,
-        messages: [
-          { role: 'system', content: AI_EMAIL_COPY_SYSTEM_PROMPT },
-          { role: 'user', content: userContent },
-        ],
-        max_tokens: AI_REQUEST_CONFIG.MAX_TOKENS,
-        temperature: AI_REQUEST_CONFIG.TEMPERATURE,
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'email_copy',
-            description: 'Subject, preview text and ordered body sections for a marketing email',
-            schema: {
-              type: 'object',
-              properties: {
-                subject: { type: 'string' },
-                preview_text: { type: 'string' },
-                sections: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      type: { type: 'string' },
-                      html: { type: 'string' },
-                      text: { type: 'string' },
-                      url: { type: 'string' },
-                    },
-                    required: ['type'],
-                    additionalProperties: false,
-                  },
-                },
-              },
-              required: ['subject', 'preview_text', 'sections'],
-              additionalProperties: false,
-            },
-          },
-        },
-      };
-
-      const response = await this.makeAiRequest(chatRequest);
-      const content = response.choices?.[0]?.message?.content;
-      if (!content || content.trim() === '') {
-        throw new Error('AI returned no email copy');
-      }
-
-      const parsed = JSON.parse(content) as {
-        subject: string;
-        preview_text: string;
-        sections: EmailContentSection[];
-      };
-
-      const sections = Array.isArray(parsed.sections) ? parsed.sections : [];
-      const bodyHtml = renderEmailSections(sections);
-
-      logger.success(req, 'generate_email_copy', startTime, { sectionCount: sections.length });
-
-      return {
-        subject: (parsed.subject ?? '').trim(),
-        previewText: (parsed.preview_text ?? '').trim(),
-        sections,
-        bodyHtml,
-        previewHtml: bodyHtml,
-      };
-    } catch (error) {
-      logger.error(req, 'generate_email_copy', startTime, error);
-      throw error;
-    }
-  }
-
   public async extractBriefActionItems(req: Request, request: ExtractActionItemsRequest): Promise<ExtractActionItemsResponse> {
     this.assertConfigured();
 

@@ -215,7 +215,7 @@
               <div class="flex flex-col gap-3" data-testid="campaigns-email-content">
                 <div class="flex flex-col gap-1">
                   <h2 class="text-base font-semibold text-gray-900">Email content</h2>
-                  <p class="text-sm text-gray-500">Generated from the brief. Refine it in your own words and regenerate.</p>
+                  <p class="text-sm text-gray-500">Generated from the brief by campaign-service. Regenerate to get a fresh draft.</p>
                 </div>
 
                 @if (emailCopy(); as copy) {
@@ -226,7 +226,7 @@
                     </div>
                     <div class="flex flex-col gap-1">
                       <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Preview text</span>
-                      <p class="text-sm text-gray-600" data-testid="campaigns-email-copy-preview">{{ copy.previewText }}</p>
+                      <p class="text-sm text-gray-600" data-testid="campaigns-email-copy-preview">{{ copy.preheader }}</p>
                     </div>
                     <div class="flex flex-col gap-1">
                       <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Body</span>
@@ -235,21 +235,10 @@
                         needs to see the rendered email, not its markup. The content is produced by
                         our own prompt through our own proxy, and Angular still sanitises it.
                       -->
-                      <div class="prose prose-sm max-w-none text-sm text-gray-800" [innerHTML]="copy.bodyHtml" data-testid="campaigns-email-copy-body"></div>
+                      <div class="prose prose-sm max-w-none text-sm text-gray-800" [innerHTML]="copy.body" data-testid="campaigns-email-copy-body"></div>
                     </div>
                   </div>
 
-                  <div class="flex flex-col gap-2" data-testid="campaigns-email-refine">
-                    <label for="email-refine" class="text-sm font-medium text-gray-700">Refine</label>
-                    <textarea
-                      id="email-refine"
-                      rows="2"
-                      class="w-full rounded-md border border-gray-300 p-2 text-sm"
-                      placeholder="e.g. shorter, lead with the speaker line-up, drop the second paragraph"
-                      [value]="emailRefineText()"
-                      (input)="emailRefineText.set($any($event.target).value)"
-                      data-testid="campaigns-email-refine-input"></textarea>
-                  </div>
                 }
 
                 <div class="flex items-center gap-3">
@@ -472,11 +461,11 @@
                   <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
                     <div class="flex flex-col gap-1 border-b border-gray-200 bg-gray-50 px-4 py-3">
                       <p class="text-sm font-semibold text-gray-900">{{ copy.subject }}</p>
-                      <p class="text-xs text-gray-500">{{ copy.previewText }}</p>
+                      <p class="text-xs text-gray-500">{{ copy.preheader }}</p>
                     </div>
                     <div
                       class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
-                      [innerHTML]="copy.previewHtml"
+                      [innerHTML]="copy.body"
                       data-testid="campaigns-email-preview-body"></div>
                   </div>
                   <!--

@@ -1843,7 +1843,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailBriefId: WritableSignal<string>;
     onBuildAudience(): Promise<void>;
     emailCopyState: WritableSignal<'idle' | 'generating' | 'error'>;
-    emailRefineText: WritableSignal<string>;
+    emailCopyError: WritableSignal<string>;
     canGenerateEmailCopy: Signal<boolean>;
     onGenerateEmailCopy(): Promise<void>;
     emailStaging: WritableSignal<'idle' | 'staging' | 'done' | 'error'>;
@@ -2193,48 +2193,18 @@ describe('CampaignsComponent — email delivery channel', () => {
     expect(internals().briefOutput()).toEqual(exampleBrief);
   });
 
-  describe('email content generation (LFXV2-3198)', () => {
+  describe('email content generation (LFXV2-2775 proxy)', () => {
     const emailBrief = {
-      eventDetails: {
-        name: 'KubeCon EU 2026',
-        slug: 'kubecon-eu-2026',
-        countryCode: 'NL',
-        registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
-        audience: 'Cloud-native developers',
-      },
-      campaignGoal: 'registrations',
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/' },
     } as unknown as CampaignBriefOutput;
 
-    const copy = {
-      subject: 'Three days of Kubernetes in Amsterdam',
-      previewText: 'Sessions, labs and the people who build it',
-      sections: [{ type: 'rich_text', html: '<p>Hello</p>' }],
-      bodyHtml: '<p>Hello</p>',
-      previewHtml: '<p>Hello</p>',
-    };
+    const copy = { subject: 'Three days in Amsterdam', preheader: 'Sessions and labs', body: '<p>Hello</p>', cta: 'Register' };
 
-    it('renders the generate button and, once copy exists, the refine box', () => {
-      selectEmail();
-      internals().selectedEmailTab.set('implementation');
-      fixture.detectChanges();
+    let persist: ReturnType<typeof vi.fn>;
 
-      const host: HTMLElement = fixture.nativeElement;
-      const panel = host.querySelector('[data-testid="campaigns-email-implementation-panel"]');
-      expect(panel?.querySelector('[data-testid="campaigns-email-generate-btn"]')).not.toBeNull();
-      // The refine box must NOT exist before there is copy to refine.
-      expect(panel?.querySelector('[data-testid="campaigns-email-refine-input"]')).toBeNull();
-
-      internals().emailCopy.set({
-        subject: 'S',
-        previewText: 'P',
-        sections: [],
-        bodyHtml: '<p>B</p>',
-        previewHtml: '<p>B</p>',
-      });
-      fixture.detectChanges();
-
-      expect(panel?.querySelector('[data-testid="campaigns-email-refine-input"]')).not.toBeNull();
-      expect(panel?.querySelector('[data-testid="campaigns-email-copy-subject"]')?.textContent).toContain('S');
+    beforeEach(() => {
+      persist = vi.fn().mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null }));
+      vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persist);
     });
 
     it('cannot generate without a brief', () => {
@@ -2246,48 +2216,60 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().canGenerateEmailCopy()).toBe(true);
     });
 
-    it('sends the event facts from the brief, not from the form', async () => {
+    it('persists the brief first, then generates against that id', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
 
-      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ copy }));
+      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
       await internals().onGenerateEmailCopy();
 
-      const [request] = gen.mock.calls[0];
-      // Asserts the VALUES and their source: a generator given the wrong URL writes a plausible
-      // email pointing at the wrong event.
-      expect(request.eventName).toBe('KubeCon EU 2026');
-      expect(request.eventUrl).toBe('https://events.linuxfoundation.org/kubecon-eu-2026/');
-      expect(request.changeRequest).toBeUndefined();
-      expect(internals().emailCopy()?.subject).toBe('Three days of Kubernetes in Amsterdam');
+      // Brief-scoped upstream: generation posts to /briefs/{id}/email-copy, so an unpersisted
+      // brief has no id to address.
+      expect(persist).toHaveBeenCalled();
+      expect(gen.mock.calls[0]).toEqual(['tlf', 'brief-77']);
+      expect(internals().emailCopy()?.subject).toBe('Three days in Amsterdam');
     });
 
-    it('passes the refine instruction and clears it only on success', async () => {
+    it('does NOT generate when the persist returns no brief id', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
-      internals().emailRefineText.set('shorter, lead with speakers');
       fixture.detectChanges();
 
-      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ copy }));
+      persist.mockReturnValue(of({ status: 'saved', briefId: '', etag: null }));
+      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy');
+
       await internals().onGenerateEmailCopy();
 
-      expect(gen.mock.calls[0][0].changeRequest).toBe('shorter, lead with speakers');
-      expect(internals().emailRefineText()).toBe('');
-    });
-
-    it('KEEPS the refine text when generation fails', async () => {
-      selectEmail();
-      internals().emailBriefOutput.set(emailBrief);
-      internals().emailRefineText.set('make it shorter');
-      fixture.detectChanges();
-
-      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(throwError(() => new Error('boom')));
-      await internals().onGenerateEmailCopy();
-
-      // Clearing it would make the operator retype their instruction to retry.
-      expect(internals().emailRefineText()).toBe('make it shorter');
+      // Generating without an id would POST to /briefs//email-copy. Refusing is the safe arm.
+      expect(gen).not.toHaveBeenCalled();
       expect(internals().emailCopyState()).toBe('error');
+    });
+
+    it('reports a disabled cutover without claiming copy was generated', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: false }));
+      await internals().onGenerateEmailCopy();
+
+      expect(internals().emailCopy()).toBeNull();
+      expect(internals().emailCopyState()).toBe('error');
+    });
+
+    it('surfaces the upstream refusal rather than a generic message', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      // The 503 case: no AI model configured upstream. An operator needs the real reason.
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(
+        of({ enabled: true, error: 'The email copy could not be generated. Try again.' })
+      );
+      await internals().onGenerateEmailCopy();
+
+      expect(internals().emailCopyError()).toBe('The email copy could not be generated. Try again.');
     });
   });
 
@@ -2357,10 +2339,9 @@ describe('CampaignsComponent — email delivery channel', () => {
   describe('email preview', () => {
     const copy = {
       subject: 'Three days in Amsterdam',
-      previewText: 'Sessions and labs',
-      sections: [],
-      bodyHtml: '<p>Body</p>',
-      previewHtml: '<p>Body</p>',
+      preheader: 'Sessions and labs',
+      body: '<p>Body</p>',
+      cta: 'Register',
     };
 
     it('shows nothing until copy exists', () => {

@@ -4,6 +4,7 @@
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import type {
   BuildAudienceResult,
+  GenerateEmailCopyResult,
   ApiResponse,
   BriefMetrics,
   CampaignBriefLoadResult,
@@ -112,6 +113,14 @@ interface CampaignServiceBriefInput {
  * Local to this file for the same reason the brief shapes are: it is a WIRE type, and exporting
  * it would invite the app to depend on upstream naming that this layer exists to translate.
  */
+/** Upstream email-copy shape, snake_case-free but exactly as campaign-service returns it. */
+interface CampaignServiceEmailCopy {
+  subject: string;
+  preheader: string;
+  body: string;
+  cta: string;
+}
+
 interface CampaignServiceAudience {
   id: string;
   project_id: string;
@@ -723,6 +732,53 @@ export class CampaignServiceClient {
     return brief === null
       ? { status: 'unreadable', briefId: found.brief.id, brief: null, etag: found.etag, approved }
       : { status: 'loaded', briefId: found.brief.id, brief, etag: found.etag, approved };
+  }
+
+  /**
+   * Generate email copy for a brief through campaign-service.
+   *
+   * A THIN PROXY, not a second generator. campaign-service owns this (LFXV2-2775, merged): it
+   * composes the prompt from the brief's own persisted event details and calls the same LiteLLM
+   * proxy this app would have. Generating here as well would mean two prompts producing two
+   * shapes for one feature, and the architecture's "AI generation eventually moves to this
+   * service" has already happened for email copy.
+   *
+   * Takes no body: `project_id` and `brief_id` are the whole input, and the brief supplies the
+   * event facts. Upstream does NOT persist the result — regenerating is safe and cheap.
+   *
+   * A 503 is a deployment state, not a bug: the AI model is optional upstream, and a service
+   * without one configured refuses rather than inventing copy.
+   */
+  public async generateEmailCopy(req: Request, projectSlug: string, briefId: string): Promise<GenerateEmailCopyResult> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      return { enabled: false };
+    }
+
+    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/email-copy`;
+    try {
+      // Fifth argument is `query`, sixth is `data` — this call has neither.
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceEmailCopy>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        path,
+        'POST',
+        undefined,
+        undefined
+      );
+
+      const copy = response.data;
+      if (!copy?.subject) {
+        return { enabled: true, error: 'The generator returned no email copy.' };
+      }
+
+      return {
+        enabled: true,
+        copy: { subject: copy.subject, preheader: copy.preheader, body: copy.body, cta: copy.cta },
+      };
+    } catch (error) {
+      logger.error(req, 'generate_email_copy', Date.now(), error);
+      return { enabled: true, error: 'The email copy could not be generated. Try again.' };
+    }
   }
 
   /**
