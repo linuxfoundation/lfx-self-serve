@@ -48,10 +48,14 @@
     @case ('ready') {
       <div class="flex flex-col gap-6 pb-2" data-testid="org-leaderboard-detail-content">
         <!--
-          Summary sentence. Formatting is pinned: the clauses are optional, so each `@if` sits inside
-          the sentence, and prettier would move the closing brace onto its own line. That turns the
-          following `. This yields` into a text node with a leading space, which Angular collapses to
-          "activities . This yields" rather than dropping. Keep the punctuation glued to the brace.
+          Summary sentence, one sentence deliberately: a second would need a pronoun for the score, and
+          "Its score" reads as the project's, which this page also shows a score for. Both clauses are
+          optional `@if` blocks sitting mid-sentence, each carrying its own leading punctuation, so
+          without the share clause it still reads "…influence in Kubernetes and a score of 6.25".
+
+          Formatting is pinned. Prettier puts a block's braces on their own lines, and Angular keeps
+          the whitespace either side of a control-flow block rather than dropping it — which renders
+          "Kubernetes , with" and "the project ." Keep punctuation glued to its brace.
         -->
         <!-- prettier-ignore -->
         <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-relaxed text-gray-800" data-testid="org-leaderboard-detail-summary">
@@ -60,9 +64,8 @@
           {{ dimension() }} influence in {{ projectName() }}@if (breakdown()?.activitySharePercent !== undefined) {
             <span>, with
               <span class="font-semibold text-blue-600">{{ breakdown()?.activitySharePercent }}%</span>
-              of the project's {{ activityShareLabel() }} activity</span
-            >
-          }. Its score is
+              of the project's {{ activityShareLabel() }} activity</span>
+          } and a score of
           <span class="font-semibold text-blue-600">{{ breakdown()?.totalScore }}</span>
           @if (breakdown()?.rank) {
             <span>
@@ -70,8 +73,7 @@
               <span class="font-semibold text-blue-600">#{{ breakdown()?.rank }}</span>
               out of
               <span class="font-semibold text-blue-600">{{ breakdown()?.totalOrganizations | number }}</span>
-              companies participating in the project</span
-            >
+              companies participating in the project</span>
           }.
         </div>
 

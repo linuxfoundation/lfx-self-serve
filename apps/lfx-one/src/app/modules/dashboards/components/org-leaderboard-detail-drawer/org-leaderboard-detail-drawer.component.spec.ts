@@ -115,10 +115,38 @@ describe('OrgLeaderboardDetailDrawerComponent', () => {
     expect(summaryText()).not.toContain('yields');
   });
 
-  it('punctuates the summary without a stray space before the share clause', async () => {
+  /**
+   * Asserted whole rather than by fragment. Both clauses are optional `@if` blocks sitting
+   * mid-sentence, and every join between one and the surrounding prose is a place the formatter can
+   * introduce a space Angular then keeps — "Kubernetes , with", "the project ." Only the assembled
+   * sentence shows those.
+   */
+  it('assembles the summary without a stray space at any clause boundary', async () => {
     await open();
 
-    expect(summaryText()).toContain('influence in Kubernetes, with');
+    expect(summaryText()).toBe(
+      "Acme has a Participating ecosystem influence in Kubernetes, with 12.4% of the project's collaboration activity and a score of 6.25 — which is #3 out of 41 companies participating in the project."
+    );
+  });
+
+  // The score belongs to the company, but a sentence break would need a pronoun to say so, and this
+  // page also shows the project's own health score for "Its score" to bind to.
+  it('states the score without a pronoun that could bind to the project', async () => {
+    await open();
+
+    expect(summaryText()).toContain('and a score of 6.25');
+    expect(summaryText()).not.toContain('Its score');
+  });
+
+  // The share is absent whenever the warehouse holds no activity row for the organization, which
+  // drops a clause out of the middle of the sentence. The rest has to close over the gap.
+  it('reads as a sentence when the organization has no activity share', async () => {
+    getLeaderboardBreakdown.mockReturnValue(of({ ...breakdown, activitySharePercent: undefined }));
+    await open();
+
+    expect(summaryText()).toBe(
+      'Acme has a Participating ecosystem influence in Kubernetes and a score of 6.25 — which is #3 out of 41 companies participating in the project.'
+    );
   });
 
   it('renders a served category with its points and ratio', async () => {
