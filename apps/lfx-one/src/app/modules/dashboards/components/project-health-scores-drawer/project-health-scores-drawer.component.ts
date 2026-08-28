@@ -29,14 +29,12 @@ import {
   computeHealthyOrBetterCount,
   computeHealthyOrBetterPct,
   computeScoredCount,
-  mapV1BandToV2,
-  mapV1DistributionToV2,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, map, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
@@ -135,9 +133,6 @@ export class ProjectHealthScoresDrawerComponent {
   // === Inputs ===
   public readonly data = input<FoundationHealthScoreDistributionResponse>(DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION);
 
-  // Maps v1 band names (stable/unsteady) from the API response to v2 names (fair/concerning) for display.
-  private readonly mappedData = computed(() => mapV1DistributionToV2(this.data()));
-
   // True while the parent's foundation health-score distribution request is in flight.
   // Gates only the parts of the drawer that depend on `data` (summary + chart). The header
   // badge additionally waits on `totalProjectsLoading` via `distributionLoading`, because
@@ -171,9 +166,9 @@ export class ProjectHealthScoresDrawerComponent {
 
   // Mirrors the foundation-health card's focal KPI so the card's `%` and the drawer's
   // summary can never drift apart.
-  protected readonly healthyOrBetterCount: Signal<number> = computed(() => computeHealthyOrBetterCount(this.mappedData()));
+  protected readonly healthyOrBetterCount: Signal<number> = computed(() => computeHealthyOrBetterCount(this.data()));
 
-  protected readonly healthyOrBetterPct: Signal<number> = computed(() => computeHealthyOrBetterPct(this.mappedData()));
+  protected readonly healthyOrBetterPct: Signal<number> = computed(() => computeHealthyOrBetterPct(this.data()));
 
   // Pre-formatted labels so the template stays a pure binding (no toLocaleString in markup).
   protected readonly healthyOrBetterCountLabel: Signal<string> = computed(() => this.healthyOrBetterCount().toLocaleString('en-US'));
@@ -182,7 +177,7 @@ export class ProjectHealthScoresDrawerComponent {
   protected readonly hasData: Signal<boolean> = computed(() => this.scoredProjects() > 0);
   // Gates the chart itself: a foundation whose projects are all unscored still has a bar to
   // draw (the leading Unscored bar), so this must not collapse to hasData() (scored-only).
-  protected readonly hasChartData: Signal<boolean> = computed(() => this.scoredProjects() > 0 || this.mappedData().unscored > 0);
+  protected readonly hasChartData: Signal<boolean> = computed(() => this.scoredProjects() > 0 || this.data().unscored > 0);
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!this.search().trim() || this.selectedStatuses().size > 0);
   protected readonly chartData: Signal<ChartData<'bar'>> = this.initChartData();
 
@@ -220,7 +215,7 @@ export class ProjectHealthScoresDrawerComponent {
 
   // === Private Initializers ===
   private initScoredProjects(): number {
-    return computeScoredCount(this.mappedData());
+    return computeScoredCount(this.data());
   }
 
   private initScoredLabel(): string {
@@ -231,7 +226,7 @@ export class ProjectHealthScoresDrawerComponent {
 
   private initChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
-      const d = this.mappedData();
+      const d = this.data();
       const barColors = PROJECT_HEALTH_CHART_CATEGORIES.map((category) => this.chartColor[category]);
       return {
         labels: PROJECT_HEALTH_CHART_CATEGORIES.map((category) => PROJECT_HEALTH_CHART_CATEGORY_LABEL[category]),
@@ -280,16 +275,6 @@ export class ProjectHealthScoresDrawerComponent {
           this.selectedStatuses.set(new Set());
           this.searchForm.get('query')!.setValue('');
           return this.analyticsService.getFoundationProjectsDetail(slug).pipe(
-            // Normalize each row's category here (not just the aggregate distribution) so a
-            // BFF still on the old rolling deployment can't return v1 names (stable/unsteady)
-            // that leave categoryBadge/categoryLabel lookups undefined and break row rendering.
-            map((response) => ({
-              ...response,
-              projects: response.projects.map((project) => ({
-                ...project,
-                healthScoreCategory: (mapV1BandToV2(project.healthScoreCategory) ?? null) as FoundationHealthScore | null,
-              })),
-            })),
             tap(() => this.tableLoading.set(false)),
             catchError(() => {
               this.tableLoading.set(false);
