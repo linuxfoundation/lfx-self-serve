@@ -12,7 +12,7 @@ These steps apply to any signed-in user on LFX Self Serve.
 
 **CLAs** is a tab under the Profile & Account hub that lists the Contributor License Agreements (CLAs) EasyCLA has on file for you. A CLA is the agreement that covers your contributions to a Linux Foundation project that requires one. The CLAs tab answers: _which agreements have I signed, under which projects am I covered, and does any of them need attention?_
 
-From this tab you can also start signing a new CLA and ask your employer's CLA managers to approve or remove an Employee CLA. Self Serve does not complete either of those itself — it hands you off to EasyCLA, which does. See [What Self Serve does not do](#what-self-serve-does-not-do).
+From this tab you can also start signing a new CLA, and ask your employer's CLA managers to approve or remove an Employee CLA. Neither is completed here, but the two end differently: signing hands you off to the EasyCLA Contributor Console, while a manager request is submitted from this tab and a CLA manager then acts on it in the Corporate CLA Console. See [What Self Serve does not do](#what-self-serve-does-not-do).
 
 For broader EasyCLA concepts (what a CLA is, project and corporate consoles, troubleshooting), see the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla).
 
@@ -76,7 +76,8 @@ When EasyCLA recorded the account used to sign, the **Signed** cell adds a secon
 
 - _Signed as \<username\> (GitHub)_
 - _Signed as \<username\> (GitLab)_
-- _Signed as \<identity\>_ — for Gerrit, and for agreements identified by LF login or email address, which carry no platform label
+- _Signed as \<username\> (Gerrit)_
+- _Signed as \<identity\>_ — with no platform label, when EasyCLA recorded the identity but not the platform it came from, which covers agreements identified by LF login or email address
 
 This line is informational. It tells you which of your accounts an agreement is attached to, which is useful when you have several linked identities and are working out why a project still asks you to sign.
 
@@ -86,14 +87,14 @@ The line is omitted when EasyCLA has no signing identity on record for that agre
 
 Each row ends with a **⋮** menu listing only the actions available for that agreement. A row with no available actions shows no **⋮** at all.
 
-| Action                     | When it appears                                                                                                       |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **Download PDF**           | On an ICLA when EasyCLA has the signed file                                                                           |
-| **Download PDF** (greyed)  | On every ECLA, annotated _Covered by Corporate CLA (CCLA)_ — employee coverage has no individual document to download |
-| **Request approval**       | On an ECLA that is no longer on your employer's **Approved List**                                                     |
-| **Request Removal**        | On any ECLA that is not **Revoked**                                                                                   |
-| **Contact CLA Manager**    | On a **Valid** or **Needs attention** ECLA                                                                            |
-| **Manage in CCLA Console** | On an ECLA where EasyCLA records you as a CLA manager for that company's Corporate CLA                                |
+| Action                     | When it appears                                                                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Download PDF**           | On an ICLA when EasyCLA has the signed file                                                                                                |
+| **Download PDF** (greyed)  | On an ECLA that is not **Revoked**, annotated _Covered by Corporate CLA (CCLA)_ — employee coverage has no individual document to download |
+| **Request approval**       | On an ECLA that is no longer on your employer's **Approved List**                                                                          |
+| **Request Removal**        | On any ECLA that is not **Revoked**                                                                                                        |
+| **Contact CLA Manager**    | On a **Valid** or **Needs attention** ECLA                                                                                                 |
+| **Manage in CCLA Console** | On an ECLA where EasyCLA records you as a CLA manager for that company's Corporate CLA                                                     |
 
 You will not see a **⋮** on:
 
@@ -124,7 +125,7 @@ Three ECLA-only actions reach the CLA managers who hold your employer's Corporat
 All three open the same dialog:
 
 1. Self Serve loads the CLA managers for that agreement and pre-selects all of them. Clear anyone you would rather not contact.
-2. Optionally add a note in **Message**.
+2. Add a **Message**. This is optional for **Request approval** and **Request Removal**. It is required for **Contact CLA Manager**, where the message is the whole point of the action — **Send** stays disabled until you write one.
 3. Select **Send**.
 
 What you see afterwards:
@@ -161,7 +162,7 @@ The info banner on the CLAs tab also points to the Identities flow (_Link your E
 
 Yes for an **ICLA**, when EasyCLA has the signed file — choose **Download PDF** from the row's **⋮** menu. When EasyCLA does not have the file, the row offers no download.
 
-No for an **ECLA**. Employee coverage is under your company's Corporate CLA (CCLA), so there is no individual PDF to download. The menu shows **Download PDF** greyed out and annotated _Covered by Corporate CLA (CCLA)_.
+No for an **ECLA**. Employee coverage is under your company's Corporate CLA (CCLA), so there is no individual PDF to download. On an ECLA that has a **⋮** menu, the menu shows **Download PDF** greyed out and annotated _Covered by Corporate CLA (CCLA)_. A **Revoked** ECLA has no menu at all, so it shows nothing.
 
 ## What Self Serve does not do
 
