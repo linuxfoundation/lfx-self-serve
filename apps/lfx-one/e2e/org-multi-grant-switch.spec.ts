@@ -134,12 +134,16 @@ test.describe('Multi-Organization Switching — non-staff, two unrelated direct 
       }
     };
     page.on('request', captureLensRequest);
+    // Register the waiter BEFORE the click so a lens request dispatched synchronously off the
+    // click can't complete before the waiter exists (per the canonical-request pattern in
+    // `org-selector.spec.ts:145-156`).
+    const lensRequestForB = page.waitForRequest((request) => request.url().includes(`/api/orgs/${ORG_B_UID}/lens/`), { timeout: 15_000 });
     try {
       await rowB.click();
       // Panel closes on selection — active org is unambiguous immediately after switching.
       await expect(page.getByTestId('org-selector-list')).not.toBeVisible({ timeout: 5_000 });
       // Wait until at least one lens fetch for B lands, proving the selection actually propagated.
-      await page.waitForRequest((request) => request.url().includes(`/api/orgs/${ORG_B_UID}/lens/`), { timeout: 15_000 });
+      await lensRequestForB;
       // Small buffer so any late A-scoped fetch (which would prove the switch didn't happen
       // atomically) shows up in the captured set instead of racing past the assertion below.
       await page.waitForTimeout(500);

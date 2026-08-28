@@ -281,16 +281,34 @@ export class OrgSelectorComponent {
     // unrelated controls while the panel happens to be open — stealing Arrow/Home/End, and
     // breaking caret/text nav in inputs like the staff search field.
     if (!this.isEventInsidePanel(event)) return;
-    const options = this.listboxOptions();
-    if (options.length === 0) {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        this.closeAndRestoreFocus();
-      }
+
+    // Escape always closes the panel — including from the staff search input.
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closeAndRestoreFocus();
       return;
     }
-    const activeIndex = options.findIndex((el) => el === document.activeElement);
 
+    const options = this.listboxOptions();
+    if (options.length === 0) return;
+
+    const targetIsOption = event.target instanceof HTMLElement && event.target.getAttribute('role') === 'option';
+
+    // ArrowDown from the search input (or the trigger, if Shift+Tab reopened focus there while
+    // the panel is open) drops focus into the first option — the standard combobox+listbox
+    // affordance that lets a caller "step into the list" without touching the mouse.
+    if (event.key === 'ArrowDown' && !targetIsOption) {
+      event.preventDefault();
+      this.moveFocusTo(options, 0);
+      return;
+    }
+
+    // All other option-nav keys only apply when an option is actually focused. Firing them on
+    // the staff search input would break its caret navigation (Home/End) and its native Enter
+    // handling, and would yank focus off the input mid-typing.
+    if (!targetIsOption) return;
+
+    const activeIndex = options.findIndex((el) => el === document.activeElement);
     switch (event.key) {
       case 'ArrowDown':
         event.preventDefault();
@@ -315,10 +333,6 @@ export class OrgSelectorComponent {
         // so schedule the focus restore in a microtask: it lands after the click has processed
         // and matches Escape's contract (focus returns to the combobox trigger, WAI-ARIA APG).
         queueMicrotask(() => this.triggerRef()?.nativeElement.focus());
-        return;
-      case 'Escape':
-        event.preventDefault();
-        this.closeAndRestoreFocus();
         return;
       default:
         return;
