@@ -508,8 +508,8 @@ export class CampaignController {
    * `project` and `brief_id` travel as query params: both are PATH segments upstream.
    */
   public async buildAudience(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'] : '';
-    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'] : '';
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
 
     if (projectSlug === '' || briefId === '') {
       next(
@@ -539,8 +539,8 @@ export class CampaignController {
    * `brief_id` travel as query params because both are PATH segments upstream.
    */
   public async generateEmailCopy(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'] : '';
-    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'] : '';
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
 
     if (projectSlug === '' || briefId === '') {
       next(

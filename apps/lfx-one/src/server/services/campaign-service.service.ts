@@ -3,34 +3,35 @@
 
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import type {
-  BuildAudienceResult,
-  GenerateEmailCopyResult,
   ApiResponse,
   BriefMetrics,
+  BuildAudienceResult,
+  CampaignAudienceStatus,
   CampaignBriefLoadResult,
-  CampaignServiceCreateResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
-  CampaignMetricsWindow,
-  HubSpotEmailSearchResult,
-  HubSpotMarketingEmail,
   CampaignEventDetails,
   CampaignGoal,
   CampaignIndexDoc,
   CampaignJobStatus,
-  CampaignListResult,
   CampaignKeyword,
+  CampaignListResult,
+  CampaignMetricsWindow,
   CampaignPlatform,
   CampaignPlatformResult,
   CampaignProgramType,
   CampaignServiceCampaign,
+  CampaignServiceCreateResult,
   CampaignToggleStatus,
+  GenerateEmailCopyResult,
+  HubSpotEmailSearchResult,
+  HubSpotMarketingEmail,
   LinkedInBriefCopy,
   LinkedInCreativeVariant,
   MetaAdVariant,
-  RedditAdVariant,
   MetaBriefCopy,
   QueryServiceResponse,
+  RedditAdVariant,
   RedditBriefCopy,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
@@ -113,6 +114,18 @@ interface CampaignServiceEmailCopy {
   preheader: string;
   body: string;
   cta: string;
+}
+
+/**
+ * Narrow the upstream status string onto the closed union.
+ *
+ * Upstream declares `Enum("building", "built", "failed")`, but a wire string is only ever a claim.
+ * Anything unrecognised becomes `failed` rather than being passed through: `canStageEmail` admits
+ * only `built`, so an unknown value must not be able to masquerade as a usable audience, and
+ * `failed` is the arm that offers the operator a rebuild.
+ */
+function toAudienceStatus(status: string): CampaignAudienceStatus {
+  return status === 'built' || status === 'building' ? status : 'failed';
 }
 
 /**
@@ -825,7 +838,7 @@ export class CampaignServiceClient {
           platformMasterListId: built.platform_master_list_id,
           suppressionListIds: built.suppression_list_ids,
           inclusionSummary: built.inclusion_summary,
-          status: built.status,
+          status: toAudienceStatus(built.status),
           version: built.version,
           // Off the HEADER, not the body: the design maps it as `Header("etag:ETag")` on the 202,
           // so `built.etag` would read `undefined` forever -- the exact trap the brief wire-type

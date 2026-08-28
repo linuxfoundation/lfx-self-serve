@@ -2012,7 +2012,7 @@ describe('CampaignServiceClient.buildAudience', () => {
     brief_id: 'b-1',
     platform: 'hubspot',
     platform_master_list_id: 'list-9',
-    suppression_list_ids: '["sup-1"]',
+    suppression_list_ids: ['sup-1'],
     inclusion_summary: '1,234 contacts',
     status: 'built',
     version: 1,
@@ -2040,6 +2040,25 @@ describe('CampaignServiceClient.buildAudience', () => {
     // `undefined` forever -- the same trap the brief wire-type comment records.
     expect(result.audience?.etag).toBe('"7"');
     expect(result.audience?.status).toBe('built');
+  });
+
+  it('does not let an unrecognised status masquerade as usable', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, status: 'queued' }));
+
+    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+
+    // `canStageEmail` admits only `built`, so an unknown wire value must not pass through as one.
+    // `failed` is the honest landing spot -- it is the arm that offers the operator a rebuild.
+    expect(result.audience?.status).toBe('failed');
+  });
+
+  it('passes through the statuses upstream actually declares', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, status: 'building' }));
+
+    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+
+    // Narrowing must not collapse the legitimate in-flight state into a failure.
+    expect(result.audience?.status).toBe('building');
   });
 
   it('reports an error result rather than throwing when upstream fails', async () => {

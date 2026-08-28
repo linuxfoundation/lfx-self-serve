@@ -931,3 +931,12 @@ export const HUBSPOT_TEMPLATE_RENDER_LIMIT = 100;
  * Order is the enum's, widening then calendar-relative; nothing depends on it.
  */
 export const CAMPAIGN_METRICS_WINDOWS = ['today', 'yesterday', 'last_7_days', 'last_14_days', 'last_30_days', 'this_month', 'last_month'] as const;
+
+/**
+ * Told to an operator wherever an email action needs a brief that does not exist yet.
+ *
+ * Shared because it appears at three points in the email flow (copy generation, audience build,
+ * staging) and it is the copy that tells someone how to unblock themselves -- three literals drift
+ * apart, and the one that drifts is the one nobody re-reads.
+ */
+export const EMAIL_BRIEF_REQUIRED_HINT = 'Generate a brief on the Plan tab first.';

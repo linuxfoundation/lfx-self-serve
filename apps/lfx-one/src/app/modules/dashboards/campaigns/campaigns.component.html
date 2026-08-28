@@ -255,7 +255,7 @@
                     (onClick)="onGenerateEmailCopy()"
                     data-testid="campaigns-email-generate-btn" />
                   @if (emailBriefOutput() === null) {
-                    <span class="text-sm text-gray-500" data-testid="campaigns-email-generate-hint">Generate a brief on the Plan tab first.</span>
+                    <span class="text-sm text-gray-500" data-testid="campaigns-email-generate-hint">{{ briefRequiredHint }}</span>
                   }
                 </div>
 
@@ -437,10 +437,20 @@
                       <p class="text-xs text-gray-500">{{ audience.suppressionListIds?.length }} suppression list(s) applied</p>
                     }
                   </div>
-                } @else {
+                }
+
+                <!--
+                  Keyed on the STATUS, not on presence. Gating the build control on
+                  `emailAudience() === null` made a non-built row terminal: the status card
+                  replaced the button, `canStageEmail` refuses anything but `built`, there is no
+                  poll and no re-read route, so a FAILED build stranded the operator with no way
+                  back except re-running the Plan-tab scrape. A build that ends in `failed` is the
+                  ordinary case here -- it calls Snowflake and several HubSpot creates.
+                -->
+                @if (emailAudience()?.status !== 'built') {
                   <div class="flex items-center gap-3">
                     <lfx-button
-                      label="Build audience"
+                      [label]="emailAudience() === null ? 'Build audience' : 'Retry build'"
                       icon="fa-light fa-users"
                       severity="secondary"
                       [disabled]="emailBriefOutput() === null || emailAudienceState() === 'building'"
@@ -448,7 +458,7 @@
                       (onClick)="onBuildAudience()"
                       data-testid="campaigns-email-audience-btn" />
                     @if (emailBriefOutput() === null) {
-                      <span class="text-sm text-gray-500">Generate a brief on the Plan tab first.</span>
+                      <span class="text-sm text-gray-500">{{ briefRequiredHint }}</span>
                     }
                   </div>
                 }
@@ -513,11 +523,15 @@
                   @if (!canStageEmail() && emailStaging() !== 'staging') {
                     <span class="text-sm text-gray-500" data-testid="campaigns-email-stage-hint">
                       @if (emailBriefOutput() === null) {
-                        Generate a brief on the Plan tab first.
+                        {{ briefRequiredHint }}
                       } @else if (selectedEmailTemplateId() === '') {
                         Choose a template to clone.
                       } @else if (emailAudience() === null) {
                         Build the send audience first.
+                      } @else if (emailAudience()?.status === 'building') {
+                        The send audience is still building.
+                      } @else if (emailAudience()?.status !== 'built') {
+                        The audience build failed — rebuild it before staging.
                       }
                     </span>
                   }

@@ -625,6 +625,16 @@ export interface LinkedInTargetingStrategy {
  * `inclusionSummary` is human-readable provenance ("how this audience was built") — what an
  * operator checks before sending to a list they did not assemble by hand.
  */
+/**
+ * The audience build's lifecycle, closed because upstream declares it closed:
+ * `Enum("building", "built", "failed")` in campaign-service's `design/audience.go`.
+ *
+ * A union rather than `string` because six sites branch on these literals across two files, and
+ * `canStageEmail` admits ONLY `built` -- a typo in any branch would silently mean "not built" and
+ * disable staging with no error.
+ */
+export type CampaignAudienceStatus = 'building' | 'built' | 'failed';
+
 export interface CampaignAudience {
   id: string;
   projectId: string;
@@ -633,7 +643,7 @@ export interface CampaignAudience {
   platformMasterListId?: string;
   suppressionListIds?: string[];
   inclusionSummary?: string;
-  status: string;
+  status: CampaignAudienceStatus;
   version: number;
   etag?: string;
 }

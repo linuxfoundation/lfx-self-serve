@@ -2278,7 +2278,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/' },
     } as unknown as CampaignBriefOutput;
 
-    const audience = {
+    const audience: CampaignAudience = {
       id: 'aud-1',
       projectId: 'tlf',
       briefId: 'brief-77',
@@ -2466,6 +2466,50 @@ describe('CampaignsComponent — email delivery channel', () => {
       // A green check beside the word "failed" tells the operator the opposite of what happened.
       expect(panel?.textContent).toContain('Audience build failed');
       expect(panel?.textContent).not.toContain('Audience built');
+    });
+
+    it('counts suppression lists, not the characters of an encoded one', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailAudience.set({ id: 'aud-1', status: 'built', suppressionListIds: ['sup-1'] } as never);
+      fixture.detectChanges();
+
+      const panel = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-built"]');
+      // Upstream declares ArrayOf(String). If it ever arrived JSON-encoded, `.length` would read
+      // the STRING length and report "9 suppression list(s)" for a single list -- a
+      // compliance-facing number on a send list, wrong by a factor of nine.
+      expect(panel?.textContent).toContain('1 suppression list(s) applied');
+    });
+
+    it('keeps a rebuild control when the audience build failed', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailAudience.set({ id: 'aud-1', status: 'failed' } as never);
+      fixture.detectChanges();
+
+      // Without this the panel is a DEAD END: the status card replaces the button, canStageEmail
+      // refuses anything but `built`, and there is no poll and no re-read route -- so the only
+      // escape was re-running the Plan-tab scrape.
+      const btn = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-btn"]');
+      expect(btn).not.toBeNull();
+    });
+
+    it('explains a disabled Stage button when the audience is present but not built', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'failed' } as never);
+      fixture.detectChanges();
+
+      // The hint chain tested PRESENCE while the guard tested STATUS, so this state fell through
+      // every branch and rendered an empty span -- a disabled button with no reason, which the
+      // panel's own comment says it exists to prevent.
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]');
+      expect(hint?.textContent?.trim()).toBeTruthy();
+      expect(hint?.textContent).toContain('failed');
     });
 
     it('says the audience is what is missing when only it is missing', () => {

@@ -10,6 +10,7 @@ import {
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_PROGRAM_TYPES,
   CAMPAIGN_TABS,
+  EMAIL_BRIEF_REQUIRED_HINT,
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
@@ -694,9 +695,13 @@ export class CampaignsComponent {
   /**
    * Build lifecycle for the REQUEST, not the upstream job.
    *
-   * `building` covers the in-flight call only; it returns to `idle` when the 202 lands. There is
-   * no poll — the audience's own `status` is the authority on whether the upstream build actually
-   * finished, which is why `canStageEmail` reads that rather than this signal.
+   * `building` covers the in-flight call only; it returns to `idle` when the 202 lands.
+   *
+   * There is no poll and no status re-read route, so the audience's `status` is only ever the one
+   * the 202 carried. `canStageEmail` reads that rather than this signal because it is the closest
+   * thing to an authority available -- but a build that is still `building` when the 202 returns
+   * stays that way on screen until the operator rebuilds. The Retry control exists for exactly
+   * that reason; a poll is the real fix and is not in this change.
    */
   protected readonly emailAudienceState = signal<'idle' | 'building' | 'error'>('idle');
 
@@ -710,6 +715,9 @@ export class CampaignsComponent {
    * `briefPersistence().briefId` to read. Staging persists on demand and records the id here so a
    * subsequent audience build — which is brief-scoped upstream — has one without persisting twice.
    */
+  /** Shared so the three email blocks that need a brief cannot drift apart. */
+  protected readonly briefRequiredHint = EMAIL_BRIEF_REQUIRED_HINT;
+
   protected readonly emailBriefId = signal<string>('');
 
   /** The chosen template's id — what `hubspotConfig.sourceEmailId` takes on create. */
