@@ -338,32 +338,6 @@ export class ProjectService {
   }
 
   /**
-   * Shared paginated fetch for all public projects, with ROOT filtered out.
-   * Both `getProjects` (access-checked) and `getProjectSlugs` (slug-only) delegate here
-   * so the query params, pagination loop, and ROOT filter stay in one place.
-   * @param extraQuery Optional caller-supplied query overrides merged into params (e.g. from getProjects).
-   */
-  private async fetchAllProjectsFiltered(req: Request, extraQuery: Record<string, any> = {}): Promise<Project[]> {
-    const params = {
-      ...extraQuery,
-      type: 'project',
-      // Overrides any caller-supplied page_size — the query service's 50-result default turns
-      // a large org's project list into a long sequential page scan (GH-1735).
-      page_size: QUERY_SERVICE_PAGE_SIZE,
-    };
-
-    const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
-    );
-
-    // ROOT is an administrative pseudo-project used only for persona detection — never surface it in user lists.
-    return resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
-  }
-
-  /**
    * Fetches a single project by ID
    */
   public async getProjectById(req: Request, uid: string, access: boolean = true, includeMeetingCoordinator: boolean = false): Promise<Project> {
@@ -7576,6 +7550,33 @@ export class ProjectService {
    * spin up its own concurrency budget, multiplying real fan-out past the cap under a wide+deep
    * tree (GH-1676 review).
    */
+
+  /**
+   * Shared paginated fetch for all public projects, with ROOT filtered out.
+   * Both `getProjects` (access-checked) and `getProjectSlugs` (slug-only) delegate here
+   * so the query params, pagination loop, and ROOT filter stay in one place.
+   * @param extraQuery Optional caller-supplied query overrides merged into params (e.g. from getProjects).
+   */
+  private async fetchAllProjectsFiltered(req: Request, extraQuery: Record<string, any> = {}): Promise<Project[]> {
+    const params = {
+      ...extraQuery,
+      type: 'project',
+      // Overrides any caller-supplied page_size — the query service's 50-result default turns
+      // a large org's project list into a long sequential page scan (GH-1735).
+      page_size: QUERY_SERVICE_PAGE_SIZE,
+    };
+
+    const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+
+    // ROOT is an administrative pseudo-project used only for persona detection — never surface it in user lists.
+    return resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+  }
+
   private async acquireTraversalSlot(gate: { active: number; queue: (() => void)[] }): Promise<void> {
     if (gate.active < FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY) {
       gate.active += 1;
