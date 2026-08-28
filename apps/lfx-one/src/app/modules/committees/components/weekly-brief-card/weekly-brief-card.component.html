@@ -2,6 +2,44 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (canEdit()) {
+  @if (isGovernanceCommittee() && !fetchLoading() && hasCurrentActivityData()) {
+    <!--
+      "This week so far" activity tally (GH-1922) — a raw count of the current, not-yet-closed
+      week's activity, separate from the AI Assistant card's own completed-week brief below (a
+      board meeting held today won't appear in that brief until next week). No card border, no
+      AI iconography, no "contains private source data" banner: this is a count query, not
+      generated prose. Governance committees only for v1 (isGovernanceCommittee).
+    -->
+    <div
+      class="flex flex-wrap items-baseline gap-x-1 gap-y-1 text-xs text-gray-500"
+      [attr.aria-label]="currentActivityLine()"
+      data-testid="weekly-brief-card-current-activity">
+      <span>This week so far:</span>
+      @if (currentActivity().length) {
+        @for (section of currentActivity(); track section.kind; let last = $last) {
+          <button
+            type="button"
+            class="inline border-0 bg-transparent p-0 text-xs text-gray-500 underline decoration-dotted cursor-pointer hover:text-gray-700 transition-colors"
+            [attr.aria-expanded]="expandedActivityKinds().has(section.kind)"
+            (click)="onToggleActivityKind(section.kind)"
+            [attr.data-testid]="'weekly-brief-card-current-activity-toggle-' + section.kind">
+            {{ section.countText }}</button
+          ><span>{{ last ? '' : ',' }}</span>
+        }
+      } @else {
+        <span>no activity yet</span>
+      }
+    </div>
+    @for (section of currentActivity(); track section.kind) {
+      @if (expandedActivityKinds().has(section.kind)) {
+        <div class="flex flex-col gap-0.5 pl-2" [attr.data-testid]="'weekly-brief-card-current-activity-items-' + section.kind">
+          @for (ref of section.refs; track ref.id) {
+            <span class="text-xs text-gray-500">{{ ref.title || section.label }}</span>
+          }
+        </div>
+      }
+    }
+  }
   @if (fetchLoading()) {
     <lfx-card>
       <div class="flex flex-col gap-3">

@@ -96,6 +96,19 @@ export interface WeeklyBriefSourceChipSection extends WeeklyBriefSourceSection {
   chips: WeeklyBriefSourceChip[];
 }
 
+/**
+ * A `WeeklyBriefSourceSection` populated with one kind's non-zero refs from
+ * `WeeklyBriefCurrentActivity.source_refs`, plus the precomputed verb-phrase count text for
+ * that kind (e.g. "1 meeting held") — the "this week so far" tally's analog to
+ * `WeeklyBriefSourceChipSection` (GH-1922). Omitted entirely (not zero-length) for a kind with
+ * no activity — `weekly-brief-card.component.ts`'s `currentActivitySections` only returns
+ * non-zero kinds, same filtering `initSourceChipSections` already does for the Sources row.
+ */
+export interface WeeklyBriefCurrentActivitySection extends WeeklyBriefSourceSection {
+  refs: WeeklyBriefSourceRef[];
+  countText: string;
+}
+
 export interface WeeklyBrief {
   uid: string;
   committee_uid: string;
@@ -154,6 +167,22 @@ export interface WeeklyBriefCurrentResponse {
    * per-user rating store, not upstream — see `weekly-brief.service.ts#getCurrentBrief`.
    */
   caller_rating?: WeeklyBriefRating | null;
+  /**
+   * BFF-side enrichment (not part of upstream's contract, same as `caller_rating`): a raw
+   * count of activity in the current, not-yet-closed week — distinct from `brief`'s own
+   * completed-week window (GH-1922). Only populated in mock mode: there is no upstream
+   * committee-service endpoint for in-progress-week counts yet, and live mode is a pure
+   * proxy passthrough that never fabricates one. Absent (not null) in live mode until that
+   * upstream support exists — see `weekly-brief.service.ts#getCurrentBrief`.
+   */
+  current_activity?: WeeklyBriefCurrentActivity;
+}
+
+/** See `WeeklyBriefCurrentResponse.current_activity`. */
+export interface WeeklyBriefCurrentActivity {
+  window_start: string;
+  window_end: string;
+  source_refs: WeeklyBriefSourceRef[];
 }
 
 /** A caller's one-tap quality rating on a specific weekly-brief revision. BFF-only — no upstream equivalent. */

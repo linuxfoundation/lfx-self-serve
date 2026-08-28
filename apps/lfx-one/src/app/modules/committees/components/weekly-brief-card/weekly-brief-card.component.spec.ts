@@ -441,3 +441,165 @@ describe('WeeklyBriefCardComponent — Sources disclosure (LFXV2-3335)', () => {
     expect(component.expandedSourceGroups().size).toBe(0);
   });
 });
+
+/**
+ * Covers the "this week so far" activity tally (GH-1922): the caption for a multi-kind and an
+ * all-zero week, the governance-only gate (Board vs. a non-governance category), the
+ * absent-vs-empty distinction that keeps live mode's backend gap from rendering a misleading
+ * "no activity yet", the per-kind click-to-reveal (mirroring LFXV2-3335's group toggle), and
+ * reset on committee navigation.
+ */
+describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => {
+  let fixture: ComponentFixture<WeeklyBriefCardComponent>;
+  let component: WeeklyBriefCardComponent;
+  let getWeeklyBrief: ReturnType<typeof vi.fn>;
+
+  const BOARD_COMMITTEE: Committee = { uid: 'committee-board', name: 'Board of Directors', project_uid: 'project-1', category: 'Board' } as Committee;
+  const WORKING_GROUP_COMMITTEE: Committee = {
+    uid: 'committee-wg',
+    name: 'Some Working Group',
+    project_uid: 'project-1',
+    category: 'Working Group',
+  } as Committee;
+
+  function activityRef(id: string, kind: string, title: string): WeeklyBriefSourceRef {
+    return { id, kind, title };
+  }
+
+  /** `activityRefs: null` omits `current_activity` entirely — simulates the live-mode backend gap. */
+  function briefResponse(activityRefs: WeeklyBriefSourceRef[] | null): WeeklyBriefCurrentResponse {
+    return {
+      brief: {
+        uid: 'brief-1',
+        committee_uid: 'committee-board',
+        window_start: '2026-08-02T00:00:00Z',
+        window_end: '2026-08-08T23:59:59Z',
+        state: 'generated',
+        brief_text: 'Weekly summary.',
+        source_refs: [],
+        prompt_version: 'v1',
+        model: 'test-model',
+        regeneration_count: 0,
+        private_source_present: false,
+        created_at: '2026-08-08T00:00:00Z',
+        updated_at: '2026-08-08T00:00:00Z',
+        revision: 1,
+      },
+      throttle: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3, window_resets_at: '2026-08-09T00:00:00Z' },
+      caller_rating: null,
+      ...(activityRefs !== null
+        ? { current_activity: { window_start: '2026-08-24T00:00:00Z', window_end: '2026-08-27T12:00:00Z', source_refs: activityRefs } }
+        : {}),
+    };
+  }
+
+  async function setup(committee: Committee, activityRefs: WeeklyBriefSourceRef[] | null): Promise<void> {
+    getWeeklyBrief = vi.fn(() => of(briefResponse(activityRefs)));
+
+    await TestBed.configureTestingModule({
+      imports: [WeeklyBriefCardComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: WeeklyBriefService, useValue: { getWeeklyBrief, listWeeklyBriefs: vi.fn(() => of({ data: [] })) } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        // Real service — see the Share to Slack describe block's docblock above for why.
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(WeeklyBriefCardComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', committee);
+    fixture.componentRef.setInput('canEdit', true);
+    await fixture.whenStable();
+  }
+
+  /** Clicks a data-testid element and flushes it, failing loudly if the element isn't there. */
+  async function clickTestId(testId: string): Promise<HTMLElement> {
+    const el = fixture.nativeElement.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null;
+    expect(el).not.toBeNull();
+    el!.click();
+    await fixture.whenStable();
+    return el!;
+  }
+
+  it('renders a comma-separated, kind-ordered caption for a governance committee with multi-kind activity', async () => {
+    await setup(BOARD_COMMITTEE, [
+      activityRef('meeting-1', 'meeting', 'Board Sync'),
+      activityRef('vote-1', 'vote', 'Q3 Resolution'),
+      activityRef('doc-1', 'doc', 'Meeting Minutes'),
+    ]);
+
+    const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
+    expect(el).not.toBeNull();
+    const text = (el.textContent as string).replace(/\s+/g, ' ').trim();
+    expect(text).toContain('This week so far:');
+    expect(text).toContain('1 meeting held');
+    expect(text).toContain('1 vote closed');
+    expect(text).toContain('1 document added');
+    // WEEKLY_BRIEF_SOURCE_SECTIONS order: meeting, vote, ..., doc.
+    expect(text.indexOf('1 meeting held')).toBeLessThan(text.indexOf('1 vote closed'));
+    expect(text.indexOf('1 vote closed')).toBeLessThan(text.indexOf('1 document added'));
+  });
+
+  it('pluralizes a kind with more than one ref this week', async () => {
+    await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync'), activityRef('meeting-2', 'meeting', 'Committee Sync')]);
+
+    const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
+    expect(el.textContent as string).toContain('2 meetings held');
+  });
+
+  it('renders "no activity yet" when current_activity is present but empty (a genuine quiet week-so-far)', async () => {
+    await setup(BOARD_COMMITTEE, []);
+
+    const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
+    expect(el).not.toBeNull();
+    expect(el.textContent).toContain('no activity yet');
+  });
+
+  it('renders nothing at all when current_activity is absent — the live-mode backend gap must not be presented as "no activity yet" (GH-1922)', async () => {
+    await setup(BOARD_COMMITTEE, null);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]')).toBeNull();
+  });
+
+  it('does not render the tally for a non-governance committee, even with activity present', async () => {
+    await setup(WORKING_GROUP_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Some Meeting')]);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]')).toBeNull();
+  });
+
+  it('clicking a kind reveals its underlying ref titles, and clicking again collapses it', async () => {
+    await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync'), activityRef('vote-1', 'vote', 'Q3 Resolution')]);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-items-meeting"]')).toBeNull();
+
+    const toggle = await clickTestId('weekly-brief-card-current-activity-toggle-meeting');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const items = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-items-meeting"]');
+    expect(items).not.toBeNull();
+    expect(items.textContent).toContain('Board Sync');
+    // The vote kind wasn't toggled — its items stay collapsed.
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-items-vote"]')).toBeNull();
+
+    await clickTestId('weekly-brief-card-current-activity-toggle-meeting');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-items-meeting"]')).toBeNull();
+  });
+
+  it('clears expandedActivityKinds when navigating to a different committee', async () => {
+    await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync')]);
+
+    await clickTestId('weekly-brief-card-current-activity-toggle-meeting');
+    expect(component.expandedActivityKinds().has('meeting')).toBe(true);
+
+    getWeeklyBrief.mockReturnValue(of(briefResponse(null)));
+    fixture.componentRef.setInput('committee', WORKING_GROUP_COMMITTEE);
+    await fixture.whenStable();
+
+    expect(component.expandedActivityKinds().size).toBe(0);
+  });
+});

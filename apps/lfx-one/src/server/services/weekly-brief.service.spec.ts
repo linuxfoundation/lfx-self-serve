@@ -157,7 +157,7 @@ import { MicroserviceError } from '../errors';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
 import { logger } from './logger.service';
-import { __resetMockBriefStateForTesting, briefWindow, WeeklyBriefService } from './weekly-brief.service';
+import { __resetMockBriefStateForTesting, briefWindow, currentWeekInProgressWindow, WeeklyBriefService } from './weekly-brief.service';
 
 const req = {} as unknown as Request;
 const userReq = { oidc: { user: { nickname: 'alice', sub: 'auth0|alice-sub' } } } as unknown as Request;
@@ -187,6 +187,46 @@ describe('briefWindow', () => {
 
     expect(window_start).toBe('2026-01-11T00:00:00.000Z'); // this week's Sunday
     expect(window_end).toBe('2026-01-17T23:59:59.999Z'); // today
+  });
+});
+
+describe('currentWeekInProgressWindow (GH-1922)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('always looks at the current week, not the last completed one, on a weekday (Wednesday)', () => {
+    // 2026-01-14 is a Wednesday (UTC) — briefWindow() would resolve to the *previous* week here.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-14T12:00:00.000Z'));
+
+    const { window_start, window_end } = currentWeekInProgressWindow();
+
+    expect(window_start).toBe('2026-01-11T00:00:00.000Z'); // this week's Sunday, not last week's
+    expect(window_end).toBe('2026-01-14T12:00:00.000Z'); // now, not a fixed Saturday 23:59:59.999
+  });
+
+  it('on Sunday itself, the window starts and ends the same day', () => {
+    // 2026-01-11 is a Sunday (UTC).
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-11T08:30:00.000Z'));
+
+    const { window_start, window_end } = currentWeekInProgressWindow();
+
+    expect(window_start).toBe('2026-01-11T00:00:00.000Z');
+    expect(window_end).toBe('2026-01-11T08:30:00.000Z');
+  });
+
+  it('on Saturday, matches briefWindow()’s start but ends at now instead of 23:59:59.999', () => {
+    // 2026-01-17 is a Saturday (UTC).
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-17T09:00:00.000Z'));
+
+    const inProgress = currentWeekInProgressWindow();
+    const completed = briefWindow();
+
+    expect(inProgress.window_start).toBe(completed.window_start);
+    expect(inProgress.window_end).toBe('2026-01-17T09:00:00.000Z');
   });
 });
 
@@ -335,6 +375,29 @@ describe('WeeklyBriefService', () => {
       process.env['NODE_ENV'] = 'production';
       await expect(service.getCurrentBrief(req, 'committee-1')).rejects.toThrow(/temporarily unavailable/);
       expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('getCurrentBrief includes a non-zero current_activity fixture spanning multiple kinds (GH-1922)', async () => {
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.current_activity).toBeDefined();
+      const kinds = result.current_activity?.source_refs.map((ref) => ref.kind).sort();
+      expect(kinds).toEqual(['doc', 'meeting', 'vote']);
+    });
+
+    it('getCurrentBrief scopes current_activity to currentWeekInProgressWindow(), not briefWindow()', async () => {
+      vi.useFakeTimers();
+      // 2026-01-14 is a Wednesday (UTC) — briefWindow() resolves to the *previous* week here,
+      // currentWeekInProgressWindow() must not.
+      vi.setSystemTime(new Date('2026-01-14T12:00:00.000Z'));
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.current_activity?.window_start).toBe('2026-01-11T00:00:00.000Z');
+      expect(result.current_activity?.window_end).toBe('2026-01-14T12:00:00.000Z');
+      expect(result.brief?.window_start).toBe('2026-01-04T00:00:00.000Z');
+
+      vi.useRealTimers();
     });
 
     it('does not leak the WEEKLY_BRIEF_BACKEND env var name into the client-facing error message', async () => {
@@ -541,6 +604,14 @@ describe('WeeklyBriefService', () => {
       proxyRequest.mockRejectedValueOnce(notFound);
 
       await expect(service.getCurrentBrief(req, 'committee-1')).rejects.toBe(notFound);
+    });
+
+    it('getCurrentBrief does not fabricate current_activity — live mode is a pure passthrough with no upstream in-progress-week endpoint yet (GH-1922)', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'generated' }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.current_activity).toBeUndefined();
     });
 
     it('generateBrief forwards the real upstream status code (202 accepted)', async () => {

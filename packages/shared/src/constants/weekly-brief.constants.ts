@@ -102,3 +102,18 @@ export const WEEKLY_BRIEF_SOURCE_SECTIONS: readonly WeeklyBriefSourceSection[] =
   { kind: 'doc', label: 'Documents' },
   { kind: 'members', label: 'Membership' },
 ] as const;
+
+/**
+ * Verb phrasing for the "this week so far" activity-tally caption (GH-1922) — one entry per
+ * `WEEKLY_BRIEF_SOURCE_SECTIONS` kind. Kept separate from that constant because the two solve
+ * different problems: `WEEKLY_BRIEF_SOURCE_SECTIONS` is a noun *label* for a disclosure section
+ * heading ("Meetings"), this is a verb *phrase* for a count sentence ("1 meeting held" / "2
+ * meetings held") — singular/plural forms a section label doesn't need.
+ */
+export const WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES: readonly { kind: string; singular: string; plural: string }[] = [
+  { kind: 'meeting', singular: 'meeting held', plural: 'meetings held' },
+  { kind: 'vote', singular: 'vote closed', plural: 'votes closed' },
+  { kind: 'mailing-list', singular: 'mailing-list post', plural: 'mailing-list posts' },
+  { kind: 'doc', singular: 'document added', plural: 'documents added' },
+  { kind: 'members', singular: 'membership change', plural: 'membership changes' },
+] as const;

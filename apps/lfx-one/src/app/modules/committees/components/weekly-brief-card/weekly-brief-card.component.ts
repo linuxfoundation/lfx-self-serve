@@ -14,6 +14,7 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { WeeklyBriefArchiveDrawerComponent } from '../weekly-brief-archive-drawer/weekly-brief-archive-drawer.component';
 import { SourceChipContextDirective } from './source-chip-context.directive';
 import {
+  WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES,
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_MAX_POLL_ATTEMPTS,
   WEEKLY_BRIEF_POLL_INTERVAL_MS,
@@ -30,6 +31,7 @@ import {
   ShareWeeklyBriefResult,
   ValidationError,
   WeeklyBrief,
+  WeeklyBriefCurrentActivitySection,
   WeeklyBriefCurrentResponse,
   WeeklyBriefRating,
   WeeklyBriefSourceChip,
@@ -37,7 +39,7 @@ import {
   WeeklyBriefSourceChipSection,
   WeeklyBriefThrottle,
 } from '@lfx-one/shared/interfaces';
-import { formatUtcDateRangeLabel, mapWeeklyBriefSourceRefsToChips } from '@lfx-one/shared/utils';
+import { formatUtcDateRangeLabel, isGoverningBoard, mapWeeklyBriefSourceRefsToChips } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
@@ -161,6 +163,10 @@ export class WeeklyBriefCardComponent {
   public readonly sourcesExpanded = signal(false);
   public readonly expandedSourceGroups = signal<Set<string>>(new Set());
 
+  // "This week so far" activity-tally disclosure state (GH-1922) — same click-to-reveal
+  // shape as expandedSourceGroups above, keyed by kind instead of chip id.
+  public readonly expandedActivityKinds = signal<Set<string>>(new Set());
+
   // Written by both the initial-load pipeline and the post-generate poll (see
   // initBriefResponseSubscription / pollUntilTerminal) — a plain signal rather than
   // toSignal(), since the poll needs to push updates outside that pipeline's own stream.
@@ -223,6 +229,32 @@ export class WeeklyBriefCardComponent {
   // (LFXV2-3335) — precomputed here rather than re-derived in the template (frontend-checklist
   // §4). See initSourceChipSections for the "Other" catch-all rationale.
   public readonly sourceChipSections: Signal<WeeklyBriefSourceChipSection[]> = this.initSourceChipSections();
+
+  // Gates the "this week so far" activity tally (GH-1922) to governance committees for v1 —
+  // Board/Government Advisory Council today. `committee().category` is always populated on
+  // this input (unlike `behavioralClass`, which is only decorated on the dashboard's own data
+  // path, not this one), so this derives the classification directly rather than reading a
+  // field that isn't there.
+  public readonly isGovernanceCommittee: Signal<boolean> = computed(() => isGoverningBoard(this.committee()?.category));
+
+  // Current, in-progress-week activity — a BFF enrichment on the response envelope (like
+  // caller_rating), absent in live mode until committee-service ships in-progress-week counts
+  // (GH-1922). Read from briefResponse, not brief(): it's scoped to a different window than
+  // the brief's own completed week, so it isn't part of WeeklyBrief itself.
+  public readonly currentActivity: Signal<WeeklyBriefCurrentActivitySection[]> = this.initCurrentActivitySections();
+
+  // Distinguishes "the field is absent" (live mode's backend gap — nothing to say) from
+  // "the field is present but every kind is zero" (mock mode, or a real quiet week once live
+  // support ships) — the template must render neither line nor "no activity yet" for the
+  // former, only the latter (GH-1922 Phase 2: "do NOT fabricate ... degrade gracefully").
+  public readonly hasCurrentActivityData: Signal<boolean> = computed(() => !!this.briefResponse()?.current_activity);
+
+  // "This week so far: 1 meeting held, 1 vote closed" / "This week so far: no activity yet".
+  public readonly currentActivityLine: Signal<string> = computed(() => {
+    const sections = this.currentActivity();
+    if (!sections.length) return 'This week so far: no activity yet';
+    return `This week so far: ${sections.map((section) => section.countText).join(', ')}`;
+  });
 
   // "no_sources" is the only error_reason meaningful to the UI today (LFXV2-3000) —
   // a committee with zero activity in the lookback window, not a genuine generation
@@ -578,6 +610,20 @@ export class WeeklyBriefCardComponent {
     });
   }
 
+  // Level-1/only disclosure for the "this week so far" tally, keyed by kind (GH-1922) — same
+  // shape as onToggleSourceGroup.
+  public onToggleActivityKind(kind: string): void {
+    this.expandedActivityKinds.update((expanded) => {
+      const next = new Set(expanded);
+      if (next.has(kind)) {
+        next.delete(kind);
+      } else {
+        next.add(kind);
+      }
+      return next;
+    });
+  }
+
   // Private initializer functions
   // Groups sourceChips() into the fixed-order kind-sections defined by WEEKLY_BRIEF_SOURCE_SECTIONS
   // (LFXV2-3335), appending a trailing "Other" section for any chip whose kind isn't one of the
@@ -592,6 +638,23 @@ export class WeeklyBriefCardComponent {
       const sections = WEEKLY_BRIEF_SOURCE_SECTIONS.map(({ kind, label }) => ({ kind, label, chips: chips.filter((chip) => chip.kind === kind) }));
       sections.push({ kind: 'other', label: 'Other', chips: chips.filter((chip) => !known.has(chip.kind)) });
       return sections.filter((section) => section.chips.length > 0);
+    });
+  }
+
+  // Groups current_activity.source_refs into the same fixed-order kinds as
+  // WEEKLY_BRIEF_SOURCE_SECTIONS (GH-1922), each with its precomputed "N <kind> <verb>" count
+  // text (WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES). No "Other" catch-all here, unlike
+  // initSourceChipSections: this is a raw count sentence, not a disclosure list — an
+  // unrecognized future kind would have no phrasing to render anyway, so it's silently
+  // excluded from the tally rather than mis-rendered.
+  private initCurrentActivitySections(): Signal<WeeklyBriefCurrentActivitySection[]> {
+    return computed(() => {
+      const refs = this.briefResponse()?.current_activity?.source_refs ?? [];
+      return WEEKLY_BRIEF_SOURCE_SECTIONS.map(({ kind, label }) => {
+        const kindRefs = refs.filter((ref) => ref.kind === kind);
+        const phrase = WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES.find((p) => p.kind === kind);
+        return { kind, label, refs: kindRefs, countText: phrase ? `${kindRefs.length} ${kindRefs.length === 1 ? phrase.singular : phrase.plural}` : '' };
+      }).filter((section) => section.refs.length > 0);
     });
   }
 
@@ -629,6 +692,8 @@ export class WeeklyBriefCardComponent {
       // reset in this block.
       this.sourcesExpanded.set(false);
       this.expandedSourceGroups.set(new Set());
+      // Reset "this week so far" disclosure state (GH-1922) — same rationale.
+      this.expandedActivityKinds.set(new Set());
     });
 
     // Archive preflight — fires once per committee as soon as the uid is known,

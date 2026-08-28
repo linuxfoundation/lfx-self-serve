@@ -25,6 +25,7 @@ import {
   ShareWeeklyBriefToSlackResult,
   WeeklyBrief,
   WeeklyBriefActionItem,
+  WeeklyBriefCurrentActivity,
   WeeklyBriefCurrentResponse,
   WeeklyBriefRating,
 } from '@lfx-one/shared/interfaces';
@@ -96,6 +97,40 @@ export function briefWindow(): { window_start: string; window_end: string } {
   return {
     window_start: sunday.toISOString(),
     window_end: saturday.toISOString(),
+  };
+}
+
+/**
+ * Returns [this week's Sunday 00:00 UTC, now] — the in-progress-week semantics "this week so
+ * far" needs, as opposed to `briefWindow()`'s last-*completed*-week semantics (GH-1922). No
+ * Saturday-rollover branch: unlike `briefWindow()`, this always looks at the current week,
+ * every day of the week, including the still-open Sun–Fri span `briefWindow()` deliberately
+ * skips past.
+ */
+export function currentWeekInProgressWindow(): { window_start: string; window_end: string } {
+  const now = new Date();
+  const day = now.getUTCDay(); // 0 = Sunday
+  const sunday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - day, 0, 0, 0, 0));
+  return { window_start: sunday.toISOString(), window_end: now.toISOString() };
+}
+
+/**
+ * Deterministic mock fixture for `WeeklyBriefCurrentResponse.current_activity` (GH-1922).
+ * Non-zero on purpose — mirrors the issue's own worked example ("1 meeting held, 1 vote
+ * closed, 1 document added") so mock mode exercises the multi-kind render, not just the
+ * empty state. Mock-only: there is no upstream committee-service endpoint for in-progress-week
+ * counts, so live mode never populates this field (see `getCurrentBrief`).
+ */
+function buildMockCurrentActivity(committeeId: string): WeeklyBriefCurrentActivity {
+  const { window_start, window_end } = currentWeekInProgressWindow();
+  return {
+    window_start,
+    window_end,
+    source_refs: [
+      { id: `mock-current-meeting-1-${committeeId}`, kind: 'meeting', title: 'Board Sync' },
+      { id: `mock-current-vote-1-${committeeId}`, kind: 'vote', title: 'Q3 Resolution' },
+      { id: `mock-current-doc-1-${committeeId}`, kind: 'doc', title: 'Meeting Minutes' },
+    ],
   };
 }
 
@@ -236,8 +271,12 @@ export class WeeklyBriefService {
           regenerations_used: brief.regeneration_count,
           window_resets_at: nextSundayIso(),
         },
+        current_activity: buildMockCurrentActivity(committeeId),
       };
     } else {
+      // No `current_activity` here — committee-service has no in-progress-week-counts
+      // endpoint yet (GH-1922), and this is a pure proxy passthrough, so the field is simply
+      // never present in the response rather than fabricated. Revisit once upstream adds it.
       logger.debug(req, 'get_weekly_brief_current', 'Proxying to committee-service', { committee_id: committeeId });
       response = await this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
         req,
