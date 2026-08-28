@@ -33,6 +33,7 @@ import {
   RedditAccountOption,
   RedditMonitorResponse,
   SSEEvent,
+  BuildAudienceResult,
   GenerateEmailCopyRequest,
   GenerateEmailCopyResponse,
 } from '@lfx-one/shared/interfaces';
@@ -143,6 +144,15 @@ export class CampaignService {
    * One method for both because a refine differs only by `changeRequest`; a separate refine call
    * would be the same request with one extra field and would drift from this one.
    */
+  /**
+   * Build the brief's send audience. No body — the service derives it from the brief itself.
+   */
+  public buildAudience(projectSlug: string, briefId: string): Observable<BuildAudienceResult> {
+    return this.http.post<BuildAudienceResult>('/api/campaigns/audience/build', {}, {
+      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+    });
+  }
+
   public generateEmailCopy(request: GenerateEmailCopyRequest): Observable<GenerateEmailCopyResponse> {
     return this.http.post<GenerateEmailCopyResponse>('/api/campaigns/email-copy', request);
   }

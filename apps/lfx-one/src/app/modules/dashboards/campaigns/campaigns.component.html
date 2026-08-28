@@ -404,6 +404,60 @@
                 No campaign-row table follows, unlike the paid side: staging produces ONE HubSpot
                 draft with nothing left running, so rows would imply pause/resume controls that
                 `HubSpotDispatcher` does not implement.
+
+              <!--
+                Audience. A SEPARATE action from staging, not folded into it, for two reasons: the
+                build is expensive (Snowflake plus several HubSpot creates), and the operator needs
+                to read the provenance before sending to a list they did not assemble by hand.
+              -->
+              <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-audience">
+                <div class="flex flex-col gap-1">
+                  <h2 class="text-base font-semibold text-gray-900">Send audience</h2>
+                  <p class="text-sm text-gray-500">Built from the brief's event details. Required before an email can be staged.</p>
+                </div>
+
+                @if (emailAudience(); as audience) {
+                  <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4" data-testid="campaigns-email-audience-built">
+                    <div class="flex items-center gap-2">
+                      <i class="fa-light fa-check text-green-600"></i>
+                      <span class="text-sm font-medium text-gray-900">Audience built</span>
+                      <span class="font-mono text-xs text-gray-500">{{ audience.status }}</span>
+                    </div>
+                    @if (audience.inclusionSummary; as summary) {
+                      <p class="text-sm text-gray-600" data-testid="campaigns-email-audience-summary">{{ summary }}</p>
+                    }
+                    @if (audience.suppressionListIds?.length) {
+                      <p class="text-xs text-gray-500">{{ audience.suppressionListIds?.length }} suppression list(s) applied</p>
+                    }
+                  </div>
+                } @else {
+                  <div class="flex items-center gap-3">
+                    <lfx-button
+                      label="Build audience"
+                      icon="fa-light fa-users"
+                      severity="secondary"
+                      [disabled]="emailBriefOutput() === null || emailAudienceState() === 'building'"
+                      [loading]="emailAudienceState() === 'building'"
+                      (onClick)="onBuildAudience()"
+                      data-testid="campaigns-email-audience-btn" />
+                    @if (emailBriefOutput() === null) {
+                      <span class="text-sm text-gray-500">Generate a brief on the Plan tab first.</span>
+                    }
+                  </div>
+                }
+
+                @if (emailAudienceMessage(); as message) {
+                  <p
+                    class="text-sm"
+                    [class.text-red-700]="emailAudienceState() === 'error'"
+                    [class.text-gray-500]="emailAudienceState() !== 'error'"
+                    [attr.role]="emailAudienceState() === 'error' ? 'alert' : 'status'"
+                    data-testid="campaigns-email-audience-message">
+                    {{ message }}
+                  </p>
+                }
+              </div>
+
               -->
               <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-stage">
                 <div class="flex items-center gap-3">

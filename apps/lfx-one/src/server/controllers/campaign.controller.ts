@@ -532,6 +532,37 @@ export class CampaignController {
    * generation and a regeneration, so one endpoint serves both and there is no second route to
    * keep in step.
    */
+  /**
+   * Build the brief's send audience — the prerequisite the email channel cannot dispatch without.
+   *
+   * `project` and `brief_id` travel as query params for the same reason creation does: both are
+   * PATH segments upstream and the server has no other source for them.
+   */
+  public async buildAudience(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'] : '';
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'] : '';
+
+    if (projectSlug === '' || briefId === '') {
+      next(
+        ServiceValidationError.forField('project', 'project and brief_id are required', {
+          operation: 'build_audience',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'build_audience', { projectSlug });
+
+    try {
+      const result = await this.campaignServiceClient.buildAudience(req, projectSlug, briefId);
+      logger.success(req, 'build_audience', startTime, { enabled: result.enabled });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public async generateEmailCopy(req: Request, res: Response, next: NextFunction): Promise<void> {
     const body = req.body as GenerateEmailCopyRequest;
 

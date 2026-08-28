@@ -15,6 +15,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
+  CampaignAudience,
   EmailBriefCopy,
   CampaignCreateRequest,
   CampaignBriefPersistenceState,
@@ -647,6 +648,30 @@ export class CampaignsComponent {
       : ''
   );
 
+  /**
+   * The brief's built send audience — the prerequisite email dispatch cannot run without.
+   *
+   * Held separately from the copy because they are independent: an operator can build the
+   * audience before writing the email or after, and regenerating copy must not discard a built
+   * audience (rebuilding calls Snowflake and several HubSpot creates).
+   */
+  protected readonly emailAudience = signal<CampaignAudience | null>(null);
+
+  /** Build lifecycle. `building` covers the 202-and-poll window. */
+  protected readonly emailAudienceState = signal<'idle' | 'building' | 'error'>('idle');
+
+  /** Message for a failed or disabled build — empty while idle or in flight. */
+  protected readonly emailAudienceMessage = signal<string>('');
+
+  /**
+   * The brief id the email side has established, if any.
+   *
+   * Email skips brief persistence on the Plan tab, so unlike the paid side there is no
+   * `briefPersistence().briefId` to read. Staging persists on demand and records the id here so a
+   * subsequent audience build — which is brief-scoped upstream — has one without persisting twice.
+   */
+  protected readonly emailBriefId = signal<string>('');
+
   /** The chosen template's id — what `hubspotConfig.sourceEmailId` takes on create. */
   protected readonly selectedEmailTemplateId = signal<string>('');
 
@@ -1079,6 +1104,78 @@ export class CampaignsComponent {
   }
 
   /**
+   * Ensure the email brief is persisted and return its id.
+   *
+   * Email never persists on the Plan tab, but BOTH the audience build and campaign creation are
+   * brief-scoped upstream, so each needs an id. Persisting once and caching it here stops the two
+   * actions writing two briefs for the same event.
+   *
+   * Returns '' when the persist could not produce an id; callers must treat that as a failure
+   * rather than proceeding with an empty path segment.
+   */
+  private async ensureEmailBriefId(brief: CampaignBriefOutput, projectSlug: string): Promise<string> {
+    const known = this.emailBriefId();
+    if (known !== '') {
+      return known;
+    }
+
+    const persisted = await firstValueFrom(this.campaignService.persistBrief(brief, projectSlug));
+    const briefId = persisted.briefId ?? '';
+    if (briefId !== '') {
+      this.emailBriefId.set(briefId);
+    }
+    return briefId;
+  }
+
+  /**
+   * Build the brief's send audience.
+   *
+   * Separate action rather than folded into staging because it is EXPENSIVE — it calls Snowflake
+   * and several HubSpot creates — and because an operator wants to inspect the provenance
+   * (`inclusionSummary`) before sending to a list they did not assemble by hand.
+   */
+  protected async onBuildAudience(): Promise<void> {
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    if (brief === null || projectSlug === '') {
+      return;
+    }
+
+    this.emailAudienceState.set('building');
+    this.emailAudienceMessage.set('');
+
+    try {
+      const briefId = await this.ensureEmailBriefId(brief, projectSlug);
+      if (briefId === '') {
+        this.emailAudienceState.set('error');
+        this.emailAudienceMessage.set('The brief could not be saved, so no audience was built.');
+        return;
+      }
+
+      const result = await firstValueFrom(this.campaignService.buildAudience(projectSlug, briefId));
+
+      // `enabled: false` is the cutover flag being off — a steady state, not a failure.
+      if (!result.enabled) {
+        this.emailAudienceState.set('idle');
+        this.emailAudienceMessage.set('Audience building is not enabled for this deployment yet.');
+        return;
+      }
+
+      if (result.error || !result.audience) {
+        this.emailAudienceState.set('error');
+        this.emailAudienceMessage.set(result.error ?? 'The audience could not be built.');
+        return;
+      }
+
+      this.emailAudience.set(result.audience);
+      this.emailAudienceState.set('idle');
+    } catch {
+      this.emailAudienceState.set('error');
+      this.emailAudienceMessage.set('The audience could not be built. Try again.');
+    }
+  }
+
+  /**
    * Generate email copy from the brief, or regenerate it with a refine instruction.
    *
    * The refine box is CLEARED on success but kept on failure: a failed refine leaves the operator
@@ -1148,13 +1245,14 @@ export class CampaignsComponent {
     this.emailStagingMessage.set('');
 
     try {
-      const persisted = await firstValueFrom(this.campaignService.persistBrief(brief, projectSlug));
-      const briefId = persisted.briefId;
+      // Shared with the audience build via `ensureEmailBriefId`, so the two actions cannot write
+      // two briefs for the same event.
+      const briefId = await this.ensureEmailBriefId(brief, projectSlug);
 
       // A persist that reports success without an id cannot be followed by a create — the id is
       // a PATH segment upstream. Reported as a failure rather than retried, because a retry
       // would post a second brief for the same event.
-      if (!briefId) {
+      if (briefId === '') {
         this.emailStaging.set('error');
         this.emailStagingMessage.set('The brief could not be saved, so the send was not staged. Try again.');
         return;

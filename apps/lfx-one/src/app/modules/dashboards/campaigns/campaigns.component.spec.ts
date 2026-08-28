@@ -8,6 +8,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { Signal, WritableSignal } from '@angular/core';
 import { computed, signal } from '@angular/core';
 import type {
+  CampaignAudience,
   EmailBriefCopy,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
@@ -1531,6 +1532,11 @@ describe('CampaignsComponent — email delivery channel', () => {
     onEmailProceedToImplementation(brief: CampaignBriefOutput): void;
     selectedEmailTemplateId: WritableSignal<string>;
     emailCopy: WritableSignal<EmailBriefCopy | null>;
+    emailAudience: WritableSignal<CampaignAudience | null>;
+    emailAudienceState: WritableSignal<'idle' | 'building' | 'error'>;
+    emailAudienceMessage: WritableSignal<string>;
+    emailBriefId: WritableSignal<string>;
+    onBuildAudience(): Promise<void>;
     emailCopyState: WritableSignal<'idle' | 'generating' | 'error'>;
     emailRefineText: WritableSignal<string>;
     canGenerateEmailCopy: Signal<boolean>;
@@ -1977,6 +1983,69 @@ describe('CampaignsComponent — email delivery channel', () => {
       // Clearing it would make the operator retype their instruction to retry.
       expect(internals().emailRefineText()).toBe('make it shorter');
       expect(internals().emailCopyState()).toBe('error');
+    });
+  });
+
+  describe('email send audience', () => {
+    const emailBrief = {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/' },
+    } as unknown as CampaignBriefOutput;
+
+    const audience = {
+      id: 'aud-1',
+      projectId: 'tlf',
+      briefId: 'brief-77',
+      platform: 'hubspot',
+      inclusionSummary: 'Past registrants of 3 prior editions',
+      status: 'built',
+      version: 1,
+    };
+
+    let persist: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      persist = vi.fn().mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null }));
+      vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persist);
+    });
+
+    it('persists the brief once and builds against that id', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const build = vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      await internals().onBuildAudience();
+
+      expect(build.mock.calls[0]).toEqual(['tlf', 'brief-77']);
+      expect(internals().emailAudience()?.inclusionSummary).toBe('Past registrants of 3 prior editions');
+    });
+
+    it('does NOT persist a second brief when staging follows an audience build', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onBuildAudience();
+      await internals().onStageEmailSend();
+
+      // Two writes for one event is the bug this guards: the id is cached after the first.
+      expect(persist).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a disabled cutover as a steady state, not an error', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: false }));
+      await internals().onBuildAudience();
+
+      expect(internals().emailAudienceState()).toBe('idle');
+      expect(internals().emailAudience()).toBeNull();
     });
   });
 

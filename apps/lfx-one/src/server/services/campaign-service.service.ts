@@ -3,6 +3,7 @@
 
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import type {
+  BuildAudienceResult,
   ApiResponse,
   BriefMetrics,
   CampaignBriefLoadResult,
@@ -105,6 +106,25 @@ interface CampaignServiceBriefInput {
  * for the same reason as on the input — the service validates none of them, so a value coming
  * back is not evidence of its shape and the adapter has to check rather than trust.
  */
+/**
+ * The upstream audience shape, snake_case exactly as campaign-service returns it.
+ *
+ * Local to this file for the same reason the brief shapes are: it is a WIRE type, and exporting
+ * it would invite the app to depend on upstream naming that this layer exists to translate.
+ */
+interface CampaignServiceAudience {
+  id: string;
+  project_id: string;
+  brief_id: string;
+  platform: string;
+  platform_master_list_id?: string;
+  suppression_list_ids?: string[];
+  inclusion_summary?: string;
+  status: string;
+  version: number;
+  etag?: string;
+}
+
 interface CampaignServiceBrief {
   id: string;
   project_id: string;
@@ -704,6 +724,63 @@ export class CampaignServiceClient {
       ? { status: 'unreadable', briefId: found.brief.id, brief: null, etag: found.etag, approved }
       : { status: 'loaded', briefId: found.brief.id, brief, etag: found.etag, approved };
   }
+
+  /**
+   * Build a brief's send audience in campaign-service.
+   *
+   * Takes NO body: the service derives the audience from the brief's own event details, so the
+   * only inputs are the two path segments. Sending a list from here would be the divergent second
+   * source of truth `hubspot.go:293` exists to avoid — it resolves the BUILT audience by brief id
+   * and never reads one off a request.
+   *
+   * Answers 202, not 200: the build calls Snowflake and several HubSpot creates, so it is
+   * accepted-and-recorded rather than a promise that every platform-side list is confirmed.
+   */
+  public async buildAudience(req: Request, projectSlug: string, briefId: string): Promise<BuildAudienceResult> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      // Same steady state as saveBrief: the flag being off is not a failure.
+      return { enabled: false };
+    }
+
+    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/audiences/build`;
+    try {
+      // Fifth argument is `query`, sixth is `data` — this call has neither. Passing anything
+      // fifth would serialise it into the query string and send no body.
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudience>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        path,
+        'POST',
+        undefined,
+        undefined
+      );
+
+      const built = response.data;
+      if (!built?.id) {
+        return { enabled: true, error: 'The audience build was accepted but returned nothing to track.' };
+      }
+
+      return {
+        enabled: true,
+        audience: {
+          id: built.id,
+          projectId: built.project_id,
+          briefId: built.brief_id,
+          platform: built.platform,
+          platformMasterListId: built.platform_master_list_id,
+          suppressionListIds: built.suppression_list_ids,
+          inclusionSummary: built.inclusion_summary,
+          status: built.status,
+          version: built.version,
+          etag: built.etag,
+        },
+      };
+    } catch (error) {
+      logger.error(req, 'build_audience', Date.now(), error);
+      return { enabled: true, error: 'The audience could not be built. Check the HubSpot connection and try again.' };
+    }
+  }
+
 
   /**
    * Ask campaign-service to create campaigns for a brief it already stores.
