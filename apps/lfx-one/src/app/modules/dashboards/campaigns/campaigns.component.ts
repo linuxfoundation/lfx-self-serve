@@ -1155,30 +1155,6 @@ export class CampaignsComponent {
   }
 
   /**
-   * Ensure the email brief is persisted and return its id.
-   *
-   * Email never persists on the Plan tab, but BOTH the audience build and campaign creation are
-   * brief-scoped upstream, so each needs an id. Persisting once and caching it here stops the two
-   * actions writing two briefs for the same event.
-   *
-   * Returns '' when the persist could not produce an id; callers must treat that as a failure
-   * rather than proceeding with an empty path segment.
-   */
-  private async ensureEmailBriefId(brief: CampaignBriefOutput, projectSlug: string): Promise<string> {
-    const known = this.emailBriefId();
-    if (known !== '') {
-      return known;
-    }
-
-    const persisted = await firstValueFrom(this.campaignService.persistBrief(brief, projectSlug));
-    const briefId = persisted.briefId ?? '';
-    if (briefId !== '') {
-      this.emailBriefId.set(briefId);
-    }
-    return briefId;
-  }
-
-  /**
    * Build the brief's send audience.
    *
    * Separate action rather than folded into staging because it is EXPENSIVE — it calls Snowflake
@@ -1778,6 +1754,30 @@ export class CampaignsComponent {
     if (this.emailTemplates() === null && !this.emailTemplatesLoading() && this.emailChannelEnabled() === null && this.emailTemplatesError() === null) {
       this.searchEmailTemplates(this.emailTemplateQuery());
     }
+  }
+
+  /**
+   * Ensure the email brief is persisted and return its id.
+   *
+   * Email never persists on the Plan tab, but BOTH the audience build and campaign creation are
+   * brief-scoped upstream, so each needs an id. Persisting once and caching it here stops the two
+   * actions writing two briefs for the same event.
+   *
+   * Returns '' when the persist could not produce an id; callers must treat that as a failure
+   * rather than proceeding with an empty path segment.
+   */
+  private async ensureEmailBriefId(brief: CampaignBriefOutput, projectSlug: string): Promise<string> {
+    const known = this.emailBriefId();
+    if (known !== '') {
+      return known;
+    }
+
+    const persisted = await firstValueFrom(this.campaignService.persistBrief(brief, projectSlug));
+    const briefId = persisted.briefId ?? '';
+    if (briefId !== '') {
+      this.emailBriefId.set(briefId);
+    }
+    return briefId;
   }
 
   /**
