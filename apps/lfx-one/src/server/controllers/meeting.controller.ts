@@ -36,7 +36,7 @@ import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveEmail } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -469,25 +469,17 @@ export class MeetingController {
         return;
       }
 
-      // Step 1: Resolve the caller's identity up front. The registrant gate check below accepts
-      // email OR username (getMeetingRegistrantsForUser) — a registrant added under a username
-      // with a different email now passes, widening the gate slightly from the previous
-      // email-only check (getMeetingRegistrantsByEmail).
-      //
-      // getEffectiveUsername (not getUsernameFromAuth) deliberately, so this access-control check
-      // honors isImpersonating on the Authelia auth path too. getUsernameFromAuth's other call
-      // sites still have this gap — tracked separately in #1908.
+      // Step 1: Resolve the caller's identity up front. The registrant gate check below is
+      // email-only (getMeetingRegistrantsByEmail), matching the pre-existing authorization surface
+      // — this PR does not widen the gate to also match by username.
       const userEmail = getEffectiveEmail(req) ?? undefined;
-      const username = getEffectiveUsername(req) ?? undefined;
 
       logger.debug(req, 'get_my_meeting_registrants', 'Checking user authentication', {
         meeting_id: uid,
         has_email: !!userEmail,
-        has_username: !!username,
-        user_email: userEmail,
       });
 
-      if (!userEmail && !username) {
+      if (!userEmail) {
         logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,
           no_email: true,
@@ -507,7 +499,7 @@ export class MeetingController {
         this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: true }),
         generateM2MToken(req).then((token) => {
           m2mToken = token;
-          return this.meetingService.getMeetingRegistrantsForUser(req, uid, userEmail, username, token);
+          return this.meetingService.getMeetingRegistrantsByEmail(req, uid, userEmail, token);
         }),
       ]);
 
