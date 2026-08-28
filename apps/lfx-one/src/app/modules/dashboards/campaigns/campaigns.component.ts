@@ -945,7 +945,17 @@ export class CampaignsComponent {
       this.loadBriefCampaigns();
     }
     if (tab === 'implementation') {
-      this.loadCreateCapabilities();
+      // Guarded on "never answered", mirroring `loadEmailTemplatesIfNeverAnswered` on the email
+      // path. The capability is a DEPLOYMENT fact, not per-visit state, so re-reading it on every
+      // tab entry spends a query-service round trip to learn the same boolean.
+      //
+      // `null` is exactly the right predicate and needs no extra flag: the foundation-switch
+      // effect and `loadBriefCampaigns`' own pre-request clear both reset it to `null`, and a
+      // failed read leaves it `null` — so the read still re-fires on every occasion where the
+      // answer is genuinely unknown, including a retry after failure.
+      if (this.briefCampaignsDemandGenEnabled() === null) {
+        this.loadCreateCapabilities();
+      }
     }
   }
 

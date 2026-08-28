@@ -1230,8 +1230,9 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       /**
-       * because the tab's draft restore clears a saved Demand Gen selection on an explicit `false`
-       * and a failed read has established nothing.
+       * A failed read leaves the capability `null`, never `false` — because the tab's draft restore
+       * clears a saved Demand Gen selection on an explicit `false`, and a failed read has
+       * established nothing.
        */
       it('leaves the capability unknown when the capability read fails', async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
