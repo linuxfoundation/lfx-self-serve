@@ -274,11 +274,6 @@ export class MeetingJoinComponent implements OnInit {
   // navigations, so a stale key (different meeting entirely) must fall back to an empty list
   // instead of leaking a previous meeting's roster into the new one.
   private registrantsRosterKey = signal<string | null>(null);
-
-  /** Builds the composite key `initializeRegistrants` uses to detect a stale roster fallback. */
-  private buildRegistrantsRosterKey(meetingId: string, occurrenceId: string | undefined): string {
-    return `${meetingId}::${occurrenceId ?? ''}`;
-  }
   // Counts from actual data
   protected totalInvitees = computed(() => this.registrants().length);
   // The roster the child component holds is now the base count — this pad is purely optimistic,
@@ -1403,6 +1398,11 @@ export class MeetingJoinComponent implements OnInit {
           })
         );
       });
+  }
+
+  /** Builds the composite key `initializeRegistrants` uses to detect a stale roster fallback. */
+  private buildRegistrantsRosterKey(meetingId: string, occurrenceId: string | undefined): string {
+    return `${meetingId}::${occurrenceId ?? ''}`;
   }
 
   private initializeRegistrants(): Signal<MeetingRegistrant[]> {
