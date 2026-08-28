@@ -624,6 +624,42 @@ export interface LinkedInTargetingStrategy {
  * operator chose, and silently discarding it would lose their edit.
  */
 /**
+ * A brief's built send audience, as campaign-service returns it.
+ *
+ * The email channel CANNOT dispatch until this exists: `HubSpotDispatcher` resolves the brief's
+ * built audience by `brief.ID` (`hubspot.go:293`) rather than reading anything off the create
+ * request. That is why the audience is not part of `hubspotConfig` — passing one there would be a
+ * second, divergent source of truth for something the service already owns.
+ *
+ * `inclusionSummary` is human-readable provenance ("how this audience was built"), not a machine
+ * field — it is what an operator checks before sending to a list they did not assemble by hand.
+ */
+export interface CampaignAudience {
+  id: string;
+  projectId: string;
+  briefId: string;
+  platform: string;
+  platformMasterListId?: string;
+  suppressionListIds?: string[];
+  inclusionSummary?: string;
+  status: string;
+  version: number;
+  etag?: string;
+}
+
+/**
+ * Result of asking campaign-service to build a brief's audience.
+ *
+ * `enabled: false` mirrors the other campaign-service reads: the cutover flag being off is a
+ * steady state, not a failure, and must not render as an error.
+ */
+export interface BuildAudienceResult {
+  enabled: boolean;
+  audience?: CampaignAudience;
+  error?: string;
+}
+
+/**
  * Request to generate (or regenerate) email copy for a brief.
  *
  * `changeRequest` carries a refine instruction in the operator's own words. Absent on the first
