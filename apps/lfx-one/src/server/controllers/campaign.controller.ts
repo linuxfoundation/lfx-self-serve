@@ -5,8 +5,6 @@ import { NextFunction, Request, Response } from 'express';
 
 import type {
   BulkKeywordActionRequest,
-  BulkKeywordActionResponse,
-  KeywordActionResponse,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
@@ -46,18 +44,7 @@ import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-fea
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { toAudienceDemographics, toKeywordMetricsResponse, windowForDays } from '../services/campaign-insights-mapper';
-import {
-  appliedResults,
-  CAMPAIGN_AMBIGUOUS,
-  CAMPAIGN_LOOKUP_FAILED,
-  CAMPAIGN_UNRESOLVED,
-  failedResults,
-  groupByCampaign,
-  inRequestOrder,
-  type OrderedKeywordResult,
-  toBulkResponse,
-  toUpstreamActions,
-} from '../services/campaign-keyword-actions';
+import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
 import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
@@ -1160,7 +1147,7 @@ export class CampaignController {
           return;
         }
 
-        const result = await this.keywordActionsViaCampaignService(req, projectSlug, body);
+        const result = await applyKeywordActionsViaCampaignService(req, this.campaignServiceClient, projectSlug, body);
         logger.success(req, 'keyword_actions', startTime, {
           viaCampaignService: true,
           succeeded: result.succeeded,
@@ -1176,84 +1163,6 @@ export class CampaignController {
     } catch (error) {
       next(error);
     }
-  }
-
-  /**
-   * Apply keyword actions through campaign-service, one call per campaign.
-   *
-   * The UI sends a flat keyword list; campaign-service takes a brief- and campaign-scoped batch.
-   * The grouping lives here rather than upstream because `api-catalog.md` rule 5 forbids a bulk
-   * mutation endpoint — each call this makes is still one permission-evaluated target.
-   *
-   * ATOMIC PER CAMPAIGN, NOT OVERALL. One campaign's keywords can pause while another's request
-   * fails, so every keyword is reported individually and a campaign-level failure marks ALL of
-   * that campaign's keywords failed — the batch is all-or-nothing upstream, so claiming
-   * otherwise would leave someone hunting for which half applied.
-   *
-   * Campaigns are resolved and applied SEQUENTIALLY rather than in parallel. These are
-   * spend-affecting mutations on live campaigns, and a burst of concurrent mutates against one
-   * ad account is the shape most likely to hit upstream rate limiting — which would fail
-   * campaigns for a reason that has nothing to do with the request.
-   */
-  private async keywordActionsViaCampaignService(req: Request, projectSlug: string, body: BulkKeywordActionRequest): Promise<BulkKeywordActionResponse> {
-    const results: OrderedKeywordResult[] = [];
-
-    for (const group of groupByCampaign(body.keywords)) {
-      let ref;
-      try {
-        const resolution = await this.campaignServiceClient.resolveGoogleAdsCampaign(req, projectSlug, group.platformCampaignId);
-        // An unowned id is a 200 with no matches, not a throw — so this is checked, never
-        // assumed. Acting on an unresolved campaign is not possible, and silently skipping it
-        // would drop the keyword from the response entirely.
-        if (resolution.match_count === 0) {
-          results.push(...failedResults(group, body.action, CAMPAIGN_UNRESOLVED));
-          continue;
-        }
-        // Ambiguity is refused rather than resolved by taking the first match: upstream reports
-        // it precisely because picking one would mutate a campaign nobody named.
-        if (resolution.match_count > 1) {
-          results.push(...failedResults(group, body.action, CAMPAIGN_AMBIGUOUS));
-          continue;
-        }
-        ref = resolution.matches[0];
-      } catch (error) {
-        // A failed LOOKUP is reported against this campaign's keywords rather than failing the
-        // whole request: the other campaigns in the batch are unaffected and their actions
-        // should still be attempted.
-        logger.warning(req, 'keyword_actions', 'Campaign reference lookup failed', {
-          platformCampaignId: group.platformCampaignId,
-          error: error instanceof Error ? error.message : 'unknown',
-        });
-        // A FAILED lookup, not an absent campaign. Reporting it as CAMPAIGN_UNRESOLVED would
-        // tell the caller this campaign is not managed here — so they stop retrying, and a
-        // spending campaign they meant to pause keeps spending. The distinction is the whole
-        // difference between "never going to work" and "try again".
-        results.push(...failedResults(group, body.action, CAMPAIGN_LOOKUP_FAILED));
-        continue;
-      }
-
-      try {
-        await this.campaignServiceClient.applyKeywordActions(req, projectSlug, ref.brief_id, ref.campaign_id, toUpstreamActions(group.keywords, body.action));
-        results.push(...appliedResults(group, body.action));
-      } catch (error) {
-        // The upstream message is surfaced because it carries the one distinction a caller must
-        // act on: campaign-service separates a DEFINITE failure from an UNCONFIRMED one where
-        // the mutate may already have applied. Flattening that to a generic string would leave
-        // someone retrying an irreversible REMOVE that already ran.
-        const message = error instanceof Error ? error.message : 'The keyword change could not be applied.';
-        logger.warning(req, 'keyword_actions', 'Keyword action batch failed', {
-          platformCampaignId: group.platformCampaignId,
-          campaignId: ref.campaign_id,
-          error: message,
-        });
-        results.push(...failedResults(group, body.action, message));
-      }
-    }
-
-    // Put the caller's ORDER back before responding. The client zips `results[i]` onto the
-    // keyword list it sent, and grouping by campaign reorders whenever campaigns interleave —
-    // so without this a still-spending keyword can be shown as paused.
-    return toBulkResponse(inRequestOrder(body.keywords, results));
   }
 
   public getRedditAccounts(_req: Request, res: Response): void {

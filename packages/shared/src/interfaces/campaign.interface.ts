@@ -1326,6 +1326,24 @@ export interface CampaignServiceCampaignResolution {
   match_count: number;
 }
 
+/**
+ * One outcome together with the request entry it belongs to.
+ *
+ * The pairing is what makes a keyword-action response re-orderable: the BFF groups the request
+ * by campaign before dispatching, so the grouped sequence is not the request sequence — and the
+ * client reads `results` POSITIONALLY against the list it sent.
+ */
+export interface OrderedKeywordResult {
+  source: KeywordActionRequest;
+  response: KeywordActionResponse;
+}
+
+/** One campaign's worth of a keyword-action request, keyed by the platform campaign id. */
+export interface KeywordActionGroup {
+  platformCampaignId: string;
+  keywords: KeywordActionRequest[];
+}
+
 export interface CampaignServiceKeywordActionInput {
   ad_group_id: string;
   criterion_id: string;
