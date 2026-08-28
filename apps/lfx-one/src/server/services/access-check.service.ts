@@ -31,6 +31,13 @@ export class AccessCheckService {
    * @param resources Array of resources to check access for
    * @param options Optional per-call overrides (e.g. explicit bearer token)
    * @returns Map keyed by "id#access" to their access status (e.g. "meeting-1#organizer")
+   *
+   * Note: for calls with more than ACCESS_CHECK_BATCH_SIZE resources, `performCheck` fans out
+   * with Promise.allSettled and absorbs per-chunk failures internally — the catch block here
+   * is only reached for single-batch calls (≤ACCESS_CHECK_BATCH_SIZE resources) where the
+   * upstream call fails before any settling occurs. Multi-batch callers receive a partial
+   * result map (failed chunks absent, defaulting to false at lookup) rather than the
+   * all-false fallback map built here.
    */
   public async checkAccess(req: Request, resources: AccessCheckRequest[], options?: ApiRequestOptions): Promise<Map<string, boolean>> {
     if (resources.length === 0) {
