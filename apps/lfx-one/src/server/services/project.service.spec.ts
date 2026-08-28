@@ -83,10 +83,16 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const urlUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/url.utils')>(
     '../../../../../packages/shared/src/utils/url.utils'
   );
+  // The real normalizeHealthScoreCategoryV2, not a stub: the foundation-project-detail tests
+  // assert actual category normalization behavior against this helper.
+  const insightsUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/insights.utils')>(
+    '../../../../../packages/shared/src/utils/insights.utils'
+  );
   return {
     computeIsFoundation: actual.computeIsFoundation,
     summarizeWriterGrants: actual.summarizeWriterGrants,
     normalizeToUrl: urlUtils.normalizeToUrl,
+    normalizeHealthScoreCategoryV2: insightsUtils.normalizeHealthScoreCategoryV2,
     getDefaultMarketingImpactMonth: vi.fn(),
     nullifyEmptyStrings: vi.fn(),
     resolvePeriodRange: vi.fn(),
@@ -1520,5 +1526,19 @@ describe('ProjectService — getHealthMetricsDaily', () => {
     const result = await service.getHealthMetricsDaily('some-project', 'project');
 
     expect(result.currentAvgHealthScore).toBe(80);
+    // Guard the actual regression: the SQL sent to Snowflake must select the v2 column, not
+    // just return one from the mock, or a query that still reads HEALTH_SCORE would pass silently.
+    expect(execute.mock.calls[0][0]).toContain('HEALTH_SCORE_V2');
+  });
+
+  it('reports the v2 health score, not the v1 score, for a foundation-level query', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [{ FOUNDATION_SLUG: 'cncf', METRIC_DATE: '2026-01-01', AVG_HEALTH_SCORE: 80 }],
+    });
+
+    const result = await service.getHealthMetricsDaily('cncf', 'foundation');
+
+    expect(result.currentAvgHealthScore).toBe(80);
+    expect(execute.mock.calls[0][0]).toContain('AVG(HEALTH_SCORE_V2)');
   });
 });

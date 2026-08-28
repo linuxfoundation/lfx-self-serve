@@ -16,7 +16,6 @@ import {
   PAID_CAMPAIGN_LIMIT,
   PENDING_ACTION_SEVERITY,
   PENDING_ACTION_SURVEYS_ROW_LIMIT,
-  PROJECT_HEALTH_SCORE_CATEGORIES,
   ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects, ProjectStage } from '@lfx-one/shared/enums';
@@ -59,7 +58,6 @@ import {
   FoundationContributorsMentoredRow,
   FoundationEventsAttendanceDistributionResponse,
   FoundationEventsAttendanceDistributionRow,
-  FoundationHealthScore,
   FoundationEventsQuarterlyResponse,
   FoundationEventsQuarterlyRow,
   FoundationHealthEventsMonthlyRow,
@@ -149,6 +147,7 @@ import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, Resolved
 import {
   computeIsFoundation,
   getDefaultMarketingImpactMonth,
+  normalizeHealthScoreCategoryV2,
   normalizeToUrl,
   nullifyEmptyStrings,
   resolvePeriodRange,
@@ -172,15 +171,6 @@ import { SnowflakeService } from './snowflake.service';
 
 /** Valid LifecycleStage values used to guard the Snowflake LIFECYCLE_STAGE string. Hoisted to module scope so the Set isn't re-created on every row mapping. */
 const VALID_LIFECYCLE_STAGES: ReadonlySet<LifecycleStage> = new Set(Object.values(LifecycleStage));
-
-/** Valid (lowercased) health-score categories used to guard the Snowflake HEALTH_SCORE_CATEGORY_V2 string. Derived from the shared runtime list, so the server and UI cannot drift. */
-const VALID_HEALTH_SCORE_CATEGORIES: ReadonlySet<string> = new Set(PROJECT_HEALTH_SCORE_CATEGORIES);
-
-/** Lowercase + validate the upstream HEALTH_SCORE_CATEGORY_V2; null when absent or unrecognized. */
-function normalizeHealthScoreCategory(raw: string | null): FoundationHealthScore | null {
-  const category = raw?.toLowerCase();
-  return category && VALID_HEALTH_SCORE_CATEGORIES.has(category) ? (category as FoundationHealthScore) : null;
-}
 
 /** Upstream response shape for project folders (POST response) */
 interface ProjectFolder {
@@ -1893,7 +1883,7 @@ export class ProjectService {
     };
 
     // Fold any category outside the 5 scored values into `unscored` to mirror the detail
-    // endpoint's normalizeHealthScoreCategory (→ null → Unscored), so chart and table agree.
+    // endpoint's normalizeHealthScoreCategoryV2 (→ null → Unscored), so chart and table agree.
     result.rows.forEach((row) => {
       const category = row.HEALTH_SCORE_CATEGORY_V2.toLowerCase();
       if (category === 'excellent') distribution.excellent += row.PROJECT_COUNT;
@@ -1960,7 +1950,7 @@ export class ProjectService {
         lastUpdated: row.LAST_UPDATED_TS ? new Date(row.LAST_UPDATED_TS).toISOString().split('T')[0] : null,
         // Normalize the upstream capitalized category to our lowercase union; guard
         // against unexpected strings so the interface's promise (FoundationHealthScore | null) holds.
-        healthScoreCategory: normalizeHealthScoreCategory(row.HEALTH_SCORE_CATEGORY_V2),
+        healthScoreCategory: normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2),
       }));
 
       logger.debug(undefined, 'get_foundation_projects_detail', 'Fetched project detail rows', { count: projects.length });
@@ -8008,7 +7998,7 @@ export class ProjectService {
       else if (category === 'concerning') existing.concerning += row.PROJECT_COUNT;
       else if (category === 'critical') existing.critical += row.PROJECT_COUNT;
       // Fold 'unscored' and any unexpected category into `unscored` to match the
-      // detail endpoint's normalizeHealthScoreCategory (→ null → Unscored in the drawer).
+      // detail endpoint's normalizeHealthScoreCategoryV2 (→ null → Unscored in the drawer).
       else existing.unscored += row.PROJECT_COUNT;
       healthScoresBySlug.set(row.FOUNDATION_SLUG, existing);
     });
