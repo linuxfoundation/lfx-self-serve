@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  ACTIVITY_FEED_MAX_PAGE_SIZE,
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
   VALKEY_CACHE,
@@ -11,6 +12,7 @@ import {
   WEEKLY_BRIEF_SHAREABLE_STATES,
 } from '@lfx-one/shared/constants';
 import {
+  ActivityEvent,
   Committee,
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
@@ -28,8 +30,9 @@ import {
   WeeklyBriefCurrentActivity,
   WeeklyBriefCurrentResponse,
   WeeklyBriefRating,
+  WeeklyBriefSourceRef,
 } from '@lfx-one/shared/interfaces';
-import { formatUtcDateRangeLabel } from '@lfx-one/shared/utils';
+import { formatUtcDateRangeLabel, isGoverningBoard } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
@@ -39,6 +42,7 @@ import { getEffectiveSub, getEffectiveUsername, getRealEmail, resolveRealAccessT
 
 import { AccessCheckService } from './access-check.service';
 import { AiService } from './ai.service';
+import { CommitteeActivityService } from './committee-activity.service';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -115,23 +119,40 @@ export function currentWeekInProgressWindow(): { window_start: string; window_en
 }
 
 /**
- * Deterministic mock fixture for `WeeklyBriefCurrentResponse.current_activity` (GH-1922).
- * Non-zero on purpose — mirrors the issue's own worked example ("1 meeting held, 1 vote
- * closed, 1 document added") so mock mode exercises the multi-kind render, not just the
- * empty state. Mock-only: there is no upstream committee-service endpoint for in-progress-week
- * counts, so live mode never populates this field (see `getCurrentBrief`).
+ * Maps a `CommitteeActivityService` event to the weekly-brief tally's `WeeklyBriefSourceRef`
+ * shape (GH-1922 rework — this tally is sourced from the same live meeting/vote/document
+ * aggregation that already powers the committee "Recent Activity" feed, not a weekly-brief-
+ * specific upstream call).
+ *
+ * `vote_opened` returns `null` deliberately — the tally's phrase is literally "vote closed"
+ * (`WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES`), and an in-progress, not-yet-closed vote isn't that
+ * yet. `document_uploaded` and `notes_added` both collapse to kind `doc` — both are "a
+ * document-like artifact was added this week," and the tally doesn't need to distinguish
+ * committee-document files/folders/links from meeting-attachment notes; their ids are prefixed
+ * per source (mirroring `committee-activity.service.ts`'s own `eventKey()` convention) since
+ * they're different upstream uid namespaces and could otherwise collide. `survey_published`/
+ * `survey_closed` map to kind `other` — not one of `WEEKLY_BRIEF_SOURCE_SECTIONS`' five kinds,
+ * but real governance activity the client's existing "other" catch-all already surfaces rather
+ * than silently dropping. `member_joined`/`member_left`/other deferred types: `CommitteeActivityService`
+ * never actually constructs these today (see `DeferredActivityEvent`'s own doc comment), so this
+ * default branch is unreached in practice, not dead by construction.
  */
-function buildMockCurrentActivity(committeeId: string): WeeklyBriefCurrentActivity {
-  const { window_start, window_end } = currentWeekInProgressWindow();
-  return {
-    window_start,
-    window_end,
-    source_refs: [
-      { id: `mock-current-meeting-1-${committeeId}`, kind: 'meeting', title: 'Board Sync' },
-      { id: `mock-current-vote-1-${committeeId}`, kind: 'vote', title: 'Q3 Resolution' },
-      { id: `mock-current-doc-1-${committeeId}`, kind: 'doc', title: 'Meeting Minutes' },
-    ],
-  };
+function mapActivityEventToCurrentActivityRef(event: ActivityEvent): WeeklyBriefSourceRef | null {
+  switch (event.type) {
+    case 'meeting_held':
+      return { id: `meeting:${event.payload.meeting_occurrence_id}`, kind: 'meeting', title: event.payload.title };
+    case 'vote_closed':
+      return { id: `vote:${event.payload.vote_uid}`, kind: 'vote', title: event.payload.name };
+    case 'document_uploaded':
+      return { id: `document:${event.payload.document_uid}`, kind: 'doc', title: event.payload.name };
+    case 'notes_added':
+      return { id: `note:${event.payload.document_uid}`, kind: 'doc', title: event.payload.name };
+    case 'survey_published':
+    case 'survey_closed':
+      return { id: `survey:${event.payload.survey_uid}`, kind: 'other', title: event.payload.title };
+    default:
+      return null;
+  }
 }
 
 /**
@@ -247,6 +268,7 @@ function buildMockBrief(committeeId: string, overrides: Partial<WeeklyBrief> = {
 export class WeeklyBriefService {
   private microserviceProxy: MicroserviceProxyService = new MicroserviceProxyService();
   private committeeService: CommitteeService = new CommitteeService();
+  private committeeActivityService: CommitteeActivityService = new CommitteeActivityService();
   private newsletterService: NewsletterService = new NewsletterService();
   private accessCheckService: AccessCheckService = new AccessCheckService();
   private aiService: AiService = new AiService();
@@ -271,12 +293,8 @@ export class WeeklyBriefService {
           regenerations_used: brief.regeneration_count,
           window_resets_at: nextSundayIso(),
         },
-        current_activity: buildMockCurrentActivity(committeeId),
       };
     } else {
-      // No `current_activity` here — committee-service has no in-progress-week-counts
-      // endpoint yet (GH-1922), and this is a pure proxy passthrough, so the field is simply
-      // never present in the response rather than fabricated. Revisit once upstream adds it.
       logger.debug(req, 'get_weekly_brief_current', 'Proxying to committee-service', { committee_id: committeeId });
       response = await this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
         req,
@@ -284,6 +302,13 @@ export class WeeklyBriefService {
         `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
         'GET'
       );
+    }
+    // Sourced from CommitteeActivityService's existing live aggregation (GH-1922 rework) — runs
+    // identically in mock and live mode, since that service has no mock/live split of its own.
+    // Only the AI-generated brief_text above still differs between the two branches.
+    const currentActivity = await this.buildCurrentActivity(req, committeeId);
+    if (currentActivity) {
+      response = { ...response, current_activity: currentActivity };
     }
     return this.withCallerRating(req, committeeId, response);
   }
@@ -1108,6 +1133,43 @@ export class WeeklyBriefService {
     }
     logger.warning(req, 'weekly_brief_mock_mode', 'Serving mock weekly-brief data — WEEKLY_BRIEF_BACKEND is not "live"', {});
     return false;
+  }
+
+  /**
+   * Builds `WeeklyBriefCurrentResponse.current_activity` (GH-1922) from
+   * `CommitteeActivityService.getCommitteeActivity` — the same live meeting/vote/document
+   * aggregation that powers the committee "Recent Activity" feed, filtered to the current,
+   * not-yet-closed week. Gated to governance (Board/Government Advisory Council) committees only
+   * — the only ones the client renders the tally for — so a non-Board committee's weekly-brief
+   * load never pays for the fan-out. Fails soft to `undefined` (never an empty array) on any
+   * error, matching the client's existing absent-vs-present distinction between "couldn't
+   * determine" and "genuinely zero activity this week" (weekly-brief-card.component.ts's
+   * `hasCurrentActivityData`).
+   */
+  private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | undefined> {
+    try {
+      const committee = await this.committeeService.getCommitteeById(req, committeeId);
+      if (!isGoverningBoard(committee.category)) return undefined;
+
+      const { window_start, window_end } = currentWeekInProgressWindow();
+      const { data } = await this.committeeActivityService.getCommitteeActivity(req, committeeId, {
+        since: window_start,
+        limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
+      });
+
+      const sourceRefs = data.reduce<WeeklyBriefSourceRef[]>((refs, event) => {
+        const ref = mapActivityEventToCurrentActivityRef(event);
+        if (ref) refs.push(ref);
+        return refs;
+      }, []);
+      return { window_start, window_end, source_refs: sourceRefs };
+    } catch (err) {
+      logger.warning(req, 'get_weekly_brief_current_activity', 'Failed to build current-week activity tally, omitting it', {
+        committee_id: committeeId,
+        err,
+      });
+      return undefined;
+    }
   }
 
   /**

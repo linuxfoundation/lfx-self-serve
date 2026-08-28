@@ -30,6 +30,7 @@ const {
   createNewsletterMock,
   sendNewsletterMock,
   deleteNewsletterMock,
+  getCommitteeActivityMock,
 } = vi.hoisted(() => {
   const valkeyStore = new Map<string, unknown>();
   const valkeyServiceMock = {
@@ -81,10 +82,15 @@ const {
     createNewsletterMock: vi.fn(),
     sendNewsletterMock: vi.fn(),
     deleteNewsletterMock: vi.fn(),
+    // buildCurrentActivity's (GH-1922) collaborator — controlled per-test in the
+    // 'current_activity (GH-1922)' describe blocks below; defaults to an empty feed (see the
+    // outer beforeEach) so unrelated tests elsewhere in this file never need to know it exists.
+    getCommitteeActivityMock: vi.fn(),
   };
 });
 
 vi.mock('@lfx-one/shared/constants', () => ({
+  ACTIVITY_FEED_MAX_PAGE_SIZE: 50,
   WEEKLY_BRIEF_DEFAULT_THROTTLE: MOCK_THROTTLE,
   WEEKLY_BRIEF_SHAREABLE_STATES: ['generated', 'edited', 'approved'],
   WEEKLY_BRIEF_ERROR_REASON: { NO_SOURCES: 'no_sources' },
@@ -101,7 +107,13 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 // `formatUtcDateRangeLabel` lives in the same `@lfx-one/shared/utils` barrel as
 // form.utils.ts, which imports `@angular/forms` — an unmocked import here would pull
 // in the real barrel and hit the same JIT-compilation failure the mocks above avoid.
-vi.mock('@lfx-one/shared/utils', () => ({ formatUtcDateRangeLabel: vi.fn(() => 'Jan 1 – Jan 7, 2026') }));
+// `isGoverningBoard` — minimal reimplementation (real one lives in committee.utils.ts, same
+// barrel/JIT-failure reasoning) sufficient for this file's fixtures, which only ever use
+// `category: 'Board'` or `category: 'Working Group'`.
+vi.mock('@lfx-one/shared/utils', () => ({
+  formatUtcDateRangeLabel: vi.fn(() => 'Jan 1 – Jan 7, 2026'),
+  isGoverningBoard: vi.fn((category: string | undefined) => category === 'Board' || category === 'Government Advisory Council'),
+}));
 
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
@@ -121,6 +133,14 @@ vi.mock('./committee.service', () => ({
   CommitteeService: class {
     public getCommitteeById = getCommitteeByIdMock;
     public hasMailingListStrict = hasMailingListStrictMock;
+  },
+}));
+// buildCurrentActivity's (GH-1922) collaborator — the same live meeting/vote/document
+// aggregation `committee-activity.service.spec.ts` covers on its own; this file only needs to
+// control what it returns, not re-verify its internal aggregation logic.
+vi.mock('./committee-activity.service', () => ({
+  CommitteeActivityService: class {
+    public getCommitteeActivity = getCommitteeActivityMock;
   },
 }));
 vi.mock('./newsletter.service', () => ({
@@ -247,6 +267,12 @@ describe('WeeklyBriefService', () => {
     service = new WeeklyBriefService();
     __resetMockBriefStateForTesting();
     valkeyStore.clear();
+    // Safe default for buildCurrentActivity's (GH-1922) collaborators — a non-governance
+    // committee with an empty activity feed, so every test elsewhere in this file that calls
+    // getCurrentBrief (the vast majority) never needs to know these mocks exist. Tests that
+    // specifically exercise current_activity override both below.
+    getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Working Group' });
+    getCommitteeActivityMock.mockResolvedValue({ data: [], page_token: undefined });
   });
 
   afterEach(() => {
@@ -375,34 +401,6 @@ describe('WeeklyBriefService', () => {
       process.env['NODE_ENV'] = 'production';
       await expect(service.getCurrentBrief(req, 'committee-1')).rejects.toThrow(/temporarily unavailable/);
       expect(proxyRequest).not.toHaveBeenCalled();
-    });
-
-    it('getCurrentBrief includes a non-zero current_activity fixture spanning multiple kinds (GH-1922)', async () => {
-      const result = await service.getCurrentBrief(req, 'committee-1');
-
-      expect(result.current_activity).toBeDefined();
-      const kinds = result.current_activity?.source_refs.map((ref) => ref.kind).sort();
-      expect(kinds).toEqual(['doc', 'meeting', 'vote']);
-    });
-
-    it('getCurrentBrief scopes current_activity to currentWeekInProgressWindow(), not briefWindow()', async () => {
-      // try/finally, not a trailing call: a failed assertion below must not skip
-      // useRealTimers() and leak fake timers into every later test in this file — this
-      // describe block's own beforeEach/afterEach only reset process.env, not timers.
-      vi.useFakeTimers();
-      try {
-        // 2026-01-14 is a Wednesday (UTC) — briefWindow() resolves to the *previous* week
-        // here, currentWeekInProgressWindow() must not.
-        vi.setSystemTime(new Date('2026-01-14T12:00:00.000Z'));
-
-        const result = await service.getCurrentBrief(req, 'committee-1');
-
-        expect(result.current_activity?.window_start).toBe('2026-01-11T00:00:00.000Z');
-        expect(result.current_activity?.window_end).toBe('2026-01-14T12:00:00.000Z');
-        expect(result.brief?.window_start).toBe('2026-01-04T00:00:00.000Z');
-      } finally {
-        vi.useRealTimers();
-      }
     });
 
     it('does not leak the WEEKLY_BRIEF_BACKEND env var name into the client-facing error message', async () => {
@@ -611,14 +609,6 @@ describe('WeeklyBriefService', () => {
       await expect(service.getCurrentBrief(req, 'committee-1')).rejects.toBe(notFound);
     });
 
-    it('getCurrentBrief does not fabricate current_activity — live mode is a pure passthrough with no upstream in-progress-week endpoint yet (GH-1922)', async () => {
-      proxyRequest.mockResolvedValueOnce({ brief: { uid: 'b1', state: 'generated' }, throttle: null });
-
-      const result = await service.getCurrentBrief(req, 'committee-1');
-
-      expect(result.current_activity).toBeUndefined();
-    });
-
     it('generateBrief forwards the real upstream status code (202 accepted)', async () => {
       const data = { brief: { uid: 'b1', state: 'generating' }, throttle: {} };
       proxyRequestWithResponse.mockResolvedValueOnce({ status: 202, data, statusText: 'Accepted', headers: {} });
@@ -698,6 +688,140 @@ describe('WeeklyBriefService', () => {
       proxyRequest.mockResolvedValueOnce({ brief: null, throttle: null });
       await service.getCurrentBrief(req, 'a/b c');
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/a%2Fb%20c/weekly-briefs/current', 'GET');
+    });
+  });
+
+  /**
+   * GH-1922 rework: `current_activity` is sourced from `CommitteeActivityService`'s existing
+   * live meeting/vote/document aggregation (mocked here via `getCommitteeActivityMock`), not a
+   * weekly-brief-specific mock/live split — these tests run against BOTH `getCurrentBrief`
+   * branches to prove that (mock mode still needs `delete process.env['WEEKLY_BRIEF_BACKEND']`
+   * for the *brief* itself to stay mocked; `current_activity` behaves identically either way).
+   */
+  describe('current_activity (GH-1922)', () => {
+    it.each([
+      ['mock mode', () => delete process.env['WEEKLY_BRIEF_BACKEND']],
+      [
+        'live mode',
+        () => {
+          process.env['WEEKLY_BRIEF_BACKEND'] = 'live';
+          proxyRequest.mockResolvedValue({ brief: { uid: 'b1', state: 'generated' }, throttle: null });
+        },
+      ],
+    ])('populates current_activity for a governance committee, mapping kinds and excluding an in-progress vote (%s)', async (_label, setBackend) => {
+      setBackend();
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeActivityMock.mockResolvedValue({
+        data: [
+          {
+            type: 'meeting_held',
+            occurred_at: '2026-01-12T10:00:00Z',
+            committee_uid: 'committee-1',
+            payload: { meeting_id: 'm1', meeting_occurrence_id: 'm1-occ', title: 'Board Sync', password: null },
+          },
+          {
+            type: 'vote_closed',
+            occurred_at: '2026-01-12T11:00:00Z',
+            committee_uid: 'committee-1',
+            payload: { vote_uid: 'v1', name: 'Q3 Resolution', status: 'Ended' },
+          },
+          // Deliberately excluded from the tally — see mapActivityEventToCurrentActivityRef's doc comment.
+          {
+            type: 'vote_opened',
+            occurred_at: '2026-01-12T09:00:00Z',
+            committee_uid: 'committee-1',
+            payload: { vote_uid: 'v2', name: 'Q4 Budget', status: 'Active' },
+          },
+          {
+            type: 'document_uploaded',
+            occurred_at: '2026-01-12T12:00:00Z',
+            committee_uid: 'committee-1',
+            payload: { document_uid: 'd1', name: 'Minutes.pdf', document_type: 'file' },
+          },
+        ],
+        page_token: undefined,
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.current_activity).toBeDefined();
+      const refs = result.current_activity?.source_refs ?? [];
+      expect(refs).toHaveLength(3);
+      expect(refs.map((ref) => ref.kind).sort()).toEqual(['doc', 'meeting', 'vote']);
+      expect(refs.find((ref) => ref.kind === 'vote')?.title).toBe('Q3 Resolution');
+      expect(refs.some((ref) => ref.title === 'Q4 Budget')).toBe(false);
+    });
+
+    it('folds survey events into the "other" kind rather than dropping them', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeActivityMock.mockResolvedValue({
+        data: [
+          {
+            type: 'survey_closed',
+            occurred_at: '2026-01-12T10:00:00Z',
+            committee_uid: 'committee-1',
+            payload: { survey_uid: 's1', title: 'Annual Review', status: 'Closed' },
+          },
+        ],
+        page_token: undefined,
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.current_activity?.source_refs).toEqual([{ id: 'survey:s1', kind: 'other', title: 'Annual Review' }]);
+    });
+
+    it('passes currentWeekInProgressWindow().window_start as since, and never briefWindow()', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+
+      vi.useFakeTimers();
+      try {
+        // 2026-01-14 is a Wednesday (UTC) — briefWindow() resolves to the previous week here;
+        // currentWeekInProgressWindow() must not.
+        vi.setSystemTime(new Date('2026-01-14T12:00:00.000Z'));
+
+        const result = await service.getCurrentBrief(req, 'committee-1');
+
+        expect(getCommitteeActivityMock).toHaveBeenCalledWith(req, 'committee-1', { since: '2026-01-11T00:00:00.000Z', limit: expect.any(Number) });
+        expect(result.current_activity?.window_start).toBe('2026-01-11T00:00:00.000Z');
+        expect(result.current_activity?.window_end).toBe('2026-01-14T12:00:00.000Z');
+        expect(result.brief?.window_start).toBe('2026-01-04T00:00:00.000Z');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('never calls getCommitteeActivity for a non-governance committee, and current_activity stays undefined', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Working Group' });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+      expect(result.current_activity).toBeUndefined();
+    });
+
+    it('degrades to current_activity: undefined (not a thrown error) when the committee lookup fails', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeByIdMock.mockRejectedValue(new Error('upstream unavailable'));
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.current_activity).toBeUndefined();
+      expect(result.brief).toBeDefined(); // the brief itself still renders — only the tally degrades
+    });
+
+    it('degrades to current_activity: undefined (not a thrown error) when the activity fetch fails', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeActivityMock.mockRejectedValue(new Error('upstream unavailable'));
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.current_activity).toBeUndefined();
+      expect(result.brief).toBeDefined();
     });
   });
 
