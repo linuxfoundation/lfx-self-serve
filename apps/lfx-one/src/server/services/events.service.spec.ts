@@ -173,10 +173,17 @@ describe('EventsService.getMyEvents past-event SQL', () => {
     // after UNION ALL it only dedups affiliated_upcoming and duplicates cross-branch events.
     const sql = await sqlFor({ isPast: false, affiliatedProjectSlugs: ['example'] });
     const combined = sql.slice(sql.indexOf('combined AS ('));
+    const wrapperOpen = combined.indexOf('SELECT * FROM (');
+    const firstBranch = combined.indexOf('SELECT *, 1 AS source_priority');
+    const lastBranch = combined.indexOf('FROM affiliated_upcoming');
     const qualify = combined.indexOf('QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY source_priority)');
 
-    expect(combined.indexOf('SELECT * FROM (')).toBeLessThan(combined.indexOf('SELECT *, 1 AS source_priority'));
-    expect(combined.slice(combined.indexOf('FROM affiliated_upcoming'), qualify)).toContain(')');
+    // Ordering alone passes on a missing landmark (indexOf returns -1), so require each to exist.
+    for (const landmark of [wrapperOpen, firstBranch, lastBranch, qualify]) {
+      expect(landmark).toBeGreaterThanOrEqual(0);
+    }
+    expect(wrapperOpen).toBeLessThan(firstBranch);
+    expect(combined.slice(lastBranch, qualify)).toContain(')');
   });
 
   it('selects EVENT_SOURCE in the past branch', async () => {
