@@ -1169,15 +1169,22 @@ export class WeeklyBriefService {
    * `hasCurrentActivityData`).
    *
    * `limit: ACTIVITY_FEED_MAX_PAGE_SIZE` is a single, unfollowed page — `getCommitteeActivity`
-   * hard-rejects any larger `limit`, so that's the ceiling one call can ever return. A returned
-   * `page_token` means real events exist beyond it; unlike the paginated Recent Activity feed,
-   * this consumer renders a *count* ("N documents added"), so silently truncating would state a
-   * wrong number as fact — worse than the list-truncation the per-leg `saturated` flags already
-   * accept elsewhere in `CommitteeActivityService`. Treated as "couldn't determine" (`undefined`),
-   * not published truncated, matching this method's own fail-soft contract. Not looped to
+   * hard-rejects any larger `limit`, so that's the ceiling one call can ever return. Deliberately
+   * NOT gated on the returned `page_token`/its underlying `anyLegSaturated` flag: two of the five
+   * legs (`fetchNotesAddedEvents`, `fetchSurveyEvents`) never push `since` upstream at all (see
+   * their own doc comments in `committee-activity.service.ts` for why), so they fetch each
+   * committee's newest `fetchSize` rows by `updated_desc` and filter to the window in memory —
+   * their own `saturated` flag reflects whether the committee has more than `fetchSize` *lifetime*
+   * notes/surveys, not whether THIS WEEK's activity was truncated. Gating on that would silently
+   * hide the tally for exactly the long-lived, active committees it exists to help. Instead, gate
+   * on `data.length` — the merged, window-filtered, already-capped-at-`limit` result: only when it
+   * actually fills the page (`>= limit`) can real in-window rows have been cut. Unlike the
+   * paginated Recent Activity feed, this consumer renders a *count* ("N documents added"), so
+   * silently truncating would state a wrong number as fact — treated as "couldn't determine"
+   * (`undefined`) instead, matching this method's own fail-soft contract. Not looped to
    * exhaustion — `decodePageToken`/`ActivityPageCursor` aren't exposed for a caller outside
-   * `committee-activity.service.ts` to do that today, and a committee clearing 50 events in one
-   * week is already an edge case this v1 tally accepts skipping.
+   * `committee-activity.service.ts` to do that today, and a committee generating 50 in-window
+   * events in one week is already an edge case this v1 tally accepts skipping.
    */
   private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | undefined> {
     try {
@@ -1185,14 +1192,19 @@ export class WeeklyBriefService {
       if (!isGoverningBoard(committee.category)) return undefined;
 
       const { window_start, window_end } = currentWeekInProgressWindow();
-      const { data, page_token: pageToken } = await this.committeeActivityService.getCommitteeActivity(req, committeeId, {
+      const { data } = await this.committeeActivityService.getCommitteeActivity(req, committeeId, {
         since: window_start,
         limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
       });
-      if (pageToken) {
-        logger.warning(req, 'get_weekly_brief_current_activity', 'Current-week activity exceeds one page — omitting rather than publishing a truncated count', {
-          committee_id: committeeId,
-        });
+      if (data.length >= ACTIVITY_FEED_MAX_PAGE_SIZE) {
+        logger.warning(
+          req,
+          'get_weekly_brief_current_activity',
+          'Current-week activity fills a full page — omitting rather than publishing a truncated count',
+          {
+            committee_id: committeeId,
+          }
+        );
         return undefined;
       }
 
@@ -1212,10 +1224,11 @@ export class WeeklyBriefService {
   }
 
   /**
-   * Enriches a `getCurrentBrief` result with the caller's own rating on that exact brief
-   * revision (LFXV2-3042). Fails soft on every edge: no brief, no resolvable username, or a
-   * cache miss/fault all resolve to `caller_rating: null` rather than throwing — this is a
-   * convenience read for the UI's pre-lit thumb state, not a precondition for anything.
+   * Enriches a `fetchBriefResponse` result (called from both `getCurrentBrief` and every other
+   * internal caller that needs `brief`/`caller_rating`) with the caller's own rating on that
+   * exact brief revision (LFXV2-3042). Fails soft on every edge: no brief, no resolvable
+   * username, or a cache miss/fault all resolve to `caller_rating: null` rather than throwing —
+   * this is a convenience read for the UI's pre-lit thumb state, not a precondition for anything.
    */
   private async withCallerRating(req: Request, committeeId: string, response: WeeklyBriefCurrentResponse): Promise<WeeklyBriefCurrentResponse> {
     if (!response.brief) return response;
@@ -1248,7 +1261,7 @@ export class WeeklyBriefService {
    * the thumb against content the rater never actually reviewed (PR #1361 review). Matches the
    * optimistic-concurrency contract `saveBrief`/`shareBrief` already enforce for their own writes.
    *
-   * Also returns the brief's `caller_rating` (already resolved by `getCurrentBrief` →
+   * Also returns the brief's `caller_rating` (already resolved by `fetchBriefResponse` →
    * `withCallerRating` for this exact key) as `callerRating`, so `rateBrief`/`clearBriefRating`
    * can use it as `previous_rating` in their log line without a second, identical Valkey read for
    * a key this call already read.

@@ -421,6 +421,17 @@ describe('WeeklyBriefService', () => {
       delete process.env['NODE_ENV'];
     });
 
+    it('never triggers the current_activity fan-out (GH-1922) — getActionItems only ever reads brief_text', async () => {
+      // A governance committee, so a regression back to `this.getCurrentBrief` here would
+      // actually trigger the fan-out this test exists to catch — not pass vacuously.
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      extractBriefActionItems.mockResolvedValue({ items: [] });
+
+      await service.getActionItems(req, 'committee-1');
+
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
     it('caches extraction per revision — a second call for the same revision does not re-invoke AiService (cache hit)', async () => {
       extractBriefActionItems.mockResolvedValue({ items: [{ text: 'Onboard the new member' }] });
 
@@ -807,7 +818,33 @@ describe('WeeklyBriefService', () => {
       expect(refs[0].id).not.toBe(refs[1].id);
     });
 
-    it('omits current_activity (rather than publishing a truncated count) when the current week has more than one page of activity', async () => {
+    it('omits current_activity (rather than publishing a truncated count) when the returned page itself is full', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeActivityMock.mockResolvedValue({
+        // ACTIVITY_FEED_MAX_PAGE_SIZE (mocked to 50) worth of in-window events — the actual signal
+        // that some of them may have been cut, unlike a bare page_token (see the next test).
+        data: Array.from({ length: 50 }, (_, i) => ({
+          type: 'meeting_held',
+          occurred_at: '2026-01-12T10:00:00Z',
+          committee_uid: 'committee-1',
+          payload: { meeting_id: `m${i}`, meeting_occurrence_id: `m${i}-occ`, title: 'Board Sync', password: null },
+        })),
+        page_token: undefined,
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.current_activity).toBeUndefined();
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'get_weekly_brief_current_activity',
+        expect.stringContaining('fills a full page'),
+        expect.objectContaining({ committee_id: 'committee-1' })
+      );
+    });
+
+    it("does NOT omit current_activity merely because page_token is present with a short page — a committee with >fetchSize lifetime notes/surveys saturates those legs regardless of the current week (see buildCurrentActivity's own doc comment)", async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       getCommitteeActivityMock.mockResolvedValue({
@@ -819,18 +856,16 @@ describe('WeeklyBriefService', () => {
             payload: { meeting_id: 'm1', meeting_occurrence_id: 'm1-occ', title: 'Board Sync', password: null },
           },
         ],
-        page_token: 'more-events-exist',
+        // A real, non-truncating page_token: notes/surveys legs saturate on lifetime volume, not
+        // in-window volume — see committee-activity.service.ts's fetchNotesAddedEvents/
+        // fetchSurveyEvents doc comments.
+        page_token: 'saturated-on-an-unrelated-leg',
       });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.current_activity).toBeUndefined();
-      expect(logger.warning).toHaveBeenCalledWith(
-        req,
-        'get_weekly_brief_current_activity',
-        expect.stringContaining('exceeds one page'),
-        expect.objectContaining({ committee_id: 'committee-1' })
-      );
+      expect(result.current_activity).toBeDefined();
+      expect(result.current_activity?.source_refs).toHaveLength(1);
     });
 
     it('renders a genuine quiet week as current_activity present with an empty source_refs array, not absent', async () => {
@@ -904,6 +939,20 @@ describe('WeeklyBriefService', () => {
     beforeEach(() => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       delete process.env['NODE_ENV'];
+    });
+
+    it('never triggers the current_activity fan-out (GH-1922) — rateBrief/clearBriefRating only ever read brief/caller_rating', async () => {
+      // A governance committee, so a regression back to `this.getCurrentBrief` inside
+      // resolveRatableBrief would actually trigger the fan-out this test exists to catch.
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      const initial = await service.getCurrentBrief(userReq, 'committee-1');
+      const briefUid = initial.brief!.uid;
+      getCommitteeActivityMock.mockClear(); // the setup call above is allowed to fan out; only what follows is under test.
+
+      await service.rateBrief(userReq, 'committee-1', briefUid, 'up', 1);
+      await service.clearBriefRating(userReq, 'committee-1', briefUid, 1);
+
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
     });
 
     it('rate → re-rate (switch) → clear round-trips through getCurrentBrief().caller_rating', async () => {
@@ -1164,7 +1213,7 @@ describe('WeeklyBriefService', () => {
       checkSingleAccessStrictMock.mockResolvedValue(true);
     });
 
-    /** A brief in a shareable state, queued up for the getCurrentBrief call shareToSlack makes internally. */
+    /** A brief in a shareable state, queued up for the fetchBriefResponse call shareToSlack makes internally. */
     function mockShareableBrief(overrides: Record<string, unknown> = {}): void {
       proxyRequest.mockResolvedValueOnce({
         brief: {
@@ -1256,6 +1305,19 @@ describe('WeeklyBriefService', () => {
       });
     });
 
+    it('never triggers the current_activity fan-out (GH-1922) — shareToSlack only ever reads brief', async () => {
+      // A governance committee, so a regression back to `this.getCurrentBrief` here would
+      // actually trigger the fan-out this test exists to catch.
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      mockShareableBrief();
+      mockCommittee();
+      proxyRequest.mockResolvedValueOnce(undefined);
+
+      await service.shareToSlack(req, 'committee-1', 1);
+
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
     it('logs the sending user (as their opaque sub, not the human-readable username) on a successful send — the committee-service call carries no caller identity of its own beyond the bearer token, so this is the only record of who shared it', async () => {
       mockShareableBrief();
       mockCommittee();
@@ -1339,7 +1401,7 @@ describe('WeeklyBriefService', () => {
       sendNewsletterMock.mockResolvedValue({ total_recipients: 42 });
     });
 
-    /** A brief in a shareable state, queued up for the getCurrentBrief call shareBrief makes internally. */
+    /** A brief in a shareable state, queued up for the fetchBriefResponse call shareBrief makes internally. */
     function mockShareableBrief(overrides: Record<string, unknown> = {}): void {
       proxyRequest.mockResolvedValueOnce({
         brief: {
@@ -1401,6 +1463,17 @@ describe('WeeklyBriefService', () => {
         expect.objectContaining({ ed_reply_email: 'writer@example.com', committee_uids: ['committee-1'] })
       );
       expect(nonImpersonatingReq.bearerToken).toBe('writer-token');
+    });
+
+    it('never triggers the current_activity fan-out (GH-1922) — shareBrief only ever reads brief', async () => {
+      // A governance committee, so a regression back to `this.getCurrentBrief` here would
+      // actually trigger the fan-out this test exists to catch.
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', name: 'Test Committee', project_uid: 'project-1', category: 'Board' });
+      mockShareableBrief();
+
+      await service.shareBrief(nonImpersonatingReq, 'committee-1', 1);
+
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
     });
 
     it("impersonating: authorizes and sends under the REAL staff member's token/email, not the impersonated target's, and restores the impersonation token afterward", async () => {

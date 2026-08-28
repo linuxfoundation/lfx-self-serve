@@ -179,7 +179,7 @@ export interface WeeklyBriefCurrentResponse {
    * BFF-side enrichment (not part of upstream's contract): the calling user's own rating on
    * this specific `brief.uid` + `brief.revision`, or `null` if they haven't rated it (or no
    * `brief` was returned). Absent entirely when `brief` is null. Read from the BFF's
-   * per-user rating store, not upstream — see `weekly-brief.service.ts#getCurrentBrief`.
+   * per-user rating store, not upstream — see `weekly-brief.service.ts#fetchBriefResponse`.
    */
   caller_rating?: WeeklyBriefRating | null;
   /**
