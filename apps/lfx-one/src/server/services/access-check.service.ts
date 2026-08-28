@@ -62,10 +62,11 @@ export class AccessCheckService {
    * from "couldn't verify" (503) — `checkAccess`'s fallback collapses that distinction.
    *
    * Note: when the resource count exceeds ACCESS_CHECK_BATCH_SIZE, requests are split into chunks
-   * and fanned out with Promise.allSettled. Per-chunk failures are treated as partial degradation
-   * (the chunk's keys are absent from the result map, defaulting to false at lookup) rather than
-   * propagated errors — this is an internal batching detail, not an upstream service failure.
-   * Only a complete call failure (all chunks rejected, or the service itself unreachable) throws.
+   * and fanned out with Promise.allSettled. Per-chunk failures — including total batch failure
+   * (all chunks rejected) — are absorbed: the method returns a partial or empty result map and
+   * logs a WARN rather than throwing. `checkAccessStrict` propagates only when `performCheck`
+   * itself throws, which happens on single-batch calls (≤ACCESS_CHECK_BATCH_SIZE resources)
+   * where the upstream call fails before any settling occurs.
    * @param req Express request object with auth context
    * @param resources Array of resources to check access for
    * @param options Optional per-call overrides (e.g. explicit bearer token)
