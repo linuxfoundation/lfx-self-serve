@@ -1,0 +1,48 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="min-h-screen bg-gray-50">
+  <lfx-header />
+
+  <main class="container mx-auto flex flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8" data-testid="public-project-calendar-page">
+    <!-- Page header -->
+    <header class="flex flex-col gap-1" data-testid="public-project-calendar-header">
+      @if (loading()) {
+        <p-skeleton width="12rem" height="2rem" />
+        <p-skeleton width="20rem" height="1rem" class="mt-1" />
+      } @else {
+        <h1 class="font-display font-light text-2xl text-gray-900" data-testid="public-project-calendar-title">
+          @if (projectName()) {
+            {{ projectName() }} — Calendar
+          } @else {
+            Calendar
+          }
+        </h1>
+        <p class="text-sm text-gray-500" data-testid="public-project-calendar-subtitle">{{ total() }} {{ total() === 1 ? 'meeting' : 'meetings' }}</p>
+      }
+    </header>
+
+    <!-- Error state -->
+    @if (fetchError()) {
+      <lfx-empty-state
+        icon="fa-light fa-circle-exclamation"
+        title="Unable to load calendar"
+        subtitle="Something went wrong while fetching meeting data. Please try refreshing the page."
+        data-testid="public-project-calendar-error" />
+    } @else if (loading()) {
+      <!-- Loading skeleton -->
+      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="public-project-calendar-skeleton">
+        <p-skeleton width="100%" height="24rem" />
+      </div>
+    } @else {
+      <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="public-project-calendar-container">
+        <lfx-fullcalendar
+          [events]="calendarEvents()"
+          [initialView]="initialView()"
+          height="auto"
+          (eventClick)="onCalendarEventClick($event)"
+          data-testid="public-project-calendar-fullcalendar" />
+      </div>
+    }
+  </main>
+</div>

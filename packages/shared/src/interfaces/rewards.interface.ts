@@ -49,6 +49,52 @@ export interface RewardPromotionsPage {
   };
 }
 
+export interface RewardUserLookupRow {
+  ID?: string;
+  Username?: string;
+}
+
+export interface RewardUserLookupPage {
+  Data?: RewardUserLookupRow[];
+  Metadata?: {
+    TotalSize?: number;
+  };
+}
+
+export interface RewardUserProfileRaw {
+  Username?: string;
+  TuxRewards?: unknown;
+  TuxProgramStartDate?: unknown;
+}
+
+export type RewardsSubject =
+  | {
+      mode: 'self';
+      readOnly: false;
+    }
+  | {
+      mode: 'impersonated';
+      username: string;
+      salesforceId: string;
+      readOnly: true;
+    };
+
+export type RewardSourceAvailability = 'available' | 'unavailable';
+
+export interface RewardsAvailability {
+  profile: RewardSourceAvailability;
+  promotions: RewardSourceAvailability;
+}
+
+export interface RewardsProfileProjection {
+  points: number;
+  nextRewardPoints: number;
+  pointsToNextReward: number;
+  progressPercentage: number;
+  programStartDate: string | null;
+  programExpiryDate: string | null;
+}
+
 export interface RewardPromotion {
   id: string;
   uid: string;
@@ -78,10 +124,12 @@ export interface RewardCouponGenerationResponse {
 }
 
 export interface RewardsSummaryResponse {
-  points: number;
-  nextRewardPoints: number;
-  pointsToNextReward: number;
-  progressPercentage: number;
+  availability: RewardsAvailability;
+  readOnly: boolean;
+  points: number | null;
+  nextRewardPoints: number | null;
+  pointsToNextReward: number | null;
+  progressPercentage: number | null;
   programStartDate: string | null;
   programExpiryDate: string | null;
   groupedPromotions: RewardPromotionGroups;
@@ -109,7 +157,8 @@ export interface DecoratedAvailableIncentive extends RewardPromotion {
  */
 export interface DecoratedCoupon extends RewardPromotion {
   hasCouponCode: boolean;
-  pointsShortfall: number;
+  canRedeem: boolean;
+  pointsShortfall: number | null;
   resolvedExpiryDate: string | null;
   isExpired: boolean;
   statusLabel: string;
