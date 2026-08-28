@@ -120,7 +120,7 @@ test.describe('Org Selector — accessibility contract', () => {
     await expect(unselectedOptions).toHaveCount(1);
   });
 
-  test('A4: keyboard-navigation contract — ArrowDown/Enter/Escape', async ({ page }) => {
+  test('A4: keyboard-navigation contract — ArrowDown / ArrowUp / Home / End / Escape', async ({ page }) => {
     const trigger = page.getByTestId('org-selector');
     await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
     await trigger.click();
@@ -138,13 +138,21 @@ test.describe('Org Selector — accessibility contract', () => {
     await page.keyboard.press('ArrowUp');
     await expect(options.nth(0)).toBeFocused();
 
+    // End jumps focus to the last option (boundary branch).
+    await page.keyboard.press('End');
+    await expect(options.nth(1)).toBeFocused();
+
+    // Home jumps focus back to the first option (boundary branch).
+    await page.keyboard.press('Home');
+    await expect(options.nth(0)).toBeFocused();
+
     // Escape closes the panel and returns focus to the trigger.
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('org-selector-list')).not.toBeVisible({ timeout: 5_000 });
     await expect(trigger).toBeFocused();
   });
 
-  test('A4b: Enter on a focused option activates that row and closes the panel', async ({ page }) => {
+  test('A4b: Enter on a focused option activates that row, closes the panel, and restores focus to the combobox trigger', async ({ page }) => {
     const trigger = page.getByTestId('org-selector');
     await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
     await trigger.click();
@@ -161,5 +169,10 @@ test.describe('Org Selector — accessibility contract', () => {
 
     // Panel closes on selection.
     await expect(page.getByTestId('org-selector-list')).not.toBeVisible({ timeout: 5_000 });
+
+    // Focus MUST return to the combobox trigger, mirroring Escape's contract — the row that
+    // received Enter is about to be removed from the DOM, so without an explicit restore, the
+    // keyboard user is dumped on `body`.
+    await expect(trigger).toBeFocused();
   });
 });

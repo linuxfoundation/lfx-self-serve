@@ -225,8 +225,10 @@ export class OrgRoleGrantsService {
         // Request one row above the hard cap so we can detect callers who have more direct
         // grants than the platform supports today. Upstream `MaxPageSize` is 1000
         // (`apps/lfx-v2-query-service/pkg/constants/query.go`), so 501 stays well within bounds and
-        // no page_token fallback is required.
-        per_page: ORG_ROLE_GRANTS_HARD_CAP + 1,
+        // no page_token fallback is required. Parameter is `page_size` — the query-service Goa DSL
+        // binds this exact key (`apps/lfx-v2-query-service/design/query-svc.go`); a legacy
+        // `per_page` here is silently ignored and the upstream defaults to `DefaultPageSize = 50`.
+        page_size: ORG_ROLE_GRANTS_HARD_CAP + 1,
       });
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org_settings query failed', { err: error });
@@ -373,7 +375,8 @@ export class OrgRoleGrantsService {
       tags: safeUids.map((uid) => `b2b_org_uid:${uid}`),
       // +10 buffer for safety, capped at the hard cap so we never request a page larger than
       // the upstream max-page-size (safeUids is already bounded by ORG_ROLE_GRANTS_HARD_CAP).
-      per_page: Math.min(safeUids.length + 10, ORG_ROLE_GRANTS_HARD_CAP),
+      // Parameter is `page_size` — see the note on the settings fetch above.
+      page_size: Math.min(safeUids.length + 10, ORG_ROLE_GRANTS_HARD_CAP),
     });
 
     const map = new Map<string, B2bOrgIndexedDoc>();
@@ -424,7 +427,8 @@ export class OrgRoleGrantsService {
       const query: Record<string, unknown> = {
         type: 'b2b_org',
         tags: [`parent_b2b_org_uid:${parentUid}`],
-        per_page: 100,
+        // Parameter is `page_size` — see the note on the settings fetch above.
+        page_size: 100,
       };
       if (pageToken) query['page_token'] = pageToken;
 

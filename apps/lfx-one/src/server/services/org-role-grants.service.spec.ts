@@ -124,28 +124,38 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
   function seedProxy(settingsCount: number): { orgUids: string[] } {
     // Filter-safe uids: matches the isFilterSafeIdentifier stub /^[a-z0-9_-]+$/i.
     const orgUids = Array.from({ length: settingsCount }, (_, i) => `org-${i.toString().padStart(4, '0')}`);
+    // Mirror the query-service Goa contract: it only recognizes `page_size` and silently defaults
+    // to 50 for missing / unknown paging keys. Bugging the mock this way means a regression to
+    // `per_page` (or any other key) fails the boundary tests here rather than shipping to prod.
+    const respectPageSize = <T>(resources: T[], params: { page_size?: number } | undefined): { resources: T[] } => {
+      const pageSize = typeof params?.page_size === 'number' && params.page_size > 0 ? params.page_size : 50;
+      return { resources: resources.slice(0, pageSize) };
+    };
     proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, _method: unknown, params?: Record<string, unknown>) => {
       if (params && (params as { type?: string }).type === 'b2b_org_settings') {
-        return { resources: orgUids.map(makeSettingsResource) };
+        return respectPageSize(orgUids.map(makeSettingsResource), params as { page_size?: number });
       }
       if (params && (params as { type?: string }).type === 'b2b_org') {
-        // Return docs matching whatever uids the service requested via `tags`.
         const tags = ((params as { tags?: string[] }).tags ?? []).map((t) => t.replace(/^b2b_org_uid:/, ''));
-        return { resources: tags.map(makeOrgDoc) };
+        return respectPageSize(tags.map(makeOrgDoc), params as { page_size?: number });
       }
       return { resources: [] };
     });
     return { orgUids };
   }
 
-  it('requests one row above the hard cap so overflow is detectable', async () => {
+  it('requests one row above the hard cap so overflow is detectable — via the `page_size` contract key', async () => {
     checkSingleAccess.mockResolvedValue(false);
     seedProxy(HARD_CAP);
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
 
     const [, , , , settingsParams] = proxyRequest.mock.calls[0];
-    expect(settingsParams).toMatchObject({ type: 'b2b_org_settings', per_page: HARD_CAP + 1 });
+    // `page_size` is the query-service Goa contract key; a legacy `per_page` is silently
+    // ignored upstream and defaults to 50, so asserting both directions here (present under
+    // the correct key, absent under the legacy key) blocks a regression to the wrong param.
+    expect(settingsParams).toMatchObject({ type: 'b2b_org_settings', page_size: HARD_CAP + 1 });
+    expect(settingsParams).not.toHaveProperty('per_page');
   });
 
   it('does NOT emit the overflow warning at exactly the cap', async () => {
