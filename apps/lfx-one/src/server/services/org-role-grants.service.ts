@@ -222,11 +222,30 @@ export class OrgRoleGrantsService {
         // form matches nothing — verified against dev). Writer-vs-auditor is classified from the
         // flattened `data.members[]` shape (falling back to legacy `data.writers[]`/`data.auditors[]`) below.
         tags: [`member:${username}`],
-        per_page: ORG_ROLE_GRANTS_HARD_CAP,
+        // Request one row above the hard cap so we can detect callers who have more direct
+        // grants than the platform supports today. Upstream `MaxPageSize` is 1000
+        // (`apps/lfx-v2-query-service/pkg/constants/query.go`), so 501 stays well within bounds and
+        // no page_token fallback is required.
+        per_page: ORG_ROLE_GRANTS_HARD_CAP + 1,
       });
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org_settings query failed', { err: error });
       return { ...empty, upstreamFailed: true, isStaff: await staffPromise };
+    }
+
+    // Operator-visibility signal: when the caller has more direct grants than
+    // ORG_ROLE_GRANTS_HARD_CAP, emit a single structured warning per response with a stable event
+    // tag so ops can page-alert on it. The response is truncated to the cap before partitioning so
+    // the resolver, cache, and wire response never exceed the supported ceiling.
+    const rawGrantCount = settingsResponse?.resources?.length ?? 0;
+    if (rawGrantCount > ORG_ROLE_GRANTS_HARD_CAP) {
+      logger.warning(req, 'get_org_role_grants', 'Raw direct-grant count exceeds supported maximum — truncating to hard cap', {
+        username_length: username.length,
+        raw_grant_count: rawGrantCount,
+        hard_cap: ORG_ROLE_GRANTS_HARD_CAP,
+        event: 'org_grant_cap_exceeded',
+      });
+      settingsResponse = { ...settingsResponse, resources: settingsResponse.resources!.slice(0, ORG_ROLE_GRANTS_HARD_CAP) };
     }
 
     const isStaff = await staffPromise;

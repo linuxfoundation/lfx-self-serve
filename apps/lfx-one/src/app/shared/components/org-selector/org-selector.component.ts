@@ -35,6 +35,13 @@ export class OrgSelectorComponent {
   private readonly popoverRef = viewChild<Popover>('popover');
   private readonly triggerRef = viewChild<ElementRef<HTMLElement>>('selectorTrigger');
 
+  /**
+   * Cached reference to the document-level keydown listener installed while the popover is open, so
+   * `detachKeyboardHandler` can remove exactly the function it attached (removing an anonymous
+   * function bound in `attachKeyboardHandler` would be a no-op).
+   */
+  private keyDownListener: ((event: KeyboardEvent) => void) | null = null;
+
   public readonly isPanelOpen = model<boolean>(false);
   /** When false the trigger is hidden by the sidebar gate — skip list bootstrap so zero-grants users don't hit /api/nav/org-items. */
   public readonly enabled = input<boolean>(true);
@@ -220,15 +227,118 @@ export class OrgSelectorComponent {
     if (this.enabled() && this.items().length === 0 && !this.loading()) {
       this.bootstrapOrgList();
     }
+    this.attachKeyboardHandler();
+    // Non-staff callers land on the currently-selected option so Arrow keys can immediately navigate;
+    // staff callers keep the pAutoFocus search input as their entry point per current UX.
+    if (!this.isStaff()) {
+      this.focusInitialOption();
+    }
   }
 
   protected onPopoverHide(): void {
     this.isPanelOpen.set(false);
     this.searchControl.setValue('', { emitEvent: true });
+    this.detachKeyboardHandler();
   }
 
   protected loadMore(): void {
     this.orgNavigationService.loadNextPage();
+  }
+
+  /**
+   * Keyboard-navigation contract (WAI-ARIA APG combobox / listbox pattern):
+   *   - ArrowDown / ArrowUp: move roving focus among role="option" rows
+   *   - Home / End: focus first / last row
+   *   - Enter: activate the focused row
+   *   - Escape: close the popover and return focus to the combobox trigger
+   * Runs only while the panel is open; document-scoped so it also catches events fired on the
+   * `appendTo="body"` popover panel (which lives outside the component subtree and would not
+   * bubble to a host listener).
+   */
+  private attachKeyboardHandler(): void {
+    if (!isPlatformBrowser(this.platformId) || this.keyDownListener) return;
+    this.keyDownListener = (event: KeyboardEvent) => this.handleKeyDown(event);
+    document.addEventListener('keydown', this.keyDownListener);
+  }
+
+  private detachKeyboardHandler(): void {
+    if (!isPlatformBrowser(this.platformId) || !this.keyDownListener) return;
+    document.removeEventListener('keydown', this.keyDownListener);
+    this.keyDownListener = null;
+  }
+
+  private handleKeyDown(event: KeyboardEvent): void {
+    if (!this.isPanelOpen()) return;
+    const options = this.listboxOptions();
+    if (options.length === 0) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        this.closeAndRestoreFocus();
+      }
+      return;
+    }
+    const activeIndex = options.findIndex((el) => el === document.activeElement);
+
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        this.moveFocusTo(options, activeIndex >= 0 ? Math.min(activeIndex + 1, options.length - 1) : 0);
+        return;
+      case 'ArrowUp':
+        event.preventDefault();
+        this.moveFocusTo(options, activeIndex > 0 ? activeIndex - 1 : 0);
+        return;
+      case 'Home':
+        event.preventDefault();
+        this.moveFocusTo(options, 0);
+        return;
+      case 'End':
+        event.preventDefault();
+        this.moveFocusTo(options, options.length - 1);
+        return;
+      case 'Enter':
+        // Native button behavior: pressing Enter on a focused `<button>` fires a click, which
+        // triggers the row's `(click)="selectItem(...)"` handler and hides the popover. Falling
+        // through here (no `preventDefault`, no imperative `.click()`) preserves that path and
+        // avoids double-firing under zone.js.
+        return;
+      case 'Escape':
+        event.preventDefault();
+        this.closeAndRestoreFocus();
+        return;
+      default:
+        return;
+    }
+  }
+
+  private listboxOptions(): HTMLElement[] {
+    if (!isPlatformBrowser(this.platformId)) return [];
+    const container = this.popoverRef()?.container as HTMLElement | null | undefined;
+    if (!container) return [];
+    return Array.from(container.querySelectorAll<HTMLElement>('[role="option"]'));
+  }
+
+  private moveFocusTo(options: HTMLElement[], index: number): void {
+    const target = options[index];
+    if (!target) return;
+    options.forEach((el, i) => el.setAttribute('tabindex', i === index ? '0' : '-1'));
+    target.focus();
+  }
+
+  private focusInitialOption(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    // Defer to the next microtask so the panel DOM is laid out and rows have been rendered.
+    queueMicrotask(() => {
+      const options = this.listboxOptions();
+      if (options.length === 0) return;
+      const selectedIdx = options.findIndex((el) => el.getAttribute('aria-selected') === 'true');
+      this.moveFocusTo(options, selectedIdx >= 0 ? selectedIdx : 0);
+    });
+  }
+
+  private closeAndRestoreFocus(): void {
+    this.popoverRef()?.hide();
+    this.triggerRef()?.nativeElement.focus();
   }
 
   /**

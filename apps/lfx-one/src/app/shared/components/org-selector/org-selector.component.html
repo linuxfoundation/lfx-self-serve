@@ -6,7 +6,11 @@
   type="button"
   class="box-border content-stretch flex gap-3 items-center overflow-clip p-3 relative w-full cursor-pointer hover:bg-gray-50 transition-colors rounded-[0.75rem] border border-gray-200 shadow-[0_2px_3px_-1px_rgba(0,0,0,0.08)]"
   (click)="togglePanel($event, popover)"
+  role="combobox"
+  aria-haspopup="listbox"
+  aria-controls="org-selector-listbox"
   [attr.aria-expanded]="popover.overlayVisible"
+  [attr.aria-label]="'Organization switcher, currently ' + displayName()"
   data-testid="org-selector">
   <div class="bg-gray-100 overflow-clip relative rounded-lg shrink-0 size-11 border border-gray-200" data-testid="org-selector-trigger-logo">
     <div class="flex items-center justify-center size-full p-1.5">
@@ -67,6 +71,8 @@
     }
 
     <div
+      id="org-selector-listbox"
+      role="listbox"
       class="max-h-[400px] overflow-y-auto"
       data-testid="org-selector-list"
       [attr.data-item-count]="displayedItems().length"
@@ -95,7 +101,10 @@
         <div class="mb-1">
           <button
             type="button"
-            class="flex items-center gap-3 p-2 w-full text-left rounded-lg transition-colors"
+            role="option"
+            [attr.aria-selected]="displayItem.isSelected"
+            tabindex="-1"
+            class="flex items-center gap-3 p-2 w-full text-left rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             [class.bg-blue-50]="displayItem.isSelected"
             [class.hover:bg-gray-100]="!displayItem.isSelected"
             (click)="selectItem(displayItem.item, popover)"
