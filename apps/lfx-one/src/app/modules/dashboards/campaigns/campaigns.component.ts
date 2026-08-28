@@ -15,6 +15,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
+  CampaignCreateRequest,
   CampaignBriefPersistenceState,
   CampaignImplementationDraft,
   CampaignBriefPersistResult,
@@ -25,6 +26,7 @@ import type {
   CampaignTabOption,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
+import { ButtonComponent } from '@components/button/button.component';
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
@@ -43,6 +45,7 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
   selector: 'lfx-campaigns',
   imports: [
     ReactiveFormsModule,
+    ButtonComponent,
     SelectComponent,
     PlanningTabComponent,
     ImplementationTabComponent,
@@ -647,6 +650,35 @@ export class CampaignsComponent {
   protected readonly selectedEmailTemplateId = signal<string>('');
 
   /**
+   * Email staging state — LFXV2-3201's create trigger.
+   *
+   * Separate from the paid side's `creating`/`campaignRows` because the two report DIFFERENT
+   * outcomes. Paid creation returns per-platform rows a user can act on; staging an email
+   * produces ONE HubSpot draft and nothing to pause, so a row table would imply controls that
+   * do not exist (`HubSpotDispatcher` implements no `StatusToggler`).
+   *
+   * `idle` before any attempt, `staging` while the job runs, then a terminal message. The
+   * message is kept as text rather than a boolean because the failure a user can act on
+   * ("connect HubSpot", "pick a template") and the one they cannot are both surfaced here.
+   */
+  protected readonly emailStaging = signal<'idle' | 'staging' | 'done' | 'error'>('idle');
+
+  /** Terminal message for the staging attempt — empty while idle or in flight. */
+  protected readonly emailStagingMessage = signal<string>('');
+
+  /**
+   * Whether a send can be staged right now.
+   *
+   * All three are REQUIRED by the upstream contract, not by preference: the brief because
+   * creation posts to `/projects/{slug}/briefs/{id}/campaigns` and there is no
+   * create-without-a-brief route; the template because `hubspot.go:281-283` refuses a blank
+   * `sourceEmailId`; the slug because briefs are project-scoped and authorised per project.
+   */
+  protected readonly canStageEmail = computed(
+    () => this.emailBriefOutput() !== null && this.selectedEmailTemplateId() !== '' && this.activeFoundationSlug() !== '' && this.emailStaging() !== 'staging'
+  );
+
+  /**
    * Whether the channel is usable at all for this project.
    *
    * `enabled: false` is the steady state wherever HubSpot is not connected, not a failure, so it
@@ -1018,6 +1050,91 @@ export class CampaignsComponent {
     // the portal's most recently updated templates already listed. Someone staging a send usually
     // wants a recent one, and an empty box with no options reads as a broken channel.
     this.searchEmailTemplates('');
+  }
+
+  /**
+   * Stage the email send — LFXV2-3201's create trigger.
+   *
+   * TWO upstream calls, in order, because creation is brief-scoped: the route is
+   * `/projects/{slug}/briefs/{brief_id}/campaigns`, so a brief id must exist BEFORE create.
+   * The email planner never persisted one (it skips the saved-brief lookup entirely, because
+   * persistence is keyed on (foundation, event) with no delivery type and the row it would find
+   * is a PAID brief), so this persists first and uses the id that comes back.
+   *
+   * The persist is deliberately NOT given a known id or ETag: this session has established no
+   * ownership of an email row, and passing a paid row's validator would let a stale-write guard
+   * pass against the wrong record.
+   *
+   * `platforms: ['hubspot']` is legal here and only here — `CampaignCreateInput.platforms` is
+   * typed `CampaignAnyPlatform[]`, the one request shape that admits the email channel.
+   */
+  protected async onStageEmailSend(): Promise<void> {
+    const brief = this.emailBriefOutput();
+    const sourceEmailId = this.selectedEmailTemplateId();
+    const projectSlug = this.activeFoundationSlug();
+
+    // Re-checked rather than trusted from `canStageEmail`: the button is one caller, and a
+    // signal can change between the guard and the await below.
+    if (brief === null || sourceEmailId === '' || projectSlug === '') {
+      return;
+    }
+
+    this.emailStaging.set('staging');
+    this.emailStagingMessage.set('');
+
+    try {
+      const persisted = await firstValueFrom(this.campaignService.persistBrief(brief, projectSlug));
+      const briefId = persisted.briefId;
+
+      // A persist that reports success without an id cannot be followed by a create — the id is
+      // a PATH segment upstream. Reported as a failure rather than retried, because a retry
+      // would post a second brief for the same event.
+      if (!briefId) {
+        this.emailStaging.set('error');
+        this.emailStagingMessage.set('The brief could not be saved, so the send was not staged. Try again.');
+        return;
+      }
+
+      // Built field-by-field rather than spread from the brief: `CampaignCreateRequest` is the
+      // PAID shape (budget split, dates, keywords, headlines) and a brief carries none of those
+      // under `eventDetails`. The email dispatcher reads only the identifiers plus
+      // `hubspotConfig`; the paid-only fields are sent empty because the contract requires them
+      // present, not because HubSpot consults them.
+      const details = brief.eventDetails;
+      const request: CampaignCreateRequest = {
+        eventName: details.name,
+        eventSlug: details.slug,
+        countryCode: details.countryCode,
+        registrationUrl: details.registrationUrl,
+        campaignTypes: [],
+        budgetUsd: 0,
+        searchBudgetPct: 0,
+        startDate: '',
+        endDate: '',
+        keywords: [],
+        headlines: [],
+        descriptions: [],
+        geoTargets: [],
+        platforms: ['hubspot'],
+        hubspotConfig: { sourceEmailId },
+      };
+
+      const outcome = await firstValueFrom(this.campaignService.createCampaign(request, projectSlug, briefId));
+
+      if (outcome.error) {
+        this.emailStaging.set('error');
+        this.emailStagingMessage.set(outcome.error);
+        return;
+      }
+
+      this.emailStaging.set('done');
+      this.emailStagingMessage.set('Draft created in HubSpot. Review and send it from there.');
+    } catch {
+      // The cause is not surfaced: a create failure can carry upstream detail, and the job
+      // result collapses every dispatcher error to one string anyway.
+      this.emailStaging.set('error');
+      this.emailStagingMessage.set('Staging failed. Check the HubSpot connection and try again.');
+    }
   }
 
   /**
