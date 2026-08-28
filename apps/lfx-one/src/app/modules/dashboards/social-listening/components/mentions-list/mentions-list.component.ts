@@ -69,9 +69,9 @@ export class MentionsListComponent {
   public readonly isReadFn: Signal<(id: string) => boolean> = this.initIsReadFn();
   /** Load More footer visibility — gated on a landed row so an early advance can't cancel the in-flight window-0 fetch. */
   public readonly showLoadMore = computed(() => this.hasMore() && this.loadedCount() > 0 && !this.phase2Failed() && !this.loadError());
-  /** Exhausted feed with rows on screen — the count persists below the feed while the advance control hides. */
+  /** Exhausted feed with rows on screen — the count persists below the feed; the servable-total gate keeps an in-flight count from flashing a bogus "of 0" total. */
   public readonly showExhaustedCount = computed(
-    () => !this.showLoadMore() && !this.renderCapped() && this.loadedCount() > 0 && !this.phase2Failed() && !this.loadError()
+    () => !this.showLoadMore() && !this.renderCapped() && this.loadedCount() > 0 && this.servableTotal() > 0 && !this.phase2Failed() && !this.loadError()
   );
   /** Running-count label shared by the Load More and exhausted footers — a failed count drops the total rather than inventing one. */
   public readonly showingLabel = computed(() =>
