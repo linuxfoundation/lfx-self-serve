@@ -114,6 +114,25 @@ export class PlanningTabComponent implements OnInit {
   protected readonly selectedPlatforms = signal<Set<CampaignPlatform>>(new Set(['google-ads']));
   protected readonly statusMessages = signal<string[]>([]);
   protected readonly eventDetails = signal<CampaignEventDetails | null>(null);
+
+  /**
+   * Email-brief editing (LFXV2-2770).
+   *
+   * An email brief comes back as event details and a UTM token — no `structuredCopy`, which is
+   * why the paid Edit entry point is hidden for email. But the SCRAPE is what gets things wrong
+   * (a wrong date, a venue that reads oddly, an audience the page never stated), and those are
+   * exactly the fields the generator is instructed to use verbatim. Without an editor the only
+   * remedy is to fix the event page and re-scrape.
+   *
+   * Held as a separate draft rather than mutating `eventDetails` in place, so Cancel restores
+   * what the scrape actually returned rather than the last thing typed.
+   */
+  protected readonly isEditingEmailBrief = signal<boolean>(false);
+  protected readonly emailEditName = signal<string>('');
+  protected readonly emailEditDates = signal<string>('');
+  protected readonly emailEditCity = signal<string>('');
+  protected readonly emailEditAudience = signal<string>('');
+  protected readonly emailEditRegistrationUrl = signal<string>('');
   protected readonly copyBuffer = signal('');
   protected readonly structuredCopy = signal<Record<string, unknown> | null>(null);
   protected readonly hsUtm = signal<string | null>(null);
@@ -645,6 +664,48 @@ export class PlanningTabComponent implements OnInit {
       default:
         return 'bg-gray-100 text-gray-600';
     }
+  }
+
+  /** Open the email brief editor, seeded with what the scrape returned. */
+  protected enterEmailEditMode(): void {
+    const d = this.eventDetails();
+    if (d === null) {
+      return;
+    }
+    this.emailEditName.set(d.name);
+    this.emailEditDates.set(d.dates);
+    this.emailEditCity.set(d.city);
+    this.emailEditAudience.set(d.audience);
+    this.emailEditRegistrationUrl.set(d.registrationUrl);
+    this.isEditingEmailBrief.set(true);
+  }
+
+  /**
+   * Apply the edits to the brief the rest of the flow reads.
+   *
+   * Writes back into `eventDetails` because that is what `proceedToImplementation` emits and what
+   * content generation is told to use verbatim — an edit that stopped at the form would show the
+   * corrected date on screen while the generator still wrote the wrong one.
+   */
+  protected saveEmailEdit(): void {
+    const d = this.eventDetails();
+    if (d === null) {
+      return;
+    }
+    this.eventDetails.set({
+      ...d,
+      name: this.emailEditName().trim(),
+      dates: this.emailEditDates().trim(),
+      city: this.emailEditCity().trim(),
+      audience: this.emailEditAudience().trim(),
+      registrationUrl: this.emailEditRegistrationUrl().trim(),
+    });
+    this.isEditingEmailBrief.set(false);
+  }
+
+  /** Discard the edits. `eventDetails` was never mutated, so nothing to restore. */
+  protected cancelEmailEdit(): void {
+    this.isEditingEmailBrief.set(false);
   }
 
   protected enterEditMode(): void {

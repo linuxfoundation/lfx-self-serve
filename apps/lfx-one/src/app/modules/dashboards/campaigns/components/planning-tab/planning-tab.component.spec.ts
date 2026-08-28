@@ -1016,3 +1016,133 @@ describe('PlanningTabComponent delivery-type mode', () => {
     expect(refineBrief.mock.calls[0][1].platforms).toEqual(['google-ads']);
   });
 });
+
+/**
+ * LFXV2-2770: the email brief is a SCRAPE, and the scrape is what gets the date or the city wrong.
+ * The generator is instructed to use these fields verbatim, so without an editor the only remedy
+ * for a wrong value is to fix the event page upstream and re-scrape.
+ */
+describe('PlanningTabComponent email brief editing', () => {
+  let fixture: ComponentFixture<PlanningTabComponent>;
+
+  const programTypeConfig: CampaignProgramTypeOption = {
+    id: 'events',
+    label: 'Events',
+    breadcrumbLabel: 'Events',
+    urlLabel: 'Event URL',
+    urlPlaceholder: 'https://events.example.com/event-name',
+    urlHelp: 'Enter the event registration URL',
+    goalLabel: 'Event conversions',
+    audiencePlaceholder: 'Enter target audience',
+    valuePropPlaceholder: 'Enter value proposition',
+  };
+
+  const scraped = {
+    name: 'MCP Dev Summit Nairobi',
+    dates: 'March 3-4, 2026',
+    city: 'Nairobi',
+    countryCode: 'KE',
+    audience: 'Developers',
+    themes: [],
+    registrationUrl: 'https://events.example.com/mcp-dev-summit-nairobi/',
+    speakers: [],
+    slug: 'mcp-dev-summit-nairobi',
+    formatNotes: '',
+  };
+
+  interface EmailEditInternals {
+    eventDetails: {
+      set(v: unknown): void;
+      (): { name: string; dates: string; city: string; audience: string; registrationUrl: string } | null;
+    };
+    isEditingEmailBrief(): boolean;
+    emailEditName: { set(v: string): void; (): string };
+    emailEditDates: { set(v: string): void; (): string };
+    enterEmailEditMode(): void;
+    saveEmailEdit(): void;
+    cancelEmailEdit(): void;
+  }
+
+  function internals(): EmailEditInternals {
+    return fixture.componentInstance as unknown as EmailEditInternals;
+  }
+
+  /**
+   * The brief card lives inside the `step() === 'review'` branch, so a fixture left on the form
+   * step renders nothing and every DOM assertion here would pass vacuously.
+   */
+  async function buildWithScrape(deliveryType: 'paid-marketing' | 'email' = 'email'): Promise<void> {
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.componentRef.setInput('deliveryType', deliveryType);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    internals().eventDetails.set(scraped);
+    (fixture.componentInstance as unknown as { step: { set(v: string): void } }).step.set('review');
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [PlanningTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    const projectContextService = TestBed.inject(ProjectContextService);
+    projectContextService.setRouteLensKind('foundation');
+    projectContextService.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+  });
+
+  it('renders the scraped brief so the user can see what generation will use', async () => {
+    await buildWithScrape();
+    const name = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-email-brief-name"]');
+    // The VALUE, not just presence: an empty card would still satisfy a presence check.
+    expect(name?.textContent?.trim()).toBe('MCP Dev Summit Nairobi');
+  });
+
+  it('seeds the editor from the scrape rather than opening blank', async () => {
+    await buildWithScrape();
+    internals().enterEmailEditMode();
+    // An editor that opened blank would silently blank the brief on save.
+    expect(internals().emailEditName()).toBe('MCP Dev Summit Nairobi');
+    expect(internals().isEditingEmailBrief()).toBe(true);
+  });
+
+  it('writes the edit back into eventDetails, which is what generation reads', async () => {
+    await buildWithScrape();
+    internals().enterEmailEditMode();
+    internals().emailEditDates.set('March 10-11, 2026');
+    internals().saveEmailEdit();
+    // Asserting the DESTINATION: an edit that stopped at the form would show the corrected date
+    // on screen while content generation still sent the wrong one upstream.
+    expect(internals().eventDetails()?.dates).toBe('March 10-11, 2026');
+    expect(internals().isEditingEmailBrief()).toBe(false);
+  });
+
+  it('discards edits on cancel', async () => {
+    await buildWithScrape();
+    internals().enterEmailEditMode();
+    internals().emailEditName.set('Something else entirely');
+    internals().cancelEmailEdit();
+    expect(internals().eventDetails()?.name).toBe('MCP Dev Summit Nairobi');
+  });
+
+  it('does not render the brief card in paid mode', async () => {
+    await buildWithScrape('paid-marketing');
+    // Paid already has its own structured-copy editor plus the compact strip; a second card
+    // would be a duplicate surface.
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-email-brief"]')).toBeNull();
+  });
+
+  it('drops the compact strip in email mode so the details are not shown twice', async () => {
+    await buildWithScrape();
+    const strips = (fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid="planning-email-brief-name"]');
+    expect(strips.length).toBe(1);
+  });
+});

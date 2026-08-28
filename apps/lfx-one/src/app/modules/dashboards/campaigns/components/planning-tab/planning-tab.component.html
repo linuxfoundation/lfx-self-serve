@@ -346,7 +346,7 @@
           </button>
         }
       </div>
-      @if (eventDetails(); as details) {
+      @if (!isEmail() && eventDetails(); as details) {
         <div class="mt-2 flex flex-wrap items-center gap-3 pl-7 text-xs text-gray-600">
           <span class="font-medium text-gray-900">{{ details.name }}</span>
           <span class="flex items-center gap-1">
@@ -366,6 +366,115 @@
         </div>
       }
     </div>
+
+    <!--
+      The email brief itself (LFXV2-2770). An email brief returns event details and a UTM token
+      and no `structuredCopy`, so the paid editor above is hidden for it — but the SCRAPE is what
+      gets things wrong, and these are the fields the content generator is instructed to use
+      verbatim. Without this the only remedy for a wrong date is to fix the event page and
+      re-scrape.
+    -->
+    @if (isEmail() && eventDetails(); as details) {
+      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="planning-email-brief">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-gray-900">Event details</h3>
+          @if (!isEditingEmailBrief()) {
+            <button
+              type="button"
+              (click)="enterEmailEditMode()"
+              class="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              data-testid="planning-email-edit-btn">
+              <i class="fa-light fa-pen-to-square" aria-hidden="true"></i>
+              Edit Brief
+            </button>
+          }
+        </div>
+
+        @if (isEditingEmailBrief()) {
+          <div class="flex flex-col gap-3" data-testid="planning-email-brief-edit">
+            <div class="flex flex-col gap-1">
+              <label for="eb-name" class="font-mono text-xs uppercase tracking-wide text-gray-400">Event name</label>
+              <input
+                id="eb-name"
+                type="text"
+                class="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                [value]="emailEditName()"
+                (input)="emailEditName.set($any($event.target).value)"
+                data-testid="planning-email-edit-name" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label for="eb-dates" class="font-mono text-xs uppercase tracking-wide text-gray-400">Dates</label>
+              <input
+                id="eb-dates"
+                type="text"
+                class="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                [value]="emailEditDates()"
+                (input)="emailEditDates.set($any($event.target).value)"
+                data-testid="planning-email-edit-dates" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label for="eb-city" class="font-mono text-xs uppercase tracking-wide text-gray-400">Location</label>
+              <input
+                id="eb-city"
+                type="text"
+                class="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                [value]="emailEditCity()"
+                (input)="emailEditCity.set($any($event.target).value)"
+                data-testid="planning-email-edit-city" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label for="eb-aud" class="font-mono text-xs uppercase tracking-wide text-gray-400">Audience</label>
+              <input
+                id="eb-aud"
+                type="text"
+                class="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                [value]="emailEditAudience()"
+                (input)="emailEditAudience.set($any($event.target).value)"
+                data-testid="planning-email-edit-audience" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label for="eb-url" class="font-mono text-xs uppercase tracking-wide text-gray-400">Registration URL</label>
+              <input
+                id="eb-url"
+                type="url"
+                class="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                [value]="emailEditRegistrationUrl()"
+                (input)="emailEditRegistrationUrl.set($any($event.target).value)"
+                data-testid="planning-email-edit-url" />
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                (click)="saveEmailEdit()"
+                class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                data-testid="planning-email-save-btn">
+                Save changes
+              </button>
+              <button
+                type="button"
+                (click)="cancelEmailEdit()"
+                class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                data-testid="planning-email-cancel-btn">
+                Cancel
+              </button>
+            </div>
+          </div>
+        } @else {
+          <dl class="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2 text-sm" data-testid="planning-email-brief-view">
+            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Event</dt>
+            <dd class="text-gray-900" data-testid="planning-email-brief-name">{{ details.name || '—' }}</dd>
+            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Dates</dt>
+            <dd class="text-gray-700">{{ details.dates || '—' }}</dd>
+            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Location</dt>
+            <dd class="text-gray-700">{{ details.city || '—' }}</dd>
+            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Audience</dt>
+            <dd class="text-gray-700">{{ details.audience || '—' }}</dd>
+            <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Register</dt>
+            <dd class="break-all text-gray-700">{{ details.registrationUrl || '—' }}</dd>
+          </dl>
+        }
+      </div>
+    }
 
     <!-- HubSpot UTM -->
     @if (hsUtm()) {
