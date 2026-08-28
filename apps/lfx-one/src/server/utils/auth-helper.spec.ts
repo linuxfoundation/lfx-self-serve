@@ -4,7 +4,15 @@
 import type { Request } from 'express';
 import { describe, expect, it } from 'vitest';
 
-import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, getRealEmail, resolveAuditUserDisplayName, resolveRealAccessToken } from './auth-helper';
+import {
+  getEffectiveEmail,
+  getEffectiveSub,
+  getEffectiveUsername,
+  getRealEmail,
+  isImpersonating,
+  resolveAuditUserDisplayName,
+  resolveRealAccessToken,
+} from './auth-helper';
 
 interface TargetUser {
   email?: string;
@@ -24,6 +32,21 @@ function buildReq(opts: { impersonating?: boolean; target?: TargetUser; oidc?: R
 // The impersonator's own OIDC identity — present in every impersonation case to prove the
 // helpers never fall back to it when the target's stored field is empty.
 const OPERATOR_OIDC = { email: 'Operator@Example.com', nickname: 'operatornick', username: 'operatorname', sub: 'auth0|operator' };
+
+describe('isImpersonating', () => {
+  it('keeps the authentication-time decision after the session expiry passes mid-request', () => {
+    const req = {
+      impersonationActive: true,
+      appSession: {
+        impersonationToken: 'imp-token',
+        impersonationExpiresAt: Date.now() - 1,
+        impersonationUser: { username: 'targetuser' },
+      },
+    } as unknown as Request;
+
+    expect(isImpersonating(req)).toBe(true);
+  });
+});
 
 describe('getEffectiveEmail', () => {
   it('returns the target email lowercased when impersonating', () => {

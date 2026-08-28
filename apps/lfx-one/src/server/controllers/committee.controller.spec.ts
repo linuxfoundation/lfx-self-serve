@@ -63,13 +63,15 @@ vi.mock('../helpers/ics.helper', () => ({
 vi.mock('../helpers/validation.helper', () => ({ getStringQueryParam: vi.fn() }));
 
 import { CommitteeController } from './committee.controller';
+import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
+import { generateM2MToken } from '../utils/m2m-token.util';
 
 function buildReq(body: Record<string, unknown> = {}): any {
   return { params: { id: COMMITTEE_ID, inviteId: INVITE_ID }, body, path: '/test', log: {} };
 }
 
 function buildRes(): any {
-  return { status: vi.fn().mockReturnThis(), send: vi.fn() };
+  return { status: vi.fn().mockReturnThis(), send: vi.fn(), setHeader: vi.fn() };
 }
 
 describe('CommitteeController.acceptCommitteeInvite — from_lfid_invite flag', () => {
@@ -169,5 +171,48 @@ describe('CommitteeController.acceptCommitteeInvite — from_lfid_invite flag', 
       );
       expect(committeeSvc.acceptCommitteeInvite).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('CommitteeController.getCommitteeCalendar', () => {
+  let controller: CommitteeController;
+
+  function buildCalendarReq(id: string = COMMITTEE_ID): any {
+    return { params: { id }, headers: {}, bearerToken: undefined, path: `/public/api/committees/${id}/calendar.ics` };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CommitteeController();
+    (generateM2MToken as any).mockResolvedValue('m2m-token');
+    (fetchAllMeetingPages as any).mockResolvedValue([]);
+    (meetingsToVEvents as any).mockReturnValue([]);
+    (buildVCalendar as any).mockReturnValue('BEGIN:VCALENDAR\r\nEND:VCALENDAR');
+  });
+
+  it('passes the resolved committee name through to buildVCalendar as calname', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, name: 'Technical Steering Committee' });
+    const req = buildCalendarReq();
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getCommitteeCalendar(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(buildVCalendar).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'Technical Steering Committee');
+    expect(res.send).toHaveBeenCalled();
+  });
+
+  it('falls back to an undefined calname (still 200) when the committee name lookup fails', async () => {
+    committeeSvc.getCommitteeById.mockRejectedValue(new Error('upstream 503'));
+    const req = buildCalendarReq();
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getCommitteeCalendar(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(buildVCalendar).toHaveBeenCalledWith(expect.anything(), expect.any(String), undefined);
+    expect(res.send).toHaveBeenCalled();
   });
 });

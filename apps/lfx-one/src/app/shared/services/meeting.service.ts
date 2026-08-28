@@ -40,6 +40,7 @@ import {
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
   PublicPastMeetingResponse,
+  PublicProjectMeetingsResponse,
   QueryServiceCountResponse,
   UpdateMeetingAttachmentRequest,
   UpdateMeetingRegistrantRequest,
@@ -258,6 +259,21 @@ export class MeetingService {
     return this.http
       .get<PublicMeetingOccurrencesResponse>(`/public/api/meetings/${id}/occurrences`, { headers })
       .pipe(catchError(() => of({ past: [], future: [] } as PublicMeetingOccurrencesResponse)));
+  }
+
+  /** Public project calendar page — meetings for a project (by UID or slug), optionally scoped to a single committee. */
+  public getPublicProjectMeetings(identifier: string, committeeUid?: string): Observable<PublicProjectMeetingsResponse> {
+    let params = new HttpParams();
+    if (committeeUid) {
+      params = params.set('committee', committeeUid);
+    }
+
+    return this.http.get<PublicProjectMeetingsResponse>(`/public/api/projects/${encodeURIComponent(identifier)}/meetings`, { params }).pipe(
+      catchError((error) => {
+        console.error(`Failed to load public meetings for project ${identifier}:`, error);
+        return throwError(() => error);
+      })
+    );
   }
 
   public getPublicMeetingJoinUrl(
