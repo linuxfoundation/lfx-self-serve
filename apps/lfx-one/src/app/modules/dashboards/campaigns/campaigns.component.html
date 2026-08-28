@@ -404,6 +404,7 @@
                 No campaign-row table follows, unlike the paid side: staging produces ONE HubSpot
                 draft with nothing left running, so rows would imply pause/resume controls that
                 `HubSpotDispatcher` does not implement.
+              -->
 
               <!--
                 Audience. A SEPARATE action from staging, not folded into it, for two reasons: the
@@ -458,7 +459,6 @@
                 }
               </div>
 
-
               <!--
                 Final preview — the email as the recipient receives it, assembled from the parts
                 above rather than re-fetched, so what is shown is exactly what was generated.
@@ -474,7 +474,10 @@
                       <p class="text-sm font-semibold text-gray-900">{{ copy.subject }}</p>
                       <p class="text-xs text-gray-500">{{ copy.previewText }}</p>
                     </div>
-                    <div class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800" [innerHTML]="copy.previewHtml" data-testid="campaigns-email-preview-body"></div>
+                    <div
+                      class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
+                      [innerHTML]="copy.previewHtml"
+                      data-testid="campaigns-email-preview-body"></div>
                   </div>
                   <!--
                     Stated rather than implied: staging CLONES the chosen template, and passing
@@ -489,7 +492,6 @@
                 </div>
               }
 
-              -->
               <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-stage">
                 <div class="flex items-center gap-3">
                   <lfx-button
