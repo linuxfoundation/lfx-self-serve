@@ -38,6 +38,18 @@ function skipWhenAuthMissing(page: Page): void {
   }
 }
 
+/**
+ * Navigate and wait for the claimed panel to render. Routes/init scripts must be
+ * registered before this — Playwright can't retroactively intercept a request or
+ * seed sessionStorage for a navigation that already happened.
+ */
+async function gotoIdentitiesAndExpectClaimedPanel(page: Page): Promise<void> {
+  await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+  await expect(page).not.toHaveURL(/auth0\.com/);
+  await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+}
+
 /** Stub the identities fetch the tab needs to render deterministically. */
 async function stubIdentities(page: Page): Promise<void> {
   await page.route('**/api/profile/identities', (route) => {
@@ -137,11 +149,7 @@ test.describe('Linux.com email — forwarding target visibility', () => {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
 
-    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
-    await expect(page).not.toHaveURL(/auth0\.com/);
-
-    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+    await gotoIdentitiesAndExpectClaimedPanel(page);
     await expect(page.getByTestId('linux-email-forward-select')).toBeVisible();
     await expect(page.getByTestId('linux-email-forward-empty')).not.toBeAttached();
     await expect(page.getByText('Add another verified email to change this.')).toBeVisible();
@@ -163,11 +171,7 @@ test.describe('Linux.com email — forwarding target visibility', () => {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
 
-    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
-    await expect(page).not.toHaveURL(/auth0\.com/);
-
-    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+    await gotoIdentitiesAndExpectClaimedPanel(page);
     await expect(page.getByTestId('linux-email-forward-select')).toBeVisible();
     // The preserved external target is the selected option — proves the preservation branch fired.
     await expect(page.getByTestId('linux-email-forward-select')).toContainText(externalForward);
@@ -186,11 +190,7 @@ test.describe('Linux.com email — forwarding target visibility', () => {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
 
-    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
-    await expect(page).not.toHaveURL(/auth0\.com/);
-
-    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+    await gotoIdentitiesAndExpectClaimedPanel(page);
     await expect(page.getByTestId('linux-email-forward-empty')).toBeVisible();
     await expect(page.getByTestId('linux-email-forward-select')).not.toBeAttached();
   });
@@ -254,18 +254,6 @@ async function stubClaimedNeedsReauth(page: Page, authorizeUrl?: string): Promis
     };
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
-}
-
-/**
- * Navigate and wait for the claimed panel to render. Routes/init scripts must be
- * registered before this — Playwright can't retroactively intercept a request or
- * seed sessionStorage for a navigation that already happened.
- */
-async function gotoIdentitiesAndExpectClaimedPanel(page: Page): Promise<void> {
-  await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
-  await expect(page).not.toHaveURL(/auth0\.com/);
-  await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
 }
 
 test.describe('Linux.com email — forward re-auth (#1935)', () => {
