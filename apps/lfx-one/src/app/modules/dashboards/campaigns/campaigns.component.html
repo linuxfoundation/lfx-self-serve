@@ -125,12 +125,11 @@
             default — omitting `platforms` alone does not achieve that, because the generator
             reads an absent list as `['google-ads']`.
 
-            STILL OPEN: an email brief generates NO copy at all today — the scrape, event details
-            and HubSpot UTM are what it comes back with, and Refine is refused with a message
-            saying so. Subject, preview text and sender arrive with the `email-copy` endpoint
-            under LFXV2-3198, together with the template picker the Implement panel needs. Until
-            then `onEmailProceedToImplementation` stores the brief for EXISTENCE only; the panel
-            does not read the payload.
+            The brief stream itself still returns no ad copy for email — the scrape, event
+            details and HubSpot UTM are what it comes back with, and Refine is refused with a
+            message saying so. Subject and body now come from campaign-service's `email-copy`
+            endpoint, generated from the PERSISTED brief, which is why the Implement panel
+            persists before it generates.
           -->
         <!-- Keyed on the program type for the same reason the paid side is: the component
                holds its brief state locally and does not reset on input change. -->
@@ -194,13 +193,11 @@
             emails, and `sourceEmailId` has no default, so a chosen template is REQUIRED before a
             send can be staged.
 
-            It is not yet SUFFICIENT, and an earlier version of this comment wrongly said it was.
-            There is no create trigger on the email side at all: the only `createCampaign` call
-            site is in the implementation tab, which renders solely under Paid, and
-            `CampaignPlatform` has no `hubspot` member — so the type system forbids this path from
-            reaching create even if a button existed. The selection is threaded through to
-            `hubspotConfig.sourceEmailId` so it flows the moment a trigger lands; wiring that
-            trigger is LFXV2-3201.
+            It is not SUFFICIENT on its own. Staging also needs a brief, a project, and a BUILT
+            audience — campaign-service's `resolveBuiltAudience` refuses a brief whose newest
+            HubSpot audience is missing, still building, or failed, so `canStageEmail` checks the
+            audience's status rather than merely its presence. The selection is threaded through
+            to `hubspotConfig.sourceEmailId`.
 
             Four states, kept distinct because collapsing any pair states something false:
             channel not connected, search failed, searched-and-empty, and results.
@@ -415,9 +412,22 @@
 
                 @if (emailAudience(); as audience) {
                   <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4" data-testid="campaigns-email-audience-built">
+                    <!--
+                      Branch on the STATUS rather than announcing success for any row: a build
+                      that ends in `failed` still returns an audience, and a green check beside
+                      the word "failed" tells the operator the opposite of what happened.
+                    -->
                     <div class="flex items-center gap-2">
-                      <i class="fa-light fa-check text-green-600"></i>
-                      <span class="text-sm font-medium text-gray-900">Audience built</span>
+                      @if (audience.status === 'built') {
+                        <i class="fa-light fa-check text-green-600"></i>
+                        <span class="text-sm font-medium text-gray-900">Audience built</span>
+                      } @else if (audience.status === 'failed') {
+                        <i class="fa-light fa-circle-exclamation text-red-600"></i>
+                        <span class="text-sm font-medium text-gray-900">Audience build failed</span>
+                      } @else {
+                        <i class="fa-light fa-spinner text-gray-500"></i>
+                        <span class="text-sm font-medium text-gray-900">Audience building</span>
+                      }
                       <span class="font-mono text-xs text-gray-500">{{ audience.status }}</span>
                     </div>
                     @if (audience.inclusionSummary; as summary) {

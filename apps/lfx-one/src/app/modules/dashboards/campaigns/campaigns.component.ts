@@ -691,7 +691,13 @@ export class CampaignsComponent {
    */
   protected readonly emailAudience = signal<CampaignAudience | null>(null);
 
-  /** Build lifecycle. `building` covers the 202-and-poll window. */
+  /**
+   * Build lifecycle for the REQUEST, not the upstream job.
+   *
+   * `building` covers the in-flight call only; it returns to `idle` when the 202 lands. There is
+   * no poll — the audience's own `status` is the authority on whether the upstream build actually
+   * finished, which is why `canStageEmail` reads that rather than this signal.
+   */
   protected readonly emailAudienceState = signal<'idle' | 'building' | 'error'>('idle');
 
   /** Message for a failed or disabled build — empty while idle or in flight. */
@@ -709,18 +715,6 @@ export class CampaignsComponent {
   /** The chosen template's id — what `hubspotConfig.sourceEmailId` takes on create. */
   protected readonly selectedEmailTemplateId = signal<string>('');
 
-  /**
-   * Email staging state — LFXV2-3201's create trigger.
-   *
-   * Separate from the paid side's `creating`/`campaignRows` because the two report DIFFERENT
-   * outcomes. Paid creation returns per-platform rows a user can act on; staging an email
-   * produces ONE HubSpot draft and nothing to pause, so a row table would imply controls that
-   * do not exist (`HubSpotDispatcher` implements no `StatusToggler`).
-   *
-   * `idle` before any attempt, `staging` while the job runs, then a terminal message. The
-   * message is kept as text rather than a boolean because the failure a user can act on
-   * ("connect HubSpot", "pick a template") and the one they cannot are both surfaced here.
-   */
   /**
    * Generated email copy for the brief on screen — LFXV2-3198's `email-copy`.
    *
@@ -743,6 +737,18 @@ export class CampaignsComponent {
    */
   protected readonly canGenerateEmailCopy = computed(() => this.emailBriefOutput() !== null && this.emailCopyState() !== 'generating');
 
+  /**
+   * Email staging state — LFXV2-3201's create trigger.
+   *
+   * Separate from the paid side's `creating`/`campaignRows` because the two report DIFFERENT
+   * outcomes. Paid creation returns per-platform rows a user can act on; staging an email
+   * produces ONE HubSpot draft and nothing to pause, so a row table would imply controls that
+   * do not exist (`HubSpotDispatcher` implements no `StatusToggler`).
+   *
+   * `idle` before any attempt, `staging` while the job runs, then a terminal message. The
+   * message is kept as text rather than a boolean because the failure a user can act on
+   * ("connect HubSpot", "pick a template") and the one they cannot are both surfaced here.
+   */
   protected readonly emailStaging = signal<'idle' | 'staging' | 'done' | 'error'>('idle');
 
   /** Terminal message for the staging attempt — empty while idle or in flight. */
@@ -765,7 +771,11 @@ export class CampaignsComponent {
       // `resolveBuiltAudience` refuses to stage when the brief has no BUILT audience. Without
       // this the Stage button is enabled, the HubSpot draft work begins, and the refusal comes
       // back as a generic staging error after the fact.
-      this.emailAudience() !== null &&
+      //
+      // The STATUS, not merely a non-null row: upstream's three states are `building`, `built`
+      // and `failed`, and a build that ends in `failed` still yields an audience object. Gating
+      // on existence alone would re-admit the exact refusal this guard exists to prevent.
+      this.emailAudience()?.status === 'built' &&
       this.emailStaging() !== 'staging'
   );
 

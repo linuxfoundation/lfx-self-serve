@@ -503,24 +503,6 @@ export class CampaignController {
   }
 
   /**
-   * Persist the generated brief so it outlives the browser tab.
-   *
-   * Today the approved brief lives only in a `CampaignsComponent` signal: a reload loses it and
-   * the whole Planning pass has to be redone. This writes it to campaign-service, which is also
-   * what later phases need — campaign creation, metrics and status writes are all nested under
-   * `/briefs/{brief_id}` and cannot be cut over until a persisted brief id exists.
-   *
-   * With the flag off this answers `{ enabled: false }` at 200 rather than 404 or 501. It is not
-   * an error for the cutover to be dark — an ordinary deployment state, not a fault — and a
-   * non-2xx would make the client's error arm fire on that case,
-   * training whoever sees it to ignore the one signal that matters.
-   *
-   * A FAILURE, by contrast, is reported as one. The temptation is to swallow it, because the
-   * handoff to the Implementation tab works perfectly well without persistence; this repo has
-   * already shipped one graceful degradation that hid a 100%-failure integration behind a clean
-   * UI. A user who is not told keeps working on a brief they believe is saved.
-   */
-  /**
    * Build the brief's send audience — the prerequisite the email channel cannot dispatch without.
    *
    * `project` and `brief_id` travel as query params: both are PATH segments upstream.
@@ -581,6 +563,24 @@ export class CampaignController {
     }
   }
 
+  /**
+   * Persist the generated brief so it outlives the browser tab.
+   *
+   * Today the approved brief lives only in a `CampaignsComponent` signal: a reload loses it and
+   * the whole Planning pass has to be redone. This writes it to campaign-service, which is also
+   * what later phases need — campaign creation, metrics and status writes are all nested under
+   * `/briefs/{brief_id}` and cannot be cut over until a persisted brief id exists.
+   *
+   * With the flag off this answers `{ enabled: false }` at 200 rather than 404 or 501. It is not
+   * an error for the cutover to be dark — an ordinary deployment state, not a fault — and a
+   * non-2xx would make the client's error arm fire on that case,
+   * training whoever sees it to ignore the one signal that matters.
+   *
+   * A FAILURE, by contrast, is reported as one. The temptation is to swallow it, because the
+   * handoff to the Implementation tab works perfectly well without persistence; this repo has
+   * already shipped one graceful degradation that hid a 100%-failure integration behind a clean
+   * UI. A user who is not told keeps working on a brief they believe is saved.
+   */
   public async persistBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
       // Every field is present rather than omitted so the response satisfies

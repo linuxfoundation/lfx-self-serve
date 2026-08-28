@@ -107,12 +107,6 @@ interface CampaignServiceBriefInput {
  * for the same reason as on the input — the service validates none of them, so a value coming
  * back is not evidence of its shape and the adapter has to check rather than trust.
  */
-/**
- * The upstream audience shape, snake_case exactly as campaign-service returns it.
- *
- * Local to this file for the same reason the brief shapes are: it is a WIRE type, and exporting
- * it would invite the app to depend on upstream naming that this layer exists to translate.
- */
 /** Upstream email-copy shape, snake_case-free but exactly as campaign-service returns it. */
 interface CampaignServiceEmailCopy {
   subject: string;
@@ -121,6 +115,12 @@ interface CampaignServiceEmailCopy {
   cta: string;
 }
 
+/**
+ * The upstream audience shape, snake_case exactly as campaign-service returns it.
+ *
+ * Local to this file for the same reason the brief shapes are: it is a WIRE type, and exporting
+ * it would invite the app to depend on upstream naming that this layer exists to translate.
+ */
 interface CampaignServiceAudience {
   id: string;
   project_id: string;
@@ -131,7 +131,6 @@ interface CampaignServiceAudience {
   inclusion_summary?: string;
   status: string;
   version: number;
-  etag?: string;
 }
 
 interface CampaignServiceBrief {
@@ -828,7 +827,10 @@ export class CampaignServiceClient {
           inclusionSummary: built.inclusion_summary,
           status: built.status,
           version: built.version,
-          etag: built.etag,
+          // Off the HEADER, not the body: the design maps it as `Header("etag:ETag")` on the 202,
+          // so `built.etag` would read `undefined` forever -- the exact trap the brief wire-type
+          // comment above records. `readEtag` is the established way to take it.
+          etag: readEtag(response) ?? undefined,
         },
       };
     } catch (error) {

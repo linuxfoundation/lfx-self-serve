@@ -129,15 +129,6 @@ export class CampaignService {
   }
 
   /**
-   * `projectSlug` and `briefId` travel as query params because the campaign-service cutover reads
-   * them there, not from the body: creation posts to
-   * `/projects/{slug}/briefs/{id}/campaigns`, so both are path segments upstream and the server
-   * has no other source for them. They are not optional in practice — with the cutover flag on,
-   * a request missing either is refused outright and deliberately does NOT fall through to the
-   * legacy path, since falling through would create the campaigns on the ad platforms while the
-   * user is told creation failed.
-   */
-  /**
    * Build the brief's send audience. No body — campaign-service derives it from the brief itself.
    */
   public buildAudience(projectSlug: string, briefId: string): Observable<BuildAudienceResult> {
@@ -161,6 +152,15 @@ export class CampaignService {
     );
   }
 
+  /**
+   * `projectSlug` and `briefId` travel as query params because the campaign-service cutover reads
+   * them there, not from the body: creation posts to
+   * `/projects/{slug}/briefs/{id}/campaigns`, so both are path segments upstream and the server
+   * has no other source for them. They are not optional in practice — with the cutover flag on,
+   * a request missing either is refused outright and deliberately does NOT fall through to the
+   * legacy path, since falling through would create the campaigns on the ad platforms while the
+   * user is told creation failed.
+   */
   public createCampaign(
     request: CampaignCreateRequest,
     projectSlug: string,

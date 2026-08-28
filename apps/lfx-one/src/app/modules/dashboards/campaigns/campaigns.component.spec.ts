@@ -2434,6 +2434,40 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().canStageEmail()).toBe(true);
     });
 
+    it('refuses to stage on an audience that is not BUILT', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+
+      // Upstream's three states are building | built | failed, and a build that ENDS in `failed`
+      // still returns an audience object. Gating on existence alone re-admits exactly the
+      // dispatcher refusal the gate exists to prevent.
+      internals().emailAudience.set({ id: 'aud-1', status: 'failed' } as never);
+      fixture.detectChanges();
+      expect(internals().canStageEmail()).toBe(false);
+
+      internals().emailAudience.set({ id: 'aud-1', status: 'building' } as never);
+      fixture.detectChanges();
+      expect(internals().canStageEmail()).toBe(false);
+
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      fixture.detectChanges();
+      expect(internals().canStageEmail()).toBe(true);
+    });
+
+    it('does not announce a failed audience as built', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailAudience.set({ id: 'aud-1', status: 'failed' } as never);
+      fixture.detectChanges();
+
+      const panel = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-built"]');
+      // A green check beside the word "failed" tells the operator the opposite of what happened.
+      expect(panel?.textContent).toContain('Audience build failed');
+      expect(panel?.textContent).not.toContain('Audience built');
+    });
+
     it('says the audience is what is missing when only it is missing', () => {
       selectEmail();
       // The hint lives in the Implement panel; without this the panel never renders and the

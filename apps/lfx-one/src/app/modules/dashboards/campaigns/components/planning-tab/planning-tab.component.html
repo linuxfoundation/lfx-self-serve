@@ -443,20 +443,21 @@
                 data-testid="planning-email-edit-url" />
             </div>
             <div class="flex items-center gap-2">
-              <button
-                type="button"
-                (click)="saveEmailEdit()"
-                class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-                data-testid="planning-email-save-btn">
-                Save changes
-              </button>
-              <button
-                type="button"
-                (click)="cancelEmailEdit()"
-                class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                data-testid="planning-email-cancel-btn">
-                Cancel
-              </button>
+              <lfx-button
+                label="Save changes"
+                icon="fa-light fa-floppy-disk"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="saveEmailEdit()"
+                ariaLabel="Save the event details"
+                data-testid="planning-email-save-btn" />
+              <lfx-button
+                label="Cancel"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="cancelEmailEdit()"
+                ariaLabel="Cancel editing the event details"
+                data-testid="planning-email-cancel-btn" />
             </div>
           </div>
         } @else {

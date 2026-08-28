@@ -2005,6 +2005,108 @@ describe('CampaignServiceClient.createCampaigns', () => {
  * body — which a GET discards, silently returning the UNFILTERED list. That failure looks like a
  * working search that ignores what the user typed, and no type checker can catch it.
  */
+describe('CampaignServiceClient.buildAudience', () => {
+  const audience = {
+    id: 'aud-1',
+    project_id: 'p-1',
+    brief_id: 'b-1',
+    platform: 'hubspot',
+    platform_master_list_id: 'list-9',
+    suppression_list_ids: '["sup-1"]',
+    inclusion_summary: '1,234 contacts',
+    status: 'built',
+    version: 1,
+  };
+
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    isServerFeatureEnabled.mockReturnValue(true);
+  });
+
+  it('answers enabled:false without calling upstream when the flag is off', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await expect(new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1')).resolves.toEqual({ enabled: false });
+    // The flag being dark is an ordinary deployment state, so it must not spend an upstream call.
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('takes the etag off the ETag HEADER, not the body', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(audience, { etag: '"7"' }));
+
+    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+
+    // `design/audience.go` maps it as `Header("etag:ETag")` on the 202, so a body read would be
+    // `undefined` forever -- the same trap the brief wire-type comment records.
+    expect(result.audience?.etag).toBe('"7"');
+    expect(result.audience?.status).toBe('built');
+  });
+
+  it('reports an error result rather than throwing when upstream fails', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new Error('boom'));
+
+    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+
+    // A graceful degradation: the caller renders the message instead of the panel exploding.
+    expect(result.enabled).toBe(true);
+    expect(result.error).toBeTruthy();
+    expect(result.audience).toBeUndefined();
+  });
+
+  it('rejects a response with no audience id', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, id: '' }));
+
+    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+
+    expect(result.error).toBeTruthy();
+    expect(result.audience).toBeUndefined();
+  });
+});
+
+describe('CampaignServiceClient.generateEmailCopy', () => {
+  const copy = { subject: 'Join us in Nairobi', preheader: 'Two days of MCP', body: '<p>Hello</p>', cta: 'Register' };
+
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    isServerFeatureEnabled.mockReturnValue(true);
+  });
+
+  it('answers enabled:false without calling upstream when the flag is off', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await expect(new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1')).resolves.toEqual({ enabled: false });
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('returns the generated copy', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy?.subject).toBe('Join us in Nairobi');
+    expect(result.copy?.body).toBe('<p>Hello</p>');
+  });
+
+  it('treats a response with no subject as a failure', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...copy, subject: '' }));
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // Staging would otherwise apply an empty subject over the template's own.
+    expect(result.error).toBeTruthy();
+    expect(result.copy).toBeUndefined();
+  });
+
+  it('reports an error result rather than throwing when upstream fails', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new Error('boom'));
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.enabled).toBe(true);
+    expect(result.error).toBeTruthy();
+  });
+});
+
 describe('CampaignServiceClient.searchHubSpotEmails', () => {
   beforeEach(() => {
     vi.clearAllMocks();
