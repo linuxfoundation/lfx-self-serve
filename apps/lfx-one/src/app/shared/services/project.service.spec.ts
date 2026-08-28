@@ -15,9 +15,18 @@ describe('ProjectService.getProjectSlugs', () => {
   beforeEach(() => {
     httpGet = vi.fn().mockReturnValue(of(['slug-a', 'slug-b']));
     TestBed.configureTestingModule({
-      providers: [{ provide: HttpClient, useValue: { get: httpGet, post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() } }],
+      providers: [
+        {
+          provide: HttpClient,
+          useValue: { get: httpGet, post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+        },
+      ],
     });
     service = TestBed.inject(ProjectService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
   });
 
   it('issues GET /api/projects/slugs and returns the slug array', () => {
