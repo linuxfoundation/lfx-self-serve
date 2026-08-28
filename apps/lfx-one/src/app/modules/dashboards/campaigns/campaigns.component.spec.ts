@@ -2482,6 +2482,40 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(panel?.textContent).toContain('1 suppression list(s) applied');
     });
 
+    it('refuses to stage if the audience stops being built before the await', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'failed' } as never);
+      // A cached brief id, so `ensureEmailBriefId` cannot be what stops this. Without it the
+      // default `persistBrief` stub NEVER emits and the test would pass on the hang instead of
+      // on the guard -- which is exactly how it survived its first mutation run.
+      internals().emailBriefId.set('brief-77');
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+
+      await internals().onStageEmailSend();
+
+      // The re-check exists because a signal can change between the guard and the await. Leaving
+      // the audience out of it let the enumeration drift from `canStageEmail`, so the refusal
+      // would come back from HubSpot after the draft work had begun.
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it('drops the previous copy when a regeneration fails', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-77');
+      internals().emailCopy.set({ subject: 'Old subject', preheader: '', body: '<p>Old</p>', cta: '' } as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, error: 'upstream refused' }) as never);
+
+      await internals().onGenerateEmailCopy();
+
+      // `onStageEmailSend` reads `emailCopy()` unconditionally, so stale copy left here is
+      // stageable -- the operator would send the OLD subject and body while the panel says the
+      // regeneration failed.
+      expect(internals().emailCopy()).toBeNull();
+    });
+
     it('keeps a rebuild control when the audience build failed', () => {
       selectEmail();
       internals().selectedEmailTab.set('implementation');
@@ -2544,6 +2578,8 @@ describe('CampaignsComponent — email delivery channel', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
+      // Staging requires a BUILT audience upstream; these predate that gate.
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: 'W/"1"' }));
@@ -2569,6 +2605,8 @@ describe('CampaignsComponent — email delivery channel', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
+      // Staging requires a BUILT audience upstream; these predate that gate.
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
       internals().emailCopy.set({ subject: 'Three days in Amsterdam', preheader: 'P', body: '<p>Join us</p>', cta: 'Register' });
       fixture.detectChanges();
 
@@ -2590,6 +2628,8 @@ describe('CampaignsComponent — email delivery channel', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
+      // Staging requires a BUILT audience upstream; these predate that gate.
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null }));
@@ -2606,6 +2646,8 @@ describe('CampaignsComponent — email delivery channel', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
+      // Staging requires a BUILT audience upstream; these predate that gate.
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', briefId: '', etag: null }));
@@ -2623,6 +2665,8 @@ describe('CampaignsComponent — email delivery channel', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
+      // Staging requires a BUILT audience upstream; these predate that gate.
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null }));

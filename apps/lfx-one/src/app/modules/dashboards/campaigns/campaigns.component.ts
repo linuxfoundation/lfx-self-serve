@@ -1249,6 +1249,11 @@ export class CampaignsComponent {
 
     this.emailCopyState.set('generating');
     this.emailCopyError.set('');
+    // Drop the PREVIOUS copy before regenerating. Leaving it would put stale copy on screen beside
+    // a "could not be generated" error, and `onStageEmailSend` reads `emailCopy()` unconditionally
+    // -- so the operator could stage the old subject and body while being told the regeneration
+    // failed.
+    this.emailCopy.set(null);
 
     try {
       const briefId = await this.ensureEmailBriefId(brief, projectSlug);
@@ -1305,7 +1310,12 @@ export class CampaignsComponent {
 
     // Re-checked rather than trusted from `canStageEmail`: the button is one caller, and a
     // signal can change between the guard and the await below.
-    if (brief === null || sourceEmailId === '' || projectSlug === '') {
+    //
+    // The audience is re-checked with the OTHERS, not left out of the list. It is the one
+    // precondition upstream actively refuses on (`resolveBuiltAudience`), so omitting it here
+    // would let the enumeration drift from the guard it mirrors -- and the failure would arrive
+    // from HubSpot after the draft work had begun rather than from this early return.
+    if (brief === null || sourceEmailId === '' || projectSlug === '' || this.emailAudience()?.status !== 'built') {
       return;
     }
 
