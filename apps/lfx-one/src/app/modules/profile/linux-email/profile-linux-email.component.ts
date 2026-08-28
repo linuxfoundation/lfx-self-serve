@@ -77,7 +77,8 @@ export class ProfileLinuxEmailComponent {
   // harmful here (it renders blank), so the template swaps it for a re-auth panel instead.
   public forwardReauthRequired = computed(() => this.state() === 'claimed' && !!this.data()?.forwardAuthRequired);
 
-  // Absent when Flow C is unconfigured server-side — gates whether the re-auth button can render.
+  // Defensive: the BFF always pairs authorizeUrl with forwardAuthRequired, so this should never
+  // be empty while forwardReauthRequired() is true. Guards against that contract drifting.
   public forwardAuthorizeUrl = computed(() => this.data()?.authorizeUrl ?? '');
 
   // Forward is genuinely unset (not unreadable) — the FORWARD_SET_FAILED recovery path and the

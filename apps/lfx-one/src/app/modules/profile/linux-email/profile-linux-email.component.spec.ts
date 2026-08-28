@@ -10,7 +10,7 @@ import { LinuxAliasData } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProfileLinuxEmailComponent } from './profile-linux-email.component';
 
@@ -23,6 +23,7 @@ import { ProfileLinuxEmailComponent } from './profile-linux-email.component';
  */
 describe('ProfileLinuxEmailComponent — forward re-auth state (#1935)', () => {
   const REAUTH_FLAG_KEY = LINUX_EMAIL_FORWARD_REAUTH_KEY;
+  const originalLocation = Object.getOwnPropertyDescriptor(window, 'location');
 
   const claimedNeedsReauth: LinuxAliasData = {
     state: 'claimed',
@@ -99,6 +100,12 @@ describe('ProfileLinuxEmailComponent — forward re-auth state (#1935)', () => {
   beforeEach(() => {
     sessionStorage.clear();
     TestBed.resetTestingModule();
+  });
+
+  afterEach(() => {
+    // setup() replaces window.location on every call — restore it so the stub doesn't
+    // leak into other tests/files sharing this jsdom window.
+    if (originalLocation) Object.defineProperty(window, 'location', originalLocation);
   });
 
   it('shows the re-auth panel (not the select) when the guard is already set, with the control left empty', async () => {

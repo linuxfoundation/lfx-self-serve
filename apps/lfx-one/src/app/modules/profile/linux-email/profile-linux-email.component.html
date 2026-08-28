@@ -180,6 +180,7 @@
                         @if (forwardAuthorizeUrl()) {
                           We couldn't read your current forwarding address. Re-authorize to view and change it.
                         } @else {
+                          <!-- Defensive: the BFF always pairs authorizeUrl with forwardAuthRequired, so this branch guards a contract drift rather than a reachable server state. -->
                           We couldn't read your current forwarding address, and re-authorization isn't available right now. Please try again later.
                         }
                       </p>
@@ -201,17 +202,19 @@
               } @else {
                 <div class="flex flex-col gap-0.5">
                   <span class="text-sm font-medium text-gray-700">Forward to</span>
-                  <p class="text-xs text-gray-500">
-                    @if (impersonating()) {
-                      Forwarding details aren't available while impersonating.
-                    } @else if (forwardNotSet() && forwardOptions().length) {
-                      Forwarding isn't set yet — choose an address.
-                    } @else if (forwardOptions().length && hasForwardOptions()) {
-                      Choose one of your verified email addresses.
-                    } @else if (forwardOptions().length) {
-                      Add another verified email to change this.
-                    }
-                  </p>
+                  @if (impersonating() || forwardOptions().length) {
+                    <p class="text-xs text-gray-500">
+                      @if (impersonating()) {
+                        Forwarding details aren't available while impersonating.
+                      } @else if (forwardNotSet()) {
+                        Forwarding isn't set yet — choose an address.
+                      } @else if (hasForwardOptions()) {
+                        Choose one of your verified email addresses.
+                      } @else {
+                        Add another verified email to change this.
+                      }
+                    </p>
+                  }
                 </div>
                 @if (forwardOptions().length) {
                   <lfx-select
