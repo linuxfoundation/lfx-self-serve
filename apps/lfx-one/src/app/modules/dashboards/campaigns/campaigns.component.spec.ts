@@ -2049,6 +2049,44 @@ describe('CampaignsComponent — email delivery channel', () => {
     });
   });
 
+  describe('email preview', () => {
+    const copy = {
+      subject: 'Three days in Amsterdam',
+      previewText: 'Sessions and labs',
+      sections: [],
+      bodyHtml: '<p>Body</p>',
+      previewHtml: '<p>Body</p>',
+    };
+
+    it('shows nothing until copy exists', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+
+      const host: HTMLElement = fixture.nativeElement;
+      // An empty preview frame would suggest the email exists and is blank.
+      expect(host.querySelector('[data-testid="campaigns-email-preview"]')).toBeNull();
+
+      internals().emailCopy.set(copy);
+      fixture.detectChanges();
+      expect(host.querySelector('[data-testid="campaigns-email-preview"]')).not.toBeNull();
+    });
+
+    it('says the generated copy is NOT applied to the staged draft', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailCopy.set(copy);
+      fixture.detectChanges();
+
+      // Pinned deliberately: hubspotConfig takes only sourceEmailId/utmCampaign, so staging
+      // clones the template and does NOT carry this copy (LFXV2-2775 upstream). If that changes,
+      // this test should fail and the note be removed — silently dropping it would leave the UI
+      // claiming a limitation that no longer exists, or worse, hiding one that still does.
+      const note = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-preview-note"]');
+      expect(note?.textContent).toContain('not wired up yet');
+    });
+  });
+
   describe('email staging trigger (LFXV2-3201)', () => {
     // Scoped to THIS block: the outer `persistBrief` spy belongs to the first describe and is
     // not in scope here.
