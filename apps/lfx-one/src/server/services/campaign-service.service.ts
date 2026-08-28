@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import type {
   ApiResponse,
   BriefMetrics,
@@ -1826,6 +1826,21 @@ export function deriveEventSlug(brief: CampaignBriefOutput): string | null {
  * paid for") they fit; if the design later grows real fields for them, this is the one function
  * that moves.
  */
+/**
+ * The ISO-2 code's country NAME, or an empty string when it is absent or unrecognised.
+ *
+ * Empty rather than the raw code: campaign-service fails loudly on a missing country and would
+ * silently build an EMPTY inclusion list for an unmatched one, and an empty send list is the
+ * worse of the two outcomes on a list that decides who receives an email.
+ */
+function countryNameFor(countryCode: string | undefined): string {
+  const code = (countryCode ?? '').trim().toUpperCase();
+  if (code === '') {
+    return '';
+  }
+  return COUNTRIES.find((c) => c.value === code)?.label ?? '';
+}
+
 function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignServiceBriefInput {
   return {
     // `CampaignProgramType` is `events | education`; the service's enum is
@@ -1835,7 +1850,13 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
     event_slug: eventSlug,
     url: brief.eventDetails?.registrationUrl || undefined,
     platforms: brief.selectedPlatforms,
-    event_details: brief.eventDetails ? { ...brief.eventDetails } : undefined,
+    // `country` alongside `countryCode`, because campaign-service's audience builder reads
+    // `json:"country"` and needs the NAME, not the ISO-2 code: its inclusion lists are matched
+    // against a HubSpot country property, and it documents that a raw `KE` "would pass through
+    // literally, match no HubSpot country property, and the build would SUCCEED while storing an
+    // empty inclusion list". Without this every audience build fails with "has no country in its
+    // details" -- observed end to end against a live local campaign-service.
+    event_details: brief.eventDetails ? { ...brief.eventDetails, country: countryNameFor(brief.eventDetails.countryCode) } : undefined,
     copy: {
       structured: brief.structuredCopy,
       linkedIn: brief.linkedInCopy ?? null,
