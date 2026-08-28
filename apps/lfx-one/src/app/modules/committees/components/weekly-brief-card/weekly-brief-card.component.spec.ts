@@ -674,7 +674,11 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     const generateWeeklyBrief = vi.fn(() =>
       of({
         brief: {
-          uid: 'brief-2',
+          // Same uid as briefResponse()'s fixture — upstream's regenerate reuses the existing
+          // brief's uid and only bumps revision (verified against
+          // group_weekly_brief_generator.go: "brief.UID = existing.UID"), so this fixture keeps
+          // the uid fixed and changes only revision/state, matching the real shape.
+          uid: 'brief-1',
           committee_uid: 'committee-board',
           window_start: '2026-08-02T00:00:00Z',
           window_end: '2026-08-08T23:59:59Z',
@@ -703,5 +707,11 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     expect(component.callerRating()).toBeNull();
     // current_activity is unaffected either way — it isn't scoped to a brief revision.
     expect(component.hasCurrentActivityData()).toBe(true);
+    // No DOM assertion on the rating buttons themselves: onGenerate() sets generating() before
+    // this response ever lands, which switches the template into the generating-state branch
+    // (weekly-brief-card.component.html:62) — the rating buttons live in the later
+    // renderableBrief branch and are not rendered at all here. Confirm that directly, so this
+    // test still proves there is no stale-rated control visible for the value we just dropped.
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-rating-up-button"]')).toBeNull();
   });
 });

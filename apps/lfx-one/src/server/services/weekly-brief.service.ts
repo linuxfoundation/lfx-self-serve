@@ -1171,17 +1171,16 @@ export class WeeklyBriefService {
    * above, for the same lightweight need) would run concurrently with `fetchBriefResponse`'s own
    * `proxyRequest` call in live mode via the `Promise.all` above, and this spec file already has
    * over a dozen order-sensitive `proxyRequest.mockResolvedValueOnce` queues elsewhere that a
-   * second, path-dispatched consumer risks silently shifting; `getCommitteesByIds` (a single
-   * batched query-service call, used by `getMyCommittees`/`getMyPendingInvitations` for the same
-   * "just need `category`" need) avoids that mock entirely, but that same call site falls back to
-   * `membership.committee_category` when the indexed `category` comes back empty — a reliability
-   * gap not investigated here, and a false negative on it would hide the tally for a real
-   * governance committee, worse than the extra calls this took instead. Reusing the
-   * already-instantiated `committeeService.getCommitteeById` accepts the known extra cost in
-   * exchange for the same category reliability every other governance-gated read in this codebase
-   * already trusts. Fails soft to `undefined` (never an empty array) on any error, matching the
-   * client's existing absent-vs-present distinction between "couldn't determine" and "genuinely
-   * zero activity this week" (weekly-brief-card.component.ts's `hasCurrentActivityData`).
+   * second, path-dispatched consumer risks silently shifting; `getCommitteesByIds` (a batched
+   * query-service read, used by `getMyCommittees`/`getMyPendingInvitations` — though for their own
+   * richer needs, not just `category`) avoids that mock family entirely, but `getMyCommittees`
+   * has to fall back to `membership.committee_category` when the indexed `category` comes back
+   * empty — an unquantified reliability gap, and a false negative on it would hide the tally for a
+   * real governance committee, worse than the extra calls this took instead. `getCommitteeById`
+   * reads the authoritative committee-service record directly, accepting the known extra cost
+   * over that unverified gap. Fails soft to `undefined` (never an empty array) on any error,
+   * matching the client's existing absent-vs-present distinction between "couldn't determine" and
+   * "genuinely zero activity this week" (weekly-brief-card.component.ts's `hasCurrentActivityData`).
    *
    * `limit: ACTIVITY_FEED_MAX_PAGE_SIZE` is a single, unfollowed page — `getCommitteeActivity`
    * hard-rejects any larger `limit`, so that's the ceiling one call can ever return. Deliberately
