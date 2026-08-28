@@ -57,16 +57,16 @@ vi.mock('../services/logger.service', () => ({
 
 import { WeeklyBriefController } from './weekly-brief.controller';
 
-function buildReq(body: unknown = {}): any {
-  return { params: { committeeId: COMMITTEE_ID }, body, path: '/test', log: {} };
+function buildReq(body: unknown = {}, query: Record<string, string> = {}): any {
+  return { params: { committeeId: COMMITTEE_ID }, query, body, path: '/test', log: {} };
 }
 
 function buildRatingReq(body: unknown = {}): any {
-  return { params: { committeeId: COMMITTEE_ID, briefUid: BRIEF_UID }, body, path: '/test', log: {} };
+  return { params: { committeeId: COMMITTEE_ID, briefUid: BRIEF_UID }, query: {}, body, path: '/test', log: {} };
 }
 
 function buildRes(): any {
-  return { status: vi.fn().mockReturnThis(), json: vi.fn(), send: vi.fn() };
+  return { status: vi.fn().mockReturnThis(), json: vi.fn(), send: vi.fn(), setHeader: vi.fn() };
 }
 
 describe('WeeklyBriefController', () => {
@@ -282,6 +282,33 @@ describe('WeeklyBriefController', () => {
 
       expect(weeklyBriefSvc.getCurrentBrief).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(forbidden);
+    });
+
+    it('defaults includeCurrentActivity to true when the query param is absent (GH-1922)', async () => {
+      weeklyBriefSvc.getCurrentBrief.mockResolvedValue({ brief: null, throttle: null });
+
+      await controller.getCurrentBrief(buildReq(), buildRes(), vi.fn());
+
+      expect(weeklyBriefSvc.getCurrentBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, { includeCurrentActivity: true });
+    });
+
+    it('only opts out of includeCurrentActivity on an exact "false" query value — any other value keeps the default', async () => {
+      weeklyBriefSvc.getCurrentBrief.mockResolvedValue({ brief: null, throttle: null });
+
+      await controller.getCurrentBrief(buildReq({}, { includeCurrentActivity: 'false' }), buildRes(), vi.fn());
+      await controller.getCurrentBrief(buildReq({}, { includeCurrentActivity: 'nope' }), buildRes(), vi.fn());
+
+      expect(weeklyBriefSvc.getCurrentBrief).toHaveBeenNthCalledWith(1, expect.anything(), COMMITTEE_ID, { includeCurrentActivity: false });
+      expect(weeklyBriefSvc.getCurrentBrief).toHaveBeenNthCalledWith(2, expect.anything(), COMMITTEE_ID, { includeCurrentActivity: true });
+    });
+
+    it('sets Cache-Control: no-store — the response can carry per-user, FGA-filtered activity/rating content', async () => {
+      weeklyBriefSvc.getCurrentBrief.mockResolvedValue({ brief: null, throttle: null });
+      const res = buildRes();
+
+      await controller.getCurrentBrief(buildReq(), res, vi.fn());
+
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     });
   });
 

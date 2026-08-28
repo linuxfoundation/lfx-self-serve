@@ -913,6 +913,17 @@ describe('WeeklyBriefService', () => {
       expect(result.current_activity).toBeUndefined();
     });
 
+    it('skips the entire fan-out (getCommitteeById and getCommitteeActivity) when includeCurrentActivity is false, even for a governance committee', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+
+      const result = await service.getCurrentBrief(req, 'committee-1', { includeCurrentActivity: false });
+
+      expect(getCommitteeByIdMock).not.toHaveBeenCalled();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+      expect(result.current_activity).toBeUndefined();
+    });
+
     it('degrades to current_activity: undefined (not a thrown error) when the committee lookup fails', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeByIdMock.mockRejectedValue(new Error('upstream unavailable'));

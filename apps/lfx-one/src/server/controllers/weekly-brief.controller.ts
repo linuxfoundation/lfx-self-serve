@@ -177,7 +177,12 @@ export class WeeklyBriefController {
 
       await assertCommitteeRead(req, committeeId, 'get_weekly_brief_current');
 
-      const result = await this.weeklyBriefService.getCurrentBrief(req, committeeId);
+      // Lets the client's own poll loop (weekly-brief-card.component.ts's pollUntilTerminal)
+      // opt out of the current_activity (GH-1922) fan-out on every tick — see
+      // WeeklyBriefService#getCurrentBrief's doc comment for why that matters. Only `=false`
+      // opts out; any other value (including absent) keeps the default-included behavior.
+      const includeCurrentActivity = req.query['includeCurrentActivity'] !== 'false';
+      const result = await this.weeklyBriefService.getCurrentBrief(req, committeeId, { includeCurrentActivity });
 
       logger.success(req, 'get_weekly_brief_current', startTime, {
         committee_id: committeeId,
@@ -186,6 +191,10 @@ export class WeeklyBriefController {
         revision: result.brief?.revision,
       });
 
+      // Per-user, FGA-filtered activity (current_activity's source_refs; caller_rating) — must
+      // not sit in a shared or intermediary cache, same rationale as the sibling
+      // CommitteeActivityController.
+      res.setHeader('Cache-Control', 'no-store');
       res.json(result);
     } catch (error) {
       next(error);

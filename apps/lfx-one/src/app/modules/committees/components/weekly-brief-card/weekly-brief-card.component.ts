@@ -822,7 +822,11 @@ export class WeeklyBriefCardComponent {
         // (and the attempt cap) indefinitely, since exhaustMap only completes once its
         // last active inner subscription settles.
         exhaustMap(() =>
-          this.weeklyBriefService.getWeeklyBrief(committeeUid).pipe(
+          // includeCurrentActivity: false (GH-1922) — this week's activity can't change
+          // mid-poll, so re-running that fan-out on every tick only multiplies its upstream
+          // cost for a value the poll's first tick (via the initial load) already has. Merged
+          // back onto the response below rather than fetched again.
+          this.weeklyBriefService.getWeeklyBrief(committeeUid, { includeCurrentActivity: false }).pipe(
             timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS),
             catchError((err: unknown) => {
               console.error('[weekly-brief-card] poll tick failed, will retry', err);
@@ -834,7 +838,10 @@ export class WeeklyBriefCardComponent {
         // a transient poll failure must not look like a terminal state and stop the poll.
         filter((response): response is WeeklyBriefCurrentResponse => response !== null),
         tap((response) => {
-          this.briefResponse.set(response);
+          // response never carries current_activity (includeCurrentActivity: false above) —
+          // preserve whatever the card already has instead of letting a plain .set() blank it
+          // out for the rest of this poll.
+          this.briefResponse.update((prev) => ({ ...response, current_activity: prev?.current_activity }));
           // Same reasoning as initBriefResponseSubscription's subscribe: a fresh GET
           // supersedes any optimistic overlay.
           this.optimisticRating.set(null);

@@ -280,8 +280,19 @@ export class WeeklyBriefService {
   /**
    * GET /committees/:committeeId/weekly-briefs/current — see `fetchBriefResponse` for the
    * mock/live `brief`/`throttle` contract this builds on.
+   *
+   * `includeCurrentActivity` (default true) lets a caller opt out of the current_activity
+   * (GH-1922) fan-out entirely. The client's own poll loop (weekly-brief-card.component.ts's
+   * `pollUntilTerminal`) is this endpoint's heaviest caller — up to `WEEKLY_BRIEF_MAX_POLL_ATTEMPTS`
+   * hits at `WEEKLY_BRIEF_POLL_INTERVAL_MS` apart per generate/regenerate — and this week's
+   * activity cannot change mid-poll, so re-running the tally on every tick multiplies its real
+   * upstream cost (getCommitteeById's 3 calls, plus getCommitteeActivity's own multi-call
+   * aggregation for a governance committee) for a value that's already correct from the poll's
+   * first tick. The poll passes `includeCurrentActivity: false` and merges the initial value
+   * forward client-side instead.
    */
-  public async getCurrentBrief(req: Request, committeeId: string): Promise<WeeklyBriefCurrentResponse> {
+  public async getCurrentBrief(req: Request, committeeId: string, options: { includeCurrentActivity?: boolean } = {}): Promise<WeeklyBriefCurrentResponse> {
+    const includeCurrentActivity = options.includeCurrentActivity ?? true;
     // current_activity (GH-1922) is sourced from CommitteeActivityService's existing live
     // aggregation — runs identically in mock and live mode, since that service has no mock/live
     // split of its own; only fetchBriefResponse's own mock-vs-proxy branch (brief/throttle)
@@ -295,7 +306,10 @@ export class WeeklyBriefService {
     // upstream fan-out (getCommitteeById, and for a governance committee, CommitteeActivityService's
     // own multi-call aggregation) for a field they'd discard on every write path (share, rate) and
     // every read of just the AI-extracted action items.
-    const [response, currentActivity] = await Promise.all([this.fetchBriefResponse(req, committeeId), this.buildCurrentActivity(req, committeeId)]);
+    const [response, currentActivity] = await Promise.all([
+      this.fetchBriefResponse(req, committeeId),
+      includeCurrentActivity ? this.buildCurrentActivity(req, committeeId) : Promise.resolve(undefined),
+    ]);
     return currentActivity ? { ...response, current_activity: currentActivity } : response;
   }
 

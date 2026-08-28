@@ -38,9 +38,15 @@ export class WeeklyBriefService {
    * real error, distinct from the server's own 200-with-null-brief "no brief yet" state.
    * A blanket fallback here would render a misconfigured deploy or a 404 identically to
    * "no brief yet, 2 generates available" — see LFXV2-2175 full-branch review.
+   *
+   * `includeCurrentActivity: false` (GH-1922) opts out of the current_activity tally on this
+   * read — see the BFF's `WeeklyBriefService#getCurrentBrief` doc comment for why the poll loop
+   * (`weekly-brief-card.component.ts`'s `pollUntilTerminal`) uses it on every tick but the
+   * initial load doesn't.
    */
-  public getWeeklyBrief(committeeId: string): Observable<WeeklyBriefCurrentResponse> {
-    return this.http.get<WeeklyBriefCurrentResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`);
+  public getWeeklyBrief(committeeId: string, options: { includeCurrentActivity?: boolean } = {}): Observable<WeeklyBriefCurrentResponse> {
+    const params = options.includeCurrentActivity === false ? { includeCurrentActivity: 'false' } : undefined;
+    return this.http.get<WeeklyBriefCurrentResponse>(`/api/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`, { params });
   }
 
   /**
