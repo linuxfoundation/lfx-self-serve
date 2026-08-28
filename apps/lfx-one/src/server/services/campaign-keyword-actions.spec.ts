@@ -4,7 +4,7 @@
 import type { KeywordActionRequest } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
-import { appliedResults, failedResults, groupByCampaign, toBulkResponse, toUpstreamActions } from './campaign-keyword-actions';
+import { appliedResults, failedResults, groupByCampaign, inRequestOrder, toBulkResponse, toUpstreamActions } from './campaign-keyword-actions';
 
 const kw = (campaignId: string, criterionId: string, adGroupId = 'ag-1'): KeywordActionRequest => ({
   campaignId,
@@ -69,14 +69,14 @@ describe('failedResults', () => {
     const results = failedResults(group, 'pause', 'upstream said no');
 
     expect(results).toHaveLength(3);
-    expect(results.every((r) => !r.success)).toBe(true);
-    expect(results.map((r) => r.message)).toEqual(['upstream said no', 'upstream said no', 'upstream said no']);
+    expect(results.every((r) => !r.response.success)).toBe(true);
+    expect(results.map((r) => r.response.message)).toEqual(['upstream said no', 'upstream said no', 'upstream said no']);
   });
 
   it('names each keyword by its own criterion id', () => {
     const [group] = groupByCampaign([kw('555', '1'), kw('555', '2')]);
 
-    expect(failedResults(group, 'pause', 'x').map((r) => r.keyword)).toEqual(['Criterion 1', 'Criterion 2']);
+    expect(failedResults(group, 'pause', 'x').map((r) => r.response.keyword)).toEqual(['Criterion 1', 'Criterion 2']);
   });
 });
 
@@ -86,15 +86,15 @@ describe('appliedResults', () => {
 
     const results = appliedResults(group, 'remove');
 
-    expect(results.every((r) => r.success)).toBe(true);
-    expect(results[0].message).toContain('removed');
-    expect(results[0].action).toBe('remove');
+    expect(results.every((r) => r.response.success)).toBe(true);
+    expect(results[0].response.message).toContain('removed');
+    expect(results[0].response.action).toBe('remove');
   });
 
   it('uses the paused wording for a pause', () => {
     const [group] = groupByCampaign([kw('555', '1')]);
 
-    expect(appliedResults(group, 'pause')[0].message).toContain('paused');
+    expect(appliedResults(group, 'pause')[0].response.message).toContain('paused');
   });
 });
 
@@ -105,7 +105,7 @@ describe('toBulkResponse', () => {
     const [ok] = groupByCampaign([kw('555', '1')]);
     const [bad] = groupByCampaign([kw('666', '2')]);
 
-    const response = toBulkResponse([...appliedResults(ok, 'pause'), ...failedResults(bad, 'pause', 'nope')]);
+    const response = toBulkResponse([...appliedResults(ok, 'pause'), ...failedResults(bad, 'pause', 'nope')].map((r) => r.response));
 
     expect(response.success).toBe(false);
     expect(response.total).toBe(2);
@@ -116,7 +116,7 @@ describe('toBulkResponse', () => {
   it('reports a fully applied batch as successful', () => {
     const [group] = groupByCampaign([kw('555', '1'), kw('555', '2')]);
 
-    const response = toBulkResponse(appliedResults(group, 'pause'));
+    const response = toBulkResponse(appliedResults(group, 'pause').map((r) => r.response));
 
     expect(response.success).toBe(true);
     expect(response.succeeded).toBe(2);
@@ -127,5 +127,69 @@ describe('toBulkResponse', () => {
   // would tell a caller their keywords were paused when no request was ever made.
   it('does not report an empty result set as successful', () => {
     expect(toBulkResponse([])).toMatchObject({ success: false, total: 0, succeeded: 0, failed: 0 });
+  });
+});
+
+describe('inRequestOrder', () => {
+  /**
+   * THE REGRESSION. `optimization-tab.component.ts` zips `res.results[i]` onto the keyword list
+   * it sent, so any reordering lands a result on a DIFFERENT keyword — and a still-spending
+   * keyword gets shown as paused. Grouping by campaign reorders whenever campaigns interleave,
+   * which the legacy per-keyword loop never did.
+   *
+   * The fixture interleaves two campaigns and gives them OPPOSITE outcomes, so a response left
+   * in grouped order puts every success on a failure's keyword and vice versa.
+   */
+  it('restores the request order after grouping reordered the results', () => {
+    const request = [kw('555', '1'), kw('666', '2'), kw('555', '3')];
+    const [groupA, groupB] = groupByCampaign(request);
+
+    // Grouped order is [555/1, 555/3, 666/2] — campaign 555's two keywords adjacent.
+    const grouped = [...appliedResults(groupA, 'pause'), ...failedResults(groupB, 'pause', 'nope')];
+    expect(grouped.map((r) => r.source.criterionId)).toEqual(['1', '3', '2']);
+
+    const ordered = inRequestOrder(request, grouped);
+
+    expect(ordered.map((r) => r.keyword)).toEqual(['Criterion 1', 'Criterion 2', 'Criterion 3']);
+    // Campaign 666's keyword (index 1) is the failure; both 555 keywords succeeded. Left
+    // unordered, index 1 would have carried 555/3's success.
+    expect(ordered.map((r) => r.success)).toEqual([true, false, true]);
+  });
+
+  it('is a no-op when the request was already in grouped order', () => {
+    const request = [kw('555', '1'), kw('555', '2')];
+    const [group] = groupByCampaign(request);
+
+    const ordered = inRequestOrder(request, appliedResults(group, 'pause'));
+
+    expect(ordered.map((r) => r.keyword)).toEqual(['Criterion 1', 'Criterion 2']);
+  });
+
+  // A criterion id is unique only within its ad group, so the match must use BOTH ids — the
+  // same reason upstream requires the pair to address a criterion.
+  /**
+   * Two ad groups in one campaign sharing a criterion id — the case the pair key exists for.
+   *
+   * NOT revert-binding, and that is stated rather than glossed: keying on `criterionId` alone
+   * produces the SAME output here. Results are drained with `shift()` in request order, so one
+   * merged bucket happens to yield the same sequence as two separate ones. I could not construct
+   * a fixture that distinguishes them.
+   *
+   * The pair key is kept anyway, for the reason upstream requires both ids to address a
+   * criterion: a criterion id is unique only within its ad group. This test pins the CONTRACT —
+   * same-id keywords in different ad groups keep their own outcomes — rather than proving the
+   * key choice, which is weaker evidence than a binding test and should be read as such.
+   */
+  it('keeps distinct outcomes for same-id keywords in different ad groups', () => {
+    const a = { campaignId: '555', adGroupId: 'ag-1', criterionId: '1', action: 'pause' } as const;
+    const mid = { campaignId: '666', adGroupId: 'ag-9', criterionId: '9', action: 'pause' } as const;
+    const b = { campaignId: '555', adGroupId: 'ag-2', criterionId: '1', action: 'pause' } as const;
+    const request = [a, mid, b];
+    const [group555, group666] = groupByCampaign(request);
+
+    const ordered = inRequestOrder(request, [...failedResults(group555, 'pause', 'batch failed'), ...appliedResults(group666, 'pause')]);
+
+    expect(ordered.map((r) => r.success)).toEqual([false, true, false]);
+    expect(ordered.map((r) => r.keyword)).toEqual(['Criterion 1', 'Criterion 9', 'Criterion 1']);
   });
 });

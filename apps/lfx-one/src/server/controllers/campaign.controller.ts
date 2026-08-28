@@ -49,9 +49,12 @@ import { toAudienceDemographics, toKeywordMetricsResponse, windowForDays } from 
 import {
   appliedResults,
   CAMPAIGN_AMBIGUOUS,
+  CAMPAIGN_LOOKUP_FAILED,
   CAMPAIGN_UNRESOLVED,
   failedResults,
   groupByCampaign,
+  inRequestOrder,
+  type OrderedKeywordResult,
   toBulkResponse,
   toUpstreamActions,
 } from '../services/campaign-keyword-actions';
@@ -880,9 +883,10 @@ export class CampaignController {
         const payload = await this.campaignServiceClient.getGoogleAdsKeywords(req, projectSlug, window);
         const data = toKeywordMetricsResponse(payload, effectiveDays, new Date().toISOString());
 
-        // `truncated` has no field in the UI contract, so it is logged rather than dropped
-        // silently: it is the difference between "this project has 50 keywords" and "here are
-        // the top 50 of more", and the table's totals mean different things in each case.
+        // `truncated` reaches the client through the response as well as this log line — the
+        // totals are a subtotal over the capped slice, and both keyword consumers qualify what
+        // they claim when it is set. It is logged too because the log is where a capped result
+        // is visible to whoever is investigating a number, not just to whoever is looking at it.
         logger.success(req, 'campaign_keywords', startTime, {
           viaCampaignService: true,
           keywords: data.totalKeywords,
@@ -1192,7 +1196,7 @@ export class CampaignController {
    * campaigns for a reason that has nothing to do with the request.
    */
   private async keywordActionsViaCampaignService(req: Request, projectSlug: string, body: BulkKeywordActionRequest): Promise<BulkKeywordActionResponse> {
-    const results: KeywordActionResponse[] = [];
+    const results: OrderedKeywordResult[] = [];
 
     for (const group of groupByCampaign(body.keywords)) {
       let ref;
@@ -1220,7 +1224,11 @@ export class CampaignController {
           platformCampaignId: group.platformCampaignId,
           error: error instanceof Error ? error.message : 'unknown',
         });
-        results.push(...failedResults(group, body.action, CAMPAIGN_UNRESOLVED));
+        // A FAILED lookup, not an absent campaign. Reporting it as CAMPAIGN_UNRESOLVED would
+        // tell the caller this campaign is not managed here — so they stop retrying, and a
+        // spending campaign they meant to pause keeps spending. The distinction is the whole
+        // difference between "never going to work" and "try again".
+        results.push(...failedResults(group, body.action, CAMPAIGN_LOOKUP_FAILED));
         continue;
       }
 
@@ -1242,7 +1250,10 @@ export class CampaignController {
       }
     }
 
-    return toBulkResponse(results);
+    // Put the caller's ORDER back before responding. The client zips `results[i]` onto the
+    // keyword list it sent, and grouping by campaign reorders whenever campaigns interleave —
+    // so without this a still-spending keyword can be shown as paused.
+    return toBulkResponse(inRequestOrder(body.keywords, results));
   }
 
   public getRedditAccounts(_req: Request, res: Response): void {

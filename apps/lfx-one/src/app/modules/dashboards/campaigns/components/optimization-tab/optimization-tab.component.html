@@ -352,7 +352,18 @@
       } @else if (!hasWastedKeywords()) {
         <div class="flex items-center gap-2 rounded-lg border border-dashed border-green-300 bg-green-50 px-4 py-3">
           <i class="fa-light fa-circle-check text-green-500" aria-hidden="true"></i>
-          <p class="text-sm text-green-700">All keywords with spend are generating conversions.</p>
+          <!--
+            The all-clear is a claim about EVERY keyword, so it must not be made over a capped
+            slice: omitted rows can carry exactly the waste it says is absent. When the set was
+            truncated the same green state reports only what was actually examined.
+          -->
+          @if (keywordsPartial()) {
+            <p class="text-sm text-green-700" data-testid="wasted-keywords-partial-clear">
+              No wasted spend among the top {{ keywordsExamined() }} keywords by impressions. Keywords beyond that were not checked.
+            </p>
+          } @else {
+            <p class="text-sm text-green-700" data-testid="wasted-keywords-all-clear">All keywords with spend are generating conversions.</p>
+          }
         </div>
       } @else {
         <div class="flex justify-end">

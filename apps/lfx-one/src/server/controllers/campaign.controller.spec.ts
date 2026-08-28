@@ -2123,7 +2123,11 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
   }
 
   const keyword = (campaignId: string, criterionId: string) => ({ campaignId, adGroupId: 'ag-1', criterionId, action: 'pause' });
-  const resolvedTo = (campaignId: string, briefId: string) => ({ platform_campaign_id: 'x', match_count: 1, matches: [{ campaign_id: campaignId, brief_id: briefId }] });
+  const resolvedTo = (campaignId: string, briefId: string) => ({
+    platform_campaign_id: 'x',
+    match_count: 1,
+    matches: [{ campaign_id: campaignId, brief_id: briefId }],
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -2141,9 +2145,7 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
     expect(svcResolveCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', '24183781329');
     // The brief and campaign must come from the RESOLUTION, not from the request — the request
     // carries neither, which is the whole reason the resolver exists.
-    expect(svcApplyKeywordActions).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', 'c-1', [
-      { ad_group_id: 'ag-1', criterion_id: '1', action: 'PAUSE' },
-    ]);
+    expect(svcApplyKeywordActions).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', 'c-1', [{ ad_group_id: 'ag-1', criterion_id: '1', action: 'PAUSE' }]);
     expect(legacyKeywordActions).not.toHaveBeenCalled();
   });
 
@@ -2176,9 +2178,7 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
   });
 
   it('issues one call per campaign rather than one flat batch', async () => {
-    svcResolveCampaign
-      .mockResolvedValueOnce(resolvedTo('c-1', 'b-1'))
-      .mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
+    svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
 
     await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2'), keyword('555', '3')]), res, next);
 
@@ -2226,12 +2226,8 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
   // One campaign's failure must not take down the others: the batch is atomic per campaign, and
   // the remaining campaigns' actions should still be attempted.
   it('continues to the next campaign when one fails, and reports both outcomes', async () => {
-    svcResolveCampaign
-      .mockResolvedValueOnce(resolvedTo('c-1', 'b-1'))
-      .mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
-    svcApplyKeywordActions
-      .mockRejectedValueOnce(new Error('upstream refused'))
-      .mockResolvedValueOnce({ campaign_id: 'c-2', results: [], applied_count: 1 });
+    svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
+    svcApplyKeywordActions.mockRejectedValueOnce(new Error('upstream refused')).mockResolvedValueOnce({ campaign_id: 'c-2', results: [], applied_count: 1 });
 
     await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2')]), res, next);
 
@@ -2249,23 +2245,25 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
 
   // A failed LOOKUP is this campaign's problem, not the request's.
   it('reports a failed resolution against that campaign and keeps going', async () => {
-    svcResolveCampaign
-      .mockRejectedValueOnce(new Error('resolver down'))
-      .mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
+    svcResolveCampaign.mockRejectedValueOnce(new Error('resolver down')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
 
     await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2')]), res, next);
 
     expect(svcApplyKeywordActions).toHaveBeenCalledTimes(1);
-    const body = vi.mocked(res.json).mock.calls[0][0] as { succeeded: number; failed: number };
+    const body = vi.mocked(res.json).mock.calls[0][0] as { succeeded: number; failed: number; results: { success: boolean; message: string }[] };
     expect(body.succeeded).toBe(1);
     expect(body.failed).toBe(1);
+    // A FAILED lookup must not read as "not managed here". That message tells the caller the
+    // campaign will never be actionable, so they stop retrying — and a campaign they meant to
+    // pause keeps spending. It must invite a retry instead.
+    const failedEntry = body.results.find((r) => !r.success);
+    expect(failedEntry?.message).toMatch(/try again/i);
+    expect(failedEntry?.message).not.toMatch(/not managed here/i);
   });
 
   // Every keyword sent must appear in the response exactly once, whatever happened to it.
   it('accounts for every requested keyword in the response', async () => {
-    svcResolveCampaign
-      .mockResolvedValueOnce(resolvedTo('c-1', 'b-1'))
-      .mockResolvedValueOnce({ platform_campaign_id: '666', match_count: 0, matches: [] });
+    svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1')).mockResolvedValueOnce({ platform_campaign_id: '666', match_count: 0, matches: [] });
 
     await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('555', '2'), keyword('666', '3')]), res, next);
 

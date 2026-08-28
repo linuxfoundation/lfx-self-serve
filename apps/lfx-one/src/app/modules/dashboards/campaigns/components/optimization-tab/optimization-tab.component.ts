@@ -429,6 +429,17 @@ export class OptimizationTabComponent implements OnInit {
   });
 
   protected readonly hasWastedKeywords = computed(() => this.wastedKeywords().length > 0);
+  /**
+   * True when the keyword set was capped upstream, so "no wasted keywords" covers only the
+   * returned slice.
+   *
+   * `=== true` rather than truthiness: the field is optional because the legacy path issues a
+   * bare LIMIT with no probe for a further row, so absence means UNKNOWN, not complete.
+   * Qualifying every legacy response would be its own false statement.
+   */
+  protected readonly keywordsPartial = computed(() => this.keywordsData()?.truncated === true);
+  /** How many keywords were actually examined, for the qualified all-clear. */
+  protected readonly keywordsExamined = computed(() => this.keywordsData()?.keywords.length ?? 0);
   protected readonly hasLowQualityKeywords = computed(() => this.lowQualityKeywords().length > 0);
   protected readonly hasDisplayCampaigns = computed(() => this.displayCampaigns().length > 0);
 

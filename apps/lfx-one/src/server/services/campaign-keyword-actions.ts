@@ -56,6 +56,17 @@ function success(action: KeywordActionType, criterionId: string): KeywordActionR
   };
 }
 
+/**
+ * One outcome together with the request entry it belongs to.
+ *
+ * The pairing is what makes the response re-orderable: the grouped sequence is not the request
+ * sequence, and the client reads results positionally.
+ */
+export interface OrderedKeywordResult {
+  source: KeywordActionRequest;
+  response: KeywordActionResponse;
+}
+
 /** One campaign's worth of the request, keyed by the platform campaign id the UI sent. */
 export interface KeywordActionGroup {
   platformCampaignId: string;
@@ -98,8 +109,8 @@ export function toUpstreamActions(keywords: KeywordActionRequest[], action: Keyw
  * whole call threw. Reading `results` back per-criterion would be no more accurate and would
  * silently drop a keyword if upstream ever returned them in a different order.
  */
-export function appliedResults(group: KeywordActionGroup, action: KeywordActionType): KeywordActionResponse[] {
-  return group.keywords.map((kw) => success(action, kw.criterionId));
+export function appliedResults(group: KeywordActionGroup, action: KeywordActionType): OrderedKeywordResult[] {
+  return group.keywords.map((kw) => ({ source: kw, response: success(action, kw.criterionId) }));
 }
 
 /**
@@ -109,8 +120,8 @@ export function appliedResults(group: KeywordActionGroup, action: KeywordActionT
  * means none of them changed — reporting anything else would leave a caller believing some
  * keywords were paused and hunting for which.
  */
-export function failedResults(group: KeywordActionGroup, action: KeywordActionType, message: string): KeywordActionResponse[] {
-  return group.keywords.map((kw) => failure(action, kw.criterionId, message));
+export function failedResults(group: KeywordActionGroup, action: KeywordActionType, message: string): OrderedKeywordResult[] {
+  return group.keywords.map((kw) => ({ source: kw, response: failure(action, kw.criterionId, message) }));
 }
 
 /**
@@ -120,6 +131,38 @@ export function failedResults(group: KeywordActionGroup, action: KeywordActionTy
  * this level even though each campaign either fully applied or fully did not: the caller asked
  * for one thing and got part of it.
  */
+/**
+ * Restore the caller's original keyword order.
+ *
+ * THE RESPONSE IS POSITIONAL. `optimization-tab.component.ts` zips `res.results[i]` onto the
+ * keyword list it sent, so an entry that moves lands on a DIFFERENT keyword — and a still-
+ * spending keyword can be shown as paused. The legacy path could not hit this because it looped
+ * the request in order; grouping by campaign reorders whenever campaigns interleave, so the
+ * order has to be put back before the response leaves.
+ *
+ * Matched on the (adGroupId, criterionId) pair rather than criterionId alone, because a
+ * criterion id is unique only within its ad group — the same reason `keyword-actions` upstream
+ * requires both to address a criterion.
+ *
+ * A result with no matching request entry cannot arise from this module's own grouping, but it
+ * is dropped rather than appended: appending would push every later entry one position out and
+ * reintroduce exactly the misalignment this exists to prevent.
+ */
+export function inRequestOrder(keywords: KeywordActionRequest[], results: OrderedKeywordResult[]): KeywordActionResponse[] {
+  const byKeyword = new Map<string, KeywordActionResponse[]>();
+  for (const { source, response } of results) {
+    const key = `${source.adGroupId}-${source.criterionId}`;
+    const bucket = byKeyword.get(key);
+    if (bucket) bucket.push(response);
+    else byKeyword.set(key, [response]);
+  }
+  // shift() so a request naming the same keyword twice consumes one result per occurrence
+  // rather than repeating the first.
+  return keywords
+    .map((kw) => byKeyword.get(`${kw.adGroupId}-${kw.criterionId}`)?.shift())
+    .filter((r): r is KeywordActionResponse => r !== undefined);
+}
+
 export function toBulkResponse(results: KeywordActionResponse[]): BulkKeywordActionResponse {
   const succeeded = results.filter((r) => r.success).length;
   return {
@@ -138,6 +181,15 @@ export function toBulkResponse(results: KeywordActionResponse[]): BulkKeywordAct
  * have to be turned into per-keyword failures here.
  */
 export const CAMPAIGN_UNRESOLVED = 'This campaign is not managed here, so its keywords cannot be changed.';
+/**
+ * A lookup that FAILED, as distinct from one that answered "no such campaign".
+ *
+ * Kept separate because the two call for opposite responses: an unowned campaign will never be
+ * actionable and retrying is pointless, while a resolver outage is transient and retrying is
+ * exactly right. Reporting a failure as CAMPAIGN_UNRESOLVED tells someone their campaign is not
+ * managed here — so they stop trying, and a spending campaign keeps spending.
+ */
+export const CAMPAIGN_LOOKUP_FAILED = 'The campaign could not be looked up just now. Try again.';
 export const CAMPAIGN_AMBIGUOUS = 'This campaign id matches more than one campaign, so it is not clear which to change.';
 
 export type { BulkKeywordActionRequest };

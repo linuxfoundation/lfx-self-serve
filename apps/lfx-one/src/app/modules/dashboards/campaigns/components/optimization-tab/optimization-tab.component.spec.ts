@@ -1846,3 +1846,165 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-2"]').disabled).toBe(true);
   });
 });
+
+/**
+ * The wasted-keyword all-clear, and whether it is entitled to say "all".
+ *
+ * "All keywords with spend are generating conversions" is a claim about EVERY keyword. Upstream
+ * caps the keyword set, so over a truncated response the omitted rows can carry exactly the
+ * waste the banner says is absent — the same class as a capped subtotal rendered as a total,
+ * reached from the other direction.
+ */
+describe('OptimizationTabComponent — wasted-keyword all-clear completeness', () => {
+  let fixture: ComponentFixture<OptimizationTabComponent>;
+
+  /** One created campaign, so the keyword block's `!hasCampaigns()` gate lets it render. */
+  const campaignDoc = (): CampaignIndexDoc =>
+    ({
+      id: 'c-1',
+      project_id: 'tlf',
+      brief_id: 'b-1',
+      platform: 'google-ads',
+      campaign_name: 'KubeCon EU',
+      status: 'created',
+      version: 3,
+      etag: '"3"',
+    }) as CampaignIndexDoc;
+
+  /** No wasted keywords: every row with spend also has a conversion. */
+  const cleanKeywords = [
+    {
+      keyword: 'a',
+      matchType: 'EXACT',
+      qualityScore: 7,
+      status: 'ENABLED',
+      adGroup: 'AG',
+      adGroupId: '1',
+      criterionId: '2',
+      campaign: 'C',
+      campaignId: '555',
+      googleAdsUrl: '',
+      impressions: 1000,
+      clicks: 40,
+      ctr: 4,
+      avgCpc: 0.625,
+      spend: 25,
+      conversions: 12.5,
+    },
+  ];
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [OptimizationTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            updateCampaignStatus: vi.fn(),
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+            getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getLinkedInMonitor: vi.fn().mockReturnValue(of(null)),
+            getRedditMonitor: vi.fn().mockReturnValue(of(null)),
+            getMetaMonitor: vi.fn().mockReturnValue(of(null)),
+            executeKeywordActions: vi.fn().mockReturnValue(of({ results: [] })),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(OptimizationTabComponent);
+    fixture.componentRef.setInput('projectSlug', 'tlf');
+    fixture.componentRef.setInput('briefId', 'b-1');
+  });
+
+  function renderKeywords(truncated: boolean | undefined): void {
+    // At least one campaign: the keyword block sits inside a `!hasCampaigns()` branch, so an
+    // empty list replaces it with the no-campaigns empty state and every assertion below would
+    // hold against an absent banner rather than a correct one.
+    fixture.componentRef.setInput('briefCampaigns', [campaignDoc()]);
+    fixture.componentRef.setInput('campaignsPossiblyStale', false);
+    fixture.componentRef.setInput('campaignsUnavailable', false);
+    fixture.componentRef.setInput('statusToggleEnabled', true);
+    fixture.detectChanges();
+    // `hasCampaigns()` derives from monitorData, NOT the briefCampaigns input — the keyword
+    // block sits behind it, so without a monitor campaign the whole section is replaced by the
+    // no-campaigns empty state and every assertion below would hold against an absent banner.
+    const instance = fixture.componentInstance as unknown as {
+      keywordsData: { set(v: unknown): void };
+      monitorData: { set(v: unknown): void };
+    };
+    instance.monitorData.set({
+      pulledAt: '2026-08-28T00:00:00.000Z',
+      dateRange: { mode: 'LAST_30_DAYS' },
+      campaigns: [
+        {
+          name: 'C',
+          shortName: 'C',
+          eventName: 'KubeCon',
+          adFormat: 'Search',
+          targeting: 'Global',
+          status: 'enabled',
+          startDate: '2026-08-01',
+          endDate: '2026-09-01',
+          budgetDay: 100,
+          totalBudget: 3000,
+          spend: 25,
+          impressions: 1000,
+          clicks: 40,
+          ctr: 4,
+          avgCpc: 0.625,
+          conversions: 12.5,
+          pacingPct: 50,
+          pacingLabel: 'on-track',
+          campaignId: '555',
+          googleAdsUrl: '',
+        },
+      ],
+      accountTotals: { impressions: 1000, clicks: 40, spend: 25, conversions: 12.5 },
+      actionItems: [],
+    });
+    instance.keywordsData.set({
+      pulledAt: '2026-08-28T00:00:00.000Z',
+      days: 30,
+      totalKeywords: cleanKeywords.length,
+      totals: { impressions: 1000, clicks: 40, spend: 25, conversions: 12.5, avgCtr: 4 },
+      keywords: cleanKeywords,
+      ...(truncated === undefined ? {} : { truncated }),
+    });
+    fixture.detectChanges();
+  }
+
+  const q = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+  it('does not claim ALL keywords are clean when the set was capped', () => {
+    renderKeywords(true);
+
+    // The unqualified banner must be gone AND the qualified one present — a bare negative
+    // assertion would pass if the whole block failed to render.
+    expect(q('wasted-keywords-all-clear')).toBeNull();
+    const partial = q('wasted-keywords-partial-clear');
+    expect(partial).not.toBeNull();
+    expect(partial?.textContent).toContain('top 1');
+  });
+
+  it('claims the full all-clear when the whole keyword set was returned', () => {
+    renderKeywords(false);
+
+    expect(q('wasted-keywords-all-clear')).not.toBeNull();
+    expect(q('wasted-keywords-partial-clear')).toBeNull();
+  });
+
+  // Absence means UNKNOWN on the legacy path (a bare LIMIT with no probe), and qualifying every
+  // legacy response would be its own false statement.
+  it('treats an absent truncation flag as unknown rather than partial', () => {
+    renderKeywords(undefined);
+
+    expect(q('wasted-keywords-all-clear')).not.toBeNull();
+    expect(q('wasted-keywords-partial-clear')).toBeNull();
+  });
+});
