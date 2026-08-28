@@ -1016,3 +1016,113 @@ describe('PlanningTabComponent delivery-type mode', () => {
     expect(refineBrief.mock.calls[0][1].platforms).toEqual(['google-ads']);
   });
 });
+
+/**
+ * The HubSpot create path. What is only observable here is what the operator is left holding
+ * after a create that did not confirm: whether they can still act, and whether an answer for one
+ * event can land on another event's panel.
+ */
+describe('PlanningTabComponent HubSpot create', () => {
+  const foundationA = { uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' };
+
+  const programTypeConfig: CampaignProgramTypeOption = {
+    id: 'events',
+    label: 'Events',
+    breadcrumbLabel: 'Events',
+    urlLabel: 'Event URL',
+    urlPlaceholder: 'https://events.example.com/event-name',
+    urlHelp: 'Enter the event registration URL',
+    goalLabel: 'Event conversions',
+    audiencePlaceholder: 'Enter target audience',
+    valuePropPlaceholder: 'Enter value proposition',
+  };
+
+  let fixture: ComponentFixture<PlanningTabComponent>;
+  let createSpy: ReturnType<typeof vi.fn>;
+
+  interface HsInternals {
+    lastLookedUpEvent: string;
+    createInHubSpot(): void;
+    hsNotFound(): boolean;
+    hsUtm(): string | null;
+    hsStatus(): string | null;
+    hsCreating(): boolean;
+  }
+
+  function hs(): HsInternals {
+    return fixture.componentInstance as unknown as HsInternals;
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [PlanningTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    createSpy = vi.fn();
+    vi.spyOn(TestBed.inject(CampaignService), 'createHubSpotUtm').mockImplementation(createSpy);
+
+    const projectContextService = TestBed.inject(ProjectContextService);
+    projectContextService.setRouteLensKind('foundation');
+    projectContextService.setFoundation(foundationA, false);
+
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('keeps the create offer up when the create could not be confirmed', async () => {
+    // `lookupHubSpot` returns early while the event is unchanged, so retyping the same url cannot
+    // re-raise a button this arm cleared. Clearing it here would strand the operator with a
+    // "check HubSpot and try again" message and no way to try again short of a page reload.
+    hs().lastLookedUpEvent = 'kubecon-eu-2026';
+    (fixture.componentInstance as unknown as { hsNotFound: { set(v: boolean): void } }).hsNotFound.set(true);
+
+    createSpy.mockReturnValue(new Observable((s) => s.next({ created: false })));
+    hs().createInHubSpot();
+    await fixture.whenStable();
+
+    expect(hs().hsNotFound()).toBe(true);
+    expect(hs().hsCreating()).toBe(false);
+    expect(hs().hsStatus()).toContain('check HubSpot');
+  });
+
+  it('keeps the create offer up when the create errors', async () => {
+    hs().lastLookedUpEvent = 'kubecon-eu-2026';
+    (fixture.componentInstance as unknown as { hsNotFound: { set(v: boolean): void } }).hsNotFound.set(true);
+
+    createSpy.mockReturnValue(throwError(() => new Error('boom')));
+    hs().createInHubSpot();
+    await fixture.whenStable();
+
+    expect(hs().hsNotFound()).toBe(true);
+    expect(hs().hsCreating()).toBe(false);
+    expect(hs().hsStatus()).toContain('check HubSpot');
+  });
+
+  it('drops a create answer for an event the operator has already left', async () => {
+    // The create is slow enough for the operator to retype the url and start a lookup for a
+    // different event while it is in flight. Event A's hs_utm must not land on event B's panel.
+    hs().lastLookedUpEvent = 'event-a';
+    const late = new Subject<{ created: boolean; hs_utm: string; campaign_name: string }>();
+    createSpy.mockReturnValue(late);
+
+    hs().createInHubSpot();
+    // The operator moves on to a different event before the create answers.
+    hs().lastLookedUpEvent = 'event-b';
+    late.next({ created: true, hs_utm: 'event-a-utm', campaign_name: 'Event A' });
+    await fixture.whenStable();
+
+    expect(hs().hsUtm()).toBeNull();
+    // Asserted as an exact value rather than `not.toContain`: the status is null here, and
+    // `not.toContain` against null throws rather than passing, so it would never have bound.
+    expect(hs().hsStatus()).toBeNull();
+  });
+});

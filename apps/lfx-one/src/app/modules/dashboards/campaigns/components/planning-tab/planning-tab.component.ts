@@ -495,22 +495,35 @@ export class PlanningTabComponent implements OnInit {
     if (!this.lastLookedUpEvent) return;
     this.hsCreating.set(true);
     this.hsStatus.set(null);
+    // Captured for the same reason the lookup captures it: the create is slow enough for the
+    // operator to retype the url and start a lookup for a DIFFERENT event while it is in flight.
+    // Without this, a create for event A lands on event B's panel — writing A's hs_utm into the
+    // field, or clearing the create offer B's own lookup just raised.
+    const capturedEvent = this.lastLookedUpEvent;
     this.campaignService
-      .createHubSpotUtm(this.activeFoundationSlug(), this.lastLookedUpEvent)
+      .createHubSpotUtm(this.activeFoundationSlug(), capturedEvent)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
+          if (this.lastLookedUpEvent !== capturedEvent) return;
           if (result?.created && result.hs_utm) {
             this.hsUtm.set(result.hs_utm);
             this.hsNotFound.set(false);
             this.hsStatus.set(`Created: ${result.campaign_name}`);
           } else {
-            this.hsStatus.set('Failed to create campaign');
+            // The create offer STAYS UP on both failure arms, and this is the deliberate half of
+            // the pair. A create that failed or could not be confirmed leaves the operator with
+            // one thing to do — check HubSpot, then retry — and `lookupHubSpot` returns early
+            // when the event is unchanged, so retyping the same url cannot re-raise a button
+            // this arm had cleared. Clearing it would stand the operator in a dead end whose
+            // only exit is a page reload.
+            this.hsStatus.set('Could not confirm the campaign was created — check HubSpot before trying again.');
           }
           this.hsCreating.set(false);
         },
         error: () => {
-          this.hsStatus.set('Create failed');
+          if (this.lastLookedUpEvent !== capturedEvent) return;
+          this.hsStatus.set('Create failed — check HubSpot before trying again, as it may already exist.');
           this.hsCreating.set(false);
         },
       });
