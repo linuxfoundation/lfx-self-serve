@@ -425,8 +425,13 @@
                         <i class="fa-light fa-circle-exclamation text-red-600"></i>
                         <span class="text-sm font-medium text-gray-900">Audience build failed</span>
                       } @else {
+                        <!--
+                          `building` is also where an UNCONFIRMED build lands, not just an
+                          in-flight one, and the two are indistinguishable from here. The copy has
+                          to hold for both, and the summary below carries the ids to reconcile.
+                        -->
                         <i class="fa-light fa-spinner text-gray-500"></i>
-                        <span class="text-sm font-medium text-gray-900">Audience building</span>
+                        <span class="text-sm font-medium text-gray-900">Audience build unconfirmed</span>
                       }
                       <span class="font-mono text-xs text-gray-500">{{ audience.status }}</span>
                     </div>
@@ -440,14 +445,21 @@
                 }
 
                 <!--
-                  Keyed on the STATUS, not on presence. Gating the build control on
-                  `emailAudience() === null` made a non-built row terminal: the status card
-                  replaced the button, `canStageEmail` refuses anything but `built`, there is no
-                  poll and no re-read route, so a FAILED build stranded the operator with no way
-                  back except re-running the Plan-tab scrape. A build that ends in `failed` is the
-                  ordinary case here -- it calls Snowflake and several HubSpot creates.
+                  Offered on `failed` and on absence, but NOT on `building`.
+                
+                  Gating on presence alone made a non-built row terminal: the status card replaced
+                  the button, `canStageEmail` refuses anything but `built`, and there is no poll,
+                  so a failed build stranded the operator with no way back but re-running the
+                  Plan-tab scrape.
+                
+                  `building` is deliberately excluded, and it is not merely "in flight". Upstream
+                  keeps a row BUILDING when the outcome is UNCONFIRMED -- a HubSpot list may
+                  already exist -- and records the ids it created so the row can be reconciled.
+                  Observed live: a build left `HubSpot lists ALREADY CREATED (reconcile these
+                  before retrying): 30779`. Offering Retry there invites the duplicate contact
+                  list that state exists to prevent.
                 -->
-                @if (emailAudience()?.status !== 'built') {
+                @if (emailAudience() === null || emailAudience()?.status === 'failed') {
                   <div class="flex items-center gap-3">
                     <lfx-button
                       [label]="emailAudience() === null ? 'Build audience' : 'Retry build'"
@@ -529,7 +541,7 @@
                       } @else if (emailAudience() === null) {
                         Build the send audience first.
                       } @else if (emailAudience()?.status === 'building') {
-                        The send audience is still building.
+                        The audience build is unconfirmed — reconcile the lists it created before staging.
                       } @else if (emailAudience()?.status !== 'built') {
                         The audience build failed — rebuild it before staging.
                       }

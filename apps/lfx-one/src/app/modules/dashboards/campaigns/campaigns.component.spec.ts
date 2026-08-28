@@ -2516,6 +2516,33 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCopy()).toBeNull();
     });
 
+    it('does NOT offer a rebuild while the outcome is unconfirmed', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailAudience.set({ id: 'aud-1', status: 'building' } as never);
+      fixture.detectChanges();
+
+      // Upstream keeps a row BUILDING when a HubSpot list may already exist, and records the ids
+      // to reconcile. Observed live: "HubSpot lists ALREADY CREATED (reconcile these before
+      // retrying): 30779". A rebuild here creates the duplicate contact list that state exists
+      // to prevent -- so the control must be absent, not merely disabled.
+      expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-btn"]')).toBeNull();
+    });
+
+    it('says why staging is blocked while the outcome is unconfirmed', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'building' } as never);
+      fixture.detectChanges();
+
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]');
+      // With no retry offered, the copy is the ONLY thing telling the operator what to do next.
+      expect(hint?.textContent).toContain('reconcile');
+    });
+
     it('keeps a rebuild control when the audience build failed', () => {
       selectEmail();
       internals().selectedEmailTab.set('implementation');
