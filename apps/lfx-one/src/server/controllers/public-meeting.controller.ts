@@ -109,9 +109,9 @@ export class PublicMeetingController {
       }
 
       // Apply organizer + host-key resolution. meeting.organizer is used by the private-meeting
-      // access gate and the organizer-only registrant count below; meeting.host_key /
-      // can_view_host_key are the response-side host-key surface. When we couldn't run the user
-      // access check (anonymous or missing user token), fail closed: no organizer, no host key.
+      // access gate; meeting.host_key / can_view_host_key are the response-side host-key surface.
+      // When we couldn't run the user access check (anonymous or missing user token), fail closed:
+      // no organizer, no host key.
       applyOrganizerAndHostKeyResult(meeting, organizerAndHostKey);
 
       // Resolves the foundation project server-side (LFXV2-3266) so anonymous visitors get

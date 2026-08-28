@@ -430,6 +430,27 @@ describe('MeetingService.getMeetingRegistrants', () => {
     expect(result).toHaveLength(1);
     expect(proxyRequest).toHaveBeenCalledTimes(1);
   });
+
+  it('returns registrants without RSVP data by default when the RSVP fetch fails', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [registrantRecord('a')] }) // roster page
+      .mockRejectedValueOnce(new Error('rsvp fetch down')) // getMeetingRsvps: rsvp page
+      .mockResolvedValueOnce({ resources: [registrantRecord('a')] }); // getMeetingRsvps: registrant-filter page
+
+    const result = await service.getMeetingRegistrants(req, 'meeting-1', true);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].rsvp).toBeNull();
+  });
+
+  it('rejects instead of silently returning registrants without RSVP data when failOnPartial is true', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [registrantRecord('a')] }) // roster page
+      .mockRejectedValueOnce(new Error('rsvp fetch down')) // getMeetingRsvps: rsvp page
+      .mockResolvedValueOnce({ resources: [registrantRecord('a')] }); // getMeetingRsvps: registrant-filter page
+
+    await expect(service.getMeetingRegistrants(req, 'meeting-1', true, undefined, true)).rejects.toThrow('rsvp fetch down');
+  });
 });
 
 describe('MeetingService.getAuthorizedRegistrantsForImport', () => {

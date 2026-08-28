@@ -1414,13 +1414,19 @@ export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string
  * the whole pad whenever *any* growth is observed double-counts rows the refetch hasn't indexed
  * yet (GH-1731). `before` is rebased to `current` so a still-pending remainder converges on the
  * next refetch instead of comparing against a stale snapshot.
+ *
+ * `before === null` means the pad was added without a confirmed roster baseline (e.g. no
+ * successful fetch had landed yet for this meeting) — the caller couldn't tell how many of the
+ * added rows this fetch already reflects, so treat this fetch as establishing the baseline rather
+ * than as absorption. Comparing against an unconfirmed baseline (like 0) would otherwise credit an
+ * unrelated roster size to "absorbed" and zero out the pad before the added guests are indexed.
  */
 export function reconcileOptimisticPad(state: { pad: number; before: number | null; current: number }): {
   pad: number;
   before: number | null;
 } {
   if (state.before === null) {
-    return { pad: state.pad, before: null };
+    return { pad: state.pad, before: state.pad > 0 ? state.current : null };
   }
 
   const absorbed = Math.max(0, state.current - state.before);

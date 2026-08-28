@@ -497,7 +497,12 @@ export class MeetingJoinComponent implements OnInit {
 
   public onRegistrantsRefreshRequested(addedCount: number): void {
     if (addedCount > 0) {
-      this.rosterCountBeforeAdd.set(this.registrants().length);
+      // Only snapshot as a real baseline when the current roster is a confirmed, successful fetch
+      // for this meeting — otherwise `registrants()` may still hold the initial `[]` (roster hasn't
+      // loaded yet) or a failure fallback, and reconcileOptimisticPad would treat that unconfirmed
+      // value as "absorbed" on the next real fetch, zeroing the pad before the added guests land.
+      const hasConfirmedRoster = this.registrantsMeetingKey() === this.meeting().id;
+      this.rosterCountBeforeAdd.set(hasConfirmedRoster ? this.registrants().length : null);
       this.optimisticAdditional.update((c) => c + addedCount);
     }
     this.registrantsRefresh$.next();

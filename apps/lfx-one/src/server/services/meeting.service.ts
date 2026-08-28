@@ -652,7 +652,7 @@ export class MeetingService {
     // If include_rsvp is true, fetch RSVP data and attach to registrants.
     if (includeRsvp) {
       try {
-        const rsvps = await this.getMeetingRsvps(req, meetingUid);
+        const rsvps = await this.getMeetingRsvps(req, meetingUid, failOnPartial);
 
         // Group RSVPs by registrant_id for lookup.
         const rsvpsByRegistrant = new Map<string, MeetingRsvp[]>();
@@ -677,6 +677,12 @@ export class MeetingService {
           return { ...registrant, rsvp: selectApplicableRsvp(occurrenceId, registrantRsvps) };
         });
       } catch (error) {
+        // A strict caller asked for a complete result and cannot tell "registrants have no RSVPs"
+        // from "RSVP data failed to load" if we swallow this — rethrow instead of returning a
+        // 200 with silently-missing RSVP data.
+        if (failOnPartial) {
+          throw error;
+        }
         logger.warning(req, 'get_meeting_registrants', 'Failed to fetch RSVPs for registrants, returning registrants without RSVP data', {
           meeting_id: meetingUid,
           err: error,
@@ -1399,8 +1405,11 @@ export class MeetingService {
    * The v1_meeting_rsvp records persist historical RSVPs including for registrants
    * who have since been removed or re-registered with a new registrant_id. We filter
    * to only those RSVPs whose registrant_id matches a currently-active registrant.
+   * @param failOnPartial - If true, throw instead of returning a truncated/empty result when the
+   *   RSVP page fetch fails or is partial. Default preserves the existing partial-tolerant
+   *   behavior (returns whatever loaded, or `[]` on total failure).
    */
-  public async getMeetingRsvps(req: Request, meetingUid: string): Promise<MeetingRsvp[]> {
+  public async getMeetingRsvps(req: Request, meetingUid: string, failOnPartial: boolean = false): Promise<MeetingRsvp[]> {
     logger.debug(req, 'get_meeting_rsvps', 'Fetching meeting RSVPs', { meeting_id: meetingUid });
 
     try {
@@ -1416,11 +1425,14 @@ export class MeetingService {
 
       let registrantsFetchFailed = false;
       const [rsvps, registrants] = await Promise.all([
-        fetchAllQueryResources<MeetingRsvp>(req, (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            ...rsvpParams,
-            ...(pageToken && { page_token: pageToken }),
-          })
+        fetchAllQueryResources<MeetingRsvp>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              ...rsvpParams,
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial }
         ),
         fetchAllQueryResources<MeetingRegistrant>(
           req,
@@ -1457,6 +1469,9 @@ export class MeetingService {
 
       return filtered;
     } catch (error) {
+      if (failOnPartial) {
+        throw error;
+      }
       logger.warning(req, 'get_meeting_rsvps', 'Failed to fetch meeting RSVPs, returning empty array', {
         meeting_id: meetingUid,
         err: error,

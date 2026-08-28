@@ -1424,6 +1424,13 @@ describe('reconcileOptimisticPad', () => {
     expect(reconcileOptimisticPad({ pad: 0, before: null, current: 10 })).toEqual({ pad: 0, before: null });
   });
 
+  it('establishes a baseline instead of absorbing when a pad exists but no confirmed snapshot was taken', () => {
+    // e.g. a guest was added before the roster's first successful fetch landed for this meeting —
+    // there's no way to tell how much of `current` already reflects the add, so this fetch just
+    // becomes the new baseline rather than being credited as absorption.
+    expect(reconcileOptimisticPad({ pad: 2, before: null, current: 10 })).toEqual({ pad: 2, before: 10 });
+  });
+
   it('fully absorbs the pad once the refetch reflects every added row', () => {
     expect(reconcileOptimisticPad({ pad: 2, before: 10, current: 12 })).toEqual({ pad: 0, before: null });
   });
