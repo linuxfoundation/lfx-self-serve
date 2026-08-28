@@ -266,6 +266,42 @@ describe('ProjectController.getLensRedirect', () => {
   });
 });
 
+describe('ProjectController.getProjectSlugs', () => {
+  let controller: ProjectController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (projectSvc as any).getProjectSlugs = vi.fn();
+    controller = new ProjectController();
+  });
+
+  it('responds with the slug array and does not call next()', async () => {
+    const slugs = ['cncf', 'kubernetes', 'linux'];
+    (projectSvc as any).getProjectSlugs.mockResolvedValue(slugs);
+    const req = { headers: {}, bearerToken: undefined, method: 'GET' } as any;
+    const res = { json: vi.fn() } as any;
+    const next = vi.fn();
+
+    await controller.getProjectSlugs(req, res, next);
+
+    expect(res.json).toHaveBeenCalledWith(slugs);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards errors to next() without calling res.json', async () => {
+    const boom = new Error('upstream-down');
+    (projectSvc as any).getProjectSlugs.mockRejectedValue(boom);
+    const req = { headers: {}, bearerToken: undefined, method: 'GET' } as any;
+    const res = { json: vi.fn() } as any;
+    const next = vi.fn();
+
+    await controller.getProjectSlugs(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(boom);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
 describe('ProjectController.getProjectCalendar', () => {
   let controller: ProjectController;
 
