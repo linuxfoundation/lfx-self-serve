@@ -7,6 +7,8 @@ import {
   AddUserToProjectRequest,
   CreateProjectDocumentRequest,
   Meeting,
+  PastMeeting,
+  PublicCalendarMeeting,
   PublicProjectMeetingsResponse,
   UpdateUserRoleRequest,
   UploadProjectDocumentRequest,
@@ -991,22 +993,30 @@ export class ProjectController {
       const [upcoming, past, project] = await Promise.all([
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_meeting', false)),
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
-        this.projectService.getProjectById(req, projectUid, false),
+        // Project metadata only feeds the page header — degrade gracefully rather than failing the whole
+        // feed on a transient project-service error, matching the X-WR-CALNAME fallback in getProjectCalendar.
+        this.projectService.getProjectById(req, projectUid, false).catch((error) => {
+          logger.warning(req, 'get_project_meetings', 'Failed to resolve project metadata for the calendar header', {
+            project_id: projectUid,
+            err: error,
+          });
+          return undefined;
+        }),
       ]);
 
       // Filter PRIVATE meetings from the public feed. Restricted (invited-guests-only) public meetings are
       // still listed so their existence is discoverable; join authorization is enforced separately at join time.
-      // created_by/owner carry organizer PII (name/email) — authenticated-visible only, per the same
-      // strip applied to anonymous callers in PublicMeetingController.getMeetingById (LFXV2-2802).
-      const meetings = [...upcoming, ...past]
+      // The projection is an allowlist, not a strip: this is an unauthenticated bulk-export endpoint, so
+      // credentials (password/passcode/host_key/zoom_config) and organizer PII (created_by/owner/organizers)
+      // must stay out of the payload even as new Meeting fields land upstream (LFXV2-2802).
+      const meetings: PublicCalendarMeeting[] = [...upcoming, ...past]
         .filter((m) => m.visibility === MeetingVisibility.PUBLIC)
-        .map((m) => {
-          const meeting = { ...m };
-          delete (meeting as Partial<Meeting>).created_by;
-          delete (meeting as Partial<Meeting>).owner;
-          return meeting;
-        });
-      const response: PublicProjectMeetingsResponse = { meetings, total: meetings.length, project: { uid: project.uid, name: project.name } };
+        .map((m) => this.toPublicCalendarMeeting(m));
+      const response: PublicProjectMeetingsResponse = {
+        meetings,
+        total: meetings.length,
+        project: { uid: projectUid, name: project?.name ?? '' },
+      };
 
       logger.success(req, 'get_project_meetings', startTime, {
         project_id: id,
@@ -1014,6 +1024,9 @@ export class ProjectController {
         meeting_count: meetings.length,
       });
 
+      // Shorter than calendar.ics's 15 minutes: calendar clients poll the ICS feed on their own schedule,
+      // while this feed backs an interactive page where a newly scheduled meeting should surface quickly.
+      res.setHeader('Cache-Control', 'public, max-age=300');
       res.json(response);
     } catch (error) {
       next(error);
@@ -1092,5 +1105,30 @@ export class ProjectController {
       });
     }
     return result.uid;
+  }
+
+  /**
+   * Projects an indexed `v1_meeting` / `v1_past_meeting` record onto the credential-free shape served
+   * by `GET /public/api/projects/:id/meetings`. Field-by-field allowlist, deliberately not a spread with
+   * deletes — anything not named here can never reach an anonymous caller.
+   */
+  private toPublicCalendarMeeting(meeting: Meeting | PastMeeting): PublicCalendarMeeting {
+    const pastRow = meeting as Partial<PastMeeting>;
+    return {
+      id: meeting.id,
+      title: meeting.title,
+      start_time: meeting.start_time,
+      duration: meeting.duration,
+      timezone: meeting.timezone,
+      occurrences: (meeting.occurrences ?? []).map((occurrence) => ({
+        occurrence_id: occurrence.occurrence_id,
+        start_time: occurrence.start_time,
+        duration: occurrence.duration,
+        status: occurrence.status,
+      })),
+      cancelled_occurrences: meeting.cancelled_occurrences,
+      scheduled_start_time: pastRow.scheduled_start_time,
+      meeting_and_occurrence_id: pastRow.meeting_and_occurrence_id,
+    };
   }
 }

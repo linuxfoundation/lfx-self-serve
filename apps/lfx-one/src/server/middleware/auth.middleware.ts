@@ -55,6 +55,11 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   { pattern: /^\/foundations\/[^/]+\/groups\/?$/, type: 'ssr', auth: 'optional' },
   { pattern: /^\/projects\/[^/]+\/groups\/?$/, type: 'ssr', auth: 'optional' },
 
+  // Public project calendar (LFXV2-3340) — month/week view of a project's public meetings, optionally
+  // scoped to one committee via `?committee=`. Same single-segment anchoring as the group directories
+  // above (no deeper route exists) so a nested path fails closed to `required`.
+  { pattern: /^\/projects\/[^/]+\/calendar\/?$/, type: 'ssr', auth: 'optional' },
+
   // Flow C callback via /passwordless/callback — needs session auth but no bearer token
   { pattern: '/passwordless/callback', type: 'ssr', auth: 'required', tokenRequired: false },
 

@@ -120,6 +120,12 @@ function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
     description: '',
     created_by: { name: 'Organizer', email: 'organizer@example.com' },
     owner: { name: 'Owner', email: 'owner@example.com' },
+    // Seeded so the public-feed tests assert these never reach an anonymous caller.
+    organizers: ['organizer-lfid'],
+    password: 'super-secret',
+    passcode: '123456',
+    host_key: '654321',
+    zoom_config: { meeting_id: '99152950841', passcode: '123456' },
     ...overrides,
   } as Meeting;
 }
@@ -313,7 +319,7 @@ describe('ProjectController.getProjectMeetings', () => {
     meetingSvc.getMeetings.mockResolvedValue({ data: [], page_token: undefined });
   });
 
-  it('strips created_by/owner PII from public meetings and returns the project envelope', async () => {
+  it('returns only allowlisted calendar fields and the project envelope', async () => {
     meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
       Promise.resolve({ data: resourceType === 'v1_meeting' ? [buildMeeting()] : [], page_token: undefined })
     );
@@ -325,10 +331,80 @@ describe('ProjectController.getProjectMeetings', () => {
     expect(res.json).toHaveBeenCalledTimes(1);
     const response = res.json.mock.calls[0][0];
     expect(response.meetings).toHaveLength(1);
-    expect(response.meetings[0]).not.toHaveProperty('created_by');
-    expect(response.meetings[0]).not.toHaveProperty('owner');
+    // Exact key set, not a list of absent keys — a delete-based strip would pass an "is X absent"
+    // check for every field named here while still shipping the next sensitive field added upstream.
+    expect(Object.keys(response.meetings[0]).sort()).toEqual(
+      ['cancelled_occurrences', 'duration', 'id', 'meeting_and_occurrence_id', 'occurrences', 'scheduled_start_time', 'start_time', 'timezone', 'title'].sort()
+    );
     expect(response.total).toBe(1);
     expect(response.project).toEqual({ uid: PROJECT_UID, name: 'CNCF' });
+  });
+
+  it('never serializes credentials or organizer PII to anonymous callers', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({ data: resourceType === 'v1_meeting' ? [buildMeeting()] : [], page_token: undefined })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    // Serialized, not just key-checked — `password` on a nested object (e.g. zoom_config) would
+    // still be on the wire while every top-level property assertion passed.
+    const serialized = JSON.stringify(res.json.mock.calls[0][0]);
+    for (const secret of ['super-secret', '123456', '654321', 'organizer@example.com', 'owner@example.com', 'organizer-lfid']) {
+      expect(serialized).not.toContain(secret);
+    }
+    for (const key of ['password', 'passcode', 'host_key', 'zoom_config', 'organizers', 'created_by', 'owner']) {
+      expect(serialized).not.toContain(key);
+    }
+  });
+
+  it('projects occurrences down to timestamps and status, dropping per-occurrence titles', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data:
+          resourceType === 'v1_meeting'
+            ? [
+                buildMeeting({
+                  occurrences: [
+                    { occurrence_id: '1630560600', start_time: '2026-09-01T15:00:00Z', duration: 30, status: 'available', title: 'Internal agenda' } as any,
+                  ],
+                }),
+              ]
+            : [],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    const [occurrence] = res.json.mock.calls[0][0].meetings[0].occurrences;
+    expect(occurrence).toEqual({ occurrence_id: '1630560600', start_time: '2026-09-01T15:00:00Z', duration: 30, status: 'available' });
+    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('Internal agenda');
+  });
+
+  it('sets a public Cache-Control on the JSON feed', async () => {
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
+  });
+
+  it('still returns meetings with an empty project name when project metadata lookup fails', async () => {
+    projectSvc.getProjectById.mockRejectedValue(new Error('upstream 503'));
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({ data: resourceType === 'v1_meeting' ? [buildMeeting()] : [], page_token: undefined })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const response = res.json.mock.calls[0][0];
+    expect(response.meetings).toHaveLength(1);
+    expect(response.project).toEqual({ uid: PROJECT_UID, name: '' });
   });
 
   it('filters out PRIVATE meetings from the public feed', async () => {
