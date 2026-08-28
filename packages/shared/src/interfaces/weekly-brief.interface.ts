@@ -188,12 +188,20 @@ export interface WeeklyBriefCurrentResponse {
    * completed-week window (GH-1922). Sourced from `CommitteeActivityService`'s existing live
    * meeting/vote/document aggregation (not a weekly-brief-specific upstream call), so it's
    * populated identically in mock and live mode — see
-   * `weekly-brief.service.ts#buildCurrentActivity`. Absent (not null) when the committee isn't
-   * governance-classified, the underlying lookup/fetch fails, or the current week's activity
-   * exceeds what a single upstream page can return — never fabricated, and never a
-   * silently-truncated count.
+   * `weekly-brief.service.ts#buildCurrentActivity`. Three states, not two — `null` and absent
+   * are deliberately distinct:
+   *   - **Absent** (key not present at all): couldn't determine — the committee lookup or
+   *     activity fetch failed. Transient; worth asking again.
+   *   - **`null`**: known, definitively, not to apply — the committee isn't
+   *     governance-classified, or the current week's activity exceeds what a single upstream
+   *     page can return (never a silently-truncated count). Not transient; re-asking within the
+   *     same poll cycle can't change either answer, so a caller that retries on any falsy value
+   *     without checking for this distinction (e.g. `weekly-brief-card.component.ts`'s
+   *     `pollUntilTerminal`) would spend calls forever for no reason.
+   *   - **Present**: the real tally, possibly with an empty `source_refs` (a genuine quiet week
+   *     — still a real answer, not absence).
    */
-  current_activity?: WeeklyBriefCurrentActivity;
+  current_activity?: WeeklyBriefCurrentActivity | null;
 }
 
 /** See `WeeklyBriefCurrentResponse.current_activity`. */

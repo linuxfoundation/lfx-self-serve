@@ -822,17 +822,15 @@ export class WeeklyBriefCardComponent {
         // (and the attempt cap) indefinitely, since exhaustMap only completes once its
         // last active inner subscription settles.
         exhaustMap(() =>
-          // includeCurrentActivity (GH-1922): only opt out once a value is already in hand —
-          // this week's activity can't change mid-poll, so re-running the fan-out for a value
-          // already held is pure waste. But if the initial load left current_activity absent
-          // (a governance committee whose lookup/fetch degraded — see
-          // weekly-brief.service.ts#buildCurrentActivity), keep asking on every tick so a
-          // transient failure can still self-heal instead of staying blank for the rest of the
-          // poll and beyond, with nothing left to re-fetch it once the poll ends. A
-          // non-governance committee (also current_activity: undefined) re-asks too, but
-          // buildCurrentActivity short-circuits cheaply for those right after the category
-          // read, well before the expensive activity aggregation.
-          this.weeklyBriefService.getWeeklyBrief(committeeUid, { includeCurrentActivity: !this.briefResponse()?.current_activity }).pipe(
+          // includeCurrentActivity (GH-1922): only opt out once the current_activity KEY is
+          // actually present on the response — `=== undefined` here, not a falsy/truthy check,
+          // because the BFF distinguishes "couldn't determine yet" (key absent — transient,
+          // worth asking again) from "known, settled, doesn't apply" (key present as `null` —
+          // non-governance, or this week's activity fills a full page; see
+          // WeeklyBriefCurrentResponse.current_activity's doc comment). A `!value` check would
+          // treat that settled `null` the same as "unknown" and re-ask forever for exactly the
+          // two cases that can never resolve differently within this poll cycle.
+          this.weeklyBriefService.getWeeklyBrief(committeeUid, { includeCurrentActivity: this.briefResponse()?.current_activity === undefined }).pipe(
             timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS),
             catchError((err: unknown) => {
               console.error('[weekly-brief-card] poll tick failed, will retry', err);
@@ -844,10 +842,16 @@ export class WeeklyBriefCardComponent {
         // a transient poll failure must not look like a terminal state and stop the poll.
         filter((response): response is WeeklyBriefCurrentResponse => response !== null),
         tap((response) => {
-          // A tick that opted out (see above) carries no current_activity of its own — fall
+          // A tick that opted out (see above) carries no current_activity key of its own — fall
           // back to whatever the card already has rather than letting a plain .set() blank a
           // good value out just because this particular tick didn't ask for a fresh one.
-          this.briefResponse.update((prev) => ({ ...response, current_activity: response.current_activity ?? prev?.current_activity }));
+          // `!== undefined`, not `??`: a tick that DID ask can come back with a settled `null`
+          // (see the exhaustMap above), which must overwrite a stale prior `undefined` — `??`
+          // would treat that fresh `null` as nullish too and wrongly keep falling back to prev.
+          this.briefResponse.update((prev) => ({
+            ...response,
+            current_activity: response.current_activity !== undefined ? response.current_activity : prev?.current_activity,
+          }));
           // Same reasoning as initBriefResponseSubscription's subscribe: a fresh GET
           // supersedes any optimistic overlay.
           this.optimisticRating.set(null);

@@ -619,6 +619,34 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]')).toBeNull();
   });
 
+  it('renders nothing when current_activity is explicitly null (the BFF\'s settled "doesn\'t apply" state) — same as absent, not "no activity yet"', async () => {
+    // A real getWeeklyBrief response can carry current_activity: null (distinct from the key
+    // being absent entirely — see WeeklyBriefCurrentResponse.current_activity's doc comment).
+    // hasCurrentActivityData's `!!` check must treat both the same for rendering purposes; only
+    // the poll loop's opt-out decision cares about the distinction.
+    getWeeklyBrief = vi.fn(() => of({ ...briefResponse(null), current_activity: null }));
+    await TestBed.configureTestingModule({
+      imports: [WeeklyBriefCardComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: WeeklyBriefService, useValue: { getWeeklyBrief, listWeeklyBriefs: vi.fn(() => of({ data: [] })) } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(WeeklyBriefCardComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', BOARD_COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    await fixture.whenStable();
+
+    expect(component.hasCurrentActivityData()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]')).toBeNull();
+  });
+
   it('clicking a kind reveals its underlying ref titles, and clicking again collapses it', async () => {
     await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync'), activityRef('vote-1', 'vote', 'Q3 Resolution')]);
 

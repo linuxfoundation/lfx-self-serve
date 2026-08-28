@@ -40,9 +40,15 @@ export class WeeklyBriefService {
    * "no brief yet, 2 generates available" — see LFXV2-2175 full-branch review.
    *
    * `includeCurrentActivity: false` (GH-1922) opts out of the current_activity tally on this
-   * read — see the BFF's `WeeklyBriefService#getCurrentBrief` doc comment for why the poll loop
-   * (`weekly-brief-card.component.ts`'s `pollUntilTerminal`) uses it on every tick but the
-   * initial load doesn't.
+   * read — see the BFF's `WeeklyBriefService#getCurrentBrief` doc comment for the upstream-cost
+   * rationale. The initial load never opts out. The poll loop
+   * (`weekly-brief-card.component.ts`'s `pollUntilTerminal`) opts out only once the
+   * current_activity KEY is present on what it already holds — `null` counts as present (a
+   * settled "doesn't apply" answer for a non-governance committee, or a week whose activity
+   * fills a full page) and stops the asking just as a real value would; only a genuinely absent
+   * key (a transient lookup/fetch failure) keeps the poll asking on every tick until it resolves
+   * — see `WeeklyBriefCurrentResponse.current_activity`'s doc comment for the three-state
+   * absent/null/present contract this depends on.
    */
   public getWeeklyBrief(committeeId: string, options: { includeCurrentActivity?: boolean } = {}): Observable<WeeklyBriefCurrentResponse> {
     const params = options.includeCurrentActivity === false ? { includeCurrentActivity: 'false' } : undefined;

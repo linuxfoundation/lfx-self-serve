@@ -288,10 +288,12 @@ export class WeeklyBriefService {
    * activity cannot change mid-poll, so re-running the tally on every tick multiplies its real
    * upstream cost (getCommitteeById's 3 calls, plus getCommitteeActivity's own multi-call
    * aggregation for a governance committee) for a value that's already correct from the poll's
-   * first tick. The poll passes `includeCurrentActivity: false` only once it already holds a
-   * value, merging it forward client-side instead of re-fetching — and keeps asking (the
-   * default) whenever it doesn't, so a transient degrade on the initial load can still self-heal
-   * on a later tick rather than staying blank for the rest of the poll and beyond.
+   * first tick. The poll passes `includeCurrentActivity: false` only once the current_activity
+   * KEY is present on what it already holds (see `WeeklyBriefCurrentResponse.current_activity`'s
+   * doc comment for the absent/null/present contract this depends on — `null` is a settled
+   * answer and stops the asking same as a real value; only a genuinely absent key keeps the
+   * poll asking on every tick, so a transient degrade on the initial load can still self-heal on
+   * a later tick rather than staying blank for the rest of the poll and beyond).
    */
   public async getCurrentBrief(req: Request, committeeId: string, options: { includeCurrentActivity?: boolean } = {}): Promise<WeeklyBriefCurrentResponse> {
     const includeCurrentActivity = options.includeCurrentActivity ?? true;
@@ -312,7 +314,10 @@ export class WeeklyBriefService {
       this.fetchBriefResponse(req, committeeId),
       includeCurrentActivity ? this.buildCurrentActivity(req, committeeId) : Promise.resolve(undefined),
     ]);
-    return currentActivity ? { ...response, current_activity: currentActivity } : response;
+    // !== undefined, not truthiness — currentActivity can be null (a settled "doesn't apply"
+    // answer, see buildCurrentActivity's doc comment), which is a real value the client needs
+    // to see, not an absence to fall through on.
+    return currentActivity !== undefined ? { ...response, current_activity: currentActivity } : response;
   }
 
   /**
@@ -1228,11 +1233,14 @@ export class WeeklyBriefService {
    * edge case relative to the `page_token`/`anyLegSaturated` gate this replaced (which fired on
    * nearly every long-lived board, every week).
    */
-  private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | undefined> {
+  private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | null | undefined> {
     try {
       logger.debug(req, 'get_weekly_brief_current_activity', 'Building current-week activity tally', { committee_id: committeeId });
       const committee = await this.committeeService.getCommitteeById(req, committeeId);
-      if (!isGoverningBoard(committee.category)) return undefined;
+      // null, not undefined — see WeeklyBriefCurrentResponse.current_activity's doc comment.
+      // This committee will never become governance-classified mid-poll, so a caller (the
+      // client's pollUntilTerminal) can treat this as a settled answer and stop asking.
+      if (!isGoverningBoard(committee.category)) return null;
 
       const { window_start, window_end } = currentWeekInProgressWindow();
       const { data } = await this.committeeActivityService.getCommitteeActivity(req, committeeId, {
@@ -1249,7 +1257,10 @@ export class WeeklyBriefService {
             committee_id: committeeId,
           }
         );
-        return undefined;
+        // null, not undefined — more in-window activity only ever accumulates within a poll
+        // cycle, never un-fills a full page, so this can't resolve differently on a later tick
+        // within the same cycle either.
+        return null;
       }
 
       const sourceRefs = data.reduce<WeeklyBriefSourceRef[]>((refs, event) => {
@@ -1263,6 +1274,8 @@ export class WeeklyBriefService {
         committee_id: committeeId,
         err,
       });
+      // undefined, not null — this failure is transient (a lookup/fetch error), unlike the two
+      // null cases above, so a caller is right to ask again.
       return undefined;
     }
   }

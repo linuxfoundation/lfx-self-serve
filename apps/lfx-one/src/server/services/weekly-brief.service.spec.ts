@@ -599,7 +599,10 @@ describe('WeeklyBriefService', () => {
       };
       proxyRequest.mockResolvedValueOnce(upstreamResult);
 
-      const result = await service.getCurrentBrief(req, 'committee-1');
+      // includeCurrentActivity: false — this test is about the mock/live proxy passthrough,
+      // not the current_activity merge (covered by its own describe block below), so opt out
+      // to keep the assertion a true pass-through-by-reference check.
+      const result = await service.getCurrentBrief(req, 'committee-1', { includeCurrentActivity: false });
 
       expect(result).toBe(upstreamResult);
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/committee-1/weekly-briefs/current', 'GET');
@@ -818,7 +821,7 @@ describe('WeeklyBriefService', () => {
       expect(refs[0].id).not.toBe(refs[1].id);
     });
 
-    it('omits current_activity (rather than publishing a truncated count) when the returned page itself is full', async () => {
+    it('sets current_activity to null (a settled, not a transient, absence) when the returned page itself is full', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       getCommitteeActivityMock.mockResolvedValue({
@@ -835,7 +838,10 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.current_activity).toBeUndefined();
+      // null, not undefined: more in-window activity only ever accumulates within a poll cycle,
+      // so a caller (the client's pollUntilTerminal) is right to treat this as settled and stop
+      // asking, unlike a genuine transient failure — see buildCurrentActivity's doc comment.
+      expect(result.current_activity).toBeNull();
       expect(logger.warning).toHaveBeenCalledWith(
         req,
         'get_weekly_brief_current_activity',
@@ -903,14 +909,17 @@ describe('WeeklyBriefService', () => {
       }
     });
 
-    it('never calls getCommitteeActivity for a non-governance committee, and current_activity stays undefined', async () => {
+    it('never calls getCommitteeActivity for a non-governance committee, and current_activity settles to null (not undefined)', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Working Group' });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
       expect(getCommitteeActivityMock).not.toHaveBeenCalled();
-      expect(result.current_activity).toBeUndefined();
+      // null, not undefined: this committee will never become governance-classified mid-poll,
+      // so a caller is right to treat this as settled and stop asking — see
+      // buildCurrentActivity's doc comment.
+      expect(result.current_activity).toBeNull();
     });
 
     it('skips the entire fan-out (getCommitteeById and getCommitteeActivity) when includeCurrentActivity is false, even for a governance committee', async () => {
