@@ -703,15 +703,12 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
 
     // The type allows a populated res.brief on the 202 — the old rating describes the
     // pre-regenerate revision, not this new one, so it must NOT carry forward here (contrast
-    // the bare-202 case above, where it correctly does).
+    // the bare-202 case above, where it correctly does). No DOM assertion alongside this: the
+    // rating buttons live in the renderableBrief template branch, which generating() (already
+    // true by this point) routes around regardless of caller_rating's value — a DOM query here
+    // would pass or fail on branch structure alone, not on the drop this test actually exercises.
     expect(component.callerRating()).toBeNull();
     // current_activity is unaffected either way — it isn't scoped to a brief revision.
     expect(component.hasCurrentActivityData()).toBe(true);
-    // No DOM assertion on the rating buttons themselves: onGenerate() sets generating() before
-    // this response ever lands, which switches the template into the generating-state branch
-    // (weekly-brief-card.component.html:62) — the rating buttons live in the later
-    // renderableBrief branch and are not rendered at all here. Confirm that directly, so this
-    // test still proves there is no stale-rated control visible for the value we just dropped.
-    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-rating-up-button"]')).toBeNull();
   });
 });
