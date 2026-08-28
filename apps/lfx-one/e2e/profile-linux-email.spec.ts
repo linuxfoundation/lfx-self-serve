@@ -231,33 +231,48 @@ test.describe('Linux.com email — forwarding target visibility', () => {
   });
 });
 
+/**
+ * Stub the alias GET as claimed with forwardAuthRequired, and pre-latch the one-shot
+ * redirect guard so the page renders the recoverable panel instead of bouncing to
+ * authorizeUrl. Omit authorizeUrl to exercise the "Flow C unconfigured" dead-end copy.
+ */
+async function stubClaimedNeedsReauth(page: Page, authorizeUrl?: string): Promise<void> {
+  await page.addInitScript((key) => sessionStorage.setItem(key, '1'), LINUX_EMAIL_FORWARD_REAUTH_KEY);
+  await stubIdentities(page);
+  const aliasEmail = `${ALIAS}@${DOMAIN}`;
+  await page.route('**/api/profile/linux-email', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const body: LinuxAliasData = {
+      state: 'claimed',
+      domain: DOMAIN,
+      alias: ALIAS,
+      email: aliasEmail,
+      forwardTo: null,
+      primaryEmail: PRIMARY_EMAIL,
+      forwardAuthRequired: true,
+      ...(authorizeUrl ? { authorizeUrl } : {}),
+    };
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  });
+}
+
+/**
+ * Navigate and wait for the claimed panel to render. Routes/init scripts must be
+ * registered before this — Playwright can't retroactively intercept a request or
+ * seed sessionStorage for a navigation that already happened.
+ */
+async function gotoIdentitiesAndExpectClaimedPanel(page: Page): Promise<void> {
+  await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+  await expect(page).not.toHaveURL(/auth0\.com/);
+  await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+}
+
 test.describe('Linux.com email — forward re-auth (#1935)', () => {
   test('shows the re-auth panel instead of the blank select when the forward target could not be read', async ({ page }) => {
-    // Pre-latch the one-shot redirect guard so the page renders the recoverable panel
-    // instead of immediately bouncing to authorizeUrl.
-    await page.addInitScript((key) => sessionStorage.setItem(key, '1'), LINUX_EMAIL_FORWARD_REAUTH_KEY);
-    await stubIdentities(page);
-    const aliasEmail = `${ALIAS}@${DOMAIN}`;
-    await page.route('**/api/profile/linux-email', (route) => {
-      if (route.request().method() !== 'GET') return route.fallback();
-      const body: LinuxAliasData = {
-        state: 'claimed',
-        domain: DOMAIN,
-        alias: ALIAS,
-        email: aliasEmail,
-        forwardTo: null,
-        primaryEmail: PRIMARY_EMAIL,
-        forwardAuthRequired: true,
-        authorizeUrl: 'https://app.dev.lfx.dev/api/profile/auth/start?returnTo=/profile/identities',
-      };
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
-    });
+    await stubClaimedNeedsReauth(page, 'https://app.dev.lfx.dev/api/profile/auth/start?returnTo=/profile/identities');
+    await gotoIdentitiesAndExpectClaimedPanel(page);
 
-    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
-    await expect(page).not.toHaveURL(/auth0\.com/);
-
-    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('linux-email-forward-reauth')).toBeVisible();
     await expect(page.getByTestId('linux-email-forward-reauth-button')).toBeVisible();
     await expect(page.getByTestId('linux-email-forward-select')).not.toBeAttached();
@@ -265,29 +280,9 @@ test.describe('Linux.com email — forward re-auth (#1935)', () => {
   });
 
   test('falls back to unavailable copy with no button when Flow C is unconfigured (no authorizeUrl)', async ({ page }) => {
-    await page.addInitScript((key) => sessionStorage.setItem(key, '1'), LINUX_EMAIL_FORWARD_REAUTH_KEY);
-    await stubIdentities(page);
-    const aliasEmail = `${ALIAS}@${DOMAIN}`;
-    await page.route('**/api/profile/linux-email', (route) => {
-      if (route.request().method() !== 'GET') return route.fallback();
-      const body: LinuxAliasData = {
-        state: 'claimed',
-        domain: DOMAIN,
-        alias: ALIAS,
-        email: aliasEmail,
-        forwardTo: null,
-        primaryEmail: PRIMARY_EMAIL,
-        forwardAuthRequired: true,
-        // No authorizeUrl — Flow C is unconfigured server-side.
-      };
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
-    });
+    await stubClaimedNeedsReauth(page);
+    await gotoIdentitiesAndExpectClaimedPanel(page);
 
-    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
-    await expect(page).not.toHaveURL(/auth0\.com/);
-
-    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('linux-email-forward-reauth')).toBeVisible();
     await expect(page.getByTestId('linux-email-forward-reauth-copy')).toContainText("re-authorization isn't available right now");
     await expect(page.getByTestId('linux-email-forward-reauth-button')).not.toBeAttached();
