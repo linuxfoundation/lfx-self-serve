@@ -3,7 +3,7 @@
 
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, output, Signal } from '@angular/core';
-import { DecoratedAvailableIncentive, RewardPromotion } from '@lfx-one/shared/interfaces';
+import { DecoratedAvailableIncentive, RewardPromotion, RewardSourceAvailability } from '@lfx-one/shared/interfaces';
 import { decorateAvailableIncentives } from '@lfx-one/shared/utils';
 
 import { ButtonComponent } from '@components/button/button.component';
@@ -19,6 +19,8 @@ export class AvailableIncentivesComponent {
   public readonly incentives = input.required<readonly RewardPromotion[]>();
   public readonly programStartDate = input<string | null>(null);
   public readonly redeemingUids = input<Record<string, boolean>>({});
+  public readonly availability = input.required<RewardSourceAvailability>();
+  public readonly readOnly = input(false);
 
   // ─── Outputs ───────────────────────────────────────────────────────────────
   public readonly copy = output<string>();
@@ -33,6 +35,7 @@ export class AvailableIncentivesComponent {
   }
 
   protected onClaim(incentive: RewardPromotion): void {
+    if (this.readOnly()) return;
     this.claim.emit(incentive);
   }
 

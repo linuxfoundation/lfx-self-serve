@@ -7,7 +7,7 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthenticationError } from '../errors';
 import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
 import { logger } from '../services/logger.service';
-import { clearImpersonationSession, decodeJwtPayload } from '../utils/auth-helper';
+import { clearImpersonationSession, decodeJwtPayload, hasActiveImpersonationSession } from '../utils/auth-helper';
 import { exchangeRefreshTokenForAudience } from '../utils/refresh-token-exchange.util';
 
 const crowdfundingAuthService = new CrowdfundingAuthService();
@@ -54,6 +54,11 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Anchored to a single trailing segment (no deeper route exists) so a nested path fails closed to `required`.
   { pattern: /^\/foundations\/[^/]+\/groups\/?$/, type: 'ssr', auth: 'optional' },
   { pattern: /^\/projects\/[^/]+\/groups\/?$/, type: 'ssr', auth: 'optional' },
+
+  // Public project calendar (LFXV2-3340) — month/week view of a project's public meetings, optionally
+  // scoped to one committee via `?committee=`. Same single-segment anchoring as the group directories
+  // above (no deeper route exists) so a nested path fails closed to `required`.
+  { pattern: /^\/projects\/[^/]+\/calendar\/?$/, type: 'ssr', auth: 'optional' },
 
   // Flow C callback via /passwordless/callback — needs session auth but no bearer token
   { pattern: '/passwordless/callback', type: 'ssr', auth: 'required', tokenRequired: false },
@@ -205,6 +210,7 @@ function checkAuthentication(req: Request): boolean {
  */
 async function extractBearerToken(req: Request, isOptionalRoute: boolean = false): Promise<TokenExtractionResult> {
   const startTime = Date.now();
+  req.impersonationActive = false;
 
   try {
     if (req.oidc?.isAuthenticated()) {
@@ -222,6 +228,7 @@ async function extractBearerToken(req: Request, isOptionalRoute: boolean = false
           clearImpersonationSession(req);
         } else {
           req.bearerToken = impersonationToken;
+          req.impersonationActive = true;
 
           logger.debug(req, 'impersonation_request', 'Request under impersonation', {
             path: req.path,
@@ -537,6 +544,7 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
     try {
       // 1. Route classification
       const routeConfig = classifyRoute(req.path, config);
+      req.impersonationActive = routeConfig.auth === 'public' ? false : hasActiveImpersonationSession(req);
 
       logger.debug(req, 'auth_middleware', 'Starting authentication check', {
         path: req.path,

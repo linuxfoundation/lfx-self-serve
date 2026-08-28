@@ -7,6 +7,7 @@ declare global {
       bearerToken?: string;
       apiGatewayToken?: string;
       crowdfundingToken?: string;
+      impersonationActive?: boolean;
       appSession?:
         | {
             profileAccessToken?: string;

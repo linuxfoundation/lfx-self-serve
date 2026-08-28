@@ -7,6 +7,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { SkeletonModule } from 'primeng/skeleton';
 
 import { OrgOverviewFoundationsAndProjectsComponent } from '../components/org-overview-foundations-and-projects/org-overview-foundations-and-projects.component';
@@ -14,7 +15,7 @@ import { OrgOverviewInvolvementComponent } from '../components/org-overview-invo
 
 @Component({
   selector: 'lfx-org-overview',
-  imports: [TagComponent, SkeletonModule, OrgOverviewInvolvementComponent, OrgOverviewFoundationsAndProjectsComponent],
+  imports: [TagComponent, SkeletonModule, OpenIntercomDirective, OrgOverviewInvolvementComponent, OrgOverviewFoundationsAndProjectsComponent],
   templateUrl: './org-overview.component.html',
 })
 export class OrgOverviewComponent {

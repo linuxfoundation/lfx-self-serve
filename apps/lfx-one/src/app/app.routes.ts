@@ -507,6 +507,12 @@ export const routes: Routes = [
     path: 'projects/:projectSlug/groups',
     loadComponent: () => import('./modules/groups/public-project-groups/public-project-groups.component').then((m) => m.PublicProjectGroupsComponent),
   },
+  // Public project calendar — month/week calendar of a project's public meetings, optionally scoped
+  // to a single committee via ?committee=<uid> (no auth required).
+  {
+    path: 'projects/:projectSlug/calendar',
+    loadComponent: () => import('./modules/meetings/public-project-calendar/public-project-calendar.component').then((m) => m.PublicProjectCalendarComponent),
+  },
   // Invite acceptance — authGuard preserves ?token= through the Auth0 login redirect.
   {
     path: 'invite',

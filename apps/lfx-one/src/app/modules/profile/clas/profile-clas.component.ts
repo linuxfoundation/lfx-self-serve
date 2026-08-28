@@ -72,6 +72,20 @@ export class ProfileClasComponent {
   /** Dark-launch for the M2 overlay. Default off — LaunchDarkly targeting is the rollout switch. */
   protected readonly myClasM2Enabled = this.featureFlagService.getBooleanFlag(MY_CLAS_M2_ENABLED_FLAG, false);
 
+  /**
+   * Read-only when impersonating — a signature and a CLA-manager request are binding acts that
+   * would be recorded against the target rather than the administrator, so the server refuses
+   * them (`blockDuringImpersonation` on `POST /api/me/clas/prepare-sign` and
+   * `POST /api/me/clas/:signatureId/cla-manager-requests`).
+   *
+   * Sign CLA and the row's write actions are therefore disabled rather than withheld, so an
+   * administrator can see the action exists and read why it is unavailable — the treatment every
+   * other impersonation-blocked control on the profile gets. Download PDF stays enabled: it is a
+   * read, and retrieving the signed document is the one thing an administrator legitimately
+   * needs on someone else's row.
+   */
+  protected readonly impersonating = this.userService.impersonating;
+
   // signatureID currently resolving a PDF URL (drives the row's spinner + guards double-clicks).
   protected readonly downloadingId = signal<string | null>(null);
 
@@ -93,22 +107,13 @@ export class ProfileClasComponent {
   protected readonly isEmpty = computed(() => isMyClasEmpty(this.state().loaded, this.state().error, this.agreements().length));
 
   /**
-   * The table's only binding source. Recomputes when the agreement list changes and not
-   * otherwise, which is also what keeps each row's `MenuItem[]` referentially stable —
-   * a fresh model per change-detection pass makes the PrimeNG popup miss the first click.
+   * The table's only binding source. Recomputes when the agreement list or the two session flags
+   * it reads change, and not otherwise, which is what keeps each row's `MenuItem[]` referentially
+   * stable — a fresh model per change-detection pass makes the PrimeNG popup miss the first click.
    */
   protected readonly rows: Signal<ClaRow[]> = this.initRows();
 
   // --- Sign CLA hand-off (#1251) -------------------------------------------
-
-  /**
-   * Offered only when M2 is on and the session is not impersonating. Impersonation is
-   * read-only by platform rule, and a signature is a binding act that would be recorded against
-   * the target rather than the administrator who performed it. Hiding it here avoids offering
-   * an action that cannot succeed; the server, not this flag, is the impersonation guard.
-   * `my-clas-m2-enabled` is the product gate — off, this page is the M1 list.
-   */
-  protected readonly canSign = computed(() => this.myClasM2Enabled() && !this.userService.impersonating());
 
   protected retry(): void {
     this.refresh$.next();
@@ -134,7 +139,10 @@ export class ProfileClasComponent {
    * dialog rule and the sibling profile tabs.
    */
   protected openSignDialog(): void {
-    if (!this.myClasM2Enabled() || this.starting() || this.signDialogOpen()) return;
+    // `impersonating()` is re-checked here and not only on the button: the button is now rendered
+    // rather than withheld, so a keyboard or programmatic activation can reach this method, and
+    // opening the picker would walk the administrator to a prepare the server refuses.
+    if (!this.myClasM2Enabled() || this.impersonating() || this.starting() || this.signDialogOpen()) return;
     this.signDialogOpen.set(true);
 
     const dialogRef = this.dialogService.open(ClaGroupSelectComponent, {
@@ -230,11 +238,11 @@ export class ProfileClasComponent {
   }
 
   /**
-   * Routes on how many accounts are linked.
+   * Routes on whether any account is linked at all: none goes to linking, any number is asked.
    *
-   * One account skips the dialog but still prepares — the screen is what is unnecessary when
-   * there is nothing to choose between, not the identity step. Dropping the prepare too would
-   * leave exactly the contributors this feature was built for on the old unpredictable path.
+   * A single account is asked for too. What the screen carries is which identity the signature
+   * will be recorded against, and a list of one says that as plainly as a list of two — so there
+   * is something to show even where there is nothing to choose between.
    */
   private chooseAccountThenSign(option: ClaGroupOption, accounts: GithubAccountOption[]): void {
     if (accounts.length === 0) {
@@ -243,16 +251,11 @@ export class ProfileClasComponent {
       return;
     }
 
-    if (accounts.length === 1) {
-      this.prepareThenHandOff(option, accounts[0]);
-      return;
-    }
-
     this.starting.set(false);
     this.signDialogOpen.set(true);
 
     const dialogRef = this.dialogService.open(GithubAccountSelectComponent, {
-      header: 'Choose a GitHub account',
+      header: 'Select a GitHub account',
       width: '32rem',
       modal: true,
       closable: true,
@@ -408,8 +411,11 @@ export class ProfileClasComponent {
    * An invalidated ICLA also has no ⋮, matching the v17-after-legal HTML (FDC3): empty
    * `actionscell` even when a PDF exists. Invalidated ECLA is not drawn there and still
    * keeps Request Removal.
+   *
+   * `impersonating` greys out the write actions the two factories emit; Download PDF is built
+   * without it, so the one action an administrator needs on someone else's row survives.
    */
-  private buildRowMenuItems(agreement: MyClaAgreement): MenuItem[] {
+  private buildRowMenuItems(agreement: MyClaAgreement, impersonating: boolean): MenuItem[] {
     if (agreement.status === 'revoked' || (agreement.kind === 'ICLA' && agreement.status === 'invalidated')) {
       return [];
     }
@@ -430,8 +436,8 @@ export class ProfileClasComponent {
           icon: 'fa-light fa-download',
           disabled: true,
         },
-        ...buildContactClaManagerMenuItems(agreement, this.dialogService),
-        ...buildManageInCclaConsoleMenuItems(agreement),
+        ...buildContactClaManagerMenuItems(agreement, this.dialogService, impersonating),
+        ...buildManageInCclaConsoleMenuItems(agreement, impersonating),
       ];
     }
     return [];
@@ -461,8 +467,9 @@ export class ProfileClasComponent {
   private initRows(): Signal<ClaRow[]> {
     return computed(() => {
       const m2 = this.myClasM2Enabled();
+      const impersonating = this.impersonating();
       return this.agreements().map((agreement) => {
-        const menuItems = m2 ? this.buildRowMenuItems(agreement) : [];
+        const menuItems = m2 ? this.buildRowMenuItems(agreement, impersonating) : [];
         return {
           id: agreement.id,
           agreement,

@@ -25,7 +25,8 @@
       </div>
       <h2 class="text-base font-semibold text-gray-900" data-testid="org-overview-no-access-title">Organization Lens is not available</h2>
       <p class="max-w-md text-sm text-gray-600" data-testid="org-overview-no-access-description">
-        Organization Lens is only available for an organization's administrators. If you believe you should have access, please contact us.
+        Organization Lens is only available for an organization's administrators. If you believe you should have access, please
+        <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-overview-no-access-contact-support">contact us</button>.
       </p>
     </section>
   } @else if (!loaded()) {
@@ -58,7 +59,8 @@
       } @else {
         <p class="max-w-md text-sm text-gray-600" data-testid="org-overview-empty-description">
           We couldn't find any organizations you have access to in this environment. If you expect to see one or more here, double-check your invite status with
-          your admin or contact support.
+          your admin or
+          <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-overview-empty-contact-support">contact support</button>.
         </p>
       }
     </section>
