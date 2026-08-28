@@ -177,4 +177,40 @@ describe('ProfileLayoutComponent — Flow C error message ownership (#1935)', ()
       })
     );
   });
+
+  it('does not toast an inherited Object.prototype key as an error message', async () => {
+    // Regression guard: params['error'] is unvalidated input — a plain-object lookup without
+    // an own-property check would resolve 'toString' to Object.prototype.toString (truthy).
+    const add = vi.fn();
+    const userServiceMock = {
+      user: signal({ user_id: 'u1' } as unknown as User),
+      impersonating: signal(false),
+      uploadedAvatarUrl: signal<string | null>(null),
+      effectiveAvatarUrl: computed(() => ''),
+      identitiesRefresh$: EMPTY,
+      getCurrentUserProfile: vi.fn(() => of({ user: {}, profile: null } as unknown as CombinedProfile)),
+      updateUserProfile: vi.fn(() => of({})),
+      getIdentities: vi.fn(() => of([])),
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { queryParams: of({ error: 'toString' }) } },
+        { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(add).not.toHaveBeenCalled();
+  });
 });

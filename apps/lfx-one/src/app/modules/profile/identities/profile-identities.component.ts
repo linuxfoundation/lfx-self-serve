@@ -92,14 +92,17 @@ export class ProfileIdentitiesComponent implements OnInit {
     } else if (params['error'] === 'already_linked') {
       this.conflictDetected.set(true);
       this.clearQueryParams();
-    } else if (params['error']) {
+    } else if (typeof params['error'] === 'string') {
+      const errorCode = params['error'];
       // Flow C (/passwordless/callback) codes are owned by ProfileLayoutComponent, which is
       // alive on this route and already toasts them — skip here to avoid a double toast.
-      if (PROFILE_AUTH_ERROR_MESSAGES[params['error']]) return;
+      // hasOwn guard: errorCode is unvalidated user input — an inherited Object.prototype key
+      // (e.g. 'toString') would otherwise resolve as a truthy hit in either map below.
+      if (Object.hasOwn(PROFILE_AUTH_ERROR_MESSAGES, errorCode)) return;
       this.messageService.add({
         severity: 'error',
         summary: 'Error',
-        detail: IDENTITY_LINK_ERROR_MESSAGES[params['error']] || 'An error occurred. Please try again.',
+        detail: Object.hasOwn(IDENTITY_LINK_ERROR_MESSAGES, errorCode) ? IDENTITY_LINK_ERROR_MESSAGES[errorCode] : 'An error occurred. Please try again.',
       });
       this.clearQueryParams();
     }

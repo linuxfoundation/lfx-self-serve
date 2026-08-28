@@ -162,8 +162,11 @@ export class ProfileLayoutComponent {
         this.clearAuthQueryParams();
       }
 
-      const authErrorMessage = PROFILE_AUTH_ERROR_MESSAGES[params['error']];
-      if (authErrorMessage) {
+      // hasOwn guard: params['error'] is unvalidated user input — an inherited Object.prototype
+      // key (e.g. 'toString') would otherwise resolve as a truthy, non-string "message".
+      const errorCode = params['error'];
+      if (typeof errorCode === 'string' && Object.hasOwn(PROFILE_AUTH_ERROR_MESSAGES, errorCode)) {
+        const authErrorMessage = PROFILE_AUTH_ERROR_MESSAGES[errorCode];
         // Clear any stash from the redirect that failed — otherwise it outlives this failed
         // attempt and gets replayed by the next unrelated Flow C success (see handleProfileAuthReturn).
         if (isPlatformBrowser(this.platformId)) {

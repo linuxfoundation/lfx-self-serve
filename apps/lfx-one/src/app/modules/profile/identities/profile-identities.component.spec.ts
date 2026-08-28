@@ -69,4 +69,11 @@ describe('ProfileIdentitiesComponent — Flow C vs identity-link error ownership
     const { add } = await setup({ error: 'zzz_unknown' });
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'An error occurred. Please try again.' }));
   });
+
+  it('treats an inherited Object.prototype key as unmapped rather than a truthy hit', async () => {
+    // Regression guard: without an own-property check, 'toString' would resolve to
+    // Object.prototype.toString in both maps — wrongly suppressing the toast here.
+    const { add } = await setup({ error: 'toString' });
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'An error occurred. Please try again.' }));
+  });
 });

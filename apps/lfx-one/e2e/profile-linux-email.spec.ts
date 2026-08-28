@@ -230,6 +230,40 @@ test.describe('Linux.com email — forwarding target visibility', () => {
   });
 });
 
+test.describe('Linux.com email — forward re-auth (#1935)', () => {
+  test('shows the re-auth panel instead of the blank select when the forward target could not be read', async ({ page }) => {
+    // Pre-latch the one-shot redirect guard so the page renders the recoverable panel
+    // instead of immediately bouncing to authorizeUrl.
+    await page.addInitScript(() => sessionStorage.setItem('linux-email:forward-reauth-attempted', '1'));
+    await stubIdentities(page);
+    const aliasEmail = `${ALIAS}@${DOMAIN}`;
+    await page.route('**/api/profile/linux-email', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: LinuxAliasData = {
+        state: 'claimed',
+        domain: DOMAIN,
+        alias: ALIAS,
+        email: aliasEmail,
+        forwardTo: null,
+        primaryEmail: PRIMARY_EMAIL,
+        forwardAuthRequired: true,
+        authorizeUrl: 'https://app.dev.lfx.dev/api/profile/auth/start?returnTo=/profile/identities',
+      };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-forward-reauth')).toBeVisible();
+    await expect(page.getByTestId('linux-email-forward-reauth-button')).toBeVisible();
+    await expect(page.getByTestId('linux-email-forward-select')).not.toBeAttached();
+    await expect(page.getByTestId('linux-email-forward-empty')).not.toBeAttached();
+  });
+});
+
 test.describe('Linux.com email — service unavailable', () => {
   test('renders the whole-tab retry panel when the alias service is unavailable', async ({ page }) => {
     // getLinuxAlias reads user_emails.read server-side; when that (or any downstream

@@ -176,7 +176,13 @@
                         <i class="fa-light fa-triangle-exclamation shrink-0"></i>
                         <span class="text-sm font-semibold">Forwarding address unavailable</span>
                       </div>
-                      <p class="text-sm font-normal text-gray-900">We couldn't read your current forwarding address. Re-authorize to view and change it.</p>
+                      <p class="text-sm font-normal text-gray-900">
+                        @if (forwardAuthorizeUrl()) {
+                          We couldn't read your current forwarding address. Re-authorize to view and change it.
+                        } @else {
+                          We couldn't read your current forwarding address, and re-authorization isn't available right now. Please try again later.
+                        }
+                      </p>
                       @if (forwardAuthorizeUrl()) {
                         <lfx-button
                           size="small"
@@ -198,7 +204,7 @@
                   <p class="text-xs text-gray-500">
                     @if (impersonating()) {
                       Forwarding details aren't available while impersonating.
-                    } @else if (forwardNotSet()) {
+                    } @else if (forwardNotSet() && forwardOptions().length) {
                       Forwarding isn't set yet — choose an address.
                     } @else if (forwardOptions().length && hasForwardOptions()) {
                       Choose one of your verified email addresses.
