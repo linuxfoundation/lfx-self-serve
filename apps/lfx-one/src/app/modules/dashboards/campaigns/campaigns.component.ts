@@ -11,12 +11,14 @@ import {
   CAMPAIGN_PROGRAM_TYPES,
   CAMPAIGN_TABS,
   EMAIL_BRIEF_REQUIRED_HINT,
+  CAMPAIGN_JOB_POLL_INTERVAL_MS,
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
   CampaignAudience,
+  CampaignJobOutcome,
   EmailBriefCopy,
   CampaignCreateRequest,
   CampaignBriefPersistenceState,
@@ -34,7 +36,7 @@ import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { firstValueFrom, skip, take } from 'rxjs';
+import { firstValueFrom, skip, Subscription, take } from 'rxjs';
 
 import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
 import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
@@ -332,6 +334,9 @@ export class CampaignsComponent {
    * subscription. A mismatch means the result is for a superseded brief and is dropped — the
    * newer owner of the signal has already set the state it wants.
    */
+  /** The in-flight staging poll, so a second Stage cannot leave two pollers racing. */
+  private stagingJobSubscription: Subscription | null = null;
+
   private briefPersistenceGeneration = 0;
 
   /**
@@ -718,6 +723,9 @@ export class CampaignsComponent {
   /** Message for a failed or disabled build — empty while idle or in flight. */
   protected readonly emailAudienceMessage = signal<string>('');
 
+  /** Shared so the three email blocks that need a brief cannot drift apart. */
+  protected readonly briefRequiredHint = EMAIL_BRIEF_REQUIRED_HINT;
+
   /**
    * The brief id the email side has established, if any.
    *
@@ -725,9 +733,6 @@ export class CampaignsComponent {
    * `briefPersistence().briefId` to read. Staging persists on demand and records the id here so a
    * subsequent audience build — which is brief-scoped upstream — has one without persisting twice.
    */
-  /** Shared so the three email blocks that need a brief cannot drift apart. */
-  protected readonly briefRequiredHint = EMAIL_BRIEF_REQUIRED_HINT;
-
   protected readonly emailBriefId = signal<string>('');
 
   /** The chosen template's id — what `hubspotConfig.sourceEmailId` takes on create. */
@@ -932,6 +937,12 @@ export class CampaignsComponent {
         this.emailChannelEnabled.set(null);
         this.emailTemplatesError.set(null);
         this.selectedEmailTemplateId.set('');
+        // The brief-derived state too. `emailBriefId` is scoped to a (project, event) row, and
+        // `ensureEmailBriefId` returns the cached id when set -- so carrying it across a
+        // foundation switch points the audience build, the copy generation and the staged draft
+        // at the PREVIOUS foundation's brief while the page says the new one. Silently, because
+        // every call still succeeds against that row.
+        this.resetEmailBriefDerivedState();
         // Cleared with the rest: it names the project in the "not connected" copy, and the
         // previous foundation's slug must not survive into a message rendered under the new one.
         this.emailSearchProjectSlug.set('');
@@ -1385,8 +1396,19 @@ export class CampaignsComponent {
         return;
       }
 
-      this.emailStaging.set('done');
-      this.emailStagingMessage.set('Draft created in HubSpot. Review and send it from there.');
+      // POLL rather than trusting the ack. `createCampaign` answers 202 with a job id; the
+      // HubSpot clone, the audience resolution and the copy application all run in the background
+      // job, so reporting "Draft created" here claimed success for work that had not happened --
+      // a dispatcher failure read as a created draft. The paid path already polls
+      // (`implementation-tab`'s `pollJob`); this is the same contract for email.
+      if (!outcome.jobId) {
+        // No id to follow. Report the ack honestly rather than inventing an outcome.
+        this.emailStaging.set('error');
+        this.emailStagingMessage.set('Staging was accepted but returned nothing to track. Check HubSpot before retrying.');
+        return;
+      }
+
+      this.pollStagingJob(outcome.jobId, projectSlug);
     } catch {
       // The cause is not surfaced: a create failure can carry upstream detail, and the job
       // result collapses every dispatcher error to one string anyway.
@@ -1805,6 +1827,49 @@ export class CampaignsComponent {
   }
 
   /**
+   * Follow a staging job to a terminal state.
+   *
+   * `emailStaging` stays 'staging' until the job settles, so the panel shows work in progress
+   * rather than a success the dispatcher has not earned. Bounded the same way as the paid path:
+   * a job that never settles reports that rather than spinning forever, because a HubSpot draft
+   * may exist either way and the operator needs to be told to go look.
+   */
+  private pollStagingJob(jobId: string, projectSlug: string): void {
+    const MAX_POLLS = Math.ceil(300_000 / CAMPAIGN_JOB_POLL_INTERVAL_MS);
+    this.stagingJobSubscription?.unsubscribe();
+    this.stagingJobSubscription = this.campaignService
+      .getCreateResult(jobId, projectSlug)
+      .pipe(take(MAX_POLLS), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (outcome: CampaignJobOutcome | null) => {
+          // `null` is a still-running tick, not an answer.
+          if (!outcome) {
+            return;
+          }
+          if (outcome.errors.length > 0) {
+            this.emailStaging.set('error');
+            this.emailStagingMessage.set(outcome.errors[0]);
+            return;
+          }
+          this.emailStaging.set('done');
+          this.emailStagingMessage.set('Draft created in HubSpot. Review and send it from there.');
+        },
+        error: () => {
+          this.emailStaging.set('error');
+          this.emailStagingMessage.set('Lost track of the staging job. Check HubSpot before retrying.');
+        },
+        complete: () => {
+          // Ran out of polls without a terminal answer. A draft may exist; say so rather than
+          // leaving the panel spinning or claiming a success nothing confirmed.
+          if (this.emailStaging() === 'staging') {
+            this.emailStaging.set('error');
+            this.emailStagingMessage.set('Staging is taking longer than expected. Check HubSpot to see whether the draft was created.');
+          }
+        },
+      });
+  }
+
+  /**
    * Ensure the email brief is persisted and return its id.
    *
    * Email never persists on the Plan tab, but BOTH the audience build and campaign creation are
@@ -1820,7 +1885,19 @@ export class CampaignsComponent {
       return known;
     }
 
-    const persisted = await firstValueFrom(this.campaignService.persistBrief(brief, projectSlug));
+    // Name the row if this session already owns it. Briefs are keyed on (project, event) and
+    // SHARED across delivery types, so an event whose paid brief was generated or restored in
+    // this session already has a row -- and a first-save call, which sends no `brief_id`, is
+    // refused against it as `unowned-brief-exists`. That made the email channel unusable for
+    // every event the paid side had touched. `knownBriefIds` is the same ownership record the
+    // paid save consults; reading it here is what lets email REPLACE rather than only create.
+    // `null` when the brief has no event slug -- there is no row to own, so this falls through to
+    // a plain first save exactly as before.
+    const ownershipKey = this.ownershipKey(projectSlug, brief);
+    const owned = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
+    const persisted = await firstValueFrom(
+      this.campaignService.persistBrief(brief, projectSlug, owned?.id ?? null, owned?.etag ?? null, owned?.absence === 'overwrite')
+    );
     const briefId = persisted.briefId ?? '';
     if (briefId !== '') {
       this.emailBriefId.set(briefId);

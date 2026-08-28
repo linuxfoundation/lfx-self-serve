@@ -2125,6 +2125,29 @@ describe('CampaignServiceClient.buildAudience', () => {
     expect(result.audience?.status).toBe('building');
   });
 
+  it('keeps a controlled upstream message instead of saying "try again"', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(
+      new MicroserviceError('AI model is not configured; email copy generation is unavailable', 503, 'UNAVAILABLE')
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // A 503 for an unconfigured model never succeeds on a retry, so "Try again" sends the
+    // operator round a loop that cannot end. The upstream message names the actual remedy.
+    expect(result.error).toContain('not configured');
+  });
+
+  it('falls back to the generic message for an unexpected server error', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('panic: nil map read at 0x4f2a', 500, 'INTERNAL'));
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // An unexpected 500 can carry stack or infrastructure detail that is not the operator's to
+    // read, and "try again" is honest advice for it.
+    expect(result.error).not.toContain('panic');
+    expect(result.error).toContain('Try again');
+  });
+
   it('reports an error result rather than throwing when upstream fails', async () => {
     proxyRequestWithResponse.mockRejectedValueOnce(new Error('boom'));
 

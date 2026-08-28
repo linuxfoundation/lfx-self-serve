@@ -2640,6 +2640,78 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(request.hubspotConfig).toEqual({ sourceEmailId: 'hs-123' });
       expect(request.eventSlug).toBe('kubecon-eu-2026');
       expect(request.eventName).toBe('KubeCon EU 2026');
+      // 'staging', NOT 'done'. The create answers 202 with a job id and the HubSpot clone, the
+      // audience resolution and the copy application all run in the background job -- so the ack
+      // alone is not a created draft. This assertion said 'done' before polling landed, which is
+      // exactly the claim that made a dispatcher failure read as success.
+      expect(internals().emailStaging()).toBe('staging');
+    });
+
+    it('drops the brief-derived state when the foundation changes', async () => {
+      selectEmail();
+      internals().emailBriefId.set('brief-from-old-foundation');
+      internals().emailAudience.set({ id: 'aud-old', status: 'built' } as never);
+
+      TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-b', slug: 'foundation-b', name: 'Foundation B' }, false);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // `emailBriefId` names a row in the PREVIOUS foundation, and `ensureEmailBriefId` returns
+      // the cached id when set -- so carrying it across would point the audience build, the copy
+      // generation and the staged draft at the old foundation's brief while the page says the new
+      // one. Silently, because every call still succeeds against that row.
+      expect(internals().emailBriefId()).toBe('');
+      expect(internals().emailAudience()).toBeNull();
+    });
+
+    it('reuses a brief this session already owns instead of trying to create a second', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      const persist = vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockReturnValue(of({ enabled: true, briefId: 'brief-77' }) as never);
+      // The ownership record the PAID save writes when it generates or restores a brief.
+      (internals() as unknown as { knownBriefIds: Map<string, unknown> }).knownBriefIds.set(
+        (internals() as unknown as { ownershipKey(p: string, b: unknown): string }).ownershipKey('tlf', emailBrief),
+        { id: 'brief-77', etag: 'W/"3"' }
+      );
+
+      await (internals() as unknown as { ensureEmailBriefId(b: unknown, p: string): Promise<string> }).ensureEmailBriefId(emailBrief, 'tlf');
+
+      // Briefs are keyed on (project, event) and SHARED across delivery types, so a first-save
+      // call -- which sends no brief_id -- is refused as `unowned-brief-exists` against a row the
+      // paid side created. That made email unusable for every event paid had touched.
+      const [, , knownId, knownEtag] = persist.mock.calls[0] as unknown as [unknown, string, string | null, string | null];
+      expect(knownId).toBe('brief-77');
+      expect(knownEtag).toBe('W/"3"');
+    });
+
+    it('reports an error when the staging job FAILS after the ack', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailBriefId.set('brief-77');
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1', result: undefined, error: undefined }) as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(of({ campaigns: [], errors: ['hubspot refused the clone'] }) as never);
+
+      await internals().onStageEmailSend();
+
+      // The failure the ack hid: the draft was never created, and saying "Draft created in
+      // HubSpot" would send the operator looking for something that does not exist.
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingMessage()).toContain('hubspot refused the clone');
+    });
+
+    it('reports done once the staging job settles successfully', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailBriefId.set('brief-77');
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1', result: undefined, error: undefined }) as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(of({ campaigns: [], errors: [] }) as never);
+
+      await internals().onStageEmailSend();
+
       expect(internals().emailStaging()).toBe('done');
     });
 

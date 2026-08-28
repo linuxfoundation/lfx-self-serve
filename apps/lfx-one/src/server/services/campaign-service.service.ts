@@ -789,7 +789,7 @@ export class CampaignServiceClient {
       };
     } catch (error) {
       logger.warning(req, 'generate_email_copy', 'Email copy generation failed, returning an error result', { err: error });
-      return { enabled: true, error: 'The email copy could not be generated. Try again.' };
+      return { enabled: true, error: upstreamMessageOr(error, 'The email copy could not be generated. Try again.') };
     }
   }
 
@@ -848,7 +848,7 @@ export class CampaignServiceClient {
       };
     } catch (error) {
       logger.warning(req, 'build_audience', 'Audience build failed, returning an error result', { err: error });
-      return { enabled: true, error: 'The audience could not be built. Check the HubSpot connection and try again.' };
+      return { enabled: true, error: upstreamMessageOr(error, 'The audience could not be built. Check the HubSpot connection and try again.') };
     }
   }
 
@@ -1833,6 +1833,27 @@ function toUpstreamEventDetails(details: CampaignEventDetails): Record<string, u
     location: details.city,
     country: countryNameFor(details.countryCode),
   };
+}
+
+/**
+ * The upstream's own message when it is a CONTROLLED 4xx, otherwise the caller's generic fallback.
+ *
+ * Collapsing every failure to "Try again" told the operator the wrong thing about the failures
+ * that will never succeed on a retry: a 503 for an unconfigured AI model, a 409 naming which
+ * precondition is unmet. Those messages are written for a human and name the remedy, and this
+ * layer has nothing better to say than they do.
+ *
+ * 5xx OTHER than a deliberate 503 stays generic: an unexpected server error can carry stack or
+ * infrastructure detail that is not the operator's to read, and "try again" is honest advice for
+ * it. A transport failure has no upstream message at all and falls through the same way.
+ */
+function upstreamMessageOr(error: unknown, fallback: string): string {
+  if (!(error instanceof MicroserviceError)) {
+    return fallback;
+  }
+  const controlled = error.statusCode === 503 || (error.statusCode >= 400 && error.statusCode < 500);
+  const message = typeof error.message === 'string' ? error.message.trim() : '';
+  return controlled && message !== '' ? message : fallback;
 }
 
 /**
