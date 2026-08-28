@@ -7551,6 +7551,14 @@ export class ProjectService {
    * tree (GH-1676 review).
    */
 
+  private async acquireTraversalSlot(gate: { active: number; queue: (() => void)[] }): Promise<void> {
+    if (gate.active < FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY) {
+      gate.active += 1;
+      return;
+    }
+    return new Promise((resolve) => gate.queue.push(resolve));
+  }
+
   /**
    * Shared paginated fetch for all public projects, with ROOT filtered out.
    * Both `getProjects` (access-checked) and `getProjectSlugs` (slug-only) delegate here
@@ -7575,14 +7583,6 @@ export class ProjectService {
 
     // ROOT is an administrative pseudo-project used only for persona detection — never surface it in user lists.
     return resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
-  }
-
-  private async acquireTraversalSlot(gate: { active: number; queue: (() => void)[] }): Promise<void> {
-    if (gate.active < FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY) {
-      gate.active += 1;
-      return;
-    }
-    return new Promise((resolve) => gate.queue.push(resolve));
   }
 
   /** Releases a traversal slot acquired via {@link acquireTraversalSlot}, waking the next queued caller if any. */
