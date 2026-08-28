@@ -1833,6 +1833,11 @@ describe('CampaignsComponent — email delivery channel', () => {
     onTabKeydown(event: KeyboardEvent, index: number, owner: CampaignDeliveryType): void;
     onProceedToImplementation(brief: CampaignBriefOutput): void;
     onEmailProceedToImplementation(brief: CampaignBriefOutput): void;
+    selectedEmailTemplateId: WritableSignal<string>;
+    emailStaging: WritableSignal<'idle' | 'staging' | 'done' | 'error'>;
+    emailStagingMessage: WritableSignal<string>;
+    canStageEmail: Signal<boolean>;
+    onStageEmailSend(): Promise<void>;
     selectorForm: {
       controls: {
         deliveryType: { setValue(v: CampaignDeliveryType): void };
@@ -2174,6 +2179,120 @@ describe('CampaignsComponent — email delivery channel', () => {
     // Still the paid brief: a shared signal here would show an email brief under Paid
     // Marketing's Implement tab after a round-trip.
     expect(internals().briefOutput()).toEqual(exampleBrief);
+  });
+
+  describe('email staging trigger (LFXV2-3201)', () => {
+    // Scoped to THIS block: the outer `persistBrief` spy belongs to the first describe and is
+    // not in scope here.
+    let persistBrief: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      persistBrief = vi.fn();
+      vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persistBrief);
+    });
+
+    // A brief shaped like the email planner's output. `eventDetails` is what the create request
+    // is built FROM, so the fields asserted below must come from here and not from a spread.
+    const emailBrief = {
+      eventDetails: {
+        name: 'KubeCon EU 2026',
+        slug: 'kubecon-eu-2026',
+        countryCode: 'NL',
+        registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+      },
+    } as unknown as CampaignBriefOutput;
+
+    it('renders the button inside the email Implement panel, disabled with a reason', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+
+      const host: HTMLElement = fixture.nativeElement;
+      const panel = host.querySelector('[data-testid="campaigns-email-implementation-panel"]');
+      const btn = panel?.querySelector('[data-testid="campaigns-email-stage-btn"]');
+
+      // PLACEMENT is the claim: the button must live under the EMAIL implement panel, not the
+      // paid one. Querying from the panel rather than the document proves containment.
+      expect(btn).not.toBeNull();
+
+      // With no brief and no template the control must be disabled AND say why — a disabled
+      // button with no reason reads as a broken panel.
+      const hint = panel?.querySelector('[data-testid="campaigns-email-stage-hint"]');
+      expect(hint?.textContent?.trim()).toContain('Generate a brief');
+    });
+
+    it('cannot stage without a brief, a template, and a project', () => {
+      selectEmail();
+      expect(internals().canStageEmail()).toBe(false);
+
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+      // A brief alone is not enough: `hubspot.go` refuses a blank sourceEmailId.
+      expect(internals().canStageEmail()).toBe(false);
+
+      internals().selectedEmailTemplateId.set('hs-123');
+      fixture.detectChanges();
+      expect(internals().canStageEmail()).toBe(true);
+    });
+
+    it('persists the brief FIRST, then creates with the returned brief id', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: 'W/"1"' }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1', result: undefined, error: undefined }));
+
+      await internals().onStageEmailSend();
+
+      // The ORDER is the point: creation posts to /briefs/{id}/campaigns, so a create issued
+      // before the persist resolved would have no id to address.
+      expect(persistBrief).toHaveBeenCalled();
+      const [request, slug, briefId] = create.mock.calls[0];
+      expect(briefId).toBe('brief-77');
+      expect(slug).toBe('tlf');
+      // Asserts the VALUE and where it came from, not merely that create ran.
+      expect(request.platforms).toEqual(['hubspot']);
+      expect(request.hubspotConfig).toEqual({ sourceEmailId: 'hs-123' });
+      expect(request.eventSlug).toBe('kubecon-eu-2026');
+      expect(request.eventName).toBe('KubeCon EU 2026');
+      expect(internals().emailStaging()).toBe('done');
+    });
+
+    it('does NOT create when the persist returns no brief id', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', briefId: '', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+
+      await internals().onStageEmailSend();
+
+      // Creating without an id would post to /briefs//campaigns; refusing is the safe arm.
+      expect(create).not.toHaveBeenCalled();
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingMessage()).not.toBe('');
+    });
+
+    it('reports a create failure rather than claiming the draft was staged', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null }));
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(
+        of({ jobId: '', result: undefined, error: 'platform campaign creation failed' })
+      );
+
+      await internals().onStageEmailSend();
+
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingMessage()).toBe('platform campaign creation failed');
+    });
   });
 });
 

@@ -330,6 +330,47 @@
                   </ul>
                 }
               }
+
+              <!--
+                The create trigger LFXV2-3201 called for. Disabled rather than hidden when it
+                cannot fire, so the reason stays visible next to it — a button that vanishes when
+                no template is picked reads as a broken panel.
+
+                No campaign-row table follows, unlike the paid side: staging produces ONE HubSpot
+                draft with nothing left running, so rows would imply pause/resume controls that
+                `HubSpotDispatcher` does not implement.
+              -->
+              <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-stage">
+                <div class="flex items-center gap-3">
+                  <lfx-button
+                    label="Stage Email Draft"
+                    icon="fa-light fa-paper-plane"
+                    severity="primary"
+                    [disabled]="!canStageEmail()"
+                    [loading]="emailStaging() === 'staging'"
+                    (onClick)="onStageEmailSend()"
+                    data-testid="campaigns-email-stage-btn" />
+                  @if (!canStageEmail() && emailStaging() !== 'staging') {
+                    <span class="text-sm text-gray-500" data-testid="campaigns-email-stage-hint">
+                      @if (emailBriefOutput() === null) {
+                        Generate a brief on the Plan tab first.
+                      } @else if (selectedEmailTemplateId() === '') {
+                        Choose a template to clone.
+                      }
+                    </span>
+                  }
+                </div>
+                @if (emailStagingMessage(); as message) {
+                  <p
+                    class="text-sm"
+                    [class.text-green-700]="emailStaging() === 'done'"
+                    [class.text-red-700]="emailStaging() === 'error'"
+                    [attr.role]="emailStaging() === 'error' ? 'alert' : 'status'"
+                    data-testid="campaigns-email-stage-message">
+                    {{ message }}
+                  </p>
+                }
+              </div>
             </div>
           </div>
         }
