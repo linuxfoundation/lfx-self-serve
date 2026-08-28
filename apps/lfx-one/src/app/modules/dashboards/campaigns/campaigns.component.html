@@ -206,6 +206,71 @@
             channel not connected, search failed, searched-and-empty, and results.
           -->
             <div class="flex flex-col gap-4" data-testid="campaigns-email-implementation">
+              <!--
+                Email content generation — LFXV2-3198. Sits ABOVE the template picker because it
+                is the first thing an operator does: write the email, then choose what to clone it
+                into. The picker's "not connected" state does not block generation, so copy can be
+                drafted before HubSpot is wired up.
+              -->
+              <div class="flex flex-col gap-3" data-testid="campaigns-email-content">
+                <div class="flex flex-col gap-1">
+                  <h2 class="text-base font-semibold text-gray-900">Email content</h2>
+                  <p class="text-sm text-gray-500">Generated from the brief. Refine it in your own words and regenerate.</p>
+                </div>
+
+                @if (emailCopy(); as copy) {
+                  <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="campaigns-email-copy">
+                    <div class="flex flex-col gap-1">
+                      <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Subject</span>
+                      <p class="text-sm font-medium text-gray-900" data-testid="campaigns-email-copy-subject">{{ copy.subject }}</p>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Preview text</span>
+                      <p class="text-sm text-gray-600" data-testid="campaigns-email-copy-preview">{{ copy.previewText }}</p>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Body</span>
+                      <!--
+                        innerHTML is the point: the generator returns HTML sections and the operator
+                        needs to see the rendered email, not its markup. The content is produced by
+                        our own prompt through our own proxy, and Angular still sanitises it.
+                      -->
+                      <div class="prose prose-sm max-w-none text-sm text-gray-800" [innerHTML]="copy.bodyHtml" data-testid="campaigns-email-copy-body"></div>
+                    </div>
+                  </div>
+
+                  <div class="flex flex-col gap-2" data-testid="campaigns-email-refine">
+                    <label for="email-refine" class="text-sm font-medium text-gray-700">Refine</label>
+                    <textarea
+                      id="email-refine"
+                      rows="2"
+                      class="w-full rounded-md border border-gray-300 p-2 text-sm"
+                      placeholder="e.g. shorter, lead with the speaker line-up, drop the second paragraph"
+                      [value]="emailRefineText()"
+                      (input)="emailRefineText.set($any($event.target).value)"
+                      data-testid="campaigns-email-refine-input"></textarea>
+                  </div>
+                }
+
+                <div class="flex items-center gap-3">
+                  <lfx-button
+                    [label]="emailCopy() ? 'Regenerate' : 'Generate email content'"
+                    icon="fa-light fa-wand-magic-sparkles"
+                    severity="primary"
+                    [disabled]="!canGenerateEmailCopy()"
+                    [loading]="emailCopyState() === 'generating'"
+                    (onClick)="onGenerateEmailCopy()"
+                    data-testid="campaigns-email-generate-btn" />
+                  @if (emailBriefOutput() === null) {
+                    <span class="text-sm text-gray-500" data-testid="campaigns-email-generate-hint">Generate a brief on the Plan tab first.</span>
+                  }
+                </div>
+
+                @if (emailCopyError(); as message) {
+                  <p class="text-sm text-red-700" role="alert" data-testid="campaigns-email-copy-error">{{ message }}</p>
+                }
+              </div>
+
               <div class="flex flex-col gap-1">
                 <h2 class="text-base font-semibold text-gray-900">Choose a template to clone</h2>
                 <p class="text-sm text-gray-500">The send is created as a clone of one of your HubSpot marketing emails.</p>

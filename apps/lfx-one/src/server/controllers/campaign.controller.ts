@@ -19,6 +19,8 @@ import type {
   FlushableResponse,
   MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
+  GenerateEmailCopyRequest,
+  GenerateEmailCopyResponse,
 } from '@lfx-one/shared/interfaces';
 import {
   CAMPAIGN_DELIVERY_TYPES,
@@ -42,6 +44,7 @@ import { CampaignMetricsService, LinkedInMetricsService, MetaMetricsService, Red
 import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
+import { AiService } from '../services/ai.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
@@ -78,6 +81,7 @@ const NUMERIC_ID_RE = /^\d+$/;
 
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
+  private readonly aiService = new AiService();
   private readonly campaignServiceClient = new CampaignServiceClient();
   private readonly metricsService = new CampaignMetricsService();
   private readonly linkedInMetricsService = new LinkedInMetricsService();
@@ -520,6 +524,40 @@ export class CampaignController {
    * already shipped one graceful degradation that hid a 100%-failure integration behind a clean
    * UI. A user who is not told keeps working on a brief they believe is saved.
    */
+  /**
+   * Generate email copy for a brief — the `email-copy` endpoint LFXV2-3198 named.
+   *
+   * POST rather than GET because generation is not idempotent and a refine carries a body. It is
+   * also the refine route: `changeRequest` is the only thing that differs between a first
+   * generation and a regeneration, so one endpoint serves both and there is no second route to
+   * keep in step.
+   */
+  public async generateEmailCopy(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const body = req.body as GenerateEmailCopyRequest;
+
+    // Validated here rather than trusted from the client: the prompt instructs the model to use
+    // ONLY supplied facts, so an absent event name would produce a confidently invented one.
+    if (!body?.eventName || !body?.eventUrl) {
+      next(
+        ServiceValidationError.forField('eventName', 'eventName and eventUrl are required', {
+          operation: 'generate_email_copy',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'generate_email_copy', { eventName: body.eventName });
+
+    try {
+      const copy = await this.aiService.generateEmailCopy(req, body);
+      logger.success(req, 'generate_email_copy', startTime, {});
+      res.json({ copy } satisfies GenerateEmailCopyResponse);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public async persistBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
       // Every field is present rather than omitted so the response satisfies
