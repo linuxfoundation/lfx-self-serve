@@ -190,11 +190,11 @@ export class EventsService {
           -- The subquery is load-bearing: QUALIFY written directly after UNION ALL binds to
           -- the last SELECT block only, so the cross-branch dedup would never run (#1926).
           SELECT * FROM (
-            SELECT *, 1 AS source_priority FROM registered_events
+            SELECT *, 1 AS SOURCE_PRIORITY FROM registered_events
             UNION ALL
-            SELECT *, 2 AS source_priority FROM affiliated_upcoming
+            SELECT *, 2 AS SOURCE_PRIORITY FROM affiliated_upcoming
           )
-          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY source_priority) = 1
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY SOURCE_PRIORITY) = 1
         )
         SELECT
           e.EVENT_ID,
