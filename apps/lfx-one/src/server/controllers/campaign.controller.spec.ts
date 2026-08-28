@@ -20,6 +20,10 @@ const {
   toggleCampaignStatus,
   listBriefCampaigns,
   getBriefMetrics,
+  svcGetKeywords,
+  svcGetAudience,
+  legacyGetKeywords,
+  legacyGetAudience,
   legacyUpdateStatus,
   isServerFeatureEnabled,
   logger,
@@ -34,6 +38,10 @@ const {
   toggleCampaignStatus: vi.fn(),
   listBriefCampaigns: vi.fn(),
   getBriefMetrics: vi.fn(),
+  svcGetKeywords: vi.fn(),
+  svcGetAudience: vi.fn(),
+  legacyGetKeywords: vi.fn(),
+  legacyGetAudience: vi.fn(),
   legacyUpdateStatus: vi.fn(),
   isServerFeatureEnabled: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
@@ -55,6 +63,8 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public toggleCampaignStatus = toggleCampaignStatus;
       public listBriefCampaigns = listBriefCampaigns;
       public getBriefMetrics = getBriefMetrics;
+      public getGoogleAdsKeywords = svcGetKeywords;
+      public getGoogleAdsAudience = svcGetAudience;
     },
   };
 });
@@ -70,7 +80,10 @@ vi.mock('../services/campaign-proxy.service', () => ({
   },
 }));
 vi.mock('../services/campaign-metrics.service', () => ({
-  CampaignMetricsService: class {},
+  CampaignMetricsService: class {
+    public getKeywords = legacyGetKeywords;
+    public getAudience = legacyGetAudience;
+  },
   LinkedInMetricsService: class {},
   RedditMetricsService: class {},
   MetaMetricsService: class {},
@@ -1837,5 +1850,225 @@ describe('CampaignController.getBriefMetrics', () => {
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+/**
+ * The Google Ads insight reads behind `CampaignServiceInsights`.
+ *
+ * The conversion arithmetic has its own direct tests in `campaign-insights-mapper.spec.ts`.
+ * What is only decidable HERE is the layer boundary: which backend a request reaches, that the
+ * flag is read per-flag rather than as a blanket toggle, that the project the campaign-service
+ * arm scopes by is required rather than defaulted, and that a failure reaches the error
+ * middleware instead of being answered with a 200 the table renders as real data.
+ */
+describe('CampaignController Google Ads insight reads', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  /** Only the insights flag on. Everything else stays off so a blanket toggle cannot pass. */
+  const onlyInsights = (flag: string): boolean => String(flag) === 'LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS';
+
+  function insightsReq(query: Record<string, unknown>): Request {
+    return { body: {}, query, path: '/api/campaigns/keywords' } as unknown as Request;
+  }
+
+  const keywordsPayload = {
+    window: 'last_30_days',
+    row_count: 1,
+    truncated: true,
+    rows: [
+      {
+        criterion_id: '305729261',
+        ad_group_id: '176216228',
+        campaign_id: '555',
+        ad_group_name: 'Registration - Exact',
+        campaign_name: 'KubeCon NA 2026 - Search',
+        text: 'kubernetes training',
+        match_type: 'EXACT',
+        status: 'ENABLED',
+        impressions: 1000,
+        clicks: 40,
+        cost_micros: 25_000_000,
+        ctr: 0.04,
+        conversions: 12.5,
+        quality_score: 7,
+      },
+    ],
+  };
+
+  const audiencePayload = {
+    window: 'last_30_days',
+    bucket_count: 1,
+    buckets: [{ dimension: 'age', value: 'AGE_RANGE_25_34', impressions: 1000, clicks: 40, cost_micros: 25_000_000, ctr: 0.04, conversions: 12.5 }],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    svcGetKeywords.mockResolvedValue(keywordsPayload);
+    svcGetAudience.mockResolvedValue(audiencePayload);
+    legacyGetKeywords.mockResolvedValue({ pulledAt: 'x', days: 14, totalKeywords: 0, totals: {}, keywords: [] });
+    legacyGetAudience.mockResolvedValue({ pulledAt: 'x', days: 14, age: [], gender: [], device: [] });
+  });
+
+  describe('getKeywords', () => {
+    it('reads from campaign-service when the flag is on, and not from the legacy path', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getKeywords(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(svcGetKeywords).toHaveBeenCalledWith(expect.anything(), 'tlf', 'last_30_days');
+      // Asserted explicitly: a branch that called BOTH would still return the right body while
+      // doubling the upstream cost and keeping the leak this cutover exists to close.
+      expect(legacyGetKeywords).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('keeps the legacy path when the flag is off', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+
+      await controller.getKeywords(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(legacyGetKeywords).toHaveBeenCalled();
+      expect(svcGetKeywords).not.toHaveBeenCalled();
+    });
+
+    // The handler must read ITS OWN flag. With a blanket `mockReturnValue(true)` this test
+    // passes no matter which flag is checked, so the other flags are held OFF: a handler
+    // reading, say, CampaignServiceCreate would take the legacy arm and fail here.
+    it('routes on the insights flag specifically, not on any cutover flag', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: string) => !onlyInsights(flag));
+
+      await controller.getKeywords(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(legacyGetKeywords).toHaveBeenCalled();
+      expect(svcGetKeywords).not.toHaveBeenCalled();
+    });
+
+    // Not defaulted to a constant: campaign-service scopes by project and /foundation/campaigns
+    // is reachable by an ED of any foundation, so a fallback would report one foundation's
+    // keywords to another.
+    it('refuses a campaign-service read with no project rather than defaulting one', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getKeywords(insightsReq({ days: '30' }), res, next);
+
+      expect(svcGetKeywords).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('refuses a whitespace-only project', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getKeywords(insightsReq({ project: '   ', days: '30' }), res, next);
+
+      expect(svcGetKeywords).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
+    });
+
+    // The window sent upstream must be the one the requested days SNAP to, not the raw value.
+    it('sends the snapped window for an arbitrary day count', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getKeywords(insightsReq({ project: 'tlf', days: '9' }), res, next);
+
+      expect(svcGetKeywords).toHaveBeenCalledWith(expect.anything(), 'tlf', 'last_14_days');
+      // And the body reports the EFFECTIVE days, never the requested 9 — the number is shown
+      // beside the figures, so echoing 9 over a 14-day window mislabels the period.
+      expect(vi.mocked(res.json).mock.calls[0][0]).toMatchObject({ days: 14 });
+    });
+
+    it('converts the payload into the UI contract', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getKeywords(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      const body = vi.mocked(res.json).mock.calls[0][0] as { keywords: { spend: number; ctr: number; adGroup: string }[] };
+      // Spot-checked here rather than re-tested: the point is that the controller runs the
+      // conversion at all, not that the arithmetic is right, which the mapper spec pins.
+      expect(body.keywords[0].spend).toBe(25);
+      expect(body.keywords[0].ctr).toBe(4);
+      expect(body.keywords[0].adGroup).toBe('Registration - Exact');
+    });
+
+    // A failed read must not be answered with a 200. An empty keywords table is
+    // indistinguishable from a project that genuinely has no keywords, which is how an outage
+    // gets read as a measurement.
+    it('forwards an upstream failure to the error middleware instead of answering 200', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+      svcGetKeywords.mockRejectedValue(new Error('campaign-service unavailable'));
+
+      await controller.getKeywords(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getAudience', () => {
+    it('reads from campaign-service when the flag is on, and not from the legacy path', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getAudience(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(svcGetAudience).toHaveBeenCalledWith(expect.anything(), 'tlf', 'last_30_days');
+      expect(legacyGetAudience).not.toHaveBeenCalled();
+    });
+
+    it('keeps the legacy path when the flag is off', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+
+      await controller.getAudience(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(legacyGetAudience).toHaveBeenCalled();
+      expect(svcGetAudience).not.toHaveBeenCalled();
+    });
+
+    it('routes on the insights flag specifically, not on any cutover flag', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: string) => !onlyInsights(flag));
+
+      await controller.getAudience(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(legacyGetAudience).toHaveBeenCalled();
+      expect(svcGetAudience).not.toHaveBeenCalled();
+    });
+
+    it('refuses a campaign-service read with no project rather than defaulting one', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getAudience(insightsReq({ days: '30' }), res, next);
+
+      expect(svcGetAudience).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('regroups the flat bucket array into the three the UI renders', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getAudience(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      const body = vi.mocked(res.json).mock.calls[0][0] as { age: unknown[]; gender: unknown[]; device: unknown[] };
+      expect(body.age).toHaveLength(1);
+      expect(body.gender).toEqual([]);
+      expect(body.device).toEqual([]);
+    });
+
+    it('forwards an upstream failure to the error middleware instead of answering 200', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+      svcGetAudience.mockRejectedValue(new Error('campaign-service unavailable'));
+
+      await controller.getAudience(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
   });
 });

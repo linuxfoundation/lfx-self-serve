@@ -212,6 +212,36 @@ export enum ServerFeatureFlag {
   CampaignServiceStatusToggle = 'LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE',
 
   /**
+   * Gates the Google Ads keyword and audience READS (`getKeywords`, `getAudience` in
+   * `campaign.controller.ts`) on campaign-service instead of this BFF's own Google Ads calls.
+   *
+   * Unlike every other cutover flag, this one changes the NUMBERS rather than only the backend.
+   * The legacy queries in `campaign-metrics.service.ts` carry no campaign filter at all, so they
+   * report the whole shared Google Ads customer — every foundation's keywords and demographics,
+   * to whichever project happens to be on screen. Campaign-service scopes the identical reads to
+   * the project's own campaigns (`campaignScopePredicate`). Turning this on therefore makes the
+   * tables SMALLER, and that is the fix, not a regression: the larger figures were other
+   * foundations' spend. Say so when enabling it, because a reader who is not told will file the
+   * drop as a bug.
+   *
+   * A project with no campaign-service campaigns reads EMPTY rather than falling back, and that
+   * is deliberate. The fallback would be the account-wide read, which is the cross-tenant leak
+   * this flag exists to close — so an empty table is the honest answer for a project whose
+   * campaigns were never created through campaign-service.
+   *
+   * SAFE TO TURN OFF. Both routes are reads with no persisted state, so flipping back restores
+   * the previous behaviour exactly, leak included. That is the opposite of
+   * `CampaignServiceStatusToggle`, which does not come back off — no UUID-shaped id is involved
+   * here, so there is no id space that only one backend can address.
+   *
+   * Does NOT gate `executeKeywordActions`. That route MUTATES live keywords and its
+   * request/response shape does not line up with campaign-service's per-campaign,
+   * all-or-nothing endpoint, so it stays on the legacy path until that is reconciled — a
+   * separate change with a separate flag, because a write needs a rollback story a read does not.
+   */
+  CampaignServiceInsights = 'LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS',
+
+  /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and
    * `weekly-brief.service.ts`'s `shareToSlack` (the Slack send) server-side. `WG_WEEKLY_BRIEF_SLACK_FLAG`
    * (`wg-weekly-brief-slack`, an OpenFeature/GrowthBook flag) only gates the Angular UI — the

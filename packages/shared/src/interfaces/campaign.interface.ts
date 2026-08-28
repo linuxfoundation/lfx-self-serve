@@ -1236,6 +1236,75 @@ export interface AudienceDemographics {
 }
 
 // ---------------------------------------------------------------------------
+// Campaign-service insight reads (wire shapes)
+//
+// These mirror campaign-service's `google-ads-keywords` and `google-ads-audience` types
+// exactly, in ITS vocabulary rather than the UI's: snake_case keys, `cost_micros` instead of
+// a currency amount, a `window` token instead of a day count, and CTR as a FRACTION rather
+// than a percentage. They exist so the conversion into `KeywordMetricsResponse` /
+// `AudienceDemographics` is one explicit, testable step instead of an inline cast.
+//
+// Do not widen these toward the UI shapes. The gap between the two is exactly where the unit
+// conversions live, and collapsing them would let a micro-unit or a fraction reach a template
+// that formats it as a currency amount or a percentage — a wrong number that renders
+// perfectly.
+// ---------------------------------------------------------------------------
+
+export interface CampaignServiceKeywordRow {
+  criterion_id: string;
+  ad_group_id: string;
+  campaign_id: string;
+  ad_group_name: string;
+  campaign_name: string;
+  text: string;
+  match_type: string;
+  status: string;
+  impressions: number;
+  clicks: number;
+  /** Micro-units of the account's native currency: divide by 1e6 for a currency amount. */
+  cost_micros: number;
+  /** A FRACTION (0.045), not a percentage. */
+  ctr: number;
+  conversions: number;
+  /**
+   * ABSENT when Google has not rated the keyword yet — normal for one with few impressions.
+   * Optional rather than nullable because campaign-service omits the key entirely, and 0 is
+   * off the 1-10 scale, so a caller must render absence as unknown and never as a low score.
+   */
+  quality_score?: number;
+}
+
+export interface CampaignServiceKeywords {
+  window: CampaignMetricsWindow;
+  rows: CampaignServiceKeywordRow[];
+  row_count: number;
+  /**
+   * True when the project has more keywords than were returned. The rows are the TOP ones by
+   * impressions, so totalling them does not give the project's whole spend.
+   */
+  truncated: boolean;
+}
+
+export interface CampaignServiceAudienceBucket {
+  dimension: 'age' | 'gender' | 'device';
+  /** Google's own enum literal, e.g. `AGE_RANGE_25_34`. */
+  value: string;
+  impressions: number;
+  clicks: number;
+  cost_micros: number;
+  /** A FRACTION (0.045), not a percentage. */
+  ctr: number;
+  conversions: number;
+}
+
+export interface CampaignServiceAudience {
+  window: CampaignMetricsWindow;
+  /** Every bucket across all three breakdowns, discriminated by `dimension`. */
+  buckets: CampaignServiceAudienceBucket[];
+  bucket_count: number;
+}
+
+// ---------------------------------------------------------------------------
 // Optimization Insights
 // ---------------------------------------------------------------------------
 

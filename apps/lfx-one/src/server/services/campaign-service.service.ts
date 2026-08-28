@@ -10,6 +10,8 @@ import type {
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignMetricsWindow,
+  CampaignServiceAudience,
+  CampaignServiceKeywords,
   HubSpotEmailSearchResult,
   HubSpotMarketingEmail,
   CampaignEventDetails,
@@ -1156,6 +1158,68 @@ export class CampaignServiceClient {
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/metrics`,
+      'GET',
+      window ? { window } : undefined
+    );
+  }
+
+  /**
+   * Google Ads keyword performance for the project's OWN campaigns.
+   *
+   * ## This is narrower than the read it replaces
+   *
+   * The BFF's own query (`campaign-metrics.service.ts`) carries no campaign filter, so it
+   * reports the entire shared Google Ads customer — every foundation's keywords. This one is
+   * scoped upstream by `campaignScopePredicate`, so a project sees only its own. Fewer rows
+   * here is the correct answer, not a partial one.
+   *
+   * ## The window is a QUERY parameter
+   *
+   * Fifth argument, which is `query`; the sixth is the body. A window passed in the body
+   * position reaches the wire as no window at all — no type error, and campaign-service
+   * silently applies its own default instead of the one the caller asked for.
+   *
+   * ## `truncated` is not decoration
+   *
+   * Upstream caps the row set and reports whether more exist. A caller that totals the rows
+   * while ignoring the flag presents the top slice as the project's whole spend, so the flag
+   * travels with the rows rather than being dropped in conversion.
+   */
+  public async getGoogleAdsKeywords(req: Request, projectSlug: string, window?: CampaignMetricsWindow): Promise<CampaignServiceKeywords> {
+    if (projectSlug === '') {
+      // Refused rather than sent, for the reason getBriefMetrics refuses: an empty segment
+      // makes `/projects//google-ads/keywords`, a different route that 404s at the
+      // gateway — and a gateway 404 is not campaign-service saying the project has no keywords.
+      throw new Error('A keyword read requires the project it is scoped to.');
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceKeywords>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/google-ads/keywords`,
+      'GET',
+      window ? { window } : undefined
+    );
+  }
+
+  /**
+   * Google Ads age/gender/device breakdowns for the project's OWN campaigns.
+   *
+   * Same scoping and same query-parameter placement as `getGoogleAdsKeywords` above, and the
+   * same narrowing against the legacy account-wide read.
+   *
+   * The three breakdowns arrive as ONE flat array discriminated by `dimension`, not as three
+   * arrays. They are also not independently failable: upstream fails the whole request if any
+   * one breakdown fails, rather than returning the two that loaded — a partial demographic
+   * picture presented as a whole one is how a campaign gets re-targeted on half the data.
+   */
+  public async getGoogleAdsAudience(req: Request, projectSlug: string, window?: CampaignMetricsWindow): Promise<CampaignServiceAudience> {
+    if (projectSlug === '') {
+      throw new Error('An audience read requires the project it is scoped to.');
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceAudience>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/google-ads/audience`,
       'GET',
       window ? { window } : undefined
     );

@@ -43,6 +43,7 @@ import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
+import { toAudienceDemographics, toKeywordMetricsResponse, windowForDays } from '../services/campaign-insights-mapper';
 import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
@@ -829,13 +830,59 @@ export class CampaignController {
     }
   }
 
+  /**
+   * Keyword performance for the campaigns table.
+   *
+   * Behind `CampaignServiceInsights` this reads from campaign-service, scoped to the
+   * project's OWN campaigns; with the flag off it keeps the legacy account-wide Google Ads
+   * query. The cutover therefore makes the table SMALLER on a shared ad account, because the
+   * rows it drops belong to other foundations — see the flag's own docs.
+   *
+   * The project is REQUIRED on the campaign-service arm and not defaulted: campaign-service
+   * scopes by project, and `/foundation/campaigns` is reachable by an ED of any foundation,
+   * so a fallback constant would report one foundation's keywords to another. The legacy arm
+   * ignores the project entirely, which is precisely the leak being closed.
+   */
   public async getKeywords(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
-    const startTime = logger.startOperation(req, 'campaign_keywords', { days });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceInsights);
+    const startTime = logger.startOperation(req, 'campaign_keywords', { days, viaCampaignService });
 
     try {
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required to read keywords', {
+              operation: 'campaign_keywords',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        // The window is what campaign-service actually applies; effectiveDays is what the
+        // response reports. They must come from the same call — deriving the label separately
+        // is how a 30-day figure ends up labelled as 20 days.
+        const { window, effectiveDays } = windowForDays(days);
+        const payload = await this.campaignServiceClient.getGoogleAdsKeywords(req, projectSlug, window);
+        const data = toKeywordMetricsResponse(payload, effectiveDays, new Date().toISOString());
+
+        // `truncated` has no field in the UI contract, so it is logged rather than dropped
+        // silently: it is the difference between "this project has 50 keywords" and "here are
+        // the top 50 of more", and the table's totals mean different things in each case.
+        logger.success(req, 'campaign_keywords', startTime, {
+          viaCampaignService: true,
+          keywords: data.totalKeywords,
+          truncated: payload.truncated,
+        });
+        res.json(data);
+        return;
+      }
+
       const data = await this.metricsService.getKeywords(req, days);
-      logger.success(req, 'campaign_keywords', startTime, {});
+      logger.success(req, 'campaign_keywords', startTime, { viaCampaignService: false });
       res.json(data);
     } catch (error) {
       next(error);
@@ -1004,13 +1051,48 @@ export class CampaignController {
     }
   }
 
+  /**
+   * Age/gender/device breakdowns for the campaigns table.
+   *
+   * Same flag, same project requirement and same narrowing as `getKeywords` above.
+   *
+   * Campaign-service fails the whole read if any one breakdown fails rather than returning
+   * the two that loaded, so there is no partial-success arm to handle here: an error is an
+   * error, and a rendered pair of breakdowns is never a silently-missing third.
+   */
   public async getAudience(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
-    const startTime = logger.startOperation(req, 'campaign_audience', { days });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceInsights);
+    const startTime = logger.startOperation(req, 'campaign_audience', { days, viaCampaignService });
 
     try {
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required to read audience demographics', {
+              operation: 'campaign_audience',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        const { window, effectiveDays } = windowForDays(days);
+        const payload = await this.campaignServiceClient.getGoogleAdsAudience(req, projectSlug, window);
+        const data = toAudienceDemographics(payload, effectiveDays, new Date().toISOString());
+
+        logger.success(req, 'campaign_audience', startTime, {
+          viaCampaignService: true,
+          buckets: payload.bucket_count,
+        });
+        res.json(data);
+        return;
+      }
+
       const data = await this.metricsService.getAudience(req, days);
-      logger.success(req, 'campaign_audience', startTime, {});
+      logger.success(req, 'campaign_audience', startTime, { viaCampaignService: false });
       res.json(data);
     } catch (error) {
       next(error);
