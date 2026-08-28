@@ -61,7 +61,7 @@ export class ProjectController {
   }
 
   /**
-   * GET /projects/slugs
+   * GET /api/projects/slugs
    */
   public async getProjectSlugs(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_project_slugs');
