@@ -238,21 +238,16 @@ export class ProfileClasComponent {
   }
 
   /**
-   * Routes on how many accounts are linked.
+   * Routes on whether any account is linked at all: none goes to linking, any number is asked.
    *
-   * One account skips the dialog but still prepares — the screen is what is unnecessary when
-   * there is nothing to choose between, not the identity step. Dropping the prepare too would
-   * leave exactly the contributors this feature was built for on the old unpredictable path.
+   * A single account is asked for too. What the screen carries is which identity the signature
+   * will be recorded against, and a list of one says that as plainly as a list of two — so there
+   * is something to show even where there is nothing to choose between.
    */
   private chooseAccountThenSign(option: ClaGroupOption, accounts: GithubAccountOption[]): void {
     if (accounts.length === 0) {
       this.starting.set(false);
       this.sendToAccountLinking();
-      return;
-    }
-
-    if (accounts.length === 1) {
-      this.prepareThenHandOff(option, accounts[0]);
       return;
     }
 
