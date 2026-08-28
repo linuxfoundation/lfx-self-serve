@@ -277,6 +277,59 @@ describe('ProjectService — create picker methods', () => {
     });
   });
 
+  describe('getProjectSlugs', () => {
+    it('returns slug strings for all non-root projects', async () => {
+      proxyRequest.mockResolvedValueOnce(
+        pageOf([
+          { uid: 'a', slug: 'a' },
+          { uid: 'b', slug: 'b' },
+        ])
+      );
+
+      const result = await service.getProjectSlugs(req);
+
+      expect(result.sort()).toEqual(['a', 'b']);
+    });
+
+    it('excludes the ROOT pseudo-project without calling addAccessToResources', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root', slug: 'root' }]));
+
+      const result = await service.getProjectSlugs(req);
+
+      expect(result).toEqual([]);
+      expect(addAccessToResources).not.toHaveBeenCalled();
+    });
+
+    it('follows page_token across pages and returns accumulated slugs', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next-token'));
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'b', slug: 'b' }]));
+
+      const result = await service.getProjectSlugs(req);
+
+      expect(result.sort()).toEqual(['a', 'b']);
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', page_size: 500 });
+      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ type: 'project', page_size: 500, page_token: 'next-token' });
+    });
+
+    it('does not call addAccessToResources for a standard non-root project', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'x', slug: 'x' }]));
+
+      await service.getProjectSlugs(req);
+
+      expect(addAccessToResources).not.toHaveBeenCalled();
+    });
+
+    it('throws when a subsequent page fails (failOnPartial: true — partial slug set drops affiliations)', async () => {
+      // First page succeeds; second page fails. With failOnPartial: true the caller receives an
+      // error rather than a truncated slug list that silently misrepresents affiliation state.
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next-token'));
+      proxyRequest.mockRejectedValueOnce(new Error('page-fail'));
+
+      await expect(service.getProjectSlugs(req)).rejects.toThrow('page-fail');
+    });
+  });
+
   describe('getChildProjects', () => {
     it('queries parent=project:<uid> and filters to writer-permitted children', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'child-1', slug: 'child-1' }]));
