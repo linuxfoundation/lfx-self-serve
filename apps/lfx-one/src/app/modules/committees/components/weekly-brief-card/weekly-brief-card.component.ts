@@ -356,16 +356,20 @@ export class WeeklyBriefCardComponent {
           // Upstream marks nothing Required on the 202 envelope — a bare 202 with no
           // brief/throttle must not wipe what's already rendered (most visible on
           // Regenerate, where a real brief is on screen when this fires). Same reasoning
-          // extends to current_activity (GH-1922) and caller_rating: the brief actually shown
-          // here is still the pre-regenerate one (res.brief is only populated once generation
-          // completes) until pollUntilTerminal's first tick replaces it with a fresh GET, so
-          // both fields still correctly describe what's on screen and must carry forward
-          // rather than drop until that tick lands.
+          // extends to current_activity (GH-1922): this week's activity doesn't change just
+          // because a brief was requested, so it always carries forward regardless of whether
+          // res.brief itself landed. caller_rating is narrower: it describes specific brief
+          // content, so it only carries forward when res.brief is absent. Upstream's own
+          // contract documents brief as normally populated on this response (the new,
+          // just-created `state: 'generating'` revision, per GroupWeeklyBriefGenerateResult's
+          // description and its 202 example) — reusing the pre-regenerate rating against that
+          // new revision would misattribute, so this drops it whenever res.brief lands and
+          // lets the poll's first GET restore the correct value for that revision instead.
           this.briefResponse.update((prev) => ({
             brief: res.brief ?? this.brief(),
             throttle: res.throttle ?? this.throttle(),
             current_activity: prev?.current_activity,
-            caller_rating: prev?.caller_rating,
+            caller_rating: res.brief ? null : prev?.caller_rating,
           }));
           // On Regenerate, currentBrief.revision is the pre-regenerate revision — pollUntilTerminal
           // uses it to reject a first tick that reads back that same (stale) terminal brief instead

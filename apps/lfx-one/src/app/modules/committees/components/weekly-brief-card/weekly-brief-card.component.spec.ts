@@ -661,13 +661,47 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
 
     expect(generateWeeklyBrief).toHaveBeenCalled();
     // GenerateWeeklyBriefResponse has neither field at all — regenerating a brief doesn't change
-    // this week's activity, and the brief actually still on screen at this point is the
-    // pre-regenerate one (res.brief only lands once generation completes), so its rating is still
-    // accurate too. Both must survive the 202 handler rather than vanish until the next
-    // pollUntilTerminal tick lands.
+    // this week's activity, and a bare 202 (no res.brief) means the brief still on screen is
+    // genuinely the pre-regenerate one, so its rating is still accurate too. Both must survive
+    // the 202 handler rather than vanish until the next pollUntilTerminal tick lands.
     expect(component.hasCurrentActivityData()).toBe(true);
     expect(component.callerRating()).toBe('up');
     const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
     expect(el.textContent as string).toContain('1 meeting held');
+  });
+
+  it('drops (not carries forward) caller_rating when the 202 envelope itself already carries a new brief', async () => {
+    const generateWeeklyBrief = vi.fn(() =>
+      of({
+        brief: {
+          uid: 'brief-2',
+          committee_uid: 'committee-board',
+          window_start: '2026-08-02T00:00:00Z',
+          window_end: '2026-08-08T23:59:59Z',
+          state: 'generating',
+          brief_text: '',
+          source_refs: [],
+          prompt_version: 'v1',
+          model: 'test-model',
+          regeneration_count: 1,
+          private_source_present: false,
+          created_at: '2026-08-08T00:00:00Z',
+          updated_at: '2026-08-08T00:00:00Z',
+          revision: 2,
+        },
+      } as GenerateWeeklyBriefResponse)
+    );
+    await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync')], generateWeeklyBrief, 'up');
+    expect(component.callerRating()).toBe('up');
+
+    component.onGenerate();
+    await fixture.whenStable();
+
+    // The type allows a populated res.brief on the 202 — the old rating describes the
+    // pre-regenerate revision, not this new one, so it must NOT carry forward here (contrast
+    // the bare-202 case above, where it correctly does).
+    expect(component.callerRating()).toBeNull();
+    // current_activity is unaffected either way — it isn't scoped to a brief revision.
+    expect(component.hasCurrentActivityData()).toBe(true);
   });
 });

@@ -1166,17 +1166,22 @@ export class WeeklyBriefService {
    * load never pays for `getCommitteeActivity`'s own 9-call upstream fan-out. The gating read
    * itself is NOT free, though: `getCommitteeById` fans out to three upstream calls of its own
    * (base committee GET, settings, access-check) to read a `category` a plain GET would suffice
-   * for — every committee, governance or not, pays that regardless. Reusing the
-   * already-instantiated `committeeService` was a deliberate choice over a bare `proxyRequest`
-   * (the pattern `shareToSlack` uses below, for the same lightweight need): this method is
-   * invoked from every `getCurrentBrief` call, concurrently with `fetchBriefResponse`'s own
-   * `proxyRequest` call in live mode, and `proxyRequest` is a single shared mock this spec file's
-   * dozens of other describe blocks assert call counts/order against — a second, path-dispatched
-   * consumer of it would need surgical updates across all of them for a request-volume win with
-   * no correctness stake. Accepted as a known v1 cost, isolated to this one gating read. Fails
-   * soft to `undefined` (never an empty array) on any error, matching the client's existing
-   * absent-vs-present distinction between "couldn't determine" and "genuinely zero activity this
-   * week" (weekly-brief-card.component.ts's `hasCurrentActivityData`).
+   * for — every committee, governance or not, pays that regardless. Two cheaper alternatives were
+   * considered and both declined: a bare `proxyRequest` GET (the pattern `shareToSlack` uses
+   * above, for the same lightweight need) would run concurrently with `fetchBriefResponse`'s own
+   * `proxyRequest` call in live mode via the `Promise.all` above, and this spec file already has
+   * over a dozen order-sensitive `proxyRequest.mockResolvedValueOnce` queues elsewhere that a
+   * second, path-dispatched consumer risks silently shifting; `getCommitteesByIds` (a single
+   * batched query-service call, used by `getMyCommittees`/`getMyPendingInvitations` for the same
+   * "just need `category`" need) avoids that mock entirely, but that same call site falls back to
+   * `membership.committee_category` when the indexed `category` comes back empty — a reliability
+   * gap not investigated here, and a false negative on it would hide the tally for a real
+   * governance committee, worse than the extra calls this took instead. Reusing the
+   * already-instantiated `committeeService.getCommitteeById` accepts the known extra cost in
+   * exchange for the same category reliability every other governance-gated read in this codebase
+   * already trusts. Fails soft to `undefined` (never an empty array) on any error, matching the
+   * client's existing absent-vs-present distinction between "couldn't determine" and "genuinely
+   * zero activity this week" (weekly-brief-card.component.ts's `hasCurrentActivityData`).
    *
    * `limit: ACTIVITY_FEED_MAX_PAGE_SIZE` is a single, unfollowed page — `getCommitteeActivity`
    * hard-rejects any larger `limit`, so that's the ceiling one call can ever return. Deliberately
