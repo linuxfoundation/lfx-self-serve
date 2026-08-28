@@ -1026,7 +1026,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
  * cannot report on — exposed that assumption.
  *
  * Both failure modes end the same way: the Create button stays up and a retry writes ANOTHER
- * campaign into a namespace every foundation shares, with no duplicate check upstream.
+ * campaign into a namespace shared by everyone on that HubSpot account, no duplicate check upstream.
  */
 describe('PlanningTabComponent — HubSpot UTM states', () => {
   const foundationA = { uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' };
@@ -1089,7 +1089,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   }
 
   /**
-   * The create is the whole hazard: it writes into a namespace every foundation shares, and a
+   * The create is the whole hazard: it writes into a namespace shared account-wide, and a
    * capped search has not proved the campaign is absent. Both directions are asserted so the
    * guard cannot be satisfied by suppressing the button unconditionally.
    */
@@ -1263,7 +1263,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
 
   /**
    * A campaign that EXISTS but has no token is a real match. Offering to create it would
-   * duplicate a campaign that is already there, in a namespace shared by every foundation.
+   * duplicate a campaign that is already there, in a namespace shared account-wide.
    */
   it('does not offer to create a campaign that exists without a token', () => {
     runLookup({ found: true, hs_utm: null, campaign_name: 'KubeCon NA 2026', all_matches: [] });
@@ -1351,12 +1351,12 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * namespace is the whole LF portal, so a campaign created here is visible to every other
    * foundation's campaign managers — and the name is whatever event text the operator typed.
    */
-  it('warns that a created campaign is visible to every foundation', () => {
+  it('warns that a created campaign is visible to everyone on the connected account', () => {
     runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
 
     const warning = fixture.nativeElement.querySelector('[data-testid="planning-hubspot-global-warning"]');
     expect(warning).not.toBeNull();
-    expect(warning?.textContent).toMatch(/every foundation/i);
+    expect(warning?.textContent).toMatch(/everyone working in that account/i);
     // Paired positive: the Create button must still be offered, so this cannot pass merely
     // because the whole block failed to render.
     expect(fixture.nativeElement.querySelector('[data-testid="planning-hubspot-create-btn"]')).not.toBeNull();
