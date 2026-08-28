@@ -537,28 +537,6 @@ export class PlanningTabComponent implements OnInit {
     this.lookupHubSpot(event);
   }
 
-  /**
-   * Whether the panel still belongs to the event `capturedEvent` was captured for.
-   *
-   * Compares against the LIVE url field, not `lastLookedUpEvent`. The latter only updates when
-   * the 500ms debounced lookup fires, so between the user typing event B and that debounce
-   * elapsing it still names event A — and a create for A landing in that window would pass a
-   * `lastLookedUpEvent` check and write A's token into B's panel. The field is the earliest
-   * point at which the user's intent is visible, which is what makes it the right thing to
-   * compare. Same reasoning as restoreSavedBrief's guard.
-   */
-  private panelStillShows(capturedEvent: string): boolean {
-    const live = this.extractEventName(this.briefForm.controls.url.value.trim());
-    // The url can be empty or half-typed mid-edit, and extractEventName then yields something
-    // short that names no event. That is not evidence the user LEFT the event, so the captured
-    // value is kept rather than treated as stale — matching the length gate onUrlInput applies
-    // before it will issue a lookup at all.
-    if (live.length <= 3) {
-      return this.lastLookedUpEvent === capturedEvent;
-    }
-    return live === capturedEvent && this.lastLookedUpEvent === capturedEvent;
-  }
-
   protected createInHubSpot(): void {
     if (!this.lastLookedUpEvent) return;
     this.hsCreating.set(true);
@@ -1048,6 +1026,28 @@ export class PlanningTabComponent implements OnInit {
     } catch {
       return '';
     }
+  }
+
+  /**
+   * Whether the panel still belongs to the event `capturedEvent` was captured for.
+   *
+   * Compares against the LIVE url field, not `lastLookedUpEvent`. The latter only updates when
+   * the 500ms debounced lookup fires, so between the user typing event B and that debounce
+   * elapsing it still names event A — and a create for A landing in that window would pass a
+   * `lastLookedUpEvent` check and write A's token into B's panel. The field is the earliest
+   * point at which the user's intent is visible, which is what makes it the right thing to
+   * compare. Same reasoning as restoreSavedBrief's guard.
+   */
+  private panelStillShows(capturedEvent: string): boolean {
+    const live = this.extractEventName(this.briefForm.controls.url.value.trim());
+    // The url can be empty or half-typed mid-edit, and extractEventName then yields something
+    // short that names no event. That is not evidence the user LEFT the event, so the captured
+    // value is kept rather than treated as stale — matching the length gate onUrlInput applies
+    // before it will issue a lookup at all.
+    if (live.length <= 3) {
+      return this.lastLookedUpEvent === capturedEvent;
+    }
+    return live === capturedEvent && this.lastLookedUpEvent === capturedEvent;
   }
 
   private lookupHubSpot(eventName: string): void {
