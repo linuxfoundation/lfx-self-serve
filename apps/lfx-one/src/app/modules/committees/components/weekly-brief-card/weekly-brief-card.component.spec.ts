@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD } from '@lfx-one/shared/constants';
-import { Committee, GenerateWeeklyBriefResponse, WeeklyBriefCurrentResponse, WeeklyBriefSourceRef } from '@lfx-one/shared/interfaces';
+import { Committee, GenerateWeeklyBriefResponse, WeeklyBriefCurrentResponse, WeeklyBriefRating, WeeklyBriefSourceRef } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
@@ -467,7 +467,7 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
   }
 
   /** `activityRefs: null` omits `current_activity` entirely — simulates a server-side degrade (non-governance committee, or a failed lookup/fetch — see weekly-brief.service.ts#buildCurrentActivity). */
-  function briefResponse(activityRefs: WeeklyBriefSourceRef[] | null): WeeklyBriefCurrentResponse {
+  function briefResponse(activityRefs: WeeklyBriefSourceRef[] | null, callerRating: WeeklyBriefRating | null = null): WeeklyBriefCurrentResponse {
     return {
       brief: {
         uid: 'brief-1',
@@ -486,7 +486,7 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
         revision: 1,
       },
       throttle: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3, window_resets_at: '2026-08-09T00:00:00Z' },
-      caller_rating: null,
+      caller_rating: callerRating,
       ...(activityRefs !== null
         ? { current_activity: { window_start: '2026-08-24T00:00:00Z', window_end: '2026-08-27T12:00:00Z', source_refs: activityRefs } }
         : {}),
@@ -496,9 +496,10 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
   async function setup(
     committee: Committee,
     activityRefs: WeeklyBriefSourceRef[] | null,
-    generateWeeklyBrief: ReturnType<typeof vi.fn> = vi.fn()
+    generateWeeklyBrief: ReturnType<typeof vi.fn> = vi.fn(),
+    callerRating: WeeklyBriefRating | null = null
   ): Promise<void> {
-    getWeeklyBrief = vi.fn(() => of(briefResponse(activityRefs)));
+    getWeeklyBrief = vi.fn(() => of(briefResponse(activityRefs, callerRating)));
 
     await TestBed.configureTestingModule({
       imports: [WeeklyBriefCardComponent],
@@ -649,19 +650,23 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     expect(component.expandedActivityKinds().size).toBe(0);
   });
 
-  it('preserves current_activity through a generate/regenerate round-trip — the 202 envelope never carries it', async () => {
+  it('preserves current_activity and caller_rating through a generate/regenerate round-trip — the 202 envelope carries neither', async () => {
     const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
-    await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync')], generateWeeklyBrief);
+    await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync')], generateWeeklyBrief, 'up');
     expect(component.hasCurrentActivityData()).toBe(true);
+    expect(component.callerRating()).toBe('up');
 
     component.onGenerate();
     await fixture.whenStable();
 
     expect(generateWeeklyBrief).toHaveBeenCalled();
-    // GenerateWeeklyBriefResponse has no current_activity field at all — regenerating a brief
-    // doesn't change this week's activity, so the tally must survive the 202 handler rather than
-    // vanish until the next pollUntilTerminal tick lands.
+    // GenerateWeeklyBriefResponse has neither field at all — regenerating a brief doesn't change
+    // this week's activity, and the brief actually still on screen at this point is the
+    // pre-regenerate one (res.brief only lands once generation completes), so its rating is still
+    // accurate too. Both must survive the 202 handler rather than vanish until the next
+    // pollUntilTerminal tick lands.
     expect(component.hasCurrentActivityData()).toBe(true);
+    expect(component.callerRating()).toBe('up');
     const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
     expect(el.textContent as string).toContain('1 meeting held');
   });

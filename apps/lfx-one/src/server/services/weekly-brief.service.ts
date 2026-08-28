@@ -1163,15 +1163,20 @@ export class WeeklyBriefService {
    * aggregation that powers the committee "Recent Activity" feed, filtered to the current,
    * not-yet-closed week. Gated to governance (Board/Government Advisory Council) committees only
    * — the only ones the client renders the tally for — so a non-Board committee's weekly-brief
-   * load never pays for `getCommitteeActivity`'s own 9-call upstream fan-out. The one
-   * `getCommitteeById` call needed to read `category` and make that gating decision runs for every
-   * committee regardless — it's a single lightweight lookup (the same cost
-   * `CommitteeActivityService`'s own internal `fetchCommittee` already pays on the "Recent
-   * Activity" feed), not the fan-out this comment is scoping. Fails soft to `undefined` (never an
-   * empty array) on any
-   * error, matching the client's existing absent-vs-present distinction between "couldn't
-   * determine" and "genuinely zero activity this week" (weekly-brief-card.component.ts's
-   * `hasCurrentActivityData`).
+   * load never pays for `getCommitteeActivity`'s own 9-call upstream fan-out. The gating read
+   * itself is NOT free, though: `getCommitteeById` fans out to three upstream calls of its own
+   * (base committee GET, settings, access-check) to read a `category` a plain GET would suffice
+   * for — every committee, governance or not, pays that regardless. Reusing the
+   * already-instantiated `committeeService` was a deliberate choice over a bare `proxyRequest`
+   * (the pattern `shareToSlack` uses below, for the same lightweight need): this method is
+   * invoked from every `getCurrentBrief` call, concurrently with `fetchBriefResponse`'s own
+   * `proxyRequest` call in live mode, and `proxyRequest` is a single shared mock this spec file's
+   * dozens of other describe blocks assert call counts/order against — a second, path-dispatched
+   * consumer of it would need surgical updates across all of them for a request-volume win with
+   * no correctness stake. Accepted as a known v1 cost, isolated to this one gating read. Fails
+   * soft to `undefined` (never an empty array) on any error, matching the client's existing
+   * absent-vs-present distinction between "couldn't determine" and "genuinely zero activity this
+   * week" (weekly-brief-card.component.ts's `hasCurrentActivityData`).
    *
    * `limit: ACTIVITY_FEED_MAX_PAGE_SIZE` is a single, unfollowed page — `getCommitteeActivity`
    * hard-rejects any larger `limit`, so that's the ceiling one call can ever return. Deliberately
