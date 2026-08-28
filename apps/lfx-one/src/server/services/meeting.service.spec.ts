@@ -544,6 +544,21 @@ describe('MeetingService.getMeetingRsvps', () => {
 
     expect(result).toHaveLength(2);
   });
+
+  it('returns the raw RSVP count unchanged when a later registrant page rejects mid-walk', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [rsvpRecord('a'), rsvpRecord('b')] }) // RSVP walk (single page)
+      .mockResolvedValueOnce({ resources: [registrantRecord('a')], page_token: 'next' }) // registrant walk, page 1
+      .mockRejectedValueOnce(new Error('query service down')); // registrant walk, page 2 rejects
+
+    const result = await service.getMeetingRsvps(req, 'meeting-1');
+
+    // The registrant walk uses failOnPartial: true, so a page-2 failure throws instead of
+    // returning a truncated roster; getMeetingRsvps catches that and falls back to the
+    // unfiltered RSVP set rather than filtering against an incomplete registrant list.
+    expect(result).toHaveLength(2);
+    expect(result.map((r) => r.registrant_id)).toEqual(['a', 'b']);
+  });
 });
 
 describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
