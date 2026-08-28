@@ -120,6 +120,15 @@ export class MonitoringTabComponent implements OnInit {
 
   protected readonly keywords = computed(() => this.keywordsData()?.keywords ?? []);
   protected readonly keywordTotals = computed(() => this.keywordsData()?.totals ?? null);
+  /**
+   * True only when the backend positively reported more keywords than it returned.
+   *
+   * `=== true` rather than a truthiness check, deliberately: the field is optional because the
+   * legacy path cannot know (a bare LIMIT with no probe for a further row), and `undefined` there
+   * means "unknown", not "complete". Treating unknown as truncated would caption every legacy
+   * response as partial; treating it as complete is the status quo those numbers already carry.
+   */
+  protected readonly keywordTotalsPartial = computed(() => this.keywordsData()?.truncated === true);
   protected readonly hasKeywords = computed(() => this.keywords().length > 0);
   protected readonly keywordTotalPages = computed(() => Math.max(1, Math.ceil(this.keywords().length / KEYWORD_PAGE_SIZE)));
   protected readonly hasKeywordPrevPage = computed(() => this.keywordPage() > 1);

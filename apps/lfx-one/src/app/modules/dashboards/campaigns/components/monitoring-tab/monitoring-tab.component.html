@@ -245,13 +245,35 @@
         } @else {
           <!-- Keyword Totals Strip -->
           @if (keywordTotals()) {
+            <!--
+              When the keyword set is capped upstream these totals cover only the returned rows,
+              so the labels say so. Rendering "Spend" flat over a top-N slice states a project
+              total that is simply lower than the truth, which reads as a measurement rather than
+              as a partial view.
+            -->
+            @if (keywordTotalsPartial()) {
+              <p class="mb-2 text-xs text-gray-500" data-testid="keyword-totals-partial">
+                <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
+                Totals cover the top {{ keywords().length }} keywords by impressions, not every keyword in this project.
+              </p>
+            }
             <div class="grid grid-cols-2 gap-3 md:grid-cols-5" data-testid="keyword-totals">
               <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
-                <p class="text-xs text-gray-500">Impressions</p>
+                <p class="text-xs text-gray-500">
+                  Impressions
+                  @if (keywordTotalsPartial()) {
+                    <span class="ml-1 text-gray-400">(top {{ keywords().length }})</span>
+                  }
+                </p>
                 <p class="text-sm font-semibold text-gray-900">{{ formatNumber(keywordTotals()!.impressions) }}</p>
               </div>
               <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
-                <p class="text-xs text-gray-500">Clicks</p>
+                <p class="text-xs text-gray-500">
+                  Clicks
+                  @if (keywordTotalsPartial()) {
+                    <span class="ml-1 text-gray-400">(top {{ keywords().length }})</span>
+                  }
+                </p>
                 <p class="text-sm font-semibold text-gray-900">{{ formatNumber(keywordTotals()!.clicks) }}</p>
               </div>
               <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
@@ -259,11 +281,21 @@
                 <p class="text-sm font-semibold text-gray-900">{{ formatPct(keywordTotals()!.avgCtr) }}</p>
               </div>
               <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
-                <p class="text-xs text-gray-500">Spend</p>
+                <p class="text-xs text-gray-500">
+                  Spend
+                  @if (keywordTotalsPartial()) {
+                    <span class="ml-1 text-gray-400">(top {{ keywords().length }})</span>
+                  }
+                </p>
                 <p class="text-sm font-semibold text-gray-900">{{ formatCurrency(keywordTotals()!.spend) }}</p>
               </div>
               <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
-                <p class="text-xs text-gray-500">Conversions</p>
+                <p class="text-xs text-gray-500">
+                  Conversions
+                  @if (keywordTotalsPartial()) {
+                    <span class="ml-1 text-gray-400">(top {{ keywords().length }})</span>
+                  }
+                </p>
                 <p class="text-sm font-semibold text-gray-900">{{ formatNumber(keywordTotals()!.conversions) }}</p>
               </div>
             </div>

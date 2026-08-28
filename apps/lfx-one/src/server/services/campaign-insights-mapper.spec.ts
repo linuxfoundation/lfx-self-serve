@@ -163,6 +163,20 @@ describe('toKeywordMetricsResponse', () => {
     expect(result.totalKeywords).toBe(1);
   });
 
+  // The flag has to reach the RESPONSE, not just the log. When it is set the totals are a
+  // subtotal over the top-N slice, and a UI that renders them flat states a project total lower
+  // than the truth — a wrong number rather than an incomplete one.
+  it('carries the truncation flag through to the response', () => {
+    const payload = keywordsPayload();
+    payload.truncated = true;
+
+    expect(toKeywordMetricsResponse(payload, 30, PULLED_AT).truncated).toBe(true);
+  });
+
+  it('carries a false truncation flag rather than dropping it', () => {
+    expect(toKeywordMetricsResponse(keywordsPayload(), 30, PULLED_AT).truncated).toBe(false);
+  });
+
   it('reports the effective day count it was given', () => {
     expect(toKeywordMetricsResponse(keywordsPayload(), 14, PULLED_AT).days).toBe(14);
   });

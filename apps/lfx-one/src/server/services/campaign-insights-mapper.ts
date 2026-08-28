@@ -135,10 +135,12 @@ function toKeywordMetrics(row: CampaignServiceKeywordRow): KeywordMetrics {
 /**
  * Convert campaign-service's keyword read into the UI's `KeywordMetricsResponse`.
  *
- * `truncated` has no home in the UI interface, so the caller is responsible for it — see the
- * controller, which logs it. It is deliberately not folded into `totalKeywords`: that field
- * is the count of rows PRESENT, and inflating it to mean "how many exist" would make the
- * table's own footer disagree with the rows beneath it.
+ * `truncated` is carried through to the response rather than only logged. When it is set the
+ * `totals` below are a subtotal over the top-N slice, not the project's figures, and a consumer
+ * that renders them flat reports a number that is simply wrong — the defect this flag exists to
+ * prevent. It is deliberately NOT folded into `totalKeywords`: that field is the count of rows
+ * PRESENT, and inflating it to mean "how many exist" would make the table's own footer disagree
+ * with the rows beneath it.
  */
 export function toKeywordMetricsResponse(payload: CampaignServiceKeywords, effectiveDays: number, pulledAt: string): KeywordMetricsResponse {
   const keywords = payload.rows.map(toKeywordMetrics);
@@ -154,6 +156,7 @@ export function toKeywordMetricsResponse(payload: CampaignServiceKeywords, effec
     pulledAt,
     days: effectiveDays,
     totalKeywords: keywords.length,
+    truncated: payload.truncated,
     totals: {
       impressions,
       clicks,

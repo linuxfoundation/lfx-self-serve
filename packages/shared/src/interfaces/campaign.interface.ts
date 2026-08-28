@@ -1210,6 +1210,16 @@ export interface KeywordMetricsResponse {
   pulledAt: string;
   days: number;
   totalKeywords: number;
+  /**
+   * True when the project has MORE keywords than `keywords` carries.
+   *
+   * The rows are the top N by impressions, so when this is set `totals` is a subtotal over that
+   * slice and not the project's figures. A consumer must say so rather than render the numbers
+   * flat — "Spend: $412" for a project whose real spend is higher is a wrong number, not merely
+   * an incomplete one. Optional because the legacy Google Ads path cannot know: it issues a bare
+   * `LIMIT 50` with no probe for a further row, so absence means "unknown", not "complete".
+   */
+  truncated?: boolean;
   totals: KeywordTotals;
   keywords: KeywordMetrics[];
 }

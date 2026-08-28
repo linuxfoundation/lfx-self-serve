@@ -2658,3 +2658,101 @@ describe('CampaignServiceClient.getBriefMetrics', () => {
     expect(result.rows).toHaveLength(2);
   });
 });
+
+/**
+ * Wire-shape coverage for the two insight reads.
+ *
+ * The controller's tests mock these methods wholesale, so nothing there can see what actually
+ * reaches the proxy. A path typo, a dropped `encodeURIComponent`, or `window` sliding from the
+ * fifth argument (query) to the sixth (body) would leave that suite entirely green while the
+ * request went somewhere else — or went out with no window at all, and campaign-service quietly
+ * applied its own default instead of the one the caller asked for. Neither raises a type error:
+ * both parameters are optional and loosely typed.
+ */
+describe('CampaignServiceClient google ads insight reads', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const keywordsResult = { window: 'last_30_days', rows: [], row_count: 0, truncated: false };
+  const audienceResult = { window: 'last_30_days', buckets: [], bucket_count: 0 };
+
+  describe('getGoogleAdsKeywords', () => {
+    it('sends the window as a query parameter, not a body', async () => {
+      proxyRequest.mockResolvedValue(keywordsResult);
+
+      await new CampaignServiceClient().getGoogleAdsKeywords(req, 'cncf', 'last_7_days');
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/google-ads/keywords', 'GET', { window: 'last_7_days' });
+      // The body position must be EMPTY. Without this the assertion above still passes when a
+      // future edit adds a body, and the query would keep working while the body silently shipped.
+      expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+    });
+
+    /**
+     * Omitted rather than defaulted here, so campaign-service applies its own documented default
+     * (`last_30_days`). Defaulting in this client would hard-code a value the service is free to
+     * change, and the two would drift apart silently.
+     */
+    it('sends no window at all when the caller specifies none', async () => {
+      proxyRequest.mockResolvedValue(keywordsResult);
+
+      await new CampaignServiceClient().getGoogleAdsKeywords(req, 'cncf');
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/google-ads/keywords', 'GET', undefined);
+    });
+
+    /** An unencoded slug would silently change the path rather than fail. */
+    it('encodes the project segment', async () => {
+      proxyRequest.mockResolvedValue(keywordsResult);
+
+      await new CampaignServiceClient().getGoogleAdsKeywords(req, 'a b/c');
+
+      expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b%2Fc/google-ads/keywords');
+    });
+
+    /**
+     * An empty segment makes `/projects//google-ads/keywords` — a DIFFERENT route that 404s at
+     * the gateway, which a caller cannot tell apart from campaign-service saying the project has
+     * no keywords. Refused before it is sent rather than after.
+     */
+    it('refuses an empty project without calling the proxy', async () => {
+      await expect(new CampaignServiceClient().getGoogleAdsKeywords(req, '')).rejects.toThrow(/requires the project/);
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getGoogleAdsAudience', () => {
+    it('sends the window as a query parameter, not a body', async () => {
+      proxyRequest.mockResolvedValue(audienceResult);
+
+      await new CampaignServiceClient().getGoogleAdsAudience(req, 'cncf', 'last_14_days');
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/google-ads/audience', 'GET', { window: 'last_14_days' });
+      expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+    });
+
+    it('sends no window at all when the caller specifies none', async () => {
+      proxyRequest.mockResolvedValue(audienceResult);
+
+      await new CampaignServiceClient().getGoogleAdsAudience(req, 'cncf');
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/google-ads/audience', 'GET', undefined);
+    });
+
+    it('encodes the project segment', async () => {
+      proxyRequest.mockResolvedValue(audienceResult);
+
+      await new CampaignServiceClient().getGoogleAdsAudience(req, 'a b/c');
+
+      expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b%2Fc/google-ads/audience');
+    });
+
+    it('refuses an empty project without calling the proxy', async () => {
+      await expect(new CampaignServiceClient().getGoogleAdsAudience(req, '')).rejects.toThrow(/requires the project/);
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+});
