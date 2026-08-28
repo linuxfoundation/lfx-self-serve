@@ -699,9 +699,19 @@ export class CampaignsComponent {
    *
    * There is no poll and no status re-read route, so the audience's `status` is only ever the one
    * the 202 carried. `canStageEmail` reads that rather than this signal because it is the closest
-   * thing to an authority available -- but a build that is still `building` when the 202 returns
-   * stays that way on screen until the operator rebuilds. The Retry control exists for exactly
-   * that reason; a poll is the real fix and is not in this change.
+   * thing to an authority available.
+   *
+   * A row that comes back `building` is therefore TERMINAL in this UI, by design: upstream keeps
+   * that state when the outcome is UNCONFIRMED -- a HubSpot list may already exist -- so offering
+   * a rebuild would create the duplicate contact list that state exists to prevent. The operator's
+   * route out is reconciling the ids in `inclusionSummary`, which is why that summary is rendered
+   * verbatim. A status re-read is the real fix and is not in this change.
+   *
+   * This rests on the build being SYNCHRONOUS from the client's side: `onBuildAudience` awaits the
+   * call and sets `emailAudience` only after it resolves, so every `building` row on screen came
+   * back on a completed 202 and is genuinely unconfirmed rather than merely in flight. If upstream
+   * ever answers `building` for an ordinary async build, the two stop being the same thing and
+   * this copy would mislabel one as the other.
    */
   protected readonly emailAudienceState = signal<'idle' | 'building' | 'error'>('idle');
 

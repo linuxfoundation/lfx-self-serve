@@ -1812,21 +1812,6 @@ export function deriveEventSlug(brief: CampaignBriefOutput): string | null {
 }
 
 /**
- * Map the UI's brief onto `brief-input`.
- *
- * `event_details`, `copy`, `keywords` and `targeting` are `Any` in the design — the service
- * stores them opaquely — so this is the only place their shape is decided, and it is chosen to
- * round-trip: everything the Implementation tab reads off `CampaignBriefOutput` must survive a
- * save and a reload.
- *
- * `targeting` carries the campaign-level planning fields — goal, budget, the HubSpot UTM and the
- * Drive folder. `BriefInput` has no first-class home for them, and dropping them would make a
- * reloaded brief quietly less complete than the one the user approved. They are grouped under
- * `targeting` because it is the only opaque slot whose meaning ("how this campaign is aimed and
- * paid for") they fit; if the design later grows real fields for them, this is the one function
- * that moves.
- */
-/**
  * Add the field names campaign-service's consumers actually decode.
  *
  * The UI's own names are KEPT -- other consumers key on them, and dropping one would be a silent
@@ -1853,6 +1838,17 @@ function toUpstreamEventDetails(details: CampaignEventDetails): Record<string, u
 /**
  * The ISO-2 code's country NAME, or an empty string when it is absent or unrecognised.
  *
+ * Deliberately NOT `getCountryByCode` from the shared constants, which falls back to the raw CODE.
+ * That fallback is the silent-empty-list bug: campaign-service matches this against a HubSpot
+ * country property, so a literal `ZZ` matches nothing and the build SUCCEEDS with an empty
+ * inclusion list. Empty makes it fail loudly instead. Do not "simplify" this into the shared
+ * helper.
+ *
+ * The loud-failure guarantee covers an UNKNOWN code, not a known code whose label HubSpot spells
+ * differently. `COUNTRIES` uses `&` (Antigua & Barbuda) and diacritics (São Tomé & Príncipe); only
+ * Kenya has been checked against a live portal. A mismatch there lands back on the silent
+ * empty-list path, so verify the label before relying on one of those.
+ *
  * Empty rather than the raw code: campaign-service fails loudly on a missing country and would
  * silently build an EMPTY inclusion list for an unmatched one, and an empty send list is the
  * worse of the two outcomes on a list that decides who receives an email.
@@ -1865,6 +1861,21 @@ function countryNameFor(countryCode: string | undefined): string {
   return COUNTRIES.find((c) => c.value === code)?.label ?? '';
 }
 
+/**
+ * Map the UI's brief onto `brief-input`.
+ *
+ * `event_details`, `copy`, `keywords` and `targeting` are `Any` in the design — the service
+ * stores them opaquely — so this is the only place their shape is decided, and it is chosen to
+ * round-trip: everything the Implementation tab reads off `CampaignBriefOutput` must survive a
+ * save and a reload.
+ *
+ * `targeting` carries the campaign-level planning fields — goal, budget, the HubSpot UTM and the
+ * Drive folder. `BriefInput` has no first-class home for them, and dropping them would make a
+ * reloaded brief quietly less complete than the one the user approved. They are grouped under
+ * `targeting` because it is the only opaque slot whose meaning ("how this campaign is aimed and
+ * paid for") they fit; if the design later grows real fields for them, this is the one function
+ * that moves.
+ */
 function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignServiceBriefInput {
   return {
     // `CampaignProgramType` is `events | education`; the service's enum is

@@ -2043,8 +2043,10 @@ describe('CampaignServiceClient brief country mapping', () => {
     // `email_copy.go` REQUIRES eventName and 400s without it; both consumers read `location`.
     // The UI persists `name` and `city`, so without these aliases copy generation fails with
     // "provide at least eventName" -- observed end to end against a live campaign-service.
-    expect(details['eventName']).toBe(details['name']);
-    expect(details['location']).toBe(details['city']);
+    // LITERALS, not `toBe(details['name'])`: a self-referential assertion passes when BOTH sides
+    // are undefined, so dropping the alias and its source together would be invisible here.
+    expect(details['eventName']).toBe('KubeCon EU 2026');
+    expect(details['location']).toBe('Amsterdam');
   });
 
   it('keeps the UI field names alongside the aliases', async () => {
@@ -2053,7 +2055,9 @@ describe('CampaignServiceClient brief country mapping', () => {
     // ADDED, not renamed: the wire shape is shared with the paid path, whose consumers read the
     // UI's names. Renaming would fix email and silently break paid.
     expect(details['name']).toBe('KubeCon EU 2026');
-    expect(details['city']).toBeDefined();
+    // The VALUE, not merely the key: `toBeDefined()` passes against the very regression the
+    // aliases exist to prevent -- a UI name that survived in name only.
+    expect(details['city']).toBe('Amsterdam');
   });
 
   it('sends an empty country rather than the raw code when it is unrecognised', async () => {

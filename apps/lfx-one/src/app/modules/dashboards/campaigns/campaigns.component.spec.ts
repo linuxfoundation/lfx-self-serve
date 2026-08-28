@@ -2516,6 +2516,21 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCopy()).toBeNull();
     });
 
+    it('does not call an unconfirmed build "building"', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailAudience.set({ id: 'aud-1', status: 'building' } as never);
+      fixture.detectChanges();
+
+      const card = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-built"]');
+      // The whole argument for this state is that "building" tells the operator the wrong thing:
+      // the row is not in flight, it is a finished build whose outcome upstream could not
+      // confirm, and the ids in the summary may need reconciling.
+      expect(card?.textContent).toContain('unconfirmed');
+      expect(card?.textContent).not.toContain('Audience built');
+    });
+
     it('does NOT offer a rebuild while the outcome is unconfirmed', () => {
       selectEmail();
       internals().selectedEmailTab.set('implementation');
