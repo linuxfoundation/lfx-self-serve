@@ -102,8 +102,12 @@ export function meetingToCalendarEvents(meeting: Meeting | PastMeeting): Meeting
 export function publicMeetingToCalendarEvents(meeting: PublicCalendarMeeting): MeetingCalendarEventInput[] {
   if (meeting.occurrences && meeting.occurrences.length > 0) {
     return meeting.occurrences.map((occ) => {
+      // `duration` is typed required, but indexed occurrences omit it when there is no per-occurrence
+      // override — same fallback the sibling mapper applies. Without it `isOccurrencePast` computes
+      // NaN (never past) and `addMinutesToDate` quietly substitutes 60 minutes.
+      const occurrenceDuration = occ.duration ?? meeting.duration;
       const isCancelled = isMeetingOccurrenceCancelled(occ, meeting.cancelled_occurrences);
-      const isPast = !isCancelled && isOccurrencePast(occ.start_time, occ.duration);
+      const isPast = !isCancelled && isOccurrencePast(occ.start_time, occurrenceDuration);
       const colors = resolveMeetingCalendarColors(isCancelled, isPast);
       const classNames = ['meeting-event'];
       if (isCancelled) {
@@ -115,7 +119,7 @@ export function publicMeetingToCalendarEvents(meeting: PublicCalendarMeeting): M
         id: `${meeting.id}-${occ.occurrence_id}`,
         title: meeting.title,
         start: occ.start_time,
-        end: addMinutesToDate(occ.start_time, occ.duration).toISOString(),
+        end: addMinutesToDate(occ.start_time, occurrenceDuration).toISOString(),
         backgroundColor: colors.bg,
         borderColor: colors.border,
         textColor: colors.text,
@@ -126,7 +130,7 @@ export function publicMeetingToCalendarEvents(meeting: PublicCalendarMeeting): M
           meetingId: meeting.id,
           cancelled: isCancelled,
           startTime: occ.start_time,
-          durationMinutes: occ.duration,
+          durationMinutes: occurrenceDuration,
         },
       };
     });

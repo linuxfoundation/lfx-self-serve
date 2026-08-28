@@ -1123,7 +1123,9 @@ export class ProjectController {
       occurrences: (meeting.occurrences ?? []).map((occurrence) => ({
         occurrence_id: occurrence.occurrence_id,
         start_time: occurrence.start_time,
-        duration: occurrence.duration,
+        // Indexed occurrences omit duration when there is no per-occurrence override; resolve it here
+        // so the wire payload honors MeetingOccurrenceSummary's required `duration` for every consumer.
+        duration: occurrence.duration ?? meeting.duration,
         status: occurrence.status,
       })),
       cancelled_occurrences: meeting.cancelled_occurrences,

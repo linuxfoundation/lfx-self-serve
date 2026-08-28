@@ -384,6 +384,25 @@ describe('ProjectController.getProjectMeetings', () => {
     expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('Internal agenda');
   });
 
+  it('resolves an occurrence with no duration override to the series duration', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data:
+          resourceType === 'v1_meeting'
+            ? [buildMeeting({ duration: 90, occurrences: [{ occurrence_id: '1630560600', start_time: '2026-09-01T15:00:00Z' } as any] })]
+            : [],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    // MeetingOccurrenceSummary types duration as required — an undefined on the wire would make the
+    // client mapper compute a NaN past-state and a silent 60-minute end time.
+    expect(res.json.mock.calls[0][0].meetings[0].occurrences[0].duration).toBe(90);
+  });
+
   it('sets a public Cache-Control on the JSON feed', async () => {
     const { req, res, next } = buildMeetingsReqRes();
 

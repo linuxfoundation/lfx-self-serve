@@ -74,6 +74,18 @@ describe('publicMeetingToCalendarEvents', () => {
     expect(events[1].classNames).not.toContain('cursor-default');
   });
 
+  it('falls back to the series duration for an occurrence with no per-occurrence override', () => {
+    // Without the fallback, isOccurrencePast computes NaN (so an ended occurrence never styles as
+    // past) and addMinutesToDate silently substitutes 60 minutes — wrong end time for any meeting
+    // whose series duration isn't 60, and no durationMinutes for the click route to build from.
+    const start = new Date(Date.now() - 3 * 60 * 60_000).toISOString();
+    const [event] = publicMeetingToCalendarEvents(publicMeeting({ duration: 90, occurrences: [{ occurrence_id: '1630560600', start_time: start } as never] }));
+
+    expect(event.extendedProps?.durationMinutes).toBe(90);
+    expect(new Date(event.end!).getTime() - new Date(start).getTime()).toBe(90 * 60_000);
+    expect(event.classNames).toContain('meeting-event-past');
+  });
+
   it('links a past-meeting row through its composite resource id', () => {
     const [event] = publicMeetingToCalendarEvents(
       publicMeeting({
