@@ -115,6 +115,12 @@ const HS_BASE = 'https://api.hubapi.com';
  * HubSpot's own per-request maximum for CRM search. IT IS A CAP, NOT A PAGE — this code does not
  * follow `paging.next.after`, so a campaign ranked below it is not returned. See `capped` on
  * HubSpotUtmResult for why that matters.
+ *
+ * Raised from 10 DELIBERATELY on this legacy path, even though the cutover flag defaults off.
+ * The `capped` signal this file now returns is what suppresses the create offer, and at a limit
+ * of 10 almost every search on a busy portal reports capped — an operator who can never create
+ * a campaign is worse off than one who occasionally sees a stale warning. The two changes only
+ * make sense together, which is why this is not held back behind the flag.
  */
 const HS_SEARCH_LIMIT = 100;
 

@@ -1153,6 +1153,95 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   /**
+   * hsCreating tracks whether a REQUEST is in flight, which is a fact about the subscription
+   * rather than about which event is on screen. Releasing it after the stale guard left the
+   * button disabled and "Creating..." frozen on the new event's panel with nothing to clear it.
+   */
+  it('releases the creating flag even when the answer arrives stale', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+
+    const late = new Subject<unknown>();
+    create.mockReturnValue(late);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    expect(instance()['hsCreating']()).toBe(true);
+
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = 'Some Other Event';
+    late.next({ created: true, hs_utm: 'x', campaign_name: 'KubeCon NA 2026' });
+    fixture.detectChanges();
+
+    expect(instance()['hsCreating']()).toBe(false);
+  });
+
+  /**
+   * A create that SUCCEEDED without a token still needs the re-check: HubSpot assigns the token
+   * asynchronously, and lookupHubSpot's early return means retyping the same url cannot fetch
+   * it. Clearing the control there leaves no way to ever retrieve it.
+   */
+  it('keeps the re-check available when a created campaign has no token yet', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    create.mockReturnValue(
+      new Observable((s) => {
+        s.next({ created: true, hs_utm: null, campaign_name: 'KubeCon NA 2026' });
+        s.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    // Create stays hidden -- the campaign exists.
+    expect(el.querySelector('[data-testid="planning-hubspot-create-btn"]')).toBeNull();
+    // But the one action that can still make progress is offered.
+    expect(el.querySelector('[data-testid="planning-hubspot-recheck-btn"]')).not.toBeNull();
+  });
+
+  /**
+   * A FAILED re-check established nothing, and this arm leaves lastLookedUpEvent set -- so
+   * without restoring the control the same event shows neither Create nor a re-check and the
+   * only exit is a page reload.
+   */
+  it('restores the re-check when the lookup itself fails', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    create.mockReturnValue(
+      new Observable((s) => {
+        s.next({ created: false });
+        s.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    lookup.mockReturnValue(throwError(() => new Error('hubspot down')));
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="planning-hubspot-recheck-btn"]')!.click();
+    fixture.detectChanges();
+
+    expect(instance()['hsSearching']()).toBe(false);
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-hubspot-recheck-btn"]')).not.toBeNull();
+  });
+
+  /**
+   * lastLookedUpEvent only updates when the 500ms debounced lookup FIRES. Between the user
+   * typing event B and that debounce elapsing it still names event A, so a create for A landing
+   * in that window passed a lastLookedUpEvent check and wrote A's token into B's panel.
+   */
+  it('drops a create answer once the url field names a different event', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+
+    const late = new Subject<unknown>();
+    create.mockReturnValue(late);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    // The user types event B. The debounce has NOT fired, so lastLookedUpEvent still says A.
+    (fixture.componentInstance as unknown as { briefForm: { controls: { url: { setValue(v: string): void } } } }).briefForm.controls.url.setValue(
+      'https://events.example.com/some-other-conference-2027'
+    );
+    late.next({ created: true, hs_utm: 'event-a-utm', campaign_name: 'KubeCon NA 2026' });
+    fixture.detectChanges();
+
+    expect(instance()['hsUtm']()).toBeFalsy();
+  });
+
+  /**
    * The create is slow enough for the operator to retype the url and start a lookup for a
    * different event while it is in flight. Event A's answer must not land on event B's panel.
    */

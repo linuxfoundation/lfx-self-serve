@@ -537,6 +537,28 @@ export class PlanningTabComponent implements OnInit {
     this.lookupHubSpot(event);
   }
 
+  /**
+   * Whether the panel still belongs to the event `capturedEvent` was captured for.
+   *
+   * Compares against the LIVE url field, not `lastLookedUpEvent`. The latter only updates when
+   * the 500ms debounced lookup fires, so between the user typing event B and that debounce
+   * elapsing it still names event A — and a create for A landing in that window would pass a
+   * `lastLookedUpEvent` check and write A's token into B's panel. The field is the earliest
+   * point at which the user's intent is visible, which is what makes it the right thing to
+   * compare. Same reasoning as restoreSavedBrief's guard.
+   */
+  private panelStillShows(capturedEvent: string): boolean {
+    const live = this.extractEventName(this.briefForm.controls.url.value.trim());
+    // The url can be empty or half-typed mid-edit, and extractEventName then yields something
+    // short that names no event. That is not evidence the user LEFT the event, so the captured
+    // value is kept rather than treated as stale — matching the length gate onUrlInput applies
+    // before it will issue a lookup at all.
+    if (live.length <= 3) {
+      return this.lastLookedUpEvent === capturedEvent;
+    }
+    return live === capturedEvent && this.lastLookedUpEvent === capturedEvent;
+  }
+
   protected createInHubSpot(): void {
     if (!this.lastLookedUpEvent) return;
     this.hsCreating.set(true);
@@ -551,7 +573,12 @@ export class PlanningTabComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
-          if (this.lastLookedUpEvent !== capturedEvent) return;
+          // Released FIRST and unconditionally: hsCreating tracks whether a request is in
+          // flight, which is a fact about this subscription, not about which event is on
+          // screen. Returning before it left the button disabled and the "Creating..." label
+          // frozen on the new event's panel forever.
+          this.hsCreating.set(false);
+          if (!this.panelStillShows(capturedEvent)) return;
           // `created` alone decides success. HubSpot assigns the token, and not necessarily by
           // the time the create returns — so requiring hs_utm too would report a campaign that
           // WAS created as a failure, leave the Create button up, and invite a retry that writes
@@ -562,7 +589,11 @@ export class PlanningTabComponent implements OnInit {
               this.hsUtm.set(result.hs_utm);
             }
             this.hsNotFound.set(false);
-            this.hsUnconfirmed.set(false);
+            // The re-check stays available when HubSpot has not assigned the token yet: it
+            // arrives asynchronously, and lookupHubSpot's early return means retyping the same
+            // url cannot fetch it. Create stays hidden either way (hsNotFound is false), so
+            // this offers the ONE action that can still make progress rather than a dead end.
+            this.hsUnconfirmed.set(!result.hs_utm);
             this.hsStatus.set(
               result.hs_utm ? `Created: ${result.campaign_name}` : `Created: ${result.campaign_name} — HubSpot has not assigned a UTM token yet`
             );
@@ -573,10 +604,10 @@ export class PlanningTabComponent implements OnInit {
             this.hsUnconfirmed.set(true);
             this.hsStatus.set('The campaign may or may not have been created — check HubSpot before trying again.');
           }
-          this.hsCreating.set(false);
         },
         error: () => {
-          if (this.lastLookedUpEvent !== capturedEvent) return;
+          this.hsCreating.set(false);
+          if (!this.panelStillShows(capturedEvent)) return;
           // The outcome is UNKNOWN, not failed. Upstream reports an id-less 2xx as an error
           // precisely because the campaign may already exist, and every other failure is
           // classified unconfirmed for the same reason — so leaving the button up would invite
@@ -587,7 +618,6 @@ export class PlanningTabComponent implements OnInit {
           this.hsNotFound.set(false);
           this.hsUnconfirmed.set(true);
           this.hsStatus.set('The campaign may or may not have been created — check HubSpot before trying again.');
-          this.hsCreating.set(false);
         },
       });
   }
@@ -1065,9 +1095,14 @@ export class PlanningTabComponent implements OnInit {
           this.hsSearching.set(false);
         },
         error: () => {
+          this.hsSearching.set(false);
           if (this.lastLookedUpEvent !== capturedEvent) return;
           this.hsStatus.set('HubSpot lookup failed');
-          this.hsSearching.set(false);
+          // The control is restored, not left cleared. A lookup that FAILED established
+          // nothing, and this arm leaves lastLookedUpEvent set — so without it the same event
+          // shows neither Create nor a re-check, and the only exit is a page reload. Retrying
+          // the lookup is exactly the right action after a failed lookup.
+          this.hsUnconfirmed.set(true);
         },
       });
   }
