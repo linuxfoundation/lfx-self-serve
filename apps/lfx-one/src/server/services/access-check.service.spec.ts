@@ -254,7 +254,7 @@ describe('AccessCheckService — batching', () => {
       req,
       expect.any(String),
       expect.stringContaining('chunk 1 failed'),
-      expect.objectContaining({ chunk_index: 1, err: chunkError })
+      expect.objectContaining({ chunk_index: 1, chunk_count: 2, err: chunkError })
     );
     expect(loggerWarning).toHaveBeenCalledWith(
       req,
@@ -288,7 +288,7 @@ describe('AccessCheckService — batching', () => {
       req,
       expect.any(String),
       expect.stringContaining('chunk 1 failed'),
-      expect.objectContaining({ chunk_index: 1, err: chunkError })
+      expect.objectContaining({ chunk_index: 1, chunk_count: 2, err: chunkError })
     );
     // Terminal warning signals partial results so monitoring alerts on "success" do not fire.
     // Also asserts duration_ms is present — logger.warning has no startTime param so it is
