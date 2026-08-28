@@ -168,6 +168,17 @@ describe('EventsService.getMyEvents past-event SQL', () => {
     expect(sql).toContain('e.EVENT_SOURCE,');
   });
 
+  it('scopes the combined-CTE dedup to the whole union, not just the last branch', async () => {
+    // QUALIFY binds to a single SELECT block, so the union has to be wrapped: written directly
+    // after UNION ALL it only dedups affiliated_upcoming and duplicates cross-branch events.
+    const sql = await sqlFor({ isPast: false, affiliatedProjectSlugs: ['example'] });
+    const combined = sql.slice(sql.indexOf('combined AS ('));
+    const qualify = combined.indexOf('QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY source_priority)');
+
+    expect(combined.indexOf('SELECT * FROM (')).toBeLessThan(combined.indexOf('SELECT *, 1 AS source_priority'));
+    expect(combined.slice(combined.indexOf('FROM affiliated_upcoming'), qualify)).toContain(')');
+  });
+
   it('selects EVENT_SOURCE in the past branch', async () => {
     const sql = await sqlFor({ isPast: true });
 
