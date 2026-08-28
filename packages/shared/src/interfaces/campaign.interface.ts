@@ -1307,6 +1307,52 @@ export interface CampaignServiceAudienceBucket {
   conversions: number;
 }
 
+export interface CampaignServiceCampaignRef {
+  campaign_id: string;
+  brief_id: string;
+}
+
+/**
+ * The answer to "which of my campaigns is this platform id?".
+ *
+ * `matches` is an array because nothing upstream constrains
+ * `(project, platform, platform_campaign_id)` to be unique. An EMPTY array is a 200, not an
+ * error: the project genuinely owns no campaign with that id, which is an answer a caller acts
+ * on by refusing rather than retrying.
+ */
+export interface CampaignServiceCampaignResolution {
+  platform_campaign_id: string;
+  matches: CampaignServiceCampaignRef[];
+  match_count: number;
+}
+
+export interface CampaignServiceKeywordActionInput {
+  ad_group_id: string;
+  criterion_id: string;
+  /** UPPERCASE upstream, unlike the UI's lowercase `KeywordActionType`. */
+  action: 'PAUSE' | 'REMOVE';
+}
+
+export interface CampaignServiceKeywordActionResult {
+  ad_group_id: string;
+  criterion_id: string;
+  action: 'PAUSE' | 'REMOVE';
+  resource_name: string;
+}
+
+/**
+ * The outcome of one campaign's keyword batch.
+ *
+ * There is NO partial success within a batch: upstream sends it as a single atomic mutate with
+ * partial failure disabled, so `applied_count` always equals the number requested or the whole
+ * request failed. A caller must not read it as "how many of my actions worked".
+ */
+export interface CampaignServiceKeywordActions {
+  campaign_id: string;
+  results: CampaignServiceKeywordActionResult[];
+  applied_count: number;
+}
+
 export interface CampaignServiceAudience {
   window: CampaignMetricsWindow;
   /** Every bucket across all three breakdowns, discriminated by `dimension`. */

@@ -242,6 +242,32 @@ export enum ServerFeatureFlag {
   CampaignServiceInsights = 'LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS',
 
   /**
+   * Routes keyword pause/remove through campaign-service instead of this BFF's own Google Ads
+   * mutate calls.
+   *
+   * SEPARATE from `CampaignServiceInsights`, which covers the two keyword/audience READS, and
+   * the split is deliberate: this one MUTATES live paid campaigns, so it needs a rollback story
+   * a read does not. The reads can be flipped back with no trace; a REMOVE cannot be undone —
+   * Google cannot re-enable a removed criterion, only create a new one with a new id.
+   *
+   * THE GRANULARITY OF FAILURE CHANGES. The legacy path issues one Google call per keyword, so
+   * each succeeds or fails alone. campaign-service takes one atomic batch per campaign, so a
+   * request spanning several campaigns becomes atomic PER CAMPAIGN and not overall: one
+   * campaign's keywords can pause while another's do not. The response still reports every
+   * keyword individually, and a campaign-level failure marks all of that campaign's keywords
+   * failed rather than leaving anyone to guess which half applied.
+   *
+   * The fan-out lives in the BFF because `api-catalog.md` rule 5 forbids a bulk cross-campaign
+   * mutation endpoint upstream — each call the BFF makes is one permission-evaluated target.
+   *
+   * The legacy path is ALREADY BROKEN in every environment where the `GADS_*` variables were
+   * deactivated: `getGadsClient()` throws before any mutate is attempted. So "off" is not a
+   * working fallback here the way it is for the reads — it is the state in which keyword actions
+   * do not work at all. Same accepted values as the flags above.
+   */
+  CampaignServiceKeywordActions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS',
+
+  /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and
    * `weekly-brief.service.ts`'s `shareToSlack` (the Slack send) server-side. `WG_WEEKLY_BRIEF_SLACK_FLAG`
    * (`wg-weekly-brief-slack`, an OpenFeature/GrowthBook flag) only gates the Angular UI — the

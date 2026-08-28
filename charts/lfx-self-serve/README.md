@@ -191,14 +191,15 @@ Campaign endpoints are being moved off this application's vendor-direct integrat
 lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
 changing a value here rather than by shipping a revert.
 
-| Parameter                                                | Description                                                                                                                                    | Required | Default  |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`          | Serves campaign job status from campaign-service; see the accepted values below                                                                | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`        | Persists the generated brief in campaign-service instead of only in the browser tab                                                            | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`        | Creates campaigns through campaign-service instead of the per-platform Express services — deploy only after STATUS_TOGGLE converges            | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`    | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below            | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                           | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`      | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — CHANGES THE NUMBERS, see below | No       | off      |
+| Parameter                                                  | Description                                                                                                                                    | Required | Default  |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`            | Serves campaign job status from campaign-service; see the accepted values below                                                                | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`          | Persists the generated brief in campaign-service instead of only in the browser tab                                                            | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`          | Creates campaigns through campaign-service instead of the per-platform Express services — deploy only after STATUS_TOGGLE converges            | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`      | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below            | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`   | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                           | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — CHANGES THE NUMBERS, see below | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — the legacy path is already broken without the GADS_* vars, see below                       | No       | off      |
 
 `..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
 **`..._JOBS` must stay on, and comes off LAST.** With `..._CREATE` enabled campaign-service mints
@@ -318,6 +319,27 @@ observable, which is precisely what makes it the safe half to ship alone. The re
 the one that costs: with CREATE on first, a new pod can mint a UUID campaign while an old pod
 still refuses its pause, and with `replicaCount: 3`, `maxSurge: "100%"` and non-sticky requests
 that window lasts as long as the rollout.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` moves keyword pause/remove onto
+campaign-service. It is separate from the reads flag above because it MUTATES live paid
+campaigns, and a REMOVE is irreversible — Google cannot re-enable a removed criterion, only
+create a new one with a new id.
+
+**Off is not a working fallback here**, unlike every other flag on this list. The legacy path
+calls `getGadsClient()`, which throws whenever the `GADS_*` variables are absent — and they were
+deactivated deliberately. With this off, keyword actions do not work at all. This flag is what
+makes them work, not what changes which backend serves them.
+
+The granularity of failure changes when it is on. The legacy path issued one Google call per
+keyword, so each succeeded or failed alone. campaign-service takes one atomic batch per
+campaign, so a request spanning several campaigns is atomic per campaign and not overall: one
+campaign's keywords can pause while another's do not. Every keyword is still reported
+individually, and a campaign-level failure marks all of that campaign's keywords failed rather
+than leaving anyone to work out which half applied.
+
+The BFF resolves each campaign and issues one call per campaign rather than one bulk call,
+because campaign-service's `api-catalog.md` rule 5 forbids a bulk cross-campaign mutation
+endpoint — each call is one permission-evaluated target.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS` moves the Google Ads keyword and audience reads onto
 campaign-service, and it is the one flag on this list that CHANGES THE NUMBERS rather than only

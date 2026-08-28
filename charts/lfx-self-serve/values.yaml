@@ -620,6 +620,26 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS:
     value: "false"
 
+  # Routes keyword pause/remove (campaign.controller.ts executeKeywordActions) through
+  # campaign-service instead of the BFF's own Google Ads mutate calls.
+  #
+  # SEPARATE from the INSIGHTS flag above, which covers the two READS. This one MUTATES live
+  # paid campaigns and needs a rollback story a read does not: a REMOVE is irreversible, since
+  # Google cannot re-enable a removed criterion, only create a new one with a new id.
+  #
+  # THE GRANULARITY OF FAILURE CHANGES when this is on. The legacy path issues one Google call
+  # per keyword, so each succeeds or fails alone. campaign-service takes one ATOMIC batch per
+  # campaign, so a request spanning several campaigns is atomic per campaign and not overall:
+  # one campaign's keywords can pause while another's do not. Every keyword is still reported
+  # individually, and a campaign-level failure marks all of that campaign's keywords failed.
+  #
+  # "OFF" IS NOT A WORKING FALLBACK HERE, unlike every other flag on this list. The legacy path
+  # calls getGadsClient(), which throws whenever the GADS_* variables are absent — and they were
+  # deactivated deliberately. So with this off, keyword actions do not work at all; this flag is
+  # what makes them work, not what changes which backend serves them.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS:
+    value: "false"
+
   # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).
   # The BFF refuses to serve mock brief data when NODE_ENV=production and this
   # isn't 'live' — leaving it unset here would 500 on every weekly-brief request.

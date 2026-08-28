@@ -5,6 +5,8 @@ import { NextFunction, Request, Response } from 'express';
 
 import type {
   BulkKeywordActionRequest,
+  BulkKeywordActionResponse,
+  KeywordActionResponse,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
@@ -44,6 +46,15 @@ import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-fea
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { toAudienceDemographics, toKeywordMetricsResponse, windowForDays } from '../services/campaign-insights-mapper';
+import {
+  appliedResults,
+  CAMPAIGN_AMBIGUOUS,
+  CAMPAIGN_UNRESOLVED,
+  failedResults,
+  groupByCampaign,
+  toBulkResponse,
+  toUpstreamActions,
+} from '../services/campaign-keyword-actions';
 import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
@@ -1128,15 +1139,110 @@ export class CampaignController {
       }
     }
 
-    const startTime = logger.startOperation(req, 'keyword_actions', { action: body.action, count: body.keywords.length });
+    const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceKeywordActions);
+    const startTime = logger.startOperation(req, 'keyword_actions', { action: body.action, count: body.keywords.length, viaCampaignService });
 
     try {
+      if (viaCampaignService) {
+        const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+        if (projectSlug === '') {
+          next(
+            ServiceValidationError.forField('project', 'A project is required to change keywords', {
+              operation: 'keyword_actions',
+              service: 'campaign_controller',
+              path: req.path,
+            })
+          );
+          return;
+        }
+
+        const result = await this.keywordActionsViaCampaignService(req, projectSlug, body);
+        logger.success(req, 'keyword_actions', startTime, {
+          viaCampaignService: true,
+          succeeded: result.succeeded,
+          failed: result.failed,
+        });
+        res.json(result);
+        return;
+      }
+
       const result = await this.proxyService.executeKeywordActions(req, body);
-      logger.success(req, 'keyword_actions', startTime, { succeeded: result.succeeded, failed: result.failed });
+      logger.success(req, 'keyword_actions', startTime, { viaCampaignService: false, succeeded: result.succeeded, failed: result.failed });
       res.json(result);
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * Apply keyword actions through campaign-service, one call per campaign.
+   *
+   * The UI sends a flat keyword list; campaign-service takes a brief- and campaign-scoped batch.
+   * The grouping lives here rather than upstream because `api-catalog.md` rule 5 forbids a bulk
+   * mutation endpoint — each call this makes is still one permission-evaluated target.
+   *
+   * ATOMIC PER CAMPAIGN, NOT OVERALL. One campaign's keywords can pause while another's request
+   * fails, so every keyword is reported individually and a campaign-level failure marks ALL of
+   * that campaign's keywords failed — the batch is all-or-nothing upstream, so claiming
+   * otherwise would leave someone hunting for which half applied.
+   *
+   * Campaigns are resolved and applied SEQUENTIALLY rather than in parallel. These are
+   * spend-affecting mutations on live campaigns, and a burst of concurrent mutates against one
+   * ad account is the shape most likely to hit upstream rate limiting — which would fail
+   * campaigns for a reason that has nothing to do with the request.
+   */
+  private async keywordActionsViaCampaignService(req: Request, projectSlug: string, body: BulkKeywordActionRequest): Promise<BulkKeywordActionResponse> {
+    const results: KeywordActionResponse[] = [];
+
+    for (const group of groupByCampaign(body.keywords)) {
+      let ref;
+      try {
+        const resolution = await this.campaignServiceClient.resolveGoogleAdsCampaign(req, projectSlug, group.platformCampaignId);
+        // An unowned id is a 200 with no matches, not a throw — so this is checked, never
+        // assumed. Acting on an unresolved campaign is not possible, and silently skipping it
+        // would drop the keyword from the response entirely.
+        if (resolution.match_count === 0) {
+          results.push(...failedResults(group, body.action, CAMPAIGN_UNRESOLVED));
+          continue;
+        }
+        // Ambiguity is refused rather than resolved by taking the first match: upstream reports
+        // it precisely because picking one would mutate a campaign nobody named.
+        if (resolution.match_count > 1) {
+          results.push(...failedResults(group, body.action, CAMPAIGN_AMBIGUOUS));
+          continue;
+        }
+        ref = resolution.matches[0];
+      } catch (error) {
+        // A failed LOOKUP is reported against this campaign's keywords rather than failing the
+        // whole request: the other campaigns in the batch are unaffected and their actions
+        // should still be attempted.
+        logger.warning(req, 'keyword_actions', 'Campaign reference lookup failed', {
+          platformCampaignId: group.platformCampaignId,
+          error: error instanceof Error ? error.message : 'unknown',
+        });
+        results.push(...failedResults(group, body.action, CAMPAIGN_UNRESOLVED));
+        continue;
+      }
+
+      try {
+        await this.campaignServiceClient.applyKeywordActions(req, projectSlug, ref.brief_id, ref.campaign_id, toUpstreamActions(group.keywords, body.action));
+        results.push(...appliedResults(group, body.action));
+      } catch (error) {
+        // The upstream message is surfaced because it carries the one distinction a caller must
+        // act on: campaign-service separates a DEFINITE failure from an UNCONFIRMED one where
+        // the mutate may already have applied. Flattening that to a generic string would leave
+        // someone retrying an irreversible REMOVE that already ran.
+        const message = error instanceof Error ? error.message : 'The keyword change could not be applied.';
+        logger.warning(req, 'keyword_actions', 'Keyword action batch failed', {
+          platformCampaignId: group.platformCampaignId,
+          campaignId: ref.campaign_id,
+          error: message,
+        });
+        results.push(...failedResults(group, body.action, message));
+      }
+    }
+
+    return toBulkResponse(results);
   }
 
   public getRedditAccounts(_req: Request, res: Response): void {
