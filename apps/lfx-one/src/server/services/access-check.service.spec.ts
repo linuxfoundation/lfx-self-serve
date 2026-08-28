@@ -230,6 +230,26 @@ describe('AccessCheckService — batching', () => {
     expect(result.get('proj-100#writer')).toBe(false);
   });
 
+  it('does not throw from checkAccessStrict when a chunk in the multi-batch path rejects', async () => {
+    // Promise.allSettled absorbs chunk failures even in strict mode — only single-batch
+    // calls (<=ACCESS_CHECK_BATCH_SIZE) propagate errors through checkAccessStrict.
+    const resources = makeResources(101);
+    const chunkError = new Error('chunk-failure');
+    // First chunk (0-based index 0, resources 0–99) succeeds;
+    // second chunk (0-based index 1, resource 100) fails.
+    proxyRequest.mockResolvedValueOnce(mockResponse(resources.slice(0, 100), true));
+    proxyRequest.mockRejectedValueOnce(chunkError);
+
+    // checkAccessStrict does NOT throw — the multi-batch path absorbs chunk failures.
+    const result = await service.checkAccessStrict(req, resources);
+
+    expect(result.get('proj-0#writer')).toBe(true);
+    // Failed chunk's key is absent (not false), defaulting to false at the call site.
+    expect(result.has('proj-100#writer')).toBe(false);
+    // Two WARN logs: one per-chunk and one terminal partial-result.
+    expect(loggerWarning).toHaveBeenCalledTimes(2);
+  });
+
   it('fails the rejected chunk closed but preserves results from fulfilled chunks', async () => {
     const resources = makeResources(101);
     const chunkError = new Error('chunk-failure');

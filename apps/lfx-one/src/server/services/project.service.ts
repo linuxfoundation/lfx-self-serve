@@ -325,6 +325,11 @@ export class ProjectService {
    * Fetches slugs for all projects without an access-check round trip.
    * Use this when the caller only needs slugs — it skips addAccessToResources
    * entirely, eliminating the OpenFGA POST that getProjects() incurs.
+   *
+   * Note: the query-service payload is as wide as getProjects() (full Project
+   * objects); only the FGA round trip is eliminated, not the response payload
+   * size. If the upstream query service ever supports field projection, pass
+   * a 'fields' parameter here to further reduce transfer cost.
    */
   public async getProjectSlugs(req: Request): Promise<string[]> {
     logger.debug(req, 'get_project_slugs', 'Fetching all project slugs');
