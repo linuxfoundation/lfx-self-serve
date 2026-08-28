@@ -319,7 +319,7 @@ export class SocialListeningComponent {
   public readonly loadedCount = computed(() => this.mentions().length);
   /** Past MENTION_FEED_RENDER_LIMIT the footer stops advancing — the rendered DOM, not the window cache, is what's bounded. */
   public readonly renderCapped = computed(() => this.loadedCount() >= MENTION_FEED_RENDER_LIMIT && this.loadedCount() < this.servableTotal());
-  public readonly hasMore = computed(() => this.loadedCount() < Math.min(this.servableTotal(), MENTION_FEED_RENDER_LIMIT));
+  public readonly hasMore: Signal<boolean> = this.initHasMore();
   /** Distinguishes a Load More fetch from the initial load, so the footer spins while the list keeps its rows. */
   public readonly loadingMore = computed(() => this.loading() && this.loadedCount() > 0);
   public readonly readMentionIds: Signal<Set<string>> = this.initReadMentionIds();
@@ -1107,6 +1107,19 @@ export class SocialListeningComponent {
         if (this.mentionReadStateService.isRead(m.id, m.timestamp)) ids.add(m.id);
       }
       return ids;
+    });
+  }
+
+  private initHasMore(): Signal<boolean> {
+    return computed(() => {
+      if (this.loadedCount() >= Math.min(this.servableTotal(), MENTION_FEED_RENDER_LIMIT)) return false;
+      // A complete short window is the feed's real end — stop there even when the count is stale or failed; the terminal
+      // window's prefetched pages stay revealable, since revealing them advances no further fetch.
+      const windowData = this.windowCache().get(this.windowIndex());
+      if (windowData?.complete && windowData.mentions.length < this.serverWindowSize) {
+        return this.loadedCount() < this.serverOffset() + windowData.mentions.length;
+      }
+      return true;
     });
   }
 

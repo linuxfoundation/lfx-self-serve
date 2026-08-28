@@ -141,17 +141,11 @@
       data-testid="mentions-list-inline-error" />
   }
 
-  <!-- Load More footer: running count plus the advance control — hidden until the first row lands (an advance before
-       then cancels the window-0 fetch and strands the feed), once the feed is exhausted, or while a window needs retry -->
+  <!-- Footers: Load More (hidden until the first row lands — an early advance cancels the window-0 fetch — and while a window
+       needs retry), a render-cap note, and a count-only end state — the running count persists below the exhausted feed per #1821. -->
   @if (showLoadMore()) {
     <div class="flex flex-col items-center gap-2" data-testid="mentions-list-load-more-footer">
-      <p class="text-xs text-gray-400" data-testid="mentions-list-showing">
-        @if (countError()) {
-          Showing {{ loadedCount() }} mentions
-        } @else {
-          Showing {{ loadedCount() }} of {{ servableTotal() }} mentions
-        }
-      </p>
+      <p class="text-xs text-gray-400" data-testid="mentions-list-showing">{{ showingLabel() }}</p>
       <button
         type="button"
         class="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-default disabled:opacity-60"
@@ -172,5 +166,7 @@
     <p class="text-center text-xs text-gray-400" data-testid="mentions-list-render-cap">
       Showing the first {{ loadedCount() }} mentions. Narrow the filters or shorten the period to see more.
     </p>
+  } @else if (showExhaustedCount()) {
+    <p class="text-center text-xs text-gray-400" data-testid="mentions-list-showing">{{ showingLabel() }}</p>
   }
 </div>

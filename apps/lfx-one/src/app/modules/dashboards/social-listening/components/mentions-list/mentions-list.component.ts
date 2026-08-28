@@ -69,6 +69,14 @@ export class MentionsListComponent {
   public readonly isReadFn: Signal<(id: string) => boolean> = this.initIsReadFn();
   /** Load More footer visibility — gated on a landed row so an early advance can't cancel the in-flight window-0 fetch. */
   public readonly showLoadMore = computed(() => this.hasMore() && this.loadedCount() > 0 && !this.phase2Failed() && !this.loadError());
+  /** Exhausted feed with rows on screen — the count persists below the feed while the advance control hides. */
+  public readonly showExhaustedCount = computed(
+    () => !this.showLoadMore() && !this.renderCapped() && this.loadedCount() > 0 && !this.phase2Failed() && !this.loadError()
+  );
+  /** Running-count label shared by the Load More and exhausted footers — a failed count drops the total rather than inventing one. */
+  public readonly showingLabel = computed(() =>
+    this.countError() ? `Showing ${this.loadedCount()} mentions` : `Showing ${this.loadedCount()} of ${this.servableTotal()} mentions`
+  );
 
   /** Per-card bookmark lookup (PCC port): one computed over the input set, not a per-row method call. */
   private initIsBookmarkedFn(): Signal<(id: string) => boolean> {
