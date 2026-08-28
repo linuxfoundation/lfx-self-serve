@@ -48,10 +48,12 @@ describe('ProjectService.getProjectSlugs', () => {
     // Use a plain Error (not HttpErrorResponse) so retryTransientHttpError passes it through
     // immediately — only status-0/408/429/5xx HttpErrorResponse values are retried.
     httpGet.mockReturnValueOnce(throwError(() => new Error('network-error')));
-    service.getProjectSlugs().subscribe();
+    let fallback: string[] = ['sentinel'];
+    service.getProjectSlugs().subscribe((v) => (fallback = v));
 
     // tap({ error }) fires synchronously (throwError is synchronous), so the cache is already
     // null by the time we assert. The next call must issue a new request.
+    expect(fallback).toEqual([]);
     expect((service as unknown as { slugsCache$: unknown }).slugsCache$).toBeNull();
 
     httpGet.mockReturnValueOnce(of(['slug-c']));

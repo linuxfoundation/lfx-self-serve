@@ -60,6 +60,12 @@ export class AccessCheckService {
    * Check access permissions for multiple resources, letting upstream failures propagate instead
    * of degrading to "no access". For callers that must distinguish "resolved: no access" (403)
    * from "couldn't verify" (503) — `checkAccess`'s fallback collapses that distinction.
+   *
+   * Note: when the resource count exceeds ACCESS_CHECK_BATCH_SIZE, requests are split into chunks
+   * and fanned out with Promise.allSettled. Per-chunk failures are treated as partial degradation
+   * (the chunk's keys are absent from the result map, defaulting to false at lookup) rather than
+   * propagated errors — this is an internal batching detail, not an upstream service failure.
+   * Only a complete call failure (all chunks rejected, or the service itself unreachable) throws.
    * @param req Express request object with auth context
    * @param resources Array of resources to check access for
    * @param options Optional per-call overrides (e.g. explicit bearer token)
