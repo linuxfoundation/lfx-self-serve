@@ -264,7 +264,8 @@ export class AccessCheckService {
       // Log at WARN rather than success — partial results are a recoverable degradation, not a
       // clean completion. A monitoring alert keyed on "operation succeeded" should not fire here.
       // logger.warning has no startTime param, so duration_ms is added manually to preserve
-      // latency data for incident correlation.
+      // latency data for incident correlation. logger.success (else branch) computes duration
+      // internally from startTime — this mirrors that same arithmetic for the degraded path.
       logger.warning(req, operationName, `${failedChunks} of ${chunks.length} access-check chunks failed; results are partial`, {
         ...sharedMetadata,
         duration_ms: Date.now() - startTime,
