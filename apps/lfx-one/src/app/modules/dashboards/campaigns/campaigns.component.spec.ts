@@ -8,6 +8,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { Signal, WritableSignal } from '@angular/core';
 import { computed, signal } from '@angular/core';
 import type {
+  EmailBriefCopy,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignBriefPersistenceState,
@@ -1529,6 +1530,11 @@ describe('CampaignsComponent — email delivery channel', () => {
     onProceedToImplementation(brief: CampaignBriefOutput): void;
     onEmailProceedToImplementation(brief: CampaignBriefOutput): void;
     selectedEmailTemplateId: WritableSignal<string>;
+    emailCopy: WritableSignal<EmailBriefCopy | null>;
+    emailCopyState: WritableSignal<'idle' | 'generating' | 'error'>;
+    emailRefineText: WritableSignal<string>;
+    canGenerateEmailCopy: Signal<boolean>;
+    onGenerateEmailCopy(): Promise<void>;
     emailStaging: WritableSignal<'idle' | 'staging' | 'done' | 'error'>;
     emailStagingMessage: WritableSignal<string>;
     canStageEmail: Signal<boolean>;
@@ -1874,6 +1880,104 @@ describe('CampaignsComponent — email delivery channel', () => {
     // Still the paid brief: a shared signal here would show an email brief under Paid
     // Marketing's Implement tab after a round-trip.
     expect(internals().briefOutput()).toEqual(exampleBrief);
+  });
+
+  describe('email content generation (LFXV2-3198)', () => {
+    const emailBrief = {
+      eventDetails: {
+        name: 'KubeCon EU 2026',
+        slug: 'kubecon-eu-2026',
+        countryCode: 'NL',
+        registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+        audience: 'Cloud-native developers',
+      },
+      campaignGoal: 'registrations',
+    } as unknown as CampaignBriefOutput;
+
+    const copy = {
+      subject: 'Three days of Kubernetes in Amsterdam',
+      previewText: 'Sessions, labs and the people who build it',
+      sections: [{ type: 'rich_text', html: '<p>Hello</p>' }],
+      bodyHtml: '<p>Hello</p>',
+      previewHtml: '<p>Hello</p>',
+    };
+
+    it('renders the generate button and, once copy exists, the refine box', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+
+      const host: HTMLElement = fixture.nativeElement;
+      const panel = host.querySelector('[data-testid="campaigns-email-implementation-panel"]');
+      expect(panel?.querySelector('[data-testid="campaigns-email-generate-btn"]')).not.toBeNull();
+      // The refine box must NOT exist before there is copy to refine.
+      expect(panel?.querySelector('[data-testid="campaigns-email-refine-input"]')).toBeNull();
+
+      internals().emailCopy.set({
+        subject: 'S',
+        previewText: 'P',
+        sections: [],
+        bodyHtml: '<p>B</p>',
+        previewHtml: '<p>B</p>',
+      });
+      fixture.detectChanges();
+
+      expect(panel?.querySelector('[data-testid="campaigns-email-refine-input"]')).not.toBeNull();
+      expect(panel?.querySelector('[data-testid="campaigns-email-copy-subject"]')?.textContent).toContain('S');
+    });
+
+    it('cannot generate without a brief', () => {
+      selectEmail();
+      expect(internals().canGenerateEmailCopy()).toBe(false);
+
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+      expect(internals().canGenerateEmailCopy()).toBe(true);
+    });
+
+    it('sends the event facts from the brief, not from the form', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ copy }));
+      await internals().onGenerateEmailCopy();
+
+      const [request] = gen.mock.calls[0];
+      // Asserts the VALUES and their source: a generator given the wrong URL writes a plausible
+      // email pointing at the wrong event.
+      expect(request.eventName).toBe('KubeCon EU 2026');
+      expect(request.eventUrl).toBe('https://events.linuxfoundation.org/kubecon-eu-2026/');
+      expect(request.changeRequest).toBeUndefined();
+      expect(internals().emailCopy()?.subject).toBe('Three days of Kubernetes in Amsterdam');
+    });
+
+    it('passes the refine instruction and clears it only on success', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailRefineText.set('shorter, lead with speakers');
+      fixture.detectChanges();
+
+      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ copy }));
+      await internals().onGenerateEmailCopy();
+
+      expect(gen.mock.calls[0][0].changeRequest).toBe('shorter, lead with speakers');
+      expect(internals().emailRefineText()).toBe('');
+    });
+
+    it('KEEPS the refine text when generation fails', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailRefineText.set('make it shorter');
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(throwError(() => new Error('boom')));
+      await internals().onGenerateEmailCopy();
+
+      // Clearing it would make the operator retype their instruction to retry.
+      expect(internals().emailRefineText()).toBe('make it shorter');
+      expect(internals().emailCopyState()).toBe('error');
+    });
   });
 
   describe('email staging trigger (LFXV2-3201)', () => {

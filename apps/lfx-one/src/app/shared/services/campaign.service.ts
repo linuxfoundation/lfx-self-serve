@@ -33,6 +33,8 @@ import {
   RedditAccountOption,
   RedditMonitorResponse,
   SSEEvent,
+  GenerateEmailCopyRequest,
+  GenerateEmailCopyResponse,
 } from '@lfx-one/shared/interfaces';
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
 import { exhaustMap, last, map, Observable, of, take, takeWhile, timer } from 'rxjs';
@@ -135,6 +137,16 @@ export class CampaignService {
    * legacy path, since falling through would create the campaigns on the ad platforms while the
    * user is told creation failed.
    */
+  /**
+   * Generate — or regenerate — email copy for the brief on screen.
+   *
+   * One method for both because a refine differs only by `changeRequest`; a separate refine call
+   * would be the same request with one extra field and would drift from this one.
+   */
+  public generateEmailCopy(request: GenerateEmailCopyRequest): Observable<GenerateEmailCopyResponse> {
+    return this.http.post<GenerateEmailCopyResponse>('/api/campaigns/email-copy', request);
+  }
+
   public createCampaign(
     request: CampaignCreateRequest,
     projectSlug: string,
