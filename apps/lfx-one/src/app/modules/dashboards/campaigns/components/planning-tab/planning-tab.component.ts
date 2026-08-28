@@ -500,10 +500,19 @@ export class PlanningTabComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
-          if (result?.created && result.hs_utm) {
-            this.hsUtm.set(result.hs_utm);
+          // `created` alone decides success. HubSpot assigns the token, and not necessarily by
+          // the time the create returns — so requiring hs_utm too would report a campaign that
+          // WAS created as a failure, leave the Create button up, and invite a retry that writes
+          // a SECOND campaign into the LF-global namespace. Upstream refuses an id-less create
+          // rather than reporting one as success, so `created` is trustworthy on its own.
+          if (result?.created) {
+            if (result.hs_utm) {
+              this.hsUtm.set(result.hs_utm);
+            }
             this.hsNotFound.set(false);
-            this.hsStatus.set(`Created: ${result.campaign_name}`);
+            this.hsStatus.set(
+              result.hs_utm ? `Created: ${result.campaign_name}` : `Created: ${result.campaign_name} — HubSpot has not assigned a UTM token yet`
+            );
           } else {
             this.hsStatus.set('Failed to create campaign');
           }
@@ -960,10 +969,20 @@ export class PlanningTabComponent implements OnInit {
       .subscribe({
         next: (result: HubSpotUtmLookupResult | null) => {
           if (this.lastLookedUpEvent !== capturedEvent) return;
+          // THREE states, not two. A campaign that exists but has NO utm token configured is a
+          // real match — treating it as not-found would offer to CREATE a campaign that already
+          // exists, into a namespace shared by every foundation and with no duplicate check
+          // upstream. The legacy path never surfaced this because it fabricated a token from the
+          // id and name whenever HubSpot had none.
           if (result?.found && result.hs_utm) {
             this.hsUtm.set(result.hs_utm);
             this.hsMatches.set(result.all_matches ?? []);
             this.hsStatus.set(`Found: ${result.campaign_name}`);
+          } else if (result?.found) {
+            // Found, but untokened. The brief gets no utm — which is honest, since HubSpot has
+            // none to report against — and Create stays hidden so nobody duplicates it.
+            this.hsMatches.set(result.all_matches ?? []);
+            this.hsStatus.set(`Found: ${result.campaign_name} — no UTM token set in HubSpot`);
           } else {
             this.hsNotFound.set(true);
             this.hsStatus.set('No matching campaign in HubSpot');

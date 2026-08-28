@@ -8,6 +8,7 @@ import { logger } from './logger.service';
 
 import type {
   BulkKeywordActionRequest,
+  CampaignServiceKeywordActions,
   BulkKeywordActionResponse,
   CampaignServiceKeywordActionInput,
   KeywordActionGroup,
@@ -168,6 +169,47 @@ export function toBulkResponse(results: KeywordActionResponse[]): BulkKeywordAct
  * Both cases are refusals rather than errors upstream, so they arrive as ordinary answers and
  * have to be turned into per-keyword failures here.
  */
+/**
+ * Compare what upstream confirmed against what was requested; returns a short description of the
+ * difference, or null when they match.
+ *
+ * Matched as a MULTISET over (ad_group_id, criterion_id, action): order is not part of the
+ * contract, but membership and count are. A criterion named twice in the request must be
+ * confirmed twice, which is why counts are compared rather than sets.
+ */
+function describeOutcomeMismatch(group: KeywordActionGroup, action: KeywordActionType, applied: CampaignServiceKeywordActions): string | null {
+  const requested = toUpstreamActions(group.keywords, action);
+  if (applied.applied_count !== requested.length) {
+    return `applied_count ${applied.applied_count} != ${requested.length} requested`;
+  }
+  const key = (a: { ad_group_id: string; criterion_id: string; action: string }): string => `${a.ad_group_id}~${a.criterion_id}~${a.action}`;
+  const tally = new Map<string, number>();
+  for (const a of requested) {
+    tally.set(key(a), (tally.get(key(a)) ?? 0) + 1);
+  }
+  for (const r of applied.results) {
+    const remaining = tally.get(key(r));
+    if (!remaining) {
+      return 'upstream confirmed a criterion that was not requested';
+    }
+    tally.set(key(r), remaining - 1);
+  }
+  for (const remaining of tally.values()) {
+    if (remaining !== 0) {
+      return 'upstream did not confirm every requested criterion';
+    }
+  }
+  return null;
+}
+
+/**
+ * The batch may or may not have applied. Distinct from a definite failure: upstream returned a
+ * 2xx, so the mutation probably ran — the confirmation simply does not match what was asked. The
+ * caller must verify in the platform rather than retry, because a retried REMOVE is irreversible.
+ */
+export const CAMPAIGN_OUTCOME_UNCONFIRMED =
+  'The change was sent but the confirmation did not match the request. Check the campaign in Google Ads before retrying.';
+
 export const CAMPAIGN_UNRESOLVED = 'This campaign is not managed here, so its keywords cannot be changed.';
 /**
  * A lookup that FAILED, as distinct from one that answered "no such campaign".
@@ -242,7 +284,23 @@ export async function applyKeywordActionsViaCampaignService(
     }
 
     try {
-      await client.applyKeywordActions(req, projectSlug, ref.brief_id, ref.campaign_id, toUpstreamActions(group.keywords, body.action));
+      const applied = await client.applyKeywordActions(req, projectSlug, ref.brief_id, ref.campaign_id, toUpstreamActions(group.keywords, body.action));
+      // The 2xx is CHECKED, not assumed. Upstream's batch is all-or-nothing, so applied_count
+      // should equal what was sent — but upstream derives it from the results it actually
+      // returns (`AppliedCount: len(results)`) rather than asserting it against the request, so a
+      // short or altered response would agree with itself. Reporting every requested keyword as
+      // changed on the strength of that would tell someone a still-spending keyword was paused,
+      // which is the one thing this path must never do.
+      const mismatch = describeOutcomeMismatch(group, body.action, applied);
+      if (mismatch) {
+        logger.warning(req, 'keyword_actions', 'Upstream confirmed a different set than was requested', {
+          platformCampaignId: group.platformCampaignId,
+          campaignId: ref.campaign_id,
+          mismatch,
+        });
+        results.push(...failedResults(group, body.action, CAMPAIGN_OUTCOME_UNCONFIRMED));
+        continue;
+      }
       results.push(...appliedResults(group, body.action));
     } catch (error) {
       // The upstream message is surfaced because it carries the one distinction a caller must

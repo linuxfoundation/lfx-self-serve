@@ -1016,3 +1016,131 @@ describe('PlanningTabComponent delivery-type mode', () => {
     expect(refineBrief.mock.calls[0][1].platforms).toEqual(['google-ads']);
   });
 });
+
+/**
+ * HubSpot UTM lookup and create, and specifically the THREE states a campaign can be in.
+ *
+ * The legacy BFF path fabricated a utm token (`<id>-<name>`) whenever HubSpot had none, so this
+ * component only ever saw two states and was written for two: token-or-nothing. Removing the
+ * fabrication — correct, because a fabricated token attributes traffic to a campaign HubSpot
+ * cannot report on — exposed that assumption.
+ *
+ * Both failure modes end the same way: the Create button stays up and a retry writes ANOTHER
+ * campaign into a namespace every foundation shares, with no duplicate check upstream.
+ */
+describe('PlanningTabComponent — HubSpot UTM states', () => {
+  const foundationA = { uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' };
+  const programTypeConfig: CampaignProgramTypeOption = {
+    id: 'events',
+    label: 'Events',
+    breadcrumbLabel: 'Events',
+    urlLabel: 'Event URL',
+    urlPlaceholder: 'https://events.example.com/event-name',
+    urlHelp: 'Enter the event registration URL',
+    goalLabel: 'Event conversions',
+    audiencePlaceholder: 'Enter target audience',
+    valuePropPlaceholder: 'Enter value proposition',
+  };
+
+  let fixture: ComponentFixture<PlanningTabComponent>;
+  let lookup: ReturnType<typeof vi.fn>;
+  let create: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [PlanningTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    lookup = vi.fn();
+    create = vi.fn();
+    vi.spyOn(TestBed.inject(CampaignService), 'lookupHubSpotUtm').mockImplementation(lookup);
+    vi.spyOn(TestBed.inject(CampaignService), 'createHubSpotUtm').mockImplementation(create);
+
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation(foundationA, false);
+
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.detectChanges();
+  });
+
+  /** Reach the component's private lookup/create the way a click would. */
+  function instance(): Record<string, { set(v: unknown): void } & (() => unknown)> {
+    return fixture.componentInstance as unknown as Record<string, { set(v: unknown): void } & (() => unknown)>;
+  }
+
+  function runLookup(result: unknown): void {
+    lookup.mockReturnValue(
+      new Observable((s) => {
+        s.next(result);
+        s.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { lookupHubSpot(name: string): void }).lookupHubSpot('KubeCon NA 2026');
+    fixture.detectChanges();
+  }
+
+  /**
+   * A campaign that EXISTS but has no token is a real match. Offering to create it would
+   * duplicate a campaign that is already there, in a namespace shared by every foundation.
+   */
+  it('does not offer to create a campaign that exists without a token', () => {
+    runLookup({ found: true, hs_utm: null, campaign_name: 'KubeCon NA 2026', all_matches: [] });
+
+    expect(instance()['hsNotFound']()).toBe(false);
+    // The brief gets no token, which is honest — HubSpot has none to report against.
+    expect(instance()['hsUtm']()).toBeFalsy();
+    expect(String(instance()['hsStatus']())).toContain('no UTM token');
+  });
+
+  /**
+   * A create that SUCCEEDED must not read as a failure just because HubSpot has not assigned the
+   * token yet. Requiring hs_utm too would leave the Create button up and invite a retry that
+   * writes a SECOND campaign into the LF-global namespace — upstream has no duplicate check, by
+   * design, because that check belongs with the operator.
+   *
+   * `created` is trustworthy on its own: upstream refuses an id-less create rather than
+   * reporting one as success.
+   */
+  it('treats a create with no token yet as success, not failure', () => {
+    // A lookup must have run first: createInHubSpot early-returns without lastLookedUpEvent,
+    // so without this the test would pass against a method that never executed.
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    create.mockReturnValue(
+      new Observable((s) => {
+        s.next({ created: true, hs_utm: null, campaign_name: 'KubeCon NA 2027' });
+        s.complete();
+      })
+    );
+
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(create).toHaveBeenCalled();
+
+    expect(String(instance()['hsStatus']())).toContain('Created');
+    expect(String(instance()['hsStatus']())).not.toContain('Failed');
+    expect(instance()['hsNotFound']()).toBe(false);
+  });
+
+  it('still offers to create when nothing matched', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+
+    expect(instance()['hsNotFound']()).toBe(true);
+  });
+
+  it('uses the token when the match has one', () => {
+    runLookup({ found: true, hs_utm: 'kubecon-na-2026', campaign_name: 'KubeCon NA 2026', all_matches: [] });
+
+    expect(instance()['hsUtm']()).toBe('kubecon-na-2026');
+    expect(instance()['hsNotFound']()).toBe(false);
+  });
+});

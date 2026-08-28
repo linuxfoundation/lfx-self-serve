@@ -1043,7 +1043,7 @@ export class CampaignController {
         const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
         if (projectSlug === '') {
           next(
-            ServiceValidationError.forField('project', 'A project is required for HubSpot campaign lookup', {
+            ServiceValidationError.forField('project', 'A project is required to create a HubSpot campaign', {
               operation: 'hubspot_utm_create',
               service: 'campaign_controller',
               path: req.path,

@@ -2137,7 +2137,14 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
     next = vi.fn();
     isServerFeatureEnabled.mockImplementation(onlyActions);
     svcResolveCampaign.mockResolvedValue(resolvedTo('c-1', 'b-1'));
-    svcApplyKeywordActions.mockResolvedValue({ campaign_id: 'c-1', results: [], applied_count: 1 });
+    // Confirms exactly what a single-keyword request sends. An empty `results` array is NOT a
+    // valid confirmation — the controller now checks the returned multiset against the request,
+    // because upstream derives applied_count from its own results rather than from the request.
+    svcApplyKeywordActions.mockResolvedValue({
+      campaign_id: 'c-1',
+      applied_count: 1,
+      results: [{ ad_group_id: 'ag-1', criterion_id: '1', action: 'PAUSE' }],
+    });
   });
 
   it('resolves the campaign and applies the batch under its brief', async () => {
@@ -2226,9 +2233,65 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
 
   // One campaign's failure must not take down the others: the batch is atomic per campaign, and
   // the remaining campaigns' actions should still be attempted.
+  /**
+   * A 2xx is not proof the batch applied as asked.
+   *
+   * Upstream derives `applied_count` from the results it actually returns rather than asserting
+   * it against the request, so a short or altered confirmation agrees with itself. Marking every
+   * requested keyword as changed on that basis would tell someone a still-spending keyword was
+   * paused — the one thing this path must never do.
+   *
+   * Reported as UNCONFIRMED rather than failed: upstream returned a 2xx, so the mutation
+   * probably ran, and a retried REMOVE is irreversible.
+   */
+  it.each([
+    ['a short confirmation', { campaign_id: 'c-1', applied_count: 1, results: [{ ad_group_id: 'ag-1', criterion_id: '1', action: 'PAUSE' }] }],
+    [
+      'a criterion that was not requested',
+      {
+        campaign_id: 'c-1',
+        applied_count: 2,
+        results: [
+          { ad_group_id: 'ag-1', criterion_id: '1', action: 'PAUSE' },
+          { ad_group_id: 'ag-1', criterion_id: '999', action: 'PAUSE' },
+        ],
+      },
+    ],
+  ])('reports %s as unconfirmed rather than applied', async (_label, applied) => {
+    svcApplyKeywordActions.mockResolvedValue(applied);
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('555', '2')]), res, next);
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as { succeeded: number; failed: number; results: { message: string }[] };
+    expect(body.succeeded).toBe(0);
+    expect(body.failed).toBe(2);
+    // The wording must send the caller to verify, not to retry: a retried REMOVE cannot be undone.
+    expect(body.results[0].message).toMatch(/check the campaign/i);
+  });
+
+  it('accepts a confirmation that matches the request regardless of order', async () => {
+    svcApplyKeywordActions.mockResolvedValue({
+      campaign_id: 'c-1',
+      applied_count: 2,
+      // Reversed: order is not part of the contract, membership and count are.
+      results: [
+        { ad_group_id: 'ag-1', criterion_id: '2', action: 'PAUSE' },
+        { ad_group_id: 'ag-1', criterion_id: '1', action: 'PAUSE' },
+      ],
+    });
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('555', '2')]), res, next);
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as { succeeded: number; failed: number };
+    expect(body.succeeded).toBe(2);
+    expect(body.failed).toBe(0);
+  });
+
   it('continues to the next campaign when one fails, and reports both outcomes', async () => {
     svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
-    svcApplyKeywordActions.mockRejectedValueOnce(new Error('upstream refused')).mockResolvedValueOnce({ campaign_id: 'c-2', results: [], applied_count: 1 });
+    svcApplyKeywordActions
+      .mockRejectedValueOnce(new Error('upstream refused'))
+      .mockResolvedValueOnce({ campaign_id: 'c-2', applied_count: 1, results: [{ ad_group_id: 'ag-1', criterion_id: '2', action: 'PAUSE' }] });
 
     await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2')]), res, next);
 
@@ -2247,6 +2310,13 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
   // A failed LOOKUP is this campaign's problem, not the request's.
   it('reports a failed resolution against that campaign and keeps going', async () => {
     svcResolveCampaign.mockRejectedValueOnce(new Error('resolver down')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
+    // Campaign 666 sends criterion 2, so its confirmation must name criterion 2 — the default
+    // stub confirms criterion 1 and would now be rejected as a mismatch.
+    svcApplyKeywordActions.mockResolvedValue({
+      campaign_id: 'c-2',
+      applied_count: 1,
+      results: [{ ad_group_id: 'ag-1', criterion_id: '2', action: 'PAUSE' }],
+    });
 
     await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2')]), res, next);
 
