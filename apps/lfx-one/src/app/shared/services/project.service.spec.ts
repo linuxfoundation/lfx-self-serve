@@ -41,7 +41,10 @@ describe('ProjectService.getProjectSlugs', () => {
     service.getProjectSlugs().subscribe((v) => results.push(v));
     service.getProjectSlugs().subscribe((v) => results.push(v));
     expect(httpGet).toHaveBeenCalledTimes(1);
-    expect(results).toEqual([['slug-a', 'slug-b'], ['slug-a', 'slug-b']]);
+    expect(results).toEqual([
+      ['slug-a', 'slug-b'],
+      ['slug-a', 'slug-b'],
+    ]);
   });
 
   it('evicts slugsCache$ on error so the next caller gets a fresh HTTP attempt', () => {

@@ -270,7 +270,12 @@ describe('ProjectService — create picker methods', () => {
 
   describe('getProjectSlugs', () => {
     it('returns slug strings for all non-root projects', async () => {
-      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }, { uid: 'b', slug: 'b' }]));
+      proxyRequest.mockResolvedValueOnce(
+        pageOf([
+          { uid: 'a', slug: 'a' },
+          { uid: 'b', slug: 'b' },
+        ])
+      );
 
       const result = await service.getProjectSlugs(req);
 
