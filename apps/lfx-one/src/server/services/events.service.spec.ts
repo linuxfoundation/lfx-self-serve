@@ -174,11 +174,11 @@ describe('EventsService.getMyEvents past-event SQL', () => {
     const sql = await sqlFor({ isPast: false, affiliatedProjectSlugs: ['example'] });
     const combined = sql.slice(sql.indexOf('combined AS ('));
     const wrapperOpen = combined.indexOf('SELECT * FROM (');
-    // Each branch landmark pins its priority literal to its source, so swapping them fails here;
-    // the QUALIFY landmark closes at ")", so an ORDER BY flipped to DESC stops matching too.
+    // Each branch landmark pins its priority literal to its source; the QUALIFY landmark spans the
+    // ORDER BY through "= 1", so a DESC flip or a changed row-number predicate stops matching too.
     const firstBranch = combined.indexOf('SELECT *, 1 AS SOURCE_PRIORITY FROM registered_events');
     const lastBranch = combined.indexOf('SELECT *, 2 AS SOURCE_PRIORITY FROM affiliated_upcoming');
-    const qualify = combined.indexOf('QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY SOURCE_PRIORITY)');
+    const qualify = combined.indexOf('QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY SOURCE_PRIORITY) = 1');
 
     // Ordering alone passes on a missing landmark (indexOf returns -1), so require each to exist.
     for (const landmark of [wrapperOpen, firstBranch, lastBranch, qualify]) {
