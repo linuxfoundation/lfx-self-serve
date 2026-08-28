@@ -72,6 +72,17 @@ export class ProfileLinuxEmailComponent {
   public domain = computed(() => this.data()?.domain ?? '');
   public email = computed(() => this.data()?.email ?? null);
 
+  // The forward target couldn't be read (no Flow C token in session) — the select is actively
+  // harmful here (it renders blank), so the template swaps it for a re-auth panel instead.
+  public forwardReauthRequired = computed(() => this.state() === 'claimed' && !!this.data()?.forwardAuthRequired);
+
+  // Absent when Flow C is unconfigured server-side — gates whether the re-auth button can render.
+  public forwardAuthorizeUrl = computed(() => this.data()?.authorizeUrl ?? '');
+
+  // Forward is genuinely unset (not unreadable) — the FORWARD_SET_FAILED recovery path and the
+  // impersonation read-only path both land here. Drives an honest hint on the still-usable select.
+  public forwardNotSet = computed(() => this.state() === 'claimed' && !this.data()?.forwardTo && !this.data()?.forwardAuthRequired);
+
   // True only when the user has changed the forward-to selection from its saved value.
   public forwardDirty: Signal<boolean> = this.initForwardDirty();
 
@@ -200,6 +211,21 @@ export class ProfileLinuxEmailComponent {
     // it must not consume a stale pending flag from an earlier claim() failure.
     this.pendingForwardRecoveryToast = false;
     this.refresh.next();
+  }
+
+  /**
+   * Manual recovery for a still-tokenless return. Deliberately does NOT clear reauthFlagKey —
+   * doing so would let maybeReauthForForward fire a second automatic redirect on a still-
+   * tokenless return. This button is the recovery path and stays available on every reload,
+   * which is what makes the one-shot guard recoverable without reopening the redirect loop it
+   * exists to prevent.
+   */
+  public reauthorizeForward(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const url = this.forwardAuthorizeUrl();
+    if (url) {
+      window.location.href = url;
+    }
   }
 
   // Private methods

@@ -132,3 +132,49 @@ describe('ProfileLayoutComponent — Flow C cold-return read-your-writes (LFXV2-
     expect(fixture.componentInstance.aboutMe()).toBe('OLD BIO');
   });
 });
+
+/**
+ * Guards issue #1935's PROFILE_AUTH_ERROR_MESSAGES lookup: a Flow C error code toasts its own
+ * specific message (not the old generic "Authorization failed. Please try again." for every code).
+ */
+describe('ProfileLayoutComponent — Flow C error message ownership (#1935)', () => {
+  it('toasts the specific message for a mapped Flow C error code', async () => {
+    const add = vi.fn();
+    const userServiceMock = {
+      user: signal({ user_id: 'u1' } as unknown as User),
+      impersonating: signal(false),
+      uploadedAvatarUrl: signal<string | null>(null),
+      effectiveAvatarUrl: computed(() => ''),
+      identitiesRefresh$: EMPTY,
+      getCurrentUserProfile: vi.fn(() => of({ user: {}, profile: null } as unknown as CombinedProfile)),
+      updateUserProfile: vi.fn(() => of({})),
+      getIdentities: vi.fn(() => of([])),
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { queryParams: of({ error: 'user_mismatch' }) } },
+        { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        summary: 'Authorization Error',
+        detail: 'You authorized a different account. Please sign in as yourself and try again.',
+      })
+    );
+  });
+});

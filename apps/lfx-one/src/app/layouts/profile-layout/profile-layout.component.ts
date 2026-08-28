@@ -5,7 +5,7 @@ import { isPlatformBrowser, NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { MY_CLAS_ENABLED_FLAG, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, TSHIRT_SIZES } from '@lfx-one/shared/constants';
+import { MY_CLAS_ENABLED_FLAG, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, PROFILE_AUTH_ERROR_MESSAGES, TSHIRT_SIZES } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
 import { buildProfileTabs } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -19,16 +19,6 @@ import { ProfileEditDrawerService } from '../../modules/profile/components/profi
 import { ProfileVisibilityDrawerComponent } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.component';
 import { ProfileVisibilityDrawerService } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.service';
 import { ProfilePanelComponent } from './profile-panel/profile-panel.component';
-
-// Error codes that originate from the Flow C profile-auth (/passwordless/callback) flow.
-// Child routes (e.g. identities) handle their own error codes — do not swallow them here.
-const PROFILE_AUTH_ERROR_CODES = new Set([
-  'profile_auth_not_configured',
-  'profile_auth_failed',
-  'token_exchange_failed',
-  'login_session_invalid',
-  'user_mismatch',
-]);
 
 /**
  * ProfileLayoutComponent is the shell for the Profile & Account hub. It provides:
@@ -172,7 +162,8 @@ export class ProfileLayoutComponent {
         this.clearAuthQueryParams();
       }
 
-      if (PROFILE_AUTH_ERROR_CODES.has(params['error'])) {
+      const authErrorMessage = PROFILE_AUTH_ERROR_MESSAGES[params['error']];
+      if (authErrorMessage) {
         // Clear any stash from the redirect that failed — otherwise it outlives this failed
         // attempt and gets replayed by the next unrelated Flow C success (see handleProfileAuthReturn).
         if (isPlatformBrowser(this.platformId)) {
@@ -181,7 +172,7 @@ export class ProfileLayoutComponent {
         this.messageService.add({
           severity: 'error',
           summary: 'Authorization Error',
-          detail: 'Authorization failed. Please try again.',
+          detail: authErrorMessage,
         });
         this.clearAuthQueryParams();
       }
