@@ -160,7 +160,10 @@ describe('MeetingJoinComponent', () => {
   });
 
   it('partially absorbs the pad and rebases the snapshot before fully converging on a later refetch', async () => {
-    getMyMeetingRegistrants.mockReturnValueOnce(of(buildRegistrants(10))).mockReturnValueOnce(of(buildRegistrants(11))).mockReturnValueOnce(of(buildRegistrants(12)));
+    getMyMeetingRegistrants
+      .mockReturnValueOnce(of(buildRegistrants(10)))
+      .mockReturnValueOnce(of(buildRegistrants(11)))
+      .mockReturnValueOnce(of(buildRegistrants(12)));
 
     const component = await createComponent();
 
@@ -177,7 +180,9 @@ describe('MeetingJoinComponent', () => {
   it("falls back to an empty roster instead of leaking a previous meeting's roster when the refetch for a newly-navigated meeting fails", async () => {
     const MEETING_ID_2 = 'meeting-2';
     getPublicMeeting.mockImplementation((id: string) =>
-      id === MEETING_ID_2 ? of({ meeting: buildMeeting({ id: MEETING_ID_2 }), project: buildProject() }) : of({ meeting: buildMeeting(), project: buildProject() })
+      id === MEETING_ID_2
+        ? of({ meeting: buildMeeting({ id: MEETING_ID_2 }), project: buildProject() })
+        : of({ meeting: buildMeeting(), project: buildProject() })
     );
     getMyMeetingRegistrants.mockReturnValueOnce(of(buildRegistrants(3))).mockReturnValueOnce(throwError(() => new Error('roster fetch failed')));
 

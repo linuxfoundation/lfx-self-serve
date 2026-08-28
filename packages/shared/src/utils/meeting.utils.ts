@@ -1420,6 +1420,18 @@ export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string
  * added rows this fetch already reflects, so treat this fetch as establishing the baseline rather
  * than as absorption. Comparing against an unconfirmed baseline (like 0) would otherwise credit an
  * unrelated roster size to "absorbed" and zero out the pad before the added guests are indexed.
+ *
+ * Known limitation, both directions: this is a bare count-delta heuristic with no visibility into
+ * *which* rows a refetch actually contains, so the null-baseline path can misfire either way once
+ * this establishing fetch lands. If it already reflects the just-added guests, they get credited a
+ * second time and the pad never comes off (permanent overcount) until an unrelated roster change
+ * happens to absorb it. If it doesn't yet reflect them, nothing here schedules a follow-up refetch
+ * on its own — the pad only converges when some other user action (another add, a registration)
+ * re-triggers `registrantsRefresh$`. Fully resolving either requires reconciling against the
+ * identity of the specific rows this client added (e.g. by email/uid) rather than a count, which is
+ * a materially larger change to the add-guest event contract and out of scope here — the same
+ * trade-off already accepted for the confirmed-baseline path (see PR #1748 review thread on
+ * concurrent roster growth).
  */
 export function reconcileOptimisticPad(state: { pad: number; before: number | null; current: number }): {
   pad: number;
