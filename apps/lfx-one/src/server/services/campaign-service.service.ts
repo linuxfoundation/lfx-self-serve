@@ -1205,17 +1205,6 @@ export class CampaignServiceClient {
   }
 
   /**
-   * Google Ads age/gender/device breakdowns for the project's OWN campaigns.
-   *
-   * Same scoping and same query-parameter placement as `getGoogleAdsKeywords` above, and the
-   * same narrowing against the legacy account-wide read.
-   *
-   * The three breakdowns arrive as ONE flat array discriminated by `dimension`, not as three
-   * arrays. They are also not independently failable: upstream fails the whole request if any
-   * one breakdown fails, rather than returning the two that loaded — a partial demographic
-   * picture presented as a whole one is how a campaign gets re-targeted on half the data.
-   */
-  /**
    * Resolve one Google Ads campaign id to campaign-service's own campaign and brief.
    *
    * A keyword row carries GOOGLE's numeric campaign id; the keyword-actions route is keyed by
@@ -1276,6 +1265,17 @@ export class CampaignServiceClient {
     );
   }
 
+  /**
+   * Google Ads age/gender/device breakdowns for the project's OWN campaigns.
+   *
+   * Same scoping and same query-parameter placement as `getGoogleAdsKeywords` above, and the
+   * same narrowing against the legacy account-wide read.
+   *
+   * The three breakdowns arrive as ONE flat array discriminated by `dimension`, not as three
+   * arrays. They are also not independently failable: upstream fails the whole request if any
+   * one breakdown fails, rather than returning the two that loaded — a partial demographic
+   * picture presented as a whole one is how a campaign gets re-targeted on half the data.
+   */
   public async getGoogleAdsAudience(req: Request, projectSlug: string, window?: CampaignMetricsWindow): Promise<CampaignServiceAudience> {
     if (projectSlug === '') {
       throw new Error('An audience read requires the project it is scoped to.');

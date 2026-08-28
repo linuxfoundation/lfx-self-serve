@@ -1994,13 +1994,14 @@ describe('CampaignController Google Ads insight reads', () => {
       expect(vi.mocked(res.json).mock.calls[0][0]).toMatchObject({ days: 14 });
     });
 
-    // `truncated` and `row_count` reach the LOG and nothing else — the UI contract has no field
-    // for either. That makes the log line the only place a capped result is visible at all, so
-    // it is asserted: without this, deleting the line leaves the whole suite green while the one
-    // signal distinguishing "this project has 50 keywords" from "here are the top 50 of more"
-    // disappears. The totals in the body are summed over a possibly-capped set, which is exactly
-    // why the flag has to survive somewhere.
-    it('logs the truncation flag and upstream row count, which the UI contract cannot carry', async () => {
+    // `row_count` reaches the LOG and nothing else — the UI contract has no field for it, so
+    // this is the only place upstream's own count is visible. `truncated` DOES reach the client
+    // now and both keyword consumers render it, but it is logged alongside because the log is
+    // where someone investigating a number looks, not just someone looking at the table.
+    //
+    // Asserted rather than assumed: without this, deleting the line leaves the whole suite green
+    // while the count that would reveal a conversion silently dropping rows disappears.
+    it('logs the truncation flag and upstream row count', async () => {
       isServerFeatureEnabled.mockImplementation(onlyInsights);
 
       await controller.getKeywords(insightsReq({ project: 'tlf', days: '30' }), res, next);

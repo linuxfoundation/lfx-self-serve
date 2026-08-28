@@ -615,8 +615,10 @@ environment:
   # restores the previous behaviour exactly, leak included. It has no ordering dependency on
   # any other flag on this list.
   #
-  # Does NOT cover keyword ACTIONS (pause/remove), which stay on the legacy path — a write
-  # needs a rollback story a read does not. Same accepted values as the flags above.
+  # Does NOT gate keyword ACTIONS (pause/remove). Those have their own flag,
+  # LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS, immediately below — a write needs a rollback
+  # story a read does not, so the two are enabled independently and neither implies the other.
+  # Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS:
     value: "false"
 

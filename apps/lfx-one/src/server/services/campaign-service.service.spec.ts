@@ -2756,3 +2756,107 @@ describe('CampaignServiceClient google ads insight reads', () => {
     });
   });
 });
+
+/**
+ * Wire-shape coverage for the campaign-ref lookup and the keyword-action mutation.
+ *
+ * Same reasoning as the insight reads above, and the same blind spot: the controller suite
+ * mocks both methods wholesale, so a wrong path, an unencoded segment, or an argument in the
+ * wrong position stays green there. It matters more here than on the reads — one of these
+ * MUTATES live campaigns, and `REMOVE` is irreversible.
+ *
+ * The query/body distinction is the trap in both directions. For a GET, a value in the body
+ * position (sixth) sends no query string at all; for a POST, a payload in the query position
+ * (fifth) sends no body — and neither raises a type error, because both parameters are optional
+ * and loosely typed.
+ */
+describe('CampaignServiceClient campaign-ref and keyword actions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('resolveGoogleAdsCampaign', () => {
+    const resolution = { platform_campaign_id: '24183781329', matches: [], match_count: 0 };
+
+    it('sends the platform campaign id as a query parameter on the campaign-ref path', async () => {
+      proxyRequest.mockResolvedValue(resolution);
+
+      await new CampaignServiceClient().resolveGoogleAdsCampaign(req, 'cncf', '24183781329');
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/google-ads/campaign-ref', 'GET', {
+        platform_campaign_id: '24183781329',
+      });
+      // The body position must stay empty, for the reason the read methods document.
+      expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+    });
+
+    it('encodes the project segment', async () => {
+      proxyRequest.mockResolvedValue(resolution);
+
+      await new CampaignServiceClient().resolveGoogleAdsCampaign(req, 'a b/c', '555');
+
+      expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b%2Fc/google-ads/campaign-ref');
+    });
+
+    it.each([
+      ['no project', '', '555'],
+      ['no platform campaign id', 'cncf', ''],
+    ])('refuses a lookup with %s without calling the proxy', async (_label, slug, id) => {
+      await expect(new CampaignServiceClient().resolveGoogleAdsCampaign(req, slug, id)).rejects.toThrow(
+        /requires both the project and the platform campaign id/
+      );
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('applyKeywordActions', () => {
+    const actions = [{ ad_group_id: '176216228', criterion_id: '305729261', action: 'PAUSE' as const }];
+    const applied = { campaign_id: 'c-1', results: [], applied_count: 1 };
+
+    it('POSTs the actions in the BODY position, not the query', async () => {
+      proxyRequest.mockResolvedValue(applied);
+
+      await new CampaignServiceClient().applyKeywordActions(req, 'cncf', 'b-1', 'c-1', actions);
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/briefs/b-1/campaigns/c-1/keyword-actions', 'POST', undefined, {
+        actions,
+      });
+      // Sixth argument present and fifth empty: swapping them would send the payload as a query
+      // string with no body, which upstream reads as a request carrying no actions.
+      expect(proxyRequest.mock.calls[0]).toHaveLength(6);
+      expect(proxyRequest.mock.calls[0][4]).toBeUndefined();
+    });
+
+    it('encodes every path segment', async () => {
+      proxyRequest.mockResolvedValue(applied);
+
+      await new CampaignServiceClient().applyKeywordActions(req, 'a b', 'b/1', 'c 1', actions);
+
+      expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b/briefs/b%2F1/campaigns/c%201/keyword-actions');
+    });
+
+    it.each([
+      ['no project', '', 'b-1', 'c-1'],
+      ['no brief', 'cncf', '', 'c-1'],
+      ['no campaign', 'cncf', 'b-1', ''],
+    ])('refuses a mutation with %s without calling the proxy', async (_label, slug, brief, campaign) => {
+      await expect(new CampaignServiceClient().applyKeywordActions(req, slug, brief, campaign, actions)).rejects.toThrow(
+        /requires the project, brief and campaign/
+      );
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Upstream declares MinLength(1), so an empty batch is a 400 round-trip. Refusing locally
+     * matters beyond saving the call: answering an empty request as a success would tell a
+     * caller their keywords were paused when no request was ever made.
+     */
+    it('refuses an empty action batch without calling the proxy', async () => {
+      await expect(new CampaignServiceClient().applyKeywordActions(req, 'cncf', 'b-1', 'c-1', [])).rejects.toThrow(/at least one action/);
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+});
