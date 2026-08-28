@@ -1058,6 +1058,24 @@ export class PlanningTabComponent implements OnInit {
    * request in flight is still this one, so nothing would ever clear the spinner. Here the
    * question is narrower and is about ownership of the flag, not about what may be displayed.
    */
+  /**
+   * The status line for a lookup that found nothing, which is three different statements.
+   *
+   * Only a TRUNCATED search may say HubSpot returned fewer than it matched. A search HubSpot
+   * answered in full, whose rows the local scorer rejected, is equally inconclusive but says so
+   * differently — the remedies differ (narrow the term vs check the name), and a message that
+   * conflates them sends the operator to the wrong one.
+   */
+  private noMatchStatus(truncated: boolean, inconclusive: boolean): string {
+    if (truncated) {
+      return 'No match in the campaigns HubSpot returned — but there are more it did not';
+    }
+    if (inconclusive) {
+      return 'No close match among the campaigns HubSpot returned';
+    }
+    return 'No matching campaign in HubSpot';
+  }
+
   private lookupIsCurrent(capturedEvent: string, capturedFoundation: string): boolean {
     return this.lastLookedUpEvent === capturedEvent && this.activeFoundationSlug() === capturedFoundation;
   }
@@ -1132,13 +1150,7 @@ export class PlanningTabComponent implements OnInit {
             // The COPY distinguishes them, because the two remedies differ. Only a truncated
             // search may say HubSpot matched more than it returned.
             this.hsTruncated.set(result?.capped === true);
-            this.hsStatus.set(
-              result?.capped === true
-                ? 'No match in the campaigns HubSpot returned — but there are more it did not'
-                : result?.inconclusive === true
-                  ? 'No close match among the campaigns HubSpot returned'
-                  : 'No matching campaign in HubSpot'
-            );
+            this.hsStatus.set(this.noMatchStatus(result?.capped === true, result?.inconclusive === true));
           }
         },
         error: () => {
