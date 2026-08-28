@@ -332,7 +332,7 @@ export class ProjectService {
    * a 'fields' parameter here to further reduce transfer cost.
    */
   public async getProjectSlugs(req: Request): Promise<string[]> {
-    logger.debug(req, 'get_project_slugs', 'Fetching all project slugs', {});
+    logger.debug(req, 'get_project_slugs', 'Fetching all project slugs', { page_size: QUERY_SERVICE_PAGE_SIZE });
     const filtered = await this.fetchAllProjectsFiltered(req);
     return filtered.map((p) => p.slug);
   }

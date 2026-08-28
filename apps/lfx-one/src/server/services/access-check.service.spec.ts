@@ -188,12 +188,12 @@ describe('AccessCheckService — batching', () => {
   let service: AccessCheckService;
 
   // Build N access-check requests for distinct project IDs.
-  function makeResources(count: number): Array<{ resource: 'project'; id: string; access: 'writer' }> {
+  function makeResources(count: number): { resource: 'project'; id: string; access: 'writer' }[] {
     return Array.from({ length: count }, (_, i) => ({ resource: 'project' as const, id: `proj-${i}`, access: 'writer' as const }));
   }
 
   // Build a mock upstream response granting access to each of the given requests.
-  function mockResponse(resources: Array<{ resource: string; id: string; access: string }>, granted = true): { results: string[] } {
+  function mockResponse(resources: { resource: string; id: string; access: string }[], granted = true): { results: string[] } {
     return { results: resources.map((r) => `${r.resource}:${r.id}#${r.access}@user:alice\t${granted}`) };
   }
 
@@ -213,6 +213,8 @@ describe('AccessCheckService — batching', () => {
     expect(proxyRequest).toHaveBeenCalledTimes(1);
     expect(result.get('proj-0#writer')).toBe(true);
     expect(result.get('proj-99#writer')).toBe(true);
+    // Single-batch path should emit no warnings — all resources resolved in one POST.
+    expect(loggerWarning).not.toHaveBeenCalled();
   });
 
   it('fans out to two POSTs when the resource count exceeds the batch size (101 resources → chunks of 100 and 1)', async () => {

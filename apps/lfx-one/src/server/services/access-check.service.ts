@@ -76,6 +76,7 @@ export class AccessCheckService {
    * where the upstream call fails before any settling occurs. Callers passing more than
    * ACCESS_CHECK_BATCH_SIZE resources will not benefit from the strict guarantee — prefer
    * `checkAccessStrict` for single-resource or small bounded-count calls only.
+   * (search: checkAccessStrict-batch-limit-caveat — locate all callers before raising the limit)
    * @param req Express request object with auth context
    * @param resources Array of resources to check access for
    * @param options Optional per-call overrides (e.g. explicit bearer token)
@@ -263,7 +264,7 @@ export class AccessCheckService {
         // chunk_index is 0-based — "chunk 0" is the first batch, "chunk 1" the second, etc.
         logger.warning(req, operationName, `Access-check batch chunk ${i} failed, failing closed for its resources`, {
           chunk_index: i,
-          chunk_size: chunks[i]?.length ?? 0,
+          chunk_size: chunks[i].length,
           err: result.reason,
         });
       }
