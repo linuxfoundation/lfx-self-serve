@@ -1020,10 +1020,9 @@ export interface CampaignBriefRefineRequest {
  * actually reads (`internal/dispatch/hubspot.go:47-56`) rather than to the legacy request shape
  * the ad platforms carry.
  *
- * Deliberately just these two fields. The rest of what the HubSpot dispatcher needs — the send
- * list, its suppressions — is NOT config: it resolves the brief's BUILT audience by `brief.ID`
- * (`hubspot.go:293`), so passing an audience here would be a second, divergent source of truth
- * for something the service already owns.
+ * The send list is deliberately NOT here: the dispatcher resolves the brief's BUILT audience by
+ * `brief.ID` (`hubspot.go:293`), so passing one would be a second, divergent source of truth for
+ * something the service already owns.
  */
 export interface HubSpotCampaignCreateRequest {
   /**
@@ -1038,6 +1037,23 @@ export interface HubSpotCampaignCreateRequest {
    * only to roll several briefs' emails up to one campaign in reporting.
    */
   utmCampaign?: string;
+  /**
+   * Generated subject line to write onto the cloned draft (LFXV2-2775). Unset leaves the
+   * template's own subject, which is what every campaign did before that shipped.
+   */
+  subject?: string;
+  /**
+   * Generated body HTML to write onto the cloned draft (LFXV2-2775).
+   *
+   * Applied upstream ONLY when the draft has exactly one rich-text widget — a template with
+   * several (header blurb, body, footer note) is left alone rather than guessed at, because
+   * writing the wrong widget destroys content the operator did not choose to replace. So sending
+   * this is a request, not a guarantee; the dispatcher logs and moves on either way.
+   *
+   * There is no preheader counterpart: Marketing Emails v3 exposes no preheader property, so a
+   * field here would report success while HubSpot ignored it.
+   */
+  bodyHtml?: string;
 }
 
 export interface CampaignCreateRequest {

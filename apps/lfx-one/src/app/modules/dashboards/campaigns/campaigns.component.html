@@ -469,14 +469,16 @@
                       data-testid="campaigns-email-preview-body"></div>
                   </div>
                   <!--
-                    Stated rather than implied: staging CLONES the chosen template, and passing
-                    the generated subject/body to HubSpot is upstream work (LFXV2-2775 in
-                    campaign-service — hubspotConfig takes only sourceEmailId and utmCampaign
-                    today). Without this line an operator would reasonably expect the draft to
-                    contain what they just wrote.
+                    Stated rather than implied: the body is applied upstream ONLY when the cloned
+                    draft has exactly one rich-text widget. A template with several (header blurb,
+                    body, footer note) is left alone rather than guessed at, because writing the
+                    wrong widget destroys content the operator did not choose to replace. So this
+                    is a request, not a guarantee, and saying so is cheaper than an operator
+                    discovering it on a send.
                   -->
                   <p class="text-xs text-gray-500" data-testid="campaigns-email-preview-note">
-                    Staging creates a draft by cloning the selected template. Applying this copy to the draft is not wired up yet — set it in HubSpot for now.
+                    Staging clones the selected template and applies this subject and body. A template with more than one
+                    text block keeps its own body — check the draft in HubSpot before sending.
                   </p>
                 </div>
               }

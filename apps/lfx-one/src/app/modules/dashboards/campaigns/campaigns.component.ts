@@ -1297,6 +1297,7 @@ export class CampaignsComponent {
     const brief = this.emailBriefOutput();
     const sourceEmailId = this.selectedEmailTemplateId();
     const projectSlug = this.activeFoundationSlug();
+    const copy = this.emailCopy();
 
     // Re-checked rather than trusted from `canStageEmail`: the button is one caller, and a
     // signal can change between the guard and the await below.
@@ -1342,7 +1343,14 @@ export class CampaignsComponent {
         descriptions: [],
         geoTargets: [],
         platforms: ['hubspot'],
-        hubspotConfig: { sourceEmailId },
+        // Generated copy rides along when it exists (LFXV2-2775). Spread conditionally rather
+        // than sent as empty strings: upstream treats a blank subject as "leave the template's
+        // own", and sending '' would be indistinguishable from an operator who generated nothing
+        // — but it would also mean every staging call claimed to carry copy it did not have.
+        hubspotConfig: {
+          sourceEmailId,
+          ...(copy === null ? {} : { subject: copy.subject, bodyHtml: copy.body }),
+        },
       };
 
       const outcome = await firstValueFrom(this.campaignService.createCampaign(request, projectSlug, briefId));

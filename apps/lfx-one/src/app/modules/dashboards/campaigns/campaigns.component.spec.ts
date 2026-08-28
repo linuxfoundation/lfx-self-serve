@@ -2358,18 +2358,18 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(host.querySelector('[data-testid="campaigns-email-preview"]')).not.toBeNull();
     });
 
-    it('says the generated copy is NOT applied to the staged draft', () => {
+    it('warns that a multi-widget template keeps its own body', () => {
       selectEmail();
       internals().selectedEmailTab.set('implementation');
       internals().emailCopy.set(copy);
       fixture.detectChanges();
 
-      // Pinned deliberately: hubspotConfig takes only sourceEmailId/utmCampaign, so staging
-      // clones the template and does NOT carry this copy (LFXV2-2775 upstream). If that changes,
-      // this test should fail and the note be removed — silently dropping it would leave the UI
-      // claiming a limitation that no longer exists, or worse, hiding one that still does.
+      // Pinned because it is a REAL upstream limitation, not a temporary gap: the dispatcher
+      // applies bodyHtml only when the draft has exactly one rich-text widget, and silently
+      // leaves a multi-widget template alone. An operator who is not told this discovers it on
+      // a send. If the upstream rule changes, this test should fail and the note be reworded.
       const note = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-preview-note"]');
-      expect(note?.textContent).toContain('not wired up yet');
+      expect(note?.textContent).toContain('more than one text block');
     });
   });
 
@@ -2450,6 +2450,43 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(request.eventSlug).toBe('kubecon-eu-2026');
       expect(request.eventName).toBe('KubeCon EU 2026');
       expect(internals().emailStaging()).toBe('done');
+    });
+
+    it('carries the generated copy into hubspotConfig when copy exists', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailCopy.set({ subject: 'Three days in Amsterdam', preheader: 'P', body: '<p>Join us</p>', cta: 'Register' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The VALUES, not merely that the keys exist: a staging call that sent the template id but
+      // dropped the copy would look identical in a shape-only assertion.
+      expect(create.mock.calls[0][0].hubspotConfig).toEqual({
+        sourceEmailId: 'hs-123',
+        subject: 'Three days in Amsterdam',
+        bodyHtml: '<p>Join us</p>',
+      });
+    });
+
+    it('omits subject and bodyHtml entirely when no copy was generated', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // Empty strings would be wrong, not merely untidy: upstream reads a blank subject as
+      // "leave the template's own", so sending '' claims copy that does not exist.
+      expect(create.mock.calls[0][0].hubspotConfig).toEqual({ sourceEmailId: 'hs-123' });
     });
 
     it('does NOT create when the persist returns no brief id', async () => {
