@@ -1460,6 +1460,31 @@ describe('CampaignsComponent brief persistence', () => {
         expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
       });
 
+      /**
+       * The capability is a DEPLOYMENT fact, so re-entering Implementation must not re-read it.
+       *
+       * Without the `null` guard this spent a full `listBriefCampaigns` round trip per tab entry
+       * to learn the same boolean. Asserted as a CALL COUNT rather than a value, because the
+       * value is identical either way — only the number of requests distinguishes them.
+       */
+      it('does not refetch the capability once it is known', async () => {
+        const list = vi
+          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
+          .mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+
+        await withSavedBrief();
+        await fixture.whenStable();
+        const afterFirst = list.mock.calls.length;
+
+        // Leave and re-enter Implementation: the answer is already known.
+        (fixture.componentInstance as unknown as { selectTab(t: string, o: string): void }).selectTab('planning', 'paid-marketing');
+        (fixture.componentInstance as unknown as { selectTab(t: string, o: string): void }).selectTab('implementation', 'paid-marketing');
+        await fixture.whenStable();
+
+        expect(list.mock.calls.length).toBe(afterFirst);
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+      });
+
       it('clears the previous brief campaigns when the foundation changes', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
