@@ -1823,6 +1823,28 @@ export class CampaignController {
 
     const rawUtm = body.hubspotConfig?.utmCampaign;
     const utmCampaign = typeof rawUtm === 'string' ? rawUtm.trim() : '';
-    return utmCampaign ? { sourceEmailId, utmCampaign } : { sourceEmailId };
+
+    // The generated copy, forwarded rather than dropped. This mapper is an ALLOW-LIST -- anything
+    // it does not name never reaches campaign-service -- and it named only the two original
+    // fields, so a staged draft silently kept the cloned template's own subject and body while
+    // the UI showed the generated ones. Observed live: draft 220597885197 went out with the
+    // template's "Reminder: Complete your OpenSearch Ambassador application".
+    //
+    // Same runtime type check as `sourceEmailId` above, for the same reason: this route has no
+    // body validator, so a non-string must take the "absent" exit rather than throw.
+    const rawSubject = body.hubspotConfig?.subject;
+    const subject = typeof rawSubject === 'string' ? rawSubject.trim() : '';
+    const rawBody = body.hubspotConfig?.bodyHtml;
+    const bodyHtml = typeof rawBody === 'string' ? rawBody.trim() : '';
+
+    // Each field is included only when set. Upstream treats both as OPTIONAL and leaves the
+    // template's own value in place when a field is absent, so sending "" would be a request to
+    // blank the draft's subject rather than to leave it alone.
+    return {
+      sourceEmailId,
+      ...(utmCampaign ? { utmCampaign } : {}),
+      ...(subject ? { subject } : {}),
+      ...(bodyHtml ? { bodyHtml } : {}),
+    };
   }
 }
