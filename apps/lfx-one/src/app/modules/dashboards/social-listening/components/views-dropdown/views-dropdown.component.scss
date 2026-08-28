@@ -1,0 +1,100 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+.views-dropdown {
+  @apply bg-white rounded-lg border border-gray-200 shadow-lg p-4 w-72;
+}
+
+.empty-state {
+  @apply px-3 py-6 text-center;
+}
+
+.views-list {
+  @apply flex flex-col list-none m-0 p-0 max-h-72 overflow-y-auto;
+}
+
+.view-row {
+  @apply flex items-center justify-between rounded-md transition-colors duration-150;
+
+  &:hover {
+    @apply bg-gray-50;
+  }
+
+  &--active {
+    @apply bg-blue-50;
+
+    .view-row__name {
+      @apply text-blue-700 font-medium;
+    }
+  }
+
+  &__apply {
+    @apply flex-1 min-w-0 flex items-center gap-2 px-3 py-2 text-left bg-transparent border-0 cursor-pointer text-sm text-gray-700;
+  }
+
+  &__check {
+    @apply text-blue-600 text-xs;
+  }
+
+  &__name {
+    @apply truncate;
+  }
+
+  &__actions {
+    @apply flex items-center gap-1 pr-2;
+  }
+}
+
+.row-action {
+  @apply w-7 h-7 flex items-center justify-center rounded-md text-gray-500 text-xs transition-all duration-150 cursor-pointer bg-transparent border-0 p-0;
+
+  &:hover {
+    @apply text-gray-700 bg-gray-100;
+  }
+
+  &--danger:hover {
+    @apply text-red-500 bg-red-50;
+  }
+
+  &--loading {
+    @apply cursor-default pointer-events-none;
+  }
+}
+
+.views-list__skeleton-row {
+  @apply px-3 py-1 list-none;
+}
+
+.views-dropdown__footer {
+  @apply flex flex-col gap-1 mt-3 pt-3 border-t border-gray-100;
+}
+
+.footer-action {
+  @apply flex items-center gap-2 px-3 py-2 rounded-md text-sm text-gray-600 bg-transparent border-0 cursor-pointer text-left;
+
+  &:hover:not(:disabled) {
+    @apply bg-gray-50 text-gray-900;
+  }
+
+  &:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  &--primary {
+    @apply text-blue-600;
+
+    &:hover:not(:disabled) {
+      @apply bg-blue-50 text-blue-700;
+    }
+  }
+}
+
+.default-view-row {
+  .view-row__name {
+    @apply font-medium;
+  }
+}
+
+.views-list__divider {
+  @apply h-px bg-gray-100 my-1 list-none;
+}

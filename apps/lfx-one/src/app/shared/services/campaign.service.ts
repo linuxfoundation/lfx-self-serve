@@ -97,9 +97,11 @@ export class CampaignService {
       if (knownEtag !== null && knownEtag !== '') {
         params = params.set('etag', knownEtag);
       } else if (allowEtagFallback) {
-        // No validator BY CHOICE: the user saw the stale-brief warning and proceeded. Without
-        // this the server cannot tell that from "the write returned no ETag", and substituting a
-        // freshly read validator for the second would bypass the precondition silently.
+        // No validator BY CHOICE: either the user saw the stale-brief warning and proceeded, or
+        // they restored a brief whose read carried no ETag. Both are decisions taken on content
+        // that was displayed. Without this the server cannot tell either from "the write returned
+        // no ETag", and substituting a freshly read validator for THAT would bypass the
+        // precondition silently.
         params = params.set('etag_fallback', '1');
       }
     }

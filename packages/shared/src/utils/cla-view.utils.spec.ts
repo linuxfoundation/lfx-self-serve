@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { PROFILE_TABS } from '../constants/profile.constants';
-import { ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
+import { ClaSignedVia, ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
 import {
   buildProfileTabs,
   claGroupPrimaryName,
@@ -146,10 +146,10 @@ describe('claStatusSeverity', () => {
 });
 
 describe('signedAsLine', () => {
-  it('adds a platform suffix for GitHub and GitLab, and none for Gerrit/email', () => {
+  it('adds a platform suffix for GitHub, GitLab, and Gerrit', () => {
     expect(signedAsLine('github', 'jellis')).toBe('Signed as jellis (GitHub)');
     expect(signedAsLine('gitlab', 'jellis')).toBe('Signed as jellis (GitLab)');
-    expect(signedAsLine('gerrit', 'jellis@acme-motors.example')).toBe('Signed as jellis@acme-motors.example');
+    expect(signedAsLine('gerrit', 'jellis@acme-motors.example')).toBe('Signed as jellis@acme-motors.example (Gerrit)');
   });
 
   it('omits the line when the identity is missing, empty, or whitespace', () => {
@@ -161,6 +161,12 @@ describe('signedAsLine', () => {
 
   it('prints the identity with no suffix when the platform is missing', () => {
     expect(signedAsLine(undefined, 'jellis')).toBe('Signed as jellis');
+  });
+
+  it('does not lend the Gerrit label to a token it does not recognise', () => {
+    // The BFF mapper narrows unknown wire tokens to undefined, so this branch is only
+    // reachable by cast. Pinned so a future token cannot inherit the Gerrit label.
+    expect(signedAsLine('bitbucket' as ClaSignedVia, 'jellis')).toBe('Signed as jellis');
   });
 });
 

@@ -432,7 +432,7 @@
           <lfx-planning-tab
             [programTypeConfig]="activeProgramTypeConfig()"
             (proceedToImplementation)="onProceedToImplementation($event)"
-            (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.approved)"
+            (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.etag, $event.approved)"
             data-testid="campaigns-planning-tab" />
         }
       </div>
@@ -456,6 +456,7 @@
               [briefPersistence]="briefPersistence()"
               [briefSaveInFlight]="briefSaveInFlight()"
               [draft]="implementationDraft()"
+              [demandGenEnabled]="briefCampaignsDemandGenEnabled()"
               (draftChange)="implementationDraft.set($event)"
               data-testid="campaigns-implementation-tab" />
           </div>

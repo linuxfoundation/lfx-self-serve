@@ -5,7 +5,6 @@ export const environment = {
   production: false,
   urls: {
     home: 'http://localhost:4200',
-    support: 'https://jira.linuxfoundation.org/plugins/servlet/desk',
     pcc: 'https://pcc.dev.platform.linuxfoundation.org',
     changelog: 'https://changelog.lfx.dev/',
     mentorship: 'https://people.dev.platform.linuxfoundation.org/#projects_all',

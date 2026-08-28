@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { LensGrantInputs } from '../interfaces/lens.interface';
+import type { LensGrantInputs } from '../interfaces/lens.interface';
 import { deriveAllowedLenses, isHybridLensUser } from './lens.utils';
 
 const NO_GRANTS: LensGrantInputs = {

@@ -1,0 +1,20 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Panel chrome — every analytics panel is a card with a small-caps section title.
+.analytics-panel {
+  @apply flex flex-col gap-4;
+}
+
+.panel-title {
+  @apply m-0 text-xs font-bold tracking-wider text-gray-500 uppercase;
+}
+
+// Top Projects ranked rows.
+.top-project-row {
+  @apply flex items-center gap-4 rounded-lg bg-gray-50 p-3 transition-colors hover:bg-gray-100;
+}
+
+.project-rank {
+  @apply bg-blue-500 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white;
+}

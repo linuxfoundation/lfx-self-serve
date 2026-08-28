@@ -4,10 +4,12 @@
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import type {
   ApiResponse,
+  BriefMetrics,
   CampaignBriefLoadResult,
   CampaignServiceCreateResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
+  CampaignMetricsWindow,
   HubSpotEmailSearchResult,
   HubSpotMarketingEmail,
   CampaignEventDetails,
@@ -301,6 +303,32 @@ function fromMarketingEmail(email: CampaignServiceMarketingEmail): HubSpotMarket
  * is an addition here plus a branch at the call site, and a rollback is the flag alone —
  * rather than an edit tangled through the vendor code that has to be reverted by hand.
  */
+/**
+ * Whether this deployment can create a Demand Gen Google campaign.
+ *
+ * NOT simply `CampaignServiceDemandGen`. That flag gates the campaign-service create path only;
+ * while the create cutover is dark the controller falls through to the LEGACY creator, whose
+ * `includeGoogle` gates on platform membership alone and which creates demand-gen campaigns
+ * perfectly well (see the note above `unconfigured` in `createCampaigns`).
+ *
+ * So the capability is missing only in the narrow window where campaign-service owns creation and
+ * has not been told it understands `googleAdsConfig.channel`. Reporting the raw flag instead would
+ * hide a working legacy option — including for the whole of the staged CREATE-off rollout this
+ * chart prescribes, which is exactly the deployment state most likely to be in effect.
+ *
+ * Mirrors `createCampaigns`' own three-flag gate rather than restating it as two: a partial flag
+ * set is equivalent to "cutover off" there, and it has to mean the same here or the two disagree
+ * mid-rollout.
+ */
+function canCreateDemandGen(): boolean {
+  const cutoverOwnsCreate =
+    isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate) &&
+    isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs) &&
+    isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs);
+
+  return !cutoverOwnsCreate || isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceDemandGen);
+}
+
 export class CampaignServiceClient {
   private readonly microserviceProxy: MicroserviceProxyService;
 
@@ -359,7 +387,12 @@ export class CampaignServiceClient {
       // programming error, and it is exactly the false absence this field exists to prevent. The
       // HTTP path never reaches this (the controller refuses both blanks first), so this guards
       // direct callers, where an unqualified "no campaigns" is the most expensive thing to say.
-      return { campaigns: [], possiblyStale: true, statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle) };
+      return {
+        campaigns: [],
+        possiblyStale: true,
+        statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle),
+        demandGenEnabled: canCreateDemandGen(),
+      };
     }
 
     const docs = await fetchAllQueryResources<CampaignIndexDoc>(
@@ -395,13 +428,20 @@ export class CampaignServiceClient {
     // yet" and "none exist" are the same answer here. Say so rather than letting the caller read
     // absence as proof.
     // Reported with the list because the client cannot infer it: this read is ungated, while the
-    // toggle route refuses every UUID when the flag is off — so a default deployment would render
-    // controls that can only fail. Read at request time rather than cached, so a flag flip does
-    // not need a redeploy of this process to take effect on the next list.
+    // toggle route refuses every UUID when the flag is off. The chart now ships the flag on, but
+    // it is read per request from the environment, so a values override or a not-yet-rolled pod
+    // still answers off — and that deployment would render controls that can only fail. Read at
+    // request time rather than cached, so a flag flip does not need a redeploy of this process to
+    // take effect on the next list.
+    //
+    // `demandGenEnabled` rides along for the same reason and is read the same way: the create
+    // route refuses `demand-gen` unless its own flag is on, and nothing in the create request
+    // tells the client that in advance.
     return {
       campaigns,
       possiblyStale: campaigns.length === 0,
       statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle),
+      demandGenEnabled: canCreateDemandGen(),
     };
   }
 
@@ -629,25 +669,30 @@ export class CampaignServiceClient {
     const found = await this.findBrief(req, basePath, eventSlug);
 
     if (found === null) {
-      return { status: 'none', briefId: null, brief: null, approved: false };
+      return { status: 'none', briefId: null, brief: null, etag: null, approved: false };
     }
 
-    // `found.etag` is dropped, and the cost of that is worth naming rather than eliding.
+    // `found.etag` is CARRIED, and the reason is the hazard it closes (LFXV2-3204).
     //
-    // The reason for dropping it: this read hands its result to a component that may sit on it
-    // for minutes before the user restores anything, so a carried validator would usually be
-    // stale by the time it was used, and `replaceBrief` re-reads the current one anyway.
+    // An earlier revision dropped it, reasoning that this read hands its result to a component
+    // which may sit on it for minutes, so the validator would usually be stale by the time it
+    // was used — and `replaceBrief` re-reads the current one anyway. The second half is what
+    // made dropping it unsafe: re-reading means the PUT carries whatever version is current at
+    // SAVE time, not the one the user was shown. That find runs inside the save, so its
+    // validator always matches and the precondition can never fire. A concurrent editor's change
+    // was therefore overwritten rather than rejected — last-write-wins between two people
+    // editing the same brief.
     //
-    // The cost: re-reading means the PUT carries whatever version is current at SAVE time, not
-    // the one the user was shown. A concurrent editor's change is therefore overwritten rather
-    // than rejected — last-write-wins between two people editing the same brief, where a
-    // carried validator would have produced a 412 and a chance to reconcile.
+    // Staleness was never the failure mode to design against: a validator that is stale because
+    // someone else moved the row is exactly the case that SHOULD 412. `replaceBrief` prefers a
+    // caller-supplied ETag over its own read for this reason, and the restore path now supplies
+    // this one, so the first save after a restore is refused as `stale-brief` instead of
+    // silently replacing the other writer's content.
     //
-    // That is a NARROWER hazard than the one LFXV2-3200 closes, and deliberately left open here:
-    // the ownership guard stops a caller replacing a brief it never saw at all, which is the
-    // case a reload or a second tab reaches. Two editors who have both LOADED the same brief are
-    // a rarer situation and want a real conflict UI — an If-Match plumbed end to end plus a
-    // reconcile path — not a validator quietly threaded through. Tracked as LFXV2-3204.
+    // This remains NARROWER than the hazard LFXV2-3200 closes. That ownership guard stops a
+    // caller replacing a brief it never saw at all — the case a reload or a second tab reaches
+    // with no coordination. This one needs two editors who have both deliberately loaded the
+    // same brief, and layers on top of that guard rather than replacing it.
     const brief = fromBriefResponse(found.brief);
     // Only the exact `approved` token counts. A brief left in `draft` by a failed approve step is
     // stored but unusable -- `build-audience` and campaign creation both gate on `approved` -- and
@@ -656,8 +701,8 @@ export class CampaignServiceClient {
     // is the one answer that silently strands the brief.
     const approved = found.brief.status === 'approved';
     return brief === null
-      ? { status: 'unreadable', briefId: found.brief.id, brief: null, approved }
-      : { status: 'loaded', briefId: found.brief.id, brief, approved };
+      ? { status: 'unreadable', briefId: found.brief.id, brief: null, etag: found.etag, approved }
+      : { status: 'loaded', briefId: found.brief.id, brief, etag: found.etag, approved };
   }
 
   /**
@@ -774,10 +819,13 @@ export class CampaignServiceClient {
     // actually serve the request until this BFF can send both channels in one envelope.
     //
     // Gated on google-ads being SELECTED, not on `campaignTypes` alone. `campaignTypes` is a
-    // Google concept but the Implementation tab sends it unconditionally — `includeDemandGen`
-    // defaults to true in the form and nothing clears it when Google is deselected — so a
-    // LinkedIn-only create arrives carrying `demand-gen`. Refusing on the type alone rejected
-    // creates that have no Google campaign in them at all.
+    // Google concept but the Implementation tab sends it unconditionally (implementation-tab
+    // :1327-1338), and nothing clears it when Google is deselected. The form now defaults
+    // `includeDemandGen` to false, so this is no longer the untouched-form case — it is RETAINED
+    // state: a user who ticks Demand Gen and then deselects Google, or a saved draft restoring
+    // the old default through `:1611`. Either way a LinkedIn-only create arrives carrying
+    // `demand-gen`, and refusing on the type alone rejected creates that have no Google campaign
+    // in them at all.
     if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen') && campaignTypes.includes('search')) {
       return {
         enabled: true,
@@ -1050,6 +1098,70 @@ export class CampaignServiceClient {
   }
 
   /**
+   * Read live metrics for EVERY campaign on a brief, in one request.
+   *
+   * This is the read that makes campaign-service's `action_items` reachable at all. Until now
+   * nothing in this app called it: the Optimize tab derives its action items from FOUR separate
+   * rule engines in this BFF (`campaign-metrics.service.ts`, `linkedin-ads.service.ts`,
+   * `reddit-ads.service.ts`, `meta-ads.service.ts`), which disagree with each other and with
+   * campaign-service on the low-CTR threshold, the impression floor beneath which CTR is not
+   * judged, and whether a paused campaign raises anything at all.
+   *
+   * Nothing is cut over here. This adds the read; the tab keeps its existing source until a
+   * caller is wired, because the two are not equivalent in SCOPE — see below.
+   *
+   * ## Brief-scoped, where the existing engines are account-scoped
+   *
+   * The BFF engines query each ad platform directly and report on every campaign in the ad
+   * account. This reports on the campaigns campaign-service has adopted onto ONE brief. Swapping
+   * one for the other narrows what an operator sees, so a consumer must pass the brief it means
+   * — there is no "all campaigns" call here, and constructing one by fanning out over briefs
+   * needs the brief ids from the Query Service, which owns brief lists (rule 3).
+   *
+   * ## Failures are per-row, and are not measurements
+   *
+   * A brief spans several platforms and each read can fail independently, so one campaign's
+   * failure must not fail the request. Every campaign gets a row; only `status === 'ok'` carries
+   * `metrics`, and a failed row omits it rather than zero-filling. Callers MUST NOT default a
+   * missing `metrics` to zeroes — that is precisely the substitution that renders an outage as a
+   * performance result, and it is the defect this row shape exists to prevent.
+   *
+   * For the same reason `ok_count` travels alongside `rows`: an empty `action_items` is not an
+   * all-clear if half the rows could not be read.
+   *
+   * ## The window is a QUERY parameter
+   *
+   * Passed as the proxy's fifth argument, which is `query` — the sixth is the request body. A
+   * window sent in the body position would reach the wire as no window at all, with no type
+   * error, and campaign-service would silently apply per-platform defaults instead.
+   *
+   * Omitted when the caller does not specify one, rather than defaulted here, because upstream
+   * resolves the default PER ROW: `defaultMetricsWindowFor` runs inside the fan-out and gives
+   * X Ads `last_7_days` (its stats endpoint caps a query at 7 days) and everything else
+   * `last_30_days`. An explicit window overrides that for every row.
+   *
+   * Defaulting here would therefore DISCARD the per-platform fallback rather than fail: an X row
+   * that would have been served at 7 days comes back `unsupported`, and the other rows report
+   * normally. The lost row is quiet, which is why the default belongs upstream.
+   */
+  public async getBriefMetrics(req: Request, projectSlug: string, briefId: string, window?: CampaignMetricsWindow): Promise<BriefMetrics> {
+    if (projectSlug === '' || briefId === '') {
+      // Refused rather than sent, for the reason `loadBrief` and `searchHubSpotEmails` refuse: an
+      // empty segment makes `/projects//briefs//metrics`, a DIFFERENT route that 404s at the
+      // gateway. A gateway 404 is not campaign-service saying the brief does not exist, and a
+      // caller cannot tell the two apart from the status code alone.
+      throw new Error('A brief metrics read requires both the project and the brief it is scoped to.');
+    }
+    return this.microserviceProxy.proxyRequest<BriefMetrics>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/metrics`,
+      'GET',
+      window ? { window } : undefined
+    );
+  }
+
+  /**
    * After an ambiguous create failure, find out whether the POST actually committed.
    *
    * Returns the row when it is provably THIS request's, and `null` when the create did not happen
@@ -1215,8 +1327,11 @@ export class CampaignServiceClient {
     // detect", which is true for one of the two reasons a validator can be missing and false for
     // the other.
     //
-    // `allowEtagFallback` — the caller was shown a stale-brief warning and proceeded. It has no
-    // validator BY CHOICE, and taking the freshly read one is exactly what proceeding means.
+    // `allowEtagFallback` — the caller has no validator BY CHOICE, and taking the freshly read
+    // one is exactly what that choice means. Two client paths set it: the user proceeded past a
+    // stale-brief warning, or they restored a brief whose read carried no ETag. This layer does
+    // not distinguish them, and must not start to: both assert that stored content was displayed
+    // and acted on, which is the whole of what the flag claims.
     //
     // Without it, the absence is UNKNOWN: the write returned no ETag, or its approval outcome was
     // indeterminate. Nobody was warned and nothing was decided, so substituting a validator this

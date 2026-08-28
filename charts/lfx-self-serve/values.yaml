@@ -379,13 +379,21 @@ environment:
   # It is NOT a live switch. This is a container environment variable, so changing it edits the
   # pod template and takes effect only as pods are replaced; with the default replica count and
   # a RollingUpdate, flag-on and flag-off pods serve side by side for the length of the rollout.
-  # That is safe for THIS flag because the source is chosen by the job id's shape as well as by
-  # the flag: a `job_...` id is answered from the in-process map on every pod, flag or no flag,
-  # and a UUID job id cannot exist until campaign creation is cut over too. Do not copy the
+  # The source is chosen by the job id's shape as well as by the flag: a `job_...` id is answered
+  # from the in-process map on every pod, flag or no flag. That made an overlapping rollout safe
+  # for THIS flag while no UUID job id could exist — but that premise EXPIRED when CREATE below
+  # was enabled. UUID job ids exist now, so a pod with JOBS off skips the id-shape check entirely
+  # and answers a terminal `not_found` for a campaign that is running and SPENDING. JOBS must stay
+  # on, and on rollback it comes off LAST — turn CREATE off first and let outstanding UUID jobs
+  # drain. Do not copy the
   # "rollback is one value" line onto a future flag whose two paths could both claim the same
   # request — that one needs a no-overlap rollout or a shared runtime configuration source.
+  #
+  # With this flag on, a poll for a UUID job id requires `?project=` and is refused with a 400
+  # without it (campaign.controller.ts). The LFX One client always sends it; a direct API caller
+  # may not.
   LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS:
-    value:
+    value: "true"
 
   # Persist the generated campaign brief to campaign-service instead of holding it only in the
   # browser tab. Same accepted values and same default-deny as the flag above.
@@ -412,7 +420,7 @@ environment:
   #
   # Turning it off again leaves the saved briefs in place; they simply stop being offered.
   LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS:
-    value:
+    value: "true"
 
   # Route campaign CREATION to lfx-v2-campaign-service instead of the per-platform Express
   # services. Same accepted values and same default-deny as the two flags above.
@@ -434,12 +442,17 @@ environment:
   # answered by whichever system owns that job.
   #
   # It is NOT unconditionally safe, and the ORDER is the whole of the safety. The check only runs
-  # on a pod that has JOBS on. If all three flags flip in one RollingUpdate, a flag-on pod mints a
+  # on a pod that has JOBS on. If the cutover flags flip in one RollingUpdate, a flag-on pod mints a
   # UUID job while a not-yet-updated pod routes that UUID to its in-process map and answers
   # terminal `not_found` — a campaign that is running and spending, reported as lost.
   #
-  #   Enable:   JOBS -> confirm every pod has it -> BRIEFS -> CREATE
+  #   Enable:   JOBS -> confirm every pod has it -> BRIEFS -> STATUS_TOGGLE -> CREATE
   #   Roll back: CREATE off first -> let outstanding UUID jobs drain -> then JOBS
+  #
+  #   STATUS_TOGGLE is NOT part of that sequence. Turning it off strands every campaign-service
+  #   campaign that already exists: a UUID is permanent, and campaign.controller.ts:1156 refuses
+  #   its pause whenever the flag is off. Unlike JOBS there is nothing to drain — keep it on for
+  #   as long as any UUID campaign can still spend.
   #
   # OPERATIONAL PRECONDITION: campaign-service reads ad-platform credentials from its OWN
   # connection tables, never from this application's GADS_ / LINKEDIN_ environment variables.
@@ -461,12 +474,27 @@ environment:
   # `POST /projects/{slug}/connection-{provider}` (singleton per provider — a second POST 409s).
   # Where neither a project row nor the fallback applies, the failure surfaces per-campaign rather
   # than at startup, so nothing warns you at deploy time.
+  # The LAST cutover step. This chart now ships every flag on, but they must not all reach the
+  # cluster in ONE rollout — the ordering is a DEPLOY constraint, not a merge one, and nothing in
+  # CI enforces it.
+  #
+  # STATUS_TOGGLE below must be on and CONVERGED before this goes on. Otherwise a new pod mints a
+  # UUID campaign while an old pod, still without the toggle flag, refuses that campaign's
+  # pause/resume at campaign.controller.ts:1156. Requests are not sticky and this chart runs
+  # replicaCount: 3 with maxSurge: "100%", so during such an overlap pause — the primary
+  # cost-control lever — can intermittently 400 on a campaign created moments earlier.
+  #
+  # To deploy safely from this chart, roll it out with this value overridden OFF, let
+  # STATUS_TOGGLE converge, then remove the override. See "Rollout ordering" in README.md.
+  #
+  # On rollback this comes off FIRST, before JOBS: turn it off and let outstanding UUID jobs drain
+  # while JOBS is still on to answer their polls.
   LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE:
-    value:
+    value: "true"
 
   # Gates whether a Demand Gen Google campaign may be requested at all (LFXV2-3257).
   #
-  # SEPARATE from the three flags above because it asks a different question: not "should
+  # SEPARATE from the cutover flags above because it asks a different question: not "should
   # creates go through campaign-service?" but "does the DEPLOYED campaign-service understand
   # googleAdsConfig.channel?". That field ships with LFXV2-3257, and the two can be out of
   # step — the create cutover may be on against a service that predates it.
@@ -537,23 +565,35 @@ environment:
   # this on is what makes Google Ads and LinkedIn pausable at all — and pause is the primary
   # cost-control lever on a mis-targeted or overspending campaign.
   #
-  # It does NOT give users a pause button. This enables the SERVER path only: the app cannot call
-  # it until the campaign read lands (LFXV2-3099), because pausing needs a campaign UUID, brief id
-  # and ETag that nothing in the UI can obtain today. Flipping this expecting a visible control
-  # would change nothing on screen.
+  # This IS user-visible now. The line that stood here said it enabled the server path only and
+  # that nothing would change on screen — true when written, false since the UI half landed: the
+  # Optimize tab propagates statusToggleEnabled and calls updateCampaignStatus, so operators get a
+  # working pause control.
   #
-  # ROLLOUT OVERLAP IS SAFE, unlike LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS, whose hazard looks
-  # identical and is not. Routing runs a campaign-id SHAPE check BEFORE and INDEPENDENTLY of this
-  # flag, and the two id spaces are disjoint: campaign-service keys campaigns by UUID, the legacy
-  # path by the ad platform's numeric id. No request can be claimed by both paths, so a flag-on
-  # and a flag-off pod cannot disagree about where one belongs. A flag-off pod handed a UUID
-  # refuses with a clear error rather than answering a confident falsehood.
+  # Still inert for campaigns the LEGACY path created: pausing needs a campaign UUID, which only a
+  # campaign-service create mints. The control appears for campaigns made after CREATE was
+  # enabled, not retroactively.
   #
-  # Order: this is INERT until LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE has been on long enough to
-  # produce UUID-keyed campaigns — a campaign only has a UUID if campaign-service created it.
-  # Enabling it earlier is harmless, just useless. Same accepted values as the flags above.
+  # MISROUTING during overlap is impossible, unlike LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS, whose
+  # hazard looks identical and is not. Routing runs a campaign-id SHAPE check BEFORE and
+  # INDEPENDENTLY of this flag, and the two id spaces are disjoint: campaign-service keys
+  # campaigns by UUID, the legacy path by the ad platform's numeric id. No request can be claimed
+  # by both paths, so a flag-on and a flag-off pod cannot disagree about where one belongs.
+  #
+  # That is a narrower claim than it first appears, and an earlier revision of this comment
+  # overstated it as "rollout overlap is safe". Disjoint id spaces mean a flag-off pod handed a
+  # UUID REFUSES rather than answering a confident falsehood — but a refusal is still a failure.
+  # It returns 400 at campaign.controller.ts:1156, and a caller that cannot pause a spending
+  # campaign is not much comforted that the error was well-formed. That is why CREATE above is
+  # sequenced AFTER this flag: no UUID-keyed campaign exists to be refused until CREATE is on.
+  #
+  # Order: enable this FIRST, before LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE. It is INERT until
+  # CREATE has produced UUID-keyed campaigns — a campaign only has a UUID if campaign-service
+  # created it — so switching it on early does nothing observable, which is exactly what makes it
+  # the safe half to ship first. Enabling it AFTER CREATE is the ordering that costs something:
+  # that is the overlap described above. Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE:
-    value:
+    value: "true"
 
   # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).
   # The BFF refuses to serve mock brief data when NODE_ENV=production and this

@@ -38,7 +38,7 @@ Before writing code, ensure the work is tracked:
 
 1. **Check for an existing ticket** — a JIRA ticket in the `LFXV2` project, or a GitHub Issue on `linuxfoundation/lfx-self-serve` (e.g. under an epic on the [Kanban board](https://github.com/orgs/linuxfoundation/projects/17))
 2. **Create one if needed** — JIRA ticket (assign to the current user and current sprint) or a GitHub Issue via `gh issue create`; don't create both for the same work
-3. **Branch name must include the ticket:** `feat/LFXV2-<number>`, `fix/LFXV2-<number>` for JIRA, or `feat/GH-<number>`, `fix/GH-<number>` for a GitHub Issue
+3. **Branch name must include the ticket:** `feat/LFXV2-<number>`, `fix/LFXV2-<number>` for JIRA, or `feat/issue-<number>`, `fix/issue-<number>` for a GitHub Issue
 4. Reference `.claude/rules/commit-workflow.md` for naming conventions
 
 ## Step 2: Plan the Feature (Ideation)

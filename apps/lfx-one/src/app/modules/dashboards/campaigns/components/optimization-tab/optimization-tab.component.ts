@@ -91,9 +91,11 @@ export class OptimizationTabComponent implements OnInit {
    * list (`CampaignListResult.statusToggleEnabled`).
    *
    * The list read is ungated while the toggle route refuses every UUID unless
-   * `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` is on, and the chart leaves it unset by default.
-   * Without this the tab renders a row of controls whose every click 400s, which an operator reads
-   * as the campaign refusing to stop rather than as a capability nobody enabled.
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` is on. The chart now ships that flag `"true"`,
+   * so the common case is enabled — but the flag is read per request from the environment, so a
+   * values override or a not-yet-rolled chart still turns it off underneath this tab. Without
+   * this the tab renders a row of controls whose every click 400s, which an operator reads as the
+   * campaign refusing to stop rather than as a capability nobody enabled.
    *
    * Defaults to `false`: withholding a control for one request is cheap, offering a doomed one on
    * a spending campaign is not.

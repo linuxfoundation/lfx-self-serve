@@ -30,16 +30,16 @@ describe('buildContactClaManagerMenuItems', () => {
   const dialog = { open: vi.fn() } as unknown as DialogService;
 
   it('returns nothing for ICLA and Revoked rows', () => {
-    expect(buildContactClaManagerMenuItems(agreement({ kind: 'ICLA', pdfAvailable: true }), dialog)).toEqual([]);
-    expect(buildContactClaManagerMenuItems(agreement({ status: 'revoked' }), dialog)).toEqual([]);
+    expect(buildContactClaManagerMenuItems(agreement({ kind: 'ICLA', pdfAvailable: true }), dialog, false)).toEqual([]);
+    expect(buildContactClaManagerMenuItems(agreement({ status: 'revoked' }), dialog, false)).toEqual([]);
   });
 
-  it('offers only Request Removal on a Valid ECLA', () => {
-    expect(labels(buildContactClaManagerMenuItems(agreement({ status: 'valid' }), dialog))).toEqual(['Request Removal']);
+  it('offers Request Removal and Contact CLA Manager on a Valid ECLA', () => {
+    expect(labels(buildContactClaManagerMenuItems(agreement({ status: 'valid' }), dialog, false))).toEqual(['Request Removal', 'Contact CLA Manager']);
   });
 
   it('offers approval, removal, and contact on Needs-attention + not_on_approval_list', () => {
-    expect(labels(buildContactClaManagerMenuItems(agreement({ status: 'needs_attention', statusReason: 'not_on_approval_list' }), dialog))).toEqual([
+    expect(labels(buildContactClaManagerMenuItems(agreement({ status: 'needs_attention', statusReason: 'not_on_approval_list' }), dialog, false))).toEqual([
       'Request approval',
       'Request Removal',
       'Contact CLA Manager',
@@ -47,17 +47,35 @@ describe('buildContactClaManagerMenuItems', () => {
   });
 
   it('hides Request approval when the reason is not an approval-list miss', () => {
-    expect(labels(buildContactClaManagerMenuItems(agreement({ status: 'needs_attention', statusReason: 'unknown' }), dialog))).toEqual([
+    expect(labels(buildContactClaManagerMenuItems(agreement({ status: 'needs_attention', statusReason: 'unknown' }), dialog, false))).toEqual([
       'Request Removal',
       'Contact CLA Manager',
     ]);
   });
 
+  it('leaves every item enabled in a normal session', () => {
+    const items = buildContactClaManagerMenuItems(agreement({ status: 'needs_attention', statusReason: 'not_on_approval_list' }), dialog, false);
+
+    expect(items.map((item) => item.disabled)).toEqual([false, false, false]);
+  });
+
+  it('disables every item while impersonating, since all three are writes (#1894)', () => {
+    const items = buildContactClaManagerMenuItems(agreement({ status: 'needs_attention', statusReason: 'not_on_approval_list' }), dialog, true);
+
+    // Still offered — the administrator sees the action exists and that it is unavailable.
+    expect(labels(items)).toEqual(['Request approval', 'Request Removal', 'Contact CLA Manager']);
+    expect(items.every((item) => item.disabled)).toBe(true);
+  });
+
   it('opens the shared modal in the matching mode', () => {
     const open = vi.fn();
-    const items = buildContactClaManagerMenuItems(agreement({ status: 'needs_attention', statusReason: 'not_on_approval_list' }), {
-      open,
-    } as unknown as DialogService);
+    const items = buildContactClaManagerMenuItems(
+      agreement({ status: 'needs_attention', statusReason: 'not_on_approval_list' }),
+      {
+        open,
+      } as unknown as DialogService,
+      false
+    );
 
     items[0]?.command?.({} as never);
 

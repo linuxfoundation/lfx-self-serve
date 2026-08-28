@@ -52,7 +52,7 @@ vi.mock('../services/logger.service', () => ({
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(), getUsernameFromAuth: vi.fn() }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn() }));
 
-import { applyHostKeyVisibility, enrichMeetingsWithCreatedBy, isWithinHostKeyWindow, stripHostKey } from './meeting.helper';
+import { applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, isWithinHostKeyWindow, resolveOrganizerAndHostKey, stripHostKey } from './meeting.helper';
 
 const req = {} as unknown as Request;
 const human: MeetingUserInfo = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
@@ -197,96 +197,136 @@ function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
   } as Meeting;
 }
 
-function mockAccessCheck(results: Map<string, boolean>): { service: AccessCheckService; checkAccess: ReturnType<typeof vi.fn> } {
-  const checkAccess = vi.fn().mockResolvedValue(results);
-  return { service: { checkAccess } as unknown as AccessCheckService, checkAccess };
+function mockAccessCheck(hasOrganizer: boolean): {
+  service: AccessCheckService;
+  checkSingleAccess: ReturnType<typeof vi.fn>;
+} {
+  const checkSingleAccess = vi.fn().mockResolvedValue(hasOrganizer);
+  return { service: { checkSingleAccess } as unknown as AccessCheckService, checkSingleAccess };
 }
 
-describe('applyHostKeyVisibility', () => {
-  // Helper: build the composite-keyed map that checkAccess now returns.
-  function accessMap(organizer: boolean, host: boolean): Map<string, boolean> {
-    return new Map([
-      [`${MEETING_ID}#organizer`, organizer],
-      [`${MEETING_ID}#host`, host],
-    ]);
-  }
+function mockMeetingSvc(hostKey: string | null | Error): {
+  service: { getMeetingHostKey: ReturnType<typeof vi.fn> };
+  getMeetingHostKey: ReturnType<typeof vi.fn>;
+} {
+  const getMeetingHostKey = hostKey instanceof Error ? vi.fn().mockRejectedValue(hostKey) : vi.fn().mockResolvedValue(hostKey);
+  return { service: { getMeetingHostKey }, getMeetingHostKey };
+}
 
+describe('resolveOrganizerAndHostKey', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('keeps host_key for a meeting organizer (has both organizer and host via FGA derivation)', async () => {
+  it('returns the host key and organizer=true for a meeting organizer inside the window', async () => {
     const meeting = buildMeeting();
-    const { service } = mockAccessCheck(accessMap(true, true));
+    const { service: access, checkSingleAccess } = mockAccessCheck(true);
+    const { service: meetingSvc, getMeetingHostKey } = mockMeetingSvc('123456');
 
-    await applyHostKeyVisibility(req, service, meeting);
+    const result = await resolveOrganizerAndHostKey(req, access, meetingSvc as any, meeting);
 
-    expect(meeting.organizer).toBe(true);
-    expect(meeting.can_view_host_key).toBe(true);
-    expect(meeting.host_key).toBe('123456');
+    expect(result).toEqual({ organizer: true, canViewHostKey: true, hostKey: '123456' });
+    // Organizer FGA + host-key fetch are fired concurrently, both with the same identity.
+    expect(checkSingleAccess).toHaveBeenCalledTimes(1);
+    expect(getMeetingHostKey).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps host_key for a direct co-host who is not the meeting organizer', async () => {
-    // host=true but organizer=false: registrant with Host=true, not a project/committee writer.
+  it('returns organizer=false and no host key for a non-organizer whose host-key fetch returns null', async () => {
+    // Query-service enforces FGA `host` on v1_meeting_host_credentials, so an unauthorized
+    // caller sees an empty resources array (null hostKey) even without a local host access check.
     const meeting = buildMeeting();
-    const { service } = mockAccessCheck(accessMap(false, true));
+    const { service: access } = mockAccessCheck(false);
+    const { service: meetingSvc } = mockMeetingSvc(null);
 
-    await applyHostKeyVisibility(req, service, meeting);
+    const result = await resolveOrganizerAndHostKey(req, access, meetingSvc as any, meeting);
 
-    expect(meeting.organizer).toBe(false);
-    expect(meeting.can_view_host_key).toBe(true);
-    expect(meeting.host_key).toBe('123456');
+    expect(result).toEqual({ organizer: false, canViewHostKey: false });
   });
 
-  it('strips host_key when the user has neither organizer nor host relation (the leak regression)', async () => {
+  it('returns the host key for a direct co-host who is not the meeting organizer', async () => {
+    // organizer=false but query-service returns a key because the FGA host relation covers
+    // registrants with Host=true independently of the organizer/writer chain.
     const meeting = buildMeeting();
-    const { service } = mockAccessCheck(accessMap(false, false));
+    const { service: access } = mockAccessCheck(false);
+    const { service: meetingSvc } = mockMeetingSvc('654321');
 
-    await applyHostKeyVisibility(req, service, meeting);
+    const result = await resolveOrganizerAndHostKey(req, access, meetingSvc as any, meeting);
 
-    expect(meeting.organizer).toBe(false);
-    expect(meeting.can_view_host_key).toBe(false);
-    expect(meeting.host_key).toBeUndefined();
+    expect(result).toEqual({ organizer: false, canViewHostKey: true, hostKey: '654321' });
   });
 
-  it('batches organizer and host checks into a single access-check call', async () => {
+  it('runs organizer FGA and host-key fetch in parallel with no host tuple in the access check', async () => {
+    // The single access-check call must be an organizer-only check — we no longer send a
+    // `host` tuple locally because the query-service already enforces FGA on the credentials doc.
     const meeting = buildMeeting();
-    const { service, checkAccess } = mockAccessCheck(accessMap(false, false));
+    const { service: access, checkSingleAccess } = mockAccessCheck(true);
+    const { service: meetingSvc } = mockMeetingSvc('123456');
 
-    await applyHostKeyVisibility(req, service, meeting);
+    await resolveOrganizerAndHostKey(req, access, meetingSvc as any, meeting);
 
-    expect(checkAccess).toHaveBeenCalledTimes(1);
-    expect(checkAccess).toHaveBeenCalledWith(req, [
-      { resource: 'v1_meeting', id: MEETING_ID, access: 'organizer' },
-      { resource: 'v1_meeting', id: MEETING_ID, access: 'host' },
-    ]);
+    expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'v1_meeting', id: MEETING_ID, access: 'organizer' }, undefined);
   });
 
-  it('strips host_key and sets can_view_host_key=false outside the time window, but still resolves organizer via FGA', async () => {
-    // Starts in 3 days — well beyond the 70-min pre-window.
+  it('skips the host-key fetch entirely outside the time window but still resolves organizer', async () => {
+    // Starts in 3 days — beyond the 70-min pre-window; the key would be stripped anyway.
     const meeting = buildMeeting({ start_time: isoOffset(3 * 24 * 60 * MIN), duration: 60 });
-    const { service, checkAccess } = mockAccessCheck(accessMap(true, true));
+    const { service: access, checkSingleAccess } = mockAccessCheck(true);
+    const { service: meetingSvc, getMeetingHostKey } = mockMeetingSvc('123456');
 
-    await applyHostKeyVisibility(req, service, meeting);
+    const result = await resolveOrganizerAndHostKey(req, access, meetingSvc as any, meeting);
 
-    // FGA still runs so organizer is set correctly (gates private-meeting access and registrant counts).
-    expect(checkAccess).toHaveBeenCalledTimes(1);
-    expect(meeting.organizer).toBe(true);
-    // Time gate blocks host-key visibility regardless of role.
-    expect(meeting.can_view_host_key).toBe(false);
-    expect(meeting.host_key).toBeUndefined();
+    expect(checkSingleAccess).toHaveBeenCalledTimes(1);
+    expect(getMeetingHostKey).not.toHaveBeenCalled();
+    expect(result).toEqual({ organizer: true, canViewHostKey: false });
   });
 
-  it('keeps host_key when the host is inside the time window', async () => {
-    // Starts in 30 min — inside the 70-min pre-window.
-    const meeting = buildMeeting({ start_time: isoOffset(30 * MIN), duration: 60 });
-    const { service } = mockAccessCheck(accessMap(true, true));
+  it('degrades to canViewHostKey=false when the host-key fetch throws', async () => {
+    const meeting = buildMeeting();
+    const { service: access } = mockAccessCheck(true);
+    const { service: meetingSvc } = mockMeetingSvc(new Error('query service 503'));
 
-    await applyHostKeyVisibility(req, service, meeting);
+    const result = await resolveOrganizerAndHostKey(req, access, meetingSvc as any, meeting);
+
+    expect(result).toEqual({ organizer: true, canViewHostKey: false });
+  });
+
+  it('forwards the bearerToken override to both parallel calls when provided', async () => {
+    // Parallel-safe fan-out: callers pass the user token explicitly so the calls don't race on
+    // req.bearerToken (which may be holding an M2M token for sibling calls in the same
+    // Promise.all).
+    const meeting = buildMeeting();
+    const { service: access, checkSingleAccess } = mockAccessCheck(false);
+    const { service: meetingSvc, getMeetingHostKey } = mockMeetingSvc(null);
+
+    await resolveOrganizerAndHostKey(req, access, meetingSvc as any, meeting, 'user-token');
+
+    expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'v1_meeting', id: MEETING_ID, access: 'organizer' }, { bearerToken: 'user-token' });
+    expect(getMeetingHostKey).toHaveBeenCalledWith(req, MEETING_ID, { bearerToken: 'user-token' });
+  });
+});
+
+describe('applyOrganizerAndHostKeyResult', () => {
+  it('applies organizer, can_view_host_key, and host_key when authorized', () => {
+    const meeting = buildMeeting();
+    delete meeting.host_key;
+
+    applyOrganizerAndHostKeyResult(meeting, { organizer: true, canViewHostKey: true, hostKey: '999999' });
 
     expect(meeting.organizer).toBe(true);
     expect(meeting.can_view_host_key).toBe(true);
-    expect(meeting.host_key).toBe('123456');
+    expect(meeting.host_key).toBe('999999');
+  });
+
+  it('strips any existing host_key when canViewHostKey is false', () => {
+    // Defense in depth: the meeting builder pre-populates host_key. If the resolution says the
+    // caller can't view it, the field must be stripped regardless of what was on the meeting.
+    const meeting = buildMeeting();
+
+    applyOrganizerAndHostKeyResult(meeting, { organizer: false, canViewHostKey: false });
+
+    expect(meeting.organizer).toBe(false);
+    expect(meeting.can_view_host_key).toBe(false);
+    expect(meeting.host_key).toBeUndefined();
   });
 });
 

@@ -3,7 +3,17 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { META_OBJECTIVE_LABELS, META_OBJECTIVE_PARAMS, META_SELECTABLE_OBJECTIVES, campaignToggleAction, normalizeGeoTargets } from './campaign.constants';
+import {
+  CAMPAIGN_ALERT_THRESHOLDS,
+  META_OBJECTIVE_LABELS,
+  META_OBJECTIVE_PARAMS,
+  META_SELECTABLE_OBJECTIVES,
+  campaignToggleAction,
+  canonicalMicrosoftMatchType,
+  isMicrosoftMatchType,
+  normalizeGeoTargets,
+  normalizeMicrosoftGeoTargets,
+} from './campaign.constants';
 
 describe('campaignToggleAction', () => {
   it('offers pause for the statuses that are running upstream', () => {
@@ -233,5 +243,123 @@ describe('persisted leads objective', () => {
     for (const objective of Object.keys(META_OBJECTIVE_PARAMS) as (keyof typeof META_OBJECTIVE_PARAMS)[]) {
       expect(META_OBJECTIVE_LABELS[objective]).toBeTruthy();
     }
+  });
+});
+
+/**
+ * Direct coverage for the shared Microsoft helpers exercised below:
+ * `canonicalMicrosoftMatchType`, `isMicrosoftMatchType` (asserted to agree with it), and
+ * `normalizeMicrosoftGeoTargets`.
+ *
+ * All had only INDIRECT coverage through the implementation-tab component specs, which exercise
+ * them via the form. That hides which layer a failure belongs to and leaves the helpers free to
+ * drift for any caller that is not the form.
+ *
+ * The callers differ, so do not read "the BFF uses these" onto all three:
+ * `isMicrosoftMatchType` and `normalizeMicrosoftGeoTargets` are called by both the form and
+ * `campaign.controller.ts`; `canonicalMicrosoftMatchType` is UI-only today, reached from the
+ * component alone. It is covered here anyway because it is exported and the agreement test below
+ * pins it against the predicate the BFF does use.
+ */
+describe('canonicalMicrosoftMatchType', () => {
+  it('canonicalises the case and whitespace upstream tolerates', () => {
+    // Upstream does strings.ToLower(strings.TrimSpace(in)), so all of these are valid there.
+    expect(canonicalMicrosoftMatchType('EXACT')).toBe('Exact');
+    expect(canonicalMicrosoftMatchType('  exact  ')).toBe('Exact');
+    expect(canonicalMicrosoftMatchType('bRoAd')).toBe('Broad');
+    expect(canonicalMicrosoftMatchType('Phrase')).toBe('Phrase');
+  });
+
+  it('returns null for a value Microsoft has no match type for', () => {
+    // null, not a default: substituting one would dispatch a match type the operator never chose.
+    expect(canonicalMicrosoftMatchType('BROAD_MATCH')).toBeNull();
+    expect(canonicalMicrosoftMatchType('')).toBeNull();
+    expect(canonicalMicrosoftMatchType(undefined)).toBeNull();
+    expect(canonicalMicrosoftMatchType(123)).toBeNull();
+  });
+
+  it('agrees with isMicrosoftMatchType on every input', () => {
+    // The two are used as a pair — one to filter, one to convert — so a disagreement between them
+    // is what would let a value pass the guard and then fail to convert.
+    for (const v of ['EXACT', '  exact  ', 'bRoAd', 'Phrase', 'BROAD_MATCH', '', undefined, 123, null]) {
+      expect(isMicrosoftMatchType(v)).toBe(canonicalMicrosoftMatchType(v) !== null);
+    }
+  });
+});
+
+describe('normalizeMicrosoftGeoTargets', () => {
+  it('upper-cases, trims and de-dupes while preserving first-seen order', () => {
+    expect(normalizeMicrosoftGeoTargets([' us ', 'DE', 'us', 'de', 'FR'])).toEqual(['US', 'DE', 'FR']);
+  });
+
+  it('keeps a code Meta excludes but Microsoft supports', () => {
+    // The whole reason this is separate from normalizeGeoTargets: AN is in Microsoft's table and
+    // not in this app's COUNTRIES, and dropping it silently retargeted the campaign.
+    expect(normalizeMicrosoftGeoTargets(['AN'])).toEqual(['AN']);
+  });
+
+  it('drops malformed entries rather than passing them upstream', () => {
+    expect(normalizeMicrosoftGeoTargets(['USA', '', '  ', 'u1', 'US'])).toEqual(['US']);
+  });
+
+  it('treats null and undefined as an empty list', () => {
+    expect(normalizeMicrosoftGeoTargets(null)).toEqual([]);
+    expect(normalizeMicrosoftGeoTargets(undefined)).toEqual([]);
+  });
+});
+
+/**
+ * These thresholds are the edit point for the LinkedIn, Meta and Reddit low-CTR and
+ * clicks-without-conversions rules — not for every Optimize-tab rule. Google keeps its own
+ * literals in `campaign-metrics.service.ts` and is deliberately out of scope here: its display
+ * rule reads `!isSearch && ctr < 0.3 && impressions > 1000`, which is a different predicate over
+ * a different population, so folding it in would flatten a real distinction rather than an
+ * accidental one. LFXV2-3314's convergence is where that decision belongs.
+ *
+ * The rules themselves have no spec of their own. So this
+ * block pins the VALUES rather than re-deriving the rules: the whole claim of LFXV2-3314's first
+ * step is that centralising them changed no behaviour, and a value drifting here is exactly how
+ * that claim would quietly stop being true.
+ *
+ * Written as literals on purpose. Asserting `x === CAMPAIGN_ALERT_THRESHOLDS[p].lowCtrPct` would
+ * pass against any value at all.
+ */
+describe('CAMPAIGN_ALERT_THRESHOLDS', () => {
+  it('preserves the values each service used before they were named', () => {
+    expect(CAMPAIGN_ALERT_THRESHOLDS['linkedin-ads']).toEqual({
+      lowCtrPct: 0.3,
+      clicksWithoutConversions: 50,
+      minImpressions: null,
+    });
+    expect(CAMPAIGN_ALERT_THRESHOLDS['meta-ads']).toEqual({
+      lowCtrPct: 0.5,
+      clicksWithoutConversions: 20,
+      minImpressions: 500,
+    });
+    expect(CAMPAIGN_ALERT_THRESHOLDS['reddit-ads']).toEqual({
+      lowCtrPct: 0.3,
+      clicksWithoutConversions: 100,
+      minImpressions: 1000,
+    });
+  });
+
+  /**
+   * The divergence is the finding, not an accident of this spec. Pinned so that CONVERGING the
+   * platforms — LFXV2-3314's second step — has to delete this test deliberately rather than
+   * discover it red, and so nobody "tidies" one value into agreement without that being the
+   * point of their change.
+   */
+  it('records that the three platforms currently disagree', () => {
+    const ctr = Object.values(CAMPAIGN_ALERT_THRESHOLDS).map((t) => t.lowCtrPct);
+    const clicks = Object.values(CAMPAIGN_ALERT_THRESHOLDS).map((t) => t.clicksWithoutConversions);
+    expect(new Set(ctr).size).toBeGreaterThan(1);
+    expect(new Set(clicks).size).toBe(3);
+  });
+
+  /** LinkedIn alone has no floor; it guards with `ctr > 0` instead. Not equivalent — see the JSDoc. */
+  it('records that only LinkedIn has no impression floor', () => {
+    expect(CAMPAIGN_ALERT_THRESHOLDS['linkedin-ads'].minImpressions).toBeNull();
+    expect(CAMPAIGN_ALERT_THRESHOLDS['meta-ads'].minImpressions).not.toBeNull();
+    expect(CAMPAIGN_ALERT_THRESHOLDS['reddit-ads'].minImpressions).not.toBeNull();
   });
 });

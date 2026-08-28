@@ -7,9 +7,8 @@
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// `@lfx-one/shared/*` isn't wired into this app's vitest config (same issue documented in
-// committee-engagement-window.helper.spec.ts) — enums/utils need stubs; the interfaces import in
-// the service under test is `import type`, so it's erased and needs no mock at all.
+// The vitest shared alias resolves enums/interfaces for real; constants/utils keep importActual subfile
+// stubs because their barrels reach Angular. The service's interfaces import is `import type` — erased, no mock needed.
 const { proxyRequest, getMeetings, getVotes, encodeActivityPageToken, warning, info } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getMeetings: vi.fn(),
@@ -33,10 +32,6 @@ vi.mock('@lfx-one/shared/constants', async () => {
   // confusing "no export defined on the mock" trap for the next test that reaches further into it.
   return { ...activityEvent, ...meeting };
 });
-vi.mock('@lfx-one/shared/enums', () => ({
-  PollStatus: { ACTIVE: 'active', DISABLED: 'disabled', ENDED: 'ended' },
-  SurveyStatus: { OPEN: 'open', CLOSED: 'closed', SCHEDULED: 'scheduled', DRAFT: 'draft', SENT: 'sent' },
-}));
 vi.mock('@lfx-one/shared/utils', async () => {
   const iso = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/iso-timestamp.utils')>(
     '../../../../../packages/shared/src/utils/iso-timestamp.utils'

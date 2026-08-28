@@ -656,6 +656,24 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
    * `Object.keys(META_OBJECTIVE_LABELS)`, which agreed with whatever that map contained and so
    * could never have caught an objective appearing or disappearing from the picker.
    */
+
+  /**
+   * The untouched form must submit successfully once the cutover is live.
+   *
+   * `createCampaigns` refuses a Google request carrying BOTH `search` and `demand-gen` and does
+   * not fall back to the legacy creator, so defaulting both to true handed a user a terminal
+   * failure on their very first create. `canSubmit` does not catch it either — it only blocks
+   * when NEITHER is selected.
+   *
+   * Pinned as a default rather than as a rule, because that is what regressed: someone restoring
+   * `includeDemandGen: [true]` for symmetry would reintroduce the dead end silently.
+   */
+  it('defaults Google to Search only, the combination the server accepts', () => {
+    const c = component() as unknown as Record<string, any>;
+    expect(c['campaignForm'].controls['includeSearch'].value).toBe(true);
+    expect(c['campaignForm'].controls['includeDemandGen'].value).toBe(false);
+  });
+
   it('renders exactly the selectable objectives, in order', () => {
     const select = require<HTMLSelectElement>('implementation-meta-objective');
     const rendered = Array.from(select.options).map((o) => o.value);
@@ -1245,15 +1263,6 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
   });
 
   /**
-   * The Microsoft geo box must NOT apply Meta's assigned-country allowlist. That list is derived
-   * from this app's own COUNTRIES and genuinely diverges from the table Microsoft validates
-   * against — `AN` is in Microsoft's and not in ours. Dropping it silently meant the request fell
-   * back to the event country and targeted a DIFFERENT market than the operator typed.
-   *
-   * Membership stays campaign-service's call: it checks Microsoft's own table and fails the create
-   * before anything is created. This asserts shape-only handling, not that AN is targetable.
-   */
-  /**
    * Brief-generated keywords carry the model's RAW `match_type` (both streams copy it through), so
    * `EXACT` reaches the seed. It must be canonicalised: the `<select>` offers only PascalCase, so a
    * raw value rendered the dropdown with NOTHING selected on a keyword that would dispatch fine.
@@ -1280,6 +1289,15 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     ]);
   });
 
+  /**
+   * The Microsoft geo box must NOT apply Meta's assigned-country allowlist. That list is derived
+   * from this app's own COUNTRIES and genuinely diverges from the table Microsoft validates
+   * against — `AN` is in Microsoft's and not in ours. Dropping it silently meant the request fell
+   * back to the event country and targeted a DIFFERENT market than the operator typed.
+   *
+   * Membership stays campaign-service's call: it checks Microsoft's own table and fails the create
+   * before anything is created. This asserts shape-only handling, not that AN is targetable.
+   */
   it('keeps a geo code Meta excludes but Microsoft supports', async () => {
     const c = component() as unknown as Record<string, any>;
     c['microsoftGeoTargets'].set([]);
@@ -1323,6 +1341,56 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
 
     expect(c['microsoftBoundsValid']()).toBe(false);
     expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The match-type half of the same backstop, and it needs its own test: the over-cap case above
+   * returns at the LENGTH check, so it never evaluates this branch. Deleting the match-type guard
+   * left the whole app suite green — an unreached guard is not coverage.
+   *
+   * `BROAD_MATCH` rather than `EXACT`: `isMicrosoftMatchType` folds case, so `EXACT` is VALID and
+   * a test built on it would assert the opposite of the contract. Google's SCREAMING_CASE
+   * vocabulary is the realistic source, since the brief's keyword stage is shared with Google Ads
+   * and a draft written from a Google-shaped brief can carry it.
+   *
+   * The list is within every cap, so nothing else can be what fails.
+   */
+  it('blocks submit when a restored draft carries a match type Microsoft has no name for', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftBudgetUsd'].set(100);
+    c['microsoftGeoTargets'].set(['US']);
+    c['microsoftKeywords'].set([
+      { text: 'kubernetes', matchType: 'Exact' },
+      { text: 'service mesh', matchType: 'BROAD_MATCH' },
+    ]);
+    await fixture.whenStable();
+
+    expect(c['microsoftBoundsValid']()).toBe(false);
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The same draft with the match type CORRECTED submits, so the test above cannot pass for an
+   * unrelated reason — without this, a form broken for any other cause would look like coverage.
+   */
+  it('allows submit once that draft carries a match type Microsoft accepts', async () => {
+    const c = component() as unknown as Record<string, any>;
+    c['selectedPlatforms'].set(['microsoft-ads']);
+    c['microsoftBudgetUsd'].set(100);
+    c['microsoftGeoTargets'].set(['US']);
+    c['microsoftKeywords'].set([
+      { text: 'kubernetes', matchType: 'Exact' },
+      // Upper case on purpose: it is ACCEPTED, because the predicate folds case.
+      { text: 'service mesh', matchType: 'BROAD' },
+    ]);
+    await fixture.whenStable();
+
+    expect(c['microsoftBoundsValid']()).toBe(true);
+    // canSubmit too, not just the bounds: without it an unrelated prerequisite being false would
+    // leave BOTH cases green, and the pair would no longer prove the match type was what blocked
+    // submission in the negative case above.
+    expect(c['canSubmit']()).toBe(true);
   });
 
   /**
@@ -3069,5 +3137,124 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(c.redditVariants()).toEqual([{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }]);
     expect(c.linkedInVariants()).toHaveLength(1);
     expect(c.metaVariants()).toHaveLength(1);
+  });
+});
+
+describe('ImplementationTabComponent demand gen capability gate', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  function checkbox(): HTMLInputElement | null {
+    return fixture.nativeElement.querySelector('input[formControlName="includeDemandGen"]');
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /**
+   * Asserted in BOTH directions on the RENDERED output, not on the input signal.
+   *
+   * A test that only checked the disabled case would pass against a template that never renders
+   * the control at all, and one that only read `demandGenEnabled()` would pass against a template
+   * that ignores it entirely.
+   */
+  it('hides the Demand Gen control when the deployment cannot create it', () => {
+    fixture.componentRef.setInput('demandGenEnabled', false);
+    fixture.detectChanges();
+    expect(checkbox()).toBeNull();
+  });
+
+  it('shows the Demand Gen control when the deployment can create it', () => {
+    fixture.componentRef.setInput('demandGenEnabled', true);
+    fixture.detectChanges();
+    expect(checkbox()).not.toBeNull();
+  });
+
+  it('defaults to hidden, so a deployment that never reports the capability cannot offer it', () => {
+    expect(checkbox()).toBeNull();
+  });
+
+  it('withholds the control while the capability is still unknown', () => {
+    fixture.componentRef.setInput('demandGenEnabled', null);
+    fixture.detectChanges();
+    expect(checkbox()).toBeNull();
+  });
+
+  /**
+   * The distinction the tri-state exists for. `null` withholds the control exactly as `false`
+   * does, so this cannot be asserted through the DOM — only the draft outcome separates them,
+   * and getting it wrong destroys a user's saved selection rather than merely hiding a checkbox.
+   */
+  it('preserves a restored draft selection while the capability is unknown', () => {
+    restoreDraft(null, true);
+    expect(demandGenValue()).toBe(true);
+  });
+
+  /**
+   * Order matters, and getting it wrong makes the negative case pass for the wrong reason.
+   *
+   * The seeding effect depends only on `briefData` and reads `draft` inside `untracked()`, so the
+   * draft must already be set when the brief lands — setting the brief first runs the effect with
+   * no draft, and a later `setInput('draft', ...)` never re-triggers it. `applyDraft` also returns
+   * early unless the draft's `eventSlug` matches the form's, which the brief is what populates.
+   *
+   * With either mistake the control keeps its `[false]` default and the "forces to Search" test
+   * passes without the guard existing at all.
+   */
+  function restoreDraft(enabled: boolean | null, includeDemandGen: boolean): void {
+    fixture.componentRef.setInput('demandGenEnabled', enabled);
+    fixture.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://example.com',
+      includeSearch: true,
+      includeDemandGen,
+      // Required: `applyDraft` calls `replaceCopyArray` on both unconditionally, so a draft
+      // without them throws "values is not iterable" before it reaches the checkbox.
+      headlines: ['Join us at KubeCon'],
+      descriptions: ['Register today for KubeCon EU 2026.'],
+    } as unknown as CampaignImplementationDraft);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+  }
+
+  function demandGenValue(): boolean {
+    return (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].controls['includeDemandGen'].value;
+  }
+
+  /**
+   * Hiding the control is not enough on its own: the draft restore writes `includeDemandGen`
+   * directly, so a draft saved when the capability was available would put a hidden `true` on the
+   * form and submit it into a refusal. Asserts the VALUE, not merely that the path ran.
+   */
+  it('forces a restored draft to Search when the deployment cannot create Demand Gen', () => {
+    restoreDraft(false, true);
+    expect(demandGenValue()).toBe(false);
+  });
+
+  /**
+   * The paired positive case. Without it the guard could be `includeDemandGen: false` outright
+   * and the negative test above would still pass, so this is what proves the gate reads the
+   * capability rather than discarding the draft value unconditionally.
+   */
+  it('preserves a restored draft Demand Gen selection where the deployment supports it', () => {
+    restoreDraft(true, true);
+    expect(demandGenValue()).toBe(true);
   });
 });

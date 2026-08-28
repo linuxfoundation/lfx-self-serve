@@ -4,10 +4,16 @@
 import type { Request } from 'express';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mirrors project.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
-// vitest config, so every runtime import needs a stub. The classifier functions are deep-imported
-// from their real implementation (not hand-copied) so a decision-table change there fails this
-// suite too; their own boundary behavior is exhaustively covered in
+// The `@lfx-one/shared/utils` barrel transitively pulls in Angular (form.utils.ts,
+// meeting.utils.ts, vote.utils.ts import @angular/forms / @angular/common/http), which this
+// Node-environment suite can't load — so it needs a stub, below. `@lfx-one/shared/constants` is
+// ALSO stubbed below, but for a different reason: it resolves fine on its own (it's Angular-free
+// and reaches this suite through the package's built `exports` map, same as `@lfx-one/shared/enums`
+// — imported at runtime by committee-engagement.service.ts, not by this spec file, and left
+// unstubbed) — the stub here exists to pin `DEFAULT_LFX_ONE_PLATINUM_SCHEMA`/`VALKEY_CACHE` to known
+// test values, not to work around a resolution failure. The classifier functions are deep-imported
+// from their real implementation (not hand-copied) so a decision-table change there fails this suite
+// too; their own boundary behavior is exhaustively covered in
 // packages/shared/src/utils/committee-engagement-classifier.utils.spec.ts.
 const {
   execute,
@@ -288,7 +294,27 @@ describe('CommitteeEngagementService.getCommitteeEngagement', () => {
       expect(result.summary.active_count).toBe(0);
     });
 
-    it('does NOT classify an LF Staff + Voting Rep member as "LF Staff" — only Observer-status staff seats are excluded (LFXV2-3101 follow-up, Jordan Evans review)', async () => {
+    it('classifies an LF Staff member with no voting status recorded and no matching row as "LF Staff", not the tenure-grace "High" (GH-1848)', async () => {
+      // The exact reported bug: a committee with no voting leaves staff seats with no voting.status
+      // on the roster, and this member's row is also individually missing (e.g. added since the
+      // model's last refresh) — so `member.voting?.status || row?.MEMBER_VOTING_STATUS` both resolve
+      // undefined and fall all the way through to the `CommitteeMemberVotingStatus.NONE` sentinel.
+      // `recentJoin` makes `joinedWithinWindow` genuinely true, so without the fix this would
+      // tenure-grace to 'High' on a literal 0/0 seat (case 3) instead of short-circuiting to
+      // 'LF Staff' the same way an Observer seat already did.
+      const recentJoin = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+      getCommitteeMembers.mockResolvedValueOnce([member('m1'), member('staff', { role: { name: 'LF Staff' } as never, created_at: recentJoin })]);
+      generateMockEngagementRows.mockReturnValueOnce([row({ MEMBER_USER_ID: 'm1', INVITED_COUNT_30D: 10, ATTENDED_COUNT_30D: 10 })]);
+
+      const result = await service.getCommitteeEngagement(req, 'committee-1', '30d');
+
+      const staffMember = result.members.find((m) => m.uid === 'staff');
+      expect(staffMember).toMatchObject({ role: 'LF Staff', voting_status: 'None', invited: 0, attended: 0, classification: 'LF Staff' });
+      expect(result.summary.active_count).toBe(1); // only m1 — the staff seat is excluded, not tenure-graced in
+      expect(result.summary.eligible_count).toBe(1);
+    });
+
+    it('does NOT classify an LF Staff + Voting Rep member as "LF Staff" — only non-voting staff seats are excluded (LFXV2-3101 follow-up, Jordan Evans review)', async () => {
       getCommitteeMembers.mockResolvedValueOnce([member('m1')]);
       // row()'s default MEMBER_VOTING_STATUS is 'Voting Rep' — deliberately left unset here to
       // exercise that default, not overridden to Observer.

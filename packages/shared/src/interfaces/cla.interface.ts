@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { CLA_MANAGER_REQUEST_TYPES } from '../constants/cla.constants';
 import type { TagSeverity } from './components.interface';
 
 // UI-facing shapes for the read-only "CLAs" view (Me lens → Profile tab).
@@ -240,6 +241,15 @@ export interface GithubAccountChoice extends GithubAccountOption {
   label: string;
 }
 
+/**
+ * What the GitHub account step closes with, beyond `null` for a dismissal (#1917).
+ *
+ * The two outcomes are kept apart because dismissing the empty state and asking to link an
+ * account both leave the picker with no account chosen, and only one of them should move the
+ * contributor off the page they started from.
+ */
+export type GithubAccountSelectResult = { githubId: string } | { linkAccounts: true };
+
 /** Response for `GET /api/me/clas/github-accounts`. */
 export interface GithubAccountOptions {
   accounts: GithubAccountOption[];
@@ -288,8 +298,13 @@ export interface PrepareSignResponse {
 /** Copy/API mode for the shared Contact CLA Manager modal (#1372 / #1574). */
 export type ClaManagerRequestMode = 'approval' | 'removal' | 'contact';
 
-/** Producer `requestType` — Contact is a UI mode only and is never sent. */
-export type ClaManagerRequestType = 'approval' | 'removal';
+/**
+ * Producer `requestType`, derived from `CLA_MANAGER_REQUEST_TYPES`. Kept separate from
+ * `ClaManagerRequestMode` even though the two currently coincide: one is the modal's copy
+ * set, the other is the wire contract, and a future copy mode must not silently become a
+ * request type the producer never promised to accept.
+ */
+export type ClaManagerRequestType = (typeof CLA_MANAGER_REQUEST_TYPES)[number];
 
 /** One CLA manager from the CCLA signature ACL covering an ECLA. */
 export interface ClaManager {
@@ -314,11 +329,15 @@ export interface ClaManagerRequest {
   requestType: ClaManagerRequestType;
   /** LF usernames of the checked managers. Must be non-empty. */
   recipients: string[];
-  /** Optional note included in the notification email (max 4096). */
+  /**
+   * Note included in the notification email, capped at `CLA_MANAGER_MESSAGE_MAX_LENGTH`.
+   * Optional for approval and removal; required and non-blank for contact, which asks for
+   * no change and so carries nothing else for the manager to read.
+   */
   message?: string;
 }
 
-/** Receipt for an approval/removal request. */
+/** Receipt for an approval, removal, or contact request. */
 export interface ClaManagerRequestResult {
   requestId: string;
   signatureId: string;

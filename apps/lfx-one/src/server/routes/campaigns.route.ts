@@ -22,6 +22,11 @@ router.post('/brief/generate', (req, res, next) => campaignController.generateBr
 router.post('/brief/refine', (req, res, next) => campaignController.refineBrief(req, res, next));
 router.post('/brief/persist', (req, res, next) => campaignController.persistBrief(req, res, next));
 router.get('/brief', (req, res, next) => campaignController.loadBrief(req, res, next));
+// campaign-service's OWN metrics and action items for one brief. Distinct from `/monitor` and its
+// per-platform siblings below, which read the ad platforms directly and derive action items from
+// four separate rule engines in this BFF. Brief-scoped where those are account-scoped, so it is
+// not a drop-in replacement for them; nothing is cut over to it yet.
+router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetrics(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
 router.get('/list', (req, res, next) => campaignController.listBriefCampaigns(req, res, next));
 router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(req, res, next));

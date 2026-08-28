@@ -61,6 +61,13 @@ export const routes: Routes = [
         canActivate: [campaignAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/campaigns/campaigns.component').then((m) => m.CampaignsComponent),
       },
+      // Foundation Lens — Social Listening page (ED + LF Staff)
+      {
+        path: 'foundation/social-listening',
+        data: { lens: 'foundation' },
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
+        loadComponent: () => import('./modules/dashboards/social-listening/social-listening.component').then((m) => m.SocialListeningComponent),
+      },
       // Foundation Lens — Projects page
       {
         path: 'foundation/projects',
@@ -499,6 +506,12 @@ export const routes: Routes = [
   {
     path: 'projects/:projectSlug/groups',
     loadComponent: () => import('./modules/groups/public-project-groups/public-project-groups.component').then((m) => m.PublicProjectGroupsComponent),
+  },
+  // Public project calendar — month/week calendar of a project's public meetings, optionally scoped
+  // to a single committee via ?committee=<uid> (no auth required).
+  {
+    path: 'projects/:projectSlug/calendar',
+    loadComponent: () => import('./modules/meetings/public-project-calendar/public-project-calendar.component').then((m) => m.PublicProjectCalendarComponent),
   },
   // Invite acceptance — authGuard preserves ?token= through the Auth0 login redirect.
   {

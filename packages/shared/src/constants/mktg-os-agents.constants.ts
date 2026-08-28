@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MktgAgent } from '../interfaces';
+import type { MktgAgent } from '../interfaces';
 
 // Shared labels for the Marketing OS Agents marketplace (LFXAI-95 workstream).
 // Centralized so the nav item, route, and landing page stay in sync.

@@ -11,7 +11,7 @@ const PROJECT_UID = 'project-2222';
 // Hoisted, per-test-controllable mocks. The controller (and the real meeting.helper it delegates
 // to for the host-key gate) reach these through the module mocks registered below.
 const {
-  checkAccessMock,
+  checkSingleAccessMock,
   addAccessToResourceMock,
   generateM2MTokenMock,
   getEffectiveEmailMock,
@@ -22,7 +22,7 @@ const {
   projectSvc,
   addInvitedStatusToMeetingMock,
 } = vi.hoisted(() => ({
-  checkAccessMock: vi.fn(),
+  checkSingleAccessMock: vi.fn(),
   addAccessToResourceMock: vi.fn(),
   generateM2MTokenMock: vi.fn(),
   getEffectiveEmailMock: vi.fn(),
@@ -80,7 +80,7 @@ vi.mock('../services/committee.service', () => ({
 }));
 vi.mock('../services/access-check.service', () => ({
   AccessCheckService: vi.fn(function () {
-    return { checkAccess: checkAccessMock, addAccessToResource: addAccessToResourceMock };
+    return { checkSingleAccess: checkSingleAccessMock, addAccessToResource: addAccessToResourceMock };
   }),
 }));
 vi.mock('../services/logger.service', () => ({
@@ -101,8 +101,8 @@ vi.mock('../utils/auth-helper', () => ({
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 vi.mock('../utils/security.util', () => ({ validatePassword: validatePasswordMock }));
 
-// Keep the real host-key gate (applyHostKeyVisibility + stripHostKey); stub only the
-// registrant-lookup helpers so we don't need M2M/registrant plumbing.
+// Keep the real host-key gate (resolveOrganizerAndHostKey + applyOrganizerAndHostKeyResult +
+// stripHostKey); stub only the registrant-lookup helpers so we don't need M2M/registrant plumbing.
 vi.mock('../helpers/meeting.helper', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../helpers/meeting.helper')>();
   return { ...actual, addInvitedStatusToMeeting: addInvitedStatusToMeetingMock, checkPastMeetingAccess: vi.fn() };
@@ -170,11 +170,6 @@ function buildReqRes(authenticated: boolean, hasUserToken = true) {
   return { req, res, next };
 }
 
-// checkAccess now keys results as "id#access" (e.g. "meeting-1111#organizer").
-function accessMap(entries: [string, boolean][]): Map<string, boolean> {
-  return new Map(entries);
-}
-
 describe('PublicMeetingController.getMeetingById host_key gating', () => {
   let controller: PublicMeetingController;
 
@@ -186,20 +181,19 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
     getEffectiveUsernameMock.mockReturnValue('user');
     projectSvc.getProjectById.mockResolvedValue(buildProject());
     meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
-    // Default: host key fetch returns null (no access); authorized tests override this.
+    // Default: host key fetch returns null (unauthorized OR no doc yet — the query-service's
+    // FGA gate on v1_meeting_host_credentials returns an empty resources array in both cases).
+    // Authorized tests override this.
     meetingSvc.getMeetingHostKey.mockResolvedValue(null);
+    // Default: organizer FGA check returns false. Organizer tests override this.
+    checkSingleAccessMock.mockResolvedValue(false);
     // Default invited helper: not invited, host_key preserved on the returned object.
     addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
   });
 
   it('strips host_key for an authenticated non-organizer on a PUBLIC non-restricted meeting (the leak regression)', async () => {
+    // organizer=false + no host_key returned from the query-service (FGA denies) => can_view_host_key=false.
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
-    checkAccessMock.mockResolvedValue(
-      accessMap([
-        [`${MEETING_ID}#organizer`, false],
-        [`${MEETING_ID}#host`, false],
-      ])
-    );
     const { req, res, next } = buildReqRes(true);
 
     await controller.getMeetingById(req, res, next);
@@ -213,12 +207,7 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
   it('keeps host_key for a meeting organizer', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
     meetingSvc.getMeetingHostKey.mockResolvedValue('123456');
-    checkAccessMock.mockResolvedValue(
-      accessMap([
-        [`${MEETING_ID}#organizer`, true],
-        [`${MEETING_ID}#host`, true],
-      ])
-    );
+    checkSingleAccessMock.mockResolvedValue(true);
     const { req, res, next } = buildReqRes(true);
 
     await controller.getMeetingById(req, res, next);
@@ -226,17 +215,15 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.meeting.host_key).toBe('123456');
     expect(payload.meeting.can_view_host_key).toBe(true);
+    expect(payload.meeting.organizer).toBe(true);
   });
 
-  it('keeps host_key for a project writer who is not the organizer (host=true via FGA derivation)', async () => {
+  it('keeps host_key for a direct co-host who is not the meeting organizer (query-service FGA authorizes the fetch)', async () => {
+    // organizer=false but the query-service returns a host_key because the FGA `host` relation
+    // on v1_meeting_host_credentials covers registrants with Host=true independently of the
+    // organizer chain. No local `host` access-check is needed.
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
     meetingSvc.getMeetingHostKey.mockResolvedValue('123456');
-    checkAccessMock.mockResolvedValue(
-      accessMap([
-        [`${MEETING_ID}#organizer`, false],
-        [`${MEETING_ID}#host`, true],
-      ])
-    );
     const { req, res, next } = buildReqRes(true);
 
     await controller.getMeetingById(req, res, next);
@@ -244,6 +231,7 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.meeting.host_key).toBe('123456');
     expect(payload.meeting.can_view_host_key).toBe(true);
+    expect(payload.meeting.organizer).toBe(false);
   });
 
   it('does not call getMeetingHostKey for an unauthenticated caller', async () => {
@@ -258,14 +246,11 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
   });
 
   it('responds without host_key when getMeetingHostKey throws a non-fatal error', async () => {
+    // Query-service blip: fail closed with can_view_host_key=false and no host_key, but do not
+    // 500 the meeting response. This is the exact NATS-degraded case that LFXV2-2885 targets.
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
     meetingSvc.getMeetingHostKey.mockRejectedValue(new Error('query service 503'));
-    checkAccessMock.mockResolvedValue(
-      accessMap([
-        [`${MEETING_ID}#organizer`, true],
-        [`${MEETING_ID}#host`, true],
-      ])
-    );
+    checkSingleAccessMock.mockResolvedValue(true);
     const { req, res, next } = buildReqRes(true);
 
     await controller.getMeetingById(req, res, next);
@@ -275,6 +260,9 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
     expect(res.json).toHaveBeenCalled();
     const payload = res.json.mock.calls[0][0];
     expect(payload.meeting.host_key).toBeUndefined();
+    expect(payload.meeting.can_view_host_key).toBe(false);
+    // organizer=true is still resolved from the FGA check even though the host-key fetch failed.
+    expect(payload.meeting.organizer).toBe(true);
   });
 
   it('strips host_key for an unauthenticated caller and never runs an access check', async () => {
@@ -283,7 +271,8 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
 
     await controller.getMeetingById(req, res, next);
 
-    expect(checkAccessMock).not.toHaveBeenCalled();
+    expect(checkSingleAccessMock).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingHostKey).not.toHaveBeenCalled();
     const payload = res.json.mock.calls[0][0];
     expect(payload.meeting.host_key).toBeUndefined();
     expect(payload.meeting.can_view_host_key).toBe(false);
@@ -296,22 +285,33 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
 
     await controller.getMeetingById(req, res, next);
 
-    // The access check must NOT run under the application (M2M) identity.
-    expect(checkAccessMock).not.toHaveBeenCalled();
+    // Neither the access check nor the host-key fetch may run under the M2M identity — the
+    // application identity could hold writer relations and leak the host key.
+    expect(checkSingleAccessMock).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingHostKey).not.toHaveBeenCalled();
     const payload = res.json.mock.calls[0][0];
     expect(payload.meeting.host_key).toBeUndefined();
     expect(payload.meeting.can_view_host_key).toBe(false);
   });
 
+  it('passes the captured user token through to both parallel access-check and host-key calls', async () => {
+    // Parallel-safe fan-out: the user token is passed per-call so it doesn't race with M2M
+    // sibling calls in the same Promise.all that read req.bearerToken.
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    meetingSvc.getMeetingHostKey.mockResolvedValue('123456');
+    checkSingleAccessMock.mockResolvedValue(true);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(checkSingleAccessMock).toHaveBeenCalledWith(req, { resource: 'v1_meeting', id: MEETING_ID, access: 'organizer' }, { bearerToken: 'user-token' });
+    expect(meetingSvc.getMeetingHostKey).toHaveBeenCalledWith(req, MEETING_ID, { bearerToken: 'user-token' });
+  });
+
   it('strips host_key for an invited non-organizer on a private restricted meeting', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, restricted: true }));
     addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: true }));
-    checkAccessMock.mockResolvedValue(
-      accessMap([
-        [`${MEETING_ID}#organizer`, false],
-        [`${MEETING_ID}#host`, false],
-      ])
-    );
     const { req, res, next } = buildReqRes(true);
 
     await controller.getMeetingById(req, res, next);
@@ -335,7 +335,7 @@ describe('PublicMeetingController.getMeetingById parent project resolution (LFXV
     meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
     meetingSvc.getMeetingHostKey.mockResolvedValue(null);
     addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
-    checkAccessMock.mockResolvedValue(accessMap([]));
+    checkSingleAccessMock.mockResolvedValue(false);
   });
 
   it('resolves and returns the foundation project', async () => {
@@ -400,7 +400,7 @@ describe('PublicMeetingController.getPublicPastMeetingById parent project resolu
     getEffectiveEmailMock.mockReturnValue('user@example.com');
     getEffectiveUsernameMock.mockReturnValue('user');
     meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting());
-    checkAccessMock.mockResolvedValue(accessMap([]));
+    checkSingleAccessMock.mockResolvedValue(false);
   });
 
   it('resolves and returns the foundation project', async () => {
@@ -472,7 +472,7 @@ describe('PublicMeetingController.getMeetingById organizer privacy (LFXV2-2802)'
     meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
     meetingSvc.getMeetingHostKey.mockResolvedValue(null);
     addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
-    checkAccessMock.mockResolvedValue(accessMap([]));
+    checkSingleAccessMock.mockResolvedValue(false);
   });
 
   it('strips created_by and owner for an anonymous caller without querying the index', async () => {
@@ -512,7 +512,7 @@ describe('PublicMeetingController.getPublicPastMeetingById organizer privacy (LF
     projectSvc.getProjectById.mockResolvedValue(buildProject({ parent_uid: '' }));
     meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ created_by: createdBy, owner } as Partial<PastMeeting>));
     addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: false }));
-    checkAccessMock.mockResolvedValue(accessMap([]));
+    checkSingleAccessMock.mockResolvedValue(false);
   });
 
   it('strips created_by and owner for an anonymous caller without querying the index', async () => {
