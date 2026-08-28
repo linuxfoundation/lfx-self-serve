@@ -875,6 +875,10 @@ export class CampaignController {
         logger.success(req, 'campaign_keywords', startTime, {
           viaCampaignService: true,
           keywords: data.totalKeywords,
+          // Upstream's own count alongside the converted one. They should agree; logging both
+          // means a conversion that silently drops rows shows up as a disagreement here rather
+          // than as a quietly shorter table.
+          rowCount: payload.row_count,
           truncated: payload.truncated,
         });
         res.json(data);

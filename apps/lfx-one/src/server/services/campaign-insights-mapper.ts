@@ -37,9 +37,19 @@ const MICROS_PER_UNIT = 1_000_000;
  * The day counts the UI's range selector offers, mapped to campaign-service's window tokens.
  *
  * The UI type is `7 | 14 | 30` (`DateRangeOption`), and the legacy BFF already snapped any
- * other value to one of those three via `resolveDateRange` — so this mapping is exactly the
- * behaviour that ships today, not a new restriction. The HTTP route still accepts an
- * arbitrary `?days=`, which is why `windowForDays` snaps rather than rejects.
+ * other POSITIVE value to one of those three via `resolveDateRange` — so for every value the
+ * range selector can produce, and every wider one, this mapping is the behaviour that ships
+ * today rather than a new restriction. The HTTP route still accepts an arbitrary `?days=`,
+ * which is why `windowForDays` snaps rather than rejects.
+ *
+ * It diverges from `resolveDateRange` in exactly one place, deliberately: a non-positive or
+ * non-finite count goes to the WIDEST window here, where legacy's leading `days <= 7` sent it
+ * to the narrowest. See `windowForDays` for why the widest is the right answer.
+ *
+ * That divergence IS reachable. The handler resolves `Number(req.query['days']) || 14`, which
+ * absorbs `0`, `''` and non-numeric text into 14 — but `?days=-5` and `?days=Infinity` pass
+ * straight through, since both are truthy. So the two arms genuinely answer such a request
+ * differently, and that is a deliberate improvement rather than an accident.
  */
 const WINDOW_BY_DAYS: readonly { maxDays: number; window: CampaignMetricsWindow; effectiveDays: number }[] = [
   { maxDays: 7, window: 'last_7_days', effectiveDays: 7 },
@@ -85,8 +95,10 @@ function percentFromFraction(fraction: number): number {
 /**
  * Build the Google Ads deep link for a campaign.
  *
- * Kept identical to the legacy path's link so the cutover does not silently change where the
- * "open in Google Ads" affordance points.
+ * The same link the legacy path builds, with the id percent-encoded. Campaign ids are numeric,
+ * so the rendered URL is identical in practice and the cutover does not change where the "open
+ * in Google Ads" affordance points; the encoding is belt-and-braces for an id that reaches here
+ * from an upstream response rather than from a literal.
  */
 function buildGoogleAdsUrl(campaignId: string): string {
   return campaignId ? `https://ads.google.com/aw/campaigns?campaignId=${encodeURIComponent(campaignId)}` : '';

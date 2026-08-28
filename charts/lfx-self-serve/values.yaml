@@ -595,6 +595,31 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE:
     value: "true"
 
+  # Routes the Google Ads keyword and audience READS (campaign.controller.ts getKeywords /
+  # getAudience) to campaign-service instead of the BFF's own Google Ads queries.
+  #
+  # THIS ONE CHANGES THE NUMBERS, which no other flag here does, and it is the reason it is
+  # separate. The BFF's own queries carry NO campaign filter, so they report the whole shared
+  # Google Ads customer — every foundation's keywords and demographics, shown to whichever
+  # project is on screen. Campaign-service scopes the same reads to the project's own campaigns.
+  # Turning this on therefore makes the tables SMALLER, and the rows it drops are other
+  # foundations' spend. TELL PEOPLE BEFORE FLIPPING IT: a reader who is not warned files the
+  # drop as a bug, and "the dashboard lost half its keywords" is a plausible-sounding report.
+  #
+  # A project with no campaign-service campaigns reads EMPTY rather than falling back. That is
+  # deliberate — the fallback would be the account-wide read, which is the cross-tenant leak
+  # this flag exists to close.
+  #
+  # UNLIKE STATUS_TOGGLE, THIS COMES BACK OFF CLEANLY. Both routes are reads with no persisted
+  # state and no UUID-keyed id space, so nothing is stranded by disabling it: flipping back
+  # restores the previous behaviour exactly, leak included. It has no ordering dependency on
+  # any other flag on this list.
+  #
+  # Does NOT cover keyword ACTIONS (pause/remove), which stay on the legacy path — a write
+  # needs a rollback story a read does not. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS:
+    value: "false"
+
   # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).
   # The BFF refuses to serve mock brief data when NODE_ENV=production and this
   # isn't 'live' — leaving it unset here would 500 on every weekly-brief request.

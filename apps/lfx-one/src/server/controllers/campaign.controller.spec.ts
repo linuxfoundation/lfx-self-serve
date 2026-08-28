@@ -1985,6 +1985,25 @@ describe('CampaignController Google Ads insight reads', () => {
       expect(vi.mocked(res.json).mock.calls[0][0]).toMatchObject({ days: 14 });
     });
 
+    // `truncated` and `row_count` reach the LOG and nothing else — the UI contract has no field
+    // for either. That makes the log line the only place a capped result is visible at all, so
+    // it is asserted: without this, deleting the line leaves the whole suite green while the one
+    // signal distinguishing "this project has 50 keywords" from "here are the top 50 of more"
+    // disappears. The totals in the body are summed over a possibly-capped set, which is exactly
+    // why the flag has to survive somewhere.
+    it('logs the truncation flag and upstream row count, which the UI contract cannot carry', async () => {
+      isServerFeatureEnabled.mockImplementation(onlyInsights);
+
+      await controller.getKeywords(insightsReq({ project: 'tlf', days: '30' }), res, next);
+
+      expect(logger.success).toHaveBeenCalledWith(
+        expect.anything(),
+        'campaign_keywords',
+        expect.anything(),
+        expect.objectContaining({ truncated: true, rowCount: 1 })
+      );
+    });
+
     it('converts the payload into the UI contract', async () => {
       isServerFeatureEnabled.mockImplementation(onlyInsights);
 

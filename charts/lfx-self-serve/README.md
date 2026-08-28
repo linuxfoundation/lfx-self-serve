@@ -191,13 +191,14 @@ Campaign endpoints are being moved off this application's vendor-direct integrat
 lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
 changing a value here rather than by shipping a revert.
 
-| Parameter                                                | Description                                                                                                                         | Required | Default  |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`          | Serves campaign job status from campaign-service; see the accepted values below                                                     | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`        | Persists the generated brief in campaign-service instead of only in the browser tab                                                 | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`        | Creates campaigns through campaign-service instead of the per-platform Express services — deploy only after STATUS_TOGGLE converges | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`    | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                | No       | `"true"` |
+| Parameter                                                | Description                                                                                                                                    | Required | Default  |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`          | Serves campaign job status from campaign-service; see the accepted values below                                                                | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`        | Persists the generated brief in campaign-service instead of only in the browser tab                                                            | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`        | Creates campaigns through campaign-service instead of the per-platform Express services — deploy only after STATUS_TOGGLE converges            | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`    | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257) — see below            | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                           | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`      | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — CHANGES THE NUMBERS, see below | No       | off      |
 
 `..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
 **`..._JOBS` must stay on, and comes off LAST.** With `..._CREATE` enabled campaign-service mints
@@ -317,6 +318,25 @@ observable, which is precisely what makes it the safe half to ship alone. The re
 the one that costs: with CREATE on first, a new pod can mint a UUID campaign while an old pod
 still refuses its pause, and with `replicaCount: 3`, `maxSurge: "100%"` and non-sticky requests
 that window lasts as long as the rollout.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS` moves the Google Ads keyword and audience reads onto
+campaign-service, and it is the one flag on this list that CHANGES THE NUMBERS rather than only
+the backend serving them.
+
+The BFF's own queries carry no campaign filter, so they report the whole shared Google Ads
+customer — every foundation's keywords and demographics, shown to whichever project is on screen.
+Campaign-service scopes the same reads to the project's own campaigns. Enabling this therefore
+makes the tables SMALLER, and the rows it drops are other foundations' spend. Announce it before
+flipping it: "the dashboard lost half its keywords" is a plausible-sounding bug report, and the
+smaller number is the correct one.
+
+A project with no campaign-service campaigns reads empty rather than falling back to the
+account-wide query — the fallback would be the cross-tenant leak this flag closes.
+
+It has no ordering dependency on the other flags, and unlike `STATUS_TOGGLE` it comes back off
+cleanly: both routes are reads with no persisted state and no UUID-keyed id space, so disabling
+it restores the previous behaviour exactly, leak included. It does not cover keyword actions
+(pause/remove), which stay on the legacy path.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` gates both halves of brief persistence: the write
 (`POST /api/campaigns/brief/persist`, called when a user approves a brief and moves to the
