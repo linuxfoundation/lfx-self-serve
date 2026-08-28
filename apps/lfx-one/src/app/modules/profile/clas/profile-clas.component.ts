@@ -255,7 +255,7 @@ export class ProfileClasComponent {
     this.signDialogOpen.set(true);
 
     const dialogRef = this.dialogService.open(GithubAccountSelectComponent, {
-      header: 'Choose a GitHub account',
+      header: 'Select a GitHub account',
       width: '32rem',
       modal: true,
       closable: true,
