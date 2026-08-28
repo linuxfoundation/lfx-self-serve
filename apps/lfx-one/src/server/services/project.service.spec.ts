@@ -300,7 +300,7 @@ describe('ProjectService — create picker methods', () => {
       expect(result.sort()).toEqual(['a', 'b']);
       expect(proxyRequest).toHaveBeenCalledTimes(2);
       expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', page_size: 500 });
-      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ page_token: 'next-token' });
+      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ type: 'project', page_size: 500, page_token: 'next-token' });
     });
 
     it('does not call addAccessToResources for a standard non-root project', async () => {

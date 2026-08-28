@@ -47,6 +47,7 @@ export class AccessCheckService {
     const { operationName, startTime } = this.beginCheckOperation(req, resources);
 
     try {
+      // success/warning logged inside performCheck; only error is logged here on propagation.
       return await this.performCheck(req, resources, operationName, startTime, options);
     } catch (error) {
       logger.error(req, operationName, startTime, error, {
@@ -89,6 +90,7 @@ export class AccessCheckService {
 
     const { operationName, startTime } = this.beginCheckOperation(req, resources);
     try {
+      // success/warning logged inside performCheck; only error is logged here on propagation.
       return await this.performCheck(req, resources, operationName, startTime, options);
     } catch (error) {
       // Unlike checkAccess, this rethrows rather than degrading — but still logs, so a failed
