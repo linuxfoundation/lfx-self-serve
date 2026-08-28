@@ -357,7 +357,9 @@ export class MeetingJoinComponent implements OnInit {
     // Reset post-registration optimistic flag when navigating to a different meeting so a
     // previous registration doesn't grant registrant-list access for an unrelated meeting.
     // Use getMeetingSeriesUid (not meeting.id) because past-occurrence composite ids differ
-    // from the live-series uid — occurrence navigation must not clear the flag.
+    // from the live-series uid — occurrence navigation must not clear the flag. Also clear the
+    // guest-add pad/snapshot so a pending count from the previous meeting doesn't leak into
+    // the next one's total.
     toObservable(this.meeting)
       .pipe(
         map((m) => (m ? getMeetingSeriesUid(m) : undefined)),
@@ -365,7 +367,11 @@ export class MeetingJoinComponent implements OnInit {
         skip(1),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(() => this.optimisticInvited.set(false));
+      .subscribe(() => {
+        this.optimisticInvited.set(false);
+        this.optimisticAdditional.set(0);
+        this.rosterCountBeforeAdd.set(null);
+      });
 
     this.primaryRecordingUrl = this.initializePrimaryRecordingUrl();
     this.transcriptUrl = this.initializeTranscriptUrl();
@@ -1405,6 +1411,13 @@ export class MeetingJoinComponent implements OnInit {
               });
               this.optimisticAdditional.set(next.pad);
               this.rosterCountBeforeAdd.set(next.before);
+            }),
+            catchError((error) => {
+              // A failed refetch must not reach reconcileOptimisticPad as an empty list — that
+              // would look like "the roster shrank to zero" and zero out a pending pad for guests
+              // that were actually added, making them disappear until the next refetch succeeds.
+              console.error(`Failed to refresh registrants for meeting ${meeting.id}:`, error);
+              return of(this.registrants());
             }),
             finalize(() => this.registrantsLoading.set(false))
           );

@@ -32,9 +32,11 @@ describe('MeetingRsvpDetailsComponent', () => {
       ...overrides,
     }) as unknown as Meeting;
 
+  let registrantUidCounter = 0;
+
   const buildRegistrant = (overrides: Partial<MeetingRegistrant> = {}) =>
     ({
-      uid: `reg-${Math.random()}`,
+      uid: `reg-${++registrantUidCounter}`,
       meeting_id: MEETING_ID,
       email: 'attendee@example.com',
       first_name: 'Test',
@@ -50,6 +52,7 @@ describe('MeetingRsvpDetailsComponent', () => {
   const createComponent = () => TestBed.createComponent(MeetingRsvpDetailsComponent);
 
   beforeEach(() => {
+    registrantUidCounter = 0;
     getMeetingRegistrants = vi.fn().mockReturnValue(of([]));
     getMeetingRsvps = vi.fn().mockReturnValue(of([]));
     getPastMeetingParticipants = vi.fn().mockReturnValue(of([]));

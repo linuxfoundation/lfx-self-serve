@@ -7,22 +7,19 @@ const MEETING_UID = 'a0000000-0000-0000-0000-000000000001';
 const COMMITTEE_UID = 'b0000000-0000-0000-0000-000000000002';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { meetingSvc, accessCheckSvc, generateM2MToken, getEffectiveEmailMock, addInvitedStatusToMeetingMock, enrichMeetingsWithCreatedByMock } =
-  vi.hoisted(() => ({
-    meetingSvc: {
-      getMeetingRegistrants: vi.fn(),
-      getAuthorizedRegistrantsForImport: vi.fn(),
-      getMeetingRegistrantsForUser: vi.fn(),
-      getMeetingRegistrantCounts: vi.fn(),
-      getMeetingById: vi.fn(),
-      getMeetingHostKey: vi.fn(),
-    },
-    accessCheckSvc: { checkSingleAccess: vi.fn() },
-    generateM2MToken: vi.fn(),
-    getEffectiveEmailMock: vi.fn(),
-    addInvitedStatusToMeetingMock: vi.fn(),
-    enrichMeetingsWithCreatedByMock: vi.fn(),
-  }));
+const { meetingSvc, generateM2MToken, getEffectiveEmailMock, addInvitedStatusToMeetingMock, enrichMeetingsWithCreatedByMock } = vi.hoisted(() => ({
+  meetingSvc: {
+    getMeetingRegistrants: vi.fn(),
+    getAuthorizedRegistrantsForImport: vi.fn(),
+    getMeetingRegistrantCounts: vi.fn(),
+    getMeetingById: vi.fn(),
+    getMeetingHostKey: vi.fn(),
+  },
+  generateM2MToken: vi.fn(),
+  getEffectiveEmailMock: vi.fn(),
+  addInvitedStatusToMeetingMock: vi.fn(),
+  enrichMeetingsWithCreatedByMock: vi.fn(),
+}));
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
 vi.mock('@lfx-one/shared/constants', async (importOriginal) => importOriginal());
@@ -59,11 +56,6 @@ vi.mock('../services/meeting.service', () => ({
 vi.mock('../services/committee.service', () => ({
   CommitteeService: vi.fn(function () {
     return {};
-  }),
-}));
-vi.mock('../services/access-check.service', () => ({
-  AccessCheckService: vi.fn(function () {
-    return accessCheckSvc;
   }),
 }));
 vi.mock('../services/ai.service', () => ({
@@ -227,5 +219,21 @@ describe('MeetingController.getMeetingById host-key gating', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.host_key).toBeUndefined();
     expect(payload.can_view_host_key).toBe(false);
+  });
+
+  // GH-1731: registrant counts removed from this hot path — the roster read here existed only to
+  // derive two integers with no remaining consumer once the join page holds its own roster.
+  it('issues zero registrant-roster queries and carries no registrant count fields on the response', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: false }));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingById(buildReq({}), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.individual_registrants_count).toBeUndefined();
+    expect(payload.committee_members_count).toBeUndefined();
   });
 });

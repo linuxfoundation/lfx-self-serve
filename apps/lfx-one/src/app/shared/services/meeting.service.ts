@@ -423,17 +423,14 @@ export class MeetingService {
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`, { params });
   }
 
+  // Callers decide how to handle failures — the join page must distinguish a failed refetch from a
+  // genuinely empty roster (see reconcileOptimisticPad), so this does not swallow errors to `[]`.
   public getMyMeetingRegistrants(meetingUid: string, includeRsvp: boolean = false, occurrenceId?: string): Observable<MeetingRegistrant[]> {
     let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
     if (occurrenceId) {
       params = params.set('occurrence_id', occurrenceId);
     }
-    return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/my-meeting-registrants`, { params }).pipe(
-      catchError((error) => {
-        console.error(`Failed to load my registrants for meeting ${meetingUid}:`, error);
-        return of([]);
-      })
-    );
+    return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/my-meeting-registrants`, { params });
   }
 
   public getPublicPastMeeting(id: string): Observable<PublicPastMeetingResponse> {
