@@ -248,6 +248,18 @@ describe('AccessCheckService — batching', () => {
     expect(result.has('proj-100#writer')).toBe(false);
     // Two WARN logs: one per-chunk and one terminal partial-result.
     expect(loggerWarning).toHaveBeenCalledTimes(2);
+    expect(loggerWarning).toHaveBeenCalledWith(
+      req,
+      expect.any(String),
+      expect.stringContaining('chunk 1 failed'),
+      expect.objectContaining({ chunk_index: 1, err: chunkError })
+    );
+    expect(loggerWarning).toHaveBeenCalledWith(
+      req,
+      expect.any(String),
+      expect.stringContaining('partial'),
+      expect.objectContaining({ failed_chunks: 1, batch_count: 2, duration_ms: expect.any(Number) })
+    );
   });
 
   it('fails the rejected chunk closed but preserves results from fulfilled chunks', async () => {
