@@ -122,6 +122,14 @@ export class PlanningTabComponent implements OnInit {
   protected readonly hsStatus = signal<string | null>(null);
   protected readonly hsNotFound = signal(false);
   protected readonly hsMatches = signal<{ name: string; hs_utm: string }[]>([]);
+  /**
+   * The search could not see every campaign HubSpot matched, so "not found" is INCONCLUSIVE.
+   *
+   * Creating on an inconclusive search duplicates a campaign in the LF-global namespace every
+   * foundation shares, and the duplicate is not recoverable from this UI. The panel therefore
+   * asks for a narrower search term instead of offering the create outright.
+   */
+  protected readonly hsCapped = signal(false);
   protected readonly keywords = signal<CampaignKeyword[]>([]);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly linkedInStrategy = signal<LinkedInTargetingStrategy | null>(null);
@@ -964,6 +972,7 @@ export class PlanningTabComponent implements OnInit {
     this.hsStatus.set(null);
     this.hsMatches.set([]);
     this.hsNotFound.set(false);
+    this.hsCapped.set(false);
     this.hsUtm.set(null);
 
     const capturedEvent = eventName;
@@ -979,7 +988,12 @@ export class PlanningTabComponent implements OnInit {
             this.hsStatus.set(`Found: ${result.campaign_name}`);
           } else {
             this.hsNotFound.set(true);
-            this.hsStatus.set('No matching campaign in HubSpot');
+            // Set from the SAME response that reported the absence, so the two can never
+            // disagree about which search they describe.
+            this.hsCapped.set(result?.capped === true);
+            this.hsStatus.set(
+              result?.capped === true ? 'No match in the campaigns HubSpot returned — but there are more it did not' : 'No matching campaign in HubSpot'
+            );
           }
           this.hsSearching.set(false);
         },

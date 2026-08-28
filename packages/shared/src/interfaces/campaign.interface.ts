@@ -1558,6 +1558,15 @@ export interface HubSpotUtmLookupResult {
   hs_utm: string | null;
   campaign_name: string;
   all_matches: { name: string; hs_utm: string }[];
+  /**
+   * True when the search could not see every campaign HubSpot matched.
+   *
+   * ABSENCE IS THEN NOT PROOF OF NON-EXISTENCE. The search is capped and unpaged, and the UI
+   * acts on `found: false` by offering to create a campaign in the LF-global namespace every
+   * foundation shares — so a campaign below the cap would be duplicated. While this is true the
+   * create must be qualified, not offered outright.
+   */
+  capped: boolean;
 }
 
 export interface HubSpotUtmCreateResult {

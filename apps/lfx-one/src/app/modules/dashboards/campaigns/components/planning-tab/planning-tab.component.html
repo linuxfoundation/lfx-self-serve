@@ -77,7 +77,21 @@
                   data-testid="planning-hubspot-utm-value" />
               }
 
-              @if (hsNotFound() && !hsUtm()) {
+              <!--
+                Two different answers, never one. A capped search did not prove the campaign is
+                absent, and offering the create on it duplicates a campaign in a namespace every
+                foundation shares — so that branch asks for a narrower term and offers no button.
+              -->
+              @if (hsNotFound() && !hsUtm() && hsCapped()) {
+                <div class="rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="planning-hubspot-capped">
+                  <p class="text-sm text-amber-700">
+                    No match for "{{ lastLookedUpEvent }}" among the campaigns HubSpot returned — but it matched more than it could return, so the campaign may
+                    still exist. Search a narrower term, or check HubSpot directly, before creating one.
+                  </p>
+                </div>
+              }
+
+              @if (hsNotFound() && !hsUtm() && !hsCapped()) {
                 <div class="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
                   <span class="flex-1 text-sm text-amber-700">No campaign found for "{{ lastLookedUpEvent }}"</span>
                   <button

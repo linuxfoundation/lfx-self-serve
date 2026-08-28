@@ -1107,6 +1107,35 @@ describe('PlanningTabComponent HubSpot create', () => {
     expect(hs().hsStatus()).toContain('check HubSpot');
   });
 
+  it('offers no create when the search was capped, and offers one when it was not', async () => {
+    // The create is the whole hazard: it writes into a namespace every foundation shares, and a
+    // capped search has not proved the campaign is absent. Both directions are asserted so the
+    // guard cannot be satisfied by suppressing the button unconditionally.
+    const lookupSpy = vi.fn();
+    vi.spyOn(TestBed.inject(CampaignService), 'lookupHubSpotUtm').mockImplementation(lookupSpy);
+
+    for (const [capped, wantButton] of [
+      [true, false],
+      [false, true],
+    ] as const) {
+      lookupSpy.mockReturnValue(new Observable((s) => s.next({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped })));
+
+      const f = TestBed.createComponent(PlanningTabComponent);
+      f.componentRef.setInput('programTypeConfig', programTypeConfig);
+      f.detectChanges();
+      (f.componentInstance as unknown as { lookupHubSpot(e: string): void }).lookupHubSpot('kubecon-eu-2026');
+      await f.whenStable();
+      f.detectChanges();
+
+      const el = f.nativeElement as HTMLElement;
+      const button = el.querySelector('[data-testid="planning-hubspot-create-btn"]');
+      const notice = el.querySelector('[data-testid="planning-hubspot-capped"]');
+
+      expect(!!button, `capped=${capped}: create button present`).toBe(wantButton);
+      expect(!!notice, `capped=${capped}: capped notice present`).toBe(!wantButton);
+    }
+  });
+
   it('drops a create answer for an event the operator has already left', async () => {
     // The create is slow enough for the operator to retype the url and start a lookup for a
     // different event while it is in flight. Event A's hs_utm must not land on event B's panel.
