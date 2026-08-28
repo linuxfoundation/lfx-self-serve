@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // matches, so an unreset mock lets an unrelated earlier test's `logger.error(..., new Error('boom'))`
 // call silently satisfy a later `toHaveBeenCalledWith(..., new Error('boom'), ...)` assertion even
 // if the code path under test never ran.
-const { proxyRequest, loggerError } = vi.hoisted(() => ({ proxyRequest: vi.fn(), loggerError: vi.fn() }));
+const { proxyRequest, loggerError, loggerWarning } = vi.hoisted(() => ({ proxyRequest: vi.fn(), loggerError: vi.fn(), loggerWarning: vi.fn() }));
 
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
@@ -25,12 +25,15 @@ vi.mock('./logger.service', () => ({
     startOperation: vi.fn(() => 0),
     success: vi.fn(),
     error: loggerError,
-    warning: vi.fn(),
+    warning: loggerWarning,
     debug: vi.fn(),
     info: vi.fn(),
     sanitize: (v: unknown) => v,
   },
 }));
+// ACCESS_CHECK_BATCH_SIZE is imported at runtime by access-check.service.ts — the alias isn't
+// wired into this app's vitest config, so it must be stubbed (same pattern as project.service.spec.ts).
+vi.mock('@lfx-one/shared/constants', () => ({ ACCESS_CHECK_BATCH_SIZE: 100 }));
 
 import type { Request } from 'express';
 
@@ -44,6 +47,7 @@ describe('AccessCheckService.checkAccess', () => {
   beforeEach(() => {
     proxyRequest.mockReset();
     loggerError.mockReset();
+    loggerWarning.mockReset();
     service = new AccessCheckService();
   });
 
@@ -147,6 +151,7 @@ describe('AccessCheckService.checkAccessStrict / checkSingleAccessStrict', () =>
   beforeEach(() => {
     proxyRequest.mockReset();
     loggerError.mockReset();
+    loggerWarning.mockReset();
     service = new AccessCheckService();
   });
 
@@ -176,5 +181,70 @@ describe('AccessCheckService.checkAccessStrict / checkSingleAccessStrict', () =>
 
     expect(result.size).toBe(0);
     expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('AccessCheckService — batching', () => {
+  let service: AccessCheckService;
+
+  // Build N access-check requests for distinct project IDs.
+  function makeResources(count: number): Array<{ resource: 'project'; id: string; access: 'writer' }> {
+    return Array.from({ length: count }, (_, i) => ({ resource: 'project' as const, id: `proj-${i}`, access: 'writer' as const }));
+  }
+
+  // Build a mock upstream response granting access to each of the given requests.
+  function mockResponse(resources: Array<{ resource: string; id: string; access: string }>, granted = true): { results: string[] } {
+    return { results: resources.map((r) => `${r.resource}:${r.id}#${r.access}@user:alice\t${granted}`) };
+  }
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    loggerError.mockReset();
+    loggerWarning.mockReset();
+    service = new AccessCheckService();
+  });
+
+  it('issues exactly one POST when the resource count is at the batch size limit (100)', async () => {
+    const resources = makeResources(100);
+    proxyRequest.mockResolvedValueOnce(mockResponse(resources, true));
+
+    const result = await service.checkAccess(req, resources);
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(result.get('proj-0#writer')).toBe(true);
+    expect(result.get('proj-99#writer')).toBe(true);
+  });
+
+  it('fans out to two POSTs when the resource count exceeds the batch size (101 resources → chunks of 100 and 1)', async () => {
+    const resources = makeResources(101);
+    // First chunk: resources 0–99, second chunk: resource 100.
+    proxyRequest.mockResolvedValueOnce(mockResponse(resources.slice(0, 100), true));
+    proxyRequest.mockResolvedValueOnce(mockResponse(resources.slice(100), false));
+
+    const result = await service.checkAccess(req, resources);
+
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    // Results from both chunks are merged into one map.
+    expect(result.get('proj-0#writer')).toBe(true);
+    expect(result.get('proj-99#writer')).toBe(true);
+    expect(result.get('proj-100#writer')).toBe(false);
+  });
+
+  it('fails the rejected chunk closed but preserves results from fulfilled chunks', async () => {
+    const resources = makeResources(101);
+    // Chunk 1 (resources 0–99) succeeds; chunk 2 (resource 100) fails.
+    proxyRequest.mockResolvedValueOnce(mockResponse(resources.slice(0, 100), true));
+    proxyRequest.mockRejectedValueOnce(new Error('chunk-failure'));
+
+    const result = await service.checkAccess(req, resources);
+
+    // Fulfilled chunk results are present.
+    expect(result.get('proj-0#writer')).toBe(true);
+    expect(result.get('proj-99#writer')).toBe(true);
+    // The failed chunk's resource is absent from the result map → defaults to false for callers.
+    expect(result.has('proj-100#writer')).toBe(false);
+    // A warning is emitted for the failed chunk so the incident is traceable.
+    expect(loggerWarning).toHaveBeenCalledTimes(1);
+    expect(loggerWarning).toHaveBeenCalledWith(req, expect.any(String), expect.stringContaining('chunk 1 failed'), expect.objectContaining({ chunk_index: 1 }));
   });
 });

@@ -202,8 +202,10 @@ export class AccessCheckService {
    * whether to degrade (`checkAccess`) or propagate (`checkAccessStrict`).
    *
    * When the resource count exceeds ACCESS_CHECK_BATCH_SIZE the tuples are split into bounded
-   * chunks and fanned out with Promise.all, keeping each POST payload small so OpenFGA latency
-   * stays proportional to batch size rather than growing unbounded with page size.
+   * chunks and fanned out with Promise.allSettled. Fulfilled chunks are merged; rejected chunks
+   * fail closed (their resources get `false`) and are logged at WARN. This preserves the
+   * existing fail-closed contract while ensuring a single bad chunk does not silently discard
+   * results from the successful ones.
    */
   private async performCheck(
     req: Request,
@@ -227,12 +229,26 @@ export class AccessCheckService {
       chunks.push(resources.slice(i, i + ACCESS_CHECK_BATCH_SIZE));
     }
 
-    const batchResults = await Promise.all(chunks.map((chunk) => this.performSingleCheck(req, chunk, options)));
+    const settled = await Promise.allSettled(chunks.map((chunk) => this.performSingleCheck(req, chunk, options)));
 
     const resultMap = new Map<string, boolean>();
-    for (const batchMap of batchResults) {
-      for (const [key, value] of batchMap) {
-        resultMap.set(key, value);
+    let failedChunks = 0;
+
+    for (let i = 0; i < settled.length; i++) {
+      const result = settled[i];
+      if (result.status === 'fulfilled') {
+        for (const [key, value] of result.value) {
+          resultMap.set(key, value);
+        }
+      } else {
+        failedChunks++;
+        // Fail closed for the resources in this chunk — their keys are not in the result map,
+        // so callers' downstream key lookups will return undefined and default to false.
+        logger.warning(req, operationName, `Access-check batch chunk ${i} failed, failing closed for its resources`, {
+          chunk_index: i,
+          chunk_size: chunks[i]!.length,
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        });
       }
     }
 
@@ -240,6 +256,7 @@ export class AccessCheckService {
       request_count: resources.length,
       granted_count: Array.from(resultMap.values()).filter(Boolean).length,
       batch_count: chunks.length,
+      failed_chunks: failedChunks,
     });
 
     return resultMap;

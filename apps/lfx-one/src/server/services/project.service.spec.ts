@@ -268,6 +268,44 @@ describe('ProjectService — create picker methods', () => {
     });
   });
 
+  describe('getProjectSlugs', () => {
+    it('returns slug strings for all non-root projects', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }, { uid: 'b', slug: 'b' }]));
+
+      const result = await service.getProjectSlugs(req);
+
+      expect(result.sort()).toEqual(['a', 'b']);
+    });
+
+    it('excludes the ROOT pseudo-project without calling addAccessToResources', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root', slug: 'root' }]));
+
+      const result = await service.getProjectSlugs(req);
+
+      expect(result).toEqual([]);
+      expect(addAccessToResources).not.toHaveBeenCalled();
+    });
+
+    it('follows page_token across pages and returns accumulated slugs', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next-token'));
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'b', slug: 'b' }]));
+
+      const result = await service.getProjectSlugs(req);
+
+      expect(result.sort()).toEqual(['a', 'b']);
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ page_token: 'next-token' });
+    });
+
+    it('never calls addAccessToResources (no access-check overhead)', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'x', slug: 'x' }]));
+
+      await service.getProjectSlugs(req);
+
+      expect(addAccessToResources).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getChildProjects', () => {
     it('queries parent=project:<uid> and filters to writer-permitted children', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'child-1', slug: 'child-1' }]));

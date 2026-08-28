@@ -52,9 +52,11 @@ export class ProjectService {
     if (!this.slugsCache$) {
       this.slugsCache$ = this.http.get<string[]>('/api/projects/slugs').pipe(
         retryTransientHttpError(),
+        // Evict the cache entry before catchError converts the error to of([]), so a
+        // future caller gets a fresh HTTP attempt instead of the pinned empty result.
+        tap({ error: () => (this.slugsCache$ = null) }),
         catchError((error) => {
           console.error('Failed to fetch project slugs:', error);
-          this.slugsCache$ = null;
           return of([]);
         }),
         shareReplay(1)
