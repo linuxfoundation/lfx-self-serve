@@ -95,9 +95,9 @@
                 <p [class]="'text-xs ' + (hsUtm() ? 'text-green-600' : 'text-amber-600')" data-testid="planning-hubspot-status">{{ hsStatus() }}</p>
               }
 
-              @if (hsMatches().length > 1) {
-                <div class="flex flex-col gap-1">
-                  <p class="text-xs text-gray-500">Multiple matches — click to select:</p>
+              @if (hsHasAlternatives()) {
+                <div class="flex flex-col gap-1" data-testid="planning-hubspot-matches">
+                  <p class="text-xs text-gray-500">Other matches — click to select:</p>
                   @for (m of hsMatches(); track m.hs_utm) {
                     <button
                       type="button"

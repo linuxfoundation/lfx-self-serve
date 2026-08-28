@@ -1137,6 +1137,42 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(instance()['hsNotFound']()).toBe(true);
   });
 
+  /**
+   * When the best match is TOKENLESS, it is excluded from `all_matches` — that list's element
+   * type has a non-nullable hs_utm, so a tokenless campaign cannot be represented there without
+   * inventing the value.
+   *
+   * The picker's old `length > 1` threshold assumed the selected match was always IN the list,
+   * so "more than one" meant "at least one alternative". With a tokenless winner, a single
+   * tokened alternative left the list at length 1 and stayed hidden — and the user had no way to
+   * take the one token actually available.
+   */
+  it('offers a lone alternative when the best match has no token', () => {
+    runLookup({
+      found: true,
+      hs_utm: null,
+      campaign_name: 'KubeCon NA 2026',
+      all_matches: [{ name: 'KubeCon NA 2026 sponsors', hs_utm: 'sponsors' }],
+    });
+
+    expect(instance()['hsHasAlternatives']()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-hubspot-matches"]')).not.toBeNull();
+  });
+
+  // The selected match alone is not an alternative — showing a one-item picker of the thing
+  // already chosen is noise.
+  it('does not offer a picker when the only match is the one already selected', () => {
+    runLookup({
+      found: true,
+      hs_utm: 'kubecon-na-2026',
+      campaign_name: 'KubeCon NA 2026',
+      all_matches: [{ name: 'KubeCon NA 2026', hs_utm: 'kubecon-na-2026' }],
+    });
+
+    expect(instance()['hsHasAlternatives']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-hubspot-matches"]')).toBeNull();
+  });
+
   it('uses the token when the match has one', () => {
     runLookup({ found: true, hs_utm: 'kubecon-na-2026', campaign_name: 'KubeCon NA 2026', all_matches: [] });
 

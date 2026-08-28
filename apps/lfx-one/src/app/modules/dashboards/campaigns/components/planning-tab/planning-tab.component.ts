@@ -122,6 +122,18 @@ export class PlanningTabComponent implements OnInit {
   protected readonly hsStatus = signal<string | null>(null);
   protected readonly hsNotFound = signal(false);
   protected readonly hsMatches = signal<{ name: string; hs_utm: string }[]>([]);
+  /**
+   * Whether the match picker has anything to offer.
+   *
+   * NOT `hsMatches().length > 1`. That threshold assumed the selected match was always IN the
+   * list, so "more than one" meant "at least one alternative". It no longer is: `all_matches`
+   * can only carry campaigns that HAVE a token, so when the best match is tokenless it is
+   * excluded — and a single tokened alternative left the list at length 1 and stayed hidden,
+   * with no way for the user to take the one token actually available.
+   *
+   * The real question is whether any listed match is not the one already selected.
+   */
+  protected readonly hsHasAlternatives = computed(() => this.hsMatches().some((m) => m.hs_utm !== this.hsUtm()));
   protected readonly keywords = signal<CampaignKeyword[]>([]);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly linkedInStrategy = signal<LinkedInTargetingStrategy | null>(null);

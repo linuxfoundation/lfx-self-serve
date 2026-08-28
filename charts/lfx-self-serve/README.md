@@ -200,6 +200,7 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`   | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                           | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — CHANGES THE NUMBERS, see below | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — the legacy path is already broken without the GADS\_\* vars, see below                     | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM`     | Serves the HubSpot campaign UTM lookup and create from campaign-service — REQUIRES campaign-service #193 deployed first, see below             | No       | off      |
 
 `..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
 **`..._JOBS` must stay on, and comes off LAST.** With `..._CREATE` enabled campaign-service mints
@@ -319,6 +320,29 @@ observable, which is precisely what makes it the safe half to ship alone. The re
 the one that costs: with CREATE on first, a new pod can mint a UUID campaign while an old pod
 still refuses its pause, and with `replicaCount: 3`, `maxSurge: "100%"` and non-sticky requests
 that window lasts as long as the rollout.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM` moves the HubSpot campaign UTM lookup and create
+onto campaign-service.
+
+**It depends on upstream endpoints that may not be deployed yet.** Both handlers call
+`/projects/{id}/connection-hubspot/campaigns`, added in campaign-service PR #193 (itself stacked
+on #192). Enabling this before those merge _and_ deploy routes both handlers at a 404, which the
+UI surfaces as "HubSpot lookup failed" — indistinguishable from a real HubSpot outage. Verify the
+endpoints respond in the target environment before flipping it on.
+
+**Off is not a working fallback**, as with the keyword-actions flag: the legacy path calls
+`hsHeaders()`, which throws whenever `HUBSPOT_ACCESS_TOKEN` is absent — and it is, by design,
+since the credential moved into campaign-service's encrypted connection store.
+
+One behaviour changes beyond the backend. The legacy path **fabricated** a UTM token
+(`<id>-<name>`) whenever HubSpot had none, so a campaign with no configured token still appeared
+tokenised — and links tagged with that invented value attribute traffic to a campaign HubSpot
+cannot report on. Behind this flag a missing token is reported as missing. Expect fewer apparent
+tokens, and expect that to be the correct answer.
+
+The create path writes into an LF-global namespace: the campaign is visible to every foundation's
+campaign managers, whatever project scoped the request, and it performs no duplicate check. The
+UI searches and warns first.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` moves keyword pause/remove onto
 campaign-service. It is separate from the reads flag above because it MUTATES live paid
