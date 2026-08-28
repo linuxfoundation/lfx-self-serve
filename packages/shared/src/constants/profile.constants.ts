@@ -13,6 +13,14 @@ import { CdpIdentityType, IdentityProvider, IdentityProviderOption, ProfileTab }
 export const PENDING_PROFILE_SAVE_KEY = 'lfx_profile_pending_save';
 
 /**
+ * sessionStorage key for the one-shot Linux.com forward re-auth redirect guard.
+ * Written by ProfileLinuxEmailComponent before its automatic Flow C redirect so a
+ * still-tokenless return can't loop; shared with its e2e/unit specs so a rename
+ * can't silently desync the guard from what the tests pre-latch or assert.
+ */
+export const LINUX_EMAIL_FORWARD_REAUTH_KEY = 'linux-email:forward-reauth-attempted';
+
+/**
  * Maximum length of the free-text "About Me" (bio) profile field. Shared across
  * the BFF validator, the reactive-form validator, and the textarea's maxlength
  * so the client and server enforce a single contract.

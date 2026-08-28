@@ -13,6 +13,7 @@ import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
+import { LINUX_EMAIL_FORWARD_REAUTH_KEY } from '@lfx-one/shared/constants';
 import { EnrichedIdentity, LinuxAliasData, LinuxForwardOption } from '@lfx-one/shared/interfaces';
 import { linuxAliasValidator } from '@lfx-one/shared/validators';
 import { UserService } from '@services/user.service';
@@ -37,7 +38,7 @@ export class ProfileLinuxEmailComponent {
   public readonly identities = input<EnrichedIdentity[]>([]);
 
   // One-shot guard (sessionStorage key) so a tokenless re-auth round-trip can't loop.
-  private readonly reauthFlagKey = 'linux-email:forward-reauth-attempted';
+  private readonly reauthFlagKey = LINUX_EMAIL_FORWARD_REAUTH_KEY;
 
   // Set on FORWARD_SET_FAILED so the recovery toast can be shown once the refreshed
   // alias state is known, instead of assuming the refetch lands on 'claimed'.

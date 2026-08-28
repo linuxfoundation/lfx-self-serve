@@ -19,6 +19,7 @@
  * separate `/api/profile/emails` fetch.
  */
 
+import { LINUX_EMAIL_FORWARD_REAUTH_KEY } from '@lfx-one/shared/constants';
 import type { LinuxAliasData } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
@@ -234,7 +235,7 @@ test.describe('Linux.com email — forward re-auth (#1935)', () => {
   test('shows the re-auth panel instead of the blank select when the forward target could not be read', async ({ page }) => {
     // Pre-latch the one-shot redirect guard so the page renders the recoverable panel
     // instead of immediately bouncing to authorizeUrl.
-    await page.addInitScript(() => sessionStorage.setItem('linux-email:forward-reauth-attempted', '1'));
+    await page.addInitScript((key) => sessionStorage.setItem(key, '1'), LINUX_EMAIL_FORWARD_REAUTH_KEY);
     await stubIdentities(page);
     const aliasEmail = `${ALIAS}@${DOMAIN}`;
     await page.route('**/api/profile/linux-email', (route) => {
@@ -261,6 +262,35 @@ test.describe('Linux.com email — forward re-auth (#1935)', () => {
     await expect(page.getByTestId('linux-email-forward-reauth-button')).toBeVisible();
     await expect(page.getByTestId('linux-email-forward-select')).not.toBeAttached();
     await expect(page.getByTestId('linux-email-forward-empty')).not.toBeAttached();
+  });
+
+  test('falls back to unavailable copy with no button when Flow C is unconfigured (no authorizeUrl)', async ({ page }) => {
+    await page.addInitScript((key) => sessionStorage.setItem(key, '1'), LINUX_EMAIL_FORWARD_REAUTH_KEY);
+    await stubIdentities(page);
+    const aliasEmail = `${ALIAS}@${DOMAIN}`;
+    await page.route('**/api/profile/linux-email', (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const body: LinuxAliasData = {
+        state: 'claimed',
+        domain: DOMAIN,
+        alias: ALIAS,
+        email: aliasEmail,
+        forwardTo: null,
+        primaryEmail: PRIMARY_EMAIL,
+        forwardAuthRequired: true,
+        // No authorizeUrl — Flow C is unconfigured server-side.
+      };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-forward-reauth')).toBeVisible();
+    await expect(page.getByTestId('linux-email-forward-reauth-copy')).toContainText("re-authorization isn't available right now");
+    await expect(page.getByTestId('linux-email-forward-reauth-button')).not.toBeAttached();
   });
 });
 

@@ -92,7 +92,7 @@ export class ProfileIdentitiesComponent implements OnInit {
     } else if (params['error'] === 'already_linked') {
       this.conflictDetected.set(true);
       this.clearQueryParams();
-    } else if (typeof params['error'] === 'string') {
+    } else if (typeof params['error'] === 'string' && params['error']) {
       const errorCode = params['error'];
       // Flow C (/passwordless/callback) codes are owned by ProfileLayoutComponent, which is
       // alive on this route and already toasts them — skip here to avoid a double toast.

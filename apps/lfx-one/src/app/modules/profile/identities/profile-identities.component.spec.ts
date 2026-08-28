@@ -76,4 +76,11 @@ describe('ProfileIdentitiesComponent — Flow C vs identity-link error ownership
     const { add } = await setup({ error: 'toString' });
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'An error occurred. Please try again.' }));
   });
+
+  it('does not toast for an empty error param', async () => {
+    // Regression guard: `typeof params['error'] === 'string'` alone is true for '' — the
+    // truthiness check must survive alongside it, or a bare ?error= starts toasting/clearing.
+    const { add } = await setup({ error: '' });
+    expect(add).not.toHaveBeenCalled();
+  });
 });

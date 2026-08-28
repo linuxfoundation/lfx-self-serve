@@ -5,6 +5,7 @@ import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
+import { LINUX_EMAIL_FORWARD_REAUTH_KEY } from '@lfx-one/shared/constants';
 import { LinuxAliasData } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -21,7 +22,7 @@ import { ProfileLinuxEmailComponent } from './profile-linux-email.component';
  * that's the path the issue's literal fix (gating on forwardTo === null) would have broken.
  */
 describe('ProfileLinuxEmailComponent — forward re-auth state (#1935)', () => {
-  const REAUTH_FLAG_KEY = 'linux-email:forward-reauth-attempted';
+  const REAUTH_FLAG_KEY = LINUX_EMAIL_FORWARD_REAUTH_KEY;
 
   const claimedNeedsReauth: LinuxAliasData = {
     state: 'claimed',
