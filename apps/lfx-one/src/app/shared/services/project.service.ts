@@ -19,6 +19,7 @@ export class ProjectService {
   private readonly http = inject(HttpClient);
   private readonly projectCache = new Map<string, Observable<Project | null>>();
   private readonly projectsCache = new Map<string, Observable<Project[]>>();
+  private slugsCache$: Observable<string[]> | null = null;
 
   public getProjects(params?: HttpParams): Observable<Project[]> {
     const cacheKey = params?.toString() || '';
@@ -45,9 +46,21 @@ export class ProjectService {
   /**
    * Fetches project slugs without access-check overhead. Use when only slugs are needed
    * (e.g. membership checks) — skips the OpenFGA POST that getProjects() incurs.
+   * Cached for the session lifetime; evicted on error so a failed fetch is retryable.
    */
   public getProjectSlugs(): Observable<string[]> {
-    return this.http.get<string[]>('/api/projects/slugs').pipe(retryTransientHttpError(), shareReplay(1));
+    if (!this.slugsCache$) {
+      this.slugsCache$ = this.http.get<string[]>('/api/projects/slugs').pipe(
+        retryTransientHttpError(),
+        catchError((error) => {
+          console.error('Failed to fetch project slugs:', error);
+          this.slugsCache$ = null;
+          return of([]);
+        }),
+        shareReplay(1)
+      );
+    }
+    return this.slugsCache$;
   }
 
   /**

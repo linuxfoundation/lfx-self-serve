@@ -315,8 +315,31 @@ export class ProjectService {
    * Fetches all projects based on query parameters
    */
   public async getProjects(req: Request, query: Record<string, any> = {}): Promise<Project[]> {
+    const filtered = await this.fetchAllProjectsFiltered(req, query);
+
+    // Add writer access field to all projects
+    return await this.accessCheckService.addAccessToResources(req, filtered, 'project');
+  }
+
+  /**
+   * Fetches slugs for all projects without an access-check round trip.
+   * Use this when the caller only needs slugs — it skips addAccessToResources
+   * entirely, eliminating the OpenFGA POST that getProjects() incurs.
+   */
+  public async getProjectSlugs(req: Request): Promise<string[]> {
+    const filtered = await this.fetchAllProjectsFiltered(req);
+    return filtered.map((p) => p.slug);
+  }
+
+  /**
+   * Shared paginated fetch for all public projects, with ROOT filtered out.
+   * Both `getProjects` (access-checked) and `getProjectSlugs` (slug-only) delegate here
+   * so the query params, pagination loop, and ROOT filter stay in one place.
+   * @param extraQuery Optional caller-supplied query overrides merged into params (e.g. from getProjects).
+   */
+  private async fetchAllProjectsFiltered(req: Request, extraQuery: Record<string, any> = {}): Promise<Project[]> {
     const params = {
-      ...query,
+      ...extraQuery,
       type: 'project',
       // Overrides any caller-supplied page_size — the query service's 50-result default turns
       // a large org's project list into a long sequential page scan (GH-1735).
@@ -331,31 +354,7 @@ export class ProjectService {
     );
 
     // ROOT is an administrative pseudo-project used only for persona detection — never surface it in user lists.
-    const filtered = resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
-
-    // Add writer access field to all projects
-    return await this.accessCheckService.addAccessToResources(req, filtered, 'project');
-  }
-
-  /**
-   * Fetches slugs for all projects without an access-check round trip.
-   * Use this when the caller only needs slugs — it skips addAccessToResources
-   * entirely, eliminating the OpenFGA POST that getProjects() incurs.
-   */
-  public async getProjectSlugs(req: Request): Promise<string[]> {
-    const params = {
-      type: 'project',
-      page_size: QUERY_SERVICE_PAGE_SIZE,
-    };
-
-    const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
-    );
-
-    return resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG).map((p) => p.slug);
+    return resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
   }
 
   /**
