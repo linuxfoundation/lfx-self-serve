@@ -18,6 +18,8 @@ export interface GatewayFetchOptions {
   body?: unknown;
   /** When provided, overrides req.apiGatewayToken as the Authorization token. */
   bearerToken?: string;
+  /** Suppresses upstream response bodies from logs and client-visible error metadata. */
+  redactResponseBody?: boolean;
 }
 
 /**
@@ -79,18 +81,21 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
   }
 
   if (!upstream.ok) {
-    const body = (await upstream.text().catch(() => '')).slice(0, UPSTREAM_ERROR_BODY_LIMIT);
-
-    logger.warning(req, options.operation, 'Upstream returned non-OK response', {
+    const body = options.redactResponseBody
+      ? await discardResponseBody(upstream.body)
+      : (await upstream.text().catch(() => '')).slice(0, UPSTREAM_ERROR_BODY_LIMIT);
+    const logContext = {
       status: upstream.status,
       status_text: upstream.statusText,
-      body,
-    });
+      ...(body === undefined ? { body_redacted: true } : { body }),
+    };
+
+    logger.warning(req, options.operation, 'Upstream returned non-OK response', logContext);
 
     throw new MicroserviceError(`${options.errorMessage}: ${upstream.status} ${upstream.statusText}`, upstream.status, options.errorCode, {
       operation: options.operation,
       service: options.service,
-      errorBody: body,
+      ...(body === undefined ? {} : { errorBody: body }),
     });
   }
 
@@ -115,20 +120,35 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
   try {
     return JSON.parse(rawBody) as T;
   } catch (error: unknown) {
-    const truncatedBody = rawBody.slice(0, UPSTREAM_ERROR_BODY_LIMIT);
     const message = error instanceof Error ? error.message : String(error);
-
-    logger.warning(req, options.operation, 'Upstream returned invalid JSON response', {
+    const truncatedBody = options.redactResponseBody ? undefined : rawBody.slice(0, UPSTREAM_ERROR_BODY_LIMIT);
+    const logContext = {
       status: upstream.status,
       status_text: upstream.statusText,
-      body: truncatedBody,
-      error: message,
-    });
+      ...(truncatedBody === undefined ? { body_redacted: true } : { body: truncatedBody, error: message }),
+    };
+
+    logger.warning(req, options.operation, 'Upstream returned invalid JSON response', logContext);
 
     throw new MicroserviceError(`${options.errorMessage}: invalid JSON response from upstream`, 502, 'UPSTREAM_INVALID_RESPONSE', {
       operation: options.operation,
       service: options.service,
-      errorBody: truncatedBody,
+      ...(truncatedBody === undefined ? {} : { errorBody: truncatedBody }),
     });
+  }
+}
+
+async function discardResponseBody(body: ReadableStream<Uint8Array> | null): Promise<void> {
+  if (!body) return;
+
+  const reader = body.getReader();
+  try {
+    while (!(await reader.read()).done) {
+      // Drain without retaining response content so the connection can be reused.
+    }
+  } catch {
+    await reader.cancel().catch(() => undefined);
+  } finally {
+    reader.releaseLock();
   }
 }

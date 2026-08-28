@@ -7,7 +7,7 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthenticationError } from '../errors';
 import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
 import { logger } from '../services/logger.service';
-import { clearImpersonationSession, decodeJwtPayload } from '../utils/auth-helper';
+import { clearImpersonationSession, decodeJwtPayload, hasActiveImpersonationSession } from '../utils/auth-helper';
 import { exchangeRefreshTokenForAudience } from '../utils/refresh-token-exchange.util';
 
 const crowdfundingAuthService = new CrowdfundingAuthService();
@@ -210,6 +210,7 @@ function checkAuthentication(req: Request): boolean {
  */
 async function extractBearerToken(req: Request, isOptionalRoute: boolean = false): Promise<TokenExtractionResult> {
   const startTime = Date.now();
+  req.impersonationActive = false;
 
   try {
     if (req.oidc?.isAuthenticated()) {
@@ -227,6 +228,7 @@ async function extractBearerToken(req: Request, isOptionalRoute: boolean = false
           clearImpersonationSession(req);
         } else {
           req.bearerToken = impersonationToken;
+          req.impersonationActive = true;
 
           logger.debug(req, 'impersonation_request', 'Request under impersonation', {
             path: req.path,
@@ -542,6 +544,7 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
     try {
       // 1. Route classification
       const routeConfig = classifyRoute(req.path, config);
+      req.impersonationActive = routeConfig.auth === 'public' ? false : hasActiveImpersonationSession(req);
 
       logger.debug(req, 'auth_middleware', 'Starting authentication check', {
         path: req.path,
