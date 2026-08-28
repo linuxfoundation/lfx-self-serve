@@ -26,6 +26,8 @@ import { expect, Page, test } from '@playwright/test';
 const DOMAIN = 'example.org';
 const ALIAS = 'jane-doe';
 const PRIMARY_EMAIL = 'jane.doe@example.com';
+// Tab load involves an identities fetch plus the alias fetch — longer than Playwright's default.
+const PANEL_TIMEOUT = 10_000;
 
 function skipWhenAuthMissing(page: Page): void {
   try {
@@ -47,7 +49,7 @@ async function gotoIdentitiesAndExpectClaimedPanel(page: Page): Promise<void> {
   await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await expect(page).not.toHaveURL(/auth0\.com/);
-  await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: PANEL_TIMEOUT });
 }
 
 /** Stub the identities fetch the tab needs to render deterministically. */
@@ -111,7 +113,7 @@ test.describe('Linux.com email — partial claim failure recovery', () => {
     await expect(page).not.toHaveURL(/auth0\.com/);
 
     // Starting state: purchased but unclaimed — the claim form is shown.
-    await expect(page.getByTestId('linux-email-claim-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-claim-panel')).toBeVisible({ timeout: PANEL_TIMEOUT });
 
     await page.getByTestId('linux-email-alias-input').locator('input').fill(ALIAS);
     await page.getByTestId('linux-email-claim-forward-select').click();
@@ -122,8 +124,8 @@ test.describe('Linux.com email — partial claim failure recovery', () => {
     // claimed/edit view (not left stuck on the claim form) and surfaces a guiding toast.
     // The toast assertion runs first — PrimeNG toasts have a short default lifetime, so
     // checking it after the other awaits below risks it disappearing before we see it.
-    await expect(page.getByText(/set your forwarding address below/i)).toBeVisible({ timeout: 10000 });
-    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/set your forwarding address below/i)).toBeVisible({ timeout: PANEL_TIMEOUT });
+    await expect(page.getByTestId('linux-email-claimed-panel')).toBeVisible({ timeout: PANEL_TIMEOUT });
     await expect(page.getByTestId('linux-email-claimed-address')).toContainText(`${ALIAS}@${DOMAIN}`);
     await expect(page.getByTestId('linux-email-forward-form')).toBeVisible();
 
@@ -203,7 +205,7 @@ test.describe('Linux.com email — forwarding target visibility', () => {
     skipWhenAuthMissing(page);
     await expect(page).not.toHaveURL(/auth0\.com/);
 
-    await expect(page.getByTestId('linux-email-claim-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-claim-panel')).toBeVisible({ timeout: PANEL_TIMEOUT });
     await expect(page.getByTestId('linux-email-claim-forward-select')).toBeVisible();
     await expect(page.getByText('Choose one of your verified email addresses.')).toBeVisible();
   });
@@ -226,7 +228,7 @@ test.describe('Linux.com email — forwarding target visibility', () => {
     await expect(page).not.toHaveURL(/auth0\.com/);
 
     // Let the tab finish rendering before asserting no /emails fetch was made.
-    await expect(page.getByTestId('linux-email-claim-panel')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-claim-panel')).toBeVisible({ timeout: PANEL_TIMEOUT });
     expect(emailsFetchCount).toBe(0);
   });
 });
@@ -293,7 +295,7 @@ test.describe('Linux.com email — service unavailable', () => {
     skipWhenAuthMissing(page);
     await expect(page).not.toHaveURL(/auth0\.com/);
 
-    await expect(page.getByTestId('linux-email-retry-button')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-retry-button')).toBeVisible({ timeout: PANEL_TIMEOUT });
     await expect(page.getByTestId('linux-email-claim-panel')).not.toBeAttached();
     await expect(page.getByTestId('linux-email-claimed-panel')).not.toBeAttached();
   });
@@ -330,7 +332,7 @@ test.describe('Linux.com email — service unavailable', () => {
     skipWhenAuthMissing(page);
     await expect(page).not.toHaveURL(/auth0\.com/);
 
-    await expect(page.getByTestId('linux-email-retry-button')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('linux-email-retry-button')).toBeVisible({ timeout: PANEL_TIMEOUT });
     await expect(page.getByTestId('linux-email-claim-panel')).not.toBeAttached();
     await expect(page.getByTestId('linux-email-claimed-panel')).not.toBeAttached();
 
