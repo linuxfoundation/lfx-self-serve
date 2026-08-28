@@ -264,6 +264,7 @@ export class AccessCheckService {
         // chunk_index is 0-based — "chunk 0" is the first batch, "chunk 1" the second, etc.
         logger.warning(req, operationName, `Access-check batch chunk ${i} failed, failing closed for its resources`, {
           chunk_index: i,
+          chunk_count: chunks.length,
           chunk_size: chunks[i].length,
           err: result.reason,
         });
