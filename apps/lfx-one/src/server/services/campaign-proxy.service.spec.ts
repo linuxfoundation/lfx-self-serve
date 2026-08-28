@@ -584,6 +584,29 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
     expect(result.found).toBe(true);
   });
 
+  it('does not create a second campaign when a tokenless one already exists', async () => {
+    // The bug this guards: `found && hsUtm` skipped the create only when a token was PRESENT.
+    // Once tokenless matches correctly return null, that condition became false for a campaign
+    // that EXISTS -- so brief generation and the legacy create would make a duplicate for the
+    // same event, every time they ran. Creating a second campaign is not a way to obtain the
+    // first one's token.
+    //
+    // Driven through createCampaign with hsToken ABSENT, because that is the only route to the
+    // module-private resolver -- and it is the route that would actually duplicate.
+    hsResponds({ total: 1, results: [{ id: '42', properties: { hs_name: 'KubeCon EU 2026' } }] });
+
+    await service.createCampaign(req, {
+      eventName: 'KubeCon EU 2026',
+      eventSlug: 'kubecon-eu-2026',
+      platforms: ['microsoft-ads'],
+    } as unknown as Parameters<typeof service.createCampaign>[1]);
+    // The job runs detached; let its first await settle.
+    await new Promise((r) => setTimeout(r, 0));
+
+    const created = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/marketing/v3/campaigns'));
+    expect(created, 'a campaign that already exists must not be created again').toHaveLength(0);
+  });
+
   it('reports capped when HubSpot matched more campaigns than it returned', async () => {
     hsResponds({ total: 250, results: [{ id: '1', properties: { hs_name: 'Unrelated', hs_utm: 'u' } }] });
 

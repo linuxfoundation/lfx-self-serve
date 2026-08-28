@@ -1153,6 +1153,29 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   /**
+   * hsSearching is shared across lookups, unlike hsCreating. An OLDER request's failure must not
+   * declare a NEWER in-flight lookup finished -- that drops the spinner while a request is still
+   * running, so the panel reads as settled when it is not.
+   */
+  it('does not let a stale lookup failure clear a newer search', () => {
+    const first = new Subject<never>();
+    lookup.mockReturnValue(first);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('Event A');
+
+    // A newer lookup starts and is still in flight.
+    const second = new Subject<never>();
+    lookup.mockReturnValue(second);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('Event B');
+    expect(instance()['hsSearching']()).toBe(true);
+
+    // The OLD one now fails.
+    first.error(new Error('stale failure'));
+    fixture.detectChanges();
+
+    expect(instance()['hsSearching'](), 'a stale failure declared the newer lookup finished').toBe(true);
+  });
+
+  /**
    * hsCreating tracks whether a REQUEST is in flight, which is a fact about the subscription
    * rather than about which event is on screen. Releasing it after the stale guard left the
    * button disabled and "Creating..." frozen on the new event's panel with nothing to clear it.

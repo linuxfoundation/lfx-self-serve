@@ -336,15 +336,25 @@ endpoints respond in the target environment before flipping it on.
 `hsHeaders()`, which throws whenever `HUBSPOT_ACCESS_TOKEN` is absent — and it is, by design,
 since the credential moved into campaign-service's encrypted connection store.
 
-One behaviour changes beyond the backend. The legacy path **fabricated** a UTM token
-(`<id>-<name>`) whenever HubSpot had none, so a campaign with no configured token still appeared
-tokenised — and links tagged with that invented value attribute traffic to a campaign HubSpot
-cannot report on. Behind this flag a missing token is reported as missing. Expect fewer apparent
-tokens, and expect that to be the correct answer.
+**Two behaviours change on both paths, including with this flag off** — a default-off deployment
+of this change is not inert.
 
-The create path writes into an LF-global namespace: the campaign is visible to every foundation's
-campaign managers, whatever project scoped the request, and it performs no duplicate check. The
-UI searches and warns first.
+1. The legacy path **fabricated** a UTM token (`<id>-<name>`) whenever HubSpot had none, so a
+   campaign with no configured token still appeared tokenised — and links tagged with that
+   invented value attribute traffic to a campaign HubSpot cannot report on. **Both** paths now
+   report a missing token as missing. Expect fewer apparent tokens, and expect that to be the
+   correct answer. This is deliberately not gated: holding it behind a default-off flag would
+   keep a known-wrong value in production.
+2. The legacy search limit rose from 10 to 100 (HubSpot's per-request maximum), and both paths
+   now report whether the search was **capped**. The two go together: `capped` is what suppresses
+   the create offer, and at a limit of 10 nearly every search on a busy portal would report
+   capped, leaving an operator unable to create anything.
+
+The create path writes into a **portal-wide** namespace: the campaign is visible to everyone
+working in the HubSpot account the project is connected to, whatever project scoped the request,
+and it performs no duplicate check. Not necessarily the LF's own account — HubSpot connections
+are stored per project with their own token and `portal_id`, and campaign-service refuses the LF
+system fallback for HubSpot. The UI searches and warns first.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` moves keyword pause/remove onto
 campaign-service. It is separate from the reads flag above because it MUTATES live paid

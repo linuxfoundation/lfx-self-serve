@@ -290,7 +290,22 @@ async function resolveHubSpotUtm(eventName: string): Promise<string | null> {
   if (!getEnv('HUBSPOT_ACCESS_TOKEN')) return null;
 
   const searchResult = await hubspotSearchCampaign(eventName);
-  if (searchResult.found && searchResult.hsUtm) return searchResult.hsUtm;
+  if (searchResult.found) {
+    // Keyed on `found`, NOT on `found && hsUtm`. A campaign that EXISTS but has no token yet is
+    // still a campaign, and creating a second one for the same event is not a way to obtain the
+    // first one's token — it duplicates a campaign in an account-wide namespace, on every brief
+    // generation. Before tokenless matches returned null this branch was reached with a
+    // fabricated token, which hid the distinction; now it must be made explicitly.
+    //
+    // A null return means "no token to attribute with", which callers already handle.
+    return searchResult.hsUtm;
+  }
+  // Nothing matched, but the search may have been CAPPED — in which case absence is not proof,
+  // and creating is how a duplicate gets made. The lookup surface asks the operator to narrow
+  // the search; this one has no operator to ask, so it declines to create rather than guess.
+  if (searchResult.capped) {
+    return null;
+  }
 
   const createResult = await hubspotCreateCampaign(eventName);
   return createResult.hsUtm;

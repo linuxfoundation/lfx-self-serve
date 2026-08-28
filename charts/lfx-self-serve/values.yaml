@@ -650,15 +650,26 @@ environment:
   # design, since the credential moved into campaign-service's encrypted connection store. With
   # this off the Planning tab's UTM lookup does not work at all.
   #
-  # ONE BEHAVIOUR CHANGES BEYOND THE BACKEND. The legacy path FABRICATED a utm token
-  # ("<id>-<name>") whenever HubSpot had none, so a campaign with no configured token still
-  # appeared tokenised — and links tagged with that invented value attribute traffic to a
-  # campaign HubSpot cannot report on. Behind this flag a missing token is reported as missing.
-  # Expect fewer apparent tokens, and expect that to be the correct answer.
+  # TWO BEHAVIOURS CHANGE ON BOTH PATHS, INCLUDING WITH THIS FLAG OFF. Read this before
+  # assuming a default-off deployment is inert — it is not.
   #
-  # The CREATE path writes into an LF-GLOBAL namespace: the campaign is visible to every
-  # foundation's campaign managers, whatever project scoped the request. It performs no
-  # duplicate check, which is why the UI must warn before offering it.
+  # 1. The legacy path FABRICATED a utm token ("<id>-<name>") whenever HubSpot had none, so a
+  #    campaign with no configured token still appeared tokenised — and links tagged with that
+  #    invented value attribute traffic to a campaign HubSpot cannot report on. BOTH paths now
+  #    report a missing token as missing. Expect fewer apparent tokens, and expect that to be
+  #    the correct answer. This is deliberately not gated: holding it behind a default-off flag
+  #    would keep a known-wrong value in production.
+  #
+  # 2. The legacy search limit rose from 10 to 100 (HubSpot's per-request maximum), and both
+  #    paths now report whether the search was CAPPED. The two go together: `capped` is what
+  #    suppresses the create offer, and at a limit of 10 nearly every search on a busy portal
+  #    would report capped, leaving an operator unable to create anything.
+  #
+  # The CREATE path writes into a PORTAL-WIDE namespace: the campaign is visible to everyone
+  # working in the HubSpot account the project is connected to, whatever project scoped the
+  # request. (Not necessarily the LF's own account — HubSpot connections are stored per project
+  # with their own token and portal_id, and campaign-service refuses the LF system fallback for
+  # HubSpot.) It performs no duplicate check, which is why the UI must warn before offering it.
   # DEPENDS ON UPSTREAM ENDPOINTS THAT ARE NOT YET DEPLOYED. Both handlers call
   # /projects/{id}/connection-hubspot/campaigns, added in
   # linuxfoundation/lfx-v2-campaign-service#193 (itself stacked on #192 of that repo — a bare

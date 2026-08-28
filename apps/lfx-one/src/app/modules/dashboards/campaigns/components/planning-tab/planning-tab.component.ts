@@ -1068,7 +1068,7 @@ export class PlanningTabComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result: HubSpotUtmLookupResult | null) => {
-          if (this.lastLookedUpEvent !== capturedEvent) return;
+          if (!this.panelStillShows(capturedEvent)) return;
           // THREE states, not two. A campaign that exists but has NO utm token configured is a
           // real match — treating it as not-found would offer to CREATE a campaign that already
           // exists, into a namespace shared by every foundation and with no duplicate check
@@ -1095,8 +1095,13 @@ export class PlanningTabComponent implements OnInit {
           this.hsSearching.set(false);
         },
         error: () => {
+          // Ordered deliberately, and NOT symmetrically with the create's hsCreating. Unlike
+          // that flag, hsSearching is shared across lookups — clearing it unconditionally lets
+          // an OLDER request's failure declare a newer in-flight lookup finished, dropping the
+          // spinner while a request is still running. So it is cleared only for the lookup
+          // that still owns the panel.
+          if (!this.panelStillShows(capturedEvent)) return;
           this.hsSearching.set(false);
-          if (this.lastLookedUpEvent !== capturedEvent) return;
           this.hsStatus.set('HubSpot lookup failed');
           // The control is restored, not left cleared. A lookup that FAILED established
           // nothing, and this arm leaves lastLookedUpEvent set — so without it the same event
