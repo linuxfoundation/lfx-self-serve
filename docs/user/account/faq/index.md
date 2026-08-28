@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing]
-last_updated: 2026-08-17
+last_updated: 2026-08-28
 intercom_collection: Account
 ---
 
@@ -70,11 +70,19 @@ An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can 
 
 ## Why don't my signed CLAs show up on the CLAs tab?
 
-The CLAs tab matches agreements to your LF username, verified emails, and linked GitHub accounts. If those values do not match the identity you used when signing (for example a work email or GitHub account that is not linked to this LFX profile), the CLA will not appear. Open [Identities](/profile/identities), link the Email or GitHub accounts you used when signing, then return to **CLAs**. More detail: [Why don't my signed CLAs show up?](../my-clas/#why-dont-my-signed-clas-show-up).
+The CLAs tab matches agreements to your LF username, verified emails, and linked GitHub accounts. If those values do not match the identity you used when signing (for example a work email or GitHub account that is not linked to this LFX profile), the CLA will not appear. Open [Identities](/profile/identities), link the Email or GitHub accounts you used when signing, then return to **CLAs**. More detail: [Why don't my signed CLAs show up?](../my-clas/#why-don-t-my-signed-clas-show-up).
 
 ## Can I sign a CLA from the CLAs tab?
 
-No. The CLAs tab is read-only and only shows agreements already on file. Signing happens outside this tab, and the signing process may evolve. See [CLAs](../my-clas/) and the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) for current guidance.
+You can start there. Select **Sign CLA**, search for the project, CLA group, or repository you need to sign for, and choose which linked GitHub account to sign under. Self Serve then hands you off to the EasyCLA Contributor Console, which presents and records the agreement — the signing itself does not happen in Self Serve. See [How do I sign a new CLA?](../my-clas/#how-do-i-sign-a-new-cla).
+
+## What do the CLA status labels mean?
+
+**Valid** means the agreement covers your contributions. **Needs attention** means an Employee CLA no longer covers you, usually because you have dropped off your employer's **Approved List**. **Invalidated** means the agreement is no longer in force — someone removed you from an Approved List, a maintainer invalidated your ICLA, or the CLA group was deleted. **Revoked** is reserved for a sanctions-screening outcome against your employer and cannot be changed from Self Serve. See [What do the status labels mean?](../my-clas/#what-do-the-status-labels-mean).
+
+## How do I ask my employer's CLA manager to approve or remove my ECLA?
+
+Open the **⋮** menu on the Employee CLA row and choose **Request approval** (when you are no longer on the Approved List) or **Request Removal**. Select which CLA managers to notify, optionally add a message, and select **Send**. The request only notifies them — a manager makes the actual change in the Corporate CLA Console. See [How do I ask my CLA manager to approve or remove my ECLA?](../my-clas/#how-do-i-ask-my-cla-manager-to-approve-or-remove-my-ecla).
 
 ## What purchases appear in my transaction history?
 
