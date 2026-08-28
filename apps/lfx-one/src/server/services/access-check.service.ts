@@ -247,7 +247,7 @@ export class AccessCheckService {
         logger.warning(req, operationName, `Access-check batch chunk ${i} failed, failing closed for its resources`, {
           chunk_index: i,
           chunk_size: chunks[i]!.length,
-          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+          err: result.reason,
         });
       }
     }
