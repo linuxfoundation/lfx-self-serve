@@ -242,8 +242,10 @@ describe('AccessCheckService — batching', () => {
     // Fulfilled chunk results are present.
     expect(result.get('proj-0#writer')).toBe(true);
     expect(result.get('proj-99#writer')).toBe(true);
-    // The failed chunk's resource is absent from the result map → defaults to false for callers.
+    // The failed chunk's key is intentionally not written to the map (not set to false) —
+    // callers using `get(...) ?? false` or `get(...) || false` both default correctly.
     expect(result.has('proj-100#writer')).toBe(false);
+    expect(result.get('proj-100#writer')).toBeUndefined();
     // Two warnings: one per-chunk warning and one terminal partial-result warning.
     expect(loggerWarning).toHaveBeenCalledTimes(2);
     // Per-chunk warning preserves the rejection value as `err` for full Pino serialization.

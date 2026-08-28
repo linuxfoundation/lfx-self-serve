@@ -252,7 +252,7 @@ export class AccessCheckService {
       }
     }
 
-    const metadata = {
+    const sharedMetadata = {
       request_count: resources.length,
       granted_count: Array.from(resultMap.values()).filter(Boolean).length,
       batch_count: chunks.length,
@@ -262,9 +262,14 @@ export class AccessCheckService {
     if (failedChunks > 0) {
       // Log at WARN rather than success — partial results are a recoverable degradation, not a
       // clean completion. A monitoring alert keyed on "operation succeeded" should not fire here.
-      logger.warning(req, operationName, `${failedChunks} of ${chunks.length} access-check chunks failed; results are partial`, metadata);
+      // logger.warning has no startTime param, so duration_ms is added manually to preserve
+      // latency data for incident correlation.
+      logger.warning(req, operationName, `${failedChunks} of ${chunks.length} access-check chunks failed; results are partial`, {
+        ...sharedMetadata,
+        duration_ms: Date.now() - startTime,
+      });
     } else {
-      logger.success(req, operationName, startTime, metadata);
+      logger.success(req, operationName, startTime, sharedMetadata);
     }
 
     return resultMap;
