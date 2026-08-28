@@ -377,6 +377,7 @@ export class PlanningTabComponent implements OnInit {
     this.step.set('input');
     this.statusMessages.set([]);
     this.eventDetails.set(null);
+    this.isEditingEmailBrief.set(false);
     this.copyBuffer.set('');
     this.structuredCopy.set(null);
     this.hsUtm.set(null);
@@ -541,6 +542,7 @@ export class PlanningTabComponent implements OnInit {
     this.step.set('generating');
     this.statusMessages.set([]);
     this.eventDetails.set(null);
+    this.isEditingEmailBrief.set(false);
     this.copyBuffer.set('');
     this.structuredCopy.set(null);
     this.keywords.set([]);
@@ -591,6 +593,12 @@ export class PlanningTabComponent implements OnInit {
   protected onProceedToImplementation(): void {
     if (this.isEditing()) {
       this.saveEdits();
+    }
+    // Same reason as the paid flush above: the emitted `eventDetails` is what generation is told
+    // to use verbatim, so an editor still open here would send the UNCORRECTED scrape while the
+    // user is looking at their correction on screen.
+    if (this.isEditingEmailBrief()) {
+      this.saveEmailEdit();
     }
     const url = this.briefForm.controls.url.value.trim();
     const fallbackName = this.extractEventName(url);

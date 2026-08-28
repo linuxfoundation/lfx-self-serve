@@ -710,7 +710,7 @@ export class CampaignProxyService {
     if (!isRefinement) {
       try {
         const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${body.url}\n\nHTML:\n${html.slice(0, 30_000)}`);
-        eventDetails = JSON.parse(extraction) as Record<string, unknown>;
+        eventDetails = JSON.parse(stripJsonFences(extraction)) as Record<string, unknown>;
         // Education extraction also yields price, certification_code, prerequisites — deferred until CampaignEventDetails supports them
         yield {
           type: 'event',
@@ -891,7 +891,7 @@ export class CampaignProxyService {
           if (lastFence !== -1) strategyText = strategyText.slice(0, lastFence);
           strategyText = strategyText.trim();
         }
-        const strategy = JSON.parse(strategyText) as Record<string, unknown>;
+        const strategy = JSON.parse(stripJsonFences(strategyText)) as Record<string, unknown>;
         yield { type: 'linkedin_strategy', data: strategy };
       } catch (error) {
         logger.warning(req, 'campaign_brief_linkedin_strategy', 'LinkedIn strategy generation failed', { err: error });

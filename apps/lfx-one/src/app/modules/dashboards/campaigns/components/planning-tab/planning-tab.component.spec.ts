@@ -1133,6 +1133,35 @@ describe('PlanningTabComponent email brief editing', () => {
     expect(internals().eventDetails()?.name).toBe('MCP Dev Summit Nairobi');
   });
 
+  it('flushes an open editor when the user clicks Proceed without saving', async () => {
+    await buildWithScrape();
+    const emitted: unknown[] = [];
+    (fixture.componentInstance as unknown as { proceedToImplementation: { subscribe(f: (v: unknown) => void): void } }).proceedToImplementation.subscribe((v) =>
+      emitted.push(v)
+    );
+
+    internals().enterEmailEditMode();
+    internals().emailEditDates.set('March 10-11, 2026');
+    // Deliberately NOT calling saveEmailEdit: clicking Proceed straight from an open editor is
+    // the ordinary path, and dropping the correction there sends the stale scrape to generation
+    // while the user is looking at their edit on screen.
+    (fixture.componentInstance as unknown as { onProceedToImplementation(): void }).onProceedToImplementation();
+
+    expect((emitted[0] as { eventDetails: { dates: string } }).eventDetails.dates).toBe('March 10-11, 2026');
+  });
+
+  it('closes the editor when a new brief is generated', async () => {
+    await buildWithScrape();
+    internals().enterEmailEditMode();
+    expect(internals().isEditingEmailBrief()).toBe(true);
+
+    (fixture.componentInstance as unknown as { reset(): void }).reset();
+
+    // The flag outliving its brief means the NEXT brief opens straight into an editor seeded from
+    // the previous event, and saving then overwrites the new scrape with the old one.
+    expect(internals().isEditingEmailBrief()).toBe(false);
+  });
+
   it('does not render the brief card in paid mode', async () => {
     await buildWithScrape('paid-marketing');
     // Paid already has its own structured-copy editor plus the compact strip; a second card
@@ -1142,7 +1171,14 @@ describe('PlanningTabComponent email brief editing', () => {
 
   it('drops the compact strip in email mode so the details are not shown twice', async () => {
     await buildWithScrape();
-    const strips = (fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid="planning-email-brief-name"]');
-    expect(strips.length).toBe(1);
+    // Targets the STRIP's own testid. Asserting on the card's testid instead could never fail:
+    // the card is the only thing carrying it, so the count is 1 whether or not the strip renders.
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-event-strip"]')).toBeNull();
+  });
+
+  it('keeps the compact strip in paid mode', async () => {
+    await buildWithScrape('paid-marketing');
+    // The other half of the guard: scoping the strip to paid must not remove it from paid.
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-event-strip"]')).not.toBeNull();
   });
 });
