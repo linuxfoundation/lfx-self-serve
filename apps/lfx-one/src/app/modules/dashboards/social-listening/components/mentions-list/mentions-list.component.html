@@ -36,10 +36,11 @@
     </div>
   </div>
 
-  <!-- Cards only — lfx-table is retained for its skeleton-row and empty-message machinery, not its paginator -->
+  <!-- Cards only — lfx-table is retained for its skeleton-row and empty-message machinery, not its paginator.
+       Skeletons paint only when nothing is on screen — a Load More fetch keeps the cards and spins the footer. -->
   <lfx-table
     [value]="mentions()"
-    [loading]="loading()"
+    [loading]="loading() && mentions().length === 0"
     [lazy]="true"
     [lazyLoadOnInit]="false"
     [paginator]="false"
@@ -127,8 +128,21 @@
     </ng-template>
   </lfx-table>
 
-  <!-- Load More footer: running count plus the advance control, both gone once the feed is exhausted -->
-  @if (hasMore()) {
+  <!-- Window failure with rows on screen (a phase-2 hole or a failed Load More fetch): the table's empty state
+       can't render over content, so the retry lives here and Load More hides behind it -->
+  @if (mentions().length > 0 && (phase2Failed() || loadError())) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Couldn't load more mentions"
+      subtitle="This batch of mentions failed to load. Try again."
+      ctaLabel="Retry"
+      ctaIcon="fa-light fa-arrow-rotate-left"
+      (ctaClick)="retry.emit()"
+      data-testid="mentions-list-inline-error" />
+  }
+
+  <!-- Load More footer: running count plus the advance control — hidden once the feed is exhausted or a window needs retry -->
+  @if (hasMore() && !phase2Failed() && !loadError()) {
     <div class="flex flex-col items-center gap-2" data-testid="mentions-list-load-more-footer">
       <p class="text-xs text-gray-400" data-testid="mentions-list-showing">
         @if (countError()) {

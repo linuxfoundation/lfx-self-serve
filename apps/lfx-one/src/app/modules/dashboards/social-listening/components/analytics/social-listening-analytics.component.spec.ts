@@ -190,7 +190,7 @@ describe('SocialListeningAnalyticsComponent', () => {
     expect(labels[0]).toContain('10');
   });
 
-  it('emits the normalized platform key when a platform row is clicked', async () => {
+  it('emits the raw platform value when a single-source platform row is clicked', async () => {
     getAnalyticsPlatformDistribution.mockReturnValue(
       of([
         { SOURCE_PLATFORM: 'reddit', SOCIAL_NETWORK: 'Reddit', MENTIONS_COUNT: 40, PERCENT_OF_TOTAL: 80 },
@@ -203,12 +203,38 @@ describe('SocialListeningAnalyticsComponent', () => {
     const emitted: string[] = [];
     fixture.componentInstance.platformSelected.subscribe((platform) => emitted.push(platform));
 
-    // `X` normalizes to the `twitter` config key, which is what the row carries and emits.
+    // The feed filter matches raw SOURCE_PLATFORM values, so the row emits raw `X` (not the normalized `twitter` key it tracks by).
     const row = fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-platform-row-twitter"]') as HTMLButtonElement;
     expect(row).toBeTruthy();
     row.click();
 
-    expect(emitted).toEqual(['twitter']);
+    expect(emitted).toEqual(['X']);
+  });
+
+  it('keeps merged platform groups display-only (no drill-down emission)', async () => {
+    getAnalyticsPlatformDistribution.mockReturnValue(
+      of([
+        { SOURCE_PLATFORM: 'X', SOCIAL_NETWORK: 'X', MENTIONS_COUNT: 10, PERCENT_OF_TOTAL: 15 },
+        { SOURCE_PLATFORM: 'twitter', SOCIAL_NETWORK: 'Twitter', MENTIONS_COUNT: 5, PERCENT_OF_TOTAL: 5 },
+        { SOURCE_PLATFORM: 'forums', SOCIAL_NETWORK: 'Forums', MENTIONS_COUNT: 6, PERCENT_OF_TOTAL: 8 },
+        { SOURCE_PLATFORM: 'mastodon', SOCIAL_NETWORK: 'Mastodon', MENTIONS_COUNT: 4, PERCENT_OF_TOTAL: 7 },
+      ])
+    );
+    create();
+    await settle();
+
+    const emitted: string[] = [];
+    fixture.componentInstance.platformSelected.subscribe((platform) => emitted.push(platform));
+
+    // X+twitter fold into one `twitter` row and forums+mastodon into `other` — merged groups can't drill down.
+    const merged = fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-platform-row-twitter"]') as HTMLButtonElement;
+    const other = fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-platform-row-other"]') as HTMLButtonElement;
+    expect(merged.disabled).toBe(true);
+    expect(other.disabled).toBe(true);
+    merged.click();
+    other.click();
+
+    expect(emitted).toEqual([]);
   });
 
   it('keeps the sentiment counts and percentages when the overview errors, omitting only the trend chips', async () => {

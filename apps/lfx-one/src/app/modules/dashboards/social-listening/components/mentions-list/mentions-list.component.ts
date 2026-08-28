@@ -39,6 +39,8 @@ export class MentionsListComponent {
   public readonly timeTick = input(0);
   /** Current window's background fill failed past its auto-retry — the empty state swaps to a retry row. */
   public readonly phase2Failed = input(false);
+  /** A Load More window fetch failed with rows on screen — the list stays mounted and offers an inline retry. */
+  public readonly loadError = input(false);
   /** Count endpoint failed while the feed has rows — keeps the Load More footer visible so the user isn't stranded. */
   public readonly countError = input(false);
   /** Bookmarked mention IDs for the current foundation (LFXV2-3002 Block 1) — decorates each card's bookmark toggle. */

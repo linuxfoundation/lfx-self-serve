@@ -2,30 +2,109 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto flex w-full flex-col gap-4 px-4 sm:px-6 lg:px-8" data-testid="social-listening-page">
-  <!-- z-20 lifts the pinned header above the mention cards' stretched-link content (z-10); the filter row's later DOM order wins the z-20 tie. -->
-  <div class="social-listening-header sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3" data-testid="social-listening-header">
-    <div class="flex flex-col gap-1">
-      <h1 class="text-2xl font-semibold text-gray-900" data-testid="social-listening-title">Social Listening</h1>
-      <p class="text-sm text-gray-500" data-testid="social-listening-subtitle">Brand mentions and sentiment across social, forums, and podcasts.</p>
+  <!-- One sticky stack for both pinned rows: separate stickies need a fixed offset that breaks when the header wraps on narrow screens. z-20 lifts the stack above the cards' stretched-link content (z-10). -->
+  <div class="sticky top-0 z-20 flex flex-col">
+    <div class="social-listening-header flex flex-wrap items-center justify-between gap-3" data-testid="social-listening-header">
+      <div class="flex flex-col gap-1">
+        <h1 class="text-2xl font-semibold text-gray-900" data-testid="social-listening-title">Social Listening</h1>
+        <p class="text-sm text-gray-500" data-testid="social-listening-subtitle">Brand mentions and sentiment across social, forums, and podcasts.</p>
+      </div>
+
+      <div
+        class="inline-flex items-center gap-1 rounded-full bg-gray-100 p-1"
+        role="group"
+        aria-label="Social listening view"
+        data-testid="social-listening-tabs">
+        @for (tab of tabOptions; track tab.id) {
+          <button
+            type="button"
+            class="cursor-pointer rounded-full border-0 px-4 py-1.5 text-xs font-medium transition-colors"
+            [class]="activeTab() === tab.id ? 'bg-white text-gray-900 shadow-sm' : 'bg-transparent text-gray-500 hover:text-gray-700'"
+            [attr.aria-pressed]="activeTab() === tab.id"
+            [attr.data-testid]="'social-listening-tab-' + tab.id"
+            (click)="onTabSelected(tab.id)">
+            {{ tab.label }}
+          </button>
+        }
+      </div>
     </div>
 
-    <div
-      class="inline-flex items-center gap-1 rounded-full bg-gray-100 p-1"
-      role="group"
-      aria-label="Social listening view"
-      data-testid="social-listening-tabs">
-      @for (tab of tabOptions; track tab.id) {
-        <button
-          type="button"
-          class="cursor-pointer rounded-full border-0 px-4 py-1.5 text-xs font-medium transition-colors"
-          [class]="activeTab() === tab.id ? 'bg-white text-gray-900 shadow-sm' : 'bg-transparent text-gray-500 hover:text-gray-700'"
-          [attr.aria-pressed]="activeTab() === tab.id"
-          [attr.data-testid]="'social-listening-tab-' + tab.id"
-          (click)="onTabSelected(tab.id)">
-          {{ tab.label }}
-        </button>
-      }
-    </div>
+    @if (hasFoundation()) {
+      <!-- Positioning context for the filters panel dropdown -->
+      <div class="social-listening-filter-row">
+        <lfx-feed-header
+          [activeTab]="activeTab()"
+          [(selectedPeriod)]="selectedPeriod"
+          [(selectedProject)]="selectedProject"
+          [(selectedPlatform)]="selectedPlatform"
+          [(searchInput)]="searchInput"
+          [(filtersVisible)]="filtersOpen"
+          [(viewsVisible)]="viewsOpen"
+          [activeViewName]="activeViewName()"
+          [activeFilterCount]="activeFilterCount()"
+          [projectOptions]="subProjectOptions()"
+          [platformOptions]="platformOptions()"
+          [optionsLoading]="optionsLoading()"
+          [exporting]="exporting()"
+          [exportDisabled]="analyticsPanelsLoading()"
+          (filtersPrefetch)="prefetchFilterOptions()"
+          (exportAnalytics)="onExportAnalytics()">
+          <!-- Views dropdown (feed tab only) — backdrop closes; the panel's own Escape/rows handle keyboard -->
+          @if (viewsOpen() && activeTab() === 'feed') {
+            <ng-container data-views-dropdown>
+              <div class="fixed inset-0 z-10" aria-hidden="true" data-testid="social-listening-views-backdrop" (click)="viewsOpen.set(false)"></div>
+              <lfx-views-dropdown
+                class="absolute right-0 top-full z-20 mt-1 max-sm:right-auto max-sm:left-0"
+                [savedViews]="savedFilters()"
+                [activeViewId]="activeViewId()"
+                [canSaveCurrentView]="canSaveCurrentView()"
+                [atSavedViewLimit]="atSavedViewLimit()"
+                [savedViewLimit]="savedViewLimit"
+                [readOnly]="savedViewsReadOnly()"
+                [isLoading]="savedFiltersLoading()"
+                [deletingViewIds]="deletingViewIds()"
+                (viewSelected)="onViewSelected($event)"
+                (defaultViewSelected)="onDefaultViewSelected()"
+                (viewDeleted)="onSavedViewDeleted($event.id)"
+                (saveCurrentViewRequested)="openSaveDialog()"
+                (close)="viewsOpen.set(false)" />
+            </ng-container>
+          }
+        </lfx-feed-header>
+
+        @if (filtersOpen() && activeTab() === 'feed') {
+          <lfx-filters-panel
+            [(visible)]="filtersOpen"
+            [(selectedSentiment)]="selectedSentiment"
+            [(selectedRelevance)]="selectedRelevance"
+            [(selectedLanguage)]="selectedLanguage"
+            [(selectedHasTitle)]="selectedHasTitle"
+            [(selectedBookmarkFilter)]="selectedBookmarkFilter"
+            [(selectedReadFilter)]="selectedReadFilter"
+            [(selectedKeywords)]="selectedKeywords"
+            [(selectedTags)]="selectedTags"
+            [(selectedAuthors)]="selectedAuthors"
+            [languageOptions]="languageOptions()"
+            [languagesLoading]="languagesLoading()"
+            [languagesError]="languagesError()"
+            [availableKeywords]="availableKeywords()"
+            [keywordsLoading]="keywordsLoading()"
+            [keywordsError]="keywordsError()"
+            [availableTags]="availableTags()"
+            [tagsLoading]="tagsLoading()"
+            [tagsError]="tagsError()"
+            [availableAuthors]="availableAuthors()"
+            [authorsLoading]="authorsLoading()"
+            [authorsError]="authorsError()"
+            [activeFilterCount]="activeFilterCount()"
+            [canSaveCurrentView]="canSaveCurrentView()"
+            [atSavedViewLimit]="atSavedViewLimit()"
+            [savedViewLimit]="savedViewLimit"
+            (filtersCleared)="clearAllFilters()"
+            (saveViewRequested)="openSaveDialog()" />
+        }
+      </div>
+    }
   </div>
 
   @if (!hasFoundation()) {
@@ -35,81 +114,6 @@
       subtitle="Choose a foundation from the sidebar context picker to see its social listening feed."
       data-testid="social-listening-no-foundation" />
   } @else {
-    <!-- Positioning context for the filters panel dropdown, and the filter row's own sticky anchor beneath the page header -->
-    <div class="social-listening-filter-row z-20">
-      <lfx-feed-header
-        [activeTab]="activeTab()"
-        [(selectedPeriod)]="selectedPeriod"
-        [(selectedProject)]="selectedProject"
-        [(selectedPlatform)]="selectedPlatform"
-        [(searchInput)]="searchInput"
-        [(filtersVisible)]="filtersOpen"
-        [(viewsVisible)]="viewsOpen"
-        [activeViewName]="activeViewName()"
-        [activeFilterCount]="activeFilterCount()"
-        [projectOptions]="subProjectOptions()"
-        [platformOptions]="platformOptions()"
-        [optionsLoading]="optionsLoading()"
-        [exporting]="exporting()"
-        [exportDisabled]="analyticsPanelsLoading()"
-        (filtersPrefetch)="prefetchFilterOptions()"
-        (exportAnalytics)="onExportAnalytics()">
-        <!-- Views dropdown (feed tab only) — backdrop closes; the panel's own Escape/rows handle keyboard -->
-        @if (viewsOpen() && activeTab() === 'feed') {
-          <ng-container data-views-dropdown>
-            <div class="fixed inset-0 z-10" aria-hidden="true" data-testid="social-listening-views-backdrop" (click)="viewsOpen.set(false)"></div>
-            <lfx-views-dropdown
-              class="absolute right-0 top-full z-20 mt-1 max-sm:right-auto max-sm:left-0"
-              [savedViews]="savedFilters()"
-              [activeViewId]="activeViewId()"
-              [canSaveCurrentView]="canSaveCurrentView()"
-              [atSavedViewLimit]="atSavedViewLimit()"
-              [savedViewLimit]="savedViewLimit"
-              [readOnly]="savedViewsReadOnly()"
-              [isLoading]="savedFiltersLoading()"
-              [deletingViewIds]="deletingViewIds()"
-              (viewSelected)="onViewSelected($event)"
-              (defaultViewSelected)="onDefaultViewSelected()"
-              (viewDeleted)="onSavedViewDeleted($event.id)"
-              (saveCurrentViewRequested)="openSaveDialog()"
-              (close)="viewsOpen.set(false)" />
-          </ng-container>
-        }
-      </lfx-feed-header>
-
-      @if (filtersOpen() && activeTab() === 'feed') {
-        <lfx-filters-panel
-          [(visible)]="filtersOpen"
-          [(selectedSentiment)]="selectedSentiment"
-          [(selectedRelevance)]="selectedRelevance"
-          [(selectedLanguage)]="selectedLanguage"
-          [(selectedHasTitle)]="selectedHasTitle"
-          [(selectedBookmarkFilter)]="selectedBookmarkFilter"
-          [(selectedReadFilter)]="selectedReadFilter"
-          [(selectedKeywords)]="selectedKeywords"
-          [(selectedTags)]="selectedTags"
-          [(selectedAuthors)]="selectedAuthors"
-          [languageOptions]="languageOptions()"
-          [languagesLoading]="languagesLoading()"
-          [languagesError]="languagesError()"
-          [availableKeywords]="availableKeywords()"
-          [keywordsLoading]="keywordsLoading()"
-          [keywordsError]="keywordsError()"
-          [availableTags]="availableTags()"
-          [tagsLoading]="tagsLoading()"
-          [tagsError]="tagsError()"
-          [availableAuthors]="availableAuthors()"
-          [authorsLoading]="authorsLoading()"
-          [authorsError]="authorsError()"
-          [activeFilterCount]="activeFilterCount()"
-          [canSaveCurrentView]="canSaveCurrentView()"
-          [atSavedViewLimit]="atSavedViewLimit()"
-          [savedViewLimit]="savedViewLimit"
-          (filtersCleared)="clearAllFilters()"
-          (saveViewRequested)="openSaveDialog()" />
-      }
-    </div>
-
     <div class="flex flex-col gap-4">
       <!-- Active-filter summary on BOTH tabs: analytics applies the feed predicate too (M1), so the pills are the only on-tab indication. Click a pill to remove that filter -->
       @if (activeFilterPills().length) {
@@ -155,8 +159,11 @@
           </div>
         }
 
-        @if (error(); as errorMessage) {
-          <lfx-message severity="error" [text]="errorMessage" data-testid="social-listening-error" />
+        <!-- A failure past the initial load keeps the loaded feed mounted — the list renders an inline retry instead -->
+        @if (loadedCount() === 0) {
+          @if (error(); as errorMessage) {
+            <lfx-message severity="error" [text]="errorMessage" data-testid="social-listening-error" />
+          }
         }
 
         @if (countError(); as countErrorMessage) {
@@ -177,8 +184,8 @@
             data-testid="social-listening-bookmark-state-error" />
         }
 
-        <!-- The list (and its empty state) stays hidden behind an error banner so the two never contradict -->
-        @if (!error() && !readStateError() && !bookmarkStateError()) {
+        <!-- The list stays hidden behind a blocking error/state banner so the two never contradict; a Load More failure is non-blocking (rows stay mounted) -->
+        @if ((!error() || loadedCount() > 0) && !readStateError() && !bookmarkStateError()) {
           <lfx-mentions-list
             [mentions]="mentions()"
             [loading]="loading()"
@@ -197,6 +204,7 @@
             [dataComputedAt]="dataComputedAt()"
             [timeTick]="timeTick()"
             [phase2Failed]="phase2Failed()"
+            [loadError]="!!error() && loadedCount() > 0"
             [countError]="countError() !== null"
             (loadMore)="onLoadMore()"
             (clearFilters)="clearAllFilters()"

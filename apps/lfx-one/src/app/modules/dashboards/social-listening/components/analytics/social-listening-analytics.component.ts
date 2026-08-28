@@ -184,8 +184,10 @@ export class SocialListeningAnalyticsComponent {
     effect(() => this.panelsLoading.set(this.anyPanelLoading()));
   }
 
+  /** The feed filter matches raw `SOURCE_PLATFORM` values, so only single-source groups drill down (merged groups like `other` stay display-only). */
   public onPlatformRowClick(row: SocialListeningPlatformRow): void {
-    this.platformSelected.emit(row.platform);
+    if (row.sourcePlatforms.length !== 1) return;
+    this.platformSelected.emit(row.sourcePlatforms[0]);
   }
 
   private async exportAnalytics(): Promise<void> {

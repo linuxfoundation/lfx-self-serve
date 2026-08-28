@@ -54,7 +54,9 @@ export class MentionCardComponent {
   public readonly failedImageUrl = signal<string | null>(null);
   /** Drives the fade + "Read full post" affordance; measured against the clamped body after each render. */
   public readonly truncated = signal(false);
-  public readonly bodyExpanded = signal(false);
+  /** Keyed by mention id (same reuse hazard as failedImageUrl) — a recycled row never renders the next mention expanded. */
+  private readonly expandedMentionId = signal<string | null>(null);
+  public readonly bodyExpanded = computed(() => this.expandedMentionId() === this.mention().id);
   private copyTimeoutId: ReturnType<typeof setTimeout> | null = null;
   private readonly bodyEl = viewChild<ElementRef<HTMLElement>>('bodyEl');
 
@@ -113,7 +115,7 @@ export class MentionCardComponent {
   }
 
   public onToggleBody(): void {
-    this.bodyExpanded.update((expanded) => !expanded);
+    this.expandedMentionId.update((id) => (id === this.mention().id ? null : this.mention().id));
   }
 
   /** Re-emits the toggle intent — the loading gate lives in the service. */

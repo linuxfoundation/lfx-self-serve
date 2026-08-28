@@ -27,6 +27,15 @@
   &:hover {
     @apply bg-gray-50;
   }
+
+  // Merged groups (e.g. `other`) can't drill down — no pointer affordance.
+  &:disabled {
+    @apply cursor-default;
+
+    &:hover {
+      @apply bg-transparent;
+    }
+  }
 }
 
 // Fixed-width track so every tag row's count column lands at the same x.

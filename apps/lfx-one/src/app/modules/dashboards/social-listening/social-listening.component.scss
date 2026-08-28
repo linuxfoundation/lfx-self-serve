@@ -3,14 +3,12 @@
 
 :host {
   @apply block;
-  // Rendered height of the sticky page header (pt-4 + 32px title + gap-1 + 20px subtitle + pb-4).
-  --sl-header-offset: 5.5rem;
 }
 
 // The pinned header floats on the page canvas: an opaque backdrop in the canvas color plus a fade
 // so cards scrolling under it dissolve instead of colliding with the title row.
 .social-listening-header {
-  @apply -mx-4 bg-gray-50 px-4 pb-4 pt-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8;
+  @apply relative -mx-4 bg-gray-50 px-4 pb-4 pt-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8;
 
   &::after {
     content: '';
@@ -18,12 +16,10 @@
   }
 }
 
-// Sticky at the header's height so the scope selects, search, and Filters trigger stay reachable while
-// the feed scrolls. `position: sticky` also anchors the absolutely positioned filters panel.
-// The fade sits at the bottom of the pinned stack so the feed dissolves as it scrolls underneath.
+// One sticky container holds both pinned rows (see the template) — a fixed per-row offset broke when the
+// header wrapped. `relative` anchors the filters panel; pt-4 keeps the unpinned rhythm. Fade: bottom of the stack.
 .social-listening-filter-row {
-  @apply sticky bg-gray-50;
-  top: var(--sl-header-offset);
+  @apply relative bg-gray-50 pt-4;
 
   &::after {
     content: '';

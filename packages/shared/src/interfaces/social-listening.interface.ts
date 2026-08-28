@@ -359,8 +359,10 @@ export interface AuthorOption extends SocialListeningMentionAuthor {
 
 /** Analytics platform-distribution row with display config pre-resolved (built by `mapPlatformDistributionRows`). */
 export interface SocialListeningPlatformRow {
-  /** Normalized grouping key — also the value the analytics tab emits when a row is clicked to scope the feed. */
+  /** Normalized grouping key — drives the display config and the row's track key. */
   platform: MentionPlatform;
+  /** Distinct raw `SOURCE_PLATFORM` values folded into the group — drill-down emits from this list (the feed filter matches raw values), so merged groups can't drill down. */
+  sourcePlatforms: string[];
   config: MentionPlatformConfigEntry;
   mentionsCount: number;
   /** 0–100 share of in-scope mentions, one decimal (server-rounded). */

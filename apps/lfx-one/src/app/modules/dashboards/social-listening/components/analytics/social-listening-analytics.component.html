@@ -80,7 +80,8 @@
                 <button
                   type="button"
                   class="platform-row"
-                  [attr.aria-label]="'Show ' + row.config.label + ' mentions in the feed'"
+                  [disabled]="row.sourcePlatforms.length !== 1"
+                  [attr.aria-label]="row.sourcePlatforms.length === 1 ? 'Show ' + row.config.label + ' mentions in the feed' : null"
                   (click)="onPlatformRowClick(row)"
                   [attr.data-testid]="'social-listening-analytics-platform-row-' + row.platform">
                   <div class="flex w-full items-center justify-between gap-3">

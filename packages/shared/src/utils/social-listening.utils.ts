@@ -285,21 +285,25 @@ export function mapTagRows(tags: SocialListeningTagCount[]): SocialListeningTagR
   }));
 }
 
-/** Top-N platform rows (default `ANALYTICS_TOP_PLATFORMS_LIMIT`) grouped by normalized key — raw duplicates (`X`/`twitter`, unsupported → other) would duplicate the template's `track row.config.label` keys. */
+/** Top-N platform rows (default `ANALYTICS_TOP_PLATFORMS_LIMIT`) grouped by normalized key — raw duplicates (`X`/`twitter`, unsupported → other) would duplicate the template's `track row.config.label` keys.
+ * `sourcePlatforms` keeps the group's raw values so drill-down can emit a feed-filter value the server actually matches. */
 export function mapPlatformDistributionRows(
   rows: SocialListeningPlatformDistribution[],
   limit: number = ANALYTICS_TOP_PLATFORMS_LIMIT
 ): SocialListeningPlatformRow[] {
   const byKey = new Map<MentionPlatform, SocialListeningPlatformRow>();
   for (const row of rows) {
-    const key = normalizePlatformKey(row.SOURCE_PLATFORM || row.SOCIAL_NETWORK);
+    const raw = row.SOURCE_PLATFORM || row.SOCIAL_NETWORK;
+    const key = normalizePlatformKey(raw);
     const existing = byKey.get(key);
     if (existing) {
       existing.mentionsCount += row.MENTIONS_COUNT;
       existing.percentOfTotal += row.PERCENT_OF_TOTAL || 0;
+      if (raw && !existing.sourcePlatforms.includes(raw)) existing.sourcePlatforms.push(raw);
     } else {
       byKey.set(key, {
         platform: key,
+        sourcePlatforms: raw ? [raw] : [],
         config: MENTION_PLATFORM_CONFIG[key],
         mentionsCount: row.MENTIONS_COUNT,
         percentOfTotal: row.PERCENT_OF_TOTAL || 0,
