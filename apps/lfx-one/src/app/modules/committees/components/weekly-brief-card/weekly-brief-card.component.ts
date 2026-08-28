@@ -355,8 +355,15 @@ export class WeeklyBriefCardComponent {
         next: (res) => {
           // Upstream marks nothing Required on the 202 envelope — a bare 202 with no
           // brief/throttle must not wipe what's already rendered (most visible on
-          // Regenerate, where a real brief is on screen when this fires).
-          this.briefResponse.set({ brief: res.brief ?? this.brief(), throttle: res.throttle ?? this.throttle() });
+          // Regenerate, where a real brief is on screen when this fires). Same reasoning
+          // extends to current_activity (GH-1922): generating a brief doesn't change this
+          // week's activity, so carry the prior value forward rather than dropping it until
+          // the next pollUntilTerminal tick lands.
+          this.briefResponse.update((prev) => ({
+            brief: res.brief ?? this.brief(),
+            throttle: res.throttle ?? this.throttle(),
+            current_activity: prev?.current_activity,
+          }));
           // On Regenerate, currentBrief.revision is the pre-regenerate revision — pollUntilTerminal
           // uses it to reject a first tick that reads back that same (stale) terminal brief instead
           // of the new one still being written. undefined on a fresh generate (no prior revision to

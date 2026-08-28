@@ -113,6 +113,15 @@ export const WEEKLY_BRIEF_SOURCE_SECTIONS: readonly WeeklyBriefSourceSection[] =
  * list alone (not by cross-referencing `WEEKLY_BRIEF_SOURCE_SECTIONS` by kind), so a kind
  * missing here can never render a phrase-less, blank-labeled toggle — see
  * `WeeklyBriefCurrentActivityPhrase`'s doc comment.
+ *
+ * `mailing-list` and `members` are forward-declared, not currently reachable: the server-side
+ * builder (`weekly-brief.service.ts#buildCurrentActivity`) sources `source_refs` from
+ * `CommitteeActivityService`, which has no mailing-list leg at all (tracked upstream —
+ * linuxfoundation/lfx-self-serve#1934) and never constructs a `member_joined`/`member_left`
+ * event (a known, permanently-deferred v1 limitation, not a tracked issue — no upstream
+ * membership-timestamp/deletion-history signal to build one from). A week whose only real
+ * activity was on one of these two kinds still renders "no activity yet" — an accepted v1 gap in
+ * what the tally can attest to, not a claim that no such activity occurred.
  */
 export const WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES: readonly WeeklyBriefCurrentActivityPhrase[] = [
   { kind: 'meeting', singular: 'meeting held', plural: 'meetings held' },

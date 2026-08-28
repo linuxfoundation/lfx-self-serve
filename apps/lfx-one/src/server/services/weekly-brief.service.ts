@@ -290,7 +290,7 @@ export class WeeklyBriefService {
     // additive on top of the brief fetch for no reason.
     //
     // Only built here, not inside fetchBriefResponse — every internal caller that reuses that
-    // helper (getActionItems, shareBrief, shareBriefToSlack, resolveRatableBrief) only ever reads
+    // helper (getActionItems, shareBrief, shareToSlack, resolveRatableBrief) only ever reads
     // brief/caller_rating off the result, so building the tally for them too would pay a real
     // upstream fan-out (getCommitteeById, and for a governance committee, CommitteeActivityService's
     // own multi-call aggregation) for a field they'd discard on every write path (share, rate) and
@@ -1123,7 +1123,7 @@ export class WeeklyBriefService {
 
   /**
    * Shared by `getCurrentBrief` and every internal caller that only needs `brief`/`throttle`/
-   * `caller_rating` — `getActionItems`, `shareBrief`, `shareBriefToSlack`, `resolveRatableBrief`.
+   * `caller_rating` — `getActionItems`, `shareBrief`, `shareToSlack`, `resolveRatableBrief`.
    * Deliberately does NOT build `current_activity` (see `getCurrentBrief`'s own doc comment for
    * why that stays exclusive to the actual `GET /current` read path — those four callers would
    * otherwise pay a real upstream fan-out for a field they immediately discard).
@@ -1163,7 +1163,12 @@ export class WeeklyBriefService {
    * aggregation that powers the committee "Recent Activity" feed, filtered to the current,
    * not-yet-closed week. Gated to governance (Board/Government Advisory Council) committees only
    * — the only ones the client renders the tally for — so a non-Board committee's weekly-brief
-   * load never pays for the fan-out. Fails soft to `undefined` (never an empty array) on any
+   * load never pays for `getCommitteeActivity`'s own 9-call upstream fan-out. The one
+   * `getCommitteeById` call needed to read `category` and make that gating decision runs for every
+   * committee regardless — it's a single lightweight lookup (the same cost
+   * `CommitteeActivityService`'s own internal `fetchCommittee` already pays on the "Recent
+   * Activity" feed), not the fan-out this comment is scoping. Fails soft to `undefined` (never an
+   * empty array) on any
    * error, matching the client's existing absent-vs-present distinction between "couldn't
    * determine" and "genuinely zero activity this week" (weekly-brief-card.component.ts's
    * `hasCurrentActivityData`).
@@ -1200,6 +1205,7 @@ export class WeeklyBriefService {
    */
   private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | undefined> {
     try {
+      logger.debug(req, 'get_weekly_brief_current_activity', 'Building current-week activity tally', { committee_id: committeeId });
       const committee = await this.committeeService.getCommitteeById(req, committeeId);
       if (!isGoverningBoard(committee.category)) return undefined;
 
@@ -1208,6 +1214,7 @@ export class WeeklyBriefService {
         since: window_start,
         limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
       });
+      logger.debug(req, 'get_weekly_brief_current_activity', 'Fetched current-week activity', { committee_id: committeeId, event_count: data.length });
       if (data.length >= ACTIVITY_FEED_MAX_PAGE_SIZE) {
         logger.warning(
           req,

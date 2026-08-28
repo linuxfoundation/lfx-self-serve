@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD } from '@lfx-one/shared/constants';
-import { Committee, WeeklyBriefCurrentResponse, WeeklyBriefSourceRef } from '@lfx-one/shared/interfaces';
+import { Committee, GenerateWeeklyBriefResponse, WeeklyBriefCurrentResponse, WeeklyBriefSourceRef } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
@@ -493,7 +493,11 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     };
   }
 
-  async function setup(committee: Committee, activityRefs: WeeklyBriefSourceRef[] | null): Promise<void> {
+  async function setup(
+    committee: Committee,
+    activityRefs: WeeklyBriefSourceRef[] | null,
+    generateWeeklyBrief: ReturnType<typeof vi.fn> = vi.fn()
+  ): Promise<void> {
     getWeeklyBrief = vi.fn(() => of(briefResponse(activityRefs)));
 
     await TestBed.configureTestingModule({
@@ -501,7 +505,7 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: WeeklyBriefService, useValue: { getWeeklyBrief, listWeeklyBriefs: vi.fn(() => of({ data: [] })) } },
+        { provide: WeeklyBriefService, useValue: { getWeeklyBrief, listWeeklyBriefs: vi.fn(() => of({ data: [] })), generateWeeklyBrief } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         // Real service — see the Share to Slack describe block's docblock above for why.
@@ -562,19 +566,22 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     expect((voteToggle.textContent as string).replace(/\s+/g, ' ').trim()).toBe('1 vote closed');
   });
 
-  it('sets role="group" + aria-label on the container, and aria-controls on each toggle pointing at its revealed list id', async () => {
+  it('sets role="group" + aria-label on the container, and aria-controls on each toggle only once its revealed list actually exists', async () => {
     await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync')]);
 
     const container = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
     expect(container.getAttribute('role')).toBe('group');
     expect(container.getAttribute('aria-label')).toContain('1 meeting held');
 
+    // Collapsed by default: the @if-guarded list this would point at isn't rendered yet, so
+    // aria-controls must be absent rather than reference a nonexistent id (axe aria-valid-attr-value).
     const toggle = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-toggle-meeting"]');
-    expect(toggle.getAttribute('aria-controls')).toBe('weekly-brief-card-current-activity-items-meeting');
+    expect(toggle.getAttribute('aria-controls')).toBeNull();
 
     await clickTestId('weekly-brief-card-current-activity-toggle-meeting');
     const items = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-items-meeting"]');
-    expect(items.getAttribute('id')).toBe(toggle.getAttribute('aria-controls'));
+    expect(items.getAttribute('id')).toBe('weekly-brief-card-current-activity-items-meeting');
+    expect(toggle.getAttribute('aria-controls')).toBe(items.getAttribute('id'));
   });
 
   it('rolls an unrecognized kind into an "Other" bucket instead of dropping it, and does not render the false "no activity yet" line', async () => {
@@ -640,5 +647,22 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     await fixture.whenStable();
 
     expect(component.expandedActivityKinds().size).toBe(0);
+  });
+
+  it('preserves current_activity through a generate/regenerate round-trip — the 202 envelope never carries it', async () => {
+    const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
+    await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync')], generateWeeklyBrief);
+    expect(component.hasCurrentActivityData()).toBe(true);
+
+    component.onGenerate();
+    await fixture.whenStable();
+
+    expect(generateWeeklyBrief).toHaveBeenCalled();
+    // GenerateWeeklyBriefResponse has no current_activity field at all — regenerating a brief
+    // doesn't change this week's activity, so the tally must survive the 202 handler rather than
+    // vanish until the next pollUntilTerminal tick lands.
+    expect(component.hasCurrentActivityData()).toBe(true);
+    const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
+    expect(el.textContent as string).toContain('1 meeting held');
   });
 });
