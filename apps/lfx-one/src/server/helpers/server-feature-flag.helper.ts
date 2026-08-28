@@ -268,6 +268,30 @@ export enum ServerFeatureFlag {
   CampaignServiceKeywordActions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS',
 
   /**
+   * Routes the HubSpot campaign UTM lookup and create through campaign-service instead of this
+   * BFF's own HubSpot calls.
+   *
+   * Like the keyword-action flag, "off" is NOT a working fallback: the legacy path calls
+   * `hsHeaders()`, which throws whenever `HUBSPOT_ACCESS_TOKEN` is absent — and it is, by design,
+   * since the credential moved into campaign-service's encrypted connection store. With this off
+   * the Planning tab's UTM lookup does not work at all.
+   *
+   * ONE BEHAVIOUR CHANGES BEYOND THE BACKEND. The legacy path fabricated a utm token
+   * (`id-name`) whenever HubSpot had none, so a campaign with no configured token still appeared
+   * tokenised — and links tagged with that invented value attribute traffic to a campaign
+   * HubSpot cannot report on. Behind this flag a missing token is reported as missing, which the
+   * UI already models (`hs_utm` is `string | null`). Expect fewer apparent tokens, and expect
+   * that to be the correct answer.
+   *
+   * The create path writes into an LF-GLOBAL namespace — the campaign is visible to every
+   * foundation — and performs no duplicate check, which is why the UI warns before offering it.
+   *
+   * Safe to turn off: both routes are stateless with respect to this service, so flipping back
+   * restores the previous behaviour, fabricated tokens included.
+   */
+  CampaignServiceHubSpotUtm = 'LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM',
+
+  /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and
    * `weekly-brief.service.ts`'s `shareToSlack` (the Slack send) server-side. `WG_WEEKLY_BRIEF_SLACK_FLAG`
    * (`wg-weekly-brief-slack`, an OpenFeature/GrowthBook flag) only gates the Angular UI — the

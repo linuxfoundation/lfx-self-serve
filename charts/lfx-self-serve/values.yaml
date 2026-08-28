@@ -642,6 +642,26 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS:
     value: "false"
 
+  # Routes the HubSpot campaign UTM lookup and create (campaign.controller.ts
+  # lookupHubSpotUtm / createHubSpotUtm) through campaign-service.
+  #
+  # "OFF" IS NOT A WORKING FALLBACK, as with the keyword-actions flag above. The legacy path
+  # calls hsHeaders(), which throws whenever HUBSPOT_ACCESS_TOKEN is absent — and it is, by
+  # design, since the credential moved into campaign-service's encrypted connection store. With
+  # this off the Planning tab's UTM lookup does not work at all.
+  #
+  # ONE BEHAVIOUR CHANGES BEYOND THE BACKEND. The legacy path FABRICATED a utm token
+  # ("<id>-<name>") whenever HubSpot had none, so a campaign with no configured token still
+  # appeared tokenised — and links tagged with that invented value attribute traffic to a
+  # campaign HubSpot cannot report on. Behind this flag a missing token is reported as missing.
+  # Expect fewer apparent tokens, and expect that to be the correct answer.
+  #
+  # The CREATE path writes into an LF-GLOBAL namespace: the campaign is visible to every
+  # foundation's campaign managers, whatever project scoped the request. It performs no
+  # duplicate check, which is why the UI must warn before offering it.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM:
+    value: "false"
+
   # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).
   # The BFF refuses to serve mock brief data when NODE_ENV=production and this
   # isn't 'live' — leaving it unset here would 500 on every weekly-brief request.

@@ -1696,6 +1696,25 @@ export interface HubSpotEmailSearchResult {
 // HubSpot UTM
 // ---------------------------------------------------------------------------
 
+/**
+ * One campaign as campaign-service returns it.
+ *
+ * `utm` is OPTIONAL because a campaign can exist with no token configured — a real state, not a
+ * missing answer. The legacy BFF path fabricated a token from the id and name when HubSpot had
+ * none; upstream does not, and neither does the conversion, because a fabricated token attributes
+ * traffic to a campaign HubSpot cannot report on.
+ */
+export interface CampaignServiceHubSpotCampaign {
+  id: string;
+  name: string;
+  utm?: string;
+  start_date?: string;
+}
+
+export interface CampaignServiceHubSpotCampaigns {
+  campaigns: CampaignServiceHubSpotCampaign[];
+}
+
 export interface HubSpotUtmLookupResult {
   found: boolean;
   hs_utm: string | null;

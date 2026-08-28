@@ -12,6 +12,8 @@ import type {
   CampaignMetricsWindow,
   CampaignServiceAudience,
   CampaignServiceCampaignResolution,
+  CampaignServiceHubSpotCampaign,
+  CampaignServiceHubSpotCampaigns,
   CampaignServiceKeywordActionInput,
   CampaignServiceKeywordActions,
   CampaignServiceKeywords,
@@ -1201,6 +1203,57 @@ export class CampaignServiceClient {
       `/projects/${encodeURIComponent(projectSlug)}/google-ads/keywords`,
       'GET',
       window ? { window } : undefined
+    );
+  }
+
+  /**
+   * Find LF HubSpot campaigns by name, to read back an existing campaign's utm token.
+   *
+   * THE ANSWER IS LF-GLOBAL: `projectSlug` gates permission, not visibility. HubSpot's campaign
+   * namespace is the whole portal, so this returns matches from every foundation's campaigns.
+   *
+   * An empty `campaigns` array is a 200, not a 404 — "nothing is named that" is the answer the
+   * caller acts on by offering to create one, so callers must check the array rather than
+   * relying on this to throw.
+   */
+  public async searchHubSpotCampaigns(req: Request, projectSlug: string, query: string): Promise<CampaignServiceHubSpotCampaigns> {
+    if (projectSlug === '' || query === '') {
+      throw new Error('A HubSpot campaign search requires both the project and a search term.');
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceHubSpotCampaigns>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/campaigns`,
+      'GET',
+      { q: query }
+    );
+  }
+
+  /**
+   * Create an LF-global HubSpot campaign and return the token HubSpot assigns it.
+   *
+   * IT ALWAYS CREATES and performs no duplicate check — upstream documents why: a
+   * search-then-create still races a concurrent caller and cannot prevent a duplicate, so the
+   * check belongs with the operator who can read the candidate names. Search first, warn, then
+   * create.
+   *
+   * The created campaign is visible to EVERY foundation's campaign managers, whatever project
+   * scoped the request.
+   *
+   * The name is the SIXTH argument (body), not the fifth (query): a POST payload in the query
+   * position sends no body at all, and upstream would reject it as a request naming no campaign.
+   */
+  public async createHubSpotCampaign(req: Request, projectSlug: string, name: string): Promise<CampaignServiceHubSpotCampaign> {
+    if (projectSlug === '' || name === '') {
+      throw new Error('A HubSpot campaign creation requires both the project and a campaign name.');
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceHubSpotCampaign>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/campaigns`,
+      'POST',
+      undefined,
+      { name }
     );
   }
 
