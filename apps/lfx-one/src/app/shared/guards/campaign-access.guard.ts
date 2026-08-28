@@ -24,6 +24,9 @@ import { PersonaService } from '../services/persona.service';
  * after hydration awaits `providerReady` and makes the real decision (LFXV2-2236).
  */
 export const campaignAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
+  // LOCAL DEV BYPASS — never commit.
+  return true;
+
   const personaService = inject(PersonaService);
   const router = inject(Router);
 

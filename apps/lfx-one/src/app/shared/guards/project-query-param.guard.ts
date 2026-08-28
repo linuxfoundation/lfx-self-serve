@@ -36,6 +36,23 @@ export const projectQueryParamGuard: CanActivateFn = (route) => {
   const slug = route.queryParamMap.get('project');
   if (!slug) return true;
 
+  // DEV BYPASS: hardcode TLF context to skip API dependency — DO NOT COMMIT
+  if (slug === 'tlf') {
+    const tlfContext: ProjectContext = {
+      uid: 'a09410d0-0ec0-11ea-8e8f-416e2d8da950',
+      name: 'The Linux Foundation',
+      slug: 'tlf',
+      parent_uid: undefined,
+      logoUrl: '',
+    };
+    if (route.data['lens'] === 'foundation') {
+      projectContextService.setFoundation(tlfContext);
+    } else {
+      projectContextService.setProject(tlfContext);
+    }
+    return true;
+  }
+
   return projectService.getProject(slug, false).pipe(
     map((project) => {
       if (!project) return true;

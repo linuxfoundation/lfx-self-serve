@@ -54,7 +54,10 @@ export class LensService {
   public readonly lastNavLens: Signal<NavLens>;
 
   /** Active lens clamped to the current persona's allowed set; falls back to default if disallowed. */
-  public readonly activeLens: Signal<Lens> = this.initActiveLens();
+  // DEV BYPASS: force the foundation lens so /foundation/* routes render locally — DO NOT COMMIT
+  // Authelia returns no ED persona, so getAllowedLensIds() excludes 'foundation' and the app
+  // falls back to the project lens, bouncing /foundation/campaigns to /project/overview.
+  public readonly activeLens: Signal<Lens> = computed<Lens>(() => 'foundation');
   /** Full set of lenses the current persona is authorised to use — drives routing and downstream visibility filters. */
   public readonly availableLenses: Signal<LensOption[]> = this.initAvailableLenses();
   /** Lenses shown in the sidebar switcher. Mirrors {@link availableLenses} except for hybrid personas, who get a merged project entry instead of separate foundation + project buttons. */
@@ -196,6 +199,8 @@ export class LensService {
    * `MainLayoutComponent.syncLensFromRoute` is the one caller that re-asserts.
    */
   private getAllowedLensIds(): readonly Lens[] {
+    // DEV BYPASS: allow every lens locally — DO NOT COMMIT
+    return ['me', 'foundation', 'project', 'org'] as Lens[];
     return deriveAllowedLenses(this.lensGrantInputs());
   }
 

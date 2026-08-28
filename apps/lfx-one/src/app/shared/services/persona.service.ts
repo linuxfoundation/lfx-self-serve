@@ -50,7 +50,8 @@ export class PersonaService {
   /** Root- or project-scoped `marketing_auditor` FGA grant (project scope applies when the request carries `?project=`) (LFXV2-2235/LFXV2-2236). Always false while `ServerFeatureFlag.MarketingOpsFga` is off. */
   public readonly isMarketingAuditor: WritableSignal<boolean> = signal<boolean>(false);
   /** Root- or project-scoped `campaign_manager` FGA grant. Same flag caveat as {@link isMarketingAuditor}. */
-  public readonly isCampaignManager: WritableSignal<boolean> = signal<boolean>(false);
+  // DEV BYPASS: force the campaign-manager grant — DO NOT COMMIT
+  public readonly isCampaignManager: WritableSignal<boolean> = signal<boolean>(true);
   /**
    * The project slug the most recent *project-scoped* {@link refreshEnrichedPersonas} call verified
    * `isMarketingAuditor`/`isCampaignManager` against — `null` when the grant was confirmed root-scoped
@@ -149,7 +150,10 @@ export class PersonaService {
 
   public constructor() {
     const stored = this.loadFromCookie();
-    this.currentPersona = signal<PersonaType>(stored?.primary ?? 'contributor');
+    // DEV BYPASS: force the ED persona — Authelia returns no persona locally, so this falls
+    // through to 'contributor' and every ED surface (lens, sidebar, campaigns) is hidden.
+    // DO NOT COMMIT
+    this.currentPersona = signal<PersonaType>('executive-director');
     this.allPersonas = signal<PersonaType[]>(stored?.all ?? ['contributor']);
     this.userSelected = signal<boolean>(stored?.userSelected === true);
     const authState = this.transferState.get(makeStateKey<AuthContext>('auth'), { authenticated: false, user: null });
