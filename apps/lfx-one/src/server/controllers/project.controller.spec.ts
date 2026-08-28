@@ -21,6 +21,7 @@ const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, p
   projectSvc: {
     getProjectIdBySlug: vi.fn(),
     getProjectById: vi.fn(),
+    getProjectSlugs: vi.fn(),
   },
 }));
 
@@ -78,6 +79,7 @@ import { readFileSync } from 'node:fs';
 import { LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
 import { ProjectController } from './project.controller';
 import { ServiceValidationError } from '../errors';
+import { logger } from '../services/logger.service';
 
 function buildProject(overrides: Partial<Project> = {}): Project {
   return {
@@ -271,13 +273,12 @@ describe('ProjectController.getProjectSlugs', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (projectSvc as any).getProjectSlugs = vi.fn();
     controller = new ProjectController();
   });
 
-  it('responds with the slug array and does not call next()', async () => {
+  it('responds with the slug array, logs success, and does not call next()', async () => {
     const slugs = ['cncf', 'kubernetes', 'linux'];
-    (projectSvc as any).getProjectSlugs.mockResolvedValue(slugs);
+    projectSvc.getProjectSlugs.mockResolvedValue(slugs);
     const req = { headers: {}, bearerToken: undefined, method: 'GET' } as any;
     const res = { json: vi.fn() } as any;
     const next = vi.fn();
@@ -285,12 +286,14 @@ describe('ProjectController.getProjectSlugs', () => {
     await controller.getProjectSlugs(req, res, next);
 
     expect(res.json).toHaveBeenCalledWith(slugs);
+    expect(logger.startOperation).toHaveBeenCalledWith(req, 'get_project_slugs');
+    expect(logger.success).toHaveBeenCalledWith(req, 'get_project_slugs', 0, { slug_count: 3 });
     expect(next).not.toHaveBeenCalled();
   });
 
   it('forwards errors to next() without calling res.json', async () => {
     const boom = new Error('upstream-down');
-    (projectSvc as any).getProjectSlugs.mockRejectedValue(boom);
+    projectSvc.getProjectSlugs.mockRejectedValue(boom);
     const req = { headers: {}, bearerToken: undefined, method: 'GET' } as any;
     const res = { json: vi.fn() } as any;
     const next = vi.fn();
