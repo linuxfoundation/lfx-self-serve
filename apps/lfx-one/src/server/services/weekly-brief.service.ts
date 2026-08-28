@@ -1184,16 +1184,26 @@ export class WeeklyBriefService {
    * this method's own fail-soft contract.
    *
    * Known v1 residual (accepted, not solved — same class of gap `committee-activity.service.ts`'s
-   * own "Known v1 limitation"/FGA-post-filter comments already document for this exact endpoint):
-   * `data.length < limit` is NOT a airtight completeness proof for the three legs that DO push
-   * `since` upstream (meetings/votes/documents) — `CommitteeActivityService`'s own docs note FGA
-   * access-checking runs after OpenSearch paginates, so one of those legs can come back under
-   * `fetchSize` visible rows on a single fetched page while `saturated` is still true, i.e. an
-   * under-count this guard won't catch. Closing that fully would need `getCommitteeActivity` to
-   * expose a window-bounded-only saturation signal (excluding notes/surveys) it doesn't return
-   * today — not done here to avoid changing the public contract of an endpoint the real "Recent
-   * Activity" feed also consumes, for a v1 tally where a committee generating ~50 in-window events
-   * in one week, right at the FGA-thinning boundary, is already a narrow edge case.
+   * own "Known v1 limitation" comment already documents for this exact endpoint): `data.length <
+   * limit` is NOT an airtight completeness proof, for two independent reasons neither leg-specific
+   * check above rules out:
+   *   - Meetings/votes/documents DO push `since` upstream, but `CommitteeActivityService`'s own
+   *     docs note two ways a leg can still under-report while `saturated` stays true: (a) FGA
+   *     access-checking runs after OpenSearch paginates, so a fetched page can come back with
+   *     fewer *visible* rows than requested; (b) votes/documents only narrow on an *approximating*
+   *     upstream `date_field` (not their real, multi-field `occurred_at`), so upstream can
+   *     over-include stale rows that the in-memory `since` pass then trims, again leaving
+   *     `data.length` under `limit` on a page that was genuinely truncated.
+   *   - Notes/surveys' `sort: updated_desc` resolves to the index's own audit `updated_at`, not a
+   *     domain timestamp — an edit or re-index of an old, out-of-window row can push a genuinely
+   *     in-window note/survey out of the top `fetchSize` entirely, with no `saturated` signal to
+   *     catch it at all (this is on top of, not instead of, why their `saturated` flag is ignored
+   *     above).
+   * Closing either fully would need `getCommitteeActivity` to expose a per-leg completeness signal
+   * it doesn't return today — not done here to avoid changing the public contract of an endpoint
+   * the real "Recent Activity" feed also consumes, for a v1 tally where any of these is already a
+   * narrow edge case relative to the false-negative this commit fixes (which fired on nearly every
+   * long-lived board, every week).
    */
   private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | undefined> {
     try {
