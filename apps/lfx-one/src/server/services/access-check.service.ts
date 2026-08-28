@@ -221,6 +221,12 @@ export class AccessCheckService {
    * (degraded path), failed chunks fail closed (keys absent, defaulting to false at lookup).
    * On clean completion logger.success is called; on partial failure logger.warning is called
    * instead so monitoring alerts keyed on success do not fire.
+   *
+   * Concurrency: all chunks are issued in parallel (no pool cap). LFX has ~500 projects
+   * (ACCESS_CHECK_BATCH_SIZE = 100), so the maximum concurrent chunk count is ~5 — the same
+   * order of magnitude as sequential concurrent requests from different users, so no concurrency
+   * limiter is warranted. If a future caller drives chunk counts into the dozens, revisit with
+   * a traversal-slot or p-limit guard (see `acquireTraversalSlot` in project.service.ts).
    */
   private async performCheck(
     req: Request,
