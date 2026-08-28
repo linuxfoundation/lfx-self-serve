@@ -188,6 +188,12 @@ export class OrgSelectorComponent {
         )
         .subscribe(() => this.bootstrapOrgList());
     });
+
+    // Second cleanup path for the document-scoped keyDown listener. PrimeNG's popover teardown
+    // doesn't emit `onHide` when the host layout destroys while the panel is open, so relying on
+    // `onPopoverHide` alone can leak the closure onto `document` and let it intercept keys on the
+    // next screen.
+    this.destroyRef.onDestroy(() => this.detachKeyboardHandler());
   }
 
   protected selectItem(item: OrgItem, popover: Popover): void {
@@ -269,6 +275,12 @@ export class OrgSelectorComponent {
 
   private handleKeyDown(event: KeyboardEvent): void {
     if (!this.isPanelOpen()) return;
+    // Ignore events dispatched outside the popover panel and its trigger. The listener is
+    // document-scoped so it can catch events fired on the `appendTo="body"` popover DOM (which
+    // lives outside this component's subtree), but that scope also picks up keys pressed on
+    // unrelated controls while the panel happens to be open — stealing Arrow/Home/End, and
+    // breaking caret/text nav in inputs like the staff search field.
+    if (!this.isEventInsidePanel(event)) return;
     const options = this.listboxOptions();
     if (options.length === 0) {
       if (event.key === 'Escape') {
@@ -297,10 +309,12 @@ export class OrgSelectorComponent {
         this.moveFocusTo(options, options.length - 1);
         return;
       case 'Enter':
-        // Native button behavior: pressing Enter on a focused `<button>` fires a click, which
-        // triggers the row's `(click)="selectItem(...)"` handler and hides the popover. Falling
-        // through here (no `preventDefault`, no imperative `.click()`) preserves that path and
-        // avoids double-firing under zone.js.
+        // Native button behavior fires a click on the focused row, which invokes `selectItem`
+        // and hides the popover (no `preventDefault` / imperative `.click()` here — that
+        // combination double-fires under zone.js). The row is about to be removed from the DOM,
+        // so schedule the focus restore in a microtask: it lands after the click has processed
+        // and matches Escape's contract (focus returns to the combobox trigger, WAI-ARIA APG).
+        queueMicrotask(() => this.triggerRef()?.nativeElement.focus());
         return;
       case 'Escape':
         event.preventDefault();
@@ -309,6 +323,22 @@ export class OrgSelectorComponent {
       default:
         return;
     }
+  }
+
+  /**
+   * True when the event target is inside the popover panel or is the combobox trigger. Keeps
+   * modifier variants (e.g. Shift+Home) on unrelated inputs from being hijacked while the panel
+   * happens to be open; the trigger is included so a caller who Shift+Tabs back to it can still
+   * use ArrowDown to open + move focus into the list.
+   */
+  private isEventInsidePanel(event: KeyboardEvent): boolean {
+    if (!isPlatformBrowser(this.platformId)) return false;
+    const target = event.target;
+    if (!(target instanceof Node)) return false;
+    const container = this.popoverRef()?.container as HTMLElement | null | undefined;
+    if (container?.contains(target)) return true;
+    const trigger = this.triggerRef()?.nativeElement;
+    return !!trigger && trigger.contains(target);
   }
 
   private listboxOptions(): HTMLElement[] {

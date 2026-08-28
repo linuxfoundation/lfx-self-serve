@@ -34,7 +34,7 @@
  * deterministic regardless of the bootstrap identity.
  */
 
-import { expect, Page, test } from '@playwright/test';
+import { expect, Page, Request, test } from '@playwright/test';
 
 // The org-selector trigger only renders (data-visible=true) while the active lens is 'org'; on the
 // default 'me' lens the sidebar keeps it in the DOM but CSS-hidden. Navigating to `/org` sets the
@@ -122,16 +122,37 @@ test.describe('Multi-Organization Switching — non-staff, two unrelated direct 
     await expect(page.getByTestId(`org-item-${ORG_A_UID}-role-badge`)).toHaveAttribute('data-role-label', 'Org Admin Editor');
     await expect(page.getByTestId(`org-item-${ORG_B_UID}-role-badge`)).toHaveAttribute('data-role-label', 'Org Admin Editor');
 
-    // Watch every subsequent lens fetch — the first one issued after clicking B MUST target B's uid.
-    const lensRequestForB = page.waitForRequest((request) => request.url().includes(`/api/orgs/${ORG_B_UID}/`), { timeout: 15_000 });
-    await rowB.click();
+    // Capture every lens-scoped request fired AFTER the click. Filtering by B's uid alone (as
+    // waitForRequest would) can't fail if A is fetched first and B later — the assertion must
+    // instead prove (a) the first post-click lens fetch targets B, and (b) no A-scoped lens
+    // fetch is issued after the switch.
+    const lensRequestsPostClick: string[] = [];
+    const captureLensRequest = (request: Request): void => {
+      const url = request.url();
+      if (/\/api\/orgs\/[^/]+\/lens\//.test(url)) {
+        lensRequestsPostClick.push(url);
+      }
+    };
+    page.on('request', captureLensRequest);
+    try {
+      await rowB.click();
+      // Panel closes on selection — active org is unambiguous immediately after switching.
+      await expect(page.getByTestId('org-selector-list')).not.toBeVisible({ timeout: 5_000 });
+      // Wait until at least one lens fetch for B lands, proving the selection actually propagated.
+      await page.waitForRequest((request) => request.url().includes(`/api/orgs/${ORG_B_UID}/lens/`), { timeout: 15_000 });
+      // Small buffer so any late A-scoped fetch (which would prove the switch didn't happen
+      // atomically) shows up in the captured set instead of racing past the assertion below.
+      await page.waitForTimeout(500);
+    } finally {
+      page.off('request', captureLensRequest);
+    }
 
-    // Panel closes on selection — active org is unambiguous immediately after switching.
-    await expect(page.getByTestId('org-selector-list')).not.toBeVisible({ timeout: 5_000 });
-
-    // First subsequent org-scoped fetch was for B, not A.
-    const request = await lensRequestForB;
-    expect(request.url()).toContain(`/api/orgs/${ORG_B_UID}/`);
+    expect(lensRequestsPostClick.length, 'at least one lens fetch should follow the switch').toBeGreaterThan(0);
+    expect(lensRequestsPostClick[0], 'first post-click lens fetch must target B, not A').toContain(`/api/orgs/${ORG_B_UID}/lens/`);
+    expect(
+      lensRequestsPostClick.filter((url) => url.includes(`/api/orgs/${ORG_A_UID}/lens/`)),
+      'no A-scoped lens fetch should be issued after selecting B'
+    ).toEqual([]);
   });
 
   test('M2: selection persists across a page reload (cookie contract)', async ({ page, context }) => {
@@ -171,12 +192,13 @@ test.describe('Multi-Organization Switching — non-staff, two unrelated direct 
 
   test('M3: fetching an ungranted org is refused, regardless of email domain', async ({ page }) => {
     // Ordinary users never see an org they were not granted — even if it exists in the catalogue.
-    // Direct fetch MUST be refused by the shared read-gate middleware.
-    const response = await page.request.get(`/api/orgs/${ORG_UNGRANTED_UID}/lens/summary`, { failOnStatusCode: false });
-    // The middleware returns 403 (Forbidden) or the auth layer returns 401 depending on the deployment.
-    // Any success (2xx) status is a policy failure and MUST fail the test.
-    expect(response.status()).toBeGreaterThanOrEqual(400);
-    expect([401, 403, 404, 502]).toContain(response.status());
+    // Direct fetch MUST be refused by the shared read-gate middleware (`requireOrgLensAccess`),
+    // which throws a `MicroserviceError(403, 'FORBIDDEN')` for a caller with no grant on the
+    // requested uid. Hitting a REGISTERED lens endpoint here is deliberate: an unmatched route
+    // (e.g. `/lens/summary`) returns 404 whether or not the middleware exists, so a stale test
+    // would not catch a regression that removed the gate.
+    const response = await page.request.get(`/api/orgs/${ORG_UNGRANTED_UID}/lens/events/summary`, { failOnStatusCode: false });
+    expect(response.status(), 'gate must reply 403 for an ungranted caller on a real lens endpoint').toBe(403);
   });
 
   test('M4: non-staff user sees NO staff catalogue affordance and exactly the seeded grants', async ({ page }) => {
@@ -281,10 +303,11 @@ test.describe('Multi-Organization Switching — non-staff, two unrelated direct 
     await expect(page.getByTestId(`org-item-${ORG_B_UID}-role-badge`)).toHaveAttribute('data-role-label', 'Org Admin Editor');
 
     // An ungranted org with any domain — matching or not — MUST NOT confer access via the API.
-    // The direct fetch below carries no grant tuple for ORG_UNGRANTED_UID and must be refused.
-    const response = await page.request.get(`/api/orgs/${ORG_UNGRANTED_UID}/lens/summary`, { failOnStatusCode: false });
-    expect(response.status()).toBeGreaterThanOrEqual(400);
-    expect([401, 403, 404, 502]).toContain(response.status());
+    // The direct fetch below carries no grant tuple for ORG_UNGRANTED_UID and must be refused by
+    // `requireOrgLensAccess` with 403. Same rationale as M3: a REGISTERED lens endpoint is used
+    // so a regression that dropped the gate can't hide behind a 404 from an unmatched route.
+    const response = await page.request.get(`/api/orgs/${ORG_UNGRANTED_UID}/lens/events/summary`, { failOnStatusCode: false });
+    expect(response.status(), 'gate must reply 403 for an ungranted caller on a real lens endpoint').toBe(403);
   });
 
   test('M8: selected-org revoked while others remain auto-selects the first remaining org', async ({ page, context }) => {

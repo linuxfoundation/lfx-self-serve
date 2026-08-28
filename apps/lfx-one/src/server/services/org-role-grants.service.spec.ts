@@ -100,6 +100,95 @@ describe('OrgRoleGrantsService — LF staff determination', () => {
   });
 });
 
+describe('OrgRoleGrantsService — direct-grant cap contract', () => {
+  // Boundary coverage for the ORG_ROLE_GRANTS_HARD_CAP (500) contract. E2E can only observe
+  // the wire response and would still pass if the service regressed to requesting per_page: 500,
+  // dropped the operator warning, or forwarded the 501st grant — the assertions below lock each
+  // of those failure modes at the service boundary.
+  const HARD_CAP = 500;
+
+  function makeSettingsResource(orgUid: string): {
+    id: string;
+    data: { members: { username: string; role: 'writer'; invite_status: 'accepted' }[] };
+  } {
+    return {
+      id: `b2b_org_settings:${orgUid}`,
+      data: { members: [{ username: USERNAME, role: 'writer', invite_status: 'accepted' }] },
+    };
+  }
+
+  function makeOrgDoc(orgUid: string): { id: string; data: { uid: string; name: string; is_parent: false } } {
+    return { id: `b2b_org:${orgUid}`, data: { uid: orgUid, name: `Org ${orgUid}`, is_parent: false } };
+  }
+
+  function seedProxy(settingsCount: number): { orgUids: string[] } {
+    // Filter-safe uids: matches the isFilterSafeIdentifier stub /^[a-z0-9_-]+$/i.
+    const orgUids = Array.from({ length: settingsCount }, (_, i) => `org-${i.toString().padStart(4, '0')}`);
+    proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, _method: unknown, params?: Record<string, unknown>) => {
+      if (params && (params as { type?: string }).type === 'b2b_org_settings') {
+        return { resources: orgUids.map(makeSettingsResource) };
+      }
+      if (params && (params as { type?: string }).type === 'b2b_org') {
+        // Return docs matching whatever uids the service requested via `tags`.
+        const tags = ((params as { tags?: string[] }).tags ?? []).map((t) => t.replace(/^b2b_org_uid:/, ''));
+        return { resources: tags.map(makeOrgDoc) };
+      }
+      return { resources: [] };
+    });
+    return { orgUids };
+  }
+
+  it('requests one row above the hard cap so overflow is detectable', async () => {
+    checkSingleAccess.mockResolvedValue(false);
+    seedProxy(HARD_CAP);
+
+    await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    const [, , , , settingsParams] = proxyRequest.mock.calls[0];
+    expect(settingsParams).toMatchObject({ type: 'b2b_org_settings', per_page: HARD_CAP + 1 });
+  });
+
+  it('does NOT emit the overflow warning at exactly the cap', async () => {
+    checkSingleAccess.mockResolvedValue(false);
+    seedProxy(HARD_CAP);
+    const { logger: mockedLogger } = await import('./logger.service');
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    const overflowCalls = (mockedLogger.warning as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c) => (c[3] as { event?: string })?.event === 'org_grant_cap_exceeded'
+    );
+    expect(overflowCalls).toHaveLength(0);
+    expect(result.resolved.size).toBe(HARD_CAP);
+  });
+
+  it('emits ONE overflow warning and truncates to the cap before partitioning when the caller has more direct grants than supported', async () => {
+    checkSingleAccess.mockResolvedValue(false);
+    seedProxy(HARD_CAP + 1);
+    const { logger: mockedLogger } = await import('./logger.service');
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    const overflowCalls = (mockedLogger.warning as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c) => (c[3] as { event?: string })?.event === 'org_grant_cap_exceeded'
+    );
+    expect(overflowCalls).toHaveLength(1);
+    expect(overflowCalls[0][3]).toMatchObject({
+      event: 'org_grant_cap_exceeded',
+      raw_grant_count: HARD_CAP + 1,
+      hard_cap: HARD_CAP,
+    });
+    // The wire response, cache, and resolved map must never exceed the supported ceiling.
+    expect(result.resolved.size).toBe(HARD_CAP);
+    // The second proxyRequest (b2b_org details fetch) must be called with at most HARD_CAP uids —
+    // proving the truncation happened BEFORE partitioning fed downstream fetches.
+    const detailsCall = proxyRequest.mock.calls.find((c) => (c[4] as { type?: string })?.type === 'b2b_org');
+    expect(detailsCall).toBeDefined();
+    const detailsTags = (detailsCall![4] as { tags?: string[] }).tags ?? [];
+    expect(detailsTags.length).toBeLessThanOrEqual(HARD_CAP);
+  });
+});
+
 describe('OrgRoleGrantsService — isStaff cache round trip', () => {
   it('writes isStaff into the cached entry', async () => {
     checkSingleAccess.mockResolvedValue(true);
