@@ -13,6 +13,7 @@ import {
   DEFAULT_MENTION_PREDICATE,
   DEFAULT_MENTION_VIEW_SCOPE,
   MAX_SAVED_FILTERS_PER_PROJECT,
+  MENTION_FEED_RENDER_LIMIT,
   MENTION_FILTER_MAX_VALUES,
   MENTION_MAX_FEED_OFFSET,
   MENTION_SEARCH_DEBOUNCE_MS,
@@ -316,7 +317,9 @@ export class SocialListeningComponent {
   public readonly phase2Failed = computed(() => this.windowCache().get(this.windowIndex())?.phase2Failed === true);
   public readonly mentions: Signal<Mention[]> = this.initMentions();
   public readonly loadedCount = computed(() => this.mentions().length);
-  public readonly hasMore = computed(() => this.loadedCount() < this.servableTotal());
+  /** Past MENTION_FEED_RENDER_LIMIT the footer stops advancing — the rendered DOM, not the window cache, is what's bounded. */
+  public readonly renderCapped = computed(() => this.loadedCount() >= MENTION_FEED_RENDER_LIMIT && this.loadedCount() < this.servableTotal());
+  public readonly hasMore = computed(() => this.loadedCount() < Math.min(this.servableTotal(), MENTION_FEED_RENDER_LIMIT));
   /** Distinguishes a Load More fetch from the initial load, so the footer spins while the list keeps its rows. */
   public readonly loadingMore = computed(() => this.loading() && this.loadedCount() > 0);
   public readonly readMentionIds: Signal<Set<string>> = this.initReadMentionIds();
@@ -562,6 +565,8 @@ export class SocialListeningComponent {
   }
 
   public onLoadMore(): void {
+    // The footer stays hidden until the first row lands — advancing mid-fetch would cancel the in-flight window request.
+    if (this.loading()) return;
     this.lastLoadedPage.update((page) => page + 1);
   }
 
@@ -706,6 +711,14 @@ export class SocialListeningComponent {
     resetters[id as keyof FilterPredicate]?.();
   }
 
+  /** Resets predicate + scope to the defaults and drops the active view — the "No Preset View", active-view-deleted, and empty-state CTA path. */
+  public resetToDefaultViewState(): void {
+    applyPredicateToSignals({ ...DEFAULT_MENTION_PREDICATE, keywords: [], tags: [], authors: [] }, this.signals);
+    applyViewScopeToSignals({ ...DEFAULT_MENTION_VIEW_SCOPE, period: this.defaultPeriod }, this.scopeSignals);
+    this.activeViewId.set(null);
+    this.commitScopeKey();
+  }
+
   /** Any active feed predicate or a non-default period means the loaded windows (and their newest) are a subset of the foundation feed. */
   private feedNarrowed(): boolean {
     return Object.keys(this.currentFilters()).length > 0 || this.selectedPeriod() !== this.defaultPeriod;
@@ -761,14 +774,6 @@ export class SocialListeningComponent {
     const scopeKey = this.computeScopeKey();
     if (!scopeKey) return;
     this.previousScopeKey = scopeKey;
-  }
-
-  /** Resets predicate + scope to the defaults and drops the active view — the "No Preset View" / active-view-deleted path. */
-  private resetToDefaultViewState(): void {
-    applyPredicateToSignals({ ...DEFAULT_MENTION_PREDICATE, keywords: [], tags: [], authors: [] }, this.signals);
-    applyViewScopeToSignals({ ...DEFAULT_MENTION_VIEW_SCOPE, period: this.defaultPeriod }, this.scopeSignals);
-    this.activeViewId.set(null);
-    this.commitScopeKey();
   }
 
   private initSearchQuery(): Signal<string> {

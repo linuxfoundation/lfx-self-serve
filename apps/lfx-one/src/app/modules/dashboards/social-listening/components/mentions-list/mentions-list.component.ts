@@ -33,6 +33,8 @@ export class MentionsListComponent {
   public readonly hasMore = input(false);
   /** A Load More fetch is in flight — the footer spins while the loaded rows stay on screen. */
   public readonly loadingMore = input(false);
+  /** Rendered rows hit MENTION_FEED_RENDER_LIMIT with more still servable — the footer swaps the button for a refine note. */
+  public readonly renderCapped = input(false);
   /** "Data as of" watermark — the feed response's `computedAt`, converted to a Date by the page. */
   public readonly dataComputedAt = input<Date | null>(null);
   /** Shared relative-time heartbeat from the page, passed through to each card. */
@@ -51,7 +53,7 @@ export class MentionsListComponent {
   public readonly unreadView = input(false);
 
   public readonly loadMore = output<void>();
-  /** Empty-state escape hatch — the page owns the reset via clearAllFilters(). */
+  /** Empty-state escape hatch — the page owns the reset via resetToDefaultViewState() (scope + filters). */
   public readonly clearFilters = output<void>();
   /** Manual retry of a phase-2-failed window. */
   public readonly retry = output<void>();
@@ -65,6 +67,8 @@ export class MentionsListComponent {
 
   public readonly isBookmarkedFn: Signal<(id: string) => boolean> = this.initIsBookmarkedFn();
   public readonly isReadFn: Signal<(id: string) => boolean> = this.initIsReadFn();
+  /** Load More footer visibility — gated on a landed row so an early advance can't cancel the in-flight window-0 fetch. */
+  public readonly showLoadMore = computed(() => this.hasMore() && this.loadedCount() > 0 && !this.phase2Failed() && !this.loadError());
 
   /** Per-card bookmark lookup (PCC port): one computed over the input set, not a per-row method call. */
   private initIsBookmarkedFn(): Signal<(id: string) => boolean> {

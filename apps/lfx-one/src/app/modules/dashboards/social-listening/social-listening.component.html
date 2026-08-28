@@ -200,6 +200,7 @@
             [loadedCount]="loadedCount()"
             [servableTotal]="servableTotal()"
             [hasMore]="hasMore()"
+            [renderCapped]="renderCapped()"
             [loadingMore]="loadingMore()"
             [dataComputedAt]="dataComputedAt()"
             [timeTick]="timeTick()"
@@ -207,7 +208,7 @@
             [loadError]="!!error() && loadedCount() > 0"
             [countError]="countError() !== null"
             (loadMore)="onLoadMore()"
-            (clearFilters)="clearAllFilters()"
+            (clearFilters)="resetToDefaultViewState()"
             (retry)="retryWindow()" />
         }
 

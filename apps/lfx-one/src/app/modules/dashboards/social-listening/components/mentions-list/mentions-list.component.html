@@ -141,8 +141,9 @@
       data-testid="mentions-list-inline-error" />
   }
 
-  <!-- Load More footer: running count plus the advance control — hidden once the feed is exhausted or a window needs retry -->
-  @if (hasMore() && !phase2Failed() && !loadError()) {
+  <!-- Load More footer: running count plus the advance control — hidden until the first row lands (an advance before
+       then cancels the window-0 fetch and strands the feed), once the feed is exhausted, or while a window needs retry -->
+  @if (showLoadMore()) {
     <div class="flex flex-col items-center gap-2" data-testid="mentions-list-load-more-footer">
       <p class="text-xs text-gray-400" data-testid="mentions-list-showing">
         @if (countError()) {
@@ -166,5 +167,10 @@
         }
       </button>
     </div>
+  } @else if (renderCapped()) {
+    <!-- Render limit reached with more servable: bound the DOM and point the user at narrowing instead of scanning -->
+    <p class="text-center text-xs text-gray-400" data-testid="mentions-list-render-cap">
+      Showing the first {{ loadedCount() }} mentions. Narrow the filters or shorten the period to see more.
+    </p>
   }
 </div>

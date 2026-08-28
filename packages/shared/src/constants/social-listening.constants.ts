@@ -121,6 +121,9 @@ export const MENTION_SERVER_WINDOW_SIZE = 100;
 /** Deepest feed offset the server honors — past ~1000 windows a paginated request is a scan, not navigation. */
 export const MENTION_MAX_FEED_OFFSET = 100_000;
 
+/** Rendered-row cap for the cumulative feed — bounds DOM size and per-card render hooks; the loaded window cache is unaffected. */
+export const MENTION_FEED_RENDER_LIMIT = 500;
+
 /** Cap for array-valued filters (keywords / tags / authors) — enforced at the HTTP boundary and in the SQL builder. */
 export const MENTION_FILTER_MAX_VALUES = 200;
 
