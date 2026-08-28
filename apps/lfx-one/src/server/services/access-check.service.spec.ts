@@ -233,7 +233,8 @@ describe('AccessCheckService — batching', () => {
   it('fails the rejected chunk closed but preserves results from fulfilled chunks', async () => {
     const resources = makeResources(101);
     const chunkError = new Error('chunk-failure');
-    // Chunk 1 (resources 0–99) succeeds; chunk 2 (resource 100) fails.
+    // First chunk (0-based index 0, resources 0–99) succeeds;
+    // second chunk (0-based index 1, resource 100) fails.
     proxyRequest.mockResolvedValueOnce(mockResponse(resources.slice(0, 100), true));
     proxyRequest.mockRejectedValueOnce(chunkError);
 

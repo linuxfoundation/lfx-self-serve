@@ -327,6 +327,7 @@ export class ProjectService {
    * entirely, eliminating the OpenFGA POST that getProjects() incurs.
    */
   public async getProjectSlugs(req: Request): Promise<string[]> {
+    logger.debug(req, 'get_project_slugs', 'Fetching all project slugs');
     const filtered = await this.fetchAllProjectsFiltered(req);
     return filtered.map((p) => p.slug);
   }

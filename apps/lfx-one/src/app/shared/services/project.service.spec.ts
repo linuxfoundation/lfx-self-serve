@@ -37,9 +37,11 @@ describe('ProjectService.getProjectSlugs', () => {
   });
 
   it('reuses the cached observable on a second call without issuing another request', () => {
-    service.getProjectSlugs().subscribe();
-    service.getProjectSlugs().subscribe();
+    const results: string[][] = [];
+    service.getProjectSlugs().subscribe((v) => results.push(v));
+    service.getProjectSlugs().subscribe((v) => results.push(v));
     expect(httpGet).toHaveBeenCalledTimes(1);
+    expect(results).toEqual([['slug-a', 'slug-b'], ['slug-a', 'slug-b']]);
   });
 
   it('evicts slugsCache$ on error so the next caller gets a fresh HTTP attempt', () => {
