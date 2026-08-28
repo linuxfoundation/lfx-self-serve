@@ -1516,16 +1516,23 @@ export class CommitteeController {
 
       // Paginate both upcoming and past meetings — first page only would silently
       // drop meetings once a committee exceeds the default page size.
-      const [upcoming, past] = await Promise.all([
+      const [upcoming, past, calname] = await Promise.all([
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_meeting', false)),
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
+        this.committeeService
+          .getCommitteeById(req, id)
+          .then((committee) => committee.name)
+          .catch((error) => {
+            logger.warning(req, 'get_committee_calendar', 'Failed to resolve committee name for X-WR-CALNAME', { committee_id: id, err: error });
+            return undefined;
+          }),
       ]);
 
       // Filter PRIVATE meetings from the public feed. Restricted (invited-guests-only) public meetings are
       // still listed so their existence is discoverable; join authorization is enforced separately at join time.
       const allMeetings = [...upcoming, ...past].filter((m) => m.visibility === MeetingVisibility.PUBLIC);
       const events = meetingsToVEvents(allMeetings);
-      const ics = buildVCalendar(events, '-//LFX//Committee Calendar//EN');
+      const ics = buildVCalendar(events, '-//LFX//Committee Calendar//EN', calname);
 
       logger.success(req, 'get_committee_calendar', startTime, {
         committee_id: id,

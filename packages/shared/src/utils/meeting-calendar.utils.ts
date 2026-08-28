@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Meeting, MeetingOccurrenceRoute, PastMeeting } from '../interfaces';
+import { Meeting, MeetingOccurrenceRoute, PastMeeting, PublicCalendarMeeting } from '../interfaces';
 import type { MeetingCalendarClickProps, MeetingCalendarEventInput } from '../interfaces/calendar.interface';
 import { Vote } from '../interfaces/poll.interface';
 import { Survey } from '../interfaces/survey.interface';
@@ -86,6 +86,80 @@ export function meetingToCalendarEvents(meeting: Meeting | PastMeeting): Meeting
         meetingId: pastResourceId ?? meeting.id,
         pastMeetingResourceId: pastResourceId,
         password: meeting.password ?? undefined,
+        startTime,
+        durationMinutes: meeting.duration,
+      },
+    },
+  ];
+}
+
+/**
+ * Builds FullCalendar event inputs for anonymous/public calendar surfaces.
+ * Takes the credential-free `PublicCalendarMeeting` projection rather than a full `Meeting`, so no
+ * meeting password can reach client event state, click-through URLs, browser history, or referrers —
+ * defense in depth behind the server-side allowlist on `GET /public/api/projects/:id/meetings`.
+ */
+export function publicMeetingToCalendarEvents(meeting: PublicCalendarMeeting): MeetingCalendarEventInput[] {
+  if (meeting.occurrences && meeting.occurrences.length > 0) {
+    return meeting.occurrences.map((occ) => {
+      // `duration` is typed required, but indexed occurrences omit it when there is no per-occurrence
+      // override — same fallback the sibling mapper applies. Without it `isOccurrencePast` computes
+      // NaN (never past) and `addMinutesToDate` quietly substitutes 60 minutes.
+      const occurrenceDuration = occ.duration ?? meeting.duration;
+      const isCancelled = isMeetingOccurrenceCancelled(occ, meeting.cancelled_occurrences);
+      const isPast = !isCancelled && isOccurrencePast(occ.start_time, occurrenceDuration);
+      const colors = resolveMeetingCalendarColors(isCancelled, isPast);
+      const classNames = ['meeting-event'];
+      if (isCancelled) {
+        classNames.push('cursor-default');
+      } else if (isPast) {
+        classNames.push('meeting-event-past');
+      }
+      return {
+        id: `${meeting.id}-${occ.occurrence_id}`,
+        title: meeting.title,
+        start: occ.start_time,
+        end: addMinutesToDate(occ.start_time, occurrenceDuration).toISOString(),
+        backgroundColor: colors.bg,
+        borderColor: colors.border,
+        textColor: colors.text,
+        display: 'block',
+        classNames,
+        extendedProps: {
+          type: 'meeting',
+          meetingId: meeting.id,
+          cancelled: isCancelled,
+          startTime: occ.start_time,
+          durationMinutes: occurrenceDuration,
+        },
+      };
+    });
+  }
+
+  const startTime = meeting.scheduled_start_time ?? meeting.start_time;
+  const isPast = isOccurrencePast(startTime, meeting.duration);
+  const colors = resolveMeetingCalendarColors(false, isPast);
+  const resourceId = meeting.meeting_and_occurrence_id ?? meeting.id;
+  const classNames = ['meeting-event'];
+  if (isPast) {
+    classNames.push('meeting-event-past');
+  }
+
+  return [
+    {
+      id: resourceId,
+      title: meeting.title,
+      start: startTime,
+      end: addMinutesToDate(startTime, meeting.duration).toISOString(),
+      backgroundColor: colors.bg,
+      borderColor: colors.border,
+      textColor: colors.text,
+      display: 'block',
+      classNames,
+      extendedProps: {
+        type: 'meeting',
+        meetingId: resourceId,
+        pastMeetingResourceId: meeting.meeting_and_occurrence_id,
         startTime,
         durationMinutes: meeting.duration,
       },
