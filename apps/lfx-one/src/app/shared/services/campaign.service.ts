@@ -152,9 +152,13 @@ export class CampaignService {
    * Generate email copy for a brief. Brief-scoped upstream, so both ids are required.
    */
   public generateEmailCopy(projectSlug: string, briefId: string): Observable<GenerateEmailCopyResult> {
-    return this.http.post<GenerateEmailCopyResult>('/api/campaigns/email-copy', {}, {
-      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
-    });
+    return this.http.post<GenerateEmailCopyResult>(
+      '/api/campaigns/email-copy',
+      {},
+      {
+        params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+      }
+    );
   }
 
   public createCampaign(
