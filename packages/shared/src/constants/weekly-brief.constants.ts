@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { WeeklyBriefSourceSection, WeeklyBriefState } from '../interfaces/weekly-brief.interface';
+import { WeeklyBriefCurrentActivityPhrase, WeeklyBriefSourceSection, WeeklyBriefState } from '../interfaces/weekly-brief.interface';
 
 /**
  * Brief states a "Share to Mailing List" action may fire from — i.e. states
@@ -104,13 +104,17 @@ export const WEEKLY_BRIEF_SOURCE_SECTIONS: readonly WeeklyBriefSourceSection[] =
 ] as const;
 
 /**
- * Verb phrasing for the "this week so far" activity-tally caption (GH-1922) — one entry per
- * `WEEKLY_BRIEF_SOURCE_SECTIONS` kind. Kept separate from that constant because the two solve
- * different problems: `WEEKLY_BRIEF_SOURCE_SECTIONS` is a noun *label* for a disclosure section
- * heading ("Meetings"), this is a verb *phrase* for a count sentence ("1 meeting held" / "2
- * meetings held") — singular/plural forms a section label doesn't need.
+ * Verb phrasing for the "this week so far" activity-tally caption (GH-1922) — the single source
+ * of truth for which kinds the tally recognizes, their display order, and their singular/plural
+ * count text ("1 meeting held" / "2 meetings held"). Kept separate from
+ * `WEEKLY_BRIEF_SOURCE_SECTIONS` because the two solve different problems: that constant is a
+ * noun *label* for a disclosure section heading ("Meetings"), this is a verb *phrase* for a
+ * count sentence — but `weekly-brief-card.component.ts` drives the tally's sections from THIS
+ * list alone (not by cross-referencing `WEEKLY_BRIEF_SOURCE_SECTIONS` by kind), so a kind
+ * missing here can never render a phrase-less, blank-labeled toggle — see
+ * `WeeklyBriefCurrentActivityPhrase`'s doc comment.
  */
-export const WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES: readonly { kind: string; singular: string; plural: string }[] = [
+export const WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES: readonly WeeklyBriefCurrentActivityPhrase[] = [
   { kind: 'meeting', singular: 'meeting held', plural: 'meetings held' },
   { kind: 'vote', singular: 'vote closed', plural: 'votes closed' },
   { kind: 'mailing-list', singular: 'mailing-list post', plural: 'mailing-list posts' },

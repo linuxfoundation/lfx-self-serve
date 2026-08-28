@@ -101,12 +101,27 @@ export interface WeeklyBriefSourceChipSection extends WeeklyBriefSourceSection {
  * `WeeklyBriefCurrentActivity.source_refs`, plus the precomputed verb-phrase count text for
  * that kind (e.g. "1 meeting held") — the "this week so far" tally's analog to
  * `WeeklyBriefSourceChipSection` (GH-1922). Omitted entirely (not zero-length) for a kind with
- * no activity — `weekly-brief-card.component.ts`'s `currentActivitySections` only returns
- * non-zero kinds, same filtering `initSourceChipSections` already does for the Sources row.
+ * no activity — `weekly-brief-card.component.ts`'s `currentActivity` (built by
+ * `initCurrentActivitySections`) only returns non-zero kinds, same filtering
+ * `initSourceChipSections` already does for the Sources row.
  */
 export interface WeeklyBriefCurrentActivitySection extends WeeklyBriefSourceSection {
   refs: WeeklyBriefSourceRef[];
   countText: string;
+}
+
+/**
+ * Verb-phrase singular/plural for one activity kind in the "this week so far" tally caption
+ * (GH-1922) — see `WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES`. This is the single source of truth
+ * for which kinds the tally recognizes and in what order; `weekly-brief-card.component.ts`
+ * drives its sections from this list directly rather than cross-referencing
+ * `WEEKLY_BRIEF_SOURCE_SECTIONS` by kind, so a kind present in one list but not the other can
+ * never produce a phrase-less, blank-labeled toggle.
+ */
+export interface WeeklyBriefCurrentActivityPhrase {
+  kind: string;
+  singular: string;
+  plural: string;
 }
 
 export interface WeeklyBrief {

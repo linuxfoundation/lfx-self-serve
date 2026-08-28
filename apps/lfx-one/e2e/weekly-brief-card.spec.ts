@@ -1026,6 +1026,22 @@ test.describe('WG Weekly Brief card — "This week so far" activity tally (GH-19
 
     await expect(page.getByTestId('weekly-brief-card-current-activity')).toHaveCount(0);
   });
+
+  test('renders "no activity yet" when current_activity is present but empty — a genuine quiet week-so-far, distinct from the absent case above', async ({
+    page,
+  }) => {
+    await mockCommitteeShell(page, { category: 'Board' });
+    await mockCurrentBrief(page, {
+      brief: GENERATED_BRIEF,
+      throttle: USED_THROTTLE_AFTER_GENERATE,
+      current_activity: { window_start: '2026-08-24T00:00:00.000Z', window_end: '2026-08-27T12:00:00.000Z', source_refs: [] },
+    });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+
+    await expect(page.getByTestId('weekly-brief-card-current-activity')).toContainText('no activity yet', { timeout: DATA_LOAD_TIMEOUT });
+  });
 });
 
 test.describe('WG Weekly Brief card — Edit → Save round-trip', () => {

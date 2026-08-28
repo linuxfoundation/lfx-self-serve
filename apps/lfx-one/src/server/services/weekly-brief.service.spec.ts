@@ -386,18 +386,23 @@ describe('WeeklyBriefService', () => {
     });
 
     it('getCurrentBrief scopes current_activity to currentWeekInProgressWindow(), not briefWindow()', async () => {
+      // try/finally, not a trailing call: a failed assertion below must not skip
+      // useRealTimers() and leak fake timers into every later test in this file — this
+      // describe block's own beforeEach/afterEach only reset process.env, not timers.
       vi.useFakeTimers();
-      // 2026-01-14 is a Wednesday (UTC) — briefWindow() resolves to the *previous* week here,
-      // currentWeekInProgressWindow() must not.
-      vi.setSystemTime(new Date('2026-01-14T12:00:00.000Z'));
+      try {
+        // 2026-01-14 is a Wednesday (UTC) — briefWindow() resolves to the *previous* week
+        // here, currentWeekInProgressWindow() must not.
+        vi.setSystemTime(new Date('2026-01-14T12:00:00.000Z'));
 
-      const result = await service.getCurrentBrief(req, 'committee-1');
+        const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.current_activity?.window_start).toBe('2026-01-11T00:00:00.000Z');
-      expect(result.current_activity?.window_end).toBe('2026-01-14T12:00:00.000Z');
-      expect(result.brief?.window_start).toBe('2026-01-04T00:00:00.000Z');
-
-      vi.useRealTimers();
+        expect(result.current_activity?.window_start).toBe('2026-01-11T00:00:00.000Z');
+        expect(result.current_activity?.window_end).toBe('2026-01-14T12:00:00.000Z');
+        expect(result.brief?.window_start).toBe('2026-01-04T00:00:00.000Z');
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('does not leak the WEEKLY_BRIEF_BACKEND env var name into the client-facing error message', async () => {

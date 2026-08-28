@@ -552,6 +552,45 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     expect(el.textContent as string).toContain('2 meetings held');
   });
 
+  it('puts the comma inside each toggle button — not a separate element that would pick up the flex gap as space before it', async () => {
+    await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync'), activityRef('vote-1', 'vote', 'Q3 Resolution')]);
+
+    const meetingToggle = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-toggle-meeting"]');
+    const voteToggle = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-toggle-vote"]');
+    expect((meetingToggle.textContent as string).replace(/\s+/g, ' ').trim()).toBe('1 meeting held,');
+    // Last item has no trailing comma.
+    expect((voteToggle.textContent as string).replace(/\s+/g, ' ').trim()).toBe('1 vote closed');
+  });
+
+  it('sets role="group" + aria-label on the container, and aria-controls on each toggle pointing at its revealed list id', async () => {
+    await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync')]);
+
+    const container = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
+    expect(container.getAttribute('role')).toBe('group');
+    expect(container.getAttribute('aria-label')).toContain('1 meeting held');
+
+    const toggle = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-toggle-meeting"]');
+    expect(toggle.getAttribute('aria-controls')).toBe('weekly-brief-card-current-activity-items-meeting');
+
+    await clickTestId('weekly-brief-card-current-activity-toggle-meeting');
+    const items = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-items-meeting"]');
+    expect(items.getAttribute('id')).toBe(toggle.getAttribute('aria-controls'));
+  });
+
+  it('rolls an unrecognized kind into an "Other" bucket instead of dropping it, and does not render the false "no activity yet" line', async () => {
+    await setup(BOARD_COMMITTEE, [activityRef('future-1', 'some_future_kind', 'A Brand New Source Kind')]);
+
+    const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
+    expect(el).not.toBeNull();
+    expect(el.textContent).not.toContain('no activity yet');
+    expect((el.textContent as string).replace(/\s+/g, ' ')).toContain('1 other update');
+
+    await clickTestId('weekly-brief-card-current-activity-toggle-other');
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity-items-other"]').textContent).toContain(
+      'A Brand New Source Kind'
+    );
+  });
+
   it('renders "no activity yet" when current_activity is present but empty (a genuine quiet week-so-far)', async () => {
     await setup(BOARD_COMMITTEE, []);
 

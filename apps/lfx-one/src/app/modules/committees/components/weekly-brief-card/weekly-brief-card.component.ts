@@ -230,12 +230,13 @@ export class WeeklyBriefCardComponent {
   // §4). See initSourceChipSections for the "Other" catch-all rationale.
   public readonly sourceChipSections: Signal<WeeklyBriefSourceChipSection[]> = this.initSourceChipSections();
 
-  // Gates the "this week so far" activity tally (GH-1922) to governance committees for v1 —
-  // Board/Government Advisory Council today. `committee().category` is always populated on
-  // this input (unlike `behavioralClass`, which is only decorated on the dashboard's own data
-  // path, not this one), so this derives the classification directly rather than reading a
-  // field that isn't there.
-  public readonly isGovernanceCommittee: Signal<boolean> = computed(() => isGoverningBoard(this.committee()?.category));
+  // Gates the "this week so far" activity tally (GH-1922) to Board/Government Advisory Council
+  // committees only for v1 — named for exactly that (not the broader `isGovernanceClass`, which
+  // also matches oversight-committee/TSC/Legal/Finance). `committee().category` is always
+  // populated on this input (unlike `behavioralClass`, which is only decorated on the
+  // dashboard's own data path, not this one), so this derives the classification directly
+  // rather than reading a field that isn't there.
+  public readonly isGoverningBoardCommittee: Signal<boolean> = computed(() => isGoverningBoard(this.committee().category));
 
   // Current, in-progress-week activity — a BFF enrichment on the response envelope (like
   // caller_rating), absent in live mode until committee-service ships in-progress-week counts
@@ -641,20 +642,28 @@ export class WeeklyBriefCardComponent {
     });
   }
 
-  // Groups current_activity.source_refs into the same fixed-order kinds as
-  // WEEKLY_BRIEF_SOURCE_SECTIONS (GH-1922), each with its precomputed "N <kind> <verb>" count
-  // text (WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES). No "Other" catch-all here, unlike
-  // initSourceChipSections: this is a raw count sentence, not a disclosure list — an
-  // unrecognized future kind would have no phrasing to render anyway, so it's silently
-  // excluded from the tally rather than mis-rendered.
+  // Groups current_activity.source_refs into fixed-order kind-sections driven by
+  // WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES — NOT by cross-referencing WEEKLY_BRIEF_SOURCE_SECTIONS
+  // by kind, since that could silently produce a phrase-less, blank-labeled toggle for a kind
+  // present in one list but not the other (PHRASES is the sole source of truth for which kinds
+  // the tally recognizes; see its doc comment). Any ref whose kind ISN'T recognized there rolls
+  // into a trailing "N other updates" bucket, mirroring initSourceChipSections's "Other"
+  // catch-all — without it, a week whose only activity is an unrecognized kind would render the
+  // misleading "no activity yet" line instead of admitting the tally just can't name it.
   private initCurrentActivitySections(): Signal<WeeklyBriefCurrentActivitySection[]> {
     return computed(() => {
       const refs = this.briefResponse()?.current_activity?.source_refs ?? [];
-      return WEEKLY_BRIEF_SOURCE_SECTIONS.map(({ kind, label }) => {
+      const known = new Set(WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES.map((phrase) => phrase.kind));
+      const sections = WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES.map(({ kind, singular, plural }) => {
         const kindRefs = refs.filter((ref) => ref.kind === kind);
-        const phrase = WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES.find((p) => p.kind === kind);
-        return { kind, label, refs: kindRefs, countText: phrase ? `${kindRefs.length} ${kindRefs.length === 1 ? phrase.singular : phrase.plural}` : '' };
-      }).filter((section) => section.refs.length > 0);
+        const label = WEEKLY_BRIEF_SOURCE_SECTIONS.find((section) => section.kind === kind)?.label ?? kind;
+        return { kind, label, refs: kindRefs, countText: `${kindRefs.length} ${kindRefs.length === 1 ? singular : plural}` };
+      });
+      const otherRefs = refs.filter((ref) => !known.has(ref.kind));
+      if (otherRefs.length > 0) {
+        sections.push({ kind: 'other', label: 'Other', refs: otherRefs, countText: `${otherRefs.length} other update${otherRefs.length === 1 ? '' : 's'}` });
+      }
+      return sections.filter((section) => section.refs.length > 0);
     });
   }
 
