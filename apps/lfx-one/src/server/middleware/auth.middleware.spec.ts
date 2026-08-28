@@ -272,6 +272,28 @@ describe('authMiddleware route classification', () => {
     expect(res.oidc.login).toHaveBeenCalledTimes(1);
   });
 
+  it('allows an anonymous GET to the public project calendar (/projects/:slug/calendar)', async () => {
+    const req = buildReq({ path: '/projects/acme/calendar' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith();
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a nested /projects/:slug/calendar/<sub> path as public (anchored regex, no fail-open)', async () => {
+    const req = buildReq({ path: '/projects/acme/calendar/extra' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
   it('allows an anonymous GET to the invite error page (/invite/error)', async () => {
     const req = buildReq({ path: '/invite/error' });
     const res = buildRes();
