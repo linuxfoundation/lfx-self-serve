@@ -12,7 +12,8 @@ import { SelectableCardComponent } from '@components/selectable-card/selectable-
 
 /**
  * "Which GitHub account are you signing as?" step, shown between the CLA-group picker and the
- * Console hand-off (#1252) whenever the contributor has at least one linked GitHub account.
+ * Console hand-off (#1252). It is shown for every account list the server returns, an empty
+ * one included.
  *
  * It exists because the account a CLA is recorded against used to be decided by whichever
  * record an identity search returned first, which is not a decision the contributor got to

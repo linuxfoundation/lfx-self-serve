@@ -217,8 +217,8 @@ export class ProfileClasComponent {
         error: () => {
           this.starting.set(false);
           // Explicitly not treated as "no accounts linked". The two are indistinguishable in
-          // the payload but not in consequence: sending someone who already linked an account
-          // into account-linking asks them to fix something that is not broken.
+          // the payload but not in consequence: showing the picker's empty state to someone
+          // who already linked an account asks them to fix something that is not broken.
           this.messageService.add({
             severity: 'error',
             summary: 'Could not start signing',

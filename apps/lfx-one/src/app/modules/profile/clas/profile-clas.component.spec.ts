@@ -855,8 +855,9 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
 
     await sign(fixture);
 
-    // Routing this into account linking would tell a contributor who has a linked account to
-    // go connect one — sending them to fix something that is not broken.
+    // Treating this as zero accounts would put the contributor in front of the empty state,
+    // telling someone who does have a linked account to go connect one — asking them to fix
+    // something that is not broken.
     expect(navigate).not.toHaveBeenCalled();
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
     expect(location.href).toBe(HOME);
@@ -1039,9 +1040,10 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
   });
 
   it('does not route a refusal into account linking', async () => {
-    // Account linking is reached only from an empty account list, which is a fact about this
-    // session rather than an upstream answer. Routing a refusal there would send someone who
-    // does have a linked account to fix something that is not broken.
+    // Account linking is reached only when the contributor asks for it from the picker's empty
+    // state, which is a fact about this session rather than an upstream answer. Routing a
+    // refusal there would send someone who does have a linked account to fix something that is
+    // not broken.
     const fixture = await setup({ prepare: refusedWith(403, OWNERSHIP_REFUSAL) });
 
     await sign(fixture);
