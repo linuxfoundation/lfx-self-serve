@@ -28,9 +28,8 @@ vi.mock('@lfx-one/shared/utils', () => ({
 
 import { attachRsvpsToRegistrants, filterRsvpsToActiveRegistrants } from './meeting-rsvp.helper';
 
-const registrant = (uid: string): MeetingRegistrant => ({ uid } as MeetingRegistrant);
-const rsvp = (overrides: Partial<MeetingRsvp>): MeetingRsvp =>
-  ({ registrant_id: 'r1', response_type: 'accepted', ...overrides }) as unknown as MeetingRsvp;
+const registrant = (uid: string): MeetingRegistrant => ({ uid }) as MeetingRegistrant;
+const rsvp = (overrides: Partial<MeetingRsvp>): MeetingRsvp => ({ registrant_id: 'r1', response_type: 'accepted', ...overrides }) as unknown as MeetingRsvp;
 
 describe('filterRsvpsToActiveRegistrants', () => {
   it('keeps only RSVPs whose registrant_id matches a currently-active registrant', () => {
