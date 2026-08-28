@@ -1899,10 +1899,16 @@ export class CampaignsComponent {
       this.campaignService.persistBrief(brief, projectSlug, owned?.id ?? null, owned?.etag ?? null, owned?.absence === 'overwrite')
     );
     const briefId = persisted.briefId ?? '';
-    if (briefId !== '') {
+    // An id is not enough: campaign-service gates `build-audience` AND campaign creation on the
+    // brief having reached `approved`, and `saveBrief` deliberately returns an id with
+    // `approved: false` when the approve step failed. Caching that id would make every downstream
+    // call fail against a brief this session believes is ready -- and because the cache
+    // short-circuits, a retry would never re-attempt the approval that is actually missing.
+    if (briefId !== '' && persisted.approved) {
       this.emailBriefId.set(briefId);
+      return briefId;
     }
-    return briefId;
+    return '';
   }
 
   /**

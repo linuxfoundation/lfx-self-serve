@@ -2203,7 +2203,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     let persist: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
-      persist = vi.fn().mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null }));
+      persist = vi.fn().mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
       vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persist);
     });
 
@@ -2291,7 +2291,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     let persist: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
-      persist = vi.fn().mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null }));
+      persist = vi.fn().mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
       vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persist);
     });
 
@@ -2624,7 +2624,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
       fixture.detectChanges();
 
-      persistBrief.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: 'W/"1"' }));
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: 'W/"1"' }));
       const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1', result: undefined, error: undefined }));
 
       await internals().onStageEmailSend();
@@ -2664,10 +2664,26 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailAudience()).toBeNull();
     });
 
+    it('does not cache a brief id that never reached approved', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockReturnValue(of({ enabled: true, briefId: 'brief-77', approved: false }) as never);
+
+      const id = await (internals() as unknown as { ensureEmailBriefId(b: unknown, p: string): Promise<string> }).ensureEmailBriefId(emailBrief, 'tlf');
+
+      // campaign-service gates build-audience AND campaign creation on `approved`, so a cached
+      // unapproved id makes every downstream call fail against a brief this session believes is
+      // ready -- and the cache short-circuits, so a retry never re-attempts the approval.
+      expect(id).toBe('');
+      expect(internals().emailBriefId()).toBe('');
+    });
+
     it('reuses a brief this session already owns instead of trying to create a second', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
-      const persist = vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockReturnValue(of({ enabled: true, briefId: 'brief-77' }) as never);
+      const persist = vi
+        .spyOn(TestBed.inject(CampaignService), 'persistBrief')
+        .mockReturnValue(of({ enabled: true, approved: true, briefId: 'brief-77' }) as never);
       // The ownership record the PAID save writes when it generates or restores a brief.
       (internals() as unknown as { knownBriefIds: Map<string, unknown> }).knownBriefIds.set(
         (internals() as unknown as { ownershipKey(p: string, b: unknown): string }).ownershipKey('tlf', emailBrief),
@@ -2724,7 +2740,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailCopy.set({ subject: 'Three days in Amsterdam', preheader: 'P', body: '<p>Join us</p>', cta: 'Register' });
       fixture.detectChanges();
 
-      persistBrief.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null }));
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
       const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
 
       await internals().onStageEmailSend();
@@ -2746,7 +2762,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
       fixture.detectChanges();
 
-      persistBrief.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null }));
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
       const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
 
       await internals().onStageEmailSend();
@@ -2783,7 +2799,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
       fixture.detectChanges();
 
-      persistBrief.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null }));
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
       vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(
         of({ jobId: '', result: undefined, error: 'platform campaign creation failed' })
       );
