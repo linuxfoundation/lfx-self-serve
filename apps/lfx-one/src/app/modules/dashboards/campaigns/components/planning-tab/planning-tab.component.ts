@@ -137,6 +137,15 @@ export class PlanningTabComponent implements OnInit {
    * narrower term instead of offering the create.
    */
   protected readonly hsCapped = signal(false);
+  /**
+   * The narrower claim: HubSpot itself returned fewer campaigns than it matched.
+   *
+   * Separate from `hsCapped` because only this one licenses the words "there are more it did
+   * not return". A result HubSpot returned in full, whose rows the local scorer rejected, is
+   * equally inconclusive but is NOT truncated — and telling an operator to narrow their search
+   * term there points them away from the actual remedy, which is to check the name.
+   */
+  protected readonly hsTruncated = signal(false);
   protected readonly hsMatches = signal<{ name: string; hs_utm: string }[]>([]);
   /**
    * Whether the match picker has anything to offer.
@@ -1039,6 +1048,20 @@ export class PlanningTabComponent implements OnInit {
    * point at which the user's intent is visible, which is what makes it the right thing to
    * compare. Same reasoning as restoreSavedBrief's guard.
    */
+  /**
+   * Whether this lookup is still the LATEST one, which is the only question the shared
+   * `hsSearching` flag should be gated on.
+   *
+   * Distinct from `panelStillShows`, deliberately. That helper also asks whether the live url
+   * still names the captured event — right for deciding whose ANSWER may be rendered, but wrong
+   * for releasing an in-flight flag: the moment the user retypes, it goes false while the only
+   * request in flight is still this one, so nothing would ever clear the spinner. Here the
+   * question is narrower and is about ownership of the flag, not about what may be displayed.
+   */
+  private lookupIsCurrent(capturedEvent: string, capturedFoundation: string): boolean {
+    return this.lastLookedUpEvent === capturedEvent && this.activeFoundationSlug() === capturedFoundation;
+  }
+
   private panelStillShows(capturedEvent: string, capturedFoundation: string): boolean {
     // The FOUNDATION is part of the key, not just the event name. This component stays mounted
     // when an ED switches foundations, campaign-service selects the HubSpot connection by
@@ -1066,6 +1089,7 @@ export class PlanningTabComponent implements OnInit {
     this.hsMatches.set([]);
     this.hsNotFound.set(false);
     this.hsCapped.set(false);
+    this.hsTruncated.set(false);
     // The lookup is what RESOLVES the unknown, so the unconfirmed state clears when one starts.
     this.hsUnconfirmed.set(false);
     this.hsUtm.set(null);
@@ -1077,6 +1101,12 @@ export class PlanningTabComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result: HubSpotUtmLookupResult | null) => {
+          // Two DIFFERENT questions, so two different guards. Releasing the shared in-flight
+          // flag asks "is this still the latest lookup?"; rendering the answer asks the stricter
+          // "does the panel still show this event?".
+          if (this.lookupIsCurrent(capturedEvent, capturedFoundation)) {
+            this.hsSearching.set(false);
+          }
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
           // THREE states, not two. A campaign that exists but has NO utm token configured is a
           // real match — treating it as not-found would offer to CREATE a campaign that already
@@ -1096,21 +1126,30 @@ export class PlanningTabComponent implements OnInit {
             this.hsNotFound.set(true);
             // Set from the SAME response that reported the absence, so the two can never
             // disagree about which search they describe.
-            this.hsCapped.set(result?.capped === true);
+            // hsCapped gates the CREATE, so it takes the union answer: any reason a match might
+            // be hidden is a reason not to offer a non-idempotent write into a shared namespace.
+            this.hsCapped.set(result?.inconclusive === true);
+            // The COPY distinguishes them, because the two remedies differ. Only a truncated
+            // search may say HubSpot matched more than it returned.
+            this.hsTruncated.set(result?.capped === true);
             this.hsStatus.set(
-              result?.capped === true ? 'No match in the campaigns HubSpot returned — but there are more it did not' : 'No matching campaign in HubSpot'
+              result?.capped === true
+                ? 'No match in the campaigns HubSpot returned — but there are more it did not'
+                : result?.inconclusive === true
+                  ? 'No close match among the campaigns HubSpot returned'
+                  : 'No matching campaign in HubSpot'
             );
           }
-          this.hsSearching.set(false);
         },
         error: () => {
-          // Ordered deliberately, and NOT symmetrically with the create's hsCreating. Unlike
-          // that flag, hsSearching is shared across lookups — clearing it unconditionally lets
-          // an OLDER request's failure declare a newer in-flight lookup finished, dropping the
-          // spinner while a request is still running. So it is cleared only for the lookup
-          // that still owns the panel.
+          // hsSearching is shared across lookups, unlike the create's hsCreating: clearing it
+          // unconditionally lets an OLDER request's failure declare a newer in-flight lookup
+          // finished. So it is released only by the lookup that still OWNS it — a narrower
+          // question than whether its answer may be rendered, below.
+          if (this.lookupIsCurrent(capturedEvent, capturedFoundation)) {
+            this.hsSearching.set(false);
+          }
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
-          this.hsSearching.set(false);
           this.hsStatus.set('HubSpot lookup failed');
           // The control is restored, not left cleared. A lookup that FAILED established
           // nothing, and this arm leaves lastLookedUpEvent set — so without it the same event

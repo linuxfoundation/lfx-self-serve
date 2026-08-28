@@ -139,6 +139,12 @@ interface HubSpotUtmResult {
    * campaign-service's own `capped` (`internal/platform/hubspot/campaign.go`).
    */
   capped: boolean;
+  /**
+   * True when a match may exist that this result does not show, for ANY reason — the union of
+   * `capped` and "HubSpot returned rows that the local scorer rejected". It is what a caller
+   * acts on; `capped` alone is the narrower claim that HubSpot truncated.
+   */
+  inconclusive: boolean;
 }
 
 function hsHeaders(): Record<string, string> {
@@ -188,7 +194,7 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
   const capped = (data.total ?? 0) > results.length;
 
   if (results.length === 0) {
-    return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [], capped };
+    return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [], capped, inconclusive: capped };
   }
 
   const queryLower = eventName.toLowerCase();
@@ -208,10 +214,18 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
 
   if (matches.length === 0) {
     // Nothing scored above zero. HubSpot's own fuzzy search DID match these rows, so this is a
-    // local scoring decision, not an absence — and it is reported as capped for the same reason
-    // a truncated page is: a campaign the operator would recognise may be sitting in `results`,
-    // and offering an unqualified create here duplicates it.
-    return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [], capped: capped || results.length > 0 };
+    // local scoring decision, not an absence — INCONCLUSIVE, but not truncation. Reporting it
+    // as `capped` would have the UI state that HubSpot matched more than it returned, which is
+    // false here, and send the operator to narrow a term when the remedy is to check the name.
+    return {
+      found: false,
+      hsUtm: null,
+      campaignName: '',
+      campaignId: null,
+      allMatches: [],
+      capped,
+      inconclusive: capped || results.length > 0,
+    };
   }
 
   const best = matches[0];
@@ -228,6 +242,7 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
     campaignId: best.id,
     allMatches: tokened.map((m) => ({ name: m.name, hsUtm: m.hsUtm })),
     capped,
+    inconclusive: capped,
   };
 }
 
@@ -283,6 +298,7 @@ async function hubspotCreateCampaign(eventName: string): Promise<HubSpotUtmResul
     campaignId,
     allMatches: hsUtm === null ? [] : [{ name: eventName, hsUtm }],
     capped: false,
+    inconclusive: false,
   };
 }
 
@@ -691,6 +707,7 @@ export class CampaignProxyService {
       // Carried to the UI because it changes what `found: false` MEANS. Dropped here, the panel
       // reads "no matches" as "no such campaign" and offers an unqualified create.
       capped: result.capped,
+      inconclusive: result.inconclusive,
     };
   }
 

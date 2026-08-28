@@ -114,16 +114,22 @@ describe('toUtmLookupResult capped', () => {
 
     expect(res.found).toBe(true);
     expect(res.capped).toBe(true);
+    // A truncated search is also inconclusive: capped is a subset of it.
+    expect(res.inconclusive).toBe(true);
   });
 
-  it('reports a scored-out but non-empty result as inconclusive', () => {
+  it('reports a scored-out but non-empty result as inconclusive WITHOUT claiming truncation', () => {
     // Upstream's fuzzy search matched these rows; only the LOCAL scoring rejected them. The
-    // caller acts on not-found by creating a campaign in the LF-global namespace, and one of
-    // these rows may be exactly the campaign that create would duplicate.
+    // caller acts on not-found by creating a campaign in a shared namespace, and one of these
+    // rows may be exactly the campaign that create would duplicate -- so the result is
+    // inconclusive. But HubSpot returned everything it matched, so `capped` must stay false:
+    // the UI would otherwise state that HubSpot truncated a result it did not truncate, and
+    // send the operator to narrow a term when the remedy is to check the name.
     const res = toUtmLookupResult(payload({ id: '1', name: 'Totally Unrelated Thing' }), 'KubeCon NA 2026');
 
     expect(res.found).toBe(false);
-    expect(res.capped).toBe(true);
+    expect(res.inconclusive).toBe(true);
+    expect(res.capped).toBe(false);
   });
 
   it('reports a genuinely empty, complete search as conclusive', () => {
@@ -132,5 +138,6 @@ describe('toUtmLookupResult capped', () => {
 
     expect(res.found).toBe(false);
     expect(res.capped).toBe(false);
+    expect(res.inconclusive).toBe(false);
   });
 });

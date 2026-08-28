@@ -1728,14 +1728,24 @@ export interface HubSpotUtmLookupResult {
   campaign_name: string;
   all_matches: { name: string; hs_utm: string }[];
   /**
-   * True when the search could not see every campaign HubSpot matched.
+   * True when HubSpot matched MORE campaigns than the search returned.
    *
-   * ABSENCE IS THEN NOT PROOF OF NON-EXISTENCE. The search is capped and unpaged, and the UI
-   * acts on `found: false` by offering to create a campaign in the LF-global namespace every
-   * foundation shares — so a campaign below the cap would be duplicated. While this is true the
-   * create must be qualified, not offered outright.
+   * Strictly about TRUNCATION, so the UI can say so truthfully. The search is capped and
+   * unpaged, so a campaign ranked below the cap is invisible here.
    */
   capped: boolean;
+
+  /**
+   * True when a match may exist that this result does not show — for ANY reason.
+   *
+   * The union of `capped` and "upstream returned rows that local scoring rejected". Both mean
+   * absence is not proof of non-existence, which is what the UI acts on: it offers the create
+   * only when this is false, because creating on an inconclusive search duplicates a campaign
+   * in a shared namespace. Kept separate from `capped` so the UI never claims HubSpot truncated
+   * a result it did not truncate — the two answers differ in what the operator should DO
+   * (narrow the term vs check the name), and one flag could not say both.
+   */
+  inconclusive: boolean;
 }
 
 export interface HubSpotUtmCreateResult {

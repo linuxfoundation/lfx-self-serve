@@ -276,18 +276,29 @@ export enum ServerFeatureFlag {
    * since the credential moved into campaign-service's encrypted connection store. With this off
    * the Planning tab's UTM lookup does not work at all.
    *
-   * ONE BEHAVIOUR CHANGES BEYOND THE BACKEND. The legacy path fabricated a utm token
-   * (`id-name`) whenever HubSpot had none, so a campaign with no configured token still appeared
-   * tokenised — and links tagged with that invented value attribute traffic to a campaign
-   * HubSpot cannot report on. Behind this flag a missing token is reported as missing, which the
-   * UI already models (`hs_utm` is `string | null`). Expect fewer apparent tokens, and expect
-   * that to be the correct answer.
+   * TWO BEHAVIOURS CHANGE ON BOTH PATHS, INCLUDING WITH THIS FLAG OFF. This flag switches the
+   * BACKEND; it does not gate either of them.
    *
-   * The create path writes into an LF-GLOBAL namespace — the campaign is visible to every
-   * foundation — and performs no duplicate check, which is why the UI warns before offering it.
+   * 1. The legacy path fabricated a utm token (`id-name`) whenever HubSpot had none, so a
+   *    campaign with no configured token still appeared tokenised — and links tagged with that
+   *    invented value attribute traffic to a campaign HubSpot cannot report on. BOTH paths now
+   *    report a missing token as missing, which the UI already models (`hs_utm` is
+   *    `string | null`). Expect fewer apparent tokens, and expect that to be the correct answer.
+   *    Deliberately not gated: holding it behind a default-off flag keeps a known-wrong value
+   *    in production.
+   * 2. The legacy search limit rose from 10 to HubSpot's per-request maximum, and both paths
+   *    report whether a match may be hidden. The two go together — that signal is what
+   *    suppresses the create offer, and at a limit of 10 nearly every search on a busy portal
+   *    would report inconclusive, leaving an operator unable to create anything.
    *
-   * Safe to turn off: both routes are stateless with respect to this service, so flipping back
-   * restores the previous behaviour, fabricated tokens included.
+   * The create path writes into a PORTAL-WIDE namespace — visible to everyone working in the
+   * HubSpot account the project is connected to, which is not necessarily the LF's own, since
+   * connections are per project with their own token and portal_id — and performs no duplicate
+   * check, which is why the UI warns before offering it.
+   *
+   * Safe to turn off, but NOT a full rollback: both routes are stateless with respect to this
+   * service, so flipping back restores the previous BACKEND. It does not restore fabricated
+   * tokens or the old search limit — those changed on both paths.
    */
   CampaignServiceHubSpotUtm = 'LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM',
 

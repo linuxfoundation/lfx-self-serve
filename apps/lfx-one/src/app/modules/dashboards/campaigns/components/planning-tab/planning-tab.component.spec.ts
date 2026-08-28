@@ -1093,7 +1093,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * capped search has not proved the campaign is absent. Both directions are asserted so the
    * guard cannot be satisfied by suppressing the button unconditionally.
    */
-  it('offers no create when the lookup was capped, and offers one when it was not', () => {
+  it('offers no create when the lookup was inconclusive, and offers one when it was not', () => {
     for (const [capped, wantButton] of [
       [true, false],
       [false, true],
@@ -1101,7 +1101,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
       // A DIFFERENT event name each pass: lookupHubSpot returns early when the event is
       // unchanged, so a repeat with the same name would silently skip the second lookup and
       // assert against the first pass's rendering.
-      runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped }, `KubeCon NA 2026 ${capped}`);
+      runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped, inconclusive: capped }, `KubeCon NA 2026 ${capped}`);
 
       const el = fixture.nativeElement as HTMLElement;
       expect(!!el.querySelector('[data-testid="planning-hubspot-create-btn"]'), `capped=${capped}: create button`).toBe(wantButton);
@@ -1171,6 +1171,48 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     fixture.detectChanges();
 
     expect(instance()['hsUtm'](), "foundation A's token landed on foundation B's panel").toBeFalsy();
+  });
+
+  /**
+   * The spinner must clear even when the user has retyped the url mid-flight.
+   *
+   * `panelStillShows` also asks whether the LIVE url still names the captured event, which goes
+   * false the moment the user types -- while the only request in flight is still this one. Gating
+   * the shared `hsSearching` flag on it therefore freezes the spinner permanently: nothing else
+   * can clear it, because `lookupHubSpot`'s early return means no new lookup starts for an
+   * unchanged event. Releasing the flag asks the narrower "is this still the latest lookup?".
+   */
+  it('clears the search flag when the url was retyped before the answer arrived', () => {
+    const pending = new Subject<unknown>();
+    lookup.mockReturnValue(pending);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+    expect(instance()['hsSearching']()).toBe(true);
+
+    // The user starts typing a different event. The debounce has NOT fired, so no second lookup
+    // exists -- this one is still the only request in flight.
+    (fixture.componentInstance as unknown as { briefForm: { controls: { url: { setValue(v: string): void } } } }).briefForm.controls.url.setValue(
+      'https://events.example.com/some-other-conference-2027'
+    );
+    pending.error(new Error('hubspot down'));
+    fixture.detectChanges();
+
+    expect(instance()['hsSearching'](), 'the spinner froze with no request in flight').toBe(false);
+  });
+
+  /**
+   * An inconclusive-but-not-truncated result must suppress the create just the same, while
+   * saying something TRUE about why. Claiming HubSpot returned fewer than it matched, when it
+   * returned everything, points the operator at narrowing a term instead of checking the name.
+   */
+  it('suppresses the create on an inconclusive result without claiming truncation', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: true }, 'KubeCon NA 2026');
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="planning-hubspot-create-btn"]'), 'create offered on an inconclusive search').toBeNull();
+    const notice = el.querySelector('[data-testid="planning-hubspot-capped"]');
+    expect(notice).not.toBeNull();
+    expect(notice?.textContent, 'claimed truncation that did not happen').not.toMatch(/matched more than it could return/i);
+    expect(notice?.textContent).toMatch(/check HubSpot directly/i);
   });
 
   /**
