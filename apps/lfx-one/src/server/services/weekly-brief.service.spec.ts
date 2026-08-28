@@ -772,6 +772,81 @@ describe('WeeklyBriefService', () => {
       expect(result.current_activity?.source_refs).toEqual([{ id: 'survey:s1', kind: 'other', title: 'Annual Review' }]);
     });
 
+    it('maps notes_added to kind "doc", and its id carries the meeting_scope discriminant so it cannot collide with a document_uploaded event sharing the same document_uid', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeActivityMock.mockResolvedValue({
+        data: [
+          {
+            type: 'notes_added',
+            occurred_at: '2026-01-12T10:00:00Z',
+            committee_uid: 'committee-1',
+            payload: { document_uid: 'shared-uid', name: 'Meeting Notes', document_type: 'file', meeting_scope: 'past' },
+          },
+          // Different upstream uid namespace (committee_document, not v1_past_meeting_attachment)
+          // coincidentally sharing the same raw document_uid — eventKey()'s own rationale for why
+          // committee-activity.service.ts prefixes with document_type/meeting_scope, not just the uid.
+          {
+            type: 'document_uploaded',
+            occurred_at: '2026-01-12T11:00:00Z',
+            committee_uid: 'committee-1',
+            payload: { document_uid: 'shared-uid', name: 'Charter.pdf', document_type: 'file' },
+          },
+        ],
+        page_token: undefined,
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      const refs = result.current_activity?.source_refs ?? [];
+      expect(refs).toEqual([
+        { id: 'note:past:shared-uid', kind: 'doc', title: 'Meeting Notes' },
+        { id: 'document:file:shared-uid', kind: 'doc', title: 'Charter.pdf' },
+      ]);
+      // The whole point of the discriminant — two refs in the same kind, distinct ids.
+      expect(refs[0].id).not.toBe(refs[1].id);
+    });
+
+    it('omits current_activity (rather than publishing a truncated count) when the current week has more than one page of activity', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeActivityMock.mockResolvedValue({
+        data: [
+          {
+            type: 'meeting_held',
+            occurred_at: '2026-01-12T10:00:00Z',
+            committee_uid: 'committee-1',
+            payload: { meeting_id: 'm1', meeting_occurrence_id: 'm1-occ', title: 'Board Sync', password: null },
+          },
+        ],
+        page_token: 'more-events-exist',
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.current_activity).toBeUndefined();
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'get_weekly_brief_current_activity',
+        expect.stringContaining('exceeds one page'),
+        expect.objectContaining({ committee_id: 'committee-1' })
+      );
+    });
+
+    it('renders a genuine quiet week as current_activity present with an empty source_refs array, not absent', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeActivityMock.mockResolvedValue({ data: [], page_token: undefined });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.current_activity).toEqual({
+        window_start: expect.any(String),
+        window_end: expect.any(String),
+        source_refs: [],
+      });
+    });
+
     it('passes currentWeekInProgressWindow().window_start as since, and never briefWindow()', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });

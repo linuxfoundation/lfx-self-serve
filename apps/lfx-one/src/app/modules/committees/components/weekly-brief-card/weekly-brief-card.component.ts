@@ -239,15 +239,17 @@ export class WeeklyBriefCardComponent {
   public readonly isGoverningBoardCommittee: Signal<boolean> = computed(() => isGoverningBoard(this.committee().category));
 
   // Current, in-progress-week activity — a BFF enrichment on the response envelope (like
-  // caller_rating), absent in live mode until committee-service ships in-progress-week counts
-  // (GH-1922). Read from briefResponse, not brief(): it's scoped to a different window than
-  // the brief's own completed week, so it isn't part of WeeklyBrief itself.
+  // caller_rating), sourced server-side from CommitteeActivityService's existing live
+  // meeting/vote/document aggregation (GH-1922), so it's populated identically in mock and live
+  // mode. Read from briefResponse, not brief(): it's scoped to a different window than the
+  // brief's own completed week, so it isn't part of WeeklyBrief itself.
   public readonly currentActivity: Signal<WeeklyBriefCurrentActivitySection[]> = this.initCurrentActivitySections();
 
-  // Distinguishes "the field is absent" (live mode's backend gap — nothing to say) from
-  // "the field is present but every kind is zero" (mock mode, or a real quiet week once live
-  // support ships) — the template must render neither line nor "no activity yet" for the
-  // former, only the latter (GH-1922 Phase 2: "do NOT fabricate ... degrade gracefully").
+  // Distinguishes "the field is absent" (non-governance committee, or the server-side
+  // lookup/fetch degraded — see weekly-brief.service.ts#buildCurrentActivity — nothing to say)
+  // from "the field is present but every kind is zero" (a genuine quiet week) — the template
+  // must render neither line nor "no activity yet" for the former, only the latter (GH-1922:
+  // "do NOT fabricate ... degrade gracefully").
   public readonly hasCurrentActivityData: Signal<boolean> = computed(() => !!this.briefResponse()?.current_activity);
 
   // "This week so far: 1 meeting held, 1 vote closed" / "This week so far: no activity yet".

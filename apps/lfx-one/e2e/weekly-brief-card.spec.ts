@@ -1016,7 +1016,7 @@ test.describe('WG Weekly Brief card — "This week so far" activity tally (GH-19
     await expect(page.getByTestId('weekly-brief-card-current-activity')).toHaveCount(0);
   });
 
-  test('renders nothing (not "no activity yet") when current_activity is absent — the live-mode backend gap', async ({ page }) => {
+  test('renders nothing (not "no activity yet") when current_activity is absent — a server-side degrade', async ({ page }) => {
     await mockCommitteeShell(page, { category: 'Board' });
     await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
 

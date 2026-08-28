@@ -466,7 +466,7 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     return { id, kind, title };
   }
 
-  /** `activityRefs: null` omits `current_activity` entirely — simulates the live-mode backend gap. */
+  /** `activityRefs: null` omits `current_activity` entirely — simulates a server-side degrade (non-governance committee, or a failed lookup/fetch — see weekly-brief.service.ts#buildCurrentActivity). */
   function briefResponse(activityRefs: WeeklyBriefSourceRef[] | null): WeeklyBriefCurrentResponse {
     return {
       brief: {
@@ -599,7 +599,7 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     expect(el.textContent).toContain('no activity yet');
   });
 
-  it('renders nothing at all when current_activity is absent — the live-mode backend gap must not be presented as "no activity yet" (GH-1922)', async () => {
+  it('renders nothing at all when current_activity is absent — a server-side degrade must not be presented as "no activity yet" (GH-1922)', async () => {
     await setup(BOARD_COMMITTEE, null);
 
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]')).toBeNull();

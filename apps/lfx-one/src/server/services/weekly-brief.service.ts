@@ -128,13 +128,17 @@ export function currentWeekInProgressWindow(): { window_start: string; window_en
  * (`WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES`), and an in-progress, not-yet-closed vote isn't that
  * yet. `document_uploaded` and `notes_added` both collapse to kind `doc` — both are "a
  * document-like artifact was added this week," and the tally doesn't need to distinguish
- * committee-document files/folders/links from meeting-attachment notes; their ids are prefixed
- * per source (mirroring `committee-activity.service.ts`'s own `eventKey()` convention) since
- * they're different upstream uid namespaces and could otherwise collide. `survey_published`/
- * `survey_closed` map to kind `other` — not one of `WEEKLY_BRIEF_SOURCE_SECTIONS`' five kinds,
- * but real governance activity the client's existing "other" catch-all already surfaces rather
- * than silently dropping. `member_joined`/`member_left`/other deferred types: `CommitteeActivityService`
- * never actually constructs these today (see `DeferredActivityEvent`'s own doc comment), so this
+ * committee-document files/folders/links from meeting-attachment notes — but their ids DO carry
+ * the same namespace discriminants `committee-activity.service.ts`'s own `eventKey()` uses
+ * (`document_type` / `meeting_scope`), not just a `document_uid`, since — per `ActivityEvent`'s
+ * own doc comments — those are two distinct upstream uid namespaces that could otherwise collide
+ * (e.g. a folder and a meeting-attachment note coincidentally sharing a uid), and a collision here
+ * would produce two refs with the same `id` in the same rendered `doc` section (an Angular
+ * duplicate-`@for`-track-key error, not a silent dedupe). `survey_published`/`survey_closed` map
+ * to kind `other` — not one of `WEEKLY_BRIEF_SOURCE_SECTIONS`' five kinds, but real governance
+ * activity the client's existing "other" catch-all already surfaces rather than silently
+ * dropping. `member_joined`/`member_left`/other deferred types: `CommitteeActivityService` never
+ * actually constructs these today (see `DeferredActivityEvent`'s own doc comment), so this
  * default branch is unreached in practice, not dead by construction.
  */
 function mapActivityEventToCurrentActivityRef(event: ActivityEvent): WeeklyBriefSourceRef | null {
@@ -144,9 +148,9 @@ function mapActivityEventToCurrentActivityRef(event: ActivityEvent): WeeklyBrief
     case 'vote_closed':
       return { id: `vote:${event.payload.vote_uid}`, kind: 'vote', title: event.payload.name };
     case 'document_uploaded':
-      return { id: `document:${event.payload.document_uid}`, kind: 'doc', title: event.payload.name };
+      return { id: `document:${event.payload.document_type}:${event.payload.document_uid}`, kind: 'doc', title: event.payload.name };
     case 'notes_added':
-      return { id: `note:${event.payload.document_uid}`, kind: 'doc', title: event.payload.name };
+      return { id: `note:${event.payload.meeting_scope}:${event.payload.document_uid}`, kind: 'doc', title: event.payload.name };
     case 'survey_published':
     case 'survey_closed':
       return { id: `survey:${event.payload.survey_uid}`, kind: 'other', title: event.payload.title };
@@ -274,43 +278,25 @@ export class WeeklyBriefService {
   private aiService: AiService = new AiService();
 
   /**
-   * GET /committees/:committeeId/weekly-briefs/current
-   *
-   * Upstream's own contract is 200-with-null-brief-and-throttle when no draft
-   * exists yet for the window — a 404 here means "committee not found", a
-   * real error the caller needs to see, not an empty-brief state to paper
-   * over.
+   * GET /committees/:committeeId/weekly-briefs/current — see `fetchBriefResponse` for the
+   * mock/live `brief`/`throttle` contract this builds on.
    */
   public async getCurrentBrief(req: Request, committeeId: string): Promise<WeeklyBriefCurrentResponse> {
-    let response: WeeklyBriefCurrentResponse;
-    if (!this.isLive(req)) {
-      const brief = currentMockBrief(committeeId);
-      response = {
-        brief,
-        throttle: {
-          ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
-          generates_used: 1,
-          regenerations_used: brief.regeneration_count,
-          window_resets_at: nextSundayIso(),
-        },
-      };
-    } else {
-      logger.debug(req, 'get_weekly_brief_current', 'Proxying to committee-service', { committee_id: committeeId });
-      response = await this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
-        req,
-        'LFX_V2_SERVICE',
-        `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
-        'GET'
-      );
-    }
-    // Sourced from CommitteeActivityService's existing live aggregation (GH-1922 rework) — runs
-    // identically in mock and live mode, since that service has no mock/live split of its own.
-    // Only the AI-generated brief_text above still differs between the two branches.
-    const currentActivity = await this.buildCurrentActivity(req, committeeId);
-    if (currentActivity) {
-      response = { ...response, current_activity: currentActivity };
-    }
-    return this.withCallerRating(req, committeeId, response);
+    // current_activity (GH-1922) is sourced from CommitteeActivityService's existing live
+    // aggregation — runs identically in mock and live mode, since that service has no mock/live
+    // split of its own; only fetchBriefResponse's own mock-vs-proxy branch (brief/throttle)
+    // differs between the two. Run in parallel with fetchBriefResponse, not after — the two are
+    // independent reads, so awaiting them sequentially would make this tally's latency fully
+    // additive on top of the brief fetch for no reason.
+    //
+    // Only built here, not inside fetchBriefResponse — every internal caller that reuses that
+    // helper (getActionItems, shareBrief, shareBriefToSlack, resolveRatableBrief) only ever reads
+    // brief/caller_rating off the result, so building the tally for them too would pay a real
+    // upstream fan-out (getCommitteeById, and for a governance committee, CommitteeActivityService's
+    // own multi-call aggregation) for a field they'd discard on every write path (share, rate) and
+    // every read of just the AI-extracted action items.
+    const [response, currentActivity] = await Promise.all([this.fetchBriefResponse(req, committeeId), this.buildCurrentActivity(req, committeeId)]);
+    return currentActivity ? { ...response, current_activity: currentActivity } : response;
   }
 
   /**
@@ -493,7 +479,7 @@ export class WeeklyBriefService {
    * (a miss, same as an actual cache miss) — that narrower case isn't covered here.
    */
   public async getActionItems(req: Request, committeeId: string): Promise<GetWeeklyBriefActionItemsResponse> {
-    const { brief } = await this.getCurrentBrief(req, committeeId);
+    const { brief } = await this.fetchBriefResponse(req, committeeId);
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state) || !brief.brief_text?.trim()) {
       return { items: [] };
     }
@@ -728,7 +714,7 @@ export class WeeklyBriefService {
    * this service — impersonation still shows staff what the target sees.
    */
   public async shareBrief(req: Request, committeeId: string, expectedRevision: number): Promise<ShareWeeklyBriefResult> {
-    const { brief } = await this.getCurrentBrief(req, committeeId);
+    const { brief } = await this.fetchBriefResponse(req, committeeId);
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', committeeId, {
         operation: 'share_weekly_brief',
@@ -966,7 +952,7 @@ export class WeeklyBriefService {
       });
     }
 
-    const { brief } = await this.getCurrentBrief(req, committeeId);
+    const { brief } = await this.fetchBriefResponse(req, committeeId);
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', committeeId, {
         operation: 'share_weekly_brief_slack',
@@ -1136,6 +1122,42 @@ export class WeeklyBriefService {
   }
 
   /**
+   * Shared by `getCurrentBrief` and every internal caller that only needs `brief`/`throttle`/
+   * `caller_rating` — `getActionItems`, `shareBrief`, `shareBriefToSlack`, `resolveRatableBrief`.
+   * Deliberately does NOT build `current_activity` (see `getCurrentBrief`'s own doc comment for
+   * why that stays exclusive to the actual `GET /current` read path — those four callers would
+   * otherwise pay a real upstream fan-out for a field they immediately discard).
+   *
+   * Upstream's own contract is 200-with-null-brief-and-throttle when no draft exists yet for the
+   * window — a 404 here means "committee not found", a real error the caller needs to see, not an
+   * empty-brief state to paper over.
+   */
+  private async fetchBriefResponse(req: Request, committeeId: string): Promise<WeeklyBriefCurrentResponse> {
+    let response: WeeklyBriefCurrentResponse;
+    if (!this.isLive(req)) {
+      const brief = currentMockBrief(committeeId);
+      response = {
+        brief,
+        throttle: {
+          ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
+          generates_used: 1,
+          regenerations_used: brief.regeneration_count,
+          window_resets_at: nextSundayIso(),
+        },
+      };
+    } else {
+      logger.debug(req, 'get_weekly_brief_current', 'Proxying to committee-service', { committee_id: committeeId });
+      response = await this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
+        'GET'
+      );
+    }
+    return this.withCallerRating(req, committeeId, response);
+  }
+
+  /**
    * Builds `WeeklyBriefCurrentResponse.current_activity` (GH-1922) from
    * `CommitteeActivityService.getCommitteeActivity` — the same live meeting/vote/document
    * aggregation that powers the committee "Recent Activity" feed, filtered to the current,
@@ -1145,6 +1167,17 @@ export class WeeklyBriefService {
    * error, matching the client's existing absent-vs-present distinction between "couldn't
    * determine" and "genuinely zero activity this week" (weekly-brief-card.component.ts's
    * `hasCurrentActivityData`).
+   *
+   * `limit: ACTIVITY_FEED_MAX_PAGE_SIZE` is a single, unfollowed page — `getCommitteeActivity`
+   * hard-rejects any larger `limit`, so that's the ceiling one call can ever return. A returned
+   * `page_token` means real events exist beyond it; unlike the paginated Recent Activity feed,
+   * this consumer renders a *count* ("N documents added"), so silently truncating would state a
+   * wrong number as fact — worse than the list-truncation the per-leg `saturated` flags already
+   * accept elsewhere in `CommitteeActivityService`. Treated as "couldn't determine" (`undefined`),
+   * not published truncated, matching this method's own fail-soft contract. Not looped to
+   * exhaustion — `decodePageToken`/`ActivityPageCursor` aren't exposed for a caller outside
+   * `committee-activity.service.ts` to do that today, and a committee clearing 50 events in one
+   * week is already an edge case this v1 tally accepts skipping.
    */
   private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | undefined> {
     try {
@@ -1152,10 +1185,16 @@ export class WeeklyBriefService {
       if (!isGoverningBoard(committee.category)) return undefined;
 
       const { window_start, window_end } = currentWeekInProgressWindow();
-      const { data } = await this.committeeActivityService.getCommitteeActivity(req, committeeId, {
+      const { data, page_token: pageToken } = await this.committeeActivityService.getCommitteeActivity(req, committeeId, {
         since: window_start,
         limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
       });
+      if (pageToken) {
+        logger.warning(req, 'get_weekly_brief_current_activity', 'Current-week activity exceeds one page — omitting rather than publishing a truncated count', {
+          committee_id: committeeId,
+        });
+        return undefined;
+      }
 
       const sourceRefs = data.reduce<WeeklyBriefSourceRef[]>((refs, event) => {
         const ref = mapActivityEventToCurrentActivityRef(event);
@@ -1221,7 +1260,7 @@ export class WeeklyBriefService {
     expectedRevision: number,
     operation: string
   ): Promise<{ brief: WeeklyBrief; callerRating: WeeklyBriefRating | null }> {
-    const response = await this.getCurrentBrief(req, committeeId);
+    const response = await this.fetchBriefResponse(req, committeeId);
     const { brief } = response;
     if (!brief || brief.uid !== briefUid || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', briefUid, { operation, service: 'weekly_brief_service' });

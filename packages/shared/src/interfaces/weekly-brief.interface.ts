@@ -185,10 +185,13 @@ export interface WeeklyBriefCurrentResponse {
   /**
    * BFF-side enrichment (not part of upstream's contract, same as `caller_rating`): a raw
    * count of activity in the current, not-yet-closed week — distinct from `brief`'s own
-   * completed-week window (GH-1922). Only populated in mock mode: there is no upstream
-   * committee-service endpoint for in-progress-week counts yet, and live mode is a pure
-   * proxy passthrough that never fabricates one. Absent (not null) in live mode until that
-   * upstream support exists — see `weekly-brief.service.ts#getCurrentBrief`.
+   * completed-week window (GH-1922). Sourced from `CommitteeActivityService`'s existing live
+   * meeting/vote/document aggregation (not a weekly-brief-specific upstream call), so it's
+   * populated identically in mock and live mode — see
+   * `weekly-brief.service.ts#buildCurrentActivity`. Absent (not null) when the committee isn't
+   * governance-classified, the underlying lookup/fetch fails, or the current week's activity
+   * exceeds what a single upstream page can return — never fabricated, and never a
+   * silently-truncated count.
    */
   current_activity?: WeeklyBriefCurrentActivity;
 }
