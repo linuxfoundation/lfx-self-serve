@@ -31,6 +31,13 @@ export const MEETING_PASSWORD_HEADER = 'x-meeting-password';
 export const QUERY_SERVICE_FILTERS_OR_BATCH_SIZE = 100;
 
 /**
+ * Maximum number of access-check tuples per POST request to the access-check service.
+ * @description Bounds OpenFGA payload size and latency. When the caller has more than this many
+ * tuples to check, split into chunks of this size and fan out with Promise.all.
+ */
+export const ACCESS_CHECK_BATCH_SIZE = 100;
+
+/**
  * NATS configuration constants
  * @description Configuration for NATS messaging system used for inter-service communication
  * @readonly

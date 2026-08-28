@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ACCESS_CHECK_BATCH_SIZE } from '@lfx-one/shared/constants';
 import {
   AccessCheckAccessType,
   AccessCheckApiRequest,
@@ -199,6 +200,10 @@ export class AccessCheckService {
   /**
    * Performs the access-check request/response round trip with no error handling — callers decide
    * whether to degrade (`checkAccess`) or propagate (`checkAccessStrict`).
+   *
+   * When the resource count exceeds ACCESS_CHECK_BATCH_SIZE the tuples are split into bounded
+   * chunks and fanned out with Promise.all, keeping each POST payload small so OpenFGA latency
+   * stays proportional to batch size rather than growing unbounded with page size.
    */
   private async performCheck(
     req: Request,
@@ -207,6 +212,44 @@ export class AccessCheckService {
     startTime: number,
     options?: ApiRequestOptions
   ): Promise<Map<string, boolean>> {
+    if (resources.length <= ACCESS_CHECK_BATCH_SIZE) {
+      const resultMap = await this.performSingleCheck(req, resources, options);
+      logger.success(req, operationName, startTime, {
+        request_count: resources.length,
+        granted_count: Array.from(resultMap.values()).filter(Boolean).length,
+        batch_count: 1,
+      });
+      return resultMap;
+    }
+
+    const chunks: AccessCheckRequest[][] = [];
+    for (let i = 0; i < resources.length; i += ACCESS_CHECK_BATCH_SIZE) {
+      chunks.push(resources.slice(i, i + ACCESS_CHECK_BATCH_SIZE));
+    }
+
+    const batchResults = await Promise.all(chunks.map((chunk) => this.performSingleCheck(req, chunk, options)));
+
+    const resultMap = new Map<string, boolean>();
+    for (const batchMap of batchResults) {
+      for (const [key, value] of batchMap) {
+        resultMap.set(key, value);
+      }
+    }
+
+    logger.success(req, operationName, startTime, {
+      request_count: resources.length,
+      granted_count: Array.from(resultMap.values()).filter(Boolean).length,
+      batch_count: chunks.length,
+    });
+
+    return resultMap;
+  }
+
+  /**
+   * Sends a single POST to the access-check service and parses the response into a map.
+   * No error handling — `performCheck` owns that boundary.
+   */
+  private async performSingleCheck(req: Request, resources: AccessCheckRequest[], options?: ApiRequestOptions): Promise<Map<string, boolean>> {
     // Transform requests to the expected API format
     const apiRequests = resources.map((resource) => `${resource.resource}:${resource.id}#${resource.access}`);
 
@@ -263,11 +306,6 @@ export class AccessCheckService {
       // Fail closed when the upstream response omits this tuple
       resultMap.set(`${resource.id}#${resource.access}`, result?.hasAccess ?? false);
     }
-
-    logger.success(req, operationName, startTime, {
-      request_count: resources.length,
-      granted_count: Array.from(resultMap.values()).filter(Boolean).length,
-    });
 
     return resultMap;
   }
