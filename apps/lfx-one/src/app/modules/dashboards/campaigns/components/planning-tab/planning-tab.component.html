@@ -77,7 +77,22 @@
                   data-testid="planning-hubspot-utm-value" />
               }
 
-              @if (hsNotFound() && !hsUtm()) {
+              <!--
+                A CAPPED search did not prove the campaign is absent, so it gets a different
+                answer entirely: no create button. Offering one here duplicates a campaign in a
+                namespace every foundation shares, and the duplicate cannot be removed from
+                this UI.
+              -->
+              @if (hsNotFound() && !hsUtm() && hsCapped()) {
+                <div class="rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="planning-hubspot-capped">
+                  <p class="text-sm text-amber-700">
+                    No match for "{{ lastLookedUpEvent }}" among the campaigns HubSpot returned — but it matched more than it could return, so the campaign may
+                    still exist. Search a narrower term, or check HubSpot directly, before creating one.
+                  </p>
+                </div>
+              }
+
+              @if (hsNotFound() && !hsUtm() && !hsCapped()) {
                 <!--
                   The exposure warning is REQUIRED by the upstream contract, not decoration.
                   HubSpot's campaign namespace is the whole LF portal, so a campaign created here
@@ -107,6 +122,23 @@
 
               @if (hsStatus()) {
                 <p [class]="'text-xs ' + (hsUtm() ? 'text-green-600' : 'text-amber-600')" data-testid="planning-hubspot-status">{{ hsStatus() }}</p>
+              }
+
+              <!--
+                Only shown while the create outcome is UNKNOWN. The create offer is deliberately
+                withdrawn there — the campaign may already exist — so a re-check is the only
+                action that can establish what happened, and retyping the same url cannot start
+                one.
+              -->
+              @if (hsUnconfirmed()) {
+                <button
+                  type="button"
+                  (click)="recheckHubSpot()"
+                  [disabled]="hsSearching() || hsCreating()"
+                  class="self-start rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-gray-400 disabled:opacity-50"
+                  data-testid="planning-hubspot-recheck-btn">
+                  {{ hsSearching() ? 'Checking...' : 'Check HubSpot again' }}
+                </button>
               }
 
               @if (hsHasAlternatives()) {

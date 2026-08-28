@@ -530,3 +530,77 @@ describe('CampaignProxyService legacy platform gate', () => {
     expect(text).toContain('google-ads');
   });
 });
+
+/**
+ * The HubSpot campaign lookup. Two contracts are load-bearing and neither is visible from the
+ * shape of the result: a token this code did not receive from HubSpot must never be invented,
+ * and a capped search must say so rather than pass as proof of absence.
+ */
+describe('CampaignProxyService HubSpot campaign lookup', () => {
+  let service: CampaignProxyService;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    service = new CampaignProxyService();
+    // Every test in this block MUST have the stub installed before it runs. `hubspotSearchCampaign`
+    // calls the real global fetch, so a test sitting outside this beforeEach would reach HubSpot
+    // for real on any machine with HUBSPOT_ACCESS_TOKEN set.
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('HUBSPOT_ACCESS_TOKEN', 'test-hs-token');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  function hsResponds(body: unknown): void {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) });
+  }
+
+  it('reports a campaign with no hs_utm as having no token, rather than inventing one', async () => {
+    // `${id}-${name}` is not a token HubSpot ever issued. A link built from it attributes traffic
+    // to a campaign HubSpot cannot report on, so the spend LOOKS tracked while the attribution
+    // goes nowhere — strictly worse than saying the token is absent.
+    hsResponds({ total: 1, results: [{ id: '42', properties: { hs_name: 'KubeCon EU 2026' } }] });
+
+    const result = await service.lookupHubSpotUtm(req, 'KubeCon EU 2026');
+
+    expect(result.hs_utm).toBeNull();
+    expect(JSON.stringify(result)).not.toContain('42-KubeCon');
+    // And it is not offered as a selectable alternative either: the picker writes the chosen
+    // token into the field, so a tokenless row has nothing to select.
+    expect(result.all_matches).toEqual([]);
+  });
+
+  it('carries a real hs_utm through untouched', async () => {
+    // The other direction, so the guard above cannot be satisfied by nulling every token.
+    hsResponds({ total: 1, results: [{ id: '42', properties: { hs_name: 'KubeCon EU 2026', hs_utm: 'kubecon-eu-2026' } }] });
+
+    const result = await service.lookupHubSpotUtm(req, 'KubeCon EU 2026');
+
+    expect(result.hs_utm).toBe('kubecon-eu-2026');
+    expect(result.found).toBe(true);
+  });
+
+  it('reports capped when HubSpot matched more campaigns than it returned', async () => {
+    hsResponds({ total: 250, results: [{ id: '1', properties: { hs_name: 'Unrelated', hs_utm: 'u' } }] });
+
+    const result = await service.lookupHubSpotUtm(req, 'KubeCon EU 2026');
+
+    expect(result.capped).toBe(true);
+  });
+
+  it('does not report capped on a complete result set', async () => {
+    // Derived from HubSpot's total, not from the returned count: an exactly-full page and a
+    // truncated one are the same length, and a warning that never clears is one operators learn
+    // to ignore.
+    hsResponds({ total: 0, results: [] });
+
+    const result = await service.lookupHubSpotUtm(req, 'KubeCon EU 2026');
+
+    expect(result.capped).toBe(false);
+    expect(result.found).toBe(false);
+  });
+});

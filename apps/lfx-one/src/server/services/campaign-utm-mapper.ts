@@ -75,7 +75,11 @@ export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, quer
     .sort((a, b) => b.score - a.score);
 
   if (scored.length === 0) {
-    return { found: false, hs_utm: null, campaign_name: '', all_matches: [] };
+    // Nothing scored. Upstream's fuzzy search DID match these rows, so when it returned any, this
+    // is a local scoring decision rather than an absence — reported as capped for the same reason
+    // a truncated page is, since the caller acts on not-found by creating a campaign in the
+    // LF-global namespace and one of those rows may be the campaign it would duplicate.
+    return { found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: payload.capped || payload.campaigns.length > 0 };
   }
 
   const best = scored[0].campaign;
@@ -86,6 +90,8 @@ export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, quer
     all_matches: scored
       .map((s) => ({ name: s.campaign.name, hs_utm: utmTokenOf(s.campaign) }))
       .filter((m): m is { name: string; hs_utm: string } => m.hs_utm !== null),
+    // Carried through because it changes what a not-found answer MEANS downstream.
+    capped: payload.capped,
   };
 }
 

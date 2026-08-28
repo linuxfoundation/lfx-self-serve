@@ -121,6 +121,22 @@ export class PlanningTabComponent implements OnInit {
   protected readonly hsCreating = signal(false);
   protected readonly hsStatus = signal<string | null>(null);
   protected readonly hsNotFound = signal(false);
+  /**
+   * A create whose outcome could not be established.
+   *
+   * Distinct from a plain status string because it drives a CONTROL, not just copy: it is the
+   * one state in which the create offer has been withdrawn but the operator still has work to
+   * do, and a re-check is the only action that can resolve it.
+   */
+  protected readonly hsUnconfirmed = signal(false);
+  /**
+   * The lookup could not see every campaign HubSpot matched, so "not found" is INCONCLUSIVE.
+   *
+   * Creating on an inconclusive search duplicates a campaign in the LF-global namespace every
+   * foundation shares, and the duplicate cannot be removed from this UI. The panel asks for a
+   * narrower term instead of offering the create.
+   */
+  protected readonly hsCapped = signal(false);
   protected readonly hsMatches = signal<{ name: string; hs_utm: string }[]>([]);
   /**
    * Whether the match picker has anything to offer.
@@ -503,15 +519,39 @@ export class PlanningTabComponent implements OnInit {
     this.hsStatus.set(`Selected: ${name}`);
   }
 
+  /**
+   * Re-run the HubSpot lookup for the event already in the field.
+   *
+   * This exists because an unconfirmed create WITHDRAWS the create offer — the campaign may
+   * already have been written, so re-offering it would invite a duplicate in a namespace every
+   * foundation shares. That leaves a fresh lookup as the only way to establish what actually
+   * happened, and `lookupHubSpot` returns early while the event is unchanged, so retyping the
+   * same url is a no-op. Without this control the operator is told to check HubSpot and try
+   * again with nothing on the page able to try.
+   */
+  protected recheckHubSpot(): void {
+    const event = this.lastLookedUpEvent;
+    if (!event || this.hsSearching() || this.hsCreating()) return;
+    // Cleared so lookupHubSpot's own early return does not swallow this deliberate re-check.
+    this.lastLookedUpEvent = '';
+    this.lookupHubSpot(event);
+  }
+
   protected createInHubSpot(): void {
     if (!this.lastLookedUpEvent) return;
     this.hsCreating.set(true);
     this.hsStatus.set(null);
+    // Captured for the same reason the lookup captures it: the create is slow enough for the
+    // operator to retype the url and start a lookup for a DIFFERENT event while it is in flight.
+    // Without this, a create for event A writes A's token into event B's panel, or withdraws the
+    // create offer B's own lookup just raised.
+    const capturedEvent = this.lastLookedUpEvent;
     this.campaignService
-      .createHubSpotUtm(this.activeFoundationSlug(), this.lastLookedUpEvent)
+      .createHubSpotUtm(this.activeFoundationSlug(), capturedEvent)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
+          if (this.lastLookedUpEvent !== capturedEvent) return;
           // `created` alone decides success. HubSpot assigns the token, and not necessarily by
           // the time the create returns — so requiring hs_utm too would report a campaign that
           // WAS created as a failure, leave the Create button up, and invite a retry that writes
@@ -522,6 +562,7 @@ export class PlanningTabComponent implements OnInit {
               this.hsUtm.set(result.hs_utm);
             }
             this.hsNotFound.set(false);
+            this.hsUnconfirmed.set(false);
             this.hsStatus.set(
               result.hs_utm ? `Created: ${result.campaign_name}` : `Created: ${result.campaign_name} — HubSpot has not assigned a UTM token yet`
             );
@@ -529,11 +570,13 @@ export class PlanningTabComponent implements OnInit {
             // Same reasoning as the error arm: without a `created` flag the outcome is unknown,
             // so the action is withdrawn rather than offered again.
             this.hsNotFound.set(false);
+            this.hsUnconfirmed.set(true);
             this.hsStatus.set('The campaign may or may not have been created — check HubSpot before trying again.');
           }
           this.hsCreating.set(false);
         },
         error: () => {
+          if (this.lastLookedUpEvent !== capturedEvent) return;
           // The outcome is UNKNOWN, not failed. Upstream reports an id-less 2xx as an error
           // precisely because the campaign may already exist, and every other failure is
           // classified unconfirmed for the same reason — so leaving the button up would invite
@@ -542,6 +585,7 @@ export class PlanningTabComponent implements OnInit {
           // Clearing hsNotFound hides the action. Recovering needs a fresh lookup, which is the
           // only thing that can establish what actually happened.
           this.hsNotFound.set(false);
+          this.hsUnconfirmed.set(true);
           this.hsStatus.set('The campaign may or may not have been created — check HubSpot before trying again.');
           this.hsCreating.set(false);
         },
@@ -983,6 +1027,9 @@ export class PlanningTabComponent implements OnInit {
     this.hsStatus.set(null);
     this.hsMatches.set([]);
     this.hsNotFound.set(false);
+    this.hsCapped.set(false);
+    // The lookup is what RESOLVES the unknown, so the unconfirmed state clears when one starts.
+    this.hsUnconfirmed.set(false);
     this.hsUtm.set(null);
 
     const capturedEvent = eventName;
@@ -1008,7 +1055,12 @@ export class PlanningTabComponent implements OnInit {
             this.hsStatus.set(`Found: ${result.campaign_name} — no UTM token set in HubSpot`);
           } else {
             this.hsNotFound.set(true);
-            this.hsStatus.set('No matching campaign in HubSpot');
+            // Set from the SAME response that reported the absence, so the two can never
+            // disagree about which search they describe.
+            this.hsCapped.set(result?.capped === true);
+            this.hsStatus.set(
+              result?.capped === true ? 'No match in the campaigns HubSpot returned — but there are more it did not' : 'No matching campaign in HubSpot'
+            );
           }
           this.hsSearching.set(false);
         },

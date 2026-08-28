@@ -6,7 +6,10 @@ import { describe, expect, it } from 'vitest';
 
 import { toUtmCreateResult, toUtmLookupResult } from './campaign-utm-mapper';
 
-const payload = (...campaigns: { id: string; name: string; utm?: string }[]): CampaignServiceHubSpotCampaigns => ({ campaigns });
+// capped defaults to false so existing cases read as complete searches; the capped-specific
+// tests below pass it explicitly.
+const payload = (...campaigns: { id: string; name: string; utm?: string }[]): CampaignServiceHubSpotCampaigns => ({ campaigns, capped: false });
+const cappedPayload = (...campaigns: { id: string; name: string; utm?: string }[]): CampaignServiceHubSpotCampaigns => ({ campaigns, capped: true });
 
 describe('toUtmLookupResult', () => {
   it('picks the exact-name match as best', () => {
@@ -102,5 +105,32 @@ describe('toUtmCreateResult', () => {
 
     expect(res.created).toBe(true);
     expect(res.hs_utm).toBeNull();
+  });
+});
+
+describe('toUtmLookupResult capped', () => {
+  it('carries capped through on a found result', () => {
+    const res = toUtmLookupResult(cappedPayload({ id: '1', name: 'KubeCon NA 2026', utm: 'kubecon-na-2026' }), 'KubeCon NA 2026');
+
+    expect(res.found).toBe(true);
+    expect(res.capped).toBe(true);
+  });
+
+  it('reports a scored-out but non-empty result as inconclusive', () => {
+    // Upstream's fuzzy search matched these rows; only the LOCAL scoring rejected them. The
+    // caller acts on not-found by creating a campaign in the LF-global namespace, and one of
+    // these rows may be exactly the campaign that create would duplicate.
+    const res = toUtmLookupResult(payload({ id: '1', name: 'Totally Unrelated Thing' }), 'KubeCon NA 2026');
+
+    expect(res.found).toBe(false);
+    expect(res.capped).toBe(true);
+  });
+
+  it('reports a genuinely empty, complete search as conclusive', () => {
+    // The one case where offering the create is legitimate: nothing matched, and nothing hidden.
+    const res = toUtmLookupResult(payload(), 'KubeCon NA 2026');
+
+    expect(res.found).toBe(false);
+    expect(res.capped).toBe(false);
   });
 });

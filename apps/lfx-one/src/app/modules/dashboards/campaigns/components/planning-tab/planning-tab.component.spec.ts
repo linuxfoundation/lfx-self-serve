@@ -1077,16 +1077,100 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     return fixture.componentInstance as unknown as Record<string, { set(v: unknown): void } & (() => unknown)>;
   }
 
-  function runLookup(result: unknown): void {
+  function runLookup(result: unknown, eventName = 'KubeCon NA 2026'): void {
     lookup.mockReturnValue(
       new Observable((s) => {
         s.next(result);
         s.complete();
       })
     );
-    (fixture.componentInstance as unknown as { lookupHubSpot(name: string): void }).lookupHubSpot('KubeCon NA 2026');
+    (fixture.componentInstance as unknown as { lookupHubSpot(name: string): void }).lookupHubSpot(eventName);
     fixture.detectChanges();
   }
+
+  /**
+   * The create is the whole hazard: it writes into a namespace every foundation shares, and a
+   * capped search has not proved the campaign is absent. Both directions are asserted so the
+   * guard cannot be satisfied by suppressing the button unconditionally.
+   */
+  it('offers no create when the lookup was capped, and offers one when it was not', () => {
+    for (const [capped, wantButton] of [
+      [true, false],
+      [false, true],
+    ] as const) {
+      // A DIFFERENT event name each pass: lookupHubSpot returns early when the event is
+      // unchanged, so a repeat with the same name would silently skip the second lookup and
+      // assert against the first pass's rendering.
+      runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped }, `KubeCon NA 2026 ${capped}`);
+
+      const el = fixture.nativeElement as HTMLElement;
+      expect(!!el.querySelector('[data-testid="planning-hubspot-create-btn"]'), `capped=${capped}: create button`).toBe(wantButton);
+      expect(!!el.querySelector('[data-testid="planning-hubspot-capped"]'), `capped=${capped}: capped notice`).toBe(!wantButton);
+    }
+  });
+
+  /**
+   * An unconfirmed create withdraws the create offer, deliberately — the campaign may already
+   * exist. That leaves a fresh lookup as the only way to establish what happened, and
+   * `lookupHubSpot` returns early while the event is unchanged, so retyping the same url is a
+   * no-op. Without this control the operator is told to check and try again with nothing on the
+   * page able to try.
+   */
+  it('offers a re-check after an unconfirmed create, and the re-check actually runs a lookup', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    create.mockReturnValue(
+      new Observable((s) => {
+        s.next({ created: false });
+        s.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    // The offer is withdrawn and the unknown is surfaced as a control, not just copy.
+    expect(instance()['hsNotFound']()).toBe(false);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="planning-hubspot-create-btn"]')).toBeNull();
+    const recheck = el.querySelector('[data-testid="planning-hubspot-recheck-btn"]') as HTMLButtonElement | null;
+    expect(recheck).not.toBeNull();
+
+    // And it must actually issue a lookup — clearing lastLookedUpEvent is what defeats the
+    // early return, so a re-check that forgot to would silently do nothing.
+    const before = lookup.mock.calls.length;
+    lookup.mockReturnValue(
+      new Observable((s) => {
+        s.next({ found: true, hs_utm: 'kubecon-na-2026', campaign_name: 'KubeCon NA 2026', all_matches: [] });
+        s.complete();
+      })
+    );
+    recheck!.click();
+    fixture.detectChanges();
+
+    expect(lookup.mock.calls.length).toBe(before + 1);
+    expect(instance()['hsUtm']()).toBe('kubecon-na-2026');
+    // Resolved, so the re-check control goes away.
+    expect(instance()['hsUnconfirmed']()).toBe(false);
+  });
+
+  /**
+   * The create is slow enough for the operator to retype the url and start a lookup for a
+   * different event while it is in flight. Event A's answer must not land on event B's panel.
+   */
+  it('drops a create answer for an event the operator has already left', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+
+    const late = new Subject<unknown>();
+    create.mockReturnValue(late);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    // The operator moves on before the create answers.
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = 'Some Other Event';
+    late.next({ created: true, hs_utm: 'event-a-utm', campaign_name: 'KubeCon NA 2026' });
+    fixture.detectChanges();
+
+    expect(instance()['hsUtm']()).toBeFalsy();
+    expect(String(instance()['hsStatus']() ?? '')).not.toContain('KubeCon NA 2026');
+  });
 
   /**
    * A campaign that EXISTS but has no token is a real match. Offering to create it would
