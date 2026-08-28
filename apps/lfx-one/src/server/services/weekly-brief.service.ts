@@ -1176,15 +1176,24 @@ export class WeeklyBriefService {
    * committee's newest `fetchSize` rows by `updated_desc` and filter to the window in memory —
    * their own `saturated` flag reflects whether the committee has more than `fetchSize` *lifetime*
    * notes/surveys, not whether THIS WEEK's activity was truncated. Gating on that would silently
-   * hide the tally for exactly the long-lived, active committees it exists to help. Instead, gate
-   * on `data.length` — the merged, window-filtered, already-capped-at-`limit` result: only when it
-   * actually fills the page (`>= limit`) can real in-window rows have been cut. Unlike the
-   * paginated Recent Activity feed, this consumer renders a *count* ("N documents added"), so
-   * silently truncating would state a wrong number as fact — treated as "couldn't determine"
-   * (`undefined`) instead, matching this method's own fail-soft contract. Not looped to
-   * exhaustion — `decodePageToken`/`ActivityPageCursor` aren't exposed for a caller outside
-   * `committee-activity.service.ts` to do that today, and a committee generating 50 in-window
-   * events in one week is already an edge case this v1 tally accepts skipping.
+   * hide the tally for exactly the long-lived, active committees it exists to help.
+   *
+   * Gate on `data.length` instead — the merged, window-filtered, already-capped-at-`limit` result:
+   * when it fills the page (`>= limit`), real in-window rows may have been cut, so this is treated
+   * as "couldn't determine" (`undefined`) rather than a truncated count stated as fact, matching
+   * this method's own fail-soft contract.
+   *
+   * Known v1 residual (accepted, not solved — same class of gap `committee-activity.service.ts`'s
+   * own "Known v1 limitation"/FGA-post-filter comments already document for this exact endpoint):
+   * `data.length < limit` is NOT a airtight completeness proof for the three legs that DO push
+   * `since` upstream (meetings/votes/documents) — `CommitteeActivityService`'s own docs note FGA
+   * access-checking runs after OpenSearch paginates, so one of those legs can come back under
+   * `fetchSize` visible rows on a single fetched page while `saturated` is still true, i.e. an
+   * under-count this guard won't catch. Closing that fully would need `getCommitteeActivity` to
+   * expose a window-bounded-only saturation signal (excluding notes/surveys) it doesn't return
+   * today — not done here to avoid changing the public contract of an endpoint the real "Recent
+   * Activity" feed also consumes, for a v1 tally where a committee generating ~50 in-window events
+   * in one week, right at the FGA-thinning boundary, is already a narrow edge case.
    */
   private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | undefined> {
     try {
