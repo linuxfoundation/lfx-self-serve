@@ -757,7 +757,16 @@ export class CampaignsComponent {
    * `sourceEmailId`; the slug because briefs are project-scoped and authorised per project.
    */
   protected readonly canStageEmail = computed(
-    () => this.emailBriefOutput() !== null && this.selectedEmailTemplateId() !== '' && this.activeFoundationSlug() !== '' && this.emailStaging() !== 'staging'
+    () =>
+      this.emailBriefOutput() !== null &&
+      this.selectedEmailTemplateId() !== '' &&
+      this.activeFoundationSlug() !== '' &&
+      // The audience is a real upstream precondition, not just UI copy: campaign-service's
+      // `resolveBuiltAudience` refuses to stage when the brief has no BUILT audience. Without
+      // this the Stage button is enabled, the HubSpot draft work begins, and the refusal comes
+      // back as a generic staging error after the fact.
+      this.emailAudience() !== null &&
+      this.emailStaging() !== 'staging'
   );
 
   /**
@@ -1147,6 +1156,7 @@ export class CampaignsComponent {
    */
   protected onEmailProceedToImplementation(brief: CampaignBriefOutput): void {
     this.emailBriefOutput.set(brief);
+    this.resetEmailBriefDerivedState();
     this.selectedEmailTab.set('implementation');
     // Load the picker's options on ARRIVAL rather than on first keystroke, so the tab opens with
     // the portal's most recently updated templates already listed. Someone staging a send usually
@@ -2174,6 +2184,27 @@ export class CampaignsComponent {
     this.implementationDraft.set(null);
     this.selectedTab.set('planning');
     this.emailBriefOutput.set(null);
+    this.resetEmailBriefDerivedState();
     this.selectedEmailTab.set('planning');
+  }
+
+  /**
+   * Drop everything derived from the PREVIOUS email brief.
+   *
+   * `emailBriefId` is the one that matters: `ensureEmailBriefId` returns the cached id when it is
+   * set, so leaving it behind makes the audience build, the copy generation and the staged draft
+   * all target the previous event's brief row -- silently, because every call still succeeds. The
+   * rest are cleared for the ordinary reason that they describe a brief that is no longer on screen.
+   */
+  private resetEmailBriefDerivedState(): void {
+    this.emailBriefId.set('');
+    this.emailAudience.set(null);
+    this.emailAudienceState.set('idle');
+    this.emailAudienceMessage.set('');
+    this.emailCopy.set(null);
+    this.emailCopyState.set('idle');
+    this.emailCopyError.set('');
+    this.emailStaging.set('idle');
+    this.emailStagingMessage.set('');
   }
 }

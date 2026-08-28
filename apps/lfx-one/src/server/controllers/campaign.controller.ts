@@ -42,7 +42,6 @@ import { CampaignMetricsService, LinkedInMetricsService, MetaMetricsService, Red
 import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
-import { AiService } from '../services/ai.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
@@ -79,7 +78,6 @@ const NUMERIC_ID_RE = /^\d+$/;
 
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
-  private readonly aiService = new AiService();
   private readonly campaignServiceClient = new CampaignServiceClient();
   private readonly metricsService = new CampaignMetricsService();
   private readonly linkedInMetricsService = new LinkedInMetricsService();
@@ -582,7 +580,6 @@ export class CampaignController {
       next(error);
     }
   }
-
 
   public async persistBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {

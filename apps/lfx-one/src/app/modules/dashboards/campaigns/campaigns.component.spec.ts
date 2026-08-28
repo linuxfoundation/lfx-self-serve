@@ -2413,7 +2413,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(hint?.textContent?.trim()).toContain('Generate a brief');
     });
 
-    it('cannot stage without a brief, a template, and a project', () => {
+    it('cannot stage without a brief, a template, an audience, and a project', () => {
       selectEmail();
       expect(internals().canStageEmail()).toBe(false);
 
@@ -2424,7 +2424,42 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       internals().selectedEmailTemplateId.set('hs-123');
       fixture.detectChanges();
+      // Still not enough. campaign-service's `resolveBuiltAudience` refuses to stage a brief with
+      // no BUILT audience, so enabling here would start the HubSpot draft work only to have the
+      // send refused afterwards -- which is what the panel's own copy promises it will not do.
+      expect(internals().canStageEmail()).toBe(false);
+
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      fixture.detectChanges();
       expect(internals().canStageEmail()).toBe(true);
+    });
+
+    it('says the audience is what is missing when only it is missing', () => {
+      selectEmail();
+      // The hint lives in the Implement panel; without this the panel never renders and the
+      // query below would be vacuously undefined rather than asserting anything.
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      fixture.detectChanges();
+
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]');
+      // A disabled button with no reason reads as a broken panel -- the same standard the
+      // no-brief case above is held to.
+      expect(hint?.textContent?.trim()).toContain('Build the send audience');
+    });
+
+    it('drops the previous brief id when a new brief arrives', () => {
+      selectEmail();
+      internals().emailBriefId.set('brief-old');
+      internals().emailAudience.set({ id: 'aud-old', status: 'built' } as never);
+
+      internals().onEmailProceedToImplementation(emailBrief);
+
+      // `ensureEmailBriefId` returns the cached id when it is set, so a stale one silently points
+      // the audience build, the copy generation and the staged draft at the PREVIOUS event's row.
+      expect(internals().emailBriefId()).toBe('');
+      expect(internals().emailAudience()).toBeNull();
     });
 
     it('persists the brief FIRST, then creates with the returned brief id', async () => {

@@ -232,13 +232,20 @@
                       <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Body</span>
                       <!--
                         innerHTML is the point: the generator returns HTML sections and the operator
-                        needs to see the rendered email, not its markup. The content is produced by
-                        our own prompt through our own proxy, and Angular still sanitises it.
+                        needs to see the rendered email, not its markup.
+
+                        Safe because NOTHING here bypasses Angular's sanitiser -- there is no
+                        `bypassSecurityTrustHtml` anywhere in this module, so the default
+                        DomSanitizer strips scripts and event handlers on this binding.
+
+                        That is the load-bearing fact, NOT "we wrote the prompt": the model is fed
+                        scraped third-party event-page HTML, so `copy.body` is not purely
+                        first-party content. If a `bypassSecurityTrust*` is ever added to this
+                        module, this binding must be re-reviewed before it lands.
                       -->
                       <div class="prose prose-sm max-w-none text-sm text-gray-800" [innerHTML]="copy.body" data-testid="campaigns-email-copy-body"></div>
                     </div>
                   </div>
-
                 }
 
                 <div class="flex items-center gap-3">
@@ -477,8 +484,8 @@
                     discovering it on a send.
                   -->
                   <p class="text-xs text-gray-500" data-testid="campaigns-email-preview-note">
-                    Staging clones the selected template and applies this subject and body. A template with more than one
-                    text block keeps its own body — check the draft in HubSpot before sending.
+                    Staging clones the selected template and applies this subject and body. A template with more than one text block keeps its own body — check
+                    the draft in HubSpot before sending.
                   </p>
                 </div>
               }
@@ -499,6 +506,8 @@
                         Generate a brief on the Plan tab first.
                       } @else if (selectedEmailTemplateId() === '') {
                         Choose a template to clone.
+                      } @else if (emailAudience() === null) {
+                        Build the send audience first.
                       }
                     </span>
                   }

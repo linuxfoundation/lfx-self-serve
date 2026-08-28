@@ -776,7 +776,7 @@ export class CampaignServiceClient {
         copy: { subject: copy.subject, preheader: copy.preheader, body: copy.body, cta: copy.cta },
       };
     } catch (error) {
-      logger.error(req, 'generate_email_copy', Date.now(), error);
+      logger.warning(req, 'generate_email_copy', 'Email copy generation failed, returning an error result', { err: error });
       return { enabled: true, error: 'The email copy could not be generated. Try again.' };
     }
   }
@@ -832,11 +832,10 @@ export class CampaignServiceClient {
         },
       };
     } catch (error) {
-      logger.error(req, 'build_audience', Date.now(), error);
+      logger.warning(req, 'build_audience', 'Audience build failed, returning an error result', { err: error });
       return { enabled: true, error: 'The audience could not be built. Check the HubSpot connection and try again.' };
     }
   }
-
 
   /**
    * Ask campaign-service to create campaigns for a brief it already stores.

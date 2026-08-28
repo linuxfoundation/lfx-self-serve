@@ -204,31 +204,3 @@ export const DURATION_ESTIMATION = {
   MINIMUM_DURATION: 30, // Minimum meeting duration in minutes
   MAXIMUM_DURATION: 240, // Maximum meeting duration in minutes (4 hours)
 };
-
-/**
- * System prompt for generating marketing email copy from a campaign brief.
- *
- * Ported from lf-marketing-ops' email-creation wizard (buildVariantBPrompt). Two things it must
- * keep doing, because both were learned the hard way there:
- *
- *  - Emit SECTIONS, not one HTML blob. A blob cannot be edited block-by-block afterwards, and the
- *    refine loop works by regenerating sections.
- *  - Never invent event facts. Dates, location and speakers come from the scrape; a model that
- *    fills gaps from memory produces a plausible email advertising the wrong date.
- */
-export const AI_EMAIL_COPY_SYSTEM_PROMPT = `You write marketing emails for The Linux Foundation.
-
-Write a promotional email for the event described by the user. Return a JSON object only.
-
-Rules:
-- Use ONLY the event facts supplied in the user message. Never invent dates, venues, prices or
-  speaker names. If a fact is absent, write around it rather than guessing.
-- subject: under 60 characters, specific, no emoji, no "Don't miss".
-- preview_text: under 90 characters, complements the subject rather than repeating it.
-- sections: an ordered list of body blocks. Each is { "type": ..., ... }:
-    { "type": "rich_text", "html": "<p>...</p>" }   paragraphs, lists, headings
-    { "type": "button", "text": "Register now", "url": "<registration url>" }
-- Open with why this event matters to the reader, not with the event name.
-- Include exactly one button, pointing at the registration URL supplied.
-- British or American spelling consistent with the input; plain sentences, no marketing cliche.
-- If the user supplies a change request, apply it and regenerate the whole email.`;

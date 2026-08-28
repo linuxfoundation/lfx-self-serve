@@ -883,14 +883,7 @@ export class CampaignProxyService {
       yield { type: 'status', data: 'Generating LinkedIn targeting strategy...' };
       try {
         const strategyPrompt = buildLinkedInStrategyPrompt(body, eventDetails);
-        let strategyText = (await aiChat(getLinkedInStrategySystemPrompt(body.programType), strategyPrompt)).trim();
-        if (strategyText.startsWith('```')) {
-          const firstNl = strategyText.indexOf('\n');
-          if (firstNl !== -1) strategyText = strategyText.slice(firstNl + 1);
-          const lastFence = strategyText.lastIndexOf('```');
-          if (lastFence !== -1) strategyText = strategyText.slice(0, lastFence);
-          strategyText = strategyText.trim();
-        }
+        const strategyText = await aiChat(getLinkedInStrategySystemPrompt(body.programType), strategyPrompt);
         const strategy = JSON.parse(stripJsonFences(strategyText)) as Record<string, unknown>;
         yield { type: 'linkedin_strategy', data: strategy };
       } catch (error) {
