@@ -1183,32 +1183,20 @@ export class WeeklyBriefService {
    * as "couldn't determine" (`undefined`) rather than a truncated count stated as fact, matching
    * this method's own fail-soft contract.
    *
-   * Known v1 residual (accepted, not solved — same class of gap `committee-activity.service.ts`
-   * documents for this exact endpoint, across its filter-dimension, sort-dimension, and
-   * FGA-post-filter comments): `data.length < limit` is NOT an airtight completeness proof, for
-   * two independent reasons neither leg-specific check above rules out:
-   *   - Filter dimension (votes/documents): these legs push `since` upstream, but only via an
-   *     *approximating* `date_field` (not their real, multi-field `occurred_at`), and FGA
-   *     access-checking runs after OpenSearch paginates — both can leave a leg's single fetched
-   *     page short of every genuinely in-window row. FGA post-filtering can do this while
-   *     `saturated` stays true; the `date_field` approximation can do it either direction —
-   *     over-inclusion (stale rows the in-memory `since` pass trims, still costing a `fetchSize`
-   *     slot) or under-inclusion (a real in-window row excluded upstream before that pass ever
-   *     sees it, which the pass can only trim, never restore — `committee-activity.service.ts`
-   *     documents it as the backstop against over-inclusion, not under-inclusion). Meetings are
-   *     exempt from this bullet: their sort/filter field is derived identically to `occurred_at`,
-   *     so it's exact, not approximating.
-   *   - Sort dimension (votes/surveys/documents/notes): `sort: updated_desc` resolves to the
-   *     index's own write-audit `updated_at`, not a domain timestamp, for all four legs — an edit
-   *     or re-index of an old, out-of-window row can push a genuinely in-window row out of the top
-   *     `fetchSize` entirely. Each leg's own `saturated`/`page_token` flag is no help here either —
-   *     it's set for the same lifetime-volume reason that makes it unusable above (see this
-   *     method's own doc comment), not because this specific week's rows were displaced.
-   * Closing either fully would need `getCommitteeActivity` to expose a per-leg completeness signal
+   * Known v1 residual (accepted, not solved): `data.length < limit` is a heuristic, not a proof of
+   * completeness. `committee-activity.service.ts` documents — in its own "Filter dimension" (its
+   * exact label), sort-dimension ("Votes, surveys, files, and notes are all in a different,
+   * genuinely-approximate bucket"), and FGA-post-filter comments — several ways an individual leg's
+   * single upstream page can under-report while the merged, capped `data.length` still lands under
+   * `limit`. Deliberately not re-derived here leg-by-leg — a summary of which mechanism hits which
+   * leg is exactly the kind of detail that silently drifts out of sync with its source as that
+   * source evolves, and none of it crosses the `getCommitteeActivity` boundary as a signal this
+   * caller could gate on regardless: only a single merged `page_token` comes back, no per-leg flag.
+   * Closing this for real would need `getCommitteeActivity` to expose a per-leg completeness signal
    * it doesn't return today — not done here to avoid changing the public contract of an endpoint
-   * the real "Recent Activity" feed also consumes, for a v1 tally where any of these is already a
-   * narrow edge case relative to the `page_token`/`anyLegSaturated` gate this replaced (which fired
-   * on nearly every long-lived board, every week).
+   * the real "Recent Activity" feed also consumes, for a v1 tally where this is already a narrow
+   * edge case relative to the `page_token`/`anyLegSaturated` gate this replaced (which fired on
+   * nearly every long-lived board, every week).
    */
   private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | undefined> {
     try {
