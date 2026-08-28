@@ -754,7 +754,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(1);
   });
 
-  // --- Cardinality (FR-002) -------------------------------------------------
+  // --- Cardinality ----------------------------------------------------------
 
   it('asks which account to sign as when several are linked', async () => {
     const fixture = await setup({ accounts: () => of(TWO_ACCOUNTS) });
@@ -787,16 +787,29 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     expect(location.href).toBe(HOME);
   });
 
-  it('skips the choice but still prepares when exactly one account is linked', async () => {
+  it('asks which account to sign as when exactly one is linked', async () => {
     const fixture = await setup({ accounts: () => of(ONE_ACCOUNT) });
 
     await sign(fixture);
 
-    // "No picker" must not become "no prepare" — dropping the call here would leave the
-    // single-account contributor with no signing session and no verified identity.
-    expect(opened).not.toContain(GithubAccountSelectComponent);
+    // A list of one still names the identity the signature will be recorded against, which is
+    // what the step is for — so it is served the account rather than the account being assumed.
+    expect(opened).toContain(GithubAccountSelectComponent);
+    expect(open.mock.calls.at(-1)?.[1]).toMatchObject({ data: { accounts: ONE_ACCOUNT.accounts } });
     expect(prepareSign).toHaveBeenCalledWith({ githubId: '12345', claGroupId: 'cg-1' });
     expect(location.href).toBe(SIGN_URL);
+  });
+
+  it('prepares nothing when the sole linked account is not confirmed', async () => {
+    const fixture = await setup({ accounts: () => of(ONE_ACCOUNT), accountClosesWith: null });
+
+    await sign(fixture);
+
+    // Showing the step and ignoring its outcome would satisfy "a picker appears" while still
+    // signing as an account nobody confirmed. The confirmation, not the render, is the gate.
+    expect(prepareSign).not.toHaveBeenCalled();
+    expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
   });
 
   it('routes to account linking rather than showing an empty picker when none are linked', async () => {
