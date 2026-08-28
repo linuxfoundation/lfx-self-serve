@@ -6,7 +6,16 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATF
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { ECLA_COVERED_DOWNLOAD_LABEL, MY_CLAS_M2_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import type { ClaGroupOption, ClaRow, ClaStatus, GithubAccountOption, MyClaAgreement, MyClasState, PrepareSignResponse } from '@lfx-one/shared/interfaces';
+import type {
+  ClaGroupOption,
+  ClaRow,
+  ClaStatus,
+  GithubAccountOption,
+  GithubAccountSelectResult,
+  MyClaAgreement,
+  MyClasState,
+  PrepareSignResponse,
+} from '@lfx-one/shared/interfaces';
 import { claStatusLabel, claStatusSeverity, downloadFromUrl, isMyClasEmpty, signedAsLine } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -208,8 +217,8 @@ export class ProfileClasComponent {
         error: () => {
           this.starting.set(false);
           // Explicitly not treated as "no accounts linked". The two are indistinguishable in
-          // the payload but not in consequence: sending someone who already linked an account
-          // into account-linking asks them to fix something that is not broken.
+          // the payload but not in consequence: showing the picker's empty state to someone
+          // who already linked an account asks them to fix something that is not broken.
           this.messageService.add({
             severity: 'error',
             summary: 'Could not start signing',
@@ -238,19 +247,16 @@ export class ProfileClasComponent {
   }
 
   /**
-   * Routes on whether any account is linked at all: none goes to linking, any number is asked.
+   * Asks which account the signature will be recorded against. Every account list reaches the
+   * picker, whatever its length.
    *
-   * A single account is asked for too. What the screen carries is which identity the signature
-   * will be recorded against, and a list of one says that as plainly as a list of two — so there
-   * is something to show even where there is nothing to choose between.
+   * A single account is asked for too, because what the screen carries is the identity rather
+   * than the choice, and a list of one says that as plainly as a list of two. An empty one is
+   * shown as well, as the picker's own blocking empty state (#1917) — the contributor is stopped
+   * where they are instead of being moved off the page, which would drop the CLA group they had
+   * already chosen. Either way nothing reaches the Console without an account.
    */
   private chooseAccountThenSign(option: ClaGroupOption, accounts: GithubAccountOption[]): void {
-    if (accounts.length === 0) {
-      this.starting.set(false);
-      this.sendToAccountLinking();
-      return;
-    }
-
     this.starting.set(false);
     this.signDialogOpen.set(true);
 
@@ -263,10 +269,14 @@ export class ProfileClasComponent {
       data: { accounts },
     }) as DynamicDialogRef;
 
-    this.whenDialogSettles<string>(dialogRef, (githubId) => {
+    this.whenDialogSettles<GithubAccountSelectResult>(dialogRef, (result) => {
       this.signDialogOpen.set(false);
-      if (!githubId) {
-        this.starting.set(false);
+      this.starting.set(false);
+
+      if (!result) return;
+
+      if ('linkAccounts' in result) {
+        this.sendToAccountLinking();
         return;
       }
 
@@ -274,9 +284,8 @@ export class ProfileClasComponent {
       // account submitted is always one of the accounts linked to this session. Ownership
       // verification upstream passes for every account the contributor holds, which is what
       // makes where this value came from matter.
-      const chosen = accounts.find((account) => account.githubId === githubId);
+      const chosen = accounts.find((account) => account.githubId === result.githubId);
       if (!chosen) {
-        this.starting.set(false);
         this.reportRecordedMismatch();
         return;
       }
@@ -376,12 +385,13 @@ export class ProfileClasComponent {
     });
   }
 
+  /**
+   * Takes the contributor to Identities, having asked for it from the picker's empty state.
+   *
+   * No accompanying message: the empty state they just acted on says the same thing, and a toast
+   * repeating it on arrival reads as though something went wrong.
+   */
   private sendToAccountLinking(): void {
-    this.messageService.add({
-      severity: 'info',
-      summary: 'Link a GitHub account',
-      detail: 'Connect the GitHub account you contribute with, then start signing again.',
-    });
     void this.router.navigate(['/profile/identities']);
   }
 
