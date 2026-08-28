@@ -388,6 +388,24 @@ describe('MeetingService.addMeetingRegistrantSelf', () => {
   });
 });
 
+describe('MeetingService.getMeetingRegistrantsByEmail', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('sends page_size on the gate-check walk', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+
+    await service.getMeetingRegistrantsByEmail(req, 'meeting-1', 'user@example.com');
+
+    const [, , , , query] = proxyRequest.mock.calls[0];
+    expect(query.page_size).toBe(1000);
+  });
+});
+
 describe('MeetingService.getMeetingRegistrants', () => {
   let service: MeetingService;
 
@@ -442,6 +460,15 @@ describe('MeetingService.getMeetingRegistrants', () => {
 
     const [, , , , query] = proxyRequest.mock.calls[0];
     expect(query.page_size).toBe(1000);
+  });
+
+  it('clamps page_size to maxResults + 1 instead of always requesting the full 1000', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    await service.getMeetingRegistrants(req, 'meeting-1', false, undefined, true, 50);
+
+    const [, , , , query] = proxyRequest.mock.calls[0];
+    expect(query.page_size).toBe(51);
   });
 
   it('threads options.bearerToken through to the roster-walk proxyRequest call', async () => {
@@ -638,5 +665,16 @@ describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
     // maxResults bounds the fetch itself: one page already exceeds the cap, so pagination never
     // continues even though the fixture's single page doesn't set page_token either way.
     expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('requests page_size 51, not 1000, since the import cap only needs 51 rows to reject', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    proxyRequest.mockResolvedValueOnce(meetingResponse('project-1')).mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    await service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID);
+
+    const [, , , , query] = proxyRequest.mock.calls[1];
+    expect(query.page_size).toBe(51);
   });
 });

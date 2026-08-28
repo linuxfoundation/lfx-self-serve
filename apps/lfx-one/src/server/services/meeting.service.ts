@@ -634,10 +634,12 @@ export class MeetingService {
   ): Promise<MeetingRegistrant[]> {
     // Registrant records carry `parent_refs: ['meeting:<uid>']` but no indexed tags — use `parent`
     // to query parent_refs, matching the working pattern in getMeetingRsvps.
+    // When maxResults bounds the walk (e.g. rejecting an over-limit roster), only that many
+    // rows are ever needed — cap the page request instead of always pulling the full 1000.
     const params: Record<string, any> = {
       type: 'v1_meeting_registrant',
       parent: `meeting:${meetingUid}`,
-      page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
+      page_size: maxResults ? Math.min(QUERY_SERVICE_MAX_PAGE_SIZE, maxResults + 1) : QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
     logger.debug(req, 'get_meeting_registrants', 'Fetching meeting registrants', { meeting_id: meetingUid, params });
@@ -750,6 +752,7 @@ export class MeetingService {
       type: 'v1_meeting_registrant',
       parent: '',
       filters: [`email:${normalizedEmail}`, `meeting_id:${meetingUid}`],
+      page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
     logger.debug(req, 'get_meeting_registrants_by_email', 'Fetching meeting registrants by email params', {
