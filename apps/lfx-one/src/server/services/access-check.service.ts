@@ -252,12 +252,20 @@ export class AccessCheckService {
       }
     }
 
-    logger.success(req, operationName, startTime, {
+    const metadata = {
       request_count: resources.length,
       granted_count: Array.from(resultMap.values()).filter(Boolean).length,
       batch_count: chunks.length,
       failed_chunks: failedChunks,
-    });
+    };
+
+    if (failedChunks > 0) {
+      // Log at WARN rather than success — partial results are a recoverable degradation, not a
+      // clean completion. A monitoring alert keyed on "operation succeeded" should not fire here.
+      logger.warning(req, operationName, `${failedChunks} of ${chunks.length} access-check chunks failed; results are partial`, metadata);
+    } else {
+      logger.success(req, operationName, startTime, metadata);
+    }
 
     return resultMap;
   }

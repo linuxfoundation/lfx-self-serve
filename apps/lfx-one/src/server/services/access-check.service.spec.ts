@@ -232,9 +232,10 @@ describe('AccessCheckService — batching', () => {
 
   it('fails the rejected chunk closed but preserves results from fulfilled chunks', async () => {
     const resources = makeResources(101);
+    const chunkError = new Error('chunk-failure');
     // Chunk 1 (resources 0–99) succeeds; chunk 2 (resource 100) fails.
     proxyRequest.mockResolvedValueOnce(mockResponse(resources.slice(0, 100), true));
-    proxyRequest.mockRejectedValueOnce(new Error('chunk-failure'));
+    proxyRequest.mockRejectedValueOnce(chunkError);
 
     const result = await service.checkAccess(req, resources);
 
@@ -243,8 +244,21 @@ describe('AccessCheckService — batching', () => {
     expect(result.get('proj-99#writer')).toBe(true);
     // The failed chunk's resource is absent from the result map → defaults to false for callers.
     expect(result.has('proj-100#writer')).toBe(false);
-    // A warning is emitted for the failed chunk so the incident is traceable.
-    expect(loggerWarning).toHaveBeenCalledTimes(1);
-    expect(loggerWarning).toHaveBeenCalledWith(req, expect.any(String), expect.stringContaining('chunk 1 failed'), expect.objectContaining({ chunk_index: 1 }));
+    // Two warnings: one per-chunk warning and one terminal partial-result warning.
+    expect(loggerWarning).toHaveBeenCalledTimes(2);
+    // Per-chunk warning preserves the rejection value as `err` for full Pino serialization.
+    expect(loggerWarning).toHaveBeenCalledWith(
+      req,
+      expect.any(String),
+      expect.stringContaining('chunk 1 failed'),
+      expect.objectContaining({ chunk_index: 1, err: chunkError })
+    );
+    // Terminal warning signals partial results so monitoring alerts on "success" do not fire.
+    expect(loggerWarning).toHaveBeenCalledWith(
+      req,
+      expect.any(String),
+      expect.stringContaining('partial'),
+      expect.objectContaining({ failed_chunks: 1, batch_count: 2 })
+    );
   });
 });
