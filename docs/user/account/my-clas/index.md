@@ -26,11 +26,11 @@ Agreements are matched from your signed-in session and your linked [Email and Gi
 
 ## What is the difference between ICLA and ECLA?
 
-| Type                      | What it means                                                                                                      | On CLAs                                                                  | Document                                                                        |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| **ICLA** (Individual CLA) | You signed as yourself for a project                                                                               | Listed                                                                   | **Download PDF** when EasyCLA has the signed file (otherwise _PDF unavailable_) |
-| **ECLA** (Employee CLA)   | You are covered because your employer holds a Corporate CLA (CCLA) and you are on that company's **Approved List** | Listed (shows the employer name)                                         | No individual PDF — shown as _Covered by Corporate CLA (CCLA)_                  |
-| **CCLA** (Corporate CLA)  | Signed by a company CLA manager; covers employees via the company's **Approved List**                              | Not listed as its own row — it is the parent agreement an ECLA hangs off | Managed in the corporate EasyCLA flow, not on this tab                          |
+| Type                      | What it means                                                                                                  | On CLAs                                                                  | Document                                                                                       |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| **ICLA** (Individual CLA) | You signed as yourself for a project                                                                           | Listed                                                                   | **Download PDF** when EasyCLA has the signed file; otherwise the row offers no download        |
+| **ECLA** (Employee CLA)   | Your employer holds a Corporate CLA (CCLA) and you were approved under it via that company's **Approved List** | Listed (shows the employer name), and stays listed if the coverage ends  | No individual PDF — where the row has a **⋮** menu, it shows _Covered by Corporate CLA (CCLA)_ |
+| **CCLA** (Corporate CLA)  | Signed by a company CLA manager; covers employees via the company's **Approved List**                          | Not listed as its own row — it is the parent agreement an ECLA hangs off | Managed in the corporate EasyCLA flow, not on this tab                                         |
 
 In short: an **ICLA** is _your_ paperwork; an **ECLA** means you are covered under your company's **CCLA**.
 
@@ -76,8 +76,8 @@ When EasyCLA recorded the account used to sign, the **Signed** cell adds a secon
 
 - _Signed as \<username\> (GitHub)_
 - _Signed as \<username\> (GitLab)_
-- _Signed as \<username\> (Gerrit)_
-- _Signed as \<identity\>_ — with no platform label, when EasyCLA recorded the identity but not the platform it came from, which covers agreements identified by LF login or email address
+- _Signed as \<username\> (Gerrit)_ — also used for agreements identified by LF login or email address, which have no separate platform of their own
+- _Signed as \<identity\>_ — with no platform label, when EasyCLA recorded an identity but no recognised platform for it
 
 This line is informational. It tells you which of your accounts an agreement is attached to, which is useful when you have several linked identities and are working out why a project still asks you to sign.
 

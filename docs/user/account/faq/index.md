@@ -66,7 +66,7 @@ Go to [**Profile & Account**](/profile) and open the **CLAs** tab (`/profile/cla
 
 ## What is the difference between an ICLA and an ECLA?
 
-An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can download its PDF from the CLAs tab when available. An **ECLA** (Employee CLA) means you are covered under your employer's **CCLA** (Corporate CLA) via the company's **Approved List**; the CLAs tab lists it with the company name and no individual PDF. See [CLAs](../my-clas/).
+An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can download its PDF from the CLAs tab when EasyCLA has the file. An **ECLA** (Employee CLA) means your employer holds a **CCLA** (Corporate CLA) and you were approved under it via the company's **Approved List**; the CLAs tab lists it with the company name and no individual PDF, and keeps listing it with a status that says so if that coverage later ends. See [CLAs](../my-clas/).
 
 ## Why don't my signed CLAs show up on the CLAs tab?
 
