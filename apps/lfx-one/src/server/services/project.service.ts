@@ -7550,7 +7550,6 @@ export class ProjectService {
    * spin up its own concurrency budget, multiplying real fan-out past the cap under a wide+deep
    * tree (GH-1676 review).
    */
-
   private async acquireTraversalSlot(gate: { active: number; queue: (() => void)[] }): Promise<void> {
     if (gate.active < FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY) {
       gate.active += 1;
