@@ -15,11 +15,8 @@
         (click)="onCardClick()"></a>
     }
 
-    <!-- Sentiment rail: the color runs the height of the card, replacing the old sentiment chip -->
-    <div
-      class="mention-rail flex shrink-0 flex-col items-center gap-2"
-      [attr.aria-label]="sentimentConfig().label + ' sentiment'"
-      data-testid="mention-card-sentiment-rail">
+    <!-- Sentiment rail: the color runs the height of the card, replacing the old sentiment chip. w-5 keeps every card's text column aligned regardless of glyph width; the sr-only span carries the label (aria-label isn't exposed on a roleless div) -->
+    <div class="flex w-5 shrink-0 flex-col items-center gap-2" data-testid="mention-card-sentiment-rail">
       <i [class]="sentimentConfig().icon + ' ' + sentimentConfig().textClass" class="text-base leading-none" aria-hidden="true"></i>
       <span class="w-0.5 flex-1 rounded-full" [class]="sentimentConfig().railClass" aria-hidden="true"></span>
       <span class="sr-only">{{ sentimentConfig().label }} sentiment</span>

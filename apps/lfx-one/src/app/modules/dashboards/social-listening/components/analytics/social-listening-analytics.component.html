@@ -77,29 +77,32 @@
           } @else if (platformRows().length > 0) {
             <div class="flex flex-col gap-1">
               @for (row of platformRows(); track row.platform) {
-                <button
-                  type="button"
-                  class="platform-row"
-                  [disabled]="row.sourcePlatforms.length !== 1"
-                  [attr.aria-label]="row.sourcePlatforms.length === 1 ? 'Show ' + row.config.label + ' mentions in the feed' : null"
-                  (click)="onPlatformRowClick(row)"
-                  [attr.data-testid]="'social-listening-analytics-platform-row-' + row.platform">
-                  <div class="flex w-full items-center justify-between gap-3">
-                    <div class="flex min-w-0 items-center gap-2">
-                      <i [class]="row.config.icon + ' ' + row.config.colorClass" class="text-sm" aria-hidden="true"></i>
-                      <span class="truncate text-[13px] font-medium text-gray-900">{{ row.config.label }}</span>
+                <!-- Tooltip sits on the wrapper: disabled buttons swallow pointer events, so the reason would never show -->
+                <div [pTooltip]="row.actionLabel" [tooltipDisabled]="row.drillable" tooltipPosition="top">
+                  <button
+                    type="button"
+                    class="flex w-full cursor-pointer flex-col gap-2 rounded-lg border-0 bg-transparent p-2 text-left transition-colors hover:bg-gray-50 disabled:cursor-default disabled:hover:bg-transparent"
+                    [disabled]="!row.drillable"
+                    [attr.aria-label]="row.actionLabel"
+                    (click)="onPlatformRowClick(row)"
+                    [attr.data-testid]="'social-listening-analytics-platform-row-' + row.platform">
+                    <div class="flex w-full items-center justify-between gap-3">
+                      <div class="flex min-w-0 items-center gap-2">
+                        <i [class]="row.config.icon + ' ' + row.config.colorClass" class="text-sm" aria-hidden="true"></i>
+                        <span class="truncate text-[13px] font-medium text-gray-900">{{ row.config.label }}</span>
+                      </div>
+                      @if (showPlatformPercents()) {
+                        <span class="text-[13px] font-semibold text-gray-900">{{ row.percentOfTotal }}%</span>
+                      }
                     </div>
-                    @if (showPlatformPercents()) {
-                      <span class="text-[13px] font-semibold text-gray-900">{{ row.percentOfTotal }}%</span>
-                    }
-                  </div>
-                  <div class="flex w-full items-center gap-3">
-                    <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
-                      <div class="h-full rounded-full" [class]="row.config.barClass" [style.width.%]="row.percentOfTotal"></div>
+                    <div class="flex w-full items-center gap-3">
+                      <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
+                        <div class="h-full rounded-full" [class]="row.config.barClass" [style.width.%]="row.percentOfTotal"></div>
+                      </div>
+                      <span class="min-w-12 shrink-0 text-right text-xs font-medium text-gray-400">{{ row.mentionsCount | number }}</span>
                     </div>
-                    <span class="min-w-12 shrink-0 text-right text-xs font-medium text-gray-400">{{ row.mentionsCount | number }}</span>
-                  </div>
-                </button>
+                  </button>
+                </div>
               }
             </div>
           } @else {
@@ -129,8 +132,9 @@
               @for (row of tagRows(); track row.label) {
                 <li class="flex items-center gap-3">
                   <span class="min-w-0 flex-1 truncate text-xs text-gray-600">{{ row.label }}</span>
-                  <span class="tag-track">
-                    <span class="tag-fill" [style.width.%]="row.percentOfMax"></span>
+                  <!-- Fixed-width track so every row's count column lands at the same x -->
+                  <span class="h-2.5 w-20 shrink-0 overflow-hidden rounded-full bg-gray-100 sm:w-40">
+                    <span class="block h-full rounded-full bg-blue-500" [style.width.%]="row.percentOfMax"></span>
                   </span>
                   <span class="min-w-10 shrink-0 text-right text-xs font-medium text-gray-900">{{ row.count | number }}</span>
                 </li>
@@ -199,7 +203,7 @@
             <div class="flex h-[18px] w-full overflow-hidden rounded-full bg-gray-100" role="img" aria-label="Sentiment distribution bar">
               @for (row of sentimentRows(); track row.sentiment) {
                 <div class="flex h-full items-center justify-center overflow-hidden" [class]="row.config.barClass" [style.width.%]="row.percentOfTotal">
-                  @if (row.percentOfTotal >= 12) {
+                  @if (row.percentOfTotal >= sentimentBarLabelMinPercent) {
                     <span class="text-[10px] font-semibold text-white">{{ row.mentionCount | number }}</span>
                   }
                 </div>
@@ -215,29 +219,14 @@
                   <div class="flex shrink-0 items-center gap-2">
                     <span class="text-[13px] text-gray-500">{{ row.mentionCount | number }}</span>
                     <span class="text-[13px] font-semibold text-gray-900">{{ row.percentOfTotal }}%</span>
-                    @switch (row.sentiment) {
-                      @case ('positive') {
-                        @if (sentimentTrends().positive; as trend) {
-                          <span
-                            class="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium"
-                            [class]="deltaTextClass[trend.direction]"
-                            data-testid="social-listening-analytics-sentiment-trend-positive">
-                            <i [class]="deltaIcon[trend.direction]" aria-hidden="true"></i>
-                            {{ trend.label }}
-                          </span>
-                        }
-                      }
-                      @case ('negative') {
-                        @if (sentimentTrends().negative; as trend) {
-                          <span
-                            class="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium"
-                            [class]="invertedDeltaTextClass[trend.direction]"
-                            data-testid="social-listening-analytics-sentiment-trend-negative">
-                            <i [class]="deltaIcon[trend.direction]" aria-hidden="true"></i>
-                            {{ trend.label }}
-                          </span>
-                        }
-                      }
+                    @if (row.trend; as trend) {
+                      <span
+                        class="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium"
+                        [class]="(trend.inverted ? invertedDeltaTextClass : deltaTextClass)[trend.direction]"
+                        [attr.data-testid]="'social-listening-analytics-sentiment-trend-' + row.sentiment">
+                        <i [class]="deltaIcon[trend.direction]" aria-hidden="true"></i>
+                        {{ trend.label }}
+                      </span>
                     }
                   </div>
                 </div>

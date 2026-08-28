@@ -194,8 +194,20 @@ describe('MentionsListComponent', () => {
     await fixture.whenStable();
 
     const showing = fixture.nativeElement.querySelector('[data-testid="mentions-list-showing"]').textContent;
-    expect(showing).toContain('Showing 1 mentions');
+    expect(showing).toContain('Showing 1 mention');
     expect(showing).not.toContain('500');
+  });
+
+  it('drops the reachable total from the running count while the count request is in flight', async () => {
+    setMentions([baseMention('m1')]);
+    fixture.componentRef.setInput('hasMore', true);
+    fixture.componentRef.setInput('servableTotal', 0);
+    fixture.componentRef.setInput('countLoading', true);
+    await fixture.whenStable();
+
+    const showing = fixture.nativeElement.querySelector('[data-testid="mentions-list-showing"]').textContent;
+    expect(showing).toContain('Showing 1 mention');
+    expect(showing).not.toContain(' of ');
   });
 
   it('swaps the empty state for all-caught-up copy in unread view', async () => {

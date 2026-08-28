@@ -20,33 +20,6 @@
   @apply static;
 }
 
-// The whole platform row is the feed drill-down target — reset the button chrome, keep the two-line layout.
-.platform-row {
-  @apply flex w-full cursor-pointer flex-col gap-2 rounded-lg border-0 bg-transparent p-2 text-left transition-colors;
-
-  &:hover {
-    @apply bg-gray-50;
-  }
-
-  // Merged groups (e.g. `other`) can't drill down — no pointer affordance.
-  &:disabled {
-    @apply cursor-default;
-
-    &:hover {
-      @apply bg-transparent;
-    }
-  }
-}
-
-// Fixed-width track so every tag row's count column lands at the same x.
-.tag-track {
-  @apply h-2.5 w-20 shrink-0 overflow-hidden rounded-full bg-gray-100 sm:w-40;
-}
-
-.tag-fill {
-  @apply bg-blue-500 block h-full rounded-full;
-}
-
 // Mentions by Project rank badges.
 .project-rank {
   @apply bg-blue-500 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white;

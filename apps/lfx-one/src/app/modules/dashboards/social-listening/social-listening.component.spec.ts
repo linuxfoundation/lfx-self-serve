@@ -36,7 +36,6 @@ import { SocialListeningComponent } from './social-listening.component';
 
 /**
  * Container-level coverage for the two things the child specs cannot see: the windowed pagination
-
  * arithmetic (windowIndex/serverOffset/localOffset, cumulative window rendering) and the bidirectional
  * query-param sync. The template is blanked out — nothing here needs the rendered tree.
  */

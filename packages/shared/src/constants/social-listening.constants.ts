@@ -170,6 +170,9 @@ export const ANALYTICS_TOP_PLATFORMS_LIMIT = 5;
 /** Row cap requested for the analytics top-projects panel (mirrors the server's `TOP_PROJECTS_LIMIT` default). */
 export const ANALYTICS_TOP_PROJECTS_LIMIT = 5;
 
+/** Minimum segment share before the sentiment bar renders its in-segment count — below this the label can't fit. */
+export const SENTIMENT_BAR_LABEL_MIN_PERCENT = 12;
+
 /**
  * Series colors for the analytics charts (LFXV2-3018) — `lfxColors` scales only (styling rule).
  * Index 0 is the "Total" line; other series cycle from index 1 (500s first, then 300s).

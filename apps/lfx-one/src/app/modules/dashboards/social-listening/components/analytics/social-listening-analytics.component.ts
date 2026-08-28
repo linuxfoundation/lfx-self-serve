@@ -15,12 +15,14 @@ import {
   DELTA_DIRECTION_TEXT_CLASS,
   INVERTED_DELTA_DIRECTION_TEXT_CLASS,
   lfxColors,
+  SENTIMENT_BAR_LABEL_MIN_PERCENT,
 } from '@lfx-one/shared/constants';
 import { buildAnalyticsDelta, buildOverTimeChartData, mapPlatformDistributionRows, mapSentimentRows, mapTagRows } from '@lfx-one/shared/utils';
 import { SocialListeningService } from '@services/social-listening.service';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, map, Observable, of, startWith, switchMap } from 'rxjs';
 
 import type { Chart, ChartData, ChartOptions, TooltipModel } from 'chart.js';
@@ -44,7 +46,7 @@ import type {
  */
 @Component({
   selector: 'lfx-social-listening-analytics',
-  imports: [DecimalPipe, CardComponent, ChartComponent, EmptyStateComponent, MessageComponent, StatCardGridComponent, SkeletonModule],
+  imports: [DecimalPipe, CardComponent, ChartComponent, EmptyStateComponent, MessageComponent, StatCardGridComponent, SkeletonModule, TooltipModule],
   templateUrl: './social-listening-analytics.component.html',
   styleUrl: './social-listening-analytics.component.scss',
 })
@@ -112,7 +114,17 @@ export class SocialListeningAnalyticsComponent {
   /** Screen-reader equivalent of the canvas line chart — the chart's values are otherwise tooltip-only. */
   public readonly overTimeTable: Signal<{ periods: string[]; series: { label: string; values: (number | null)[] }[] } | null> = this.initOverTimeTable();
 
-  public readonly platformRows = computed(() => this.platformState().data);
+  /** Rows with drill-down precomputed — merged groups (multi-source) are disabled, and their label/tooltip carries the reason why. */
+  public readonly platformRows = computed(() =>
+    this.platformState().data.map((row) => ({
+      ...row,
+      drillable: row.sourcePlatforms.length === 1,
+      actionLabel:
+        row.sourcePlatforms.length === 1
+          ? `Show ${row.config.label} mentions in the feed`
+          : `${row.config.label} groups several platforms and can't be filtered in the feed`,
+    }))
+  );
   public readonly platformLoading = computed(() => this.platformState().loading);
   public readonly platformError = computed(() => this.platformState().error);
   /** PCC behavior: the per-platform % label is only meaningful on the unfiltered (all-platforms) view. */
@@ -122,7 +134,11 @@ export class SocialListeningAnalyticsComponent {
   public readonly tagsLoading = computed(() => this.tagsState().loading);
   public readonly tagsError = computed(() => this.tagsState().error);
 
-  public readonly sentimentRows = computed(() => this.sentimentState().data);
+  /** Rows with the trend chip pre-attached — neutral carries no trend, and the delta's own `inverted` flag picks the class map. */
+  public readonly sentimentRows = computed(() => {
+    const trends = this.sentimentTrends();
+    return this.sentimentState().data.map((row) => ({ ...row, trend: row.sentiment === 'neutral' ? null : trends[row.sentiment] }));
+  });
   public readonly sentimentLoading = computed(() => this.sentimentState().loading);
   public readonly sentimentError = computed(() => this.sentimentState().error);
 
@@ -166,6 +182,7 @@ export class SocialListeningAnalyticsComponent {
   protected readonly deltaTextClass = DELTA_DIRECTION_TEXT_CLASS;
   /** Negative-sentiment trends invert: an increase is bad, so up renders red and down emerald. */
   protected readonly invertedDeltaTextClass = INVERTED_DELTA_DIRECTION_TEXT_CLASS;
+  protected readonly sentimentBarLabelMinPercent = SENTIMENT_BAR_LABEL_MIN_PERCENT;
 
   private destroyed = false;
 

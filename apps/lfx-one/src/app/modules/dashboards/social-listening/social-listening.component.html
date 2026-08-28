@@ -10,23 +10,26 @@
         <p class="text-sm text-gray-500" data-testid="social-listening-subtitle">Brand mentions and sentiment across social, forums, and podcasts.</p>
       </div>
 
-      <div
-        class="inline-flex items-center gap-1 rounded-full bg-gray-100 p-1"
-        role="group"
-        aria-label="Social listening view"
-        data-testid="social-listening-tabs">
-        @for (tab of tabOptions; track tab.id) {
-          <button
-            type="button"
-            class="cursor-pointer rounded-full border-0 px-4 py-1.5 text-xs font-medium transition-colors"
-            [class]="activeTab() === tab.id ? 'bg-white text-gray-900 shadow-sm' : 'bg-transparent text-gray-500 hover:text-gray-700'"
-            [attr.aria-pressed]="activeTab() === tab.id"
-            [attr.data-testid]="'social-listening-tab-' + tab.id"
-            (click)="onTabSelected(tab.id)">
-            {{ tab.label }}
-          </button>
-        }
-      </div>
+      <!-- Tabs are meaningless without a foundation — the body renders the empty state either way -->
+      @if (hasFoundation()) {
+        <div
+          class="inline-flex items-center gap-1 rounded-full bg-gray-100 p-1"
+          role="group"
+          aria-label="Social listening view"
+          data-testid="social-listening-tabs">
+          @for (tab of tabOptions; track tab.id) {
+            <button
+              type="button"
+              class="cursor-pointer rounded-full border-0 px-4 py-1.5 text-xs font-medium transition-colors"
+              [class]="activeTab() === tab.id ? 'bg-white text-gray-900 shadow-sm' : 'bg-transparent text-gray-500 hover:text-gray-700'"
+              [attr.aria-pressed]="activeTab() === tab.id"
+              [attr.data-testid]="'social-listening-tab-' + tab.id"
+              (click)="onTabSelected(tab.id)">
+              {{ tab.label }}
+            </button>
+          }
+        </div>
+      }
     </div>
 
     @if (hasFoundation()) {
@@ -207,6 +210,7 @@
             [phase2Failed]="phase2Failed()"
             [loadError]="!!error() && loadedCount() > 0"
             [countError]="countError() !== null"
+            [countLoading]="countLoading()"
             (loadMore)="onLoadMore()"
             (clearFilters)="resetToDefaultViewState()"
             (retry)="retryWindow()" />

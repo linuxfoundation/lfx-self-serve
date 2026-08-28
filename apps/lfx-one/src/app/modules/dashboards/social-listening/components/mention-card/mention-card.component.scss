@@ -19,9 +19,6 @@
 }
 
 // Fixed-width gutter so every card's text column starts at the same x regardless of the sentiment icon's glyph width.
-.mention-rail {
-  @apply w-5;
-}
 
 // Stretched link: an invisible anchor covering the entire card, giving native link/keyboard
 // behavior without nesting interactive elements inside it.

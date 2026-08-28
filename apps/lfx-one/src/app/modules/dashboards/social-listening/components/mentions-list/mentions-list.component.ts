@@ -45,6 +45,8 @@ export class MentionsListComponent {
   public readonly loadError = input(false);
   /** Count endpoint failed while the feed has rows — keeps the Load More footer visible so the user isn't stranded. */
   public readonly countError = input(false);
+  /** Count request still in flight — the footer label reports only the rendered rows until the total lands. */
+  public readonly countLoading = input(false);
   /** Bookmarked mention IDs for the current foundation (LFXV2-3002 Block 1) — decorates each card's bookmark toggle. */
   public readonly bookmarkedIds = input<Set<string>>(new Set());
   /** Read mention IDs for the current foundation (LFXV2-3002 Block 2) — decorates each card's read toggle. */
@@ -73,10 +75,12 @@ export class MentionsListComponent {
   public readonly showExhaustedCount = computed(
     () => !this.showLoadMore() && !this.renderCapped() && this.loadedCount() > 0 && this.servableTotal() > 0 && !this.phase2Failed() && !this.loadError()
   );
-  /** Running-count label shared by the Load More and exhausted footers — a failed count drops the total rather than inventing one. */
-  public readonly showingLabel = computed(() =>
-    this.countError() ? `Showing ${this.loadedCount()} mentions` : `Showing ${this.loadedCount()} of ${this.servableTotal()} mentions`
-  );
+  /** Running-count label shared by the Load More and exhausted footers — a failed or in-flight count drops the total rather than inventing one. */
+  public readonly showingLabel = computed(() => {
+    const count = this.loadedCount();
+    const noun = count === 1 ? 'mention' : 'mentions';
+    return this.countError() || this.countLoading() ? `Showing ${count} ${noun}` : `Showing ${count} of ${this.servableTotal()} ${noun}`;
+  });
 
   /** Per-card bookmark lookup (PCC port): one computed over the input set, not a per-row method call. */
   private initIsBookmarkedFn(): Signal<(id: string) => boolean> {

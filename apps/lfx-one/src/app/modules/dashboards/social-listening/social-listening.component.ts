@@ -175,8 +175,11 @@ export class SocialListeningComponent {
 
   // === Pagination state ===
   public readonly lastLoadedPage = signal(0);
-  public readonly pageSize = signal(DEFAULT_MENTION_PAGE_SIZE);
+  private readonly pageSize = DEFAULT_MENTION_PAGE_SIZE;
   private readonly windowCache = signal<Map<number, SocialListeningWindowCacheEntry>>(new Map());
+  // Memo table for mapCachedWindow — keyed by entry identity, so a Load More click re-slices without
+  // re-mapping every loaded row (at the render cap that was 500 card re-renders for 20 new rows).
+  private readonly mentionViewCache = new WeakMap<SocialListeningWindowCacheEntry, Mention[]>();
   // Global-newest MENTION_TS, captured whenever window 0 loads — held outside the cache so a mark-all from a deep page still stamps the true cutoff.
   private newestMentionTs: string | null = null;
   /** Guards the mark-all cutoff fetch against double-clicks during a slow round-trip. */
@@ -220,10 +223,10 @@ export class SocialListeningComponent {
   /** Read-state snapshot behind the unread feed filter — refreshed only on mode entry, load completion, and the two mark-all actions, so single toggles restyle in place and pagination stays stable. */
   private readonly unreadSnapshot = signal<ReadStateData | null>(null);
 
-  private readonly windowIndex = computed(() => Math.floor((this.lastLoadedPage() * this.pageSize()) / this.serverWindowSize));
+  private readonly windowIndex = computed(() => Math.floor((this.lastLoadedPage() * this.pageSize) / this.serverWindowSize));
   // Load More is capped at the last servable window, so serverOffset stays within MENTION_MAX_FEED_OFFSET (100,000).
   private readonly serverOffset = computed(() => this.windowIndex() * this.serverWindowSize);
-  private readonly localOffset = computed(() => this.lastLoadedPage() * this.pageSize() - this.serverOffset());
+  private readonly localOffset = computed(() => this.lastLoadedPage() * this.pageSize - this.serverOffset());
 
   // === Request pipelines ===
   private readonly searchQuery: Signal<string> = this.initSearchQuery();
@@ -240,6 +243,7 @@ export class SocialListeningComponent {
   // The server clamps offset at MENTION_MAX_FEED_OFFSET — never advertise more than the last servable window holds.
   public readonly servableTotal = computed(() => Math.min(this.totalRecords(), MENTION_MAX_FEED_OFFSET + this.serverWindowSize));
   public readonly countError = computed(() => this.countState().error);
+  public readonly countLoading = computed(() => this.countState().loading);
   private readonly subProjectsState: Signal<LoadableState<SocialListeningSubProject[]>> = this.initSubProjectsState();
   private readonly platformsState: Signal<LoadableState<SocialListeningPlatform[]>> = this.initPlatformsState();
 
@@ -304,7 +308,7 @@ export class SocialListeningComponent {
     if (!windowData) return this.feedRequest() !== null && !this.feedState().error;
     if (windowData.complete) return false;
     // Partial window: the visible page extends past what phase 2 has filled so far.
-    const neededEnd = this.localOffset() + this.pageSize();
+    const neededEnd = this.localOffset() + this.pageSize;
     if (neededEnd <= windowData.mentions.length) return false;
     return this.backgroundLoading() || this.feedState().loading;
   });
@@ -886,8 +890,8 @@ export class SocialListeningComponent {
           }
 
           // Phase 2 re-requests from offset + initialLimit — past MENTION_MAX_FEED_OFFSET that offset clamps, duplicating rows.
-          const canSplitWindow = (req.offset ?? 0) + this.pageSize() <= MENTION_MAX_FEED_OFFSET;
-          const initialLimit = this.localOffset() === 0 && canSplitWindow ? this.pageSize() : this.serverWindowSize;
+          const canSplitWindow = (req.offset ?? 0) + this.pageSize <= MENTION_MAX_FEED_OFFSET;
+          const initialLimit = this.localOffset() === 0 && canSplitWindow ? this.pageSize : this.serverWindowSize;
           const initialReq = { ...req, limit: initialLimit };
 
           return this.socialListeningService.getMentionsFeed(initialReq).pipe(
@@ -1088,14 +1092,24 @@ export class SocialListeningComponent {
       // Load More renders cumulatively: every window the user has walked into is concatenated in order,
       // then trimmed to the batches actually requested so a prefetched window tail never paints early.
       const cache = this.windowCache();
-      const rows: SocialListeningMention[] = [];
+      const rows: Mention[] = [];
       for (let w = 0; w <= this.windowIndex(); w++) {
         const entry = cache.get(w);
         if (!entry) break;
-        rows.push(...entry.mentions);
+        rows.push(...this.mapCachedWindow(entry));
       }
-      return rows.slice(0, (this.lastLoadedPage() + 1) * this.pageSize()).map(mapRawToMention);
+      return rows.slice(0, (this.lastLoadedPage() + 1) * this.pageSize);
     });
+  }
+
+  /** View-model mapping memoized per cache-entry identity, so advancing the feed re-maps only windows that actually changed. */
+  private mapCachedWindow(entry: SocialListeningWindowCacheEntry): Mention[] {
+    let mapped = this.mentionViewCache.get(entry);
+    if (!mapped) {
+      mapped = entry.mentions.map(mapRawToMention);
+      this.mentionViewCache.set(entry, mapped);
+    }
+    return mapped;
   }
 
   private initReadMentionIds(): Signal<Set<string>> {
@@ -1112,7 +1126,10 @@ export class SocialListeningComponent {
 
   private initHasMore(): Signal<boolean> {
     return computed(() => {
-      if (this.loadedCount() >= Math.min(this.servableTotal(), MENTION_FEED_RENDER_LIMIT)) return false;
+      if (this.loadedCount() >= MENTION_FEED_RENDER_LIMIT) return false;
+      // A landed count is authoritative; an in-flight one reads as servableTotal 0 — unknown, not an exhausted feed.
+      const total = this.servableTotal();
+      if (total > 0 && this.loadedCount() >= total) return false;
       // A complete short window is the feed's real end — stop there even when the count is stale or failed; the terminal
       // window's prefetched pages stay revealable, since revealing them advances no further fetch.
       const windowData = this.windowCache().get(this.windowIndex());
@@ -1126,9 +1143,9 @@ export class SocialListeningComponent {
   private initTotalRecords(): Signal<number> {
     return computed(() => {
       const count = this.countState();
-      // Count failed: a zero total would disable Next and strand the user on page 1 despite loaded rows.
-      // Derive a provisional total from the loaded window; the extra pageSize keeps Next enabled past it.
-      if (count.error) return this.serverOffset() + this.currentWindowData().mentions.length + this.pageSize();
+      // Count failed: a zero total would hide Load More and strand the user on the first window despite loaded rows.
+      // Derive a provisional total from the loaded window; the extra pageSize keeps Load More available past it.
+      if (count.error) return this.serverOffset() + this.currentWindowData().mentions.length + this.pageSize;
       return count.data ?? 0;
     });
   }
