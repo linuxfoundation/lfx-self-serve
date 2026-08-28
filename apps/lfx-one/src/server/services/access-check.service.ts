@@ -66,7 +66,9 @@ export class AccessCheckService {
    * (all chunks rejected) — are absorbed: the method returns a partial or empty result map and
    * logs a WARN rather than throwing. `checkAccessStrict` propagates only when `performCheck`
    * itself throws, which happens on single-batch calls (≤ACCESS_CHECK_BATCH_SIZE resources)
-   * where the upstream call fails before any settling occurs.
+   * where the upstream call fails before any settling occurs. Callers passing more than
+   * ACCESS_CHECK_BATCH_SIZE resources will not benefit from the strict guarantee — prefer
+   * `checkAccessStrict` for single-resource or small bounded-count calls only.
    * @param req Express request object with auth context
    * @param resources Array of resources to check access for
    * @param options Optional per-call overrides (e.g. explicit bearer token)
