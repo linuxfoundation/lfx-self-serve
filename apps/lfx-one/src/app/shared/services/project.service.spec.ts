@@ -30,14 +30,14 @@ describe('ProjectService.getProjectSlugs', () => {
   });
 
   it('issues GET /api/projects/slugs and returns the slug array', () => {
-    let result: string[] = [];
+    let result: string[] | null = null;
     service.getProjectSlugs().subscribe((slugs) => (result = slugs));
     expect(httpGet).toHaveBeenCalledWith('/api/projects/slugs');
     expect(result).toEqual(['slug-a', 'slug-b']);
   });
 
   it('reuses the cached observable on a second call without issuing another request', () => {
-    const results: string[][] = [];
+    const results: (string[] | null)[] = [];
     service.getProjectSlugs().subscribe((v) => results.push(v));
     service.getProjectSlugs().subscribe((v) => results.push(v));
     expect(httpGet).toHaveBeenCalledTimes(1);
@@ -51,12 +51,14 @@ describe('ProjectService.getProjectSlugs', () => {
     // Use a plain Error (not HttpErrorResponse) so retryTransientHttpError passes it through
     // immediately — only status-0/408/429/5xx HttpErrorResponse values are retried.
     httpGet.mockReturnValueOnce(throwError(() => new Error('network-error')));
-    let fallback: string[] = ['sentinel'];
+    let fallback: string[] | null = ['sentinel'];
     service.getProjectSlugs().subscribe((v) => (fallback = v));
 
     // tap({ error }) fires synchronously (throwError is synchronous), so the cache is already
     // null by the time we assert. The next call must issue a new request.
-    expect(fallback).toEqual([]);
+    // Returns null (not []) so callers can distinguish "fetch failed, skip LFX filter"
+    // from "fetch succeeded, no LFX projects".
+    expect(fallback).toBeNull();
     expect((service as unknown as { slugsCache$: unknown }).slugsCache$).toBeNull();
 
     httpGet.mockReturnValueOnce(of(['slug-c']));
@@ -64,10 +66,10 @@ describe('ProjectService.getProjectSlugs', () => {
     expect(httpGet).toHaveBeenCalledTimes(2);
   });
 
-  it('falls back to [] on error so callers never receive an error notification', () => {
+  it('falls back to null on error so callers can skip the LFX filter rather than filtering all affiliations out', () => {
     httpGet.mockReturnValueOnce(throwError(() => new Error('network-error')));
-    let result: string[] = ['sentinel'];
+    let result: string[] | null = ['sentinel'];
     service.getProjectSlugs().subscribe((slugs) => (result = slugs));
-    expect(result).toEqual([]);
+    expect(result).toBeNull();
   });
 });

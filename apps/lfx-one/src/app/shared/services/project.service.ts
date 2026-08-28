@@ -19,7 +19,7 @@ export class ProjectService {
   private readonly http = inject(HttpClient);
   private readonly projectCache = new Map<string, Observable<Project | null>>();
   private readonly projectsCache = new Map<string, Observable<Project[]>>();
-  private slugsCache$: Observable<string[]> | null = null;
+  private slugsCache$: Observable<string[] | null> | null = null;
 
   public getProjects(params?: HttpParams): Observable<Project[]> {
     const cacheKey = params?.toString() || '';
@@ -48,16 +48,19 @@ export class ProjectService {
    * (e.g. membership checks) — skips the OpenFGA POST that getProjects() incurs.
    * Cached for the session lifetime; evicted on error so a failed fetch is retryable.
    */
-  public getProjectSlugs(): Observable<string[]> {
+  public getProjectSlugs(): Observable<string[] | null> {
     if (!this.slugsCache$) {
       this.slugsCache$ = this.http.get<string[]>('/api/projects/slugs').pipe(
         retryTransientHttpError(),
-        // Evict the cache entry before catchError converts the error to of([]), so a
-        // future caller gets a fresh HTTP attempt instead of the pinned empty result.
+        // Evict the cache entry before catchError converts the error to of(null), so a
+        // future caller gets a fresh HTTP attempt instead of the pinned null result.
         tap({ error: () => (this.slugsCache$ = null) }),
         catchError((error) => {
           console.error('Failed to fetch project slugs:', error);
-          return of([]);
+          // Return null rather than [] so callers can distinguish "fetch failed, skip
+          // LFX filter" from "fetch succeeded, no LFX projects" — an empty array would
+          // make the component filter out all CDP affiliations as non-LFX contributions.
+          return of(null);
         }),
         shareReplay(1)
       );

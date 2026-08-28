@@ -67,7 +67,7 @@ export class ProfileAffiliationsComponent {
   public readonly addWorkExperience = output();
 
   private readonly cdpAffiliations = signal<CdpProjectAffiliation[]>([]);
-  private readonly lfxSlugs = signal<Set<string>>(new Set());
+  private readonly lfxSlugs = signal<Set<string> | null>(new Set());
   private readonly connectedIdentities = signal<EnrichedIdentity[]>([]);
   private readonly identitiesLoadFailed = signal(false);
 
@@ -429,7 +429,9 @@ export class ProfileAffiliationsComponent {
         ),
       ]).pipe(
         map(([cdpAffiliations, slugs, workExperiences, identities]) => {
-          const lfxSlugs = new Set(slugs);
+          // null means the slug fetch failed — use null to skip LFX filtering so affiliations
+          // are not silently hidden when the slug endpoint is temporarily unavailable.
+          const lfxSlugs = slugs !== null ? new Set(slugs) : null;
           this.cdpAffiliations.set(cdpAffiliations);
           this.lfxSlugs.set(lfxSlugs);
           this.workExperience.set(workExperiences);
@@ -448,7 +450,7 @@ export class ProfileAffiliationsComponent {
     );
   }
 
-  private transformToProjectGroups(cdpAffiliations: CdpProjectAffiliation[], lfxSlugs: Set<string>): ProjectGroup[] {
+  private transformToProjectGroups(cdpAffiliations: CdpProjectAffiliation[], lfxSlugs: Set<string> | null): ProjectGroup[] {
     const lfid = this.userService.user()?.username || this.userService.user()?.['https://sso.linuxfoundation.org/claims/username'] || '';
 
     const verifiedOrgIds = new Set(
@@ -458,7 +460,7 @@ export class ProfileAffiliationsComponent {
     );
 
     return cdpAffiliations
-      .filter((project) => project.projectSlug && lfxSlugs.has(project.projectSlug))
+      .filter((project) => project.projectSlug && (!lfxSlugs || lfxSlugs.has(project.projectSlug)))
       .map((project) => {
         const firstRole = project.roles.length > 0 ? project.roles[0] : undefined;
         const role: 'Maintainer' | 'Contributor' = firstRole?.role === 'Maintainer' ? 'Maintainer' : 'Contributor';
