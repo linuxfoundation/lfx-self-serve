@@ -822,11 +822,17 @@ export class WeeklyBriefCardComponent {
         // (and the attempt cap) indefinitely, since exhaustMap only completes once its
         // last active inner subscription settles.
         exhaustMap(() =>
-          // includeCurrentActivity: false (GH-1922) — this week's activity can't change
-          // mid-poll, so re-running that fan-out on every tick only multiplies its upstream
-          // cost for a value the poll's first tick (via the initial load) already has. Merged
-          // back onto the response below rather than fetched again.
-          this.weeklyBriefService.getWeeklyBrief(committeeUid, { includeCurrentActivity: false }).pipe(
+          // includeCurrentActivity (GH-1922): only opt out once a value is already in hand —
+          // this week's activity can't change mid-poll, so re-running the fan-out for a value
+          // already held is pure waste. But if the initial load left current_activity absent
+          // (a governance committee whose lookup/fetch degraded — see
+          // weekly-brief.service.ts#buildCurrentActivity), keep asking on every tick so a
+          // transient failure can still self-heal instead of staying blank for the rest of the
+          // poll and beyond, with nothing left to re-fetch it once the poll ends. A
+          // non-governance committee (also current_activity: undefined) re-asks too, but
+          // buildCurrentActivity short-circuits cheaply for those right after the category
+          // read, well before the expensive activity aggregation.
+          this.weeklyBriefService.getWeeklyBrief(committeeUid, { includeCurrentActivity: !this.briefResponse()?.current_activity }).pipe(
             timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS),
             catchError((err: unknown) => {
               console.error('[weekly-brief-card] poll tick failed, will retry', err);
@@ -838,10 +844,10 @@ export class WeeklyBriefCardComponent {
         // a transient poll failure must not look like a terminal state and stop the poll.
         filter((response): response is WeeklyBriefCurrentResponse => response !== null),
         tap((response) => {
-          // response never carries current_activity (includeCurrentActivity: false above) —
-          // preserve whatever the card already has instead of letting a plain .set() blank it
-          // out for the rest of this poll.
-          this.briefResponse.update((prev) => ({ ...response, current_activity: prev?.current_activity }));
+          // A tick that opted out (see above) carries no current_activity of its own — fall
+          // back to whatever the card already has rather than letting a plain .set() blank a
+          // good value out just because this particular tick didn't ask for a fresh one.
+          this.briefResponse.update((prev) => ({ ...response, current_activity: response.current_activity ?? prev?.current_activity }));
           // Same reasoning as initBriefResponseSubscription's subscribe: a fresh GET
           // supersedes any optimistic overlay.
           this.optimisticRating.set(null);

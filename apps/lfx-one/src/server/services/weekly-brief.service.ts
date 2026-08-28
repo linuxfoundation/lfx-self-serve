@@ -288,8 +288,10 @@ export class WeeklyBriefService {
    * activity cannot change mid-poll, so re-running the tally on every tick multiplies its real
    * upstream cost (getCommitteeById's 3 calls, plus getCommitteeActivity's own multi-call
    * aggregation for a governance committee) for a value that's already correct from the poll's
-   * first tick. The poll passes `includeCurrentActivity: false` and merges the initial value
-   * forward client-side instead.
+   * first tick. The poll passes `includeCurrentActivity: false` only once it already holds a
+   * value, merging it forward client-side instead of re-fetching — and keeps asking (the
+   * default) whenever it doesn't, so a transient degrade on the initial load can still self-heal
+   * on a later tick rather than staying blank for the rest of the poll and beyond.
    */
   public async getCurrentBrief(req: Request, committeeId: string, options: { includeCurrentActivity?: boolean } = {}): Promise<WeeklyBriefCurrentResponse> {
     const includeCurrentActivity = options.includeCurrentActivity ?? true;
