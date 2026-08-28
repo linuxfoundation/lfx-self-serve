@@ -158,9 +158,7 @@ export function inRequestOrder(keywords: KeywordActionRequest[], results: Ordere
   }
   // shift() so a request naming the same keyword twice consumes one result per occurrence
   // rather than repeating the first.
-  return keywords
-    .map((kw) => byKeyword.get(`${kw.adGroupId}-${kw.criterionId}`)?.shift())
-    .filter((r): r is KeywordActionResponse => r !== undefined);
+  return keywords.map((kw) => byKeyword.get(`${kw.adGroupId}-${kw.criterionId}`)?.shift()).filter((r): r is KeywordActionResponse => r !== undefined);
 }
 
 export function toBulkResponse(results: KeywordActionResponse[]): BulkKeywordActionResponse {
