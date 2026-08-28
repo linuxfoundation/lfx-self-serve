@@ -526,12 +526,23 @@ export class PlanningTabComponent implements OnInit {
               result.hs_utm ? `Created: ${result.campaign_name}` : `Created: ${result.campaign_name} — HubSpot has not assigned a UTM token yet`
             );
           } else {
-            this.hsStatus.set('Failed to create campaign');
+            // Same reasoning as the error arm: without a `created` flag the outcome is unknown,
+            // so the action is withdrawn rather than offered again.
+            this.hsNotFound.set(false);
+            this.hsStatus.set('The campaign may or may not have been created — check HubSpot before trying again.');
           }
           this.hsCreating.set(false);
         },
         error: () => {
-          this.hsStatus.set('Create failed');
+          // The outcome is UNKNOWN, not failed. Upstream reports an id-less 2xx as an error
+          // precisely because the campaign may already exist, and every other failure is
+          // classified unconfirmed for the same reason — so leaving the button up would invite
+          // a retry that creates a SECOND campaign in a namespace every foundation shares.
+          //
+          // Clearing hsNotFound hides the action. Recovering needs a fresh lookup, which is the
+          // only thing that can establish what actually happened.
+          this.hsNotFound.set(false);
+          this.hsStatus.set('The campaign may or may not have been created — check HubSpot before trying again.');
           this.hsCreating.set(false);
         },
       });

@@ -78,16 +78,30 @@
               }
 
               @if (hsNotFound() && !hsUtm()) {
-                <div class="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <span class="flex-1 text-sm text-amber-700">No campaign found for "{{ lastLookedUpEvent }}"</span>
-                  <button
-                    type="button"
-                    (click)="createInHubSpot()"
-                    [disabled]="hsCreating()"
-                    class="whitespace-nowrap rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                    data-testid="planning-hubspot-create-btn">
-                    {{ hsCreating() ? 'Creating...' : 'Create in HubSpot' }}
-                  </button>
+                <!--
+                  The exposure warning is REQUIRED by the upstream contract, not decoration.
+                  HubSpot's campaign namespace is the whole LF portal, so a campaign created here
+                  is visible to every other foundation's campaign managers — and the name is
+                  whatever event text the operator typed. Without this they cannot know that
+                  before clicking.
+                -->
+                <div class="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="planning-hubspot-create-block">
+                  <p class="text-sm text-amber-700">No campaign found for "{{ lastLookedUpEvent }}"</p>
+                  <p class="text-xs text-amber-800" data-testid="planning-hubspot-global-warning">
+                    Creating one adds it to the Linux Foundation's shared HubSpot account, where every foundation's campaign managers can see the name. Do not
+                    include anything project-sensitive.
+                  </p>
+                  <div class="flex items-center gap-3">
+                    <span class="flex-1"></span>
+                    <button
+                      type="button"
+                      (click)="createInHubSpot()"
+                      [disabled]="hsCreating()"
+                      class="whitespace-nowrap rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                      data-testid="planning-hubspot-create-btn">
+                      {{ hsCreating() ? 'Creating...' : 'Create in HubSpot' }}
+                    </button>
+                  </div>
                 </div>
               }
 

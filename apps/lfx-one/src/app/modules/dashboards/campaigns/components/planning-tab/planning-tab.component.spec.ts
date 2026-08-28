@@ -1173,6 +1173,40 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="planning-hubspot-matches"]')).toBeNull();
   });
 
+  /**
+   * The exposure warning is REQUIRED by the upstream contract, not decoration. HubSpot's campaign
+   * namespace is the whole LF portal, so a campaign created here is visible to every other
+   * foundation's campaign managers — and the name is whatever event text the operator typed.
+   */
+  it('warns that a created campaign is visible to every foundation', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+
+    const warning = fixture.nativeElement.querySelector('[data-testid="planning-hubspot-global-warning"]');
+    expect(warning).not.toBeNull();
+    expect(warning?.textContent).toMatch(/every foundation/i);
+    // Paired positive: the Create button must still be offered, so this cannot pass merely
+    // because the whole block failed to render.
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-hubspot-create-btn"]')).not.toBeNull();
+  });
+
+  /**
+   * A FAILED create withdraws the button. The outcome is unknown, not failed — upstream reports
+   * an id-less 2xx as an error precisely because the campaign may already exist, and classifies
+   * every other failure unconfirmed for the same reason. Leaving the button up invites a retry
+   * that creates a SECOND campaign in a namespace every foundation shares.
+   */
+  it('withdraws the create button when the outcome is unknown', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-hubspot-create-btn"]')).not.toBeNull();
+
+    create.mockReturnValue(throwError(() => new Error('upstream timeout')));
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-hubspot-create-btn"]')).toBeNull();
+    expect(String(instance()['hsStatus']())).toMatch(/check HubSpot/i);
+  });
+
   it('uses the token when the match has one', () => {
     runLookup({ found: true, hs_utm: 'kubecon-na-2026', campaign_name: 'KubeCon NA 2026', all_matches: [] });
 

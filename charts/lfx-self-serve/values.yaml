@@ -660,8 +660,10 @@ environment:
   # foundation's campaign managers, whatever project scoped the request. It performs no
   # duplicate check, which is why the UI must warn before offering it.
   # DEPENDS ON UPSTREAM ENDPOINTS THAT ARE NOT YET DEPLOYED. Both handlers call
-  # /projects/{id}/connection-hubspot/campaigns, added in campaign-service PR #193 (itself
-  # stacked on #192). Enabling this before those merge AND deploy routes both handlers at a 404,
+  # /projects/{id}/connection-hubspot/campaigns, added in
+  # linuxfoundation/lfx-v2-campaign-service#193 (itself stacked on #192 of that repo — a bare
+  # "#193" resolves to an unrelated PR in THIS repository, hence the full reference).
+  # Enabling this before those merge AND deploy routes both handlers at a 404,
   # which surfaces as "HubSpot lookup failed" — indistinguishable from a real HubSpot outage.
   # Verify the endpoints respond in the target environment before flipping this on.
   LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM:

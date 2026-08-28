@@ -325,8 +325,10 @@ that window lasts as long as the rollout.
 onto campaign-service.
 
 **It depends on upstream endpoints that may not be deployed yet.** Both handlers call
-`/projects/{id}/connection-hubspot/campaigns`, added in campaign-service PR #193 (itself stacked
-on #192). Enabling this before those merge _and_ deploy routes both handlers at a 404, which the
+`/projects/{id}/connection-hubspot/campaigns`, added in campaign-service PR
+[linuxfoundation/lfx-v2-campaign-service#193](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/193)
+(itself stacked on
+[#192](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/192)). Enabling this before those merge _and_ deploy routes both handlers at a 404, which the
 UI surfaces as "HubSpot lookup failed" — indistinguishable from a real HubSpot outage. Verify the
 endpoints respond in the target environment before flipping it on.
 
