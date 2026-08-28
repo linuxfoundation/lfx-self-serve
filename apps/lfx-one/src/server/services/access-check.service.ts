@@ -198,14 +198,14 @@ export class AccessCheckService {
   }
 
   /**
-   * Performs the access-check request/response round trip with no error handling — callers decide
-   * whether to degrade (`checkAccess`) or propagate (`checkAccessStrict`).
+   * Performs the access-check request/response round trip and logs its own completion.
+   * Callers own error handling: `checkAccess` degrades, `checkAccessStrict` propagates.
    *
    * When the resource count exceeds ACCESS_CHECK_BATCH_SIZE the tuples are split into bounded
    * chunks and fanned out with Promise.allSettled. Fulfilled chunks are merged; rejected chunks
-   * fail closed (their resources get `false`) and are logged at WARN. This preserves the
-   * existing fail-closed contract while ensuring a single bad chunk does not silently discard
-   * results from the successful ones.
+   * fail closed (their keys are absent from the result map, defaulting to false at lookup) and
+   * are logged at WARN. On clean completion logger.success is called; on partial failure
+   * logger.warning is called instead so monitoring alerts keyed on success do not fire.
    */
   private async performCheck(
     req: Request,

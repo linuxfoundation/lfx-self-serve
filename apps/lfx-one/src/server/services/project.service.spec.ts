@@ -297,7 +297,7 @@ describe('ProjectService — create picker methods', () => {
       expect(proxyRequest.mock.calls[1][4]).toMatchObject({ page_token: 'next-token' });
     });
 
-    it('never calls addAccessToResources (no access-check overhead)', async () => {
+    it('does not call addAccessToResources for a standard non-root project', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'x', slug: 'x' }]));
 
       await service.getProjectSlugs(req);
