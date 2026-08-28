@@ -1827,6 +1827,30 @@ export function deriveEventSlug(brief: CampaignBriefOutput): string | null {
  * that moves.
  */
 /**
+ * Add the field names campaign-service's consumers actually decode.
+ *
+ * The UI's own names are KEPT -- other consumers key on them, and dropping one would be a silent
+ * regression -- so this only ADDS aliases. Each was found by running the stack end to end:
+ *
+ * - `eventName`: `email_copy.go` REQUIRES it and 400s without it ("provide at least eventName");
+ *   `audience_build.go` prefers it and falls back to `name`. The UI persists `name`.
+ * - `country`: the audience builder matches it against a HubSpot country property and needs the
+ *   NAME, not the ISO-2 code the UI carries. See `countryNameFor`.
+ * - `location`: both consumers read it; the UI persists the same value as `city`.
+ *
+ * These are aliases rather than a rename because the wire shape is shared with the paid path,
+ * whose consumers read the UI's names. A rename would fix email and break paid.
+ */
+function toUpstreamEventDetails(details: CampaignEventDetails): Record<string, unknown> {
+  return {
+    ...details,
+    eventName: details.name,
+    location: details.city,
+    country: countryNameFor(details.countryCode),
+  };
+}
+
+/**
  * The ISO-2 code's country NAME, or an empty string when it is absent or unrecognised.
  *
  * Empty rather than the raw code: campaign-service fails loudly on a missing country and would
@@ -1856,7 +1880,7 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
     // literally, match no HubSpot country property, and the build would SUCCEED while storing an
     // empty inclusion list". Without this every audience build fails with "has no country in its
     // details" -- observed end to end against a live local campaign-service.
-    event_details: brief.eventDetails ? { ...brief.eventDetails, country: countryNameFor(brief.eventDetails.countryCode) } : undefined,
+    event_details: brief.eventDetails ? toUpstreamEventDetails(brief.eventDetails) : undefined,
     copy: {
       structured: brief.structuredCopy,
       linkedIn: brief.linkedInCopy ?? null,

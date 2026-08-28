@@ -2017,8 +2017,8 @@ describe('CampaignServiceClient brief country mapping', () => {
       .mockRejectedValueOnce(NOT_FOUND)
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }))
       .mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"2"' }));
-    const brief = { ...briefWithSlug('mcp-dev-summit-nairobi') };
-    (brief.eventDetails as Record<string, unknown>)['countryCode'] = countryCode;
+    const base = briefWithSlug('mcp-dev-summit-nairobi');
+    const brief = { ...base, eventDetails: { ...base.eventDetails, countryCode } };
     await new CampaignServiceClient().saveBrief(req, brief, 'mcp-dev-summit-nairobi', 'tlf', null, null, true);
     // The body is an ENVELOPE -- `{ brief: {...} }` -- so `event_details` sits one level deeper.
     const create = proxyRequestWithResponse.mock.calls.find((c) => c[3] === 'POST');
@@ -2035,6 +2035,25 @@ describe('CampaignServiceClient brief country mapping', () => {
     expect(details['country']).toBe('Kenya');
     // The code is still carried: other consumers (geo targeting) key on it.
     expect(details['countryCode']).toBe('KE');
+  });
+
+  it('sends the field names campaign-service actually decodes', async () => {
+    const details = await persistedDetails('KE');
+
+    // `email_copy.go` REQUIRES eventName and 400s without it; both consumers read `location`.
+    // The UI persists `name` and `city`, so without these aliases copy generation fails with
+    // "provide at least eventName" -- observed end to end against a live campaign-service.
+    expect(details['eventName']).toBe(details['name']);
+    expect(details['location']).toBe(details['city']);
+  });
+
+  it('keeps the UI field names alongside the aliases', async () => {
+    const details = await persistedDetails('KE');
+
+    // ADDED, not renamed: the wire shape is shared with the paid path, whose consumers read the
+    // UI's names. Renaming would fix email and silently break paid.
+    expect(details['name']).toBe('KubeCon EU 2026');
+    expect(details['city']).toBeDefined();
   });
 
   it('sends an empty country rather than the raw code when it is unrecognised', async () => {
