@@ -333,7 +333,10 @@ export class ProjectService {
    */
   public async getProjectSlugs(req: Request): Promise<string[]> {
     logger.debug(req, 'get_project_slugs', 'Fetching all project slugs', { page_size: QUERY_SERVICE_PAGE_SIZE });
-    const filtered = await this.fetchAllProjectsFiltered(req);
+    // failOnPartial: a truncated slug list silently drops affiliations from CDP matching —
+    // a user whose project was on a failed page appears as not LFX-affiliated. Throw instead
+    // so the caller receives an error and can surface it rather than returning a stale/false view.
+    const filtered = await this.fetchAllProjectsFiltered(req, {}, true);
     return filtered.map((p) => p.slug);
   }
 
@@ -7563,8 +7566,11 @@ export class ProjectService {
    * Both `getProjects` (access-checked) and `getProjectSlugs` (slug-only) delegate here
    * so the query params, pagination loop, and ROOT filter stay in one place.
    * @param extraQuery Optional caller-supplied query overrides merged into params (e.g. from getProjects).
+   * @param failOnPartial When true, a pagination failure throws instead of returning a truncated
+   *   list. Pass true for slug-only callers where a partial slug set silently drops affiliations;
+   *   leave false (default) for access-checked callers where a partial list degrades gracefully.
    */
-  private async fetchAllProjectsFiltered(req: Request, extraQuery: Record<string, any> = {}): Promise<Project[]> {
+  private async fetchAllProjectsFiltered(req: Request, extraQuery: Record<string, any> = {}, failOnPartial: boolean = false): Promise<Project[]> {
     const params = {
       ...extraQuery,
       type: 'project',
@@ -7573,11 +7579,14 @@ export class ProjectService {
       page_size: QUERY_SERVICE_PAGE_SIZE,
     };
 
-    const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const resources = await fetchAllQueryResources<Project>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial }
     );
 
     // ROOT is an administrative pseudo-project used only for persona detection — never surface it in user lists.

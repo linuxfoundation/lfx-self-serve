@@ -33,11 +33,10 @@ export class AccessCheckService {
    * @returns Map keyed by "id#access" to their access status (e.g. "meeting-1#organizer")
    *
    * Note: for calls with more than ACCESS_CHECK_BATCH_SIZE resources, `performCheck` fans out
-   * with Promise.allSettled and absorbs per-chunk failures internally — the catch block here
-   * is only reached for single-batch calls (≤ACCESS_CHECK_BATCH_SIZE resources) where the
-   * upstream call fails before any settling occurs. Multi-batch callers receive a partial
-   * result map (failed chunks absent, defaulting to false at lookup) rather than the
-   * all-false fallback map built here.
+   * with Promise.allSettled and absorbs per-chunk failures — failed chunks are absent from the
+   * result map (defaulting to false at lookup) rather than propagating. The all-false fallback
+   * map here is only returned when a single-batch call (≤ACCESS_CHECK_BATCH_SIZE resources)
+   * throws before any settling occurs.
    */
   public async checkAccess(req: Request, resources: AccessCheckRequest[], options?: ApiRequestOptions): Promise<Map<string, boolean>> {
     if (resources.length === 0) {
@@ -69,15 +68,10 @@ export class AccessCheckService {
    * of degrading to "no access". For callers that must distinguish "resolved: no access" (403)
    * from "couldn't verify" (503) — `checkAccess`'s fallback collapses that distinction.
    *
-   * Note: when the resource count exceeds ACCESS_CHECK_BATCH_SIZE, requests are split into chunks
-   * and fanned out with Promise.allSettled. Per-chunk failures — including total batch failure
-   * (all chunks rejected) — are absorbed: the method returns a partial or empty result map and
-   * logs a WARN rather than throwing. `checkAccessStrict` propagates only when `performCheck`
-   * itself throws, which happens on single-batch calls (≤ACCESS_CHECK_BATCH_SIZE resources)
-   * where the upstream call fails before any settling occurs. Callers passing more than
-   * ACCESS_CHECK_BATCH_SIZE resources will not benefit from the strict guarantee — prefer
-   * `checkAccessStrict` for single-resource or small bounded-count calls only.
-   * (search: checkAccessStrict-batch-limit-caveat — locate all callers before raising the limit)
+   * When the resource count exceeds ACCESS_CHECK_BATCH_SIZE, requests are split into chunks and
+   * fanned out with Promise.allSettled. Any per-chunk failure (including total batch failure)
+   * causes this method to throw after all chunks have settled and per-chunk WARNs have been
+   * logged — preserving the strict error-propagation contract across all batch sizes.
    * @param req Express request object with auth context
    * @param resources Array of resources to check access for
    * @param options Optional per-call overrides (e.g. explicit bearer token)
@@ -91,7 +85,7 @@ export class AccessCheckService {
     const { operationName, startTime } = this.beginCheckOperation(req, resources);
     try {
       // success/warning logged inside performCheck; only error is logged here on propagation.
-      return await this.performCheck(req, resources, operationName, startTime, options);
+      return await this.performCheck(req, resources, operationName, startTime, options, true);
     } catch (error) {
       // Unlike checkAccess, this rethrows rather than degrading — but still logs, so a failed
       // strict check leaves the same terminal error record as any other failed operation instead
@@ -222,16 +216,19 @@ export class AccessCheckService {
    *
    * When the resource count exceeds ACCESS_CHECK_BATCH_SIZE the tuples are split into bounded
    * chunks and fanned out with Promise.allSettled. Fulfilled chunks are merged; rejected chunks
-   * fail closed (their keys are absent from the result map, defaulting to false at lookup) and
-   * are logged at WARN. On clean completion logger.success is called; on partial failure
-   * logger.warning is called instead so monitoring alerts keyed on success do not fire.
+   * are logged at WARN. When `throwOnChunkFailure` is true (strict path), any chunk rejection
+   * causes a throw after all chunks settle and per-chunk WARNs are emitted. When false
+   * (degraded path), failed chunks fail closed (keys absent, defaulting to false at lookup).
+   * On clean completion logger.success is called; on partial failure logger.warning is called
+   * instead so monitoring alerts keyed on success do not fire.
    */
   private async performCheck(
     req: Request,
     resources: AccessCheckRequest[],
     operationName: string,
     startTime: number,
-    options?: ApiRequestOptions
+    options?: ApiRequestOptions,
+    throwOnChunkFailure: boolean = false
   ): Promise<Map<string, boolean>> {
     if (resources.length <= ACCESS_CHECK_BATCH_SIZE) {
       const resultMap = await this.performSingleCheck(req, resources, options);
@@ -290,6 +287,15 @@ export class AccessCheckService {
         ...sharedMetadata,
         duration_ms: Date.now() - startTime,
       });
+
+      // Strict callers must be able to distinguish "denied" from "couldn't verify" — throw
+      // after all chunks have settled and per-chunk WARNs have been emitted so the terminal
+      // warning above always appears in logs before the rethrow. The first rejection reason
+      // is surfaced; checkAccessStrict's catch block logs it at ERROR before rethrowing.
+      if (throwOnChunkFailure) {
+        const firstFailure = settled.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+        throw firstFailure.reason;
+      }
     } else {
       logger.success(req, operationName, startTime, sharedMetadata);
     }

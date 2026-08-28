@@ -310,6 +310,15 @@ describe('ProjectService — create picker methods', () => {
 
       expect(addAccessToResources).not.toHaveBeenCalled();
     });
+
+    it('throws when a subsequent page fails (failOnPartial: true — partial slug set drops affiliations)', async () => {
+      // First page succeeds; second page fails. With failOnPartial: true the caller receives an
+      // error rather than a truncated slug list that silently misrepresents affiliation state.
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next-token'));
+      proxyRequest.mockRejectedValueOnce(new Error('page-fail'));
+
+      await expect(service.getProjectSlugs(req)).rejects.toThrow('page-fail');
+    });
   });
 
   describe('getChildProjects', () => {
