@@ -183,7 +183,9 @@
       It stays in the DOM on the other email tabs, which is harmless: the computed reads signals
       that are only written by a search, so it is empty unless one is running or has answered.
     -->
-      <div role="status" aria-live="polite" class="sr-only" data-testid="campaigns-email-templates-live">{{ emailTemplatesAnnouncement() }}</div>
+      <div role="status" aria-live="polite" class="sr-only" data-testid="campaigns-email-templates-live">
+        {{ emailTemplatesAnnouncement() }}{{ emailTemplateSuggestionAnnouncement() }}
+      </div>
 
       <!--
       Metrics-read status, mounted OUTSIDE the @switch for the same reason as the region above:
@@ -389,8 +391,8 @@
                     -->
                       @if (emailTemplateSuggestionTerms().length > 0) {
                         <span
-                          >Pre-selected the template this portal appears to use for this event — matched on {{ emailTemplateSuggestionTerms().join(', ') }}.
-                          Pick a different one to override it.</span
+                          >Pre-selected the template this portal appears to use for this event — matched on {{ emailTemplateSuggestionTermsLabel() }}. Pick a
+                          different one to override it.</span
                         >
                       } @else {
                         <span>Pre-selected the template this portal appears to use for this event. Pick a different one to override it.</span>

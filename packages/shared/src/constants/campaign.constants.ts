@@ -1007,11 +1007,19 @@ export const EVENT_TERM_STOPWORDS: readonly string[] = [
   'america',
   'europe',
   'asia',
-  '2024',
-  '2025',
-  '2026',
-  '2027',
 ];
+
+/**
+ * Matches a year-shaped token, which is dropped from event terms whatever the year.
+ *
+ * Years were originally enumerated in the stopword list, which made the protection EXPIRE: in 2028
+ * an `Open Source Summit 2028` brief and an unrelated `Open newsletter 2028` template would match
+ * `open` plus `2028`, reach the threshold, and be pre-selected. A pattern cannot go stale.
+ *
+ * Deliberately narrow — four digits beginning 19 or 20. A bare `\d{4}` would also drop conference
+ * numbers and venue codes that really do identify an event.
+ */
+export const EVENT_TERM_YEAR_PATTERN = /^(19|20)\d{2}$/;
 
 /**
  * The twelve email types an event programme sends, in lifecycle order, each mapped to the stage

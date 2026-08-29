@@ -4072,6 +4072,98 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(text).toContain('. Pick a different one to override it.');
     });
 
+    /**
+     * The type is the tie-break, so it must be re-applied when the type CHANGES. A suggestion made
+     * under Registration Push is the wrong answer once the operator switches to CFP Launch — and
+     * left alone the stale template stayed selected and would have been the one staged.
+     */
+    it('re-derives the suggestion when the email type changes', () => {
+      showPicker();
+      picker().selectedEmailTypeId.set('main-registration-push');
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'cfp', name: 'MCP Dev Summit Nairobi — call for proposals closes soon' },
+          { id: 'reg', name: 'MCP Dev Summit Nairobi — registration reminder' },
+        ] as HubSpotMarketingEmail[],
+      });
+      expect(picker().selectedEmailTemplateId()).toBe('reg');
+
+      (fixture.componentInstance as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
+      expect(picker().selectedEmailTemplateId()).toBe('cfp');
+    });
+
+    /** A hand-picked template is the operator's; a type change is not permission to replace it. */
+    it('leaves a hand-picked template alone when the email type changes', () => {
+      showPicker();
+      picker().selectedEmailTypeId.set('main-registration-push');
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'cfp', name: 'MCP Dev Summit Nairobi — call for proposals closes soon' },
+          { id: 'reg', name: 'MCP Dev Summit Nairobi — registration reminder' },
+        ] as HubSpotMarketingEmail[],
+      });
+      picker().onSelectEmailTemplate('cfp');
+
+      (fixture.componentInstance as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
+      expect(picker().selectedEmailTemplateId()).toBe('cfp');
+    });
+
+    /**
+     * Years were enumerated in the stopword list, so the protection EXPIRED: in 2028 an unrelated
+     * "Open newsletter 2028" would match `open` plus `2028`, reach the threshold and be
+     * pre-selected. A pattern cannot go stale.
+     */
+    it('drops a year token from any year, not only the enumerated ones', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Open Source Summit 2028', 'open-source-summit-2028'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'unrelated', name: 'Open newsletter 2028' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+    });
+
+    /**
+     * The banner is a plain <p> inserted when the suggestion lands, and a newly inserted element is
+     * not reliably announced — so a screen-reader user could miss that a template was chosen for
+     * them and that it is the one staging will use.
+     */
+    it('announces the auto-selection through the existing live region', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+
+      const live = fixture.nativeElement.querySelector('[data-testid="campaigns-email-templates-live"]')?.textContent ?? '';
+      expect(live).toContain('MCP Dev Summit Nairobi registration');
+      expect(live).toContain('nairobi');
+
+      // Silent once the operator overrides — it no longer describes what is selected.
+      picker().onSelectEmailTemplate('mcp-other');
+      fixture.detectChanges();
+      const after = fixture.nativeElement.querySelector('[data-testid="campaigns-email-templates-live"]')?.textContent ?? '';
+      expect(after).not.toContain('Template selected for this event');
+    });
+
     /** The suggestion ranks too, so the derived template is reachable past the render cap. */
     it('ranks the event match to the top of the rendered list', () => {
       showPicker();

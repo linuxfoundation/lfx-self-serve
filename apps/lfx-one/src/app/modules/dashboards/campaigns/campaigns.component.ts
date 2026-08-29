@@ -18,6 +18,7 @@ import {
   EVENT_TEMPLATE_SUGGESTION_MIN_SCORE,
   EVENT_TERM_DISTINCTIVE_LENGTH,
   EVENT_TERM_STOPWORDS,
+  EVENT_TERM_YEAR_PATTERN,
   EVENT_TERM_WEIGHT,
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
@@ -727,6 +728,34 @@ export class CampaignsComponent {
 
   /** Which event terms the suggested template matched on, so the operator can judge it themselves. */
   protected readonly emailTemplateSuggestionTerms = signal<readonly string[]>([]);
+
+  /**
+   * The matched terms as one display string.
+   *
+   * A `computed` rather than `.join()` in the template: the checklist allows only signal reads,
+   * computed values and pipes there, and a `join` in an interpolation re-runs on every
+   * change-detection pass over an array that changes only when a search answers.
+   */
+  protected readonly emailTemplateSuggestionTermsLabel = computed<string>(() => this.emailTemplateSuggestionTerms().join(', '));
+
+  /**
+   * Screen-reader announcement for the auto-selection.
+   *
+   * The banner is a plain `<p>` inserted when the suggestion lands, and a newly inserted element
+   * is not reliably announced -- so a screen-reader user could miss that a template was chosen for
+   * them, and that it is the one staging will use. Routed through the picker's existing live
+   * region, which is already mounted and only has its CONTENTS change.
+   */
+  protected readonly emailTemplateSuggestionAnnouncement = computed<string>(() => {
+    const id = this.emailTemplateSuggestionId();
+    if (id === '' || id !== this.selectedEmailTemplateId()) {
+      return '';
+    }
+    const name = this.emailTemplates()?.find((t) => t.id === id)?.name ?? '';
+    const terms = this.emailTemplateSuggestionTermsLabel();
+    const matched = terms === '' ? '' : `, matched on ${terms}`;
+    return `Template selected for this event: ${name}${matched}. Choose another to override it.`;
+  });
 
   /**
    * The rows the picker actually DRAWS — the first `HUBSPOT_TEMPLATE_RENDER_LIMIT` of them.
@@ -1623,6 +1652,19 @@ export class CampaignsComponent {
     // Invalidate any generate still in flight. Clearing the signals is not enough: the older
     // response resolves afterwards and would repopulate the panel with the previous stage's copy.
     this.emailCopyGeneration++;
+
+    // Re-derive, because the type is the tie-break. Several of one event's templates score
+    // identically on the event, and the type is what chooses between them -- so a suggestion made
+    // under Registration Push is the wrong answer once the operator switches to CFP Launch. Left
+    // alone, the stale template stayed selected and would have been the one staged.
+    //
+    // Only when the current selection IS the suggestion: a hand-picked template is the operator's
+    // and a type change is not permission to replace it.
+    const templates = this.emailTemplates();
+    if (templates !== null && this.selectedEmailTemplateId() === this.emailTemplateSuggestionId()) {
+      this.selectedEmailTemplateId.set('');
+      this.applyEventTemplateSuggestion(templates);
+    }
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');
@@ -2577,7 +2619,7 @@ export class CampaignsComponent {
       // Lower-cased only. Letters outside a-z are KEPT, and the boundary matcher below is built
       // from the same alphabet, so an accented term matches an accented template name.
       const cleaned = token.toLowerCase();
-      if (cleaned.length >= 3 && !EVENT_TERM_STOPWORDS.includes(cleaned)) {
+      if (cleaned.length >= 3 && !EVENT_TERM_STOPWORDS.includes(cleaned) && !EVENT_TERM_YEAR_PATTERN.test(cleaned)) {
         seen.add(cleaned);
       }
     }
