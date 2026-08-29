@@ -720,6 +720,9 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
     await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync')], generateWeeklyBrief);
     expect(component.hasCurrentActivityData()).toBe(true);
+    // setup()'s own initial getWeeklyBrief call — pinned so the nth-call assertions below have a
+    // known starting index regardless of what setup() does internally.
+    expect(getWeeklyBrief.mock.calls).toHaveLength(1);
 
     fakePollTimers();
     try {
@@ -733,15 +736,23 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
 
-      // Length asserted explicitly — every tick here carries the same includeCurrentActivity:
-      // false args, so toHaveBeenLastCalledWith alone would pass silently even if the poll kept
-      // ticking past the terminal revision (the "poll doesn't stop" regression this suite exists
-      // to catch), same reasoning as the sibling test below.
+      // Length asserted explicitly, not just the last call's args — a call count that isn't
+      // exactly 2 means either the tick never fired or (e.g. a regressed pollActive guard) fired
+      // more than once within this same window, either of which would make
+      // toHaveBeenLastCalledWith silently read the wrong call.
       expect(getWeeklyBrief.mock.calls).toHaveLength(2);
       expect(getWeeklyBrief).toHaveBeenNthCalledWith(2, 'committee-board', { includeCurrentActivity: false });
       // The tick's own response has no current_activity key — this must still read as present,
       // merged forward from before the tick, not blanked out.
       expect(component.hasCurrentActivityData()).toBe(true);
+
+      // Proves takeWhile actually stopped the poll on this terminal revision, not just that this
+      // one tick's own args were right — the call count above alone can't distinguish "the poll
+      // stopped" from "we just haven't advanced far enough to see the next tick yet" (confirmed
+      // by mutation-testing isNewTerminal to always return false: the assertions above still pass
+      // with the poll never stopping — only a further advance catches it).
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief.mock.calls).toHaveLength(2);
     } finally {
       vi.useRealTimers();
     }
@@ -783,6 +794,12 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
       expect(getWeeklyBrief.mock.calls).toHaveLength(3);
       expect(getWeeklyBrief).toHaveBeenNthCalledWith(3, 'committee-board', { includeCurrentActivity: false });
+
+      // Proves the poll actually stopped on tick 2's terminal revision, not just that tick 2's
+      // own args were right — see the sibling test above for why a further advance is needed to
+      // tell "stopped" apart from "haven't looked far enough yet".
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief.mock.calls).toHaveLength(3);
     } finally {
       vi.useRealTimers();
     }
