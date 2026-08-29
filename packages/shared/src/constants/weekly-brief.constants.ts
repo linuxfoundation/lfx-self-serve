@@ -64,6 +64,13 @@ export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
  * *tally's* self-heal retries, not the brief's own terminal-state poll, which keeps running
  * regardless — a card can still finish generating and simply render without the "this week so
  * far" line once this is exhausted.
+ *
+ * Known v1 gap this cap doesn't cover: `pollUntilTerminal` (where this budget lives) only runs
+ * while the brief itself is `generating` — a page load onto an already-terminal brief (the far
+ * more common case) never invokes it at all. A transient `current_activity` degrade on that load
+ * has no self-heal path here; the tally simply doesn't render until the next navigation or
+ * reload. Not solved by this constant — a fix would need `initBriefResponseSubscription` to kick
+ * off its own bounded re-ask, independent of the generating-poll's budget.
  */
 export const WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS = 3;
 
