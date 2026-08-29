@@ -653,15 +653,21 @@ export class PlanningTabComponent implements OnInit {
           //         so the create offer stays up and the operator can correct and retry.
           //   404 — no HubSpot connection for this project. Also nothing created, but the
           //         remedy is to connect HubSpot rather than to change the name.
-          //   500 — the stored credential could not be decrypted. Nothing created either.
-          //   503 — UNCONFIRMED. The campaign may already exist, so the offer is WITHDRAWN and
+          //   else — UNCONFIRMED. The campaign may already exist, so the offer is WITHDRAWN and
           //         only a fresh lookup can establish what happened.
           //
-          // Treating every status as "may have been created" hid three actionable failures
-          // behind a message telling the operator to go and check HubSpot for a campaign that
-          // was never attempted.
+          // 500 is UNCONFIRMED, not a definite failure, even though one of its causes (an
+          // undecryptable credential) proves nothing was sent. It is the CATCH-ALL: the same
+          // status covers "the campaign was not returned after creation", where the campaign
+          // may well exist. A status cannot distinguish those, so the ambiguous reading is the
+          // only safe one for a non-idempotent create — the cost of being wrong the other way
+          // is a duplicate nobody can remove from this UI.
+          //
+          // Treating every status as "may have been created" hid two actionable failures behind
+          // a message telling the operator to check HubSpot for a campaign never attempted; the
+          // fix must not overshoot into the opposite error.
           const status = typeof err === 'object' && err !== null && 'status' in err ? Number((err as { status: unknown }).status) : 0;
-          if (status === 400 || status === 404 || status === 500) {
+          if (status === 400 || status === 404) {
             // Nothing was created: keep the offer so the operator can act on the message.
             this.hsUnconfirmed.set(false);
             this.hsStatus.set(this.createFailureMessage(status));
@@ -1170,16 +1176,13 @@ export class PlanningTabComponent implements OnInit {
   /**
    * The operator-facing message for a create that PROVABLY did not happen.
    *
-   * Split by status because the remedies differ and are not interchangeable: a rejected name is
-   * the operator's to fix, a missing connection needs HubSpot connected, and a credential that
-   * cannot be decrypted is nobody's to fix from this screen.
+   * Only the statuses that PROVE nothing was created reach here: a rejected name is the
+   * operator's to fix, a missing connection needs HubSpot connected. A 500 is deliberately NOT
+   * among them — see the caller.
    */
   private createFailureMessage(status: number): string {
     if (status === 404) {
       return 'No HubSpot connection is configured for this project — connect HubSpot before creating a campaign.';
-    }
-    if (status === 500) {
-      return 'The stored HubSpot credential could not be used. Nothing was created; this needs an administrator.';
     }
     return 'HubSpot rejected the campaign. Nothing was created — check the name and try again.';
   }

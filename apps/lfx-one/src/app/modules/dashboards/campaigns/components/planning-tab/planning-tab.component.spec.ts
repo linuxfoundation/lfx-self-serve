@@ -1277,7 +1277,10 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     for (const [status, offerStaysUp, expected] of [
       [400, true, /check the name/i],
       [404, true, /connect HubSpot/i],
-      [500, true, /administrator/i],
+      // 500 is the CATCH-ALL, not just "credential undecryptable": it also covers "the campaign
+      // was not returned after creation", where the campaign may well exist. A status cannot
+      // tell those apart, so it must fail CLOSED for a non-idempotent create.
+      [500, false, /may or may not/i],
       [503, false, /may or may not/i],
       // Unclassifiable: a non-idempotent create must fail CLOSED, so it reads as unconfirmed.
       [0, false, /may or may not/i],
