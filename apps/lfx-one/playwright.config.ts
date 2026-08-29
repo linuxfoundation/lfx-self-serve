@@ -24,7 +24,12 @@ try {
  * and for the case where 4200 is already serving another session.
  */
 const E2E_PORT = process.env['E2E_PORT'] ?? '4200';
-const E2E_BASE_URL = `http://localhost:${E2E_PORT}`;
+// 127.0.0.1, not localhost. `ng serve` binds IPv4-only, while Chromium resolves localhost to
+// ::1 first — so every navigation came back ERR_CONNECTION_REFUSED against a server that was
+// up and serving, and the run read as six spec failures rather than a name-resolution problem.
+// Overridable for anyone whose setup needs a different host.
+const E2E_HOST = process.env['E2E_HOST'] ?? '127.0.0.1';
+const E2E_BASE_URL = `http://${E2E_HOST}:${E2E_PORT}`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -89,7 +94,12 @@ export default defineConfig({
   webServer: {
     // `yarn start` is the ROOT script, which goes through turbo and does not accept --port; the
     // app's own script is `ng serve`. Invoked directly so an E2E_PORT override actually works.
-    command: `yarn --cwd apps/lfx-one ng serve --port ${E2E_PORT}`,
+    //
+    // No --cwd: this config already lives in apps/lfx-one, so Playwright runs the command from
+    // there and `--cwd apps/lfx-one` resolved to apps/lfx-one/apps/lfx-one. Locally
+    // reuseExistingServer hides it by adopting a server someone already started; CI has it off,
+    // so the server never launches and the whole suite fails there.
+    command: `yarn ng serve --port ${E2E_PORT}`,
     url: E2E_BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

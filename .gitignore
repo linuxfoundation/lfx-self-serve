@@ -76,3 +76,6 @@ design/
 # Playwright MCP snapshot/screenshot artifacts
 .playwright-mcp
 .claude/launch.json
+
+# Playwright auth state — a real signed-in SSO session. Never commit.
+playwright/.auth/

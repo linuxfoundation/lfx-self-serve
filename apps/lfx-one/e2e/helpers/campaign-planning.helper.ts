@@ -10,7 +10,9 @@
  * panel into one specific state and assert what the user is then allowed to do.
  */
 
-import { Page, test } from '@playwright/test';
+import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
+import type { PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
+import { expect, Frame, Locator, Page, test } from '@playwright/test';
 
 export const DATA_LOAD_TIMEOUT = 30_000;
 
@@ -45,6 +47,19 @@ export function skipWhenAuthMissing(): void {
 }
 
 /** One `text/event-stream` body, in the shape `/api/campaigns/brief/generate` emits. */
+/**
+ * The PAID planning panel.
+ *
+ * The Campaigns page renders the planning tab TWICE — `campaigns-planning-panel` for paid and
+ * `campaigns-email-planning-panel` for email — so every `planning-*` testid resolves to two
+ * elements and an unscoped locator is a strict-mode violation. Scoping here rather than in each
+ * spec means a test cannot accidentally assert against the email panel, which has its own
+ * HubSpot surface and different rules.
+ */
+export function paidPanel(page: Page): Locator {
+  return page.getByTestId('campaigns-planning-panel');
+}
+
 export function sseBody(events: { type: string; data: unknown }[]): string {
   return events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e.data)}\n\n`).join('');
 }
@@ -94,13 +109,6 @@ export async function mockPlanningApis(page: Page, opts: PlanningMockOptions = {
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'not_found' }) })
   );
 
-  await page.route('**/api/campaigns/hubspot/utm?**', (route) => {
-    if (route.request().method() !== 'GET') return route.fallback();
-    counts.lookups += 1;
-    if (!opts.lookup) return route.fallback();
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.lookup) });
-  });
-
   await page.route('**/api/campaigns/hubspot/utm/create**', (route) => {
     counts.creates += 1;
     const create = opts.create;
@@ -110,14 +118,126 @@ export async function mockPlanningApis(page: Page, opts: PlanningMockOptions = {
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(create) });
   });
+
+  // The CREATE route is registered FIRST, and the lookup guards on the path, because
+  // `**/api/campaigns/hubspot/utm?**` also matches `/utm/create?...` — Playwright runs the most
+  // recently registered handler first, so an overlapping lookup pattern silently swallowed every
+  // create and the panel never advanced.
+  await page.route('**/api/campaigns/hubspot/utm?**', (route) => {
+    if (new URL(route.request().url()).pathname.endsWith('/create')) return route.fallback();
+    if (route.request().method() !== 'GET') return route.fallback();
+    counts.lookups += 1;
+    if (!opts.lookup) return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.lookup) });
+  });
+}
+
+/**
+ * Present the signed-in user as an executive director.
+ *
+ * `campaignAccessGuard` admits an ED outright and otherwise redirects to /foundation/overview —
+ * a SILENT redirect, so without this the specs land on the Me lens and every locator fails with
+ * "element not found" rather than anything that names the real cause.
+ *
+ * Both halves are needed: the COOKIE is what SSR reads while rendering, and the route mock is
+ * what the browser-side XHR reads afterwards. Seeding only one leaves the two disagreeing.
+ * Mirrors seedEdPersona in ed-dashboard-unavailable.spec.ts.
+ */
+export async function seedEdPersona(page: Page): Promise<void> {
+  const state: PersistedPersonaState = {
+    primary: 'executive-director' as PersonaType,
+    all: ['executive-director'] as PersonaType[],
+  };
+  await page.context().addCookies([
+    {
+      name: PERSONA_COOKIE_KEY,
+      value: encodeURIComponent(JSON.stringify(state)),
+      // Must match the host in baseURL (127.0.0.1) — a cookie scoped to 'localhost' is simply
+      // not sent to 127.0.0.1, and the persona guard would redirect away from the tab.
+      domain: new URL(process.env['E2E_BASE_URL'] ?? `http://${process.env['E2E_HOST'] ?? '127.0.0.1'}:${process.env['E2E_PORT'] ?? '4200'}`).hostname,
+      path: '/',
+      sameSite: 'Lax',
+    },
+  ]);
+  await page.route('**/api/user/personas*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        personas: ['executive-director'],
+        personaProjects: {},
+        projects: [],
+        organizations: [],
+        isRootWriter: false,
+        isLFStaff: false,
+      }),
+    })
+  );
 }
 
 /** Open the Campaigns page's Planning tab for a foundation. */
-export async function gotoPlanningTab(page: Page, project = 'cncf'): Promise<void> {
+/**
+ * Open the Campaigns page's Planning tab for a foundation.
+ *
+ * Defaults to `tlf`, matching the other authenticated specs in this suite: the route is behind
+ * campaignAccessGuard, which redirects to /foundation/overview unless the signed-in user is an
+ * ED or campaign_manager on that project — so a slug the test account cannot access fails as a
+ * silent redirect rather than an obvious error.
+ */
+/**
+ * Resolves once the page has stopped re-navigating to itself.
+ *
+ * SSR hydration re-navigates to the same url more than once, and every one of those destroys the
+ * component tree. A test that types before the last one loses the value with no error anywhere,
+ * which reads as a form-binding bug rather than a timing one. networkidle cannot be used to wait
+ * this out because the app keeps long-lived connections open and never reaches idle.
+ */
+async function waitForHydration(page: Page, quietMs = 1200, timeoutMs = 20000): Promise<void> {
+  let last = Date.now();
+  const onNav = (f: Frame): void => {
+    if (f === page.mainFrame()) {
+      last = Date.now();
+    }
+  };
+  page.on('framenavigated', onNav);
+  try {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (Date.now() - last >= quietMs) {
+        return;
+      }
+      await page.waitForTimeout(150);
+    }
+  } finally {
+    page.off('framenavigated', onNav);
+  }
+}
+
+export async function gotoPlanningTab(page: Page, project = 'aswf'): Promise<void> {
+  await seedEdPersona(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing();
   await page.goto(`/foundation/campaigns?project=${encodeURIComponent(project)}`, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing();
+
+  // Wait for hydration to settle before touching anything. The SSR page renders, then navigates
+  // to its own url twice more as it hydrates, and each of those tears down the component tree —
+  // anything typed before the last one is silently gone about half a second later. That looked
+  // for a long time like a typing or form-binding bug; it is neither, the field is simply on a
+  // component that got destroyed.
+  //
+  // Not networkidle: this app holds long-lived connections open, so the network never goes idle
+  // and the wait just burns the whole timeout. Waiting for the re-navigations to STOP is the
+  // actual signal — the url is stable, so count main-frame navigations and wait for a quiet gap.
+  await waitForHydration(page);
+
+  // The tab is 'Plan' and it IS the default selected tab, but the click is kept: it is what
+  // guarantees the panel is mounted regardless of which tab a future default lands on, and
+  // clicking an already-selected tab is a no-op.
+  const planningTab = page.locator('#tab-planning');
+  await planningTab.waitFor({ state: 'visible', timeout: DATA_LOAD_TIMEOUT });
+  await planningTab.click();
+  await paidPanel(page).getByTestId('planning-url-input').waitFor({ state: 'visible', timeout: DATA_LOAD_TIMEOUT });
 }
 
 /**
@@ -126,11 +246,20 @@ export async function gotoPlanningTab(page: Page, project = 'cncf'): Promise<voi
  * The debounce is 500ms; waiting on the STATUS element rather than a fixed sleep is what keeps
  * this from being timing-dependent on a loaded CI machine.
  */
-export async function typeEventUrl(page: Page, url = EVENT_URL): Promise<void> {
-  // The url field has its OWN testid. `planning-url-section` contains two inputs, so a
-  // `.locator('input').first()` would be one refactor away from silently typing into the wrong
-  // one and asserting against a lookup that never happened.
-  const input = page.getByTestId('planning-url-input');
+export async function typeEventUrl(page: Page, url: string = EVENT_URL): Promise<void> {
+  const input = paidPanel(page).getByTestId('planning-url-input');
+  await input.waitFor({ state: 'visible' });
+
+  // fill() goes through the ControlValueAccessor, which is the part that matters here. Writing
+  // .value directly does update the DOM, but Angular's form model still holds '' and the next
+  // change-detection pass writes that empty model straight back over the field — the value is
+  // gone about a second later, with no error anywhere. Assert it survived rather than trusting
+  // the write, because that reset is silent and made this look like a typing/encoding problem.
   await input.fill(url);
-  await input.blur();
+  await expect(input).toHaveValue(url);
+
+  await paidPanel(page)
+    .getByTestId('planning-hubspot-status')
+    .waitFor({ state: 'visible', timeout: DATA_LOAD_TIMEOUT })
+    .catch(() => {});
 }
