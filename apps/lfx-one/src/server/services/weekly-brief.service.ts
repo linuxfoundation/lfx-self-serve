@@ -300,32 +300,15 @@ export class WeeklyBriefService {
    * mock/live `brief`/`throttle` contract this builds on.
    *
    * `includeCurrentActivity` (default true) lets a caller opt out of the current_activity
-   * (GH-1922) fan-out entirely. Two independent client callers do, on two different signals —
-   * see `WeeklyBriefService#getWeeklyBrief` (the Angular client, `app/shared/services/`) for the
-   * full breakdown:
-   *   - `weekly-brief-card.component.ts`'s `initBriefResponseSubscription` opts out on every
-   *     non-poll load (see that method's `combineLatest` sources for what triggers one — not
-   *     re-listed here, since it's exactly the kind of detail that drifts stale as those sources
-   *     change) for any committee its own `isGoverningBoardCommittee()` already reports as
-   *     non-governance — the tally section can never render for one regardless of what
-   *     current_activity holds, so the fan-out would be pure waste.
-   *   - `weekly-brief-card.component.ts`'s `pollUntilTerminal` is this endpoint's heaviest caller
-   *     — up to `WEEKLY_BRIEF_MAX_POLL_ATTEMPTS` hits at `WEEKLY_BRIEF_POLL_INTERVAL_MS` apart per
-   *     generate/regenerate — and this week's activity cannot change mid-poll, so re-running the
-   *     tally on every tick multiplies its real upstream cost (getCommitteeBase's one call, plus
-   *     getCommitteeActivity's own multi-call aggregation for a governance committee — see
-   *     buildCurrentActivity's doc comment for how the two share a single committee fetch) for a
-   *     value that's already correct from the poll's first tick. It passes
-   *     `includeCurrentActivity: false` once ANY of three conditions holds: the current_activity
-   *     KEY is present on what it already holds (see `WeeklyBriefCurrentResponse.current_activity`'s
-   *     doc comment for the absent/null/present contract this depends on — `null` is a settled
-   *     answer and stops the asking same as a real value); the committee isn't
-   *     governance-classified (so a deliberate non-poll-load opt-out, which also leaves the key
-   *     absent, is never mistaken for a transient degrade worth re-asking for); or
-   *     `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS` re-asks have already been spent on a
-   *     governance committee whose fan-out keeps genuinely failing. When none of those holds, a
-   *     transient degrade on an earlier non-poll load can still self-heal on a later poll tick
-   *     rather than staying blank for the rest of the poll and beyond.
+   * (GH-1922) fan-out entirely — worth having because `getCommitteeActivity`'s own multi-call
+   * aggregation isn't free, and this week's activity can't change within one poll cycle, so
+   * re-running it on every tick would multiply a real upstream cost for a value that's already
+   * correct from the first tick. Two independent client callers opt out, each on its own signal
+   * — see `WeeklyBriefService#getWeeklyBrief` (the Angular client, `app/shared/services/`) for
+   * which callers, when, and why — and see `WeeklyBriefCurrentResponse.current_activity`'s doc
+   * comment (`@lfx-one/shared/interfaces`) for the absent/null/present contract this option
+   * interacts with. Not re-derived here to avoid yet another copy of that contract drifting out
+   * of sync with the other five that already reference it.
    */
   public async getCurrentBrief(req: Request, committeeId: string, options: { includeCurrentActivity?: boolean } = {}): Promise<WeeklyBriefCurrentResponse> {
     const includeCurrentActivity = options.includeCurrentActivity ?? true;
@@ -1227,16 +1210,12 @@ export class WeeklyBriefService {
    * own — safe here only because this method's one caller, `getCurrentBrief`, is reachable
    * exclusively through the controller's `assertCommitteeRead` gate; a new caller of
    * `getCommitteeBase` would need its own. Fails soft to `undefined` (never an empty array) on a
-   * genuine error — one of three states, not two: `undefined` is transient ("couldn't
-   * determine", worth asking again), `null` is settled ("known not to apply", see below), and a
-   * real object is "genuinely zero activity this week" or more. `undefined`'s three actual causes
-   * (see this method's body): `getCommitteeBase` resolves with no body at all; it resolves with a
-   * committee that carries no usable `category`; or any other error thrown while building the
-   * tally, caught below.
-   * `weekly-brief-card.component.ts`'s `hasCurrentActivityData` collapses `undefined`/`null`
-   * alike for rendering (neither is a value to show), but its `pollUntilTerminal` poll loop
-   * depends on keeping them apart — see `WeeklyBriefCurrentResponse.current_activity`'s doc
-   * comment for the full contract.
+   * genuine error — see `WeeklyBriefCurrentResponse.current_activity`'s doc comment
+   * (`@lfx-one/shared/interfaces`) for the full absent/null/present contract that puts `undefined`
+   * here in context; not re-derived in this method. `undefined`'s three actual causes, specific
+   * to this method and not part of that shared contract: `getCommitteeBase` resolves with no
+   * body at all; it resolves with a committee that carries no usable `category`; or any other
+   * error thrown while building the tally, caught below.
    *
    * `limit: ACTIVITY_FEED_MAX_PAGE_SIZE` is a single, unfollowed page — `getCommitteeActivity`
    * hard-rejects any larger `limit`, so that's the ceiling one call can ever return. Deliberately
@@ -1328,7 +1307,20 @@ export class WeeklyBriefService {
         return null;
       }
 
+      // Filtered to occurred_at <= window_end, not just >= window_start (the `since` param
+      // above already narrows that half) — getCommitteeActivity has no `before`/upper-bound
+      // param of its own, and at least one leg can report an occurred_at ahead of "now": a vote
+      // administratively ended (status ENDED) with its own end_time still in the future stamps
+      // occurred_at from that future end_time (see mapVoteToEvent). Without this filter,
+      // window_end would advertise a bound the response doesn't actually honor. Numeric (Date.parse),
+      // not string, comparison — matches committee-activity.service.ts's own timestampValue
+      // convention rather than assuming every occurred_at is byte-identically formatted to
+      // window_end's toISOString() output. An unparseable occurred_at (NaN) is let through rather
+      // than dropped — this filter exists to enforce a stated bound, not to validate the field.
+      const windowEndMs = Date.parse(window_end);
       const sourceRefs = data.reduce<WeeklyBriefSourceRef[]>((refs, event) => {
+        const eventMs = Date.parse(event.occurred_at);
+        if (!Number.isNaN(eventMs) && eventMs > windowEndMs) return refs;
         const ref = mapActivityEventToCurrentActivityRef(event);
         if (ref) refs.push(ref);
         return refs;

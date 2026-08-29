@@ -565,7 +565,8 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     expect(text).toContain('1 meeting held');
     expect(text).toContain('1 vote closed');
     expect(text).toContain('1 document added');
-    // WEEKLY_BRIEF_SOURCE_SECTIONS order: meeting, vote, ..., doc.
+    // WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES order: meeting, vote, ..., doc — the list
+    // initCurrentActivitySections actually iterates, not WEEKLY_BRIEF_SOURCE_SECTIONS.
     expect(text.indexOf('1 meeting held')).toBeLessThan(text.indexOf('1 vote closed'));
     expect(text.indexOf('1 vote closed')).toBeLessThan(text.indexOf('1 document added'));
   });

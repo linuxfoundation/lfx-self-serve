@@ -933,6 +933,42 @@ describe('WeeklyBriefService', () => {
       }
     });
 
+    it('excludes an event whose occurred_at is after window_end — getCommitteeActivity has no upper-bound param of its own to enforce this', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-01-14T12:00:00.000Z'));
+
+        getCommitteeActivityMock.mockResolvedValue({
+          data: [
+            {
+              type: 'meeting_held',
+              // Ahead of window_end (2026-01-14T12:00:00.000Z) — e.g. a vote administratively
+              // ended with its own end_time still in the future (see mapVoteToEvent).
+              occurred_at: '2026-01-14T13:00:00.000Z',
+              committee_uid: 'committee-1',
+              payload: { meeting_id: 'm1', meeting_occurrence_id: 'm1-occ', title: 'Future Meeting', password: null },
+            },
+            {
+              type: 'meeting_held',
+              occurred_at: '2026-01-14T11:00:00.000Z',
+              committee_uid: 'committee-1',
+              payload: { meeting_id: 'm2', meeting_occurrence_id: 'm2-occ', title: 'Real Meeting', password: null },
+            },
+          ],
+          page_token: undefined,
+        });
+
+        const result = await service.getCurrentBrief(req, 'committee-1');
+
+        expect(result.current_activity?.source_refs).toEqual([{ id: 'm2-occ', kind: 'meeting', title: 'Real Meeting' }]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('never calls getCommitteeActivity for a non-governance committee, and current_activity settles to null (not undefined)', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ category: 'Working Group' });
