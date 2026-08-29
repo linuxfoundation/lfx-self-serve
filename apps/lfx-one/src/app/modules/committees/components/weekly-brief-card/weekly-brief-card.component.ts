@@ -246,8 +246,8 @@ export class WeeklyBriefCardComponent {
   public readonly currentActivity: Signal<WeeklyBriefCurrentActivitySection[]> = this.initCurrentActivitySections();
 
   // Distinguishes "no value to show" (absent — a transient server-side lookup/fetch degrade —
-  // or null — a settled non-governance/full-page answer; see weekly-brief.service.ts's
-  // WeeklyBriefCurrentResponse.current_activity doc comment for that three-state contract,
+  // or null — a settled non-governance/full-page answer; see WeeklyBriefCurrentResponse's own
+  // current_activity doc comment, in @lfx-one/shared/interfaces, for that three-state contract,
   // which pollUntilTerminal's poll loop below depends on but rendering here doesn't) from "the
   // field is a real object, every kind possibly zero" (a genuine quiet week) — the template
   // must render neither line nor "no activity yet" for the former, only the latter (GH-1922:

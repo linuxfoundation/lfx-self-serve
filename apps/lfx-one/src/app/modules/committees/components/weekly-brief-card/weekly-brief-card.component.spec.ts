@@ -703,14 +703,14 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
    * `timer(delay, period)` schedules its periodic emissions via `setInterval`, not repeated
    * `setTimeout` calls, so faking only `setTimeout` (as the two prior commits in this sequence
    * tried) leaves the poll's own timer running on the real clock and `vi.advanceTimersByTimeAsync`
-   * advances nothing it's actually waiting on. Deliberately does NOT fake `Date`'s siblings this
-   * suite doesn't need, and — critically — the tests below never call `fixture.whenStable()` while
-   * fake timers are active: zoneless Angular's own change-detection stability tracking depends on
-   * some faked-by-default primitive (`requestAnimationFrame` is the prime suspect, though the
-   * exact mechanism wasn't root-caused), and calling it here hangs indefinitely. Assertions read
-   * component signals directly instead (`hasCurrentActivityData()`, the `getWeeklyBrief` spy's
-   * call args) — `vi.advanceTimersByTimeAsync`'s own microtask flushing is sufficient for those to
-   * be current by the time it resolves.
+   * advances nothing it's actually waiting on. Deliberately excludes `requestAnimationFrame` and
+   * every other vitest-fakes-by-default primitive this suite doesn't need — critically, zoneless
+   * Angular's own change-detection stability tracking depends on one of them (`rAF` is the prime
+   * suspect, though the exact mechanism wasn't root-caused), and faking it hangs
+   * `fixture.whenStable()` indefinitely. For that reason the tests below never call
+   * `fixture.whenStable()` while fake timers are active — assertions read component signals and
+   * the `getWeeklyBrief` spy's call args directly instead, which `vi.advanceTimersByTimeAsync`'s
+   * own microtask flushing keeps current without it.
    */
   function fakePollTimers(): void {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
@@ -747,6 +747,9 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     // null activityRefs — current_activity starts absent (e.g. a degraded initial lookup).
     await setup(BOARD_COMMITTEE, null, generateWeeklyBrief);
     expect(component.hasCurrentActivityData()).toBe(false);
+    // setup()'s own initial getWeeklyBrief call — pinned so the nth-call assertions below have a
+    // known starting index regardless of what setup() does internally.
+    expect(getWeeklyBrief.mock.calls).toHaveLength(1);
 
     fakePollTimers();
     try {
@@ -762,14 +765,19 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       component.onGenerate();
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
-      expect(getWeeklyBrief).toHaveBeenLastCalledWith('committee-board', { includeCurrentActivity: true });
+      // Length asserted explicitly, not just the last call's args — a call count that isn't
+      // exactly 2 means either the tick never fired or fired more than once, either of which
+      // would make toHaveBeenLastCalledWith silently read the wrong call.
+      expect(getWeeklyBrief.mock.calls).toHaveLength(2);
+      expect(getWeeklyBrief).toHaveBeenNthCalledWith(2, 'committee-board', { includeCurrentActivity: true });
 
       // The second tick is the real proof: if the first tick's fresh null had been discarded by
       // a `??` merge (rather than adopted via `!== undefined`), current_activity would still
       // read as absent here and this second tick would ask again with `true` — forever, on every
       // subsequent tick, which is the exact regression this commit exists to fix.
       await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
-      expect(getWeeklyBrief).toHaveBeenLastCalledWith('committee-board', { includeCurrentActivity: false });
+      expect(getWeeklyBrief.mock.calls).toHaveLength(3);
+      expect(getWeeklyBrief).toHaveBeenNthCalledWith(3, 'committee-board', { includeCurrentActivity: false });
     } finally {
       vi.useRealTimers();
     }
