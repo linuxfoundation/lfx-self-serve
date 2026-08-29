@@ -171,6 +171,12 @@ export class PlanningTabComponent implements OnInit {
    * re-enabling the button under a running request. This only advances.
    */
   private createGeneration = 0;
+  /**
+   * The same monotonic id for the in-flight LOOKUP. Identical reasoning to createGeneration:
+   * an A -> B -> A round trip while an A lookup is in flight leaves the old response matching
+   * on event AND foundation, so it would pass an equality check and overwrite the newer one.
+   */
+  private lookupGeneration = 0;
   private readonly urlInput$ = new Subject<string>();
 
   /**
@@ -1101,6 +1107,11 @@ export class PlanningTabComponent implements OnInit {
    * for releasing an in-flight flag: the moment the user retypes, it goes false while the only
    * request in flight is still this one, so nothing would ever clear the spinner. Here the
    * question is narrower and is about ownership of the flag, not about what may be displayed.
+   *
+   * Keyed on a GENERATION rather than on the event and foundation, for the same reason
+   * createIsCurrent is: both of those can come BACK. An A -> B -> A round trip while an A
+   * lookup is in flight leaves the old response matching on both, so an equality check would
+   * let it clear or overwrite the newer one. A counter only advances.
    */
   /**
    * The status line for a lookup that found nothing, which is three different statements.
@@ -1120,8 +1131,8 @@ export class PlanningTabComponent implements OnInit {
     return 'No matching campaign in HubSpot';
   }
 
-  private lookupIsCurrent(capturedEvent: string, capturedFoundation: string): boolean {
-    return this.lastLookedUpEvent === capturedEvent && this.activeFoundationSlug() === capturedFoundation;
+  private lookupIsCurrent(generation: number): boolean {
+    return this.lookupGeneration === generation;
   }
 
   /**
@@ -1176,6 +1187,7 @@ export class PlanningTabComponent implements OnInit {
 
     const capturedEvent = eventName;
     const capturedFoundation = this.activeFoundationSlug();
+    const generation = ++this.lookupGeneration;
     this.campaignService
       .lookupHubSpotUtm(capturedFoundation, eventName)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -1184,7 +1196,7 @@ export class PlanningTabComponent implements OnInit {
           // Two DIFFERENT questions, so two different guards. Releasing the shared in-flight
           // flag asks "is this still the latest lookup?"; rendering the answer asks the stricter
           // "does the panel still show this event?".
-          if (this.lookupIsCurrent(capturedEvent, capturedFoundation)) {
+          if (this.lookupIsCurrent(generation)) {
             this.hsSearching.set(false);
           }
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
@@ -1220,7 +1232,7 @@ export class PlanningTabComponent implements OnInit {
           // unconditionally lets an OLDER request's failure declare a newer in-flight lookup
           // finished. So it is released only by the lookup that still OWNS it — a narrower
           // question than whether its answer may be rendered, below.
-          if (this.lookupIsCurrent(capturedEvent, capturedFoundation)) {
+          if (this.lookupIsCurrent(generation)) {
             this.hsSearching.set(false);
           }
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;

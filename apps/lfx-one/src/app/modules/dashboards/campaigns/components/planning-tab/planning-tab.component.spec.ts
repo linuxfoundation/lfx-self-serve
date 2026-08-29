@@ -1240,6 +1240,34 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   /**
+   * The lookup side has the identical hazard: an A -> B -> A round trip while an A lookup is in
+   * flight leaves the old response matching on event AND foundation, so an equality check lets
+   * it clear the flag a newer A lookup is holding.
+   */
+  it('does not let a round-tripped stale lookup clear a newer search', () => {
+    const first = new Subject<never>();
+    lookup.mockReturnValue(first);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+
+    // A newer lookup for the SAME event under the SAME foundation is now in flight.
+    const second = new Subject<never>();
+    lookup.mockReturnValue(second);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+    expect(instance()['hsSearching']()).toBe(true);
+
+    first.error(new Error('stale lookup failed'));
+    fixture.detectChanges();
+
+    expect(instance()['hsSearching'](), 'a round-tripped stale lookup declared the newer one finished').toBe(true);
+  });
+
+  /**
    * Ownership of `hsCreating` cannot be keyed on a value the user can navigate BACK to. A round
    * trip A -> B -> A leaves the original create matching the active foundation again, so it
    * would release the flag a newer create is holding and re-enable the button under a running
