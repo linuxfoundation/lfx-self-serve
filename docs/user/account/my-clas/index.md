@@ -4,7 +4,7 @@ description: View your signed Individual and Employee CLAs in LFX Self Serve, st
 audience: [all]
 product_area: Account
 tags: [account, cla, easycla, icla, ecla, ccla, identities, signing]
-last_updated: 2026-08-28
+last_updated: 2026-08-29
 intercom_collection: Account
 ---
 
@@ -26,13 +26,13 @@ Agreements are matched from your signed-in session and your linked [Email and Gi
 
 ## What is the difference between ICLA and ECLA?
 
+An **ICLA** (Individual CLA) is _your_ paperwork, signed as yourself; an **ECLA** (Employee CLA) means you are covered under your employer's **CCLA** (Corporate CLA). Both appear on the CLAs tab.
+
 | Type                      | What it means                                                                                                  | On CLAs                                                                  | Document                                                                                       |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | **ICLA** (Individual CLA) | You signed as yourself for a project                                                                           | Listed                                                                   | **Download PDF** when EasyCLA has the signed file; otherwise the row offers no download        |
 | **ECLA** (Employee CLA)   | Your employer holds a Corporate CLA (CCLA) and you were approved under it via that company's **Approved List** | Listed (shows the employer name), and stays listed if the coverage ends  | No individual PDF — where the row has a **⋮** menu, it shows _Covered by Corporate CLA (CCLA)_ |
 | **CCLA** (Corporate CLA)  | Signed by a company CLA manager; covers employees via the company's **Approved List**                          | Not listed as its own row — it is the parent agreement an ECLA hangs off | Managed in the corporate EasyCLA flow, not on this tab                                         |
-
-In short: an **ICLA** is _your_ paperwork; an **ECLA** means you are covered under your company's **CCLA**.
 
 ## What does the CLAs list show?
 
@@ -41,7 +41,7 @@ When agreements are found, the CLAs tab shows a table with these columns:
 | Column      | Contents                                                                                                                                                 |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Project** | Project logo (or a placeholder), project name, and — when it differs — the CLA group name as secondary text                                              |
-| **Type**    | `ICLA`, or `ECLA · <company name>`                                                                                                                       |
+| **Type**    | `ICLA`, `ECLA · <company name>`, or just `ECLA` when the employer name is not on record                                                                  |
 | **Status**  | Whether the agreement is in force — see [What do the status labels mean?](#what-do-the-status-labels-mean)                                               |
 | **Signed**  | The date the agreement was signed, and — when EasyCLA recorded it — the account it was signed under                                                      |
 | ⋮ (actions) | The actions available for that row, such as **Download PDF** or **Request Removal** — see [What can I do from a CLA row?](#what-can-i-do-from-a-cla-row) |
@@ -58,6 +58,8 @@ If nothing matches your linked identities, you see:
 That does not always mean you never signed — see [Why don't my signed CLAs show up?](#why-don-t-my-signed-clas-show-up).
 
 ## What do the status labels mean?
+
+The **Status** column on the CLAs tab tells you whether an agreement still covers your contributions, and if not, why:
 
 | Status              | What it means                                                                                                                                                                    | Applies to |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
@@ -104,13 +106,14 @@ You will not see a **⋮** on:
 
 ## How do I sign a new CLA?
 
-Select **Sign CLA** at the top right of the CLAs tab.
+You start signing from the CLAs tab and finish in the EasyCLA Contributor Console:
 
-1. In the **Sign a CLA** dialog, type at least three characters. You can search by project name, CLA group name, a linked GitHub, GitLab, or Gerrit organization, or by pasting a repository link.
-2. Each result shows why it matched — project name, CLA group name, linked organization, or repository link — so you can tell near-identical names apart.
-3. Select the right result and choose **Continue to sign**.
-4. Choose which of your linked GitHub accounts to sign under, then select **Continue to sign** again. Nothing is selected for you, and the step appears even when you have only one account linked — its job is to tell you which identity the agreement will be recorded against. If you have no GitHub account linked, the step says so and offers a link to [Identities](/profile/identities); you cannot continue past it until you link one.
-5. Self Serve hands you off to the EasyCLA Contributor Console, which presents and records the agreement. When you finish there, you are returned to the CLAs tab.
+1. Select **Sign CLA** at the top right of the CLAs tab.
+2. In the **Sign a CLA** dialog, type at least three characters. You can search by project name, CLA group name, a linked GitHub, GitLab, or Gerrit organization, or by pasting a repository link.
+3. Each result shows why it matched — project name, CLA group name, linked organization, or repository link — so you can tell near-identical names apart.
+4. Select the right result and choose **Continue to sign**.
+5. Choose which of your linked GitHub accounts to sign under, then select **Continue to sign** again. Nothing is selected for you, and the step appears even when you have only one account linked — its job is to tell you which identity the agreement will be recorded against. If you have no GitHub account linked, the step says so and offers a link to [Identities](/profile/identities); you cannot continue past it until you link one.
+6. Self Serve hands you off to the EasyCLA Contributor Console, which presents and records the agreement. When you finish there, you are returned to the CLAs tab.
 
 If the search returns more matches than it can display, narrow the term — the dialog tells you when results were truncated.
 

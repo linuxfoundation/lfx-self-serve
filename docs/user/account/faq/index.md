@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing]
-last_updated: 2026-08-28
+last_updated: 2026-08-29
 intercom_collection: Account
 ---
 
@@ -80,6 +80,14 @@ You can start there. Select **Sign CLA**, search for the project, CLA group, or 
 
 **Valid** means the agreement covers your contributions. **Needs attention** means an Employee CLA no longer covers you, usually because you have dropped off your employer's **Approved List**. **Invalidated** means the agreement is no longer in force — someone removed you from an Approved List, a maintainer invalidated your ICLA, or the CLA group was deleted. **Revoked** is reserved for a sanctions-screening outcome against your employer and cannot be changed from Self Serve. See [What do the status labels mean?](../my-clas/#what-do-the-status-labels-mean).
 
+## Which account was my CLA signed under?
+
+When EasyCLA recorded the account used to sign, the **Signed** column adds a second line under the date, such as _Signed as \<username\> (GitHub)_. It is informational: it tells you which of your linked identities that agreement is attached to, which is what to check when a project still asks you to sign something you believe you have already signed. The line is omitted when EasyCLA has no signing identity on record for that agreement. See [Which identity was a CLA signed under?](../my-clas/#which-identity-was-a-cla-signed-under).
+
+## Can I download my signed CLA PDF?
+
+You can download a signed **ICLA** (Individual CLA) when EasyCLA has the file — open the **⋮** menu on that row and choose **Download PDF**. If EasyCLA does not have the file, the row offers no download. There is no PDF for an **ECLA** (Employee CLA), because your coverage sits under your employer's Corporate CLA (CCLA) rather than an agreement of your own; where such a row has a **⋮** menu, **Download PDF** appears greyed out and annotated _Covered by Corporate CLA (CCLA)_, and a **Revoked** ECLA has no menu at all. See [Can I download my signed CLA PDF?](../my-clas/#can-i-download-my-signed-cla-pdf).
+
 ## How do I ask my employer's CLA manager to approve or remove my ECLA?
 
 Open the **⋮** menu on the Employee CLA row and choose **Request approval** (when you are no longer on the Approved List) or **Request Removal**. Select which CLA managers to notify, optionally add a message, and select **Send**. The request only notifies them — a manager makes the actual change in the Corporate CLA Console. See [How do I ask my CLA manager to approve or remove my ECLA?](../my-clas/#how-do-i-ask-my-cla-manager-to-approve-or-remove-my-ecla).
@@ -98,7 +106,7 @@ Recent purchases may take up to 48 hours to appear in LFX Self Serve. If a purch
 
 ## Can I request a refund through LFX Self Serve?
 
-To request a refund, contact LFX support with your order confirmation.
+No — there is no refund request in LFX Self Serve. To request a refund, contact LFX support with your order confirmation.
 
 ## Who can see my transactions?
 
