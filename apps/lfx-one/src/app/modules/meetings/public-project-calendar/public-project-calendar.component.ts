@@ -86,25 +86,7 @@ export class PublicProjectCalendarComponent {
     return this.committeesByUid()[uid];
   });
 
-  /**
-   * True when `?committee=` cannot name a group anyone could reach — a stale bookmark or a hand-edited
-   * URL. Distinguished from "no meetings" so the reader is told the filter is the problem.
-   *
-   * A malformed value is decided without waiting for the directory: nothing that isn't a UUID can ever
-   * match, and the request is skipped for it. A well-formed value needs a loaded directory before it can
-   * be called unknown — an empty `groups()` means not-yet-loaded or a failed fetch, neither of which
-   * proves the UID is bad.
-   */
-  protected readonly unknownCommittee: Signal<boolean> = computed(() => {
-    const uid = this.activeCommitteeUid();
-    if (!uid) {
-      return false;
-    }
-    if (!isUuid(uid)) {
-      return true;
-    }
-    return this.groups().length > 0 && !this.activeCommittee();
-  });
+  protected readonly unknownCommittee: Signal<boolean> = this.initUnknownCommittee();
 
   // publicMeetingToCalendarEvents (not meetingToCalendarEvents) — the public mapper never places a
   // meeting password in extendedProps, so a click can't forward one into the join URL, history, or referrer.
@@ -144,16 +126,6 @@ export class PublicProjectCalendarComponent {
     this.applyCommitteeFilter(null);
   }
 
-  /** Writes the filter to the URL rather than to local state, keeping the view shareable and bookmarkable. */
-  private applyCommitteeFilter(committeeUid: string | null): void {
-    void this.router.navigate([], {
-      relativeTo: this.route,
-      // A null value drops the key, so clearing the filter yields a clean URL rather than `?committee=`.
-      queryParams: { committee: committeeUid || null },
-      queryParamsHandling: 'merge',
-    });
-  }
-
   // Private initializer functions
 
   /**
@@ -184,15 +156,25 @@ export class PublicProjectCalendarComponent {
   }
 
   /**
-   * Prefers the server-computed `behavioral_class` so the calendar's colors cannot drift from the badges
-   * the public group directory renders for the same groups. Falls back to deriving from `category` only
-   * when the field is missing or carries a class this build does not know.
+   * True when `?committee=` cannot name a group anyone could reach — a stale bookmark or a hand-edited
+   * URL. Distinguished from "no meetings" so the reader is told the filter is the problem.
+   *
+   * A malformed value is decided without waiting for the directory: nothing that isn't a UUID can ever
+   * match, and the request is skipped for it. A well-formed value needs a loaded directory before it can
+   * be called unknown — an empty `groups()` means not-yet-loaded or a failed fetch, neither of which
+   * proves the UID is bad.
    */
-  private toBehavioralClass(group: PublicGroupSummary): GroupBehavioralClass {
-    if (group.behavioral_class && group.behavioral_class in BEHAVIORAL_CLASS_CONFIG) {
-      return group.behavioral_class as GroupBehavioralClass;
-    }
-    return getGroupBehavioralClass(group.category);
+  private initUnknownCommittee(): Signal<boolean> {
+    return computed(() => {
+      const uid = this.activeCommitteeUid();
+      if (!uid) {
+        return false;
+      }
+      if (!isUuid(uid)) {
+        return true;
+      }
+      return this.groups().length > 0 && !this.activeCommittee();
+    });
   }
 
   private initInitialView(): Signal<string> {
@@ -271,5 +253,29 @@ export class PublicProjectCalendarComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  // Private helper methods
+
+  /** Writes the filter to the URL rather than to local state, keeping the view shareable and bookmarkable. */
+  private applyCommitteeFilter(committeeUid: string | null): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      // A null value drops the key, so clearing the filter yields a clean URL rather than `?committee=`.
+      queryParams: { committee: committeeUid || null },
+      queryParamsHandling: 'merge',
+    });
+  }
+
+  /**
+   * Prefers the server-computed `behavioral_class` so the calendar's colors cannot drift from the badges
+   * the public group directory renders for the same groups. Falls back to deriving from `category` only
+   * when the field is missing or carries a class this build does not know.
+   */
+  private toBehavioralClass(group: PublicGroupSummary): GroupBehavioralClass {
+    if (group.behavioral_class && group.behavioral_class in BEHAVIORAL_CLASS_CONFIG) {
+      return group.behavioral_class as GroupBehavioralClass;
+    }
+    return getGroupBehavioralClass(group.category);
   }
 }
