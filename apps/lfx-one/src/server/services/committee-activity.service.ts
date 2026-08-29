@@ -189,14 +189,6 @@ export class CommitteeActivityService {
   }
 
   /**
-   * `callerOptions` is deliberately its own bag, not folded into `options: CommitteeActivityQuery`
-   * — that type is also the parsed, validated shape of `GET /api/committees/:uid/activity`'s query
-   * string (see its own doc comment), and neither `knownCommittee` nor `quietAggregationLog` is
-   * ever HTTP-parsed; mixing an internal caller-intent flag into a wire-query type would blur that
-   * boundary for no benefit (general-code-reviewer flagged the previous 5-positional-parameter
-   * signature as a footgun forcing callers to pass `undefined` to reach a later flag — this bag
-   * fixes the footgun without paying that cost).
-   *
    * `knownCommittee` (optional): a caller that already fetched this committee for its own reasons
    * (e.g. weekly-brief.service.ts's `buildCurrentActivity`, which must read `category` before it
    * can even decide whether to call this method) can pass it here to skip this method's own
@@ -224,6 +216,12 @@ export class CommitteeActivityService {
    * caller invoked at higher-than-once-per-request frequency (currently only
    * `weekly-brief.service.ts`'s per-poll-tick tally) to log the aggregation start/completion at
    * DEBUG instead of INFO — see those two log call sites' own comments for the full rationale.
+   *
+   * Both of the above live in `callerOptions`, a bag kept deliberately separate from
+   * `options: CommitteeActivityQuery` — that type is also the parsed, validated shape of
+   * `GET /api/committees/:uid/activity`'s query string (see its own doc comment), and neither
+   * `knownCommittee` nor `quietAggregationLog` is ever HTTP-parsed; mixing an internal
+   * caller-intent flag into a wire-query type would blur that boundary for no benefit.
    */
   public async getCommitteeActivity(
     req: Request,

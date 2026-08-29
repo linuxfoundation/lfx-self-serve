@@ -98,8 +98,10 @@ export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
  * decoupling the tally into its own request — so a slow upstream delays only the enrichment,
  * never the brief, and a lost race can actually be cancelled — would remove this tax and the
  * amplification risk entirely; deliberately not done here. A known, accepted v1 limitation, not
- * an oversight: the machinery already in this file (the budget race, the sentinel, the ask-attempt
- * cap, the poll's opt-out gate) exists specifically to manage this coupling, not to hide it.
+ * an oversight: the machinery already built around this coupling — the budget race and its
+ * `BUDGET_ELAPSED` sentinel in `weekly-brief.service.ts`'s `buildCurrentActivityWithBudget`, this
+ * file's own ask-attempt cap, and the poll's opt-out gate in `weekly-brief-card.component.ts` —
+ * exists specifically to manage it, not to hide it.
  */
 export const WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS = 3_000;
 
