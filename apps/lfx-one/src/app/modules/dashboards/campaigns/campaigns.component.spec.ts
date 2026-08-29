@@ -3961,6 +3961,117 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().emailTemplatesRendered().length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
     });
 
+    /**
+     * The event decides WHETHER to suggest; the selected type decides WHICH of that event's
+     * templates. A portal that runs an event well has several of its emails, and they score
+     * identically on the event — so a strict `>` over the server's newest-first order picked
+     * whichever was edited last. Observed live: the three MCP Dev Summit templates tie, and the
+     * newest is a CFP-deadline email, which is the wrong answer for Registration Push.
+     */
+    it('breaks an event tie using the selected email type', () => {
+      showPicker();
+      picker().selectedEmailTypeId.set('main-registration-push');
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        // Both name the event identically; only the TYPE separates them, and the CFP one is first
+        // (newest), so a tie-blind scan would take it.
+        emails: [
+          { id: 'cfp', name: 'MCP Dev Summit Nairobi — 5 days left to submit to speak' },
+          { id: 'reg', name: 'MCP Dev Summit Nairobi — registration reminder' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('reg');
+    });
+
+    /**
+     * The chosen template belongs to the brief that chose it. Left set, it survives into the next
+     * event in the same foundation — where it is both wrong AND silently suppresses the new
+     * suggestion, since the derivation only fills an empty selection. The feature would fail
+     * precisely on the second event.
+     */
+    it('clears the chosen template when the brief-derived state resets', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    /**
+     * The banner asserts what is SELECTED, so it must not survive an override. Keyed on the
+     * suggestion merely existing, it read "pre-selected ... for this event" beside a template the
+     * derivation never chose.
+     */
+    it('hides the suggestion banner once the operator picks a different row', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi registration' },
+          { id: 'other', name: 'Something else entirely' },
+        ] as HubSpotMarketingEmail[],
+      });
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')).not.toBeNull();
+
+      picker().onSelectEmailTemplate('other');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')).toBeNull();
+    });
+
+    /**
+     * Accents must survive tokenizing. Deleting non-`[a-z0-9]` turned "München" into "mnchen" on
+     * the BRIEF side only, so a template actually named "München" could never match — an
+     * international event permanently unsuggestable.
+     */
+    it('matches an accented event name against an accented template name', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon München', 'kubecon-munchen', 'München'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'de', name: 'KubeCon München — Registrierung' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('de');
+      expect(picker().emailTemplateSuggestionTerms()).toContain('münchen');
+    });
+
+    /** The banner is one sentence; an @if between text nodes rendered "event . Pick a different". */
+    it('renders the banner without a space before the full stop', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+
+      const text = fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')?.textContent?.replace(/\s+/g, ' ') ?? '';
+      expect(text).not.toContain(' .');
+      expect(text).toContain('. Pick a different one to override it.');
+    });
+
     /** The suggestion ranks too, so the derived template is reachable past the render cap. */
     it('ranks the event match to the top of the rendered list', () => {
       showPicker();

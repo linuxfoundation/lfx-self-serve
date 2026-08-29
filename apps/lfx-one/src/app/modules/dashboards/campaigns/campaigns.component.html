@@ -370,23 +370,31 @@
                   -->
                     <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-render-capped">{{ emailTemplatesRenderCapMessage() }}</p>
                   }
-                  @if (emailTemplateSuggestionId() !== '') {
+                  @if (emailTemplateSuggestionId() !== '' && emailTemplateSuggestionId() === selectedEmailTemplateId()) {
                     <!--
-                    The derived suggestion, stated as one. The matched terms are shown because a
-                    suggestion whose reasoning is invisible cannot be judged -- an operator seeing
-                    "matched on kubecon" can tell instantly whether it found the right event, where
-                    a bare pre-selection would just look decided. Picking any other row replaces
-                    it, and the suggestion never overwrites a selection that is already set.
+                    Rendered only while the suggestion IS the current selection. Keying it on the
+                    suggestion merely existing meant that after an operator picked a different row
+                    the banner still read "pre-selected ... for this event" beside a template the
+                    derivation never chose -- a false statement about what is selected, which is
+                    the exact class of claim this feature exists to avoid making.
+                    The matched terms are shown because a suggestion whose reasoning is invisible
+                    cannot be judged: "matched on kubecon" can be checked at a glance.
                   -->
                     <p class="flex items-start gap-2 text-xs text-blue-800" data-testid="campaigns-email-template-suggestion">
                       <i class="fa-light fa-wand-magic-sparkles mt-0.5" aria-hidden="true"></i>
-                      <span>
-                        Pre-selected the template this portal appears to use for this event
-                        @if (emailTemplateSuggestionTerms().length > 0) {
-                          <span> — matched on {{ emailTemplateSuggestionTerms().join(', ') }}</span>
-                        }
-                        . Pick a different one to override it.
-                      </span>
+                      <!--
+                      One text node, not a text-@if-text sandwich. Angular collapses the leading
+                      whitespace of the trailing fragment to a single space, so the sentence
+                      rendered as "... event . Pick a different one" with a space before the stop.
+                    -->
+                      @if (emailTemplateSuggestionTerms().length > 0) {
+                        <span
+                          >Pre-selected the template this portal appears to use for this event — matched on {{ emailTemplateSuggestionTerms().join(', ') }}.
+                          Pick a different one to override it.</span
+                        >
+                      } @else {
+                        <span>Pre-selected the template this portal appears to use for this event. Pick a different one to override it.</span>
+                      }
                     </p>
                   }
                   <ul class="flex flex-col gap-2" data-testid="campaigns-email-template-list">

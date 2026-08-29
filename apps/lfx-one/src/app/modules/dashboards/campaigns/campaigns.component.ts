@@ -2453,13 +2453,30 @@ export class CampaignsComponent {
     // Scored on the EVENT alone, not the blended rank. The blended score mixes in type keywords,
     // so a template matching only the type could clear the threshold while saying nothing about
     // which event it belongs to -- the precise confusion this gate exists to prevent.
+    // The EVENT decides whether to suggest at all; the TYPE decides which of that event's
+    // templates. A portal that runs an event well has several of its emails -- CFP launch,
+    // registration push, final countdown -- and they score identically on the event, so a
+    // strict `>` over the server's newest-first order picked whichever was edited last. That
+    // preselected a CFP-deadline email for an operator who had chosen Registration Push, which
+    // is a wrong answer wearing the right event's name. Observed live: the three MCP Dev Summit
+    // templates tie at 12 and the newest is a "Days Left to Submit to Speak" CFP email.
+    //
+    // The type is a TIE-BREAK, never a gate: it cannot rescue a template the event did not
+    // identify, and a type that matches nothing leaves the event ordering untouched.
+    const typeKeywords = CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
     let best: HubSpotMarketingEmail | null = null;
     let bestScore = 0;
+    let bestTypeScore = 0;
     for (const template of templates) {
       const score = this.eventMatchScore(template, eventTerms);
-      if (score > bestScore) {
+      if (score === 0) {
+        continue;
+      }
+      const typeScore = this.templateKeywordScore(template, typeKeywords);
+      if (score > bestScore || (score === bestScore && typeScore > bestTypeScore)) {
         best = template;
         bestScore = score;
+        bestTypeScore = typeScore;
       }
     }
 
@@ -2514,9 +2531,11 @@ export class CampaignsComponent {
     const name = (template.name ?? '').toLowerCase();
     const subject = (template.subject ?? '').toLowerCase();
     return eventTerms.filter((term) => {
-      // Terms are already `[a-z0-9]`-only (eventTemplateTerms strips everything else), so they
-      // carry no regex metacharacters and need no escaping.
-      const bounded = new RegExp(`(^|[^a-z0-9])${term}([^a-z0-9]|$)`);
+      // The boundary class is the SAME alphabet the tokenizer splits on, so "münchen" in a
+      // template name is a whole word rather than a letter-run interrupted by the accent.
+      // Terms carry only letters and digits (the tokenizer splits on everything else), so there
+      // are no regex metacharacters to escape.
+      const bounded = new RegExp(`(^|[^\\p{L}\\p{N}])${term}([^\\p{L}\\p{N}]|$)`, 'u');
       return bounded.test(name) || bounded.test(subject);
     });
   }
@@ -2543,12 +2562,21 @@ export class CampaignsComponent {
     if (!details) {
       return [];
     }
-    const raw = [...(details.name ?? '').split(/\s+/), ...(details.slug ?? '').split(/[-_/]+/), ...(details.city ?? '').split(/\s+/)];
+    // SPLIT on punctuation rather than deleting it. Deleting merged "KubeCon+CloudNativeCon" into
+    // one unmatchable token, and -- worse -- silently dropped accented letters, so "München"
+    // became "mnchen" and could never match a template actually named "München". The event side
+    // was mangled while the template side was not, which makes international event names
+    // permanently unsuggestable.
+    const raw = [
+      ...(details.name ?? '').split(/[^\p{L}\p{N}]+/u),
+      ...(details.slug ?? '').split(/[^\p{L}\p{N}]+/u),
+      ...(details.city ?? '').split(/[^\p{L}\p{N}]+/u),
+    ];
     const seen = new Set<string>();
     for (const token of raw) {
-      // Punctuation stripped rather than split on: "KubeCon+CloudNativeCon" must yield two usable
-      // tokens, and a trailing comma in "Nairobi, Kenya" must not make "nairobi," unmatchable.
-      const cleaned = token.toLowerCase().replace(/[^a-z0-9]/g, '');
+      // Lower-cased only. Letters outside a-z are KEPT, and the boundary matcher below is built
+      // from the same alphabet, so an accented term matches an accented template name.
+      const cleaned = token.toLowerCase();
       if (cleaned.length >= 3 && !EVENT_TERM_STOPWORDS.includes(cleaned)) {
         seen.add(cleaned);
       }
@@ -3102,6 +3130,11 @@ export class CampaignsComponent {
     this.emailMetrics.set(null);
     this.emailMetricsState.set('idle');
     this.emailMetricsError.set('');
+    // The chosen template belongs to the brief that chose it. Left set, it survives into the next
+    // event in the same foundation, where it is both WRONG (a template for the previous event) and
+    // silently suppresses the new suggestion, since the derivation only ever fills an empty
+    // selection. That is the feature failing exactly where it is most useful -- the second event.
+    this.selectedEmailTemplateId.set('');
     // The suggestion is derived from THIS brief's event, so it and the override that rejected it
     // both belong to the brief. Carrying the override into a new event would suppress a suggestion
     // the operator has never seen.
