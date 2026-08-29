@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -18,8 +18,11 @@ import {
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import type {
+  BriefMetrics,
+  BriefMetricsRow,
   CampaignBriefOutput,
   CampaignAudience,
+  CampaignServiceEmailMetrics,
   CampaignJobOutcome,
   CampaignEmailStage,
   EmailBriefCopy,
@@ -52,6 +55,7 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
 @Component({
   selector: 'lfx-campaigns',
   imports: [
+    DecimalPipe,
     ReactiveFormsModule,
     ButtonComponent,
     SelectComponent,
@@ -557,6 +561,16 @@ export class CampaignsComponent {
   private briefCampaignsGeneration = 0;
 
   /**
+   * Guards a late email-metrics response against a context that has since changed.
+   *
+   * Same hazard and same remedy as `briefCampaignsGeneration`: a read dispatched for one
+   * (foundation, brief) can resolve AFTER a switch, and its `next` would write the previous
+   * foundation's sends into a panel now labelled with the new one. Clearing the signals is not
+   * enough on its own — the clear happens first and the stale write lands after it.
+   */
+  private emailMetricsGeneration = 0;
+
+  /**
    * Generation counter for the create-time capability read — its OWN, deliberately.
    *
    * Two wrong versions preceded this one, and both were reachable. Sharing
@@ -971,6 +985,133 @@ export class CampaignsComponent {
    */
   protected readonly emailTabs: readonly CampaignTabOption[] = CAMPAIGN_TABS.filter((t) => t.id !== 'optimization');
 
+  /**
+   * Rows from the brief's metrics read, narrowed to the email channel.
+   *
+   * `null` means NOT YET READ, which is distinct from a read that returned no rows: the first
+   * renders the loading state, the second says nothing has been staged. Collapsing them into an
+   * empty array would report "no emails staged" to someone whose request is still in flight.
+   */
+  protected readonly emailMetrics = signal<BriefMetrics | null>(null);
+
+  /** `error` covers only a failed REQUEST. A row that could not be measured is a successful read. */
+  protected readonly emailMetricsState = signal<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+
+  /** Operator-facing text for a failed request — empty in every other state. */
+  protected readonly emailMetricsError = signal<string>('');
+
+  /**
+   * Only the rows this tab is about.
+   *
+   * A brief is shared across delivery types, so its metrics read returns the paid campaigns too.
+   * Rendering those under a tab labelled Email would show Google Ads spend as email performance —
+   * numbers that are real, plausible, and about a different campaign entirely, which is the exact
+   * substitution the placeholder this panel replaces existed to avoid.
+   *
+   * Filtered on the upstream platform token `hubspot`, which is why `BriefMetricsRow.platform` is
+   * typed `string` rather than `CampaignPlatform` — the ad-platform union has no member for it.
+   */
+  protected readonly emailMetricsRows = computed<BriefMetricsRow[]>(() => (this.emailMetrics()?.rows ?? []).filter((row) => row.platform === 'hubspot'));
+
+  /**
+   * Rows carrying an actual measurement.
+   *
+   * `status === 'ok'` is the ONLY status the contract permits reading `metrics` from — every other
+   * row omits it rather than zero-filling — so this is what any total must be computed over, and
+   * `emailMetricsRows().length` is what it must be compared against before being presented.
+   */
+  protected readonly emailMetricsOkRows = computed<BriefMetricsRow[]>(() =>
+    this.emailMetricsRows().filter((row) => row.status === 'ok' && row.metrics !== undefined)
+  );
+
+  /**
+   * Rows that are staged but carry no measurement yet.
+   *
+   * This is the state #1699 exists to keep visible. campaign-service classifies "HubSpot answered
+   * successfully and reported nothing" as `not_ready`, NOT as a failure, because on this channel
+   * dispatch stages a DRAFT and a human presses send in HubSpot afterwards — so every read before
+   * that moment looks exactly like this. Rendering it as zeros would claim an email was sent to
+   * nobody's interest; rendering it as an error would send an operator to investigate a healthy
+   * integration. It is neither, and it gets its own row treatment.
+   */
+  protected readonly emailMetricsPendingRows = computed<BriefMetricsRow[]>(() => this.emailMetricsRows().filter((row) => row.status === 'not_ready'));
+
+  /** Rows whose read genuinely could not be completed — a real problem worth surfacing apart. */
+  protected readonly emailMetricsProblemRows = computed<BriefMetricsRow[]>(() =>
+    this.emailMetricsRows().filter((row) => row.status === 'connection_problem' || row.status === 'failed' || row.status === 'unsupported')
+  );
+
+  /**
+   * Channel totals, summed ONLY over measured rows.
+   *
+   * Returns `null` when nothing is measured, so the template renders the empty state rather than a
+   * row of confident zeroes. `cost_micros` is deliberately absent: this channel bills no per-send
+   * cost and the issue is explicit that pacing does not exist here.
+   */
+  protected readonly emailMetricsTotals = computed<CampaignServiceEmailMetrics | null>(() => {
+    const rows = this.emailMetricsOkRows();
+    if (rows.length === 0) {
+      return null;
+    }
+    return rows.reduce<CampaignServiceEmailMetrics>(
+      (acc, row) => {
+        const email = row.metrics?.email;
+        // A row can be `ok` on its ad-platform counters and still carry no `email` object — the
+        // upstream design notes `email` is optional even where the row succeeded. Skipping such a
+        // row keeps the total honest; defaulting its absent counters to 0 would silently widen the
+        // denominator this total is read against.
+        if (email === undefined) {
+          return acc;
+        }
+        return {
+          sent: acc.sent + email.sent,
+          delivered: acc.delivered + email.delivered,
+          opens: acc.opens + email.opens,
+          clicks: acc.clicks + email.clicks,
+          bounces: acc.bounces + email.bounces,
+          unsubscribes: acc.unsubscribes + email.unsubscribes,
+        };
+      },
+      { sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, unsubscribes: 0 }
+    );
+  });
+
+  /**
+   * Whether every measured row reports nothing sent.
+   *
+   * `sent === 0` is what separates the two cases the issue insists must not be conflated. HubSpot
+   * answered, so this is not "not ready" — but it counted no sends, so opens and clicks of 0 are
+   * not a performance result either. Only with `sent > 0` does a 0% open rate mean what it looks
+   * like it means.
+   */
+  protected readonly emailMetricsNothingSent = computed<boolean>(() => {
+    const totals = this.emailMetricsTotals();
+    return totals !== null && totals.sent === 0;
+  });
+
+  /**
+   * Rates, computed only where the denominator makes them meaningful.
+   *
+   * Every rate is `null` rather than 0 when its denominator is 0. A displayed `0.0%` is a claim
+   * that the thing was measured and found to be zero; for an email nobody has sent, that claim is
+   * false. Open and click rates are taken over DELIVERED rather than sent, which is what HubSpot's
+   * own reporting does — an email that bounced was never a chance to open.
+   */
+  protected readonly emailMetricsRates = computed<{ delivery: number | null; open: number | null; click: number | null; bounce: number | null }>(() => {
+    const totals = this.emailMetricsTotals();
+    if (totals === null) {
+      return { delivery: null, open: null, click: null, bounce: null };
+    }
+    const perSent = (value: number): number | null => (totals.sent === 0 ? null : (value / totals.sent) * 100);
+    const perDelivered = (value: number): number | null => (totals.delivered === 0 ? null : (value / totals.delivered) * 100);
+    return {
+      delivery: perSent(totals.delivered),
+      open: perDelivered(totals.opens),
+      click: perDelivered(totals.clicks),
+      bounce: perSent(totals.bounces),
+    };
+  });
+
   public constructor() {
     // Discard the persistence state when the selected foundation changes — see
     // `activeFoundationSlug`. The generation bump is what stops a save already in flight for the
@@ -1068,6 +1209,14 @@ export class CampaignsComponent {
           this.loadEmailTemplatesIfNeverAnswered();
         }
 
+        // Same shape one tab over: an operator sitting on Monitor through a foundation switch
+        // would otherwise keep reading the PREVIOUS foundation's numbers under the new
+        // foundation's name. `loadEmailMetrics` re-reads its own context and handles the
+        // no-brief case, so it is safe to call unconditionally.
+        if (this.selectedDeliveryType() === 'email' && this.selectedEmailTab() === 'insights') {
+          this.loadEmailMetrics();
+        }
+
         // Same reasoning for Optimize, and it is the same bug the picker had: the entry load lives
         // in `selectTab`, which only runs on a tab transition, so an operator SITTING on Optimize
         // through a switch would be left with the blank panel the clears above just produced until
@@ -1152,6 +1301,12 @@ export class CampaignsComponent {
         // operator is already searching, and skipped while a request is in flight.
         if (tab === 'implementation') {
           this.loadEmailTemplatesIfNeverAnswered();
+        }
+        // Re-read on every entry rather than once, unlike the picker above. The picker's contents
+        // change only when someone edits templates in HubSpot; these numbers change the moment a
+        // human presses send there, which is precisely why an operator opens this tab.
+        if (tab === 'insights') {
+          this.loadEmailMetrics();
         }
       }
       return;
@@ -1815,6 +1970,89 @@ export class CampaignsComponent {
       this.knownBriefIds.set(key, { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) });
     }
     this.onProceedToImplementation(brief, true, approved);
+  }
+
+  /**
+   * Render one rate for display, or an em dash where the rate does not exist.
+   *
+   * `null` means the denominator was 0, and the em dash is the point: a `0.0%` in this slot would
+   * assert that the rate was measured and found to be zero. For an email nobody has sent, or one
+   * that reached no inbox, that assertion is false — and it is exactly the false reading this tab
+   * exists to prevent.
+   *
+   * One decimal place, matching the paid dashboard's percentage formatting. Rates below 0.05%
+   * therefore render as `0.0%`, which is a real rounding of a real measurement rather than a
+   * substitution for a missing one — the em dash keeps those two cases apart.
+   */
+  protected formatRate(rate: number | null): string {
+    if (rate === null) {
+      return '—';
+    }
+    return `${rate.toFixed(1)}%`;
+  }
+
+  /**
+   * Read the email channel's metrics for the current brief.
+   *
+   * Re-read on every entry rather than cached, matching `loadBriefCampaigns` on the paid side and
+   * for the same reason: on this channel the numbers change when a HUMAN presses send in HubSpot,
+   * entirely outside this app. A cached read would show an operator the state from before the
+   * send they just performed, which is the one moment they are most likely to be looking.
+   *
+   * No `window` is passed. campaign-service resolves a per-platform default, and on this channel
+   * the window does not scope the counters at all — it selects which emails are in scope by send
+   * date, and the counters returned are then that email's totals TO DATE. Sending a window from
+   * here would imply a period the numbers do not cover.
+   */
+  protected loadEmailMetrics(): void {
+    const projectSlug = this.activeFoundationSlug();
+    const briefId = this.emailBriefId();
+
+    // Bumped BEFORE the early return as well as before the request, for the reason
+    // `loadBriefCampaigns` gives: the early return is itself a context change ("this context has
+    // no brief"), and leaving the counter alone there would let a request dispatched under the
+    // PREVIOUS brief land afterwards and still pass `isCurrent()`.
+    const generation = ++this.emailMetricsGeneration;
+    const isCurrent = (): boolean => generation === this.emailMetricsGeneration;
+
+    // Both are genuine preconditions of the route, not defaults to paper over: the BFF refuses an
+    // empty `project` or `brief_id` with a 400. Reporting the missing precondition is more useful
+    // than showing the operator that 400.
+    if (projectSlug === '' || briefId === '') {
+      this.emailMetrics.set(null);
+      this.emailMetricsState.set('idle');
+      this.emailMetricsError.set('');
+      return;
+    }
+
+    // Cleared on EVERY entry, before dispatch. The generation counter fixes the LATE response; it
+    // does nothing about the window before any response, during which the previous brief's
+    // counters would still be on screen under the new one.
+    this.emailMetrics.set(null);
+    this.emailMetricsState.set('loading');
+    this.emailMetricsError.set('');
+    this.campaignService
+      .getBriefMetrics(projectSlug, briefId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (metrics: BriefMetrics) => {
+          if (!isCurrent()) {
+            return;
+          }
+          this.emailMetrics.set(metrics);
+          this.emailMetricsState.set('loaded');
+        },
+        error: () => {
+          if (!isCurrent()) {
+            return;
+          }
+          // Left as `null`, NOT as an empty result. An empty result renders as "nothing staged
+          // yet", which is a claim about HubSpot this failed request establishes nothing about.
+          this.emailMetrics.set(null);
+          this.emailMetricsState.set('error');
+          this.emailMetricsError.set('Could not read email performance. Retry, or check the HubSpot connection.');
+        },
+      });
   }
 
   /**
@@ -2621,5 +2859,12 @@ export class CampaignsComponent {
     this.stagingJobSubscription = null;
     this.emailStaging.set('idle');
     this.emailStagingMessage.set('');
+    // Cleared with the rest of the brief-derived state. These counters belong to ONE brief's
+    // campaigns; leaving them set would render the previous brief's sends under the new one.
+    // Back to `null`/`idle` rather than an empty result, so the panel reads "nothing staged yet"
+    // only when a read actually said so.
+    this.emailMetrics.set(null);
+    this.emailMetricsState.set('idle');
+    this.emailMetricsError.set('');
   }
 }

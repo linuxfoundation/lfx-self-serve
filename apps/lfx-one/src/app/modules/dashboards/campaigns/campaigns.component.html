@@ -590,7 +590,12 @@
           </div>
         }
         @case ('insights') {
-          <div role="tabpanel" id="email-panel-insights" aria-labelledby="email-tab-insights" data-testid="campaigns-email-insights-panel">
+          <div
+            role="tabpanel"
+            id="email-panel-insights"
+            aria-labelledby="email-tab-insights"
+            data-testid="campaigns-email-insights-panel"
+            class="flex flex-col gap-4">
             <!--
             Deliberately NOT <lfx-monitoring-tab>. That component is paid-ads only: its
             `PlatformType` union is 'google' | 'linkedin' | 'reddit' | 'meta', it defaults to
@@ -599,19 +604,205 @@
             real, plausible, and about a different campaign entirely, which is worse than showing
             nothing.
 
-            The email metrics read exists in campaign-service (LFXV2-3058), so this needs a
-            reader of its own rather than a reuse.
+            This panel reads campaign-service's brief metrics and renders only the `hubspot` rows.
+            The vocabulary is sends/opens/clicks, not impressions/CTR/CPC, and there is no pacing
+            or spend: this channel bills no per-send cost, so a budget-consumed bar would be
+            measuring something that does not exist.
           -->
-            <div
-              class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-16 text-center"
-              data-testid="campaigns-email-insights-pending">
-              <i class="fa-light fa-chart-mixed text-3xl text-gray-400" aria-hidden="true"></i>
-              <h2 class="text-base font-semibold text-gray-900">Email performance is not shown here yet</h2>
-              <p class="max-w-md text-sm text-gray-500">
-                Opens, clicks and sends come back from HubSpot once an email has been staged and sent. This view reports on paid ad platforms today, so it is
-                not wired to the email channel.
-              </p>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex flex-col gap-1">
+                <h2 class="text-base font-semibold text-gray-900">Email performance</h2>
+                <!--
+                "to date", not "over the window". On this channel the window selects which emails
+                are IN SCOPE by their send date; the counters returned are then that email's
+                totals to date and are NOT narrowed by it. Asking for `today` and `last_30_days`
+                on an email sent this morning returns identical numbers, so a label like "opens in
+                the last 7 days" would be false. Getting genuine event-time windowing needs
+                HubSpot's email-events API, which campaign-service deliberately does not use.
+              -->
+                <p class="text-sm text-gray-500">Counters are each email's totals to date, as reported by HubSpot.</p>
+              </div>
+              <lfx-button
+                label="Refresh"
+                icon="fa-light fa-arrows-rotate"
+                [outlined]="true"
+                size="small"
+                [disabled]="emailMetricsState() === 'loading'"
+                (onClick)="loadEmailMetrics()"
+                data-testid="campaigns-email-metrics-refresh" />
             </div>
+
+            @switch (emailMetricsState()) {
+              @case ('idle') {
+                <!--
+                No brief, so there is nothing to read. Distinct from a read that came back empty:
+                this states the precondition rather than making any claim about HubSpot.
+              -->
+                <div
+                  class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-12 text-center"
+                  data-testid="campaigns-email-metrics-idle">
+                  <i class="fa-light fa-chart-mixed text-3xl text-gray-400" aria-hidden="true"></i>
+                  <h3 class="text-base font-semibold text-gray-900">No campaign to report on yet</h3>
+                  <p class="max-w-md text-sm text-gray-500">Generate a brief and stage an email, and its performance will appear here.</p>
+                </div>
+              }
+              @case ('loading') {
+                <div class="flex items-center justify-center gap-3 rounded-lg border border-gray-200 px-6 py-12" data-testid="campaigns-email-metrics-loading">
+                  <i class="fa-light fa-spinner fa-spin text-gray-400" aria-hidden="true"></i>
+                  <span class="text-sm text-gray-500">Reading email performance…</span>
+                </div>
+              }
+              @case ('error') {
+                <!--
+                A failed REQUEST, which is not the same as a campaign that could not be measured.
+                The latter comes back as a successful read with a per-row status and is rendered
+                in the rows below, not here.
+              -->
+                <div class="flex flex-col gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3" data-testid="campaigns-email-metrics-error">
+                  <p class="text-sm font-medium text-red-800">{{ emailMetricsError() }}</p>
+                </div>
+              }
+              @case ('loaded') {
+                @if (emailMetricsRows().length === 0) {
+                  <div
+                    class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-6 py-12 text-center"
+                    data-testid="campaigns-email-metrics-empty">
+                    <i class="fa-light fa-envelope text-3xl text-gray-400" aria-hidden="true"></i>
+                    <h3 class="text-base font-semibold text-gray-900">No email staged for this brief</h3>
+                    <p class="max-w-md text-sm text-gray-500">Stage a draft from the Implement tab, send it in HubSpot, and its numbers will land here.</p>
+                  </div>
+                } @else {
+                  @if (emailMetricsTotals(); as totals) {
+                    <!--
+                    Rendered ONLY over rows whose status is `ok`. The count below states how many
+                    of the channel's rows that is, because a total over 1 of 3 campaigns is not
+                    the channel's performance and must not be presented as though it were.
+                  -->
+                    @if (emailMetricsNothingSent()) {
+                      <!--
+                      HubSpot answered and counted no sends. This is NOT the `not_ready` case —
+                      the read succeeded — but opens and clicks of 0 are still not a performance
+                      result, so the rate cards are suppressed rather than rendered as 0.0%.
+                    -->
+                      <div
+                        class="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
+                        data-testid="campaigns-email-metrics-nothing-sent">
+                        <i class="fa-light fa-circle-info mt-0.5 text-amber-600" aria-hidden="true"></i>
+                        <p class="text-sm text-amber-900">
+                          HubSpot reports this email exists but has sent nothing yet. Open and click rates will appear once it has been sent.
+                        </p>
+                      </div>
+                    }
+
+                    <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6" data-testid="campaigns-email-metrics-totals">
+                      <div class="flex flex-col gap-1 rounded-lg border border-gray-200 px-4 py-3">
+                        <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Sent</span>
+                        <span class="text-xl font-semibold text-gray-900" data-testid="campaigns-email-metric-sent">{{ totals.sent | number: '1.0-0' }}</span>
+                      </div>
+                      <div class="flex flex-col gap-1 rounded-lg border border-gray-200 px-4 py-3">
+                        <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Delivered</span>
+                        <span class="text-xl font-semibold text-gray-900" data-testid="campaigns-email-metric-delivered">{{
+                          totals.delivered | number: '1.0-0'
+                        }}</span>
+                        <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-delivery-rate"
+                          >{{ formatRate(emailMetricsRates().delivery) }} of sent</span
+                        >
+                      </div>
+                      <div class="flex flex-col gap-1 rounded-lg border border-gray-200 px-4 py-3">
+                        <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Opens</span>
+                        <span class="text-xl font-semibold text-gray-900" data-testid="campaigns-email-metric-opens">{{ totals.opens | number: '1.0-0' }}</span>
+                        <!--
+                        Over DELIVERED, not sent — an email that bounced was never a chance to
+                        open, and HubSpot's own reporting uses the same denominator.
+                      -->
+                        <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-open-rate"
+                          >{{ formatRate(emailMetricsRates().open) }} of delivered</span
+                        >
+                      </div>
+                      <div class="flex flex-col gap-1 rounded-lg border border-gray-200 px-4 py-3">
+                        <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Clicks</span>
+                        <span class="text-xl font-semibold text-gray-900" data-testid="campaigns-email-metric-clicks">{{
+                          totals.clicks | number: '1.0-0'
+                        }}</span>
+                        <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-click-rate"
+                          >{{ formatRate(emailMetricsRates().click) }} of delivered</span
+                        >
+                      </div>
+                      <div class="flex flex-col gap-1 rounded-lg border border-gray-200 px-4 py-3">
+                        <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Bounces</span>
+                        <span class="text-xl font-semibold text-gray-900" data-testid="campaigns-email-metric-bounces">{{
+                          totals.bounces | number: '1.0-0'
+                        }}</span>
+                        <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-bounce-rate"
+                          >{{ formatRate(emailMetricsRates().bounce) }} of sent</span
+                        >
+                      </div>
+                      <div class="flex flex-col gap-1 rounded-lg border border-gray-200 px-4 py-3">
+                        <span class="text-xs font-medium uppercase tracking-wide text-gray-500">Unsubscribes</span>
+                        <span class="text-xl font-semibold text-gray-900" data-testid="campaigns-email-metric-unsubscribes">{{
+                          totals.unsubscribes | number: '1.0-0'
+                        }}</span>
+                      </div>
+                    </div>
+
+                    <!--
+                    Stated whenever the totals cover fewer than every email row, so a partial
+                    total is never read as the channel's. `ok_count` is the whole read's count
+                    across all platforms, so the email-scoped lengths are compared instead.
+                  -->
+                    @if (emailMetricsOkRows().length < emailMetricsRows().length) {
+                      <p class="text-xs text-gray-500" data-testid="campaigns-email-metrics-partial">
+                        Totals cover {{ emailMetricsOkRows().length }} of {{ emailMetricsRows().length }} staged emails. The rest are listed below.
+                      </p>
+                    }
+                  }
+
+                  @if (emailMetricsPendingRows().length > 0) {
+                    <!--
+                    The state this tab exists to keep distinguishable. Dispatch STAGES a draft and
+                    a human sends it in HubSpot, so every read before that moment lands here.
+                    campaign-service classifies it `not_ready` rather than as a failure for
+                    exactly this reason, and rendering it as zeros would claim an email was sent
+                    and ignored.
+                  -->
+                    <div class="flex flex-col gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3" data-testid="campaigns-email-metrics-pending">
+                      <div class="flex items-center gap-2">
+                        <i class="fa-light fa-paper-plane text-blue-600" aria-hidden="true"></i>
+                        <h3 class="text-sm font-semibold text-blue-900">
+                          {{ emailMetricsPendingRows().length }} staged {{ emailMetricsPendingRows().length === 1 ? 'email has' : 'emails have' }} not been sent
+                          yet
+                        </h3>
+                      </div>
+                      <p class="text-sm text-blue-900">
+                        These drafts exist in HubSpot and are waiting for someone to send them. They report no numbers until then.
+                      </p>
+                    </div>
+                  }
+
+                  @if (emailMetricsProblemRows().length > 0) {
+                    <div class="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3" data-testid="campaigns-email-metrics-problems">
+                      <div class="flex items-center gap-2">
+                        <i class="fa-light fa-triangle-exclamation text-amber-600" aria-hidden="true"></i>
+                        <h3 class="text-sm font-semibold text-amber-900">
+                          {{ emailMetricsProblemRows().length }} {{ emailMetricsProblemRows().length === 1 ? 'email' : 'emails' }} could not be read
+                        </h3>
+                      </div>
+                      <ul class="flex flex-col gap-1">
+                        @for (row of emailMetricsProblemRows(); track row.campaign_id) {
+                          <!--
+                          `row.reason` is campaign-service's own consumer-safe sentence, never an
+                          adapter's raw error text — those can carry a platform response body or
+                          operator-supplied account identifiers. Rendered as-is rather than
+                          remapped here, so the advice stays the advice upstream chose.
+                        -->
+                          <li class="text-sm text-amber-900">{{ row.reason }}</li>
+                        }
+                      </ul>
+                    </div>
+                  }
+                }
+              }
+            }
           </div>
         }
       }

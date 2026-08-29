@@ -8,7 +8,10 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { Signal, WritableSignal } from '@angular/core';
 import { computed, signal } from '@angular/core';
 import type {
+  BriefMetrics,
+  BriefMetricsRow,
   CampaignAudience,
+  CampaignServiceEmailMetrics,
   EmailBriefCopy,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
@@ -4347,5 +4350,232 @@ describe('CampaignsComponent when the client flag is on and the user holds a cam
 
   it('admits the contributor without requiring ED persona', () => {
     expect((fgaFixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-no-access"]')).toBeNull();
+  });
+});
+
+/**
+ * The Email Monitor tab (#1699).
+ *
+ * The defect class these guard against is a single substitution: rendering a row that carries NO
+ * measurement as a measurement of zero. On this channel that is not a hypothetical — dispatch
+ * stages a DRAFT and a human sends it in HubSpot afterwards, so "staged, never sent" is the most
+ * ordinary state the channel has, and it is what every read before that moment returns.
+ */
+describe('CampaignsComponent email monitor', () => {
+  let fixture: ComponentFixture<CampaignsComponent>;
+
+  interface MonitorInternals {
+    emailBriefId: { set(v: string): void };
+    emailMetrics: { set(v: BriefMetrics | null): void };
+    emailMetricsState: { (): string; set(v: string): void };
+    emailMetricsRows(): BriefMetricsRow[];
+    emailMetricsOkRows(): BriefMetricsRow[];
+    emailMetricsPendingRows(): BriefMetricsRow[];
+    emailMetricsProblemRows(): BriefMetricsRow[];
+    emailMetricsTotals(): CampaignServiceEmailMetrics | null;
+    emailMetricsNothingSent(): boolean;
+    emailMetricsRates(): { delivery: number | null; open: number | null; click: number | null; bounce: number | null };
+    formatRate(rate: number | null): string;
+    loadEmailMetrics(): void;
+  }
+
+  const internals = (): MonitorInternals => fixture.componentInstance as unknown as MonitorInternals;
+
+  /** A measured email row. Counters are the design's own examples, so they exercise real magnitudes. */
+  const okRow = (over: Partial<CampaignServiceEmailMetrics> = {}): BriefMetricsRow =>
+    ({
+      campaign_id: 'c-email',
+      platform: 'hubspot',
+      status: 'ok',
+      metrics: {
+        campaign_id: 'c-email',
+        platform_campaign_id: '104670127234',
+        window: 'last_30_days',
+        impressions: 1840,
+        clicks: 212,
+        cost_micros: 0,
+        ctr: 0.115,
+        email: { sent: 9400, delivered: 9268, opens: 1840, clicks: 212, bounces: 95, unsubscribes: 17, ...over },
+      },
+    }) as unknown as BriefMetricsRow;
+
+  const metrics = (rows: BriefMetricsRow[]): BriefMetrics =>
+    ({ brief_id: 'b1', window: 'last_30_days', rows, ok_count: rows.filter((r) => r.status === 'ok').length, action_items: [] }) as BriefMetrics;
+
+  /**
+   * Put the page on Email/Monitor before asserting anything about the DOM.
+   *
+   * Both delivery containers are mounted at once and the panel is inside an `@switch` on the tab,
+   * so without this the queries below find nothing and every DOM assertion fails for a reason
+   * that has nothing to do with what it is testing.
+   */
+  const showMonitor = (): void => {
+    const c = fixture.componentInstance as unknown as {
+      selectorForm: { controls: { deliveryType: { setValue(v: CampaignDeliveryType): void } } };
+      selectTab(tab: CampaignTab, owner: CampaignDeliveryType): void;
+    };
+    c.selectorForm.controls.deliveryType.setValue('email');
+    c.selectTab('insights', 'email');
+    fixture.detectChanges();
+  };
+
+  const load = (rows: BriefMetricsRow[]): void => {
+    showMonitor();
+    internals().emailMetrics.set(metrics(rows));
+    internals().emailMetricsState.set('loaded');
+    fixture.detectChanges();
+  };
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CampaignsComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
+    fixture.detectChanges();
+  });
+
+  /**
+   * The load-bearing case, verified against a real staged HubSpot draft (email 220600410544):
+   * campaign-service answers `not_ready` with NO `metrics` object at all.
+   *
+   * The mutation that matters is defaulting the absent object to zeroes. Doing so makes `totals`
+   * a filled record and this assertion fail — which is the point: `null` is what suppresses the
+   * metric cards, and a filled record would render "0 sent / 0.0% open rate" for an email nobody
+   * has sent yet.
+   */
+  it('renders no totals for a staged email that has never been sent', () => {
+    load([{ campaign_id: 'c1', platform: 'hubspot', status: 'not_ready', reason: 'not sent yet' } as BriefMetricsRow]);
+
+    expect(internals().emailMetricsTotals()).toBeNull();
+    expect(internals().emailMetricsPendingRows()).toHaveLength(1);
+    expect(internals().emailMetricsOkRows()).toHaveLength(0);
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="campaigns-email-metrics-pending"]')).not.toBeNull();
+    // The absence is the assertion: no card may render for an unmeasured row.
+    expect(el.querySelector('[data-testid="campaigns-email-metrics-totals"]')).toBeNull();
+  });
+
+  /**
+   * A brief is shared across delivery types, so its metrics read returns the paid rows too.
+   * Without the platform filter those become "email performance" — real, plausible numbers about
+   * a different campaign entirely.
+   */
+  it('excludes ad-platform rows from the email totals', () => {
+    load([
+      okRow(),
+      {
+        campaign_id: 'c-google',
+        platform: 'google-ads',
+        status: 'ok',
+        metrics: {
+          campaign_id: 'c-google',
+          platform_campaign_id: 'g1',
+          window: 'last_30_days',
+          impressions: 999_999,
+          clicks: 8888,
+          cost_micros: 5_000_000,
+          ctr: 0.08,
+        },
+      } as unknown as BriefMetricsRow,
+    ]);
+
+    expect(internals().emailMetricsRows()).toHaveLength(1);
+    // Not merely "1 row": the google clicks must not have been folded into the email click total.
+    expect(internals().emailMetricsTotals()?.clicks).toBe(212);
+  });
+
+  /**
+   * `sent === 0` separates the two cases the issue insists must not be conflated: HubSpot
+   * answered (so this is not `not_ready`), but it counted no sends, so a 0% open rate would not
+   * mean what it looks like it means.
+   */
+  it('suppresses rates when the read succeeded but nothing was sent', () => {
+    load([okRow({ sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, unsubscribes: 0 })]);
+
+    expect(internals().emailMetricsNothingSent()).toBe(true);
+    const rates = internals().emailMetricsRates();
+    // `null`, never 0 — a rendered 0.0% asserts a measurement that was never taken.
+    expect(rates.open).toBeNull();
+    expect(rates.click).toBeNull();
+    expect(rates.delivery).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-metrics-nothing-sent"]')).not.toBeNull();
+  });
+
+  /**
+   * Open and click rates are taken over DELIVERED, not sent: an email that bounced was never a
+   * chance to open, and HubSpot's own reporting uses the same denominator. Asserted with
+   * delivered !== sent so the two denominators give different answers — equal values would let a
+   * wrong denominator pass.
+   */
+  it('computes open and click rates over delivered, not sent', () => {
+    load([okRow()]);
+
+    const rates = internals().emailMetricsRates();
+    expect(rates.open).toBeCloseTo((1840 / 9268) * 100, 6);
+    expect(rates.click).toBeCloseTo((212 / 9268) * 100, 6);
+    // Delivery and bounce are over SENT, which is the only denominator that makes them mean anything.
+    expect(rates.delivery).toBeCloseTo((9268 / 9400) * 100, 6);
+    expect(rates.bounce).toBeCloseTo((95 / 9400) * 100, 6);
+  });
+
+  /** An em dash, not `0.0%` — the whole point of carrying `null` this far rather than defaulting. */
+  it('renders a missing rate as an em dash and a real zero as 0.0%', () => {
+    expect(internals().formatRate(null)).toBe('—');
+    expect(internals().formatRate(0)).toBe('0.0%');
+  });
+
+  /**
+   * A total over some of the rows must never be presented as the channel's. The count is stated
+   * whenever the measured rows are fewer than the email rows.
+   */
+  it('discloses when totals cover only some of the staged emails', () => {
+    load([okRow(), { campaign_id: 'c2', platform: 'hubspot', status: 'not_ready', reason: 'not sent yet' } as BriefMetricsRow]);
+
+    const partial = fixture.nativeElement.querySelector('[data-testid="campaigns-email-metrics-partial"]');
+    expect(partial).not.toBeNull();
+    expect(partial?.textContent).toContain('1 of 2');
+  });
+
+  /**
+   * A failed REQUEST is not a campaign that could not be measured. Leaving an empty result behind
+   * would render "No email staged for this brief" — a claim about HubSpot that a failed request
+   * establishes nothing about.
+   */
+  it('does not claim anything about HubSpot when the request itself failed', () => {
+    const svc = TestBed.inject(CampaignService);
+    vi.spyOn(svc, 'getBriefMetrics').mockReturnValue(throwError(() => new Error('gateway down')));
+
+    showMonitor();
+    internals().emailBriefId.set('b1');
+    internals().loadEmailMetrics();
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="campaigns-email-metrics-empty"]')).toBeNull();
+  });
+
+  /**
+   * A row that is `ok` on its ad counters but carries no `email` object must be skipped, not
+   * treated as six zeroes — otherwise it silently widens the denominator the totals are read
+   * against while contributing nothing.
+   */
+  it('skips an ok row that carries no email object rather than counting it as zeroes', () => {
+    load([
+      okRow(),
+      {
+        campaign_id: 'c3',
+        platform: 'hubspot',
+        status: 'ok',
+        metrics: { campaign_id: 'c3', platform_campaign_id: '999', window: 'last_30_days', impressions: 0, clicks: 0, cost_micros: 0, ctr: 0 },
+      } as unknown as BriefMetricsRow,
+    ]);
+
+    // The WHOLE record, not just one counter. Asserting `sent` alone passes against a mutation
+    // that leaves `sent` intact and corrupts another field — which is exactly what "skipped"
+    // has to rule out: the row must contribute nothing to ANY counter.
+    expect(internals().emailMetricsTotals()).toEqual({ sent: 9400, delivered: 9268, opens: 1840, clicks: 212, bounces: 95, unsubscribes: 17 });
   });
 });
