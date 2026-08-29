@@ -114,13 +114,20 @@ vi.mock('@lfx-one/shared/constants', () => ({
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 // `formatUtcDateRangeLabel` lives in the same `@lfx-one/shared/utils` barrel as
 // form.utils.ts, which imports `@angular/forms` — an unmocked import here would pull
-// in the real barrel and hit the same JIT-compilation failure the mocks above avoid.
-// `isGoverningBoard` — minimal reimplementation (real one lives in committee.utils.ts, same
-// barrel/JIT-failure reasoning) sufficient for this file's fixtures, which only ever use
-// `category: 'Board'` or `category: 'Working Group'`.
-vi.mock('@lfx-one/shared/utils', () => ({
+// in the real barrel and hit the same JIT-compilation failure the mocks above avoid, so it
+// stays a plain stub. `isGoverningBoard` is the REAL function (via `vi.importActual` on its own
+// deep module, not the barrel) — committee.utils.ts imports only enums/interfaces/constants, no
+// Angular, so it loads safely on its own. This governance gate decides whether the server pays
+// for the tally fan-out at all AND whether the client's poll keeps asking for one, so a stub
+// that's narrower than production (e.g. exact `'Board'` equality vs. the real
+// substring/normalization-based `getGroupBehavioralClass`) would let this file's assertions
+// about the settled-`null`/non-governance branch stay green after the real predicate changed
+// underneath them.
+vi.mock('@lfx-one/shared/utils', async () => ({
   formatUtcDateRangeLabel: vi.fn(() => 'Jan 1 – Jan 7, 2026'),
-  isGoverningBoard: vi.fn((category: string | undefined) => category === 'Board' || category === 'Government Advisory Council'),
+  isGoverningBoard: (
+    await vi.importActual<typeof import('../../../../../packages/shared/src/utils/committee.utils')>('../../../../../packages/shared/src/utils/committee.utils')
+  ).isGoverningBoard,
 }));
 
 vi.mock('./microservice-proxy.service', () => ({
@@ -1133,6 +1140,30 @@ describe('WeeklyBriefService', () => {
           committee_id: 'committee-1',
           budget_ms: WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS,
         });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('resolves on the fast path without waiting for the budget, and clears its timer — proves this is a genuine race, not an accidental wait for the full duration, and that the timer handle does not leak', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeActivityMock.mockResolvedValue({ data: [], page_token: undefined });
+
+      vi.useFakeTimers();
+      try {
+        const result = await service.getCurrentBrief(req, 'committee-1');
+
+        // A real object (not undefined), proving the fast leg — not the budget timeout — won the
+        // race: if `Promise.race` were accidentally `Promise.all`-like or otherwise waited for
+        // the budget, this assertion alone wouldn't distinguish that from the timeout path also
+        // resolving to a real value — the next assertion (no advance needed to get here, and the
+        // timer count check below) is what actually pins the race behavior.
+        expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: [] }));
+        // No leaked timer handle: buildCurrentActivityWithBudget's `finally { clearTimeout(timer) }`
+        // must fire on the winning-leg path too, not just the timeout path the sibling test above
+        // covers — otherwise every fast GET /current still leaves a 3s handle running.
+        expect(vi.getTimerCount()).toBe(0);
       } finally {
         vi.useRealTimers();
       }
