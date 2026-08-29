@@ -907,9 +907,14 @@ describe('CommitteeService.getCommitteeCategory', () => {
       `/committees/${COMMITTEE_UID}`,
       'get_committee'
     );
-    proxyRequest.mockRejectedValue(upstreamError);
+    proxyRequest.mockRejectedValueOnce(upstreamError);
 
-    await expect(service.getCommitteeCategory(req, COMMITTEE_UID)).rejects.toBeInstanceOf(MicroserviceError);
-    await expect(service.getCommitteeCategory(req, COMMITTEE_UID)).rejects.toMatchObject({ statusCode: 404 });
+    const thrown = await service.getCommitteeCategory(req, COMMITTEE_UID).catch((e: unknown) => e);
+
+    // Identity, not just type/status — proves the exact upstream error propagates rather than
+    // getting caught and re-thrown as a freshly constructed lookalike.
+    expect(thrown).toBe(upstreamError);
+    expect(thrown).toBeInstanceOf(MicroserviceError);
+    expect(thrown).toMatchObject({ statusCode: 404 });
   });
 });
