@@ -947,9 +947,14 @@ export const EMAIL_BRIEF_REQUIRED_HINT = 'Generate a brief on the Plan tab first
  *
  * Within one portal that runs several events, "which event is this" discriminates far harder than
  * "which stage of the sequence": a KubeCon registration push and an MCP Dev Summit registration
- * push score identically on type keywords, and only the event term tells them apart. Three is
- * enough that a single event hit outranks any realistic type-only match (types carry at most three
- * keywords) without letting event terms alone decide -- a template matching both still wins.
+ * push score identically on type keywords, and only the event term tells them apart.
+ *
+ * It does NOT guarantee an event hit outranks every type-only match, and an earlier version of this
+ * comment wrongly claimed it did on the grounds that "types carry at most three keywords" -- they
+ * carry four to seven (`final-countdown` has seven), so a type-only match can reach 7 and outrank a
+ * single short event hit at 3. What the weight buys is that a template matching BOTH sorts above one
+ * matching only the type, which is the ordering that matters. The suggestion does not rely on rank
+ * at all: it scores the event alone and is spliced into the rendered list if ranking cuts it.
  */
 export const EVENT_TERM_WEIGHT = 3;
 

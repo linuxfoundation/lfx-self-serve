@@ -3635,6 +3635,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     emailTemplateSuggestionId: Signal<string>;
     emailTemplateSuggestionTerms: Signal<readonly string[]>;
     emailTemplatesRendered: Signal<HubSpotMarketingEmail[]>;
+    selectedEmailTypeId: WritableSignal<string>;
   }
   const picker = (): PickerInternals => fixture.componentInstance as unknown as PickerInternals;
 
@@ -3786,20 +3787,55 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
-     * The other half of the same rule, and the reason it is length-based rather than a blanket
-     * "one hit is enough": a SHORT token still needs corroboration, because it occurs in template
-     * names that have nothing to do with the event.
+     * A distinctive term suggests on its own, so a bare substring test would pre-select
+     * "KubeConference recap" for KubeCon outright. Matching on word boundaries removes that
+     * without costing any real name: verified byte-identical against the live portal.
      */
-    it('still withholds on a single short term, which is not evidence of the event', () => {
+    it('does not match a term buried inside a longer word', () => {
       showPicker();
-      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026'));
       picker().searchEmailTemplates('');
       respond({
         enabled: true,
         error: null,
         possiblyTruncated: false,
-        // 'dev' only — three characters, and a word that appears across unrelated templates.
-        emails: [{ id: 'weak', name: 'Dev tools digest' }] as HubSpotMarketingEmail[],
+        emails: [{ id: 'nope', name: 'KubeConference recap' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+    });
+
+    /** The naming patterns LF actually uses must keep matching — the boundary is any non-alphanumeric. */
+    it('still matches an event name joined by punctuation', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'joined', name: 'KubeCon+CloudNativeCon NA 2026 registration' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('joined');
+    });
+
+    /**
+     * The other half of the same rule, at the TOP of the sub-distinctive band rather than the
+     * bottom. A five-character term is long enough to look meaningful and still short enough to
+     * collide, so it must not decide on its own — this pins the boundary at 6, not merely that
+     * three-character tokens are weak.
+     */
+    it('still withholds on a single five-character term, one short of distinctive', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Seoul Open Infra Days', 'seoul-open-infra-days'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        // 'seoul' matches, and is five characters — one below EVENT_TERM_DISTINCTIVE_LENGTH.
+        emails: [{ id: 'weak', name: 'Seoul city guide' }] as HubSpotMarketingEmail[],
       });
 
       expect(picker().emailTemplateSuggestionId()).toBe('');
@@ -3822,6 +3858,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
     /** A generic word shared by the event name and an unrelated template must not manufacture a hit. */
     it('does not match on a stopword the event name happens to contain', () => {
+      showPicker();
       picker().emailBriefOutput.set(briefFor('Open Source Summit Europe', 'open-source-summit-europe'));
       picker().searchEmailTemplates('');
       respond({
@@ -3837,6 +3874,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     it('never overwrites a template the operator already picked', () => {
+      showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().onSelectEmailTemplate('chosen-by-hand');
       picker().searchEmailTemplates('');
@@ -3854,11 +3892,17 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
-     * An override must SURVIVE a re-search. Without the sticky flag the derivation re-runs on the
-     * next search and silently reinstates the template the operator just rejected, which reads as
-     * the app ignoring them.
+     * An override must SURVIVE a re-search: the derivation re-runs on every successful search, and
+     * a suggestion that reinstated itself over a hand-pick would read as the app ignoring the
+     * operator.
+     *
+     * What actually pins it is the empty-selection check — a separate "was it overridden" flag was
+     * written first and removed as unfalsifiable (see the comment in the component). This test is
+     * therefore about the re-search path specifically, which the sibling test above does not
+     * exercise.
      */
-    it('does not reinstate the suggestion after the operator overrides it', () => {
+    it('does not reinstate the suggestion after a re-search once the operator has overridden it', () => {
+      showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
       const emails = [
@@ -3875,8 +3919,51 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().selectedEmailTemplateId()).toBe('other');
     });
 
+    /**
+     * The worst state this feature can reach: a banner announcing a pre-selected template while no
+     * VISIBLE row carries it.
+     *
+     * Ranking and the suggestion agree on the event half but not the type half, and a tie falls to
+     * the server's original order — so a genuinely-suggested template can rank below enough
+     * type-keyword matches to be cut by the 100-row render limit. The operator would then be told
+     * something was chosen for them with no way to see or change it. The selected row is spliced
+     * back in at the top for exactly this reason.
+     *
+     * Built to reproduce it: 150 rows that match six keywords of the seven-keyword
+     * `final-countdown` type, plus one true KubeCon template that matches none of them.
+     */
+    it('always draws the selected row, even when ranking would cut it past the render limit', () => {
+      showPicker();
+      picker().selectedEmailTypeId.set('final-countdown');
+      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026'));
+      picker().searchEmailTemplates('');
+
+      const noise = Array.from({ length: 150 }, (_, i) => ({
+        id: `noise-${i}`,
+        name: `Final countdown: last chance, closing deadline, closes soon #${i}`,
+      })) as HubSpotMarketingEmail[];
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [...noise, { id: 'kc', name: 'KubeCon NA 2026 Modern Template' } as HubSpotMarketingEmail],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('kc');
+      expect(picker().selectedEmailTemplateId()).toBe('kc');
+      // The assertion that matters: it is actually DRAWN, not merely selected.
+      expect(
+        picker()
+          .emailTemplatesRendered()
+          .some((t) => t.id === 'kc')
+      ).toBe(true);
+      // And the render cap is still honoured — the splice replaces a row, it does not append.
+      expect(picker().emailTemplatesRendered().length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+    });
+
     /** The suggestion ranks too, so the derived template is reachable past the render cap. */
     it('ranks the event match to the top of the rendered list', () => {
+      showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
       respond({

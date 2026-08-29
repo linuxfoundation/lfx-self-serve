@@ -751,17 +751,24 @@ export class CampaignsComponent {
     }
     const drawn = ranked.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT);
 
-    // The SELECTED row is always drawn, even when reranking pushes it past the cap.
+    // The SELECTED row is always drawn, even when ranking pushes it past the cap.
     //
-    // Ranking depends on the chosen email TYPE, so switching type reorders the list under a
-    // selection the operator already made: with enough matches for the new type, the selected row
-    // drops below the cap and vanishes. Nothing else notices — `canStageEmail` stays enabled and
-    // `onStageEmailSend` still clones that now-invisible template, so the operator stages a clone
-    // of something they can no longer see or change. Hiding the current choice is the one thing a
-    // ranking heuristic must never do.
+    // TWO routes reach that state, and the guard covers both:
     //
-    // Splicing to the TOP rather than re-ranking: it is the row the operator chose, so it belongs
-    // where they will look for it. The cap is still honoured — this replaces a row, never appends.
+    //   - A TYPE CHANGE reranks the list under a selection the operator already made, so with
+    //     enough matches for the new type the selected row drops below the cap and vanishes.
+    //   - A SUGGESTED template can be cut even as it is pre-selected: ranking and the suggestion
+    //     agree on the event half but not the type half, and a tie falls to the server's original
+    //     order. Reproduced with a 7-keyword type against 300 rows matching six of them.
+    //
+    // Either way nothing else notices — `canStageEmail` stays enabled and `onStageEmailSend` still
+    // clones the now-invisible template, so the operator stages a clone of something they can no
+    // longer see or change, and in the second case the banner announces a pre-selection no visible
+    // row carries. Hiding the current choice is the one thing a ranking heuristic must never do.
+    //
+    // Splicing to the TOP rather than re-ranking: it is the row the operator chose (or was chosen
+    // for them), so it belongs where they will look. The cap holds — this replaces a row, never
+    // appends one.
     const selectedId = this.selectedEmailTemplateId();
     if (selectedId !== '' && !drawn.some((t) => t.id === selectedId)) {
       const selected = ranked.find((t) => t.id === selectedId);
@@ -2393,15 +2400,22 @@ export class CampaignsComponent {
     // Score once per row rather than inside the comparator: a comparator that lowercases and
     // scans both operands runs O(n log n) times over strings that never change.
     //
-    // The EVENT outweighs the type, and by more than one type keyword can make up: within a
-    // portal that runs several events, "which event is this" discriminates far harder than
-    // "which stage of the sequence". A KubeCon registration-push template and an MCP Dev Summit
-    // one score identically on type; only the event term separates them, and picking the wrong
-    // one clones the wrong branding into a real HubSpot draft.
+    // ONE scorer for the event half, shared with the suggestion. They diverged in an earlier
+    // version -- ranking counted every term equally while the suggestion doubled distinctive ones
+    // -- and the two disagreeing is a visible defect, not a nuance: a single-distinctive-term match
+    // could be PRE-SELECTED while ranking below enough type-keyword matches to fall outside the
+    // 100-row render cap, so the banner announced a suggestion with no highlighted row anywhere in
+    // the list. Reproduced with a 7-keyword type (`final-countdown`) against 300 rows matching six
+    // of them: the true KubeCon template ranked 3 against their 6 and was not drawn.
+    //
+    // The EVENT outweighs the type, and deliberately: within a portal running several events,
+    // "which event is this" discriminates far harder than "which stage of the sequence". A KubeCon
+    // registration push and an MCP Dev Summit one score identically on type, and only the event
+    // term separates them -- picking the wrong one clones the wrong branding into a real draft.
     const scored = templates.map((template, index) => ({
       template,
       index,
-      score: this.templateKeywordScore(template, keywords) + this.templateKeywordScore(template, eventTerms) * EVENT_TERM_WEIGHT,
+      score: this.templateKeywordScore(template, keywords) + this.eventMatchScore(template, eventTerms),
     }));
     // `index` breaks ties, which is what makes this stable across engines rather than relying on
     // Array.prototype.sort's stability guarantee holding for every input shape.
@@ -2486,11 +2500,25 @@ export class CampaignsComponent {
     );
   }
 
-  /** Which of the event's terms a template actually matched, for the "why" shown to the operator. */
+  /**
+   * Which of the event's terms a template actually matched, for the "why" shown to the operator.
+   *
+   * Matched on WORD BOUNDARIES, not `includes`. A bare substring test lets a distinctive term match
+   * inside a longer word — "KubeConference recap" would score as a KubeCon template and, because a
+   * distinctive term suggests on its own, would be pre-selected outright. The boundary is any
+   * non-alphanumeric, which keeps every real naming pattern working: `KubeCon + CloudNativeCon`,
+   * `KubeCon+CloudNativeCon` with no spaces, `KubeCon: registration`, and `Nairobi, Kenya` all
+   * still match. Verified byte-identical against the live portal's templates.
+   */
   private matchedEventTerms(template: HubSpotMarketingEmail, eventTerms: readonly string[]): string[] {
     const name = (template.name ?? '').toLowerCase();
     const subject = (template.subject ?? '').toLowerCase();
-    return eventTerms.filter((term) => name.includes(term) || subject.includes(term));
+    return eventTerms.filter((term) => {
+      // Terms are already `[a-z0-9]`-only (eventTemplateTerms strips everything else), so they
+      // carry no regex metacharacters and need no escaping.
+      const bounded = new RegExp(`(^|[^a-z0-9])${term}([^a-z0-9]|$)`);
+      return bounded.test(name) || bounded.test(subject);
+    });
   }
 
   /**
