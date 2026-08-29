@@ -2227,7 +2227,10 @@ describe('CampaignsComponent — email delivery channel', () => {
       // Brief-scoped upstream: generation posts to /briefs/{id}/email-copy, so an unpersisted
       // brief has no id to address.
       expect(persist).toHaveBeenCalled();
-      expect(gen.mock.calls[0]).toEqual(['tlf', 'brief-77']);
+      // Slug and brief id, in that order. The third argument is the email stage, asserted by its
+      // own test -- pinning the whole argv here made this ordering test fail when the stage was
+      // added, which is a different claim than the one it exists to make.
+      expect(gen.mock.calls[0].slice(0, 2)).toEqual(['tlf', 'brief-77']);
       expect(internals().emailCopy()?.subject).toBe('Three days in Amsterdam');
     });
 
@@ -2499,6 +2502,34 @@ describe('CampaignsComponent — email delivery channel', () => {
       // the audience out of it let the enumeration drift from `canStageEmail`, so the refusal
       // would come back from HubSpot after the draft work had begun.
       expect(create).not.toHaveBeenCalled();
+    });
+
+    it("sends the selected type's STAGE, not its id", async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-77');
+      const gen = vi
+        .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
+        .mockReturnValue(of({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } }) as never);
+
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+      await internals().onGenerateEmailCopy();
+
+      // campaign-service enumerates STAGES, not type ids -- sending 'thank-you-survey' would be
+      // refused by its enum. Several types share a stage, which is why the two are distinct.
+      expect(gen).toHaveBeenCalledWith('tlf', 'brief-77', 'Post-Event');
+    });
+
+    it('drops copy written for the previous type when the type changes', () => {
+      selectEmail();
+      internals().emailCopy.set({ subject: 'CFP copy', preheader: '', body: '<p>x</p>', cta: '' } as never);
+
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      // The copy on screen was written for the PREVIOUS stage -- its subject, tone and CTA all
+      // belong to it. `onStageEmailSend` reads `emailCopy()` unconditionally, so leaving it makes
+      // mismatched copy stageable under the new type's label.
+      expect(internals().emailCopy()).toBeNull();
     });
 
     it('drops the previous copy when a regeneration fails', async () => {

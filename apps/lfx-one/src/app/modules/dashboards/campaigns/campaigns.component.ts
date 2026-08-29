@@ -8,10 +8,12 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
 import {
   CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_EMAIL_TYPES,
+  CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CAMPAIGN_PROGRAM_TYPES,
   CAMPAIGN_TABS,
+  DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   EMAIL_BRIEF_REQUIRED_HINT,
-  CAMPAIGN_JOB_POLL_INTERVAL_MS,
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
@@ -19,6 +21,7 @@ import type {
   CampaignBriefOutput,
   CampaignAudience,
   CampaignJobOutcome,
+  CampaignEmailStage,
   EmailBriefCopy,
   CampaignCreateRequest,
   CampaignBriefPersistenceState,
@@ -735,6 +738,23 @@ export class CampaignsComponent {
    */
   protected readonly emailBriefId = signal<string>('');
 
+  /**
+   * The email type the operator is writing.
+   *
+   * Held as the TYPE id rather than the stage, because several types share a stage and the
+   * operator picked a type -- storing the stage would lose which one they chose, and a reload
+   * would show a different label than they selected.
+   */
+  protected readonly selectedEmailTypeId = signal<string>(DEFAULT_CAMPAIGN_EMAIL_TYPE_ID);
+
+  /** The stage that type generates from — what campaign-service actually takes. */
+  protected readonly selectedEmailStage = computed<CampaignEmailStage | undefined>(
+    () => CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.stage
+  );
+
+  /** The full type list, for the selector. */
+  protected readonly emailTypes = CAMPAIGN_EMAIL_TYPES;
+
   /** The chosen template's id — what `hubspotConfig.sourceEmailId` takes on create. */
   protected readonly selectedEmailTemplateId = signal<string>('');
 
@@ -1252,6 +1272,25 @@ export class CampaignsComponent {
   }
 
   /**
+   * Switch the email type.
+   *
+   * Clears any generated copy, because the copy on screen was written for the PREVIOUS type: its
+   * subject, tone and CTA all belong to that stage. Leaving it would show an operator
+   * post-event copy under a "CFP Launch" label, and `onStageEmailSend` reads `emailCopy()`
+   * unconditionally -- so the mismatched copy is stageable, the same defect a failed
+   * regeneration had before it cleared on retry.
+   */
+  protected onSelectEmailType(typeId: string): void {
+    if (typeId === this.selectedEmailTypeId()) {
+      return;
+    }
+    this.selectedEmailTypeId.set(typeId);
+    this.emailCopy.set(null);
+    this.emailCopyState.set('idle');
+    this.emailCopyError.set('');
+  }
+
+  /**
    * Generate email copy for the brief.
    *
    * Brief-scoped upstream (`/briefs/{id}/email-copy`), so the brief must be persisted first —
@@ -1284,7 +1323,7 @@ export class CampaignsComponent {
         return;
       }
 
-      const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId));
+      const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage()));
 
       // The cutover flag being off is a steady state, not a failure.
       if (!result.enabled) {

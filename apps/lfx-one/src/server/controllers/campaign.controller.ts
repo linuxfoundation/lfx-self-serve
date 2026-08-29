@@ -555,7 +555,13 @@ export class CampaignController {
     const startTime = logger.startOperation(req, 'generate_email_copy', { projectSlug });
 
     try {
-      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId);
+      // Forwarded, NOT validated here. The stage's valid set is campaign-service's enum, and
+      // duplicating it in this layer would give two sources of truth that drift -- the BFF is a
+      // thin proxy. An unknown stage comes back as upstream's 400 naming the valid values, which
+      // is a better answer than anything this layer could invent.
+      const rawStage = (req.body as { stage?: unknown } | undefined)?.stage;
+      const stage = typeof rawStage === 'string' && rawStage.trim() !== '' ? rawStage.trim() : undefined;
+      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId, stage);
       logger.success(req, 'generate_email_copy', startTime, { enabled: result.enabled });
       res.json(result);
     } catch (error) {

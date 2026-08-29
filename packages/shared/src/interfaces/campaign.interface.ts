@@ -2118,3 +2118,26 @@ export interface BriefMetrics {
    */
   action_items: BriefMetricsActionItem[];
 }
+
+/**
+ * The event-lifecycle stage an email belongs to, as campaign-service enumerates it.
+ *
+ * Closed because upstream's `generate-email-copy` declares it closed: an unrecognised value is
+ * refused with a 400 naming the valid ones, so a typo cannot quietly become registration copy.
+ */
+export type CampaignEmailStage = 'CFP Launch' | 'Schedule Announcement' | 'Registration Push' | 'Discount Offer' | 'Final Countdown' | 'Post-Event';
+
+/**
+ * One selectable email type.
+ *
+ * The TYPE is what an operator recognises ("Thank You + Survey"); the STAGE is what
+ * campaign-service generates from. Several types map to one stage -- a CFP launch and a
+ * co-located CFP reminder are both CFP Launch -- which is why these are two fields rather than
+ * one. `keywords` rank clone templates (#1942); they live here so the taxonomy has a single home.
+ */
+export interface CampaignEmailTypeOption {
+  id: string;
+  label: string;
+  stage: CampaignEmailStage;
+  keywords: readonly string[];
+}

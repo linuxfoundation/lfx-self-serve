@@ -6,6 +6,7 @@ import { inject, Injectable } from '@angular/core';
 import { CAMPAIGN_JOB_POLL_INTERVAL_MS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import {
   AudienceDemographics,
+  BuildAudienceResult,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
   CampaignBriefLoadResult,
@@ -15,6 +16,7 @@ import {
   CampaignBriefRequest,
   CampaignCreateRequest,
   CampaignCreateResponse,
+  CampaignEmailStage,
   CampaignJobOutcome,
   CampaignJobStatus,
   CampaignListResult,
@@ -22,6 +24,7 @@ import {
   CampaignSSEEventType,
   CampaignStatusToggleParams,
   CampaignStatusUpdateResult,
+  GenerateEmailCopyResult,
   HubSpotEmailSearchResult,
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
@@ -33,8 +36,6 @@ import {
   RedditAccountOption,
   RedditMonitorResponse,
   SSEEvent,
-  BuildAudienceResult,
-  GenerateEmailCopyResult,
 } from '@lfx-one/shared/interfaces';
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
 import { exhaustMap, last, map, Observable, of, take, takeWhile, timer } from 'rxjs';
@@ -142,14 +143,14 @@ export class CampaignService {
   /**
    * Generate email copy for a brief. Brief-scoped upstream, so both ids are required.
    */
-  public generateEmailCopy(projectSlug: string, briefId: string): Observable<GenerateEmailCopyResult> {
-    return this.http.post<GenerateEmailCopyResult>(
-      '/api/campaigns/email-copy',
-      {},
-      {
-        params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
-      }
-    );
+  public generateEmailCopy(projectSlug: string, briefId: string, stage?: CampaignEmailStage): Observable<GenerateEmailCopyResult> {
+    // `stage` travels in the BODY, not the query string, because that is where upstream declares
+    // it -- `generate-email-copy` takes project and brief as PATH segments and stage as a body
+    // attribute. Omitted when absent rather than sent empty: upstream reads absence as "the caller
+    // did not say" and defaults, while an empty string would fail its enum.
+    return this.http.post<GenerateEmailCopyResult>('/api/campaigns/email-copy', stage ? { stage } : {}, {
+      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+    });
   }
 
   /**

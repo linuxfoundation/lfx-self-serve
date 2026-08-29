@@ -761,21 +761,22 @@ export class CampaignServiceClient {
    * A 503 is a deployment state, not a bug: the AI model is optional upstream, and a service
    * without one configured refuses rather than inventing copy.
    */
-  public async generateEmailCopy(req: Request, projectSlug: string, briefId: string): Promise<GenerateEmailCopyResult> {
+  public async generateEmailCopy(req: Request, projectSlug: string, briefId: string, stage?: string): Promise<GenerateEmailCopyResult> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
       return { enabled: false };
     }
 
     const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/email-copy`;
     try {
-      // Fifth argument is `query`, sixth is `data` — this call has neither.
+      // Fifth argument is `query`, sixth is `data`. The stage is a BODY attribute upstream, so it
+      // goes in the sixth; passing it fifth would send no body and no type error would say so.
       const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceEmailCopy>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
         path,
         'POST',
         undefined,
-        undefined
+        stage ? { stage } : undefined
       );
 
       const copy = response.data;

@@ -245,6 +245,26 @@
                   </div>
                 }
 
+                <!--
+                  The email TYPE, above the generate control because it changes what generation
+                  produces. Twelve types map onto six stages: a CFP launch and a co-located CFP
+                  reminder are the same stage, sent at different times, so the operator picks the
+                  type they recognise and the stage is derived.
+                -->
+                <div class="flex flex-col gap-1">
+                  <label for="email-type" class="font-mono text-xs uppercase tracking-wide text-gray-400">Email type</label>
+                  <select
+                    id="email-type"
+                    class="w-full max-w-md rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    [value]="selectedEmailTypeId()"
+                    (change)="onSelectEmailType($any($event.target).value)"
+                    data-testid="campaigns-email-type-select">
+                    @for (t of emailTypes; track t.id) {
+                      <option [value]="t.id">{{ t.label }}</option>
+                    }
+                  </select>
+                </div>
+
                 <div class="flex items-center gap-3">
                   <lfx-button
                     [label]="emailCopy() ? 'Regenerate' : 'Generate email content'"
