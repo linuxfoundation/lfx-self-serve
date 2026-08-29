@@ -190,13 +190,17 @@ export const WEEKLY_BRIEF_SOURCE_SECTIONS: readonly WeeklyBriefSourceSection[] =
  * not by cross-referencing `WEEKLY_BRIEF_SOURCE_SECTIONS` by kind for that part, so a kind present
  * here always gets a real countText, never a placeholder. That's not the WHOLE membership story,
  * though: the same method also appends a single trailing `other` section, its kind/label/countText
- * all hardcoded inline rather than sourced from this list, for any `source_refs` kind this list
- * doesn't recognize (currently `vote_opened` and `survey_published`/`survey_closed` — see
- * `mapActivityEventToCurrentActivityRef`'s own doc comment in `weekly-brief.service.ts`) — so a
- * kind missing from this list doesn't vanish, it just loses its own count text and its position in
- * the display order. The section's display LABEL, separately, IS looked up from
+ * all hardcoded inline rather than sourced from this list, for any `source_refs` entry whose kind
+ * this list doesn't recognize — today that's only the literal kind `other` itself, which the
+ * server-side mapper stamps on `vote_opened` and `survey_published`/`survey_closed` events (see
+ * `mapActivityEventToCurrentActivityRef`'s own doc comment in
+ * `apps/lfx-one/src/server/services/weekly-brief.service.ts`; no `source_ref` is ever literally
+ * `kind: 'vote_opened'` or `'survey_published'` — those are `ActivityEvent` types, already folded
+ * to `other` before this list ever sees them) — so a kind missing from this list doesn't vanish, it
+ * just loses its own count text and its position in the display order. The section's display
+ * LABEL, separately, IS looked up from
  * `WEEKLY_BRIEF_SOURCE_SECTIONS` (with a `?? kind` fallback covering the reverse gap — a kind
- * present here but missing there) — see `WeeklyBriefCurrentActivityPhrase`'s doc comment.
+ * present here but missing there).
  *
  * `mailing-list` and `members` are forward-declared, not currently reachable: the server-side
  * builder (`weekly-brief.service.ts#buildCurrentActivity`) sources `source_refs` from

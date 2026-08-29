@@ -113,9 +113,9 @@ export interface WeeklyBriefCurrentActivitySection extends WeeklyBriefSourceSect
 /**
  * Verb-phrase singular/plural for one activity kind in the "this week so far" tally caption
  * (GH-1922) — see `WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES`'s own doc comment for the full
- * membership/ordering/label contract (including its "recognized kinds only" scope and the
- * trailing `other` catch-all it doesn't cover) — not restated here to avoid the two drifting
- * apart.
+ * membership/ordering/label contract, including the "recognized kinds only" scope of this list
+ * and the trailing `other` catch-all for the kinds it doesn't cover — not restated here to avoid
+ * the two drifting apart.
  */
 export interface WeeklyBriefCurrentActivityPhrase {
   kind: string;
