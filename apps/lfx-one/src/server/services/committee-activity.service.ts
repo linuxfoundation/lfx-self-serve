@@ -209,6 +209,13 @@ export class CommitteeActivityService {
    * a tripwire for a caller reachable directly (tests, or a future `knownCommittee` caller that
    * doesn't degrade the way `buildCurrentActivity` does), and as a precondition the type signature
    * alone can't express.
+   *
+   * `quietAggregationLog` (optional, default `false`): deliberately independent of `knownCommittee`
+   * — passing a known committee only skips a redundant fetch and implies nothing about how often
+   * this method is called, so it must not double as a logging-verbosity switch. Set `true` for a
+   * caller invoked at higher-than-once-per-request frequency (currently only
+   * `weekly-brief.service.ts`'s per-poll-tick tally) to log the aggregation start/completion at
+   * DEBUG instead of INFO — see those two log call sites' own comments for the full rationale.
    */
   public async getCommitteeActivity(
     req: Request,
@@ -496,7 +503,7 @@ export class CommitteeActivityService {
     const hasMore = (windowed.length > limit || anyLegSaturated) && !!lastPageItem;
     const pageToken = hasMore && lastPageItem ? encodeActivityPageToken({ before: lastPageItem.event.occurred_at, key: lastPageItem.key }) : undefined;
 
-    // Same knownCommittee-gated level as the "Starting" log above — see that call's comment.
+    // Same quietAggregationLog-gated level as the "Starting" log above — see that call's comment.
     logger[aggregationLogLevel](req, 'get_committee_activity', 'Completed committee activity aggregation', {
       committee_uid: committeeUid,
       meeting_count: pastMeetingResult.events.length,
