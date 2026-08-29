@@ -645,13 +645,22 @@ export class PlanningTabComponent implements OnInit {
               this.hsUtm.set(result.hs_utm);
             }
             this.hsNotFound.set(false);
-            // The re-check stays available when HubSpot has not assigned the token yet: it
-            // arrives asynchronously, and lookupHubSpot's early return means retyping the same
-            // url cannot fetch it. Create stays hidden either way (hsNotFound is false), so
-            // this offers the ONE action that can still make progress rather than a dead end.
+            // The re-check stays available when the response carried no token. That does NOT
+            // establish that HubSpot has not assigned one — the marketing create is not
+            // documented to return `hs_utm` at all — so a re-read is exactly what settles it,
+            // and lookupHubSpot's early return means retyping the same url cannot. Create stays
+            // hidden either way (hsNotFound is false), so this offers the ONE action that can
+            // still make progress rather than a dead end.
             this.hsUnconfirmed.set(!result.hs_utm);
             this.hsStatus.set(
-              result.hs_utm ? `Created: ${result.campaign_name}` : `Created: ${result.campaign_name} — HubSpot has not assigned a UTM token yet`
+              result.hs_utm
+                ? `Created: ${result.campaign_name}`
+                : // NOT "HubSpot has not assigned one yet" — that is a guess. The marketing
+                  // create is not documented to return `hs_utm`, so an absent token here means
+                  // only that THIS RESPONSE did not carry one; the campaign may already have a
+                  // token the very next lookup can see. Say what is known, and let the re-check
+                  // establish the rest.
+                  `Created: ${result.campaign_name} — its UTM token is not known yet; check again to read it back`
             );
           } else {
             // Same reasoning as the error arm: without a `created` flag the outcome is unknown,

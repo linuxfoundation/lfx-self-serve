@@ -1500,6 +1500,30 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * asynchronously, and lookupHubSpot's early return means retyping the same url cannot fetch
    * it. Clearing the control there leaves no way to ever retrieve it.
    */
+  /**
+   * The message must not claim HubSpot has assigned nothing. The marketing create is not
+   * documented to return `hs_utm` at all, so an absent token means only that THIS RESPONSE did
+   * not carry one -- the campaign may already have a token the next lookup can read.
+   */
+  it('does not claim HubSpot assigned no token when the create response simply lacked one', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+    create.mockReturnValue(
+      new Observable((s) => {
+        s.next({ created: true, hs_utm: null, campaign_name: 'KubeCon NA 2026' });
+        s.complete();
+      })
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    fixture.detectChanges();
+
+    const status = String(instance()['hsStatus']());
+    // It DID create -- that much is known and must be stated.
+    expect(status).toContain('Created');
+    // But not what HubSpot did or did not assign.
+    expect(status, 'stated as fact something the response cannot establish').not.toMatch(/has not assigned/i);
+    expect(status).toMatch(/not known yet/i);
+  });
+
   it('keeps the re-check available when a created campaign has no token yet', () => {
     runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [] });
     create.mockReturnValue(
