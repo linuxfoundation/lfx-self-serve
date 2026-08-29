@@ -369,10 +369,14 @@ export class WeeklyBriefCardComponent {
           // description and its 202 example) — reusing the pre-regenerate rating against that
           // new revision would misattribute, so this drops it whenever res.brief lands and
           // lets the poll's first GET restore the correct value for that revision instead.
-          // Spreads `prev` rather than enumerating every field — `current_activity` carries
-          // forward unchanged for free, and a future field added to WeeklyBriefCurrentResponse
-          // survives this update by default instead of being silently dropped on every
-          // generate/regenerate.
+          // Spreads `prev` rather than enumerating every field, so a week-scoped field like
+          // current_activity (unaffected by a brief request) carries forward by construction
+          // instead of needing to be named here. This is NOT a universal safety improvement,
+          // though: a brief-scoped field — keyed to the specific brief/revision, like
+          // caller_rating above — is wrong to carry forward once res.brief lands, and spreading
+          // would silently do exactly that unless explicitly overridden, same as caller_rating
+          // is below. A future field must be classified as one or the other, not assumed safe by
+          // default either way.
           this.briefResponse.update((prev) => ({
             ...prev,
             brief: res.brief ?? prev?.brief ?? null,
