@@ -616,16 +616,6 @@ export interface LinkedInTargetingStrategy {
 }
 
 /**
- * A brief's built send audience, as campaign-service returns it.
- *
- * The email channel CANNOT dispatch until this exists: `HubSpotDispatcher` resolves the brief's
- * built audience by `brief.ID` (`hubspot.go:293`) rather than reading anything off the create
- * request. That is why the audience is not part of `hubspotConfig`.
- *
- * `inclusionSummary` is human-readable provenance ("how this audience was built") — what an
- * operator checks before sending to a list they did not assemble by hand.
- */
-/**
  * The audience build's lifecycle, closed because upstream declares it closed:
  * `Enum("building", "built", "failed")` in campaign-service's `design/audience.go`.
  *
@@ -635,6 +625,16 @@ export interface LinkedInTargetingStrategy {
  */
 export type CampaignAudienceStatus = 'building' | 'built' | 'failed';
 
+/**
+ * A brief's built send audience, as campaign-service returns it.
+ *
+ * The email channel CANNOT dispatch until this exists: `HubSpotDispatcher` resolves the brief's
+ * built audience by `brief.ID` (`hubspot.go:293`) rather than reading anything off the create
+ * request. That is why the audience is not part of `hubspotConfig`.
+ *
+ * `inclusionSummary` is human-readable provenance ("how this audience was built") — what an
+ * operator checks before sending to a list they did not assemble by hand.
+ */
 export interface CampaignAudience {
   id: string;
   projectId: string;

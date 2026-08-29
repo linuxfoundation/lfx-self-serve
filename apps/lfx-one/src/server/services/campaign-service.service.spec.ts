@@ -2177,6 +2177,30 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     isServerFeatureEnabled.mockReturnValue(true);
   });
 
+  it('sends the stage as a QUERY param, not a body', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' }));
+
+    await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Post-Event');
+
+    // `proxyRequestWithResponse(req, service, path, method, query, data)` -- query is 5th, data
+    // 6th, and BOTH are optional and loosely typed, so a swap is silent. Upstream reads `stage`
+    // off the query string; sent as a body it would be ignored and the caller would get
+    // default-stage copy while believing it asked for another.
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[4]).toEqual({ stage: 'Post-Event' });
+    expect(call[5]).toBeUndefined();
+  });
+
+  it('sends no stage param at all when the caller names none', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' }));
+
+    await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // Absence is meaningful upstream: no stage resolves to the default. Sending an empty string
+    // would fail its enum instead.
+    expect(proxyRequestWithResponse.mock.calls[0][4]).toBeUndefined();
+  });
+
   it('answers enabled:false without calling upstream when the flag is off', async () => {
     isServerFeatureEnabled.mockReturnValue(false);
 

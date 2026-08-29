@@ -768,15 +768,20 @@ export class CampaignServiceClient {
 
     const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/email-copy`;
     try {
-      // Fifth argument is `query`, sixth is `data`. The stage is a BODY attribute upstream, so it
-      // goes in the sixth; passing it fifth would send no body and no type error would say so.
+      // Fifth argument is `query`, sixth is `data`. The stage is a QUERY parameter upstream, so
+      // it goes in the FIFTH -- putting it sixth would send it as a body, which upstream does not
+      // read, and no type error would say so because both slots are optional and loosely typed.
+      //
+      // It is a query param rather than a body attribute because declaring it in the body made
+      // the body REQUIRED upstream, so a caller sending none got a 400 instead of default-stage
+      // copy.
       const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceEmailCopy>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
         path,
         'POST',
-        undefined,
-        stage ? { stage } : undefined
+        stage ? { stage } : undefined,
+        undefined
       );
 
       const copy = response.data;

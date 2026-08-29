@@ -2357,6 +2357,10 @@ export class CampaignsComponent {
    * rest are cleared for the ordinary reason that they describe a brief that is no longer on screen.
    */
   private resetEmailBriefDerivedState(): void {
+    // `selectedEmailTypeId` is deliberately NOT cleared, unlike every signal below it. It is the
+    // operator's choice rather than state derived from the brief, and someone working an event's
+    // send sequence usually wants the type to persist across briefs. Nothing stale survives with
+    // it: the generated copy IS cleared here, so the next generation runs against the new brief.
     this.emailBriefId.set('');
     this.emailAudience.set(null);
     this.emailAudienceState.set('idle');
