@@ -129,9 +129,10 @@ export function currentWeekInProgressWindow(): { window_start: string; window_en
  * only vote phrase is literally "vote closed" (`WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES` has no
  * "vote opened" entry), and an in-progress, not-yet-closed vote isn't that yet. It still can't be
  * dropped outright (the `null` this file used to return here): the "Recent Activity" feed on the
- * same committee-overview page renders `vote_opened` directly, so a week that opened but hasn't
- * yet closed a vote must not report itself as "no activity yet" while the feed right below it
- * proves otherwise. `document_uploaded` and `notes_added` both collapse to kind `doc` — both are
+ * same committee-overview page renders `vote_opened` directly for any voting-enabled committee, so
+ * a week that opened but hasn't yet closed a vote must not report itself as "no activity yet"
+ * while the feed right below it proves otherwise. `document_uploaded` and `notes_added` both
+ * collapse to kind `doc` — both are
  * "a document-like artifact was added this week," and the tally doesn't need to distinguish
  * committee-document files/folders/links from meeting-attachment notes — but their ids DO carry
  * the same namespace discriminants `committee-activity.service.ts`'s own `eventKey()` uses
@@ -178,9 +179,9 @@ function mapActivityEventToCurrentActivityRef(event: ActivityEvent): WeeklyBrief
       return { id: event.payload.vote_uid, kind: 'vote', title: event.payload.name };
     // Folds into `other`, not dropped: an open-but-not-yet-closed vote isn't "vote closed" (the
     // tally's only vote phrase), but dropping it produced a same-page contradiction — the
-    // "Recent Activity" feed (mapActivityEventToFeedItem, activity-feed.utils.ts) already renders
-    // vote_opened for any committee with voting enabled, so a week whose only activity was opening
-    // a vote would have shown "no activity yet" directly beneath a feed proving otherwise.
+    // "Recent Activity" feed (mapActivityEventsToFeedItems, activity-feed.utils.ts) already
+    // renders vote_opened for any committee with voting enabled, so a week whose only activity was
+    // opening a vote would have shown "no activity yet" directly beneath a feed proving otherwise.
     // Prefixed, unlike `vote_closed` above: `other` now holds two upstream uid namespaces
     // (vote_uid here, survey_uid below), the same two-namespace situation `doc`'s prefixing
     // already exists to guard against, not the single-namespace case the unprefixed `vote` kind's
