@@ -13,12 +13,26 @@ describe('mktgOsAgentsEnabledGuard', () => {
   let getFlagOverride: ReturnType<typeof vi.fn>;
   let providerReady: ReturnType<typeof signal<boolean>>;
   let getBooleanFlag: ReturnType<typeof vi.fn>;
-  let queryParams: Record<string, string | undefined>;
-  let router: { url: string; parseUrl: ReturnType<typeof vi.fn>; createUrlTree: ReturnType<typeof vi.fn> };
+  let getCurrentNavigation: ReturnType<typeof vi.fn>;
+  let router: {
+    url: string;
+    parseUrl: ReturnType<typeof vi.fn>;
+    createUrlTree: ReturnType<typeof vi.fn>;
+    getCurrentNavigation: ReturnType<typeof vi.fn>;
+  };
 
   const projectRoute: Route = { path: 'project/mktg-os-agents', data: { lens: 'project' } };
   const foundationRoute: Route = { path: 'foundation/mktg-os-agents', data: { lens: 'foundation' } };
   const segments: UrlSegment[] = [];
+
+  const parseQueryParams = (url: string): Record<string, string> => {
+    const query = url.split('?')[1];
+    return query ? Object.fromEntries(new URLSearchParams(query)) : {};
+  };
+
+  const setNavigationProject = (project: string): void => {
+    getCurrentNavigation.mockReturnValue({ extractedUrl: { queryParams: { project } } });
+  };
 
   const runGuard = (route: Route = projectRoute): ReturnType<typeof mktgOsAgentsEnabledGuard> =>
     TestBed.runInInjectionContext(() => mktgOsAgentsEnabledGuard(route, segments));
@@ -27,12 +41,13 @@ describe('mktgOsAgentsEnabledGuard', () => {
     getFlagOverride = vi.fn().mockReturnValue(undefined);
     providerReady = signal(true);
     getBooleanFlag = vi.fn().mockReturnValue(signal(false));
-    queryParams = {};
+    getCurrentNavigation = vi.fn().mockReturnValue(null);
 
     router = {
       url: '/project/mktg-os-agents',
-      parseUrl: vi.fn().mockImplementation(() => ({ queryParams })),
+      parseUrl: vi.fn().mockImplementation((url: string) => ({ queryParams: parseQueryParams(url) })),
       createUrlTree: vi.fn().mockImplementation((commands: string[], opts: unknown) => ({ denied: commands[0], opts }) as unknown as UrlTree),
+      getCurrentNavigation,
     };
 
     TestBed.configureTestingModule({
@@ -79,7 +94,28 @@ describe('mktgOsAgentsEnabledGuard', () => {
 
   it('preserves the project query on an override deny', async () => {
     getFlagOverride.mockReturnValue(false);
-    queryParams = { project: 'my-project' };
+    setNavigationProject('my-project');
+
+    const result = await runGuard();
+
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: 'my-project' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'my-project' } } });
+  });
+
+  it('preserves the project query from the in-flight URL when router.url has none', async () => {
+    getFlagOverride.mockReturnValue(false);
+    router.url = '/project/overview';
+    setNavigationProject('my-project');
+
+    const result = await runGuard();
+
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: 'my-project' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'my-project' } } });
+  });
+
+  it('falls back to router.url when no navigation is in flight', async () => {
+    getFlagOverride.mockReturnValue(false);
+    router.url = '/project/mktg-os-agents?project=my-project';
 
     const result = await runGuard();
 
@@ -121,7 +157,7 @@ describe('mktgOsAgentsEnabledGuard', () => {
 
   it('preserves the project query when the flag is off after READY', async () => {
     getBooleanFlag.mockReturnValue(signal(false));
-    queryParams = { project: 'my-project' };
+    setNavigationProject('my-project');
 
     const result = await runGuard();
 

@@ -10,9 +10,18 @@ import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
 
+function queryProject(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.length > 0) {
+    return value;
+  }
+
+  return undefined;
+}
+
 function deniedOverview(router: Router, route: Route): UrlTree {
   const lens = route.data?.['lens'] === 'foundation' ? 'foundation' : 'project';
-  const project = router.parseUrl(router.url).queryParams['project'];
+  const project =
+    queryProject(router.getCurrentNavigation()?.extractedUrl.queryParams['project']) ?? queryProject(router.parseUrl(router.url).queryParams['project']);
   return router.createUrlTree([`/${lens}/overview`], {
     queryParams: project ? { project } : {},
   });
