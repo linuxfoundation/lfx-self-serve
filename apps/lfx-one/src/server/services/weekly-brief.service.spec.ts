@@ -939,8 +939,7 @@ describe('WeeklyBriefService', () => {
           req,
           'committee-1',
           { since: '2026-01-11T00:00:00.000Z', limit: ACTIVITY_FEED_MAX_PAGE_SIZE },
-          { uid: 'committee-1', category: 'Board' },
-          true
+          { knownCommittee: { uid: 'committee-1', category: 'Board' }, quietAggregationLog: true }
         );
         expect(result.current_activity?.window_start).toBe('2026-01-11T00:00:00.000Z');
         expect(result.current_activity?.window_end).toBe('2026-01-14T12:00:00.000Z');

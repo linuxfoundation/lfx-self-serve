@@ -91,10 +91,15 @@ export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
  * lands on an already-terminal one — that known v1 gap applies here unchanged, not restated.
  * Note the retries that budget enables are not free: the loser of the race in
  * `buildCurrentActivityWithBudget` is never cancelled, so a persistently slow upstream can end up
- * serving multiple overlapping fan-outs at once (one per ask attempt) rather than being asked
- * once and left alone. Structurally decoupling the tally into its own request — so a slow
- * upstream delays only the enrichment, never the brief — would remove this tax entirely; not done
- * here — a deferred, not a dismissed, trade-off (linuxfoundation/lfx-self-serve#1922).
+ * serving multiple overlapping fan-outs at once (one per ask attempt, up to
+ * `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS` + the initial load) rather than being asked
+ * once and left alone — a genuine retry-amplification risk against a struggling upstream, not
+ * mitigated here (no `AbortSignal` threading, no per-committee in-flight dedupe). Structurally
+ * decoupling the tally into its own request — so a slow upstream delays only the enrichment,
+ * never the brief, and a lost race can actually be cancelled — would remove this tax and the
+ * amplification risk entirely; deliberately not done here. A known, accepted v1 limitation, not
+ * an oversight: the machinery already in this file (the budget race, the sentinel, the ask-attempt
+ * cap, the poll's opt-out gate) exists specifically to manage this coupling, not to hide it.
  */
 export const WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS = 3_000;
 

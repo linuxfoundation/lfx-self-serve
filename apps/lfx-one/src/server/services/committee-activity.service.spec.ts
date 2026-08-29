@@ -876,7 +876,12 @@ describe('CommitteeActivityService', () => {
         return defaultProxyRequest(r, s, path, m, query);
       });
 
-      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { uid: COMMITTEE_UID, enable_voting: true } as Committee);
+      const result = await service.getCommitteeActivity(
+        req,
+        COMMITTEE_UID,
+        { limit: 8 },
+        { knownCommittee: { uid: COMMITTEE_UID, enable_voting: true } as Committee }
+      );
 
       // enable_voting: true on the passed-in committee — votes are included, proving the
       // knownCommittee value (not a stubbed-out default) actually drove the gating decision.
@@ -886,7 +891,12 @@ describe('CommitteeActivityService', () => {
     it('still gates on enable_voting from the knownCommittee, not just skips the fetch', async () => {
       getVotes.mockResolvedValue({ data: [vote()] });
 
-      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { uid: COMMITTEE_UID, enable_voting: false } as Committee);
+      const result = await service.getCommitteeActivity(
+        req,
+        COMMITTEE_UID,
+        { limit: 8 },
+        { knownCommittee: { uid: COMMITTEE_UID, enable_voting: false } as Committee }
+      );
 
       expect(result.data).toEqual([]);
     });
@@ -895,7 +905,7 @@ describe('CommitteeActivityService', () => {
       // enable_voting decides the entire vote leg's visibility — a mismatched committee here
       // would silently add or hide votes for the real committeeUid with no error anywhere else.
       await expect(
-        service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { uid: 'some-other-committee', enable_voting: true } as Committee)
+        service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { knownCommittee: { uid: 'some-other-committee', enable_voting: true } as Committee })
       ).rejects.toThrow(ServiceValidationError);
       // Pins the guard's value as a cheap tripwire — it must reject BEFORE the 5-leg upstream
       // fan-out starts, not just eventually throw after paying for it.
@@ -905,7 +915,12 @@ describe('CommitteeActivityService', () => {
     it('logs the aggregation start/completion at DEBUG, not INFO, when quietAggregationLog is passed — this caller is a per-poll-tick tally, not the controller-driven feed the INFO rationale was written for', async () => {
       getVotes.mockResolvedValue({ data: [vote()] });
 
-      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { uid: COMMITTEE_UID, enable_voting: true } as Committee, true);
+      await service.getCommitteeActivity(
+        req,
+        COMMITTEE_UID,
+        { limit: 8 },
+        { knownCommittee: { uid: COMMITTEE_UID, enable_voting: true } as Committee, quietAggregationLog: true }
+      );
 
       expect(debug).toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
       expect(debug).toHaveBeenCalledWith(req, 'get_committee_activity', 'Completed committee activity aggregation', expect.anything());
@@ -927,7 +942,7 @@ describe('CommitteeActivityService', () => {
     it('still logs at INFO when knownCommittee is passed but quietAggregationLog is not — passing knownCommittee alone must not silence the log, since it exists only to skip a redundant fetch and says nothing about call frequency', async () => {
       getVotes.mockResolvedValue({ data: [vote()] });
 
-      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { uid: COMMITTEE_UID, enable_voting: true } as Committee);
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { knownCommittee: { uid: COMMITTEE_UID, enable_voting: true } as Committee });
 
       expect(info).toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
       expect(debug).not.toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());

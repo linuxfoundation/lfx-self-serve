@@ -189,6 +189,14 @@ export class CommitteeActivityService {
   }
 
   /**
+   * `callerOptions` is deliberately its own bag, not folded into `options: CommitteeActivityQuery`
+   * — that type is also the parsed, validated shape of `GET /api/committees/:uid/activity`'s query
+   * string (see its own doc comment), and neither `knownCommittee` nor `quietAggregationLog` is
+   * ever HTTP-parsed; mixing an internal caller-intent flag into a wire-query type would blur that
+   * boundary for no benefit (general-code-reviewer flagged the previous 5-positional-parameter
+   * signature as a footgun forcing callers to pass `undefined` to reach a later flag — this bag
+   * fixes the footgun without paying that cost).
+   *
    * `knownCommittee` (optional): a caller that already fetched this committee for its own reasons
    * (e.g. weekly-brief.service.ts's `buildCurrentActivity`, which must read `category` before it
    * can even decide whether to call this method) can pass it here to skip this method's own
@@ -221,9 +229,9 @@ export class CommitteeActivityService {
     req: Request,
     committeeUid: string,
     options: CommitteeActivityQuery,
-    knownCommittee?: Committee,
-    quietAggregationLog = false
+    callerOptions: { knownCommittee?: Committee; quietAggregationLog?: boolean } = {}
   ): Promise<PaginatedResponse<ActivityEvent>> {
+    const { knownCommittee, quietAggregationLog = false } = callerOptions;
     if (knownCommittee && knownCommittee.uid !== committeeUid) {
       throw ServiceValidationError.forField('knownCommittee', 'knownCommittee.uid must match committeeUid', { operation: 'get_committee_activity' });
     }

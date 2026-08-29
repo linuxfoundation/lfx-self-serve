@@ -1367,8 +1367,7 @@ export class WeeklyBriefService {
           since: window_start,
           limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
         },
-        committee,
-        /* quietAggregationLog */ true
+        { knownCommittee: committee, quietAggregationLog: true }
       );
       logger.debug(req, 'get_weekly_brief_current_activity', 'Fetched current-week activity', { committee_id: committeeId, event_count: data.length });
       if (data.length >= ACTIVITY_FEED_MAX_PAGE_SIZE) {
