@@ -1303,18 +1303,23 @@ export class WeeklyBriefService {
    * notes/surveys, not whether THIS WEEK's activity was truncated. Gating on that would silently
    * hide the tally for exactly the long-lived, active committees it exists to help.
    *
-   * Gate on the filtered `sourceRefs.length`, not the raw merged/capped `data.length` — this
-   * method's body filters `data` to `occurred_at <= window_end` before the gate runs, specifically
-   * so a page saturated with administratively-closed, future-stamped votes (destined to be
-   * filtered out anyway) can't settle a comfortably-under-the-cap committee to `null`. When the
-   * filtered count itself fills the page (`>= limit`, which also implies nothing was filtered
-   * out — `sourceRefs.length` can never exceed `data.length`), real in-window rows may have been
-   * cut, so this returns `null` (a settled "can't state a count as fact" answer, not a transient
-   * "couldn't determine") rather than a truncated count stated as fact — see
+   * Gate on `sourceRefs.length + unmappedInWindow`, not the raw merged/capped `data.length` and
+   * not bare `sourceRefs.length` either — this method's body filters `data` to `occurred_at <=
+   * window_end` before the gate runs, specifically so a page saturated with administratively-
+   * closed, future-stamped votes (destined to be dropped anyway) can't settle a comfortably-
+   * under-the-cap committee to `null`. Only that window_end drop is safe to exclude, though:
+   * `unmappedInWindow` counts in-window events mapActivityEventToCurrentActivityRef doesn't
+   * recognize, which is NOT proof those events don't belong in the tally — just that this method
+   * can't render them yet — so the gate adds them back in rather than treating them the same as
+   * genuine out-of-window noise. When the sum fills the page (`>= limit`, which also implies
+   * nothing was dropped for the one proven-safe reason — window_end — since `sourceRefs.length +
+   * unmappedInWindow` can never exceed `data.length`), real in-window rows may have been cut, so
+   * this returns `null` (a settled "can't state a count as fact" answer, not a transient "couldn't
+   * determine") rather than a truncated count stated as fact — see
    * `WeeklyBriefCurrentResponse.current_activity`'s doc comment for why `null` here, not
    * `undefined`.
    *
-   * Known v1 residual (accepted, not solved): `sourceRefs.length < limit` is a heuristic, not a
+   * Known v1 residual (accepted, not solved): `sourceRefs.length + unmappedInWindow < limit` is a heuristic, not a
    * proof of completeness. `committee-activity.service.ts` documents — in its own "Filter
    * dimension" (its exact label), sort-dimension ("Votes, surveys, files, and notes are all in a
    * different, genuinely-approximate bucket"), and FGA-post-filter comments — several ways an
@@ -1400,8 +1405,19 @@ export class WeeklyBriefService {
       // to be dropped here anyway, settling a comfortably-under-the-cap committee to `null` for no
       // real reason. Gating on the filtered count instead only trips when the events that actually
       // make it into the tally themselves fill the page.
+      // `unmappedInWindow` (events that pass the window_end filter but that
+      // mapActivityEventToCurrentActivityRef's `default: return null` branch doesn't recognize —
+      // unreached today, since CommitteeActivityService never constructs a DeferredActivityEvent,
+      // but type-legal) is tracked separately from droppedAfterWindowEnd and, unlike it, counts
+      // toward the truncation gate below. The two are NOT symmetric: a window-filtered event is
+      // *proven* not to belong in this week's tally (its occurred_at is after window_end), so
+      // excluding it from the gate is safe. An unmapped-but-in-window event is NOT proven
+      // irrelevant — it may well belong in the tally, this method just has no rendering for it —
+      // so a full raw page dominated by these must still be treated as possibly truncated, not
+      // waved through the way genuine future-noise is.
       const windowEndMs = Date.parse(window_end);
       let droppedAfterWindowEnd = 0;
+      let unmappedInWindow = 0;
       const sourceRefs = data.reduce<WeeklyBriefSourceRef[]>((refs, event) => {
         const eventMs = Date.parse(event.occurred_at);
         if (!Number.isNaN(eventMs) && eventMs > windowEndMs) {
@@ -1409,7 +1425,11 @@ export class WeeklyBriefService {
           return refs;
         }
         const ref = mapActivityEventToCurrentActivityRef(event);
-        if (ref) refs.push(ref);
+        if (ref) {
+          refs.push(ref);
+        } else {
+          unmappedInWindow += 1;
+        }
         return refs;
       }, []);
       // DEBUG, not WARN — the vote leg's occurred_at-ahead-of-"now" case (see the filter's own
@@ -1428,7 +1448,7 @@ export class WeeklyBriefService {
         });
       }
 
-      if (sourceRefs.length >= ACTIVITY_FEED_MAX_PAGE_SIZE) {
+      if (sourceRefs.length + unmappedInWindow >= ACTIVITY_FEED_MAX_PAGE_SIZE) {
         logger.warning(
           req,
           'get_weekly_brief_current_activity',

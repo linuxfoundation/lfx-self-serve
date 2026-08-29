@@ -947,16 +947,19 @@ describe('WeeklyBriefService', () => {
       }
     });
 
-    it("does NOT settle to null when a full raw page is mostly unrecognized event types the mapper drops — same interaction as the window_end case, via mapActivityEventToCurrentActivityRef's default branch instead", async () => {
+    it('DOES settle to null when a full raw page is mostly unrecognized-but-in-window event types — unlike window_end noise, an unmapped event is not proven irrelevant to the tally, so it must still count toward the truncation gate', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
 
       // DeferredActivityEvent ('member_joined' et al.) is a real ActivityEvent union member —
       // type-legal, never actually constructed by CommitteeActivityService today (see that
       // interface's own doc comment) — that mapActivityEventToCurrentActivityRef's `default:
-      // return null` branch exists to handle. A full raw page dominated by these must filter down
-      // to the small genuine count, not settle to null the same way a full page of window_end-
-      // future noise must not (see the sibling test above).
+      // return null` branch exists to handle. Unlike the window_end-future-noise case (sibling
+      // test above), these events are genuinely in-window — this method just has no rendering for
+      // them — so a full raw page dominated by them must still gate to null: excluding them from
+      // the truncation count the way window_end drops are excluded would risk publishing an
+      // undercounted tally as fact the moment CommitteeActivityService starts constructing one of
+      // these kinds.
       const unrecognized = Array.from({ length: ACTIVITY_FEED_MAX_PAGE_SIZE - 2 }, () => ({
         type: 'member_joined' as const,
         occurred_at: '2026-01-12T10:00:00Z',
@@ -973,13 +976,12 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
-      expect(result.current_activity?.source_refs).toHaveLength(2);
-      expect(logger.warning).not.toHaveBeenCalledWith(
+      expect(result.current_activity).toBeNull();
+      expect(logger.warning).toHaveBeenCalledWith(
         req,
         'get_weekly_brief_current_activity',
         expect.stringContaining('fills a full page'),
-        expect.anything()
+        expect.objectContaining({ committee_id: 'committee-1' })
       );
     });
 
