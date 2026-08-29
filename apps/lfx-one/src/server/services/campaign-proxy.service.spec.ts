@@ -629,6 +629,19 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
     expect(created, 'auto-created a campaign on a search that settled nothing').toHaveLength(0);
   });
 
+  it('asks HubSpot for its per-request maximum, not a smaller number', async () => {
+    // The cap is part of the duplicate-avoidance contract: every row it omits is a campaign a
+    // caller can duplicate, and a limit BELOW the API maximum makes `capped` fire on searches
+    // HubSpot would happily have answered in full -- suppressing the create for no reason.
+    // 200 since September 2024; nothing else asserted this, so lowering it was invisible.
+    hsResponds({ total: 0, results: [] });
+
+    await service.lookupHubSpotUtm(req, 'KubeCon EU 2026');
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as { body: string }).body));
+    expect(body.limit, 'asked HubSpot for fewer rows than it will return').toBe(200);
+  });
+
   it('refuses a malformed 2xx rather than reading it as an empty search', async () => {
     // A body with no `results` array is a response we could not parse. Defaulting it to `[]`
     // turned that into an AUTHORITATIVE absence -- and absence is what the caller acts on by

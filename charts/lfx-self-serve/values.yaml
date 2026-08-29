@@ -660,7 +660,8 @@ environment:
   #    the correct answer. This is deliberately not gated: holding it behind a default-off flag
   #    would keep a known-wrong value in production.
   #
-  # 2. The legacy search limit rose from 10 to 100 (HubSpot's per-request maximum), and both
+  # 2. The legacy search limit rose from 10 to 200 (HubSpot's per-request maximum, raised from
+  #    100 on their side in September 2024), and both
   #    paths now report whether the search was CAPPED. The two go together: `capped` is what
   #    suppresses the create offer, and at a limit of 10 nearly every search on a busy portal
   #    would report capped, leaving an operator unable to create anything.

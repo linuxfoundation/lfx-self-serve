@@ -345,7 +345,8 @@ of this change is not inert.
    report a missing token as missing. Expect fewer apparent tokens, and expect that to be the
    correct answer. This is deliberately not gated: holding it behind a default-off flag would
    keep a known-wrong value in production.
-2. The legacy search limit rose from 10 to 100 (HubSpot's per-request maximum), and both paths
+2. The legacy search limit rose from 10 to 200 (HubSpot's per-request maximum, raised from 100
+   on their side in September 2024), and both paths
    now report whether the search was **capped**. The two go together: `capped` is what suppresses
    the create offer, and at a limit of 10 nearly every search on a busy portal would report
    capped, leaving an operator unable to create anything.
@@ -394,7 +395,8 @@ account-wide query — the fallback would be the cross-tenant leak this flag clo
 It has no ordering dependency on the other flags, and unlike `STATUS_TOGGLE` it comes back off
 cleanly: both routes are reads with no persisted state and no UUID-keyed id space, so disabling
 it restores the previous behaviour exactly, leak included. It does not cover keyword actions
-(pause/remove), which stay on the legacy path.
+(pause/remove): those have their own flag, `LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS`,
+documented above — enabling this one leaves them wherever that flag puts them.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` gates both halves of brief persistence: the write
 (`POST /api/campaigns/brief/persist`, called when a user approves a brief and moves to the

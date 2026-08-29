@@ -112,7 +112,8 @@ export async function gaqlSearch(query: string): Promise<unknown[]> {
 const HS_BASE = 'https://api.hubapi.com';
 
 /**
- * HubSpot's own per-request maximum for CRM search. IT IS A CAP, NOT A PAGE — this code does not
+ * HubSpot's own per-request maximum for CRM search — 200 since September 2024
+ * (https://developers.hubspot.com/changelog/increasing-our-api-limits), raised from 100. IT IS A CAP, NOT A PAGE — this code does not
  * follow `paging.next.after`, so a campaign ranked below it is not returned. See `capped` on
  * HubSpotUtmResult for why that matters.
  *
@@ -122,7 +123,7 @@ const HS_BASE = 'https://api.hubapi.com';
  * a campaign is worse off than one who occasionally sees a stale warning. The two changes only
  * make sense together, which is why this is not held back behind the flag.
  */
-const HS_SEARCH_LIMIT = 100;
+const HS_SEARCH_LIMIT = 200;
 
 interface HubSpotUtmResult {
   found: boolean;
@@ -172,7 +173,7 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
     headers: hsHeaders(),
     body: JSON.stringify({
       query: eventName,
-      // 100 is HubSpot's own per-request maximum. Raised from 10 to make the gap between "not in
+      // 200 is HubSpot's own per-request maximum. Raised from 10 to make the gap between "not in
       // the returned matches" and "does not exist" as small as one request can make it, because
       // the caller reads absence as licence to create. `capped` below reports when a gap remains.
       limit: HS_SEARCH_LIMIT,

@@ -234,10 +234,10 @@ export enum ServerFeatureFlag {
    * `CampaignServiceStatusToggle`, which does not come back off — no UUID-shaped id is involved
    * here, so there is no id space that only one backend can address.
    *
-   * Does NOT gate `executeKeywordActions`. That route MUTATES live keywords and its
-   * request/response shape does not line up with campaign-service's per-campaign,
-   * all-or-nothing endpoint, so it stays on the legacy path until that is reconciled — a
-   * separate change with a separate flag, because a write needs a rollback story a read does not.
+   * Does NOT gate `executeKeywordActions`. That route MUTATES live keywords, so it has its own
+   * flag — `CampaignServiceKeywordActions`, defined just below — because a write needs a
+   * rollback story a read does not. The two are independent: enabling this one leaves keyword
+   * actions wherever their own flag puts them.
    */
   CampaignServiceInsights = 'LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS',
 
