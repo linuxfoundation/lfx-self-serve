@@ -3631,6 +3631,10 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     emailTemplatesAnnouncement: Signal<string>;
     searchEmailTemplates(query: string): void;
     onSelectEmailTemplate(id: string): void;
+    emailBriefOutput: WritableSignal<CampaignBriefOutput | null>;
+    emailTemplateSuggestionId: Signal<string>;
+    emailTemplateSuggestionTerms: Signal<readonly string[]>;
+    emailTemplatesRendered: Signal<HubSpotMarketingEmail[]>;
   }
   const picker = (): PickerInternals => fixture.componentInstance as unknown as PickerInternals;
 
@@ -3656,6 +3660,239 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     req.flush(body);
     fixture.detectChanges();
   }
+
+  /**
+   * The event-derived template suggestion (#1698).
+   *
+   * The mapping of event -> branding lives in HubSpot, in the names its operators gave their
+   * templates. These pin that it is read rather than guessed at, and — more importantly — that a
+   * weak signal is NOT turned into a confident pre-selection.
+   */
+  describe('event-derived template suggestion', () => {
+    const briefFor = (name: string, slug: string, city = ''): CampaignBriefOutput => ({ eventDetails: { name, slug, city } }) as unknown as CampaignBriefOutput;
+
+    /**
+     * Put the page on Email/Implement so the picker panel is in the DOM.
+     *
+     * Without this every DOM query returns null -- which makes a NEGATIVE assertion pass for a
+     * reason that has nothing to do with the suggestion: the classic test that cannot fail.
+     */
+    const showPicker = (): void => {
+      const c = fixture.componentInstance as unknown as {
+        selectorForm: { controls: { deliveryType: { setValue(v: string): void } } };
+        selectTab(tab: string, owner: string): void;
+      };
+      c.selectorForm.controls.deliveryType.setValue('email');
+      c.selectTab('implementation', 'email');
+      fixture.detectChanges();
+      // selectTab issues its own entry search; answer it so it cannot collide with the
+      // explicit one each test makes.
+      httpMock
+        .match((r) => r.url === '/api/campaigns/hubspot/emails')
+        .forEach((r) => r.flush({ enabled: true, error: null, possiblyTruncated: false, emails: [] }));
+      fixture.detectChanges();
+    };
+
+    it('pre-selects the template whose name carries the event, and says what it matched', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'kc', name: 'KubeCon registration reminder' },
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi — registration push' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      // The REASON must be visible; a suggestion nobody can check is one nobody should trust.
+      expect(picker().emailTemplateSuggestionTerms()).toContain('nairobi');
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')).not.toBeNull();
+    });
+
+    /**
+     * The case that matters most. A portal whose templates do not name their event must produce NO
+     * pre-selection — a confident wrong pick clones another event's branding into a real HubSpot
+     * draft, and because it reads as decided nobody re-examines it.
+     */
+    it('withholds the suggestion when nothing identifies the event', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'a', name: 'Monthly newsletter' },
+          { id: 'b', name: 'Registration reminder' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')).toBeNull();
+    });
+
+    /**
+     * The safety property, and the one the earlier "nothing identifies the event" case does NOT
+     * cover: that test scores 0, so it is stopped by the no-match guard and never reaches the
+     * threshold. This lands in the WEAK band — one distinctive term hit, below
+     * EVENT_TEMPLATE_SUGGESTION_MIN_SCORE — which is exactly where a confident-looking wrong pick
+     * would clone another event's branding into a real HubSpot draft.
+     */
+    it('withholds a suggestion that matches on only one term', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        // Matches 'dev' and nothing else: a real but weak signal, not evidence of the event.
+        emails: [{ id: 'weak', name: 'Dev tools digest' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+      // Positive control: the panel is mounted, so the absence above is a real absence.
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-list"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')).toBeNull();
+    });
+
+    /**
+     * Found against the LIVE portal, not in a fixture: "KubeCon North America" reduces to
+     * `kubecon | salt | lake | city`, and the real template "KubeCon NA 2026 - Modern Registration
+     * Template" matches only `kubecon`. Scoring every term equally withheld it — one hit — even
+     * though the name states the event unambiguously. A brand token needs no corroboration.
+     */
+    it('suggests on a single distinctive term, so a brand name alone is enough', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026', 'Salt Lake City'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'kc', name: 'KubeCon NA 2026 - Modern Registration Template' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('kc');
+      expect(picker().emailTemplateSuggestionTerms()).toEqual(['kubecon']);
+    });
+
+    /**
+     * The other half of the same rule, and the reason it is length-based rather than a blanket
+     * "one hit is enough": a SHORT token still needs corroboration, because it occurs in template
+     * names that have nothing to do with the event.
+     */
+    it('still withholds on a single short term, which is not evidence of the event', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        // 'dev' only — three characters, and a word that appears across unrelated templates.
+        emails: [{ id: 'weak', name: 'Dev tools digest' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+    });
+
+    /** Two distinctive terms IS enough — the threshold must not be so high it never fires. */
+    it('offers a suggestion once two distinctive terms match', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'ok', name: 'MCP Nairobi invite' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('ok');
+    });
+
+    /** A generic word shared by the event name and an unrelated template must not manufacture a hit. */
+    it('does not match on a stopword the event name happens to contain', () => {
+      picker().emailBriefOutput.set(briefFor('Open Source Summit Europe', 'open-source-summit-europe'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'x', name: 'Cloud Summit Europe 2026 invite' }] as HubSpotMarketingEmail[],
+      });
+
+      // 'summit' and 'europe' are stopwords; only 'open'/'source' are distinctive, and neither
+      // appears in the template. A match here would be the false positive the list exists to stop.
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+    });
+
+    it('never overwrites a template the operator already picked', () => {
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().onSelectEmailTemplate('chosen-by-hand');
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'chosen-by-hand', name: 'Something the operator knows about' },
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi — registration push' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().selectedEmailTemplateId()).toBe('chosen-by-hand');
+    });
+
+    /**
+     * An override must SURVIVE a re-search. Without the sticky flag the derivation re-runs on the
+     * next search and silently reinstates the template the operator just rejected, which reads as
+     * the app ignoring them.
+     */
+    it('does not reinstate the suggestion after the operator overrides it', () => {
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      const emails = [
+        { id: 'mcp', name: 'MCP Dev Summit Nairobi — registration push' },
+        { id: 'other', name: 'Nairobi welcome note' },
+      ] as HubSpotMarketingEmail[];
+      respond({ enabled: true, error: null, possiblyTruncated: false, emails });
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+
+      picker().onSelectEmailTemplate('other');
+      picker().searchEmailTemplates('');
+      respond({ enabled: true, error: null, possiblyTruncated: false, emails });
+
+      expect(picker().selectedEmailTemplateId()).toBe('other');
+    });
+
+    /** The suggestion ranks too, so the derived template is reachable past the render cap. */
+    it('ranks the event match to the top of the rendered list', () => {
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'a', name: 'Zulu unrelated' },
+          { id: 'b', name: 'Yankee unrelated' },
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi — registration push' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplatesRendered()[0].id).toBe('mcp');
+    });
+  });
 
   it('loads templates when the implementation tab is entered, not only on proceed', () => {
     // The only other searchEmailTemplates call site is onEmailProceedToImplementation, so

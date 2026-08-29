@@ -943,6 +943,72 @@ export const CAMPAIGN_METRICS_WINDOWS = ['today', 'yesterday', 'last_7_days', 'l
 export const EMAIL_BRIEF_REQUIRED_HINT = 'Generate a brief on the Plan tab first.';
 
 /**
+ * How much harder an EVENT term counts than an email-type keyword when ranking clone templates.
+ *
+ * Within one portal that runs several events, "which event is this" discriminates far harder than
+ * "which stage of the sequence": a KubeCon registration push and an MCP Dev Summit registration
+ * push score identically on type keywords, and only the event term tells them apart. Three is
+ * enough that a single event hit outranks any realistic type-only match (types carry at most three
+ * keywords) without letting event terms alone decide -- a template matching both still wins.
+ */
+export const EVENT_TERM_WEIGHT = 3;
+
+/**
+ * The lowest event score that may PRE-SELECT a template rather than merely rank it.
+ *
+ * Two independent event hits, or one weighted hit. Below this the suggestion is withheld entirely
+ * and the operator picks by hand, which is the honest outcome: a confidently wrong pre-selection
+ * clones another event's branding into a real HubSpot draft, and because it looks decided nobody
+ * re-reads it. Ranking still applies -- a weak signal is worth ordering by, just not deciding by.
+ */
+export const EVENT_TEMPLATE_SUGGESTION_MIN_SCORE = 6;
+
+/**
+ * Length at which a matched event term is treated as evidence on its own.
+ *
+ * Corroboration by a second term is the usual bar, but it is the wrong bar for a distinctive brand
+ * token. Verified against the live portal: "KubeCon North America" reduces to
+ * `kubecon | salt | lake | city`, and "KubeCon NA 2026 - Registration" matches only `kubecon` --
+ * one hit, withheld, despite naming the event unambiguously. Meanwhile a short token like `dev`
+ * or `mcp` really does need corroboration, because it occurs in unrelated template names.
+ *
+ * Six characters is where the two groups separate in practice (`kubecon`, `nairobi`, `pytorch`,
+ * `zephyr` above it; `dev`, `mcp`, `city`, `salt`, `lake` below), so a single long-token hit is
+ * scored double and clears the threshold alone while a short one still cannot.
+ */
+export const EVENT_TERM_DISTINCTIVE_LENGTH = 6;
+
+/**
+ * Words dropped from an event name before it is used to match template names.
+ *
+ * Every one of these appears in ordinary event titles AND in unrelated template names, so keeping
+ * them manufactures hits that mean nothing -- "2026" matches every template written this year, and
+ * "summit" matches every summit in the portal. Short tokens are dropped separately by length.
+ */
+export const EVENT_TERM_STOPWORDS: readonly string[] = [
+  'the',
+  'and',
+  'for',
+  'con',
+  'conference',
+  'summit',
+  'event',
+  'events',
+  'day',
+  'days',
+  'annual',
+  'north',
+  'south',
+  'america',
+  'europe',
+  'asia',
+  '2024',
+  '2025',
+  '2026',
+  '2027',
+];
+
+/**
  * The twelve email types an event programme sends, in lifecycle order, each mapped to the stage
  * campaign-service generates from.
  *

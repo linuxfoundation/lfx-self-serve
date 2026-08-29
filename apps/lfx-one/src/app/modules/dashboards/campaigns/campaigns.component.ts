@@ -15,6 +15,10 @@ import {
   CAMPAIGN_TABS,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   EMAIL_BRIEF_REQUIRED_HINT,
+  EVENT_TEMPLATE_SUGGESTION_MIN_SCORE,
+  EVENT_TERM_DISTINCTIVE_LENGTH,
+  EVENT_TERM_STOPWORDS,
+  EVENT_TERM_WEIGHT,
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
@@ -709,6 +713,20 @@ export class CampaignsComponent {
    * send them looking for a template that does not exist.
    */
   protected readonly emailTemplatesTruncated = signal(false);
+
+  /**
+   * The template auto-derived from HubSpot for this event, if one was confident enough to offer.
+   *
+   * A SUGGESTION the operator can change, never a decision. Empty means no template scored above
+   * `EVENT_TEMPLATE_SUGGESTION_MIN_SCORE` and the picker behaves exactly as it did before -- which
+   * is the honest outcome for a portal whose templates do not name their event. Withholding a weak
+   * guess matters more than offering one: a pre-selection looks decided, so nobody re-reads it,
+   * and cloning the wrong template puts another event's branding into a real HubSpot draft.
+   */
+  protected readonly emailTemplateSuggestionId = signal<string>('');
+
+  /** Which event terms the suggested template matched on, so the operator can judge it themselves. */
+  protected readonly emailTemplateSuggestionTerms = signal<readonly string[]>([]);
 
   /**
    * The rows the picker actually DRAWS — the first `HUBSPOT_TEMPLATE_RENDER_LIMIT` of them.
@@ -1903,6 +1921,7 @@ export class CampaignsComponent {
           }
           this.emailTemplates.set(selectable);
           this.emailTemplatesTruncated.set(result.possiblyTruncated);
+          this.applyEventTemplateSuggestion(selectable);
         },
         error: () => {
           if (!isCurrent()) {
@@ -2367,20 +2386,146 @@ export class CampaignsComponent {
    */
   private rankTemplatesForSelectedType(templates: HubSpotMarketingEmail[]): HubSpotMarketingEmail[] {
     const keywords = CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
-    if (keywords.length === 0) {
+    const eventTerms = this.eventTemplateTerms();
+    if (keywords.length === 0 && eventTerms.length === 0) {
       return templates;
     }
     // Score once per row rather than inside the comparator: a comparator that lowercases and
     // scans both operands runs O(n log n) times over strings that never change.
+    //
+    // The EVENT outweighs the type, and by more than one type keyword can make up: within a
+    // portal that runs several events, "which event is this" discriminates far harder than
+    // "which stage of the sequence". A KubeCon registration-push template and an MCP Dev Summit
+    // one score identically on type; only the event term separates them, and picking the wrong
+    // one clones the wrong branding into a real HubSpot draft.
     const scored = templates.map((template, index) => ({
       template,
       index,
-      score: this.templateKeywordScore(template, keywords),
+      score: this.templateKeywordScore(template, keywords) + this.templateKeywordScore(template, eventTerms) * EVENT_TERM_WEIGHT,
     }));
     // `index` breaks ties, which is what makes this stable across engines rather than relying on
     // Array.prototype.sort's stability guarantee holding for every input shape.
     scored.sort((a, b) => b.score - a.score || a.index - b.index);
     return scored.map((s) => s.template);
+  }
+
+  /**
+   * Offer the template this portal already uses for this event, if one is identifiable.
+   *
+   * This is the answer to "how is it done for that event": rather than holding a per-event mapping
+   * of our own, it reads the event off the brief and finds the template whose NAME says it belongs
+   * to that event. The portal's own naming is the mapping.
+   *
+   * Three properties, each load-bearing:
+   *
+   *   - It only ever pre-fills an EMPTY selection, so an operator who has already chosen keeps
+   *     their choice across a re-search or an email-type change -- a suggestion that reinstates
+   *     itself over a hand-pick is not a suggestion.
+   *   - It withholds below `EVENT_TEMPLATE_SUGGESTION_MIN_SCORE`. A pre-selection reads as decided,
+   *     so a wrong one is unlikely to be re-examined, and cloning the wrong template puts another
+   *     event's branding into a real HubSpot draft.
+   *   - It records WHICH terms matched, so the operator can judge the suggestion rather than trust
+   *     it. A suggestion whose reasoning is invisible cannot be checked.
+   */
+  private applyEventTemplateSuggestion(templates: HubSpotMarketingEmail[]): void {
+    this.emailTemplateSuggestionId.set('');
+    this.emailTemplateSuggestionTerms.set([]);
+
+    const eventTerms = this.eventTemplateTerms();
+    if (eventTerms.length === 0 || templates.length === 0) {
+      return;
+    }
+
+    // Scored on the EVENT alone, not the blended rank. The blended score mixes in type keywords,
+    // so a template matching only the type could clear the threshold while saying nothing about
+    // which event it belongs to -- the precise confusion this gate exists to prevent.
+    let best: HubSpotMarketingEmail | null = null;
+    let bestScore = 0;
+    for (const template of templates) {
+      const score = this.eventMatchScore(template, eventTerms);
+      if (score > bestScore) {
+        best = template;
+        bestScore = score;
+      }
+    }
+
+    if (best === null || bestScore < EVENT_TEMPLATE_SUGGESTION_MIN_SCORE) {
+      return;
+    }
+
+    this.emailTemplateSuggestionId.set(best.id);
+    this.emailTemplateSuggestionTerms.set(this.matchedEventTerms(best, eventTerms));
+
+    // Pre-fill ONLY an untouched selection. `selectedEmailTemplateId` is the operator's, and a
+    // suggestion that overwrites a deliberate choice is a bug wearing a feature's clothes.
+    //
+    // The empty check is the WHOLE guard, deliberately. A separate "was it overridden" flag was
+    // written first and removed: the only path that clears the selection is the foundation switch,
+    // which resets the brief-derived state in the same pass, so the flag could never be the reason
+    // a re-selection was refused. It was unfalsifiable — no mutation of it changed any test — and
+    // an unfalsifiable guard reads as protection that is not there.
+    if (this.selectedEmailTemplateId() === '') {
+      this.selectedEmailTemplateId.set(best.id);
+    }
+  }
+
+  /**
+   * How strongly a template's name says it belongs to THIS event.
+   *
+   * Long terms count double, because corroboration is the wrong bar for a distinctive brand token.
+   * Found against the live portal: "KubeCon North America" reduces to `kubecon|salt|lake|city`,
+   * and "KubeCon NA 2026 - Registration" matches only `kubecon` — one hit, which a
+   * count-everything-equally score withholds despite the template naming the event unambiguously.
+   * A short token like `dev` or `mcp` genuinely does need a second term, since it turns up in
+   * unrelated names, so the two cases must not be scored the same.
+   */
+  private eventMatchScore(template: HubSpotMarketingEmail, eventTerms: readonly string[]): number {
+    return this.matchedEventTerms(template, eventTerms).reduce(
+      (score, term) => score + (term.length >= EVENT_TERM_DISTINCTIVE_LENGTH ? EVENT_TERM_WEIGHT * 2 : EVENT_TERM_WEIGHT),
+      0
+    );
+  }
+
+  /** Which of the event's terms a template actually matched, for the "why" shown to the operator. */
+  private matchedEventTerms(template: HubSpotMarketingEmail, eventTerms: readonly string[]): string[] {
+    const name = (template.name ?? '').toLowerCase();
+    const subject = (template.subject ?? '').toLowerCase();
+    return eventTerms.filter((term) => name.includes(term) || subject.includes(term));
+  }
+
+  /**
+   * The terms that identify THIS event in a template's name, derived from the brief.
+   *
+   * The point of the whole feature: the portal already encodes how each event's email is done, in
+   * the names its operators gave those templates. Rather than storing a per-event mapping of our
+   * own, this reads the event off the brief and asks HubSpot which templates look like it.
+   *
+   * The slug is split on its separators and the name on whitespace, then both are filtered:
+   * stopwords out (they match everything), tokens under three characters out (so "AI" cannot match
+   * "chain" and a stray "of" cannot score). What survives is the distinctive part of the event's
+   * identity -- "kubecon", "nairobi", "pytorch".
+   *
+   * The city is included because operators frequently name templates by location where the event
+   * brand repeats annually. Themes are NOT: they describe subject matter ("cloud native",
+   * "security") and collide across unrelated events in the same portal, which is exactly the
+   * false-positive this scoring must avoid.
+   */
+  private eventTemplateTerms(): string[] {
+    const details = this.emailBriefOutput()?.eventDetails;
+    if (!details) {
+      return [];
+    }
+    const raw = [...(details.name ?? '').split(/\s+/), ...(details.slug ?? '').split(/[-_/]+/), ...(details.city ?? '').split(/\s+/)];
+    const seen = new Set<string>();
+    for (const token of raw) {
+      // Punctuation stripped rather than split on: "KubeCon+CloudNativeCon" must yield two usable
+      // tokens, and a trailing comma in "Nairobi, Kenya" must not make "nairobi," unmatchable.
+      const cleaned = token.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleaned.length >= 3 && !EVENT_TERM_STOPWORDS.includes(cleaned)) {
+        seen.add(cleaned);
+      }
+    }
+    return [...seen];
   }
 
   /**
@@ -2929,5 +3074,10 @@ export class CampaignsComponent {
     this.emailMetrics.set(null);
     this.emailMetricsState.set('idle');
     this.emailMetricsError.set('');
+    // The suggestion is derived from THIS brief's event, so it and the override that rejected it
+    // both belong to the brief. Carrying the override into a new event would suppress a suggestion
+    // the operator has never seen.
+    this.emailTemplateSuggestionId.set('');
+    this.emailTemplateSuggestionTerms.set([]);
   }
 }

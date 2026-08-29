@@ -370,6 +370,25 @@
                   -->
                     <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-render-capped">{{ emailTemplatesRenderCapMessage() }}</p>
                   }
+                  @if (emailTemplateSuggestionId() !== '') {
+                    <!--
+                    The derived suggestion, stated as one. The matched terms are shown because a
+                    suggestion whose reasoning is invisible cannot be judged -- an operator seeing
+                    "matched on kubecon" can tell instantly whether it found the right event, where
+                    a bare pre-selection would just look decided. Selecting any other row retires
+                    this permanently for the brief.
+                  -->
+                    <p class="flex items-start gap-2 text-xs text-blue-800" data-testid="campaigns-email-template-suggestion">
+                      <i class="fa-light fa-wand-magic-sparkles mt-0.5" aria-hidden="true"></i>
+                      <span>
+                        Pre-selected the template this portal appears to use for this event
+                        @if (emailTemplateSuggestionTerms().length > 0) {
+                          <span> — matched on {{ emailTemplateSuggestionTerms().join(', ') }}</span>
+                        }
+                        . Pick a different one to override it.
+                      </span>
+                    </p>
+                  }
                   <ul class="flex flex-col gap-2" data-testid="campaigns-email-template-list">
                     @for (template of emailTemplatesRendered(); track template.id) {
                       <li>
