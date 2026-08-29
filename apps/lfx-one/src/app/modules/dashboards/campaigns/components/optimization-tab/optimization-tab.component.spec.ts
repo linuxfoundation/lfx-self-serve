@@ -2052,6 +2052,20 @@ describe('OptimizationTabComponent — keyword action outcome states', () => {
     expect(isUnconfirmed({ success: false, message: unconfirmedMessage }), 'an unconfirmed change read as a definite failure').toBe(true);
   });
 
+  it("recognises campaign-service's own unconfirmed wording, not just the BFF's", () => {
+    // TWO producers reach this predicate. The BFF writes "confirmation did not match" when the
+    // returned outcomes do not match the request; campaign-service reports its OWN ambiguity in
+    // its own words, and that message passes through verbatim. Recognising only the first left a
+    // genuine upstream ambiguity rendering as "Failed" -- the retry-an-irreversible-REMOVE
+    // hazard this exists to prevent.
+    for (const message of [
+      'google-ads keyword actions UNCONFIRMED (2 operation(s); the changes may have been applied — verify in Google Ads before retrying)',
+      'the keyword actions are unconfirmed — they may or may not have been applied on the ad platform',
+    ]) {
+      expect(isUnconfirmed({ success: false, message }), `not recognised: ${message}`).toBe(true);
+    }
+  });
+
   it('does not treat an ordinary failure as unconfirmed', () => {
     // The other direction, so the guard cannot be satisfied by calling everything unconfirmed --
     // which would suppress the retry prompt on changes that genuinely did not apply.

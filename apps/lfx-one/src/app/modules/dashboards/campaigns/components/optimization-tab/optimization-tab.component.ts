@@ -501,11 +501,25 @@ export class OptimizationTabComponent implements OnInit {
    * "Failed" about a change that may already have applied is being invited to run it twice.
    *
    * Matched on the message because that is what the wire carries; `success` alone cannot express
-   * three states. Keyed on the distinctive clause rather than the whole sentence so a later
-   * wording tweak does not silently re-collapse the states.
+   * three states.
+   *
+   * TWO producers reach here, and an earlier version recognised only one. The BFF writes its own
+   * text when the returned outcomes do not match what was asked ("confirmation did not match"),
+   * while campaign-service reports its own ambiguity in its own words — "UNCONFIRMED (... the
+   * changes may have been applied ...)" from the Google Ads client, or "is unconfirmed" from the
+   * service layer — and that message passes through the BFF verbatim. Missing the second meant
+   * a genuine upstream ambiguity still rendered as "Failed", which is the exact retry-an-
+   * irreversible-REMOVE hazard this exists to prevent.
+   *
+   * Matched case-insensitively on the WORD, not a full sentence, so a wording tweak upstream
+   * cannot silently re-collapse the states.
    */
   protected isUnconfirmed(result: { success: boolean; message: string }): boolean {
-    return !result.success && result.message.includes('confirmation did not match');
+    if (result.success) {
+      return false;
+    }
+    const message = result.message.toLowerCase();
+    return message.includes('unconfirmed') || message.includes('confirmation did not match');
   }
 
   /**

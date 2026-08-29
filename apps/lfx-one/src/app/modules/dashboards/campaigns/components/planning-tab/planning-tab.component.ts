@@ -163,6 +163,14 @@ export class PlanningTabComponent implements OnInit {
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly linkedInStrategy = signal<LinkedInTargetingStrategy | null>(null);
   protected lastLookedUpEvent = '';
+  /**
+   * Monotonic id for the in-flight create, identifying which one owns `hsCreating`.
+   *
+   * A counter rather than a captured value: the foundation and the event can both come BACK
+   * (A -> B -> A), and an older create matching again would release a flag a newer one holds,
+   * re-enabling the button under a running request. This only advances.
+   */
+  private createGeneration = 0;
   private readonly urlInput$ = new Subject<string>();
 
   /**
@@ -586,6 +594,7 @@ export class PlanningTabComponent implements OnInit {
     // create offer B's own lookup just raised.
     const capturedEvent = this.lastLookedUpEvent;
     const capturedFoundation = this.activeFoundationSlug();
+    const generation = ++this.createGeneration;
     this.campaignService
       .createHubSpotUtm(capturedFoundation, capturedEvent)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -596,7 +605,7 @@ export class PlanningTabComponent implements OnInit {
           // frozen on the new event's panel forever; ownership matters because releasing
           // unconditionally lets an OLDER create re-enable the button while a newer one is
           // still running, which is how a duplicate gets made.
-          if (this.createIsCurrent(capturedFoundation)) {
+          if (this.createIsCurrent(generation)) {
             this.hsCreating.set(false);
           }
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
@@ -627,7 +636,7 @@ export class PlanningTabComponent implements OnInit {
           }
         },
         error: () => {
-          if (this.createIsCurrent(capturedFoundation)) {
+          if (this.createIsCurrent(generation)) {
             this.hsCreating.set(false);
           }
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
@@ -1123,12 +1132,14 @@ export class PlanningTabComponent implements OnInit {
    * unconditionally then re-enables the button while the NEWER request is still running, which
    * is how a duplicate campaign gets made in a shared namespace.
    *
-   * Keyed on the foundation alone, deliberately narrower than `lookupIsCurrent`. The event may
-   * legitimately move on while a create is in flight, and the request still needs to release the
-   * flag it took; what must not happen is one foundation's create clearing another's.
+   * Keyed on a GENERATION counter rather than on the foundation or the event. Both of those are
+   * values that can come back: a round trip A -> B -> A leaves an old create matching the active
+   * foundation again, so it would clear the flag a newer create is holding. The counter only
+   * ever advances, so exactly one in-flight create owns the flag at a time, and identity does
+   * not depend on state the user can navigate back to.
    */
-  private createIsCurrent(capturedFoundation: string): boolean {
-    return this.activeFoundationSlug() === capturedFoundation;
+  private createIsCurrent(generation: number): boolean {
+    return this.createGeneration === generation;
   }
 
   private panelStillShows(capturedEvent: string, capturedFoundation: string): boolean {

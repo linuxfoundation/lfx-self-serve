@@ -1240,6 +1240,37 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   /**
+   * Ownership of `hsCreating` cannot be keyed on a value the user can navigate BACK to. A round
+   * trip A -> B -> A leaves the original create matching the active foundation again, so it
+   * would release the flag a newer create is holding and re-enable the button under a running
+   * request -- the same duplicate hazard, reached by a different route.
+   */
+  it('does not let a create released by a round-trip foundation switch re-enable the button', () => {
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = 'KubeCon NA 2026';
+    const first = new Subject<unknown>();
+    create.mockReturnValue(first);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    // ...and straight back to A, so the first create's captured foundation matches once more.
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = 'KubeCon NA 2026';
+    const second = new Subject<unknown>();
+    create.mockReturnValue(second);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    expect(instance()['hsCreating']()).toBe(true);
+
+    first.error(new Error('stale create failed'));
+    fixture.detectChanges();
+
+    expect(instance()['hsCreating'](), "a round-tripped stale create released the newer one's flag").toBe(true);
+  });
+
+  /**
    * The spinner must clear even when the user has retyped the url mid-flight.
    *
    * `panelStillShows` also asks whether the LIVE url still names the captured event, which goes
