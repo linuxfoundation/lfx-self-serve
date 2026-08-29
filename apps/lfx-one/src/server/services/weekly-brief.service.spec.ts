@@ -4,13 +4,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors access-check.service.spec.ts / committee.controller.spec.ts: the `@lfx-one/shared/*`
-// alias isn't wired into this app's vitest config, so runtime collaborators need mocking —
-// including `constants`, since this service spreads WEEKLY_BRIEF_DEFAULT_THROTTLE at runtime
-// (not just a type import). MOCK_THROTTLE is shared between the mock factory and the test
-// assertions below so the two can't drift from each other. (Deliberately not cross-checked
-// against the real constants module here — `vi.importActual` on a real, unmocked
-// `@lfx-one/shared/*` import re-triggers the Angular JIT-compilation failure this file's
-// mocks exist to avoid, and it contaminates other spec files sharing the test worker.)
+// alias IS wired into this app's vitest config, but the `utils` and `interfaces` barrels below
+// still need mocking — `utils/index.ts` re-exports form.utils.ts, which imports `@angular/forms`,
+// and importing that barrel unmocked triggers Angular JIT-compilation failure in this worker (see
+// the deep `vi.importActual` on `committee.utils.ts` further down for the one function pulled
+// through the real module instead of a stub). `constants` also needs mocking, since this service
+// spreads WEEKLY_BRIEF_DEFAULT_THROTTLE at runtime (not just a type import) and MOCK_THROTTLE is
+// shared between the mock factory and the test assertions below so the two can't drift from each
+// other. (Deliberately not cross-checked against the real constants module here — `vi.importActual`
+// on the full `@lfx-one/shared/*` barrel would re-trigger the same JIT-compilation failure and
+// contaminate other spec files sharing the test worker.)
 // A real Map-backed fake (not just call-arg assertions) so the rating tests below prove actual
 // upsert/clear round-trip behavior through the public API, not just "was called with X". Shared
 // by the action-items tests too — `weekly-brief.service.ts`'s rating and action-items code paths
@@ -116,8 +119,11 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 // form.utils.ts, which imports `@angular/forms` — an unmocked import here would pull
 // in the real barrel and hit the same JIT-compilation failure the mocks above avoid, so it
 // stays a plain stub. `isGoverningBoard` is the REAL function (via `vi.importActual` on its own
-// deep module, not the barrel) — committee.utils.ts imports only enums/interfaces/constants, no
-// Angular, so it loads safely on its own. This governance gate decides whether the server pays
+// deep module, not the barrel). committee.utils.ts reaches date-time.utils/entity-route.utils/
+// string.utils and the deep constants files (a benign re-export cycle back through
+// committees.constants) — none of which touch `@angular/*`. It's the `utils/index.ts` barrel,
+// which re-exports form.utils.ts's `@angular/forms` import, that can't load here — depth isn't
+// what makes this safe, avoiding the barrel is. This governance gate decides whether the server pays
 // for the tally fan-out at all AND whether the client's poll keeps asking for one, so a stub
 // that's narrower than production (e.g. exact `'Board'` equality vs. the real
 // substring/normalization-based `getGroupBehavioralClass`) would let this file's assertions
