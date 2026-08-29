@@ -236,9 +236,8 @@ test.describe('Linux.com email — forwarding target visibility', () => {
 /**
  * Stub the alias GET as claimed with forwardAuthRequired, and pre-latch the one-shot
  * redirect guard so the page renders the recoverable panel instead of bouncing to
- * authorizeUrl. Omit authorizeUrl to exercise the defensive dead-end copy — the BFF
- * always pairs authorizeUrl with forwardAuthRequired, so this shape isn't one the
- * server actually produces, but the component guards against the contract drifting.
+ * authorizeUrl. Omit authorizeUrl to exercise the dead-end copy — the server emits
+ * this exact shape when Flow C itself is unconfigured (no authorizeUrl to offer).
  */
 async function stubClaimedNeedsReauth(page: Page, authorizeUrl?: string): Promise<void> {
   await page.addInitScript((key) => sessionStorage.setItem(key, '1'), LINUX_EMAIL_FORWARD_REAUTH_KEY);

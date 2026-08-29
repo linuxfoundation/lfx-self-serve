@@ -180,7 +180,7 @@
                         @if (forwardAuthorizeUrl()) {
                           We couldn't read your current forwarding address. Re-authorize to view and change it.
                         } @else {
-                          <!-- Defensive: the BFF always pairs authorizeUrl with forwardAuthRequired, so this branch guards a contract drift rather than a reachable server state. -->
+                          <!-- Reached when Flow C itself is unconfigured — the BFF omits authorizeUrl, so there's nowhere to send the user. -->
                           We couldn't read your current forwarding address, and re-authorization isn't available right now. Please try again later.
                         }
                       </p>
