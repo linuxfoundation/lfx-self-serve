@@ -28,8 +28,9 @@ vi.mock('../helpers/committee-write-access.helper', () => ({ assertCommitteeWrit
 // server-side vitest config (see vitest.config.ts's `resolve.alias`), so both barrels below are
 // real, unmocked modules loaded via `importOriginal` — not stubs. Kept as explicit `vi.mock(...,
 // importOriginal)` calls rather than left unmocked outright only so a future addition to this file
-// that genuinely needs a stub has an obvious place to add one, matching meeting.controller.spec.ts's
-// established idiom for the same three barrels.
+// that genuinely needs a stub has an obvious place to add one — the same `importOriginal` idiom
+// `meeting.controller.spec.ts` already establishes for `constants`/`enums`/`interfaces` (this file
+// only needs two of those three; `utils` below is a genuine stub, not this same idiom).
 vi.mock('@lfx-one/shared/interfaces', async (importOriginal) => importOriginal());
 vi.mock('@lfx-one/shared/constants', async (importOriginal) => importOriginal());
 // validation.helper.ts's other exports (unrelated to getStringQueryParam/validateUidParameter)
