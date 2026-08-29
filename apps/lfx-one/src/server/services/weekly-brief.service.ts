@@ -1309,22 +1309,42 @@ export class WeeklyBriefService {
 
       // Filtered to occurred_at <= window_end, not just >= window_start (the `since` param
       // above already narrows that half) — getCommitteeActivity has no `before`/upper-bound
-      // param of its own, and at least one leg can report an occurred_at ahead of "now": a vote
-      // administratively ended (status ENDED) with its own end_time still in the future stamps
-      // occurred_at from that future end_time (see mapVoteToEvent). Without this filter,
-      // window_end would advertise a bound the response doesn't actually honor. Numeric (Date.parse),
-      // not string, comparison — matches committee-activity.service.ts's own timestampValue
-      // convention rather than assuming every occurred_at is byte-identically formatted to
-      // window_end's toISOString() output. An unparseable occurred_at (NaN) is let through rather
-      // than dropped — this filter exists to enforce a stated bound, not to validate the field.
+      // param of its own, and at least two legs can report an occurred_at ahead of "now": a
+      // vote administratively ended (status ENDED) with its own end_time still in the future
+      // stamps occurred_at from that future end_time (see mapVoteToEvent), and the survey leg's
+      // cutoff-driven occurred_at has the same shape (see fetchSurveyEvents in
+      // committee-activity.service.ts). Without this filter, window_end would advertise a bound
+      // the response doesn't actually honor. Numeric (Date.parse), not string, comparison —
+      // matches committee-activity.service.ts's own timestampValue convention rather than
+      // assuming every occurred_at is byte-identically formatted to window_end's toISOString()
+      // output. An unparseable occurred_at (NaN) is let through rather than dropped — unreachable
+      // through getCommitteeActivity today (its own merge pass already drops unparseable
+      // timestamps via timestampValue !== -Infinity), kept so this filter stays correct on its
+      // own terms if that ever changes, same rationale as mapActivityEventToCurrentActivityRef's
+      // own "unreached in practice, not dead by construction" default branch.
       const windowEndMs = Date.parse(window_end);
+      let droppedAfterWindowEnd = 0;
       const sourceRefs = data.reduce<WeeklyBriefSourceRef[]>((refs, event) => {
         const eventMs = Date.parse(event.occurred_at);
-        if (!Number.isNaN(eventMs) && eventMs > windowEndMs) return refs;
+        if (!Number.isNaN(eventMs) && eventMs > windowEndMs) {
+          droppedAfterWindowEnd += 1;
+          return refs;
+        }
         const ref = mapActivityEventToCurrentActivityRef(event);
         if (ref) refs.push(ref);
         return refs;
       }, []);
+      // A dropped event is a real upstream data-quality anomaly (a leg reporting an occurred_at
+      // ahead of "now" — see the filter's own comment above for which legs can do this), not an
+      // expected, silent case — matches this method's other degrade paths, which all warn rather
+      // than drop quietly.
+      if (droppedAfterWindowEnd > 0) {
+        logger.warning(req, 'get_weekly_brief_current_activity', 'Dropped one or more events stamped after window_end', {
+          committee_id: committeeId,
+          dropped_count: droppedAfterWindowEnd,
+          window_end,
+        });
+      }
       return { window_start, window_end, source_refs: sourceRefs };
     } catch (err) {
       logger.warning(req, 'get_weekly_brief_current_activity', 'Failed to build current-week activity tally, omitting it', {

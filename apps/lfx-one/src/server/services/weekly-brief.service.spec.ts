@@ -944,12 +944,15 @@ describe('WeeklyBriefService', () => {
         getCommitteeActivityMock.mockResolvedValue({
           data: [
             {
-              type: 'meeting_held',
-              // Ahead of window_end (2026-01-14T12:00:00.000Z) — e.g. a vote administratively
-              // ended with its own end_time still in the future (see mapVoteToEvent).
+              // vote_closed, not meeting_held — this is the real mechanism that can produce an
+              // occurred_at ahead of "now": mapVoteToEvent stamps occurred_at from
+              // early_end_time ?? end_time for a closed vote, and an administratively-ended vote
+              // (status ENDED) can carry an end_time still in the future.
+              type: 'vote_closed',
+              // Ahead of window_end (2026-01-14T12:00:00.000Z).
               occurred_at: '2026-01-14T13:00:00.000Z',
               committee_uid: 'committee-1',
-              payload: { meeting_id: 'm1', meeting_occurrence_id: 'm1-occ', title: 'Future Meeting', password: null },
+              payload: { vote_uid: 'v1', name: 'Future Vote', status: 'Ended' },
             },
             {
               type: 'meeting_held',
@@ -964,6 +967,13 @@ describe('WeeklyBriefService', () => {
         const result = await service.getCurrentBrief(req, 'committee-1');
 
         expect(result.current_activity?.source_refs).toEqual([{ id: 'm2-occ', kind: 'meeting', title: 'Real Meeting' }]);
+        // A dropped event is a real data-quality anomaly, not an expected silent case — must
+        // warn like this method's other degrade paths, not drop quietly.
+        expect(logger.warning).toHaveBeenCalledWith(req, 'get_weekly_brief_current_activity', 'Dropped one or more events stamped after window_end', {
+          committee_id: 'committee-1',
+          dropped_count: 1,
+          window_end: '2026-01-14T12:00:00.000Z',
+        });
       } finally {
         vi.useRealTimers();
       }
