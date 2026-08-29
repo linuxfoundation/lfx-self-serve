@@ -198,9 +198,8 @@ export const WEEKLY_BRIEF_SOURCE_SECTIONS: readonly WeeklyBriefSourceSection[] =
  * `kind: 'vote_opened'` or `'survey_published'` — those are `ActivityEvent` types, already folded
  * to `other` before this list ever sees them) — so a kind missing from this list doesn't vanish, it
  * just loses its own count text and its position in the display order. The section's display
- * LABEL, separately, IS looked up from
- * `WEEKLY_BRIEF_SOURCE_SECTIONS` (with a `?? kind` fallback covering the reverse gap — a kind
- * present here but missing there).
+ * LABEL, separately, IS looked up from `WEEKLY_BRIEF_SOURCE_SECTIONS` (with a `?? kind` fallback
+ * covering the reverse gap — a kind present here but missing there).
  *
  * `mailing-list` and `members` are forward-declared, not currently reachable: the server-side
  * builder (`weekly-brief.service.ts#buildCurrentActivity`) sources `source_refs` from
