@@ -178,9 +178,9 @@ function mapActivityEventToCurrentActivityRef(event: ActivityEvent): WeeklyBrief
       return { id: event.payload.vote_uid, kind: 'vote', title: event.payload.name };
     // Folds into `other`, not dropped: an open-but-not-yet-closed vote isn't "vote closed" (the
     // tally's only vote phrase), but dropping it produced a same-page contradiction — the
-    // "Recent Activity" feed (mapActivityEventToDisplayText, activity-feed.utils.ts) already
-    // renders vote_opened, so a week that opened a vote and this tally alone showed "no activity
-    // yet" directly beneath a feed proving otherwise.
+    // "Recent Activity" feed (mapActivityEventToFeedItem, activity-feed.utils.ts) already renders
+    // vote_opened for any committee with voting enabled, so a week whose only activity was opening
+    // a vote would have shown "no activity yet" directly beneath a feed proving otherwise.
     // Prefixed, unlike `vote_closed` above: `other` now holds two upstream uid namespaces
     // (vote_uid here, survey_uid below), the same two-namespace situation `doc`'s prefixing
     // already exists to guard against, not the single-namespace case the unprefixed `vote` kind's
