@@ -385,6 +385,25 @@ export class PlanningTabComponent implements OnInit {
       this.savedBriefEtag = null;
       this.savedBriefApproved = false;
       this.savedBriefWarning.set(null);
+      // The HubSpot state is cleared too, and the stale-response guard is not enough on its own.
+      // That guard stops a LATE answer from landing; it does nothing about an answer that
+      // already landed. campaign-service selects the HubSpot connection BY PROJECT, so once the
+      // foundation changes, a token found under A is an answer to a question nobody asked about
+      // B — and the url field does not change, so nothing else re-runs the lookup.
+      //
+      // Left in place, A's token stays in the field and rolls into B's brief, and A's Create
+      // button stays live against B's portal. `lastLookedUpEvent` is cleared as well so the
+      // early return cannot swallow the re-lookup for the same event under the new foundation.
+      this.lastLookedUpEvent = '';
+      this.hsUtm.set(null);
+      this.hsMatches.set([]);
+      this.hsNotFound.set(false);
+      this.hsCapped.set(false);
+      this.hsTruncated.set(false);
+      this.hsUnconfirmed.set(false);
+      this.hsStatus.set(null);
+      this.hsSearching.set(false);
+      this.hsCreating.set(false);
     });
   }
 

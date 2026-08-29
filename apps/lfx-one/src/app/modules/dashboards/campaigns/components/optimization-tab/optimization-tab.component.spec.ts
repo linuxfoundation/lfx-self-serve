@@ -2008,3 +2008,57 @@ describe('OptimizationTabComponent — wasted-keyword all-clear completeness', (
     expect(q('wasted-keywords-partial-clear')).toBeNull();
   });
 });
+
+/**
+ * A keyword action has THREE outcomes, and the table used to render two.
+ *
+ * The BFF deliberately surfaces campaign-service's unconfirmed message rather than flattening it,
+ * because that is the one distinction a caller must act on. Rendering every non-success as
+ * "Failed" threw it away at the last step -- and a retried REMOVE is irreversible, so an operator
+ * told "Failed" about a change that may already have applied is being invited to run it twice.
+ */
+describe('OptimizationTabComponent — keyword action outcome states', () => {
+  let fixture: ComponentFixture<OptimizationTabComponent>;
+
+  // The exact string the BFF sends (CAMPAIGN_OUTCOME_UNCONFIRMED).
+  const unconfirmedMessage = 'The change was sent but the confirmation did not match the request. Check the campaign in Google Ads before retrying.';
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [OptimizationTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            updateCampaignStatus: vi.fn().mockReturnValue(of(null)),
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(OptimizationTabComponent);
+  });
+
+  function isUnconfirmed(result: { success: boolean; message: string }): boolean {
+    return (fixture.componentInstance as unknown as { isUnconfirmed(r: { success: boolean; message: string }): boolean }).isUnconfirmed(result);
+  }
+
+  it('distinguishes an unconfirmed outcome from a definite failure', () => {
+    expect(isUnconfirmed({ success: false, message: unconfirmedMessage }), 'an unconfirmed change read as a definite failure').toBe(true);
+  });
+
+  it('does not treat an ordinary failure as unconfirmed', () => {
+    // The other direction, so the guard cannot be satisfied by calling everything unconfirmed --
+    // which would suppress the retry prompt on changes that genuinely did not apply.
+    expect(isUnconfirmed({ success: false, message: 'Google Ads rejected the criterion.' })).toBe(false);
+  });
+
+  it('never reports a success as unconfirmed', () => {
+    expect(isUnconfirmed({ success: true, message: '' })).toBe(false);
+  });
+});

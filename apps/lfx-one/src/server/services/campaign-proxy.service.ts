@@ -316,10 +316,16 @@ async function resolveHubSpotUtm(eventName: string): Promise<string | null> {
     // A null return means "no token to attribute with", which callers already handle.
     return searchResult.hsUtm;
   }
-  // Nothing matched, but the search may have been CAPPED — in which case absence is not proof,
-  // and creating is how a duplicate gets made. The lookup surface asks the operator to narrow
-  // the search; this one has no operator to ask, so it declines to create rather than guess.
-  if (searchResult.capped) {
+  // Nothing matched, but the search may not have SETTLED the question — in which case absence
+  // is not proof, and creating is how a duplicate gets made. The lookup surface asks the
+  // operator to narrow the search; this one has no operator to ask, so it declines to create
+  // rather than guess.
+  //
+  // Keyed on `inconclusive`, NOT `capped`. Those were one field until `capped` was narrowed to
+  // mean truncation only, and this guard has to ask the WIDER question: a search HubSpot
+  // answered in full, whose rows the local scorer rejected, reports `capped: false` while one
+  // of those rows may be exactly the campaign a create would duplicate.
+  if (searchResult.inconclusive) {
     return null;
   }
 

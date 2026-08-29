@@ -1174,6 +1174,27 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   /**
+   * The stale-response guard stops a LATE answer landing; it does nothing about one that already
+   * landed. campaign-service picks the HubSpot connection BY PROJECT, so a token found under
+   * foundation A is an answer to a question nobody asked about B -- and the url does not change,
+   * so nothing else re-runs the lookup. Left in place it rolls into B's brief, and A's Create
+   * button stays live against B's portal.
+   */
+  it('clears settled HubSpot state when the foundation changes', () => {
+    runLookup({ found: true, hs_utm: 'foundation-a-token', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false });
+    expect(instance()['hsUtm']()).toBe('foundation-a-token');
+
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+
+    expect(instance()['hsUtm'](), "foundation A's token survived into foundation B").toBeNull();
+    expect(instance()['hsStatus']()).toBeNull();
+    // And the event key is cleared, or lookupHubSpot's early return would swallow the re-lookup
+    // for the same event under the new foundation.
+    expect((fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent).toBe('');
+  });
+
+  /**
    * The spinner must clear even when the user has retyped the url mid-flight.
    *
    * `panelStillShows` also asks whether the LIVE url still names the captured event, which goes

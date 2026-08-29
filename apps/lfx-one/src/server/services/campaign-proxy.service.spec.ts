@@ -607,6 +607,28 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
     expect(created, 'a campaign that already exists must not be created again').toHaveLength(0);
   });
 
+  it('does not auto-create when the search was inconclusive but not truncated', async () => {
+    // The guard has to ask the WIDER question. `capped` and `inconclusive` were one field until
+    // `capped` was narrowed to truncation only -- and a search HubSpot answered IN FULL, whose
+    // rows the local scorer rejected, reports `capped: false` while one of those rows may be
+    // exactly the campaign a create would duplicate. Keying on `capped` here silently
+    // reintroduced the duplicate-create bug.
+    //
+    // Total equals the returned count (not truncated), but the row does not score against the
+    // query (inconclusive).
+    hsResponds({ total: 1, results: [{ id: '42', properties: { hs_name: 'Totally Unrelated Thing', hs_utm: 'u' } }] });
+
+    await service.createCampaign(req, {
+      eventName: 'KubeCon EU 2026',
+      eventSlug: 'kubecon-eu-2026',
+      platforms: ['microsoft-ads'],
+    } as unknown as Parameters<typeof service.createCampaign>[1]);
+    await new Promise((r) => setTimeout(r, 0));
+
+    const created = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/marketing/v3/campaigns'));
+    expect(created, 'auto-created a campaign on a search that settled nothing').toHaveLength(0);
+  });
+
   it('reports capped when HubSpot matched more campaigns than it returned', async () => {
     hsResponds({ total: 250, results: [{ id: '1', properties: { hs_name: 'Unrelated', hs_utm: 'u' } }] });
 

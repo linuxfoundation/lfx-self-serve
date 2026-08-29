@@ -493,6 +493,22 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   /**
+   * Whether a failed action's outcome is UNKNOWN rather than known-failed.
+   *
+   * The BFF deliberately surfaces campaign-service's unconfirmed message instead of flattening it,
+   * because that is the one distinction a caller must act on — and rendering every non-success as
+   * "Failed" threw it away right at the end. A retried REMOVE is irreversible, so an operator told
+   * "Failed" about a change that may already have applied is being invited to run it twice.
+   *
+   * Matched on the message because that is what the wire carries; `success` alone cannot express
+   * three states. Keyed on the distinctive clause rather than the whole sentence so a later
+   * wording tweak does not silently re-collapse the states.
+   */
+  protected isUnconfirmed(result: { success: boolean; message: string }): boolean {
+    return !result.success && result.message.includes('confirmation did not match');
+  }
+
+  /**
    * Pause or resume one campaign on its ad platform.
    *
    * The write this whole tab exists to reach. It changes money-affecting state on a third party:

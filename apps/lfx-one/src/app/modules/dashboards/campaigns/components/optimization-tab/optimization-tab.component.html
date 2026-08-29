@@ -417,8 +417,17 @@
                     <td class="px-4 py-2.5 text-right font-medium text-red-600">0</td>
                     <td class="px-4 py-2.5 text-center">
                       @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
-                        <span class="text-xs font-medium" [class]="result.success ? 'text-green-600' : 'text-red-600'">
-                          {{ result.success ? 'Done' : 'Failed' }}
+                        <!--
+                          THREE states, not two. An unconfirmed change may already have applied,
+                          and a retried REMOVE is irreversible — so "Failed" would invite exactly
+                          the retry that must not happen. The message is on the title so an
+                          operator can read what to verify.
+                        -->
+                        <span
+                          class="text-xs font-medium"
+                          [class]="result.success ? 'text-green-600' : isUnconfirmed(result) ? 'text-amber-600' : 'text-red-600'"
+                          [title]="result.success ? '' : result.message">
+                          {{ result.success ? 'Done' : isUnconfirmed(result) ? 'Unconfirmed' : 'Failed' }}
                         </span>
                       } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
                         <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
@@ -502,8 +511,17 @@
                     <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.spend | adsCurrency }}</td>
                     <td class="px-4 py-2.5 text-center">
                       @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
-                        <span class="text-xs font-medium" [class]="result.success ? 'text-green-600' : 'text-red-600'">
-                          {{ result.success ? 'Done' : 'Failed' }}
+                        <!--
+                          THREE states, not two. An unconfirmed change may already have applied,
+                          and a retried REMOVE is irreversible — so "Failed" would invite exactly
+                          the retry that must not happen. The message is on the title so an
+                          operator can read what to verify.
+                        -->
+                        <span
+                          class="text-xs font-medium"
+                          [class]="result.success ? 'text-green-600' : isUnconfirmed(result) ? 'text-amber-600' : 'text-red-600'"
+                          [title]="result.success ? '' : result.message">
+                          {{ result.success ? 'Done' : isUnconfirmed(result) ? 'Unconfirmed' : 'Failed' }}
                         </span>
                       } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
                         <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
