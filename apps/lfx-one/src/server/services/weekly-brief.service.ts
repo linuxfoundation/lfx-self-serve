@@ -180,7 +180,7 @@ function mapActivityEventToCurrentActivityRef(event: ActivityEvent): WeeklyBrief
     // tally's only vote phrase), but dropping it produced a same-page contradiction — the
     // "Recent Activity" feed (mapActivityEventToDisplayText, activity-feed.utils.ts) already
     // renders vote_opened, so a week that opened a vote and this tally alone showed "no activity
-    // yet" directly beneath a feed proving otherwise (general-code-reviewer, full-branch sweep).
+    // yet" directly beneath a feed proving otherwise.
     // Prefixed, unlike `vote_closed` above: `other` now holds two upstream uid namespaces
     // (vote_uid here, survey_uid below), the same two-namespace situation `doc`'s prefixing
     // already exists to guard against, not the single-namespace case the unprefixed `vote` kind's
