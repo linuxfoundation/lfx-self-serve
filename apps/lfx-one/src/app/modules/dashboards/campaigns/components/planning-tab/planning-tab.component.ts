@@ -641,18 +641,36 @@ export class PlanningTabComponent implements OnInit {
             this.hsStatus.set('The campaign may or may not have been created — check HubSpot before trying again.');
           }
         },
-        error: () => {
+        error: (err: unknown) => {
           if (this.createIsCurrent(generation)) {
             this.hsCreating.set(false);
           }
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
-          // The outcome is UNKNOWN, not failed. Upstream reports an id-less 2xx as an error
-          // precisely because the campaign may already exist, and every other failure is
-          // classified unconfirmed for the same reason — so leaving the button up would invite
-          // a retry that creates a SECOND campaign in a namespace every foundation shares.
+          // The STATUS is read, not discarded. campaign-service separates the outcomes
+          // deliberately, and collapsing them here would throw that away at the last step:
           //
-          // Clearing hsNotFound hides the action. Recovering needs a fresh lookup, which is the
-          // only thing that can establish what actually happened.
+          //   400 — HubSpot rejected it, or the connection is unusable. NOTHING was created,
+          //         so the create offer stays up and the operator can correct and retry.
+          //   404 — no HubSpot connection for this project. Also nothing created, but the
+          //         remedy is to connect HubSpot rather than to change the name.
+          //   500 — the stored credential could not be decrypted. Nothing created either.
+          //   503 — UNCONFIRMED. The campaign may already exist, so the offer is WITHDRAWN and
+          //         only a fresh lookup can establish what happened.
+          //
+          // Treating every status as "may have been created" hid three actionable failures
+          // behind a message telling the operator to go and check HubSpot for a campaign that
+          // was never attempted.
+          const status = typeof err === 'object' && err !== null && 'status' in err ? Number((err as { status: unknown }).status) : 0;
+          if (status === 400 || status === 404 || status === 500) {
+            // Nothing was created: keep the offer so the operator can act on the message.
+            this.hsUnconfirmed.set(false);
+            this.hsStatus.set(this.createFailureMessage(status));
+            return;
+          }
+          // Unconfirmed — including any status this code cannot classify, because a
+          // non-idempotent create must fail CLOSED. Clearing hsNotFound hides the action;
+          // recovering needs a fresh lookup, which is the only thing that can establish what
+          // actually happened.
           this.hsNotFound.set(false);
           this.hsUnconfirmed.set(true);
           this.hsStatus.set('The campaign may or may not have been created — check HubSpot before trying again.');
@@ -1149,6 +1167,23 @@ export class PlanningTabComponent implements OnInit {
    * ever advances, so exactly one in-flight create owns the flag at a time, and identity does
    * not depend on state the user can navigate back to.
    */
+  /**
+   * The operator-facing message for a create that PROVABLY did not happen.
+   *
+   * Split by status because the remedies differ and are not interchangeable: a rejected name is
+   * the operator's to fix, a missing connection needs HubSpot connected, and a credential that
+   * cannot be decrypted is nobody's to fix from this screen.
+   */
+  private createFailureMessage(status: number): string {
+    if (status === 404) {
+      return 'No HubSpot connection is configured for this project — connect HubSpot before creating a campaign.';
+    }
+    if (status === 500) {
+      return 'The stored HubSpot credential could not be used. Nothing was created; this needs an administrator.';
+    }
+    return 'HubSpot rejected the campaign. Nothing was created — check the name and try again.';
+  }
+
   private createIsCurrent(generation: number): boolean {
     return this.createGeneration === generation;
   }

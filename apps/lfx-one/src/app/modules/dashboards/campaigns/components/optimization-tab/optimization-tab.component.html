@@ -423,11 +423,8 @@
                           the retry that must not happen. The message is on the title so an
                           operator can read what to verify.
                         -->
-                        <span
-                          class="text-xs font-medium"
-                          [class]="result.success ? 'text-green-600' : isUnconfirmed(result) ? 'text-amber-600' : 'text-red-600'"
-                          [title]="result.success ? '' : result.message">
-                          {{ result.success ? 'Done' : isUnconfirmed(result) ? 'Unconfirmed' : 'Failed' }}
+                        <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]" [title]="result.success ? '' : result.message">
+                          {{ OUTCOME_LABEL[result.state] }}
                         </span>
                       } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
                         <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
@@ -517,11 +514,8 @@
                           the retry that must not happen. The message is on the title so an
                           operator can read what to verify.
                         -->
-                        <span
-                          class="text-xs font-medium"
-                          [class]="result.success ? 'text-green-600' : isUnconfirmed(result) ? 'text-amber-600' : 'text-red-600'"
-                          [title]="result.success ? '' : result.message">
-                          {{ result.success ? 'Done' : isUnconfirmed(result) ? 'Unconfirmed' : 'Failed' }}
+                        <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]" [title]="result.success ? '' : result.message">
+                          {{ OUTCOME_LABEL[result.state] }}
                         </span>
                       } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
                         <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>

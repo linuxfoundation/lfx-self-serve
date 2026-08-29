@@ -2044,8 +2044,17 @@ describe('OptimizationTabComponent — keyword action outcome states', () => {
     fixture = TestBed.createComponent(OptimizationTabComponent);
   });
 
+  /**
+   * Asserts on the STORED state, which is what the template reads. The classification is derived
+   * once at storage time rather than per render, so this exercises the shipped path.
+   */
   function isUnconfirmed(result: { success: boolean; message: string }): boolean {
-    return (fixture.componentInstance as unknown as { isUnconfirmed(r: { success: boolean; message: string }): boolean }).isUnconfirmed(result);
+    const outcome = (
+      fixture.componentInstance as unknown as {
+        toActionOutcome(success: boolean, message: string): { state: string };
+      }
+    ).toActionOutcome(result.success, result.message);
+    return outcome.state === 'unconfirmed';
   }
 
   it('distinguishes an unconfirmed outcome from a definite failure', () => {

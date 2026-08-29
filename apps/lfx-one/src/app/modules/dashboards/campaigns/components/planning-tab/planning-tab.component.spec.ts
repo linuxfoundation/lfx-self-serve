@@ -1268,6 +1268,34 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   /**
+   * campaign-service separates the create's outcomes by STATUS, and collapsing them here threw
+   * that away at the last step: a 400/404/500 all prove nothing was created, so telling the
+   * operator the campaign "may or may not" exist sends them to hunt for something never
+   * attempted -- and withdraws the offer they could have acted on.
+   */
+  it('distinguishes a definite create failure from an unconfirmed one', () => {
+    for (const [status, offerStaysUp, expected] of [
+      [400, true, /check the name/i],
+      [404, true, /connect HubSpot/i],
+      [500, true, /administrator/i],
+      [503, false, /may or may not/i],
+      // Unclassifiable: a non-idempotent create must fail CLOSED, so it reads as unconfirmed.
+      [0, false, /may or may not/i],
+    ] as const) {
+      runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, `Event ${status}`);
+      create.mockReturnValue(throwError(() => ({ status })));
+      (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+      fixture.detectChanges();
+
+      expect(String(instance()['hsStatus']()), `status ${status}`).toMatch(expected);
+      // Nothing created -> the offer stays actionable. Unconfirmed -> it is withdrawn, because
+      // the campaign may already exist and a retry would duplicate it.
+      expect(instance()['hsNotFound'](), `status ${status}: create offer`).toBe(offerStaysUp);
+      expect(instance()['hsUnconfirmed'](), `status ${status}: unconfirmed control`).toBe(!offerStaysUp);
+    }
+  });
+
+  /**
    * Ownership of `hsCreating` cannot be keyed on a value the user can navigate BACK to. A round
    * trip A -> B -> A leaves the original create matching the active foundation again, so it
    * would release the flag a newer create is holding and re-enable the button under a running

@@ -21,6 +21,7 @@ import type {
   LinkedInMonitorResponse,
   MetaAccountOption,
   MetaActionItem,
+  KeywordActionOutcome,
   MetaMonitorResponse,
   RedditAccountOption,
   RedditActionItem,
@@ -470,7 +471,23 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly metaActionItems = computed<MetaActionItem[]>(() => this.metaData()?.actionItems ?? []);
 
   protected readonly actionInProgress = signal<Record<string, boolean>>({});
-  protected readonly actionResults = signal<Record<string, { success: boolean; message: string }>>({});
+  protected readonly actionResults = signal<Record<string, KeywordActionOutcome>>({});
+  /**
+   * Label and colour per outcome state, as lookup maps so the template does no work.
+   *
+   * The three states are not two with a variant: an UNCONFIRMED action may already have applied,
+   * and a retried REMOVE is irreversible, so it must never read as "Failed".
+   */
+  protected readonly OUTCOME_LABEL: Record<KeywordActionOutcome['state'], string> = {
+    done: 'Done',
+    unconfirmed: 'Unconfirmed',
+    failed: 'Failed',
+  };
+  protected readonly OUTCOME_CLASS: Record<KeywordActionOutcome['state'], string> = {
+    done: 'text-green-600',
+    unconfirmed: 'text-amber-600',
+    failed: 'text-red-600',
+  };
 
   protected readonly activeFoundationSlug = computed(() => this.projectSlug());
 
@@ -490,36 +507,6 @@ export class OptimizationTabComponent implements OnInit {
 
   public ngOnInit(): void {
     this.loadForActiveFoundation();
-  }
-
-  /**
-   * Whether a failed action's outcome is UNKNOWN rather than known-failed.
-   *
-   * The BFF deliberately surfaces campaign-service's unconfirmed message instead of flattening it,
-   * because that is the one distinction a caller must act on — and rendering every non-success as
-   * "Failed" threw it away right at the end. A retried REMOVE is irreversible, so an operator told
-   * "Failed" about a change that may already have applied is being invited to run it twice.
-   *
-   * Matched on the message because that is what the wire carries; `success` alone cannot express
-   * three states.
-   *
-   * TWO producers reach here, and an earlier version recognised only one. The BFF writes its own
-   * text when the returned outcomes do not match what was asked ("confirmation did not match"),
-   * while campaign-service reports its own ambiguity in its own words — "UNCONFIRMED (... the
-   * changes may have been applied ...)" from the Google Ads client, or "is unconfirmed" from the
-   * service layer — and that message passes through the BFF verbatim. Missing the second meant
-   * a genuine upstream ambiguity still rendered as "Failed", which is the exact retry-an-
-   * irreversible-REMOVE hazard this exists to prevent.
-   *
-   * Matched case-insensitively on the WORD, not a full sentence, so a wording tweak upstream
-   * cannot silently re-collapse the states.
-   */
-  protected isUnconfirmed(result: { success: boolean; message: string }): boolean {
-    if (result.success) {
-      return false;
-    }
-    const message = result.message.toLowerCase();
-    return message.includes('unconfirmed') || message.includes('confirmation did not match');
   }
 
   /**
@@ -869,14 +856,14 @@ export class OptimizationTabComponent implements OnInit {
           const result = res.results[0];
           this.actionResults.update((map) => ({
             ...map,
-            [key]: { success: result?.success ?? false, message: result?.message ?? 'Unknown result' },
+            [key]: this.toActionOutcome(result?.success ?? false, result?.message ?? 'Unknown result'),
           }));
         },
         error: (err) => {
           this.actionInProgress.update((map) => ({ ...map, [key]: false }));
           this.actionResults.update((map) => ({
             ...map,
-            [key]: { success: false, message: err?.error?.message || err?.message || 'Action failed' },
+            [key]: this.toActionOutcome(false, err?.error?.message || err?.message || 'Action failed'),
           }));
         },
       });
@@ -906,7 +893,7 @@ export class OptimizationTabComponent implements OnInit {
             const updated = { ...map };
             for (let i = 0; i < keys.length; i++) {
               const result = res.results[i];
-              updated[keys[i]] = { success: result?.success ?? false, message: result?.message ?? 'Done' };
+              updated[keys[i]] = this.toActionOutcome(result?.success ?? false, result?.message ?? 'Done');
             }
             return updated;
           });
@@ -920,11 +907,56 @@ export class OptimizationTabComponent implements OnInit {
           const msg = err?.error?.message || err?.message || 'Bulk action failed';
           this.actionResults.update((map) => {
             const updated = { ...map };
-            for (const key of keys) updated[key] = { success: false, message: msg };
+            for (const key of keys) updated[key] = this.toActionOutcome(false, msg);
             return updated;
           });
         },
       });
+  }
+
+  /**
+   * Whether a failed action's outcome is UNKNOWN rather than known-failed.
+   *
+   * The BFF deliberately surfaces campaign-service's unconfirmed message instead of flattening it,
+   * because that is the one distinction a caller must act on — and rendering every non-success as
+   * "Failed" threw it away right at the end. A retried REMOVE is irreversible, so an operator told
+   * "Failed" about a change that may already have applied is being invited to run it twice.
+   *
+   * Matched on the message because that is what the wire carries; `success` alone cannot express
+   * three states.
+   *
+   * TWO producers reach here, and an earlier version recognised only one. The BFF writes its own
+   * text when the returned outcomes do not match what was asked ("confirmation did not match"),
+   * while campaign-service reports its own ambiguity in its own words — "UNCONFIRMED (... the
+   * changes may have been applied ...)" from the Google Ads client, or "is unconfirmed" from the
+   * service layer — and that message passes through the BFF verbatim. Missing the second meant
+   * a genuine upstream ambiguity still rendered as "Failed", which is the exact retry-an-
+   * irreversible-REMOVE hazard this exists to prevent.
+   *
+   * Matched case-insensitively on the WORD, not a full sentence, so a wording tweak upstream
+   * cannot silently re-collapse the states.
+   */
+  /**
+   * Build the stored outcome, classifying it ONCE at the point of storage.
+   *
+   * The template must not call this: the repo's frontend checklist allows only signal reads,
+   * computeds and pipes there, precisely so logic does not re-run per row per change detection.
+   * Deriving here also means every write site gets the same classification for free, rather than
+   * each one remembering to.
+   */
+  private toActionOutcome(success: boolean, message: string): KeywordActionOutcome {
+    if (success) {
+      return { success, message, state: 'done' };
+    }
+    return { success, message, state: this.isUnconfirmed({ success, message }) ? 'unconfirmed' : 'failed' };
+  }
+
+  private isUnconfirmed(result: { success: boolean; message: string }): boolean {
+    if (result.success) {
+      return false;
+    }
+    const message = result.message.toLowerCase();
+    return message.includes('unconfirmed') || message.includes('confirmation did not match');
   }
 
   private loadForActiveFoundation(): void {
