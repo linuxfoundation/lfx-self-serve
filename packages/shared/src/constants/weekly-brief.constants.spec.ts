@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Pins WEEKLY_BRIEF_TEXT_MAX_LENGTH against upstream's documented bound. The BFF's
-// server-side vitest config mocks `@lfx-one/shared/constants` wholesale (to avoid
-// re-triggering an Angular JIT-compilation failure — see weekly-brief.controller.spec.ts),
-// so its mocked value can't catch drift if this constant ever changes. This is the one
-// place the real value is loaded and checked.
+// Pins WEEKLY_BRIEF_TEXT_MAX_LENGTH against upstream's documented bound, and
+// WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS against the value the server spec's mock hand-copies
+// (see that constant's own test below). The BFF's server-side vitest config mocks
+// `@lfx-one/shared/constants` wholesale (to avoid re-triggering an Angular JIT-compilation
+// failure — see weekly-brief.controller.spec.ts), so its mocked values can't catch drift if
+// either constant ever changes. This is the one place the real values are loaded and checked.
 
 import { describe, expect, it } from 'vitest';
 
@@ -27,14 +28,15 @@ describe('WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS', () => {
     expect(WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS).toBeLessThan(WEEKLY_BRIEF_POLL_INTERVAL_MS);
   });
 
-  // Absolute pin, alongside the relative one above — weekly-brief.service.spec.ts's own budget
-  // test imports this identifier through that file's `vi.mock('@lfx-one/shared/constants', ...)`
-  // hand-copy (currently 3_000, kept in sync by hand), so a real-value change here would leave
-  // that test silently exercising a value production no longer uses, with only the relative
-  // ordering test above (which a value change could still satisfy) standing between that drift
-  // and going unnoticed. Same rationale as activity-event.constants.spec.ts's pin on
+  // Absolute pin, alongside the relative one above —
+  // apps/lfx-one/src/server/services/weekly-brief.service.spec.ts's own budget test imports this
+  // identifier through that file's `vi.mock('@lfx-one/shared/constants', ...)` hand-copy
+  // (currently 3_000, kept in sync by hand), so a real-value change here would leave that test
+  // silently exercising a value production no longer uses, with only the relative ordering test
+  // above (which a value change could still satisfy) standing between that drift and going
+  // unnoticed. Same rationale as activity-event.constants.spec.ts's pin on
   // ACTIVITY_FEED_MAX_PAGE_SIZE for the identical hand-copy hazard.
-  it('is 3000ms', () => {
+  it("matches the value weekly-brief.service.spec.ts's mock factory hand-copies", () => {
     expect(WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS).toBe(3_000);
   });
 });
