@@ -55,6 +55,22 @@ export const WEEKLY_BRIEF_POLL_INTERVAL_MS = 4000;
 export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
 
 /**
+ * Bounds how long `WeeklyBriefService#buildCurrentActivity` (GH-1922) is allowed to run before
+ * `getCurrentBrief` gives up on it and renders the brief without the tally. Without this, a
+ * degraded upstream could hold the ENTIRE `GET /current` response hostage: the tally runs inside
+ * the same `Promise.all` as the brief fetch, `buildCurrentActivity` already degrades any error to
+ * `undefined` (fails soft), but that only helps if the failure is fast — a slow-but-not-erroring
+ * upstream (each of its several legs defaults to a much longer per-call timeout) would otherwise
+ * add real seconds to a response that should return in well under one. Deliberately generous
+ * relative to a normal aggregation (this isn't tuned from production latency data, just picked to
+ * be comfortably longer than typical completion and clearly shorter than any single leg's own
+ * timeout) — a timeout here resolves to `undefined`, the same transient/"worth asking again"
+ * value any other `buildCurrentActivity` failure produces, so the existing poll self-heal
+ * (`WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS`) already knows how to recover from it.
+ */
+export const WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS = 10_000;
+
+/**
  * Caps how many poll ticks (GH-1922) keep asking the BFF to rebuild `current_activity` while it
  * stays absent (`undefined` — see `WeeklyBriefCurrentResponse.current_activity`'s doc comment).
  * That fan-out isn't free — a governance committee's tally costs an upstream committee read plus

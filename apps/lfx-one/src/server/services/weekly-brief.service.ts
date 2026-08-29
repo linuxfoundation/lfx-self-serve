@@ -7,6 +7,7 @@ import {
   NEWSLETTER_SUBJECT_MAX_LENGTH,
   VALKEY_CACHE,
   WEEKLY_BRIEF_ACTION_ITEMS_MAX,
+  WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS,
   WEEKLY_BRIEF_DEFAULT_THROTTLE,
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_SHAREABLE_STATES,
@@ -327,7 +328,7 @@ export class WeeklyBriefService {
     // write path (share, rate) and every read of just the AI-extracted action items.
     const [response, currentActivity] = await Promise.all([
       this.fetchBriefResponse(req, committeeId),
-      includeCurrentActivity ? this.buildCurrentActivity(req, committeeId) : Promise.resolve(undefined),
+      includeCurrentActivity ? this.buildCurrentActivityWithBudget(req, committeeId) : Promise.resolve(undefined),
     ]);
     // !== undefined, not truthiness — currentActivity can be null (a settled "doesn't apply"
     // answer, see buildCurrentActivity's doc comment), which is a real value the client needs
@@ -1194,6 +1195,34 @@ export class WeeklyBriefService {
   }
 
   /**
+   * Races `buildCurrentActivity` against `WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS` — see that
+   * constant's own doc comment for why this exists (a slow, not just an erroring, upstream must
+   * not hold the whole `GET /current` response hostage). Resolving to `undefined` on a lost race,
+   * not rejecting, is deliberate: it's the same value `buildCurrentActivity` itself already
+   * produces for any other transient failure, so `getCurrentBrief`'s caller — and the client's
+   * poll self-heal — can't tell a timeout apart from any other degrade, and don't need to. The
+   * loser of the race is not cancelled (`buildCurrentActivity` has no cancellation hook — its
+   * underlying upstream calls keep running until they settle or their own timeout fires). The
+   * trailing `.catch()` on it is defense-in-depth, not a live path today: `buildCurrentActivity`'s
+   * own try/catch already wraps everything it does, so it can never actually reject as written —
+   * kept so a late rejection stays harmless rather than an unhandled one if that invariant ever
+   * changes, same rationale as this file's other "unreached in practice" guards.
+   */
+  private async buildCurrentActivityWithBudget(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | null | undefined> {
+    let timer: NodeJS.Timeout;
+    const timeout = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS);
+    });
+    const result = this.buildCurrentActivity(req, committeeId);
+    result.catch(() => undefined);
+    try {
+      return await Promise.race([result, timeout]);
+    } finally {
+      clearTimeout(timer!);
+    }
+  }
+
+  /**
    * Builds `WeeklyBriefCurrentResponse.current_activity` (GH-1922) from
    * `CommitteeActivityService.getCommitteeActivity` — the same live meeting/vote/document
    * aggregation that powers the committee "Recent Activity" feed, filtered to the current,
@@ -1337,12 +1366,16 @@ export class WeeklyBriefService {
         if (ref) refs.push(ref);
         return refs;
       }, []);
-      // A dropped event is a real upstream data-quality anomaly (a leg reporting an occurred_at
-      // ahead of "now" — see the filter's own comment above for which legs can do this), not an
-      // expected, silent case — matches this method's other degrade paths, which all warn rather
-      // than drop quietly.
+      // DEBUG, not WARN — the vote leg's occurred_at-ahead-of-"now" case (see the filter's own
+      // comment above) is a mapVoteToEvent-modeled, expected shape, not an anomaly: an
+      // administratively-ENDED vote with no early_end_time stamps occurred_at from its still-future
+      // end_time deliberately, and stays that way for the rest of that vote's scheduled term — so a
+      // WARN here would repeat on every GET /current for that committee for a case the system
+      // already knows about and models on purpose, not a genuine data-quality problem worth an
+      // operator's attention. Still logged (not silent) since a drop is still worth being able to
+      // find while debugging a tally that looks short.
       if (droppedAfterWindowEnd > 0) {
-        logger.warning(req, 'get_weekly_brief_current_activity', 'Dropped one or more events stamped after window_end', {
+        logger.debug(req, 'get_weekly_brief_current_activity', 'Dropped one or more events stamped after window_end', {
           committee_id: committeeId,
           dropped_count: droppedAfterWindowEnd,
           window_end,

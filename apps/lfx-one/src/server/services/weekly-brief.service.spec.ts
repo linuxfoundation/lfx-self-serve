@@ -98,6 +98,7 @@ const {
 
 vi.mock('@lfx-one/shared/constants', () => ({
   ACTIVITY_FEED_MAX_PAGE_SIZE: 50,
+  WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS: 10_000,
   WEEKLY_BRIEF_DEFAULT_THROTTLE: MOCK_THROTTLE,
   WEEKLY_BRIEF_SHAREABLE_STATES: ['generated', 'edited', 'approved'],
   WEEKLY_BRIEF_ERROR_REASON: { NO_SOURCES: 'no_sources' },
@@ -178,7 +179,7 @@ vi.mock('./valkey.service', () => ({
   valkeyService: valkeyServiceMock,
 }));
 
-import { ACTIVITY_FEED_MAX_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { ACTIVITY_FEED_MAX_PAGE_SIZE, WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
@@ -937,10 +938,10 @@ describe('WeeklyBriefService', () => {
         expect(result.current_activity?.window_start).toBe('2026-01-11T00:00:00.000Z');
         expect(result.current_activity?.window_end).toBe('2026-01-14T12:00:00.000Z');
         expect(result.brief?.window_start).toBe('2026-01-04T00:00:00.000Z');
-        // The dropped-events warning must stay off the healthy path — pins the
-        // droppedAfterWindowEnd > 0 guard itself, not just the warning's payload shape (which
+        // The dropped-events log must stay off the healthy path — pins the
+        // droppedAfterWindowEnd > 0 guard itself, not just the log's payload shape (which
         // the sibling "excludes an event..." test already covers).
-        expect(logger.warning).not.toHaveBeenCalledWith(
+        expect(logger.debug).not.toHaveBeenCalledWith(
           req,
           'get_weekly_brief_current_activity',
           'Dropped one or more events stamped after window_end',
@@ -985,9 +986,10 @@ describe('WeeklyBriefService', () => {
         const result = await service.getCurrentBrief(req, 'committee-1');
 
         expect(result.current_activity?.source_refs).toEqual([{ id: 'm2-occ', kind: 'meeting', title: 'Real Meeting' }]);
-        // A dropped event is a real data-quality anomaly, not an expected silent case — must
-        // warn like this method's other degrade paths, not drop quietly.
-        expect(logger.warning).toHaveBeenCalledWith(req, 'get_weekly_brief_current_activity', 'Dropped one or more events stamped after window_end', {
+        // DEBUG, not WARN — this is a modeled, expected shape for an administratively-closed
+        // vote (see mapVoteToEvent), not a data-quality anomaly; still logged, just not at a
+        // level that pages someone for something the system already understands.
+        expect(logger.debug).toHaveBeenCalledWith(req, 'get_weekly_brief_current_activity', 'Dropped one or more events stamped after window_end', {
           committee_id: 'committee-1',
           dropped_count: 1,
           window_end: '2026-01-14T12:00:00.000Z',
@@ -1076,6 +1078,27 @@ describe('WeeklyBriefService', () => {
 
       expect(result.current_activity).toBeUndefined();
       expect(result.brief).toMatchObject({ state: expect.any(String), brief_text: expect.any(String) });
+    });
+
+    it('degrades to current_activity: undefined once WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS elapses, rather than letting a slow (not erroring) upstream hold the whole response hostage', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      // Never settles — models a slow, not a failing, upstream: buildCurrentActivity's own
+      // try/catch already covers the failing case (see the sibling test above).
+      // eslint-disable-next-line @typescript-eslint/no-empty-function -- deliberately never settles
+      getCommitteeActivityMock.mockReturnValue(new Promise(() => {}));
+
+      vi.useFakeTimers();
+      try {
+        const resultPromise = service.getCurrentBrief(req, 'committee-1');
+        await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS);
+        const result = await resultPromise;
+
+        expect(result.current_activity).toBeUndefined();
+        expect(result.brief).toMatchObject({ state: expect.any(String), brief_text: expect.any(String) });
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
