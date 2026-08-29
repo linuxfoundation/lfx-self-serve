@@ -187,11 +187,22 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
   }
 
   const data = (await response.json()) as { results?: { id: string; properties: Record<string, string> }[]; total?: number };
-  const results = data.results ?? [];
+  // A MALFORMED 2xx must not read as "nothing matched". A genuinely empty search returns
+  // `{"results":[]}`; a body with no `results` array at all is a response we could not parse,
+  // and defaulting it to `[]` turns that into an authoritative absence — which the caller acts
+  // on by creating a campaign. Mirrors the same fail-closed rule campaign-service applies.
+  if (!Array.isArray(data.results)) {
+    throw new Error('HubSpot search returned a 2xx with no results array (malformed response)');
+  }
+  const results = data.results;
   // Derived from HubSpot's own total, never from `results.length === HS_SEARCH_LIMIT`: an
   // exactly-full page and a truncated one are the same length, so a length test would warn on
   // complete result sets and teach operators to ignore the warning.
-  const capped = (data.total ?? 0) > results.length;
+  //
+  // An ABSENT or nonsensical total means completeness is UNKNOWN, not zero. Defaulting to 0 made
+  // `capped` false and reported the search as proven-complete, which is the licence to create.
+  const total = typeof data.total === 'number' && Number.isFinite(data.total) ? data.total : null;
+  const capped = total === null || total !== results.length;
 
   if (results.length === 0) {
     return { found: false, hsUtm: null, campaignName: '', campaignId: null, allMatches: [], capped, inconclusive: capped };

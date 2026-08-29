@@ -1268,6 +1268,27 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   /**
+   * The create OFFER survives a url edit, deliberately -- the HubSpot state is not reset until
+   * the 500ms debounced lookup starts. But acting on it in that window would create a campaign
+   * for an event the operator has already left, into a namespace nobody can clean up from here.
+   */
+  it('refuses a create once the url no longer names the event the offer was raised for', () => {
+    (fixture.componentInstance as unknown as { briefForm: { controls: { url: { setValue(v: string): void } } } }).briefForm.controls.url.setValue(
+      'https://events.example.com/kubecon-na-2026'
+    );
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false }, 'Kubecon Na 2026');
+
+    // The operator types a different event. The debounce has NOT fired, so the offer is still
+    // on screen and lastLookedUpEvent still names the old one.
+    (fixture.componentInstance as unknown as { briefForm: { controls: { url: { setValue(v: string): void } } } }).briefForm.controls.url.setValue(
+      'https://events.example.com/some-other-conference-2027'
+    );
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    expect(create, 'created a campaign for an event the operator had left').not.toHaveBeenCalled();
+  });
+
+  /**
    * campaign-service separates the create's outcomes by STATUS, and collapsing them here threw
    * that away at the last step: a 400/404/500 all prove nothing was created, so telling the
    * operator the campaign "may or may not" exist sends them to hunt for something never

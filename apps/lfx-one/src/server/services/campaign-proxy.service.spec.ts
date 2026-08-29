@@ -629,6 +629,27 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
     expect(created, 'auto-created a campaign on a search that settled nothing').toHaveLength(0);
   });
 
+  it('refuses a malformed 2xx rather than reading it as an empty search', async () => {
+    // A body with no `results` array is a response we could not parse. Defaulting it to `[]`
+    // turned that into an AUTHORITATIVE absence -- and absence is what the caller acts on by
+    // creating a campaign, so a HubSpot hiccup became a duplicate.
+    hsResponds({ total: 0 });
+
+    await expect(service.lookupHubSpotUtm(req, 'KubeCon EU 2026')).rejects.toThrow(/malformed/i);
+  });
+
+  it('treats an absent total as unknown completeness, not zero', async () => {
+    // Defaulting the total to 0 made `capped` false and reported the search as PROVEN complete,
+    // which is precisely the licence to create.
+    hsResponds({ results: [] });
+
+    const result = await service.lookupHubSpotUtm(req, 'KubeCon EU 2026');
+
+    expect(result.found).toBe(false);
+    expect(result.capped, 'an unknown completeness read as proven-complete').toBe(true);
+    expect(result.inconclusive).toBe(true);
+  });
+
   it('reports capped when HubSpot matched more campaigns than it returned', async () => {
     hsResponds({ total: 250, results: [{ id: '1', properties: { hs_name: 'Unrelated', hs_utm: 'u' } }] });
 

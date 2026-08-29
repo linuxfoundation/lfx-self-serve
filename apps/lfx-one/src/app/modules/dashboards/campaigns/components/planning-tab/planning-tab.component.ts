@@ -592,6 +592,17 @@ export class PlanningTabComponent implements OnInit {
 
   protected createInHubSpot(): void {
     if (!this.lastLookedUpEvent) return;
+    // Refuse when the field no longer names the event this offer was raised for. The button
+    // survives a url edit because the HubSpot state is not reset until the 500ms debounced
+    // lookup STARTS — so between typing and that debounce, the offer on screen belongs to the
+    // previous event. Acting on it would create a campaign for an event the operator has left,
+    // in a namespace nobody can clean up from this UI.
+    //
+    // Same shape as restoreSavedBrief's guard: keep the offer visible through a mid-edit url,
+    // but only ever act on it while the field still names its own event.
+    if (!this.panelStillShows(this.lastLookedUpEvent, this.activeFoundationSlug())) {
+      return;
+    }
     this.hsCreating.set(true);
     this.hsStatus.set(null);
     // Captured for the same reason the lookup captures it: the create is slow enough for the

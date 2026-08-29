@@ -420,11 +420,18 @@
                         <!--
                           THREE states, not two. An unconfirmed change may already have applied,
                           and a retried REMOVE is irreversible — so "Failed" would invite exactly
-                          the retry that must not happen. The message is on the title so an
-                          operator can read what to verify.
+                          the retry that must not happen.
+
+                          The message is RENDERED rather than hidden behind `title`: a tooltip on
+                          a non-focusable span is unreachable by keyboard and touch, and the text
+                          it carries is the "verify before retrying" guidance — the one thing an
+                          operator must read before acting on an irreversible REMOVE.
                         -->
-                        <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]" [title]="result.success ? '' : result.message">
-                          {{ OUTCOME_LABEL[result.state] }}
+                        <span class="flex flex-col items-center gap-0.5">
+                          <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
+                          @if (!result.success) {
+                            <span class="max-w-[16rem] text-[11px] leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                          }
                         </span>
                       } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
                         <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
@@ -511,11 +518,18 @@
                         <!--
                           THREE states, not two. An unconfirmed change may already have applied,
                           and a retried REMOVE is irreversible — so "Failed" would invite exactly
-                          the retry that must not happen. The message is on the title so an
-                          operator can read what to verify.
+                          the retry that must not happen.
+
+                          The message is RENDERED rather than hidden behind `title`: a tooltip on
+                          a non-focusable span is unreachable by keyboard and touch, and the text
+                          it carries is the "verify before retrying" guidance — the one thing an
+                          operator must read before acting on an irreversible REMOVE.
                         -->
-                        <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]" [title]="result.success ? '' : result.message">
-                          {{ OUTCOME_LABEL[result.state] }}
+                        <span class="flex flex-col items-center gap-0.5">
+                          <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
+                          @if (!result.success) {
+                            <span class="max-w-[16rem] text-[11px] leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                          }
                         </span>
                       } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
                         <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
