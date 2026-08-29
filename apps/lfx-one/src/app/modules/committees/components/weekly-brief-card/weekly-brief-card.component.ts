@@ -882,6 +882,13 @@ export class WeeklyBriefCardComponent {
             timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS),
             catchError((err: unknown) => {
               console.error('[weekly-brief-card] poll tick failed, will retry', err);
+              // Undo the optimistic increment above: a tick that never reached the server (this
+              // tick's own HTTP timeout, or any other error) never got a chance to answer, so it
+              // must not count against the cap the same way a tick that DID answer — even with a
+              // transient `undefined` — does. Without this, a run of ordinary network hiccups
+              // could exhaust WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS on its own, before
+              // the fan-out this cap actually exists to bound ever got asked.
+              if (shouldAskCurrentActivity) currentActivityAskAttempts -= 1;
               return of(null as WeeklyBriefCurrentResponse | null);
             })
           );

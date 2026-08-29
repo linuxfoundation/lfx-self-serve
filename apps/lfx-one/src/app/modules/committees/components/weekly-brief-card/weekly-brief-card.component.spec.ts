@@ -10,7 +10,14 @@ import {
   WEEKLY_BRIEF_POLL_INTERVAL_MS,
   WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD,
 } from '@lfx-one/shared/constants';
-import { Committee, GenerateWeeklyBriefResponse, WeeklyBriefCurrentResponse, WeeklyBriefRating, WeeklyBriefSourceRef } from '@lfx-one/shared/interfaces';
+import {
+  Committee,
+  GenerateWeeklyBriefResponse,
+  WeeklyBriefCurrentResponse,
+  WeeklyBriefRating,
+  WeeklyBriefSourceRef,
+  WeeklyBriefThrottle,
+} from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
@@ -699,24 +706,51 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     expect(component.expandedActivityKinds().size).toBe(0);
   });
 
-  it('preserves current_activity and caller_rating through a generate/regenerate round-trip — the 202 envelope carries neither', async () => {
+  it('preserves current_activity, caller_rating, brief, and throttle through a generate/regenerate round-trip — the 202 envelope carries none of them', async () => {
     const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
     await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync')], generateWeeklyBrief, 'up');
     expect(component.hasCurrentActivityData()).toBe(true);
     expect(component.callerRating()).toBe('up');
+    const briefBeforeGenerate = component.brief();
+    const throttleBeforeGenerate = component.throttle();
 
     component.onGenerate();
     await fixture.whenStable();
 
     expect(generateWeeklyBrief).toHaveBeenCalled();
-    // GenerateWeeklyBriefResponse has neither field at all — regenerating a brief doesn't change
-    // this week's activity, and a bare 202 (no res.brief) means the brief still on screen is
-    // genuinely the pre-regenerate one, so its rating is still accurate too. Both must survive
-    // the 202 handler rather than vanish until the next pollUntilTerminal tick lands.
+    // GenerateWeeklyBriefResponse has none of these fields at all — regenerating a brief doesn't
+    // change this week's activity, and a bare 202 (no res.brief/res.throttle) means the brief and
+    // throttle still on screen are genuinely the pre-regenerate ones, so their rating is still
+    // accurate too. All four must survive the 202 handler's `res.x ?? prev?.x ?? null` fallbacks
+    // rather than vanish until the next pollUntilTerminal tick lands — this is the behavior the
+    // handler's `.set()` -> `.update()` change exists for.
     expect(component.hasCurrentActivityData()).toBe(true);
     expect(component.callerRating()).toBe('up');
+    expect(component.brief()).toEqual(briefBeforeGenerate);
+    expect(component.throttle()).toEqual(throttleBeforeGenerate);
     const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
     expect(el.textContent as string).toContain('1 meeting held');
+  });
+
+  it('adopts a throttle the 202 envelope DOES carry, rather than keeping the pre-generate value', async () => {
+    const newThrottle: WeeklyBriefThrottle = {
+      generates_used: 2,
+      generates_limit: 2,
+      regenerations_used: 0,
+      regenerations_limit: 3,
+      window_resets_at: '2026-08-09T00:00:00Z',
+    };
+    const generateWeeklyBrief = vi.fn(() => of({ throttle: newThrottle } as GenerateWeeklyBriefResponse));
+    await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync')], generateWeeklyBrief);
+    expect(component.throttle()).not.toEqual(newThrottle);
+
+    component.onGenerate();
+    await fixture.whenStable();
+
+    // A generate response that DOES report throttle (the normal shape — upstream bumps
+    // generates_used before returning) must be adopted immediately, not deferred to the next poll
+    // tick — the fallback exists for the fields a bare 202 omits, not to ignore ones it supplies.
+    expect(component.throttle()).toEqual(newThrottle);
   });
 
   /**
@@ -902,6 +936,49 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
 
       // Terminate the poll cleanly (a new terminal revision) so no open subscription leaks past
       // this test.
+      getWeeklyBrief.mockImplementation(() => of(pollTick(2)));
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(component.generating()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not burn the ask-attempt cap on a tick that fails before reaching the server — only a tick that actually got an answer counts', async () => {
+    const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
+    await setup(BOARD_COMMITTEE, null, generateWeeklyBrief);
+    expect(getWeeklyBrief.mock.calls).toHaveLength(1);
+
+    fakePollTimers();
+    try {
+      component.onGenerate();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // The first tick after generate fails outright (a stand-in for the tick's own HTTP timeout
+      // or a network error) before any response — this asked (includeCurrentActivity: true), but
+      // must NOT count against WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS, since the server
+      // never had a chance to answer.
+      getWeeklyBrief.mockImplementationOnce(() => throwError(() => new Error('network error')));
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief).toHaveBeenNthCalledWith(2, 'committee-board', { includeCurrentActivity: true });
+      // A failed tick degrades gracefully — it must not look like a terminal state and stop the
+      // poll (see the pipe's own comment in weekly-brief-card.component.ts).
+      expect(component.generating()).toBe(true);
+
+      // Every subsequent tick succeeds but still reports no current_activity. If the failed tick
+      // above had wrongly consumed a slot (the bug this test pins the fix for), the cap would be
+      // reached one tick earlier than this loop expects.
+      getWeeklyBrief.mockImplementation(() => of(pollTick(1)));
+      for (let attempt = 0; attempt < WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS; attempt++) {
+        await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+        expect(getWeeklyBrief).toHaveBeenNthCalledWith(3 + attempt, 'committee-board', { includeCurrentActivity: true });
+      }
+      // Past the full cap now (one failed ask + WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS
+      // real ones) — this next tick stops asking.
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief).toHaveBeenNthCalledWith(3 + WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS, 'committee-board', { includeCurrentActivity: false });
+
+      // Terminate the poll cleanly so no open subscription leaks past this test.
       getWeeklyBrief.mockImplementation(() => of(pollTick(2)));
       await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
       expect(component.generating()).toBe(false);
