@@ -1824,6 +1824,9 @@ describe('CampaignsComponent — email delivery channel', () => {
   // against a shape that no longer exists. The cast still cannot catch a RENAME — that is the
   // cost of reaching protected members, and the reason the assertions below stay behavioural.
   interface Internals {
+    /** The rows the picker draws, after type ranking and the render cap. */
+    emailTemplatesRendered: Signal<{ id: string }[]>;
+    emailTemplates: WritableSignal<unknown[] | null>;
     selectedDeliveryType: Signal<CampaignDeliveryType>;
     selectedTab: WritableSignal<CampaignTab>;
     selectedEmailTab: WritableSignal<Exclude<CampaignTab, 'optimization'>>;
@@ -2852,6 +2855,56 @@ describe('CampaignsComponent — email delivery channel', () => {
       // campaign-service enumerates STAGES, not type ids -- sending 'thank-you-survey' would be
       // refused by its enum. Several types share a stage, which is why the two are distinct.
       expect(gen).toHaveBeenCalledWith('tlf', 'brief-77', 'Post-Event');
+    });
+
+    it('ranks templates matching the selected type first, without removing any', () => {
+      selectEmail();
+      const templates = [
+        { id: '1', name: 'Registration reminder', subject: 'Register now' },
+        { id: '2', name: 'Post-event thank you', subject: 'Survey inside' },
+        { id: '3', name: 'Unrelated newsletter', subject: 'Monthly update' },
+      ];
+      internals().emailTemplates.set(templates as never);
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      const rendered = internals().emailTemplatesRendered();
+
+      // The match rises...
+      expect(rendered[0].id).toBe('2');
+      // ...but NOTHING is removed. A filter would hide a template the operator may know is right
+      // and the keywords do not describe, and cloning writes a real HubSpot draft.
+      expect(rendered.map((t: { id: string }) => t.id).sort()).toEqual(['1', '2', '3']);
+    });
+
+    it('leaves the order untouched when nothing matches', () => {
+      selectEmail();
+      const templates = [
+        { id: '1', name: 'Alpha', subject: 'One' },
+        { id: '2', name: 'Beta', subject: 'Two' },
+      ];
+      internals().emailTemplates.set(templates as never);
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      // Ties keep the server's newest-first order, so an unmatched list is identical to what the
+      // picker showed before ranking existed.
+      expect(
+        internals()
+          .emailTemplatesRendered()
+          .map((t: { id: string }) => t.id)
+      ).toEqual(['1', '2']);
+    });
+
+    it('ranks before the render cap, so a match beyond it can still surface', () => {
+      selectEmail();
+      // 600 unmatched rows, then the match -- past HUBSPOT_TEMPLATE_RENDER_LIMIT (500).
+      const templates = Array.from({ length: 600 }, (_, i) => ({ id: `u${i}`, name: 'Unrelated', subject: 'Monthly update' }));
+      templates.push({ id: 'match', name: 'Post-event thank you', subject: 'Survey inside' });
+      internals().emailTemplates.set(templates as never);
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      // Ranking AFTER the slice could only reorder the first 500 -- the one template the operator
+      // was looking for would have been cut before it could rise.
+      expect(internals().emailTemplatesRendered()[0].id).toBe('match');
     });
 
     it('renders the selector defaulted to the registration push type', () => {

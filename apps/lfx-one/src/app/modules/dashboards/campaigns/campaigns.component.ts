@@ -708,7 +708,11 @@ export class CampaignsComponent {
   protected readonly emailTemplatesRendered = computed<HubSpotMarketingEmail[]>(() => {
     const templates = this.emailTemplates();
     if (templates === null) return [];
-    return templates.length > HUBSPOT_TEMPLATE_RENDER_LIMIT ? templates.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT) : templates;
+    // RANK BEFORE SLICING. The cap keeps the first N rows, so ranking afterwards could only
+    // reorder what survived -- a matching template on row 501 would be cut before it could rise,
+    // which is exactly the template the operator was looking for.
+    const ranked = this.rankTemplatesForSelectedType(templates);
+    return ranked.length > HUBSPOT_TEMPLATE_RENDER_LIMIT ? ranked.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT) : ranked;
   });
 
   /** How many rows the search returned, as opposed to how many are drawn. */
@@ -2026,6 +2030,51 @@ export class CampaignsComponent {
           }
         },
       });
+  }
+
+  /**
+   * Order templates by how well they match the selected email type, best first.
+   *
+   * A SUGGESTION, not a filter. Every template stays in the list and stays selectable: the corpus
+   * is whatever the portal happens to hold, an operator may know a template the keywords do not
+   * describe, and hiding rows would turn a ranking heuristic into a decision they cannot see or
+   * undo. Cloning writes a real HubSpot draft -- the wrong clone inherits the wrong structure, and
+   * with a multi-widget template the body cannot be replaced at all.
+   *
+   * STABLE: ties keep the server's newest-first order, so an unmatched list is byte-identical to
+   * what the picker showed before ranking existed.
+   */
+  private rankTemplatesForSelectedType(templates: HubSpotMarketingEmail[]): HubSpotMarketingEmail[] {
+    const keywords = CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
+    if (keywords.length === 0) {
+      return templates;
+    }
+    // Score once per row rather than inside the comparator: a comparator that lowercases and
+    // scans both operands runs O(n log n) times over strings that never change.
+    const scored = templates.map((template, index) => ({
+      template,
+      index,
+      score: this.templateKeywordScore(template, keywords),
+    }));
+    // `index` breaks ties, which is what makes this stable across engines rather than relying on
+    // Array.prototype.sort's stability guarantee holding for every input shape.
+    scored.sort((a, b) => b.score - a.score || a.index - b.index);
+    return scored.map((s) => s.template);
+  }
+
+  /**
+   * How many of the type's keywords appear in a template's name or subject.
+   *
+   * Name and subject are searched INDEPENDENTLY rather than concatenated: joining them would let a
+   * keyword match across the boundary between two unrelated fields.
+   */
+  private templateKeywordScore(template: HubSpotMarketingEmail, keywords: readonly string[]): number {
+    const name = (template.name ?? '').toLowerCase();
+    const subject = (template.subject ?? '').toLowerCase();
+    return keywords.reduce((score, kw) => {
+      const needle = kw.toLowerCase();
+      return score + (name.includes(needle) || subject.includes(needle) ? 1 : 0);
+    }, 0);
   }
 
   /**
