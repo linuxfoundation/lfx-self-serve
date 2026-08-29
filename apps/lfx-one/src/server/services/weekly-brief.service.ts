@@ -134,17 +134,28 @@ export function currentWeekInProgressWindow(): { window_start: string; window_en
  * own doc comments — those are two distinct upstream uid namespaces that could otherwise collide
  * (e.g. a folder and a meeting-attachment note coincidentally sharing a uid), and a collision here
  * would produce two refs with the same `id` in the same rendered `doc` section (an Angular
- * duplicate-`@for`-track-key error, not a silent dedupe). `meeting` and `vote` do NOT carry this
- * same kind-prefix, deliberately — `weekly-brief.utils.ts`'s `resolveSourceRefAction` passes a
- * `meeting` ref's raw `id` straight through as `meetingId`, and a `vote` ref's as `voteUid`; both
- * are already unique on their own upstream uid (one uid namespace each, unlike doc's two), and a
- * `meeting:`/`vote:` prefix would reach that click-through action as a corrupted id instead of a
- * real one. `survey_published`/`survey_closed` map to kind `other` — not one of
+ * duplicate-`@for`-track-key error, not a silent dedupe). `vote` does NOT carry this same
+ * kind-prefix, deliberately — `weekly-brief.utils.ts`'s `resolveSourceRefAction` passes a `vote`
+ * ref's raw `id` straight through as `voteUid`, already unique on its own upstream uid (one uid
+ * namespace, unlike doc's two), and a `vote:` prefix would reach that click-through action as a
+ * corrupted id instead of a real one.
+ *
+ * `meeting` is unprefixed for the same collision-avoidance reason, but its `id` is deliberately
+ * `meeting_occurrence_id`, NOT the `meeting_id` `resolveSourceRefAction`'s `meetingId` actually
+ * needs (see `MeetingHeldActivityEvent`'s own doc comment: a recurring meeting's occurrences
+ * share one `meeting_id` but need distinct `@for` tracking keys, which is exactly what this
+ * `id` doubles as via `weekly-brief-card.component.html`'s `track ref.id`). Known v1 residual:
+ * wiring `current_activity.source_refs` into `mapWeeklyBriefSourceRefsToChips` (nothing does
+ * today) would click through to the wrong meeting for a recurring series — closing this needs
+ * `WeeklyBriefSourceRef` to carry the navigation id separately from the tracking id, not done
+ * here since nothing consumes this mapper's meeting refs as click targets yet.
+ *
+ * `survey_published`/`survey_closed` map to kind `other` — not one of
  * `WEEKLY_BRIEF_SOURCE_SECTIONS`' five kinds, but real governance activity the client's existing
  * "other" catch-all already surfaces rather than silently dropping; `other` has no
  * `resolveSourceRefAction` case (falls to its `default: return null`), so it carries no id
  * contract to protect either way, but is left unprefixed for the same "already unique on its own
- * uid" reason as meeting/vote. `member_joined`/`member_left`/other deferred types:
+ * uid" reason as vote. `member_joined`/`member_left`/other deferred types:
  * `CommitteeActivityService` never actually constructs these today (see `DeferredActivityEvent`'s
  * own doc comment), so this default branch is unreached in practice, not dead by construction.
  */
@@ -1248,13 +1259,17 @@ export class WeeklyBriefService {
     try {
       logger.debug(req, 'get_weekly_brief_current_activity', 'Building current-week activity tally', { committee_id: committeeId });
       const committee = await this.committeeService.getCommitteeBase(req, committeeId);
-      // undefined `committee` here means upstream resolved with no body at all (see
-      // getCommitteeBase's own doc comment) — a genuine 404/upstream error throws instead and
-      // is caught below, same as any other failure in this method. Either way this is an
-      // anomaly, not a governance verdict, so it falls through to undefined rather than being
-      // asserted as "not governance".
-      if (committee === undefined) {
-        logger.warning(req, 'get_weekly_brief_current_activity', 'Committee lookup returned nothing, omitting the tally', {
+      // undefined `committee`, OR a resolved committee with no `category` (its type declares
+      // `category` required — committee.interface.ts — but that's a contract on well-formed
+      // upstream data, not a runtime guarantee against a malformed body), means upstream
+      // resolved with no usable category to classify on. A genuine 404/upstream error throws
+      // instead and is caught below, same as any other failure in this method. Either way this
+      // is an anomaly, not a governance verdict, so it falls through to undefined rather than
+      // being asserted as "not governance" — isGoverningBoard(undefined) below would otherwise
+      // return false and this would settle to `null` (permanent) for what might just be a
+      // transient partial response, worth asking again on the next poll tick.
+      if (committee === undefined || committee.category === undefined) {
+        logger.warning(req, 'get_weekly_brief_current_activity', 'Committee lookup returned nothing usable to classify on, omitting the tally', {
           committee_id: committeeId,
         });
         return undefined;

@@ -776,10 +776,11 @@ describe('WeeklyBriefService', () => {
       expect(refs.map((ref) => ref.kind).sort()).toEqual(['doc', 'meeting', 'vote']);
       expect(refs.find((ref) => ref.kind === 'vote')?.title).toBe('Q3 Resolution');
       expect(refs.some((ref) => ref.title === 'Q4 Budget')).toBe(false);
-      // Raw upstream uid, no kind prefix — weekly-brief.utils.ts's resolveSourceRefAction passes
-      // a meeting ref's id straight through as PastMeetingActivityFeedAction.meetingId and a vote
-      // ref's as VoteDrawerActivityFeedAction.voteUid; a `meeting:`/`vote:` prefix would reach
-      // either action as a corrupted id.
+      // No kind prefix on meeting/vote — see mapActivityEventToCurrentActivityRef's doc comment
+      // for why: a vote ref's id passes straight through as VoteDrawerActivityFeedAction.voteUid
+      // (a `vote:` prefix would reach that action as a corrupted id), and a meeting ref's id is
+      // deliberately the occurrence-scoped tracking id, not (yet) a click-through navigation id —
+      // same doc comment covers that known v1 residual.
       expect(refs.find((ref) => ref.kind === 'meeting')?.id).toBe('m1-occ');
       expect(refs.find((ref) => ref.kind === 'vote')?.id).toBe('v1');
     });
@@ -964,6 +965,32 @@ describe('WeeklyBriefService', () => {
 
       expect(result.current_activity).toBeUndefined();
       expect(result.brief).toBeDefined(); // the brief itself still renders — only the tally degrades
+    });
+
+    it('degrades to current_activity: undefined (not a thrown error) when the committee lookup returns nothing (the empty-body case)', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeBaseMock.mockResolvedValue(undefined);
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.current_activity).toBeUndefined();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+      expect(result.brief).toBeDefined();
+    });
+
+    it('degrades to current_activity: undefined (not null) when the committee resolves with no category — an anomaly, not a "not governance" verdict', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      // No `category` field at all — a malformed/partial body, not the empty-body case
+      // getCommitteeBase's own doc comment covers (that resolves to undefined, not an object).
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1' });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      // undefined, not null: isGoverningBoard(undefined) is false, so a naive category-only
+      // check would settle this to null (permanent "not governance") — this is a transient
+      // anomaly worth asking again on the next poll tick instead.
+      expect(result.current_activity).toBeUndefined();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
     });
 
     it('degrades to current_activity: undefined (not a thrown error) when the activity fetch fails', async () => {
