@@ -300,19 +300,30 @@ export class WeeklyBriefService {
    * mock/live `brief`/`throttle` contract this builds on.
    *
    * `includeCurrentActivity` (default true) lets a caller opt out of the current_activity
-   * (GH-1922) fan-out entirely. The client's own poll loop (weekly-brief-card.component.ts's
-   * `pollUntilTerminal`) is this endpoint's heaviest caller — up to `WEEKLY_BRIEF_MAX_POLL_ATTEMPTS`
-   * hits at `WEEKLY_BRIEF_POLL_INTERVAL_MS` apart per generate/regenerate — and this week's
-   * activity cannot change mid-poll, so re-running the tally on every tick multiplies its real
-   * upstream cost (getCommitteeBase's one call, plus getCommitteeActivity's own multi-call
-   * aggregation for a governance committee — see buildCurrentActivity's doc comment for how the
-   * two share a single committee fetch) for a value that's already correct from the poll's
-   * first tick. The poll passes `includeCurrentActivity: false` only once the current_activity
-   * KEY is present on what it already holds (see `WeeklyBriefCurrentResponse.current_activity`'s
-   * doc comment for the absent/null/present contract this depends on — `null` is a settled
-   * answer and stops the asking same as a real value; only a genuinely absent key keeps the
-   * poll asking on every tick, so a transient degrade on the initial load can still self-heal on
-   * a later tick rather than staying blank for the rest of the poll and beyond).
+   * (GH-1922) fan-out entirely. Two independent client callers do, on two different signals —
+   * see `WeeklyBriefService#getWeeklyBrief` (the Angular client, `app/shared/services/`) for the
+   * full breakdown:
+   *   - `weekly-brief-card.component.ts`'s `initBriefResponseSubscription` opts out on the
+   *     initial load for any committee its own `isGoverningBoardCommittee()` already reports as
+   *     non-governance — the tally section can never render for one regardless of what
+   *     current_activity holds, so the fan-out would be pure waste.
+   *   - `weekly-brief-card.component.ts`'s `pollUntilTerminal` is this endpoint's heaviest caller
+   *     — up to `WEEKLY_BRIEF_MAX_POLL_ATTEMPTS` hits at `WEEKLY_BRIEF_POLL_INTERVAL_MS` apart per
+   *     generate/regenerate — and this week's activity cannot change mid-poll, so re-running the
+   *     tally on every tick multiplies its real upstream cost (getCommitteeBase's one call, plus
+   *     getCommitteeActivity's own multi-call aggregation for a governance committee — see
+   *     buildCurrentActivity's doc comment for how the two share a single committee fetch) for a
+   *     value that's already correct from the poll's first tick. It passes
+   *     `includeCurrentActivity: false` once ANY of three conditions holds: the current_activity
+   *     KEY is present on what it already holds (see `WeeklyBriefCurrentResponse.current_activity`'s
+   *     doc comment for the absent/null/present contract this depends on — `null` is a settled
+   *     answer and stops the asking same as a real value); the committee isn't
+   *     governance-classified (so a deliberate initial-load opt-out, which also leaves the key
+   *     absent, is never mistaken for a transient degrade worth re-asking for); or
+   *     `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS` re-asks have already been spent on a
+   *     governance committee whose fan-out keeps genuinely failing. Absent none of those, a
+   *     transient degrade on the initial load can still self-heal on a later tick rather than
+   *     staying blank for the rest of the poll and beyond.
    */
   public async getCurrentBrief(req: Request, committeeId: string, options: { includeCurrentActivity?: boolean } = {}): Promise<WeeklyBriefCurrentResponse> {
     const includeCurrentActivity = options.includeCurrentActivity ?? true;

@@ -190,8 +190,16 @@ export interface WeeklyBriefCurrentResponse {
    * populated identically in mock and live mode — see
    * `weekly-brief.service.ts#buildCurrentActivity`. Three states, not two — `null` and absent
    * are deliberately distinct:
-   *   - **Absent** (key not present at all): couldn't determine — the committee lookup or
-   *     activity fetch failed. Transient; worth asking again.
+   *   - **Absent** (key not present at all): two distinct causes, only one worth re-asking for.
+   *     Either the committee lookup or activity fetch genuinely failed (transient; worth asking
+   *     again on a governance committee, up to `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS`
+   *     poll ticks), OR the caller deliberately asked the BFF to skip the fan-out via
+   *     `includeCurrentActivity: false` (GH-1922 cost optimization — `weekly-brief-card.component.ts`'s
+   *     initial load does this for any committee it already knows isn't governance-classified,
+   *     since the tally section can never render for one regardless). A caller re-asking on
+   *     absent must also check whether asking is worthwhile at all — see
+   *     `weekly-brief-card.component.ts`'s `pollUntilTerminal`, which additionally gates on
+   *     `isGoverningBoardCommittee()` for exactly this reason.
    *   - **`null`**: known, definitively, not to apply — the committee isn't
    *     governance-classified, or the current week's activity exceeds what a single upstream
    *     page can return (never a silently-truncated count). Not transient; re-asking within the
