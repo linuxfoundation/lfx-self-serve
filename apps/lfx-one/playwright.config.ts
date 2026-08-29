@@ -15,6 +15,17 @@ try {
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
+/**
+ * The dev-server port, overridable with E2E_PORT.
+ *
+ * Defaults to 4200 because Auth0's callback is registered for that origin — a run on any other
+ * port cannot complete the login, so the default is the only value that works for AUTHENTICATED
+ * tests. An override exists for specs that mock every route they need and so never reach Auth0,
+ * and for the case where 4200 is already serving another session.
+ */
+const E2E_PORT = process.env['E2E_PORT'] ?? '4200';
+const E2E_BASE_URL = `http://localhost:${E2E_PORT}`;
+
 export default defineConfig({
   testDir: './e2e',
   /* Run tests in files in parallel */
@@ -32,7 +43,7 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: 'http://localhost:4200',
+    baseURL: E2E_BASE_URL,
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
     /* Take screenshot on failure */
@@ -76,8 +87,10 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'yarn start',
-    url: 'http://localhost:4200',
+    // `yarn start` is the ROOT script, which goes through turbo and does not accept --port; the
+    // app's own script is `ng serve`. Invoked directly so an E2E_PORT override actually works.
+    command: `yarn --cwd apps/lfx-one ng serve --port ${E2E_PORT}`,
+    url: E2E_BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
   },
