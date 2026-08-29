@@ -10,10 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // the deep `vi.importActual` on `committee.utils.ts` further down for the one function pulled
 // through the real module instead of a stub). `constants` is mocked too, not because the real
 // module can't load here, but for test control: the mock pins a deterministic
-// WEEKLY_BRIEF_DEFAULT_THROTTLE (MOCK_THROTTLE), shared between the factory and the assertions
-// below so the two can't drift from each other, without paying the real barrel's evaluation cost.
-// weekly-brief.constants.spec.ts is the named spec pinning MOCK_THROTTLE's shape against the real
-// constant, same pattern as that file's ACTIVITY_FEED_MAX_PAGE_SIZE pin further down.
+// WEEKLY_BRIEF_DEFAULT_THROTTLE (MOCK_THROTTLE) so the throttle assertions below start from a
+// known zero-used baseline, without paying the real barrel's evaluation cost.
+// weekly-brief.constants.spec.ts's WEEKLY_BRIEF_DEFAULT_THROTTLE test pins MOCK_THROTTLE's shape
+// against the real constant, same pattern as activity-event.constants.spec.ts's pin on
+// ACTIVITY_FEED_MAX_PAGE_SIZE, which guards this file's own hand-copy of that constant below.
 // A real Map-backed fake (not just call-arg assertions) so the rating tests below prove actual
 // upsert/clear round-trip behavior through the public API, not just "was called with X". Shared
 // by the action-items tests too — `weekly-brief.service.ts`'s rating and action-items code paths
