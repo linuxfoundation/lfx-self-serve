@@ -757,6 +757,16 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       // double duty (releases pollActive AND clears generating), and a poll that stops without
       // clearing generating strands the card on "Generating…" with no way out but a reload.
       expect(component.generating()).toBe(false);
+
+      // The other half of finalize's double duty: pollActive must also have been released, or
+      // pollUntilTerminal's own re-entrancy guard (`if (!isPlatformBrowser... || this.pollActive)
+      // return`) makes every later Regenerate set generating() with no poll left to ever clear
+      // it — a deeper version of the same dead end. Proven by actually regenerating again and
+      // confirming a new poll tick fires.
+      component.onGenerate();
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief.mock.calls).toHaveLength(3);
     } finally {
       vi.useRealTimers();
     }
