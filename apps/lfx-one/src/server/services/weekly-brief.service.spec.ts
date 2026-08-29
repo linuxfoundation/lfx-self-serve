@@ -897,6 +897,48 @@ describe('WeeklyBriefService', () => {
       );
     });
 
+    it('does NOT settle to null when a full raw page is mostly future-stamped noise the window_end filter drops — the gate must run on the filtered count, not the raw page size', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-01-14T12:00:00.000Z'));
+
+        // A full raw page (ACTIVITY_FEED_MAX_PAGE_SIZE) where most rows are administratively-closed
+        // votes stamped from a still-future end_time (see mapVoteToEvent) — the exact noise the
+        // window_end filter above the gate exists to drop. Only a handful are genuine in-window
+        // activity. If the gate ran on the raw page size (the bug this test pins the fix for), this
+        // committee would settle to null despite a comfortably-under-the-cap real count.
+        const futureNoise = Array.from({ length: ACTIVITY_FEED_MAX_PAGE_SIZE - 3 }, (_, i) => ({
+          type: 'vote_closed' as const,
+          occurred_at: '2026-01-14T13:00:00.000Z', // after window_end (2026-01-14T12:00:00.000Z)
+          committee_uid: 'committee-1',
+          payload: { vote_uid: `future-v${i}`, name: 'Future Vote', status: 'Ended' as const },
+        }));
+        const realActivity = Array.from({ length: 3 }, (_, i) => ({
+          type: 'meeting_held' as const,
+          occurred_at: '2026-01-12T10:00:00Z',
+          committee_uid: 'committee-1',
+          payload: { meeting_id: `m${i}`, meeting_occurrence_id: `m${i}-occ`, title: 'Board Sync', password: null },
+        }));
+        getCommitteeActivityMock.mockResolvedValue({ data: [...futureNoise, ...realActivity], page_token: undefined });
+
+        const result = await service.getCurrentBrief(req, 'committee-1');
+
+        expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
+        expect(result.current_activity?.source_refs).toHaveLength(3);
+        expect(logger.warning).not.toHaveBeenCalledWith(
+          req,
+          'get_weekly_brief_current_activity',
+          expect.stringContaining('fills a full page'),
+          expect.anything()
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("does NOT omit current_activity merely because page_token is present with a short page — a committee with >fetchSize lifetime notes/surveys saturates those legs regardless of the current week (see buildCurrentActivity's own doc comment)", async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });

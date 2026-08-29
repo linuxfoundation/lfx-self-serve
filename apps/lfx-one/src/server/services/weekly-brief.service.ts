@@ -1303,19 +1303,23 @@ export class WeeklyBriefService {
    * notes/surveys, not whether THIS WEEK's activity was truncated. Gating on that would silently
    * hide the tally for exactly the long-lived, active committees it exists to help.
    *
-   * Gate on `data.length` instead — the merged, window-filtered, already-capped-at-`limit` result:
-   * when it fills the page (`>= limit`), real in-window rows may have been cut, so this returns
-   * `null` (a settled "can't state a count as fact" answer, not a transient "couldn't determine")
-   * rather than a truncated count stated as fact — see
+   * Gate on the filtered `sourceRefs.length`, not the raw merged/capped `data.length` — this
+   * method's body filters `data` to `occurred_at <= window_end` before the gate runs, specifically
+   * so a page saturated with administratively-closed, future-stamped votes (destined to be
+   * filtered out anyway) can't settle a comfortably-under-the-cap committee to `null`. When the
+   * filtered count itself fills the page (`>= limit`, which also implies nothing was filtered
+   * out — `sourceRefs.length` can never exceed `data.length`), real in-window rows may have been
+   * cut, so this returns `null` (a settled "can't state a count as fact" answer, not a transient
+   * "couldn't determine") rather than a truncated count stated as fact — see
    * `WeeklyBriefCurrentResponse.current_activity`'s doc comment for why `null` here, not
    * `undefined`.
    *
-   * Known v1 residual (accepted, not solved): `data.length < limit` is a heuristic, not a proof of
-   * completeness. `committee-activity.service.ts` documents — in its own "Filter dimension" (its
-   * exact label), sort-dimension ("Votes, surveys, files, and notes are all in a different,
-   * genuinely-approximate bucket"), and FGA-post-filter comments — several ways an individual leg's
-   * single upstream page can under-report while the merged, capped `data.length` still lands under
-   * `limit`. Deliberately not re-derived here leg-by-leg — a summary of which mechanism hits which
+   * Known v1 residual (accepted, not solved): `sourceRefs.length < limit` is a heuristic, not a
+   * proof of completeness. `committee-activity.service.ts` documents — in its own "Filter
+   * dimension" (its exact label), sort-dimension ("Votes, surveys, files, and notes are all in a
+   * different, genuinely-approximate bucket"), and FGA-post-filter comments — several ways an
+   * individual leg's single upstream page can under-report while the merged, capped `data.length`
+   * still lands under `limit`. Deliberately not re-derived here leg-by-leg — a summary of which mechanism hits which
    * leg is exactly the kind of detail that silently drifts out of sync with its source as that
    * source evolves, and none of it crosses the `getCommitteeActivity` boundary as a signal this
    * caller could gate on regardless: only a single merged `page_token` comes back, no per-leg flag.
@@ -1370,20 +1374,6 @@ export class WeeklyBriefService {
         { knownCommittee: committee, quietAggregationLog: true }
       );
       logger.debug(req, 'get_weekly_brief_current_activity', 'Fetched current-week activity', { committee_id: committeeId, event_count: data.length });
-      if (data.length >= ACTIVITY_FEED_MAX_PAGE_SIZE) {
-        logger.warning(
-          req,
-          'get_weekly_brief_current_activity',
-          'Current-week activity fills a full page — publishing null (settled, not a count) rather than a truncated count stated as fact',
-          {
-            committee_id: committeeId,
-          }
-        );
-        // null, not undefined — more in-window activity only ever accumulates within a poll
-        // cycle, never un-fills a full page, so this can't resolve differently on a later tick
-        // within the same cycle either.
-        return null;
-      }
 
       // Filtered to occurred_at <= window_end, not just >= window_start (the `since` param
       // above already narrows that half) — getCommitteeActivity has no `before`/upper-bound
@@ -1403,6 +1393,13 @@ export class WeeklyBriefService {
       // timestamps via timestampValue !== -Infinity), kept so this filter stays correct on its
       // own terms if that ever changes, same rationale as mapActivityEventToCurrentActivityRef's
       // own "unreached in practice, not dead by construction" default branch.
+      //
+      // Deliberately runs BEFORE the truncation gate below, not after: gating on the raw,
+      // unfiltered `data.length` would count a page saturated with administratively-closed,
+      // future-stamped votes as "possibly truncated" even when every one of those events is about
+      // to be dropped here anyway, settling a comfortably-under-the-cap committee to `null` for no
+      // real reason. Gating on the filtered count instead only trips when the events that actually
+      // make it into the tally themselves fill the page.
       const windowEndMs = Date.parse(window_end);
       let droppedAfterWindowEnd = 0;
       const sourceRefs = data.reduce<WeeklyBriefSourceRef[]>((refs, event) => {
@@ -1430,6 +1427,22 @@ export class WeeklyBriefService {
           window_end,
         });
       }
+
+      if (sourceRefs.length >= ACTIVITY_FEED_MAX_PAGE_SIZE) {
+        logger.warning(
+          req,
+          'get_weekly_brief_current_activity',
+          'Current-week activity fills a full page — publishing null (settled, not a count) rather than a truncated count stated as fact',
+          {
+            committee_id: committeeId,
+          }
+        );
+        // null, not undefined — more in-window activity only ever accumulates within a poll
+        // cycle, never un-fills a full page, so this can't resolve differently on a later tick
+        // within the same cycle either.
+        return null;
+      }
+
       return { window_start, window_end, source_refs: sourceRefs };
     } catch (err) {
       logger.warning(req, 'get_weekly_brief_current_activity', 'Failed to build current-week activity tally, omitting it', {
