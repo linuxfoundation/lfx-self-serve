@@ -43,12 +43,12 @@ export class PublicProjectCalendarComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly groupService = inject(GroupService);
 
-  protected readonly loading = signal(true);
-  protected readonly fetchError = signal(false);
-
   protected readonly committeeForm = new FormGroup({
     committee: new FormControl<string | null>(null),
   });
+
+  protected readonly loading = signal(true);
+  protected readonly fetchError = signal(false);
 
   private readonly calendarData: Signal<PublicProjectMeetingsResponse | null> = this.initCalendarData();
   private readonly groups: Signal<PublicGroupSummary[]> = this.initGroups();
@@ -59,17 +59,7 @@ export class PublicProjectCalendarComponent {
   protected readonly projectName: Signal<string> = computed(() => this.calendarData()?.project?.name ?? '');
   protected readonly total: Signal<number> = computed(() => this.calendarData()?.total ?? 0);
 
-  /**
-   * Publicly listed groups keyed by UID — the only source of committee names and colors on this page.
-   * The meetings feed publishes committee UIDs without names, so a committee missing from the directory
-   * stays anonymous rather than having a non-public name rendered.
-   */
-  private readonly committeesByUid: Signal<Record<string, PublicCalendarCommittee>> = computed(() =>
-    this.groups().reduce<Record<string, PublicCalendarCommittee>>((byUid, group) => {
-      byUid[group.uid] = { uid: group.uid, name: group.name, behavioralClass: getGroupBehavioralClass(group.category) };
-      return byUid;
-    }, {})
-  );
+  private readonly committeesByUid: Signal<Record<string, PublicCalendarCommittee>> = this.initCommitteesByUid();
 
   private readonly committeeContext: Signal<PublicCalendarCommitteeContext> = computed(() => ({
     activeCommitteeUid: this.activeCommitteeUid() ?? undefined,
@@ -110,29 +100,7 @@ export class PublicProjectCalendarComponent {
     return (this.calendarData()?.meetings ?? []).flatMap((meeting) => publicMeetingToCalendarEvents(meeting, context) as EventInput[]);
   });
 
-  /**
-   * Group types present in the rendered events, paired with the color those events carry. Renders only
-   * when unfiltered — under a filter every event shares one color and the dropdown already names it.
-   */
-  protected readonly legendItems: Signal<CalendarLegendItem[]> = computed(() => {
-    if (this.activeCommitteeUid()) {
-      return [];
-    }
-
-    const committeesByUid = this.committeesByUid();
-    const behavioralClasses = new Set<GroupBehavioralClass>();
-    for (const meeting of this.calendarData()?.meetings ?? []) {
-      const committee = resolvePublicCalendarCommittee(meeting, { committeesByUid });
-      if (committee) {
-        behavioralClasses.add(committee.behavioralClass);
-      }
-    }
-
-    return [...behavioralClasses].map((behavioralClass) => ({
-      label: BEHAVIORAL_CLASS_CONFIG[behavioralClass].label,
-      color: BEHAVIORAL_CLASS_CALENDAR_COLORS[behavioralClass].bg,
-    }));
-  });
+  protected readonly legendItems: Signal<CalendarLegendItem[]> = this.initLegendItems();
 
   public constructor() {
     // The URL stays authoritative for the dropdown so deep links and browser back/forward are reflected.
@@ -175,6 +143,46 @@ export class PublicProjectCalendarComponent {
 
   // Private initializer functions
 
+  /**
+   * Publicly listed groups keyed by UID — the only source of committee names and colors on this page.
+   * The meetings feed publishes committee UIDs without names, so a committee missing from the directory
+   * stays anonymous rather than having a non-public name rendered.
+   */
+  private initCommitteesByUid(): Signal<Record<string, PublicCalendarCommittee>> {
+    return computed(() =>
+      this.groups().reduce<Record<string, PublicCalendarCommittee>>((byUid, group) => {
+        byUid[group.uid] = { uid: group.uid, name: group.name, behavioralClass: getGroupBehavioralClass(group.category) };
+        return byUid;
+      }, {})
+    );
+  }
+
+  /**
+   * Group types present in the rendered events, paired with the color those events carry. Renders only
+   * when unfiltered — under a filter every event shares one color and the dropdown already names it.
+   */
+  private initLegendItems(): Signal<CalendarLegendItem[]> {
+    return computed(() => {
+      if (this.activeCommitteeUid()) {
+        return [];
+      }
+
+      const committeesByUid = this.committeesByUid();
+      const behavioralClasses = new Set<GroupBehavioralClass>();
+      for (const meeting of this.calendarData()?.meetings ?? []) {
+        const committee = resolvePublicCalendarCommittee(meeting, { committeesByUid });
+        if (committee) {
+          behavioralClasses.add(committee.behavioralClass);
+        }
+      }
+
+      return [...behavioralClasses].map((behavioralClass) => ({
+        label: BEHAVIORAL_CLASS_CONFIG[behavioralClass].label,
+        color: BEHAVIORAL_CLASS_CALENDAR_COLORS[behavioralClass].bg,
+      }));
+    });
+  }
+
   private initInitialView(): Signal<string> {
     return toSignal(this.route.queryParamMap.pipe(map((params) => (params.get('view') === 'week' ? 'timeGridWeek' : 'dayGridMonth'))), {
       initialValue: 'dayGridMonth',
@@ -201,8 +209,13 @@ export class PublicProjectCalendarComponent {
           this.groupService.getPublicProjectGroups(slug).pipe(
             map((response) => response.groups ?? []),
             // A directory failure costs the filter, labels, and legend but not the calendar itself, so
-            // degrade to an unlabelled calendar instead of surfacing the page-level error state.
-            catchError(() => of<PublicGroupSummary[]>([]))
+            // degrade to an unlabelled calendar instead of surfacing the page-level error state. Logged
+            // because the degrade is otherwise invisible: the page still renders and nothing tells an
+            // operator the filter silently vanished.
+            catchError((error) => {
+              console.error(`Failed to load the public group directory for project ${slug}:`, error);
+              return of<PublicGroupSummary[]>([]);
+            })
           )
         )
       ),
@@ -225,6 +238,8 @@ export class PublicProjectCalendarComponent {
               this.loading.set(false);
               return response;
             }),
+            // Not logged here: MeetingService.getPublicProjectMeetings already logs the failure before
+            // rethrowing, unlike GroupService, which has no handler of its own.
             catchError(() => {
               this.loading.set(false);
               this.fetchError.set(true);
