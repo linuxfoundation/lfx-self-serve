@@ -369,10 +369,14 @@ export class WeeklyBriefCardComponent {
           // description and its 202 example) — reusing the pre-regenerate rating against that
           // new revision would misattribute, so this drops it whenever res.brief lands and
           // lets the poll's first GET restore the correct value for that revision instead.
+          // Spreads `prev` rather than enumerating every field — `current_activity` carries
+          // forward unchanged for free, and a future field added to WeeklyBriefCurrentResponse
+          // survives this update by default instead of being silently dropped on every
+          // generate/regenerate.
           this.briefResponse.update((prev) => ({
-            brief: res.brief ?? this.brief(),
-            throttle: res.throttle ?? this.throttle(),
-            current_activity: prev?.current_activity,
+            ...prev,
+            brief: res.brief ?? prev?.brief ?? null,
+            throttle: res.throttle ?? prev?.throttle ?? null,
             caller_rating: res.brief ? null : prev?.caller_rating,
           }));
           // On Regenerate, currentBrief.revision is the pre-regenerate revision — pollUntilTerminal
