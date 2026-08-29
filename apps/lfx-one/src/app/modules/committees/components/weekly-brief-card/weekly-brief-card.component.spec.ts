@@ -716,7 +716,7 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
   }
 
-  it('a poll tick opts out (includeCurrentActivity: false) once current_activity is already present, and merges it forward since the tick carries none', async () => {
+  it('a poll tick opts out once current_activity is present and merges it forward, then the poll fully stops (generating/pollActive both clear) so a later Regenerate can start a new poll', async () => {
     const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
     await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync')], generateWeeklyBrief);
     expect(component.hasCurrentActivityData()).toBe(true);
@@ -762,11 +762,14 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       // pollUntilTerminal's own re-entrancy guard (`if (!isPlatformBrowser... || this.pollActive)
       // return`) makes every later Regenerate set generating() with no poll left to ever clear
       // it — a deeper version of the same dead end. Proven by actually regenerating again and
-      // confirming a new poll tick fires.
+      // confirming a new poll tick fires. A genuinely new terminal revision (not the same 2 as
+      // before) so this second poll settles too, rather than leaving an open subscription behind.
+      getWeeklyBrief.mockImplementation(() => of({ brief: { ...briefResponse(null).brief, revision: 3 }, throttle: briefResponse(null).throttle }));
       component.onGenerate();
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
       expect(getWeeklyBrief.mock.calls).toHaveLength(3);
+      expect(component.generating()).toBe(false);
     } finally {
       vi.useRealTimers();
     }
