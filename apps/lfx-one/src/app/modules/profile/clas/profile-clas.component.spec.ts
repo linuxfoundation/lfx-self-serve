@@ -17,6 +17,7 @@ import type {
   ClaGroupSearchResponse,
   ClaManagerList,
   GithubAccountOptions,
+  GithubAccountSelectResult,
   MyClaAgreement,
   MyClasResponse,
   PrepareSignResponse,
@@ -505,11 +506,11 @@ describe('ProfileClasComponent', () => {
  * inside it (#1252).
  *
  * Each picker is a dynamic dialog with its own spec; what matters here is the orchestration —
- * that the action is offered only when it can succeed, that the number of linked accounts
- * decides whether a choice is even presented, that the address navigated to is the one the CLA
- * backend returned rather than one assembled here, and that a refusal ends the flow rather than
- * quietly picking another account. The template is rendered rather than overridden, because
- * whether the action is offered at all is a template condition.
+ * that the action is offered only when it can succeed, that every account list reaches the
+ * picker whatever its length, that the address navigated to is the one the CLA backend returned
+ * rather than one assembled here, and that a refusal ends the flow rather than quietly picking
+ * another account. The template is rendered rather than overridden, because whether the action
+ * is offered at all is a template condition.
  */
 describe('ProfileClasComponent — Sign CLA hand-off and account selection (#1251, #1252)', () => {
   const CLA_GROUP: ClaGroupOption = { claGroupId: 'cg-1', projectName: 'Venus test', matchTypes: ['project'], organizations: [] };
@@ -548,7 +549,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
       accounts?: () => Observable<GithubAccountOptions>;
       prepare?: () => Observable<PrepareSignResponse>;
       closesWith?: ClaGroupOption | null;
-      accountClosesWith?: string | null;
+      accountClosesWith?: GithubAccountSelectResult | null;
       dismissGroup?: 'close' | 'destroy' | 'hold';
       dismissAccount?: 'close' | 'destroy' | 'hold';
     } = {}
@@ -565,7 +566,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     open = vi.fn((component: unknown) => {
       opened.push(component);
       if (component === GithubAccountSelectComponent) {
-        return dialogEvents('accountClosesWith' in options ? options.accountClosesWith : '12345', options.dismissAccount ?? 'close');
+        return dialogEvents('accountClosesWith' in options ? options.accountClosesWith : { githubId: '12345' }, options.dismissAccount ?? 'close');
       }
       return dialogEvents('closesWith' in options ? options.closesWith : CLA_GROUP, options.dismissGroup ?? 'close');
     });
@@ -754,7 +755,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     expect(opened.filter((component) => component === ClaGroupSelectComponent)).toHaveLength(1);
   });
 
-  // --- Cardinality (FR-002) -------------------------------------------------
+  // --- Cardinality ----------------------------------------------------------
 
   it('asks which account to sign as when several are linked', async () => {
     const fixture = await setup({ accounts: () => of(TWO_ACCOUNTS) });
@@ -769,7 +770,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
   });
 
   it('submits the account chosen, not the first one listed', async () => {
-    const fixture = await setup({ accounts: () => of(TWO_ACCOUNTS), accountClosesWith: '67890' });
+    const fixture = await setup({ accounts: () => of(TWO_ACCOUNTS), accountClosesWith: { githubId: '67890' } });
 
     await sign(fixture);
 
@@ -777,7 +778,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
   });
 
   it('does not submit an account that is not in the served list', async () => {
-    const fixture = await setup({ accounts: () => of(TWO_ACCOUNTS), accountClosesWith: '99999' });
+    const fixture = await setup({ accounts: () => of(TWO_ACCOUNTS), accountClosesWith: { githubId: '99999' } });
 
     await sign(fixture);
 
@@ -787,26 +788,65 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     expect(location.href).toBe(HOME);
   });
 
-  it('skips the choice but still prepares when exactly one account is linked', async () => {
+  it('asks which account to sign as when exactly one is linked', async () => {
     const fixture = await setup({ accounts: () => of(ONE_ACCOUNT) });
 
     await sign(fixture);
 
-    // "No picker" must not become "no prepare" — dropping the call here would leave the
-    // single-account contributor with no signing session and no verified identity.
-    expect(opened).not.toContain(GithubAccountSelectComponent);
+    // A list of one still names the identity the signature will be recorded against, which is
+    // what the step is for — so it is served the account rather than the account being assumed.
+    expect(opened).toContain(GithubAccountSelectComponent);
+    expect(open.mock.calls.at(-1)?.[1]).toMatchObject({ data: { accounts: ONE_ACCOUNT.accounts } });
     expect(prepareSign).toHaveBeenCalledWith({ githubId: '12345', claGroupId: 'cg-1' });
     expect(location.href).toBe(SIGN_URL);
   });
 
-  it('routes to account linking rather than showing an empty picker when none are linked', async () => {
-    const fixture = await setup({ accounts: () => of({ accounts: [] }) });
+  it('prepares nothing when the sole linked account is not confirmed', async () => {
+    const fixture = await setup({ accounts: () => of(ONE_ACCOUNT), accountClosesWith: null });
 
     await sign(fixture);
 
-    expect(opened).not.toContain(GithubAccountSelectComponent);
+    // Showing the step and ignoring its outcome would satisfy "a picker appears" while still
+    // signing as an account nobody confirmed. The confirmation, not the render, is the gate.
     expect(prepareSign).not.toHaveBeenCalled();
+    expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('opens the picker on its empty state when no account is linked (#1917)', async () => {
+    const fixture = await setup({ accounts: () => of({ accounts: [] }), accountClosesWith: null });
+
+    await sign(fixture);
+
+    // The picker is opened and served the empty list rather than being skipped for a redirect.
+    // Stopping the contributor where they are is what keeps the CLA group they already chose.
+    expect(opened).toContain(GithubAccountSelectComponent);
+    expect(open.mock.calls.at(-1)?.[1]).toMatchObject({ data: { accounts: [] } });
+    expect(prepareSign).not.toHaveBeenCalled();
+    expect(location.href).toBe(HOME);
+    expect(isStarting(fixture)).toBe(false);
+  });
+
+  it('goes to Identities when the empty state asks for it', async () => {
+    const fixture = await setup({ accounts: () => of({ accounts: [] }), accountClosesWith: { linkAccounts: true } });
+
+    await sign(fixture);
+
     expect(navigate).toHaveBeenCalledWith(['/profile/identities']);
+    expect(prepareSign).not.toHaveBeenCalled();
+    // No toast on the way out: the empty state they acted on already said this, and repeating it
+    // on arrival reads as an error report for something that went right.
+    expect(messageAdd).not.toHaveBeenCalled();
+  });
+
+  it('stays put when the empty state is dismissed rather than acted on', async () => {
+    const fixture = await setup({ accounts: () => of({ accounts: [] }), accountClosesWith: null });
+
+    await sign(fixture);
+
+    // Dismissing and asking to link both leave the picker with no account chosen. Navigating on
+    // either would move a contributor who only wanted to close the dialog.
+    expect(navigate).not.toHaveBeenCalled();
     expect(location.href).toBe(HOME);
   });
 
@@ -815,8 +855,9 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
 
     await sign(fixture);
 
-    // Routing this into account linking would tell a contributor who has a linked account to
-    // go connect one — sending them to fix something that is not broken.
+    // Treating this as zero accounts would put the contributor in front of the empty state,
+    // telling someone who does have a linked account to go connect one — asking them to fix
+    // something that is not broken.
     expect(navigate).not.toHaveBeenCalled();
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
     expect(location.href).toBe(HOME);
@@ -894,7 +935,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     // nothing below this layer can notice. Only comparing what came back against what went in
     // catches a signature about to be attributed to an account nobody chose.
     const fixture = await setup({
-      accountClosesWith: '12345',
+      accountClosesWith: { githubId: '12345' },
       prepare: () => of({ ...PREPARED, githubId: '67890', githubUsername: 'hubot' }),
     });
 
@@ -905,7 +946,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
   });
 
   it('proceeds when the verified account matches, so the check is not merely blocking everything', async () => {
-    const fixture = await setup({ accountClosesWith: '67890', prepare: () => of({ ...PREPARED, githubId: '67890', githubUsername: 'hubot' }) });
+    const fixture = await setup({ accountClosesWith: { githubId: '67890' }, prepare: () => of({ ...PREPARED, githubId: '67890', githubUsername: 'hubot' }) });
 
     await sign(fixture);
 
@@ -917,7 +958,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
     // The server refuses this too; the second guard is here because this is the only layer that
     // saw the picker.
     const fixture = await setup({
-      accountClosesWith: '12345',
+      accountClosesWith: { githubId: '12345' },
       prepare: () => of({ ...PREPARED, githubId: '67890', githubUsername: 'hubot', skippedIdentities: ['github-id:12345'] }),
     });
 
@@ -928,7 +969,7 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
   });
 
   it('reports a mismatch as a mismatch, not as a failure to open the page', async () => {
-    const fixture = await setup({ accountClosesWith: '12345', prepare: () => of({ ...PREPARED, githubId: '67890' }) });
+    const fixture = await setup({ accountClosesWith: { githubId: '12345' }, prepare: () => of({ ...PREPARED, githubId: '67890' }) });
 
     await sign(fixture);
 
@@ -999,9 +1040,10 @@ describe('ProfileClasComponent — Sign CLA hand-off and account selection (#125
   });
 
   it('does not route a refusal into account linking', async () => {
-    // Account linking is reached only from an empty account list, which is a fact about this
-    // session rather than an upstream answer. Routing a refusal there would send someone who
-    // does have a linked account to fix something that is not broken.
+    // Account linking is reached only when the contributor asks for it from the picker's empty
+    // state, which is a fact about this session rather than an upstream answer. Routing a
+    // refusal there would send someone who does have a linked account to fix something that is
+    // not broken.
     const fixture = await setup({ prepare: refusedWith(403, OWNERSHIP_REFUSAL) });
 
     await sign(fixture);

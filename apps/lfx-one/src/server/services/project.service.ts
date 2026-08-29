@@ -16,7 +16,6 @@ import {
   PAID_CAMPAIGN_LIMIT,
   PENDING_ACTION_SEVERITY,
   PENDING_ACTION_SURVEYS_ROW_LIMIT,
-  PROJECT_HEALTH_SCORE_CATEGORIES,
   ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects, ProjectStage } from '@lfx-one/shared/enums';
@@ -59,7 +58,6 @@ import {
   FoundationContributorsMentoredRow,
   FoundationEventsAttendanceDistributionResponse,
   FoundationEventsAttendanceDistributionRow,
-  FoundationHealthScore,
   FoundationEventsQuarterlyResponse,
   FoundationEventsQuarterlyRow,
   FoundationHealthEventsMonthlyRow,
@@ -149,7 +147,7 @@ import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, Resolved
 import {
   computeIsFoundation,
   getDefaultMarketingImpactMonth,
-  mapV1BandToV2,
+  normalizeHealthScoreCategoryV2,
   normalizeToUrl,
   nullifyEmptyStrings,
   resolvePeriodRange,
@@ -173,15 +171,6 @@ import { SnowflakeService } from './snowflake.service';
 
 /** Valid LifecycleStage values used to guard the Snowflake LIFECYCLE_STAGE string. Hoisted to module scope so the Set isn't re-created on every row mapping. */
 const VALID_LIFECYCLE_STAGES: ReadonlySet<LifecycleStage> = new Set(Object.values(LifecycleStage));
-
-/** Valid (lowercased) health-score categories used to guard the Snowflake HEALTH_SCORE_CATEGORY string. Derived from the shared runtime list, plus legacy v1 band names (IN-1219 may still emit these until the v2 dbt models are live), so the server and UI cannot drift. */
-const VALID_HEALTH_SCORE_CATEGORIES: ReadonlySet<string> = new Set([...PROJECT_HEALTH_SCORE_CATEGORIES, 'stable', 'unsteady']);
-
-/** Lowercase + validate the upstream HEALTH_SCORE_CATEGORY, mapping legacy v1 band names (stable/unsteady) to their v2 equivalents; null when absent or unrecognized. */
-function normalizeHealthScoreCategory(raw: string | null): FoundationHealthScore | null {
-  const category = raw?.toLowerCase();
-  return category && VALID_HEALTH_SCORE_CATEGORIES.has(category) ? (mapV1BandToV2(category) as FoundationHealthScore) : null;
-}
 
 /** Upstream response shape for project folders (POST response) */
 interface ProjectFolder {
@@ -315,26 +304,29 @@ export class ProjectService {
    * Fetches all projects based on query parameters
    */
   public async getProjects(req: Request, query: Record<string, any> = {}): Promise<Project[]> {
-    const params = {
-      ...query,
-      type: 'project',
-      // Overrides any caller-supplied page_size — the query service's 50-result default turns
-      // a large org's project list into a long sequential page scan (GH-1735).
-      page_size: QUERY_SERVICE_PAGE_SIZE,
-    };
-
-    const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
-    );
-
-    // ROOT is an administrative pseudo-project used only for persona detection — never surface it in user lists.
-    const filtered = resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+    const filtered = await this.fetchAllProjectsFiltered(req, query);
 
     // Add writer access field to all projects
     return await this.accessCheckService.addAccessToResources(req, filtered, 'project');
+  }
+
+  /**
+   * Fetches slugs for all projects without an access-check round trip.
+   * Use this when the caller only needs slugs — it skips addAccessToResources
+   * entirely, eliminating the OpenFGA POST that getProjects() incurs.
+   *
+   * Note: the query-service payload is as wide as getProjects() (full Project
+   * objects); only the FGA round trip is eliminated, not the response payload
+   * size. If the upstream query service ever supports field projection, pass
+   * a 'fields' parameter here to further reduce transfer cost.
+   */
+  public async getProjectSlugs(req: Request): Promise<string[]> {
+    logger.debug(req, 'get_project_slugs', 'Fetching all project slugs', { page_size: QUERY_SERVICE_PAGE_SIZE });
+    // failOnPartial: a truncated slug list silently drops affiliations from CDP matching —
+    // a user whose project was on a failed page appears as not LFX-affiliated. Throw instead
+    // so the caller receives an error and can surface it rather than returning a stale/false view.
+    const filtered = await this.fetchAllProjectsFiltered(req, {}, true);
+    return filtered.map((p) => p.slug);
   }
 
   /**
@@ -1873,7 +1865,7 @@ export class ProjectService {
   public async getFoundationHealthScoreDistribution(foundationSlug: string): Promise<FoundationHealthScoreDistributionResponse> {
     const query = `
       SELECT
-        HEALTH_SCORE_CATEGORY,
+        HEALTH_SCORE_CATEGORY_V2,
         PROJECT_COUNT
       FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_SCORE_DISTRIBUTION
       WHERE FOUNDATION_SLUG = ?
@@ -1882,28 +1874,26 @@ export class ProjectService {
     const result = await this.snowflakeService.execute<FoundationHealthScoreDistributionRow>(query, [foundationSlug]);
 
     // Map categories to response structure (case-insensitive). "Unscored" is an additive
-    // dbt bucket (COALESCE(health_score_category, 'Unscored')) so every project counted in
+    // dbt bucket (COALESCE(health_score_category_v2, 'Unscored')) so every project counted in
     // FOUNDATION_TOTAL_PROJECTS_DETAIL maps to exactly one bar, scored or not.
     const distribution = {
       excellent: 0,
       healthy: 0,
-      stable: 0,
-      unsteady: 0,
+      fair: 0,
+      concerning: 0,
       critical: 0,
       unscored: 0,
     };
 
     // Fold any category outside the 5 scored values into `unscored` to mirror the detail
-    // endpoint's normalizeHealthScoreCategory (→ null → Unscored), so chart and table agree.
-    // Accept both v1 and v2 band names; map v2 names (fair/concerning) to v1-keyed buckets.
+    // endpoint's normalizeHealthScoreCategoryV2 (→ null → Unscored), so chart and table agree.
     result.rows.forEach((row) => {
-      const category = row.HEALTH_SCORE_CATEGORY.toLowerCase();
-      const normalizedCategory = mapV1BandToV2(category);
-      if (normalizedCategory === 'excellent') distribution.excellent += row.PROJECT_COUNT;
-      else if (normalizedCategory === 'healthy') distribution.healthy += row.PROJECT_COUNT;
-      else if (normalizedCategory === 'fair') distribution.stable += row.PROJECT_COUNT;
-      else if (normalizedCategory === 'concerning') distribution.unsteady += row.PROJECT_COUNT;
-      else if (normalizedCategory === 'critical') distribution.critical += row.PROJECT_COUNT;
+      const category = row.HEALTH_SCORE_CATEGORY_V2.toLowerCase();
+      if (category === 'excellent') distribution.excellent += row.PROJECT_COUNT;
+      else if (category === 'healthy') distribution.healthy += row.PROJECT_COUNT;
+      else if (category === 'fair') distribution.fair += row.PROJECT_COUNT;
+      else if (category === 'concerning') distribution.concerning += row.PROJECT_COUNT;
+      else if (category === 'critical') distribution.critical += row.PROJECT_COUNT;
       else distribution.unscored += row.PROJECT_COUNT;
     });
 
@@ -1918,7 +1908,7 @@ export class ProjectService {
   public async getFoundationProjectsDetail(foundationSlug: string): Promise<FoundationProjectsDetailResponse> {
     logger.debug(undefined, 'get_foundation_projects_detail', 'Fetching project detail rows', { foundationSlug });
 
-    // HEALTH_SCORE_CATEGORY is folded directly into FOUNDATION_TOTAL_PROJECTS_DETAIL by dbt (a
+    // HEALTH_SCORE_CATEGORY_V2 is folded directly into FOUNDATION_TOTAL_PROJECTS_DETAIL by dbt (a
     // slug-only LEFT JOIN to PROJECT_HEALTH_METRICS_LATEST, the shared per-project latest-score
     // selection). FOUNDATION_HEALTH_SCORE_DISTRIBUTION counts over this same model, so the chart
     // and this table can never disagree. Absent categories are null; the drawer renders "Unscored".
@@ -1933,7 +1923,7 @@ export class ProjectService {
         d.MAINTAINERS_CURRENT_COUNT,
         d.STARS_YTD_COUNT,
         d.LAST_UPDATED_TS,
-        d.HEALTH_SCORE_CATEGORY
+        d.HEALTH_SCORE_CATEGORY_V2
       FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL d
       WHERE d.FOUNDATION_SLUG = ?
       ORDER BY d.PROJECT_NAME ASC
@@ -1963,7 +1953,7 @@ export class ProjectService {
         lastUpdated: row.LAST_UPDATED_TS ? new Date(row.LAST_UPDATED_TS).toISOString().split('T')[0] : null,
         // Normalize the upstream capitalized category to our lowercase union; guard
         // against unexpected strings so the interface's promise (FoundationHealthScore | null) holds.
-        healthScoreCategory: normalizeHealthScoreCategory(row.HEALTH_SCORE_CATEGORY),
+        healthScoreCategory: normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2),
       }));
 
       logger.debug(undefined, 'get_foundation_projects_detail', 'Fetched project detail rows', { count: projects.length });
@@ -2139,7 +2129,7 @@ export class ProjectService {
         SELECT
           FOUNDATION_SLUG,
           METRIC_DATE,
-          AVG(HEALTH_SCORE) AS AVG_HEALTH_SCORE
+          AVG(HEALTH_SCORE_V2) AS AVG_HEALTH_SCORE
         FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_HEALTH_METRICS_DAILY
         WHERE FOUNDATION_SLUG = ?
         GROUP BY FOUNDATION_SLUG, METRIC_DATE
@@ -2167,8 +2157,8 @@ export class ProjectService {
           FOUNDATION_ID,
           FOUNDATION_SLUG,
           METRIC_DATE,
-          HEALTH_SCORE,
-          HEALTH_SCORE_CATEGORY,
+          HEALTH_SCORE_V2,
+          HEALTH_SCORE_CATEGORY_V2,
           SOFTWARE_VALUE,
           CM_STATUS,
           PARENT_ID,
@@ -2183,7 +2173,7 @@ export class ProjectService {
     const result = await this.snowflakeService.execute<ProjectHealthMetricsDailyRow>(query, [slug]);
 
     // Get current health score from most recent date
-    const currentAvgHealthScore = result.rows.length > 0 ? Math.round(result.rows[0].HEALTH_SCORE) : 0;
+    const currentAvgHealthScore = result.rows.length > 0 ? Math.round(result.rows[0].HEALTH_SCORE_V2) : 0;
 
     return {
       data: result.rows,
@@ -6950,8 +6940,8 @@ export class ProjectService {
     const emptyHealthScores = (): FoundationHealthScoreDistributionResponse => ({
       excellent: 0,
       healthy: 0,
-      stable: 0,
-      unsteady: 0,
+      fair: 0,
+      concerning: 0,
       critical: 0,
       unscored: 0,
     });
@@ -7558,6 +7548,38 @@ export class ProjectService {
     return new Promise((resolve) => gate.queue.push(resolve));
   }
 
+  /**
+   * Shared paginated fetch for all public projects, with ROOT filtered out.
+   * Both `getProjects` (access-checked) and `getProjectSlugs` (slug-only) delegate here
+   * so the query params, pagination loop, and ROOT filter stay in one place.
+   * @param extraQuery Optional caller-supplied query overrides merged into params (e.g. from getProjects).
+   * @param failOnPartial When true, a pagination failure throws instead of returning a truncated
+   *   list. Pass true for slug-only callers where a partial slug set silently drops affiliations;
+   *   leave false (default) for access-checked callers where a partial list degrades gracefully.
+   */
+  private async fetchAllProjectsFiltered(req: Request, extraQuery: Record<string, any> = {}, failOnPartial: boolean = false): Promise<Project[]> {
+    const params = {
+      ...extraQuery,
+      type: 'project',
+      // Overrides any caller-supplied page_size — the query service's 50-result default turns
+      // a large org's project list into a long sequential page scan (GH-1735).
+      page_size: QUERY_SERVICE_PAGE_SIZE,
+    };
+
+    const resources = await fetchAllQueryResources<Project>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial }
+    );
+
+    // ROOT is an administrative pseudo-project used only for persona detection — never surface it in user lists.
+    return resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+  }
+
   /** Releases a traversal slot acquired via {@link acquireTraversalSlot}, waking the next queued caller if any. */
   private releaseTraversalSlot(gate: { active: number; queue: (() => void)[] }): void {
     const next = gate.queue.shift();
@@ -7940,7 +7962,7 @@ export class ProjectService {
     `;
 
     const healthScoreQuery = `
-      SELECT FOUNDATION_SLUG, HEALTH_SCORE_CATEGORY, PROJECT_COUNT
+      SELECT FOUNDATION_SLUG, HEALTH_SCORE_CATEGORY_V2, PROJECT_COUNT
       FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_SCORE_DISTRIBUTION
       WHERE FOUNDATION_SLUG IN (${placeholders})
     `;
@@ -7959,7 +7981,7 @@ export class ProjectService {
     }
     interface HealthScoreRow {
       FOUNDATION_SLUG: string;
-      HEALTH_SCORE_CATEGORY: string;
+      HEALTH_SCORE_CATEGORY_V2: string;
       PROJECT_COUNT: number;
     }
 
@@ -7999,20 +8021,19 @@ export class ProjectService {
       const existing = healthScoresBySlug.get(row.FOUNDATION_SLUG) ?? {
         excellent: 0,
         healthy: 0,
-        stable: 0,
-        unsteady: 0,
+        fair: 0,
+        concerning: 0,
         critical: 0,
         unscored: 0,
       };
-      const category = row.HEALTH_SCORE_CATEGORY.toLowerCase();
-      const normalizedCategory = mapV1BandToV2(category);
-      if (normalizedCategory === 'excellent') existing.excellent += row.PROJECT_COUNT;
-      else if (normalizedCategory === 'healthy') existing.healthy += row.PROJECT_COUNT;
-      else if (normalizedCategory === 'fair') existing.stable += row.PROJECT_COUNT;
-      else if (normalizedCategory === 'concerning') existing.unsteady += row.PROJECT_COUNT;
-      else if (normalizedCategory === 'critical') existing.critical += row.PROJECT_COUNT;
+      const category = row.HEALTH_SCORE_CATEGORY_V2.toLowerCase();
+      if (category === 'excellent') existing.excellent += row.PROJECT_COUNT;
+      else if (category === 'healthy') existing.healthy += row.PROJECT_COUNT;
+      else if (category === 'fair') existing.fair += row.PROJECT_COUNT;
+      else if (category === 'concerning') existing.concerning += row.PROJECT_COUNT;
+      else if (category === 'critical') existing.critical += row.PROJECT_COUNT;
       // Fold 'unscored' and any unexpected category into `unscored` to match the
-      // detail endpoint's normalizeHealthScoreCategory (→ null → Unscored in the drawer).
+      // detail endpoint's normalizeHealthScoreCategoryV2 (→ null → Unscored in the drawer).
       else existing.unscored += row.PROJECT_COUNT;
       healthScoresBySlug.set(row.FOUNDATION_SLUG, existing);
     });

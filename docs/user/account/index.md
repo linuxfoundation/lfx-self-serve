@@ -4,7 +4,7 @@ description: Manage your LFX account — work history and affiliations, identiti
 audience: [all]
 product_area: Account
 tags: [account, settings, affiliations, identities, individual-enrollment, cla, transactions]
-last_updated: 2026-08-17
+last_updated: 2026-08-28
 intercom_collection: Account
 ---
 
@@ -17,7 +17,7 @@ Your personal identity details (name, photo, About Me, primary email, and locati
 - Review and update your work history and project affiliations
 - Manage the identities used to attribute your contributions
 - Enroll in the Linux Foundation Individual Supporter plan
-- View your Individual CLAs (ICLAs) and Employee CLA (ECLA) coverage
+- View your Individual CLAs (ICLAs) and Employee CLA (ECLA) coverage, and start signing a new CLA
 - View your Linux Foundation purchase history
 - Manage your email addresses, password, and developer API token
 
@@ -29,14 +29,14 @@ All authenticated users have an account. Every user can view and manage their ow
 
 Account areas live under the **Profile & Account** hub. Go to **app.lfx.dev**, select [**Profile & Account**](/profile) from the left navigation sidebar, and choose a tab:
 
-| Tab                         | Route                            | Description                                                    | Documentation                                     |
-| --------------------------- | -------------------------------- | -------------------------------------------------------------- | ------------------------------------------------- |
-| Work history & Affiliations | `/profile/attributions`          | Your work history and project affiliations                     | [Work history & Affiliations](./work-history/)    |
-| Identities                  | `/profile/identities`            | Connected accounts used to identify and attribute your work    | [Identities](./identities/)                       |
-| Individual Enrollment       | `/profile/individual-enrollment` | Enroll in the Linux Foundation Individual Supporter plan       | [Individual Enrollment](./individual-enrollment/) |
-| CLAs                        | `/profile/clas`                  | Your signed ICLAs and Employee CLA (ECLA) coverage (read-only) | [CLAs](./my-clas/)                                |
-| Transactions                | `/profile/transactions`          | Your Linux Foundation purchase history                         | [Transactions](./transactions/)                   |
-| Settings                    | `/profile/settings`              | Email addresses, password, and developer API token             | [Settings](./settings/)                           |
+| Tab                         | Route                            | Description                                                                               | Documentation                                     |
+| --------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Work history & Affiliations | `/profile/attributions`          | Your work history and project affiliations                                                | [Work history & Affiliations](./work-history/)    |
+| Identities                  | `/profile/identities`            | Connected accounts used to identify and attribute your work                               | [Identities](./identities/)                       |
+| Individual Enrollment       | `/profile/individual-enrollment` | Enroll in the Linux Foundation Individual Supporter plan                                  | [Individual Enrollment](./individual-enrollment/) |
+| CLAs                        | `/profile/clas`                  | Your signed ICLAs and Employee CLA (ECLA) coverage, and where you start signing a new CLA | [CLAs](./my-clas/)                                |
+| Transactions                | `/profile/transactions`          | Your Linux Foundation purchase history                                                    | [Transactions](./transactions/)                   |
+| Settings                    | `/profile/settings`              | Email addresses, password, and developer API token                                        | [Settings](./settings/)                           |
 
 `/profile` opens the **Work history & Affiliations** tab by default.
 

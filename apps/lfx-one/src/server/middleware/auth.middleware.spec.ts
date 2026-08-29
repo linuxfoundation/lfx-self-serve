@@ -33,14 +33,54 @@ function buildRes(): Response {
 describe('authMiddleware route classification', () => {
   const middleware = createAuthMiddleware();
 
+  it('captures impersonation as immutable request state during authentication', async () => {
+    const req = buildReq({ path: '/api/rewards/summary', authenticated: true });
+    req.appSession = {
+      impersonationToken: 'eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0YXJnZXQifQ.',
+      impersonationExpiresAt: Date.now() + 60_000,
+      impersonationUser: { username: 'targetuser' },
+    };
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(req.impersonationActive).toBe(true);
+    expect(req.bearerToken).toBe('eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0YXJnZXQifQ.');
+    expect(next).toHaveBeenCalledWith();
+  });
+
+  it('captures impersonation for required routes that do not extract a bearer token', async () => {
+    const req = buildReq({ path: '/api/profile/auth/start', authenticated: true });
+    req.appSession = {
+      impersonationToken: 'eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0YXJnZXQifQ.',
+      impersonationExpiresAt: Date.now() + 60_000,
+      impersonationUser: { username: 'targetuser' },
+    };
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(req.impersonationActive).toBe(true);
+    expect(req.bearerToken).toBeUndefined();
+    expect(next).toHaveBeenCalledWith();
+  });
+
   it('allows an anonymous GET to a public contributor profile (/u/:username)', async () => {
     const req = buildReq({ path: '/u/johndoe' });
+    req.appSession = {
+      impersonationToken: 'eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0YXJnZXQifQ.',
+      impersonationExpiresAt: Date.now() + 60_000,
+      impersonationUser: { username: 'targetuser' },
+    };
     const res = buildRes();
     const next = vi.fn() as unknown as NextFunction;
 
     await middleware(req, res, next);
 
     // Public route → allow (next with no error), never a login redirect.
+    expect(req.impersonationActive).toBe(false);
     expect(next).toHaveBeenCalledTimes(1);
     expect(next).toHaveBeenCalledWith();
     expect(res.oidc.login).not.toHaveBeenCalled();
@@ -264,6 +304,28 @@ describe('authMiddleware route classification', () => {
 
   it('does not treat a nested /projects/:slug/groups/<sub> path as public (anchored regex, no fail-open)', async () => {
     const req = buildReq({ path: '/projects/acme/groups/extra' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows an anonymous GET to the public project calendar (/projects/:slug/calendar)', async () => {
+    const req = buildReq({ path: '/projects/acme/calendar' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith();
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a nested /projects/:slug/calendar/<sub> path as public (anchored regex, no fail-open)', async () => {
+    const req = buildReq({ path: '/projects/acme/calendar/extra' });
     const res = buildRes();
     const next = vi.fn() as unknown as NextFunction;
 

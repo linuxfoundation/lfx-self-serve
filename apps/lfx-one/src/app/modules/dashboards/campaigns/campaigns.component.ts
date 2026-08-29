@@ -479,9 +479,11 @@ export class CampaignsComponent {
    * Implementation tab's draft restore, where a false negative REWRITES the user's saved
    * selection — so the arms that mean "no answer" must say `null`, not "off".
    *
-   * It also stays `null` on the whole Planning → Implementation path, because the only writer is
-   * `loadBriefCampaigns` and that runs on Optimize entry. The tab treats `null` as "withhold the
-   * control but preserve the draft", which is the correct behaviour for an unanswered question;
+   * Two readers write it: `loadBriefCampaigns` on Optimize entry, and `loadCreateCapabilities`
+   * on the Implementation entry paths — the create path needs the answer BEFORE any campaign
+   * exists, so it cannot wait for the first. `null` therefore means "unanswered or failed", not
+   * "never asked". The tab treats it as "withhold the control but preserve the draft", which is
+   * the correct behaviour for an unanswered question;
    * the server-side predicate reports `true` whenever the legacy creator still owns creation, so
    * the common case is not a silently missing control.
    */
@@ -498,6 +500,38 @@ export class CampaignsComponent {
    * clears stick — a response whose generation no longer matches writes nothing.
    */
   private briefCampaignsGeneration = 0;
+
+  /**
+   * Generation counter for the create-time capability read — its OWN, deliberately.
+   *
+   * Two wrong versions preceded this one, and both were reachable. Sharing
+   * `briefCampaignsGeneration` fails because `loadBriefCampaigns` increments it, so an ordinary
+   * Optimize visit discarded an in-flight capability response. Guarding on the foundation alone
+   * fails the other way: it drops no valid response but imposes no ORDER, so two Implementation
+   * entries within one foundation can land out of order and an older failure can wipe a newer
+   * success back to `null`.
+   *
+   * Ordered by ANSWER, not by dispatch, and shared by every writer of the capability.
+   *
+   * Dispatch order is the obvious rule and it is wrong here, because the two readers race in both
+   * directions. `loadCreateCapabilitiesFor` can answer while an Optimize list is still open, and
+   * `loadBriefCampaigns` can answer while a capability read is still open — "last dispatched
+   * wins" drops a good answer in whichever direction happens to lose, which is how the first two
+   * versions of this guard each broke one case while fixing the other.
+   *
+   * What both cases actually want is the same invariant: a SUCCESS is authoritative from the
+   * moment it lands, and nothing older may overwrite it — least of all a failure, which has
+   * established nothing. So this is stamped when an answer is WRITTEN, and a writer defers to it
+   * if another answer has landed since it dispatched.
+   *
+   * It does NOT cover a foundation switch: that clears the capability but dispatches nothing, so
+   * it never bumps this. The two readers reject the previous foundation's response by different
+   * means, and both are load-bearing: `loadCreateCapabilitiesFor` compares the slug it dispatched
+   * against the active one, while `loadBriefCampaigns` relies on the switch handler incrementing
+   * `briefCampaignsGeneration`, which its own `isCurrent` checks. Stated apart from the ordering
+   * above so neither is removed on the strength of the other.
+   */
+  private capabilityGeneration = 0;
 
   /**
    * Whether the server has told us the brief-persistence cutover is on.
@@ -910,6 +944,19 @@ export class CampaignsComponent {
       // since the last look — must not render with a stale status the user then acts on.
       this.loadBriefCampaigns();
     }
+    if (tab === 'implementation') {
+      // Guarded on "never answered", mirroring `loadEmailTemplatesIfNeverAnswered` on the email
+      // path. The capability is a DEPLOYMENT fact, not per-visit state, so re-reading it on every
+      // tab entry spends a query-service round trip to learn the same boolean.
+      //
+      // `null` is exactly the right predicate and needs no extra flag: the foundation-switch
+      // effect and `loadBriefCampaigns`' own pre-request clear both reset it to `null`, and a
+      // failed read leaves it `null` — so the read still re-fires on every occasion where the
+      // answer is genuinely unknown, including a retry after failure.
+      if (this.briefCampaignsDemandGenEnabled() === null) {
+        this.loadCreateCapabilities();
+      }
+    }
   }
 
   /**
@@ -997,8 +1044,15 @@ export class CampaignsComponent {
         // of false never reaches a genuinely-approved one.
         approved: restoredApproved,
       });
+      // AFTER the branch, not before it. This path sets the tab directly, bypassing `selectTab`,
+      // so the capability must be asked for here — but the restored brief's id is written by the
+      // branch above, and asking first read the PREVIOUS id and guarded out. A restored brief
+      // then reached Implementation with the capability permanently unknown.
+      this.loadCreateCapabilities();
       return;
     }
+    // The create path has no id yet — `persistBrief` mints one — so the read is triggered from
+    // its success arm rather than here. See `loadCreateCapabilitiesFor`.
     this.persistBrief(brief);
   }
 
@@ -1248,6 +1302,72 @@ export class CampaignsComponent {
   }
 
   /**
+   * Read the create-time capabilities the Implementation tab gates controls on.
+   *
+   * Separate from `loadBriefCampaigns` deliberately, even though both read the same response
+   * today. That one is an Optimize concern: it needs a persisted `briefId`, it re-fetches on
+   * every entry because a status can go stale, and it clears its rows first. None of that is
+   * true here — the capability is a deployment fact, it is needed BEFORE a campaign exists, and
+   * on the first-create path there may be no brief id at all.
+   *
+   * So this asks only when it can, and stays silent otherwise: the tab treats an unanswered
+   * capability as `null` and withholds the control without touching the user's draft. That is
+   * the correct reading of "not known", and it is why this is safe to skip.
+   */
+  private loadCreateCapabilities(): void {
+    this.loadCreateCapabilitiesFor(this.briefPersistence().briefId);
+  }
+
+  /**
+   * The same read against an explicitly supplied brief id.
+   *
+   * Needed because the first-create path has no id on the signal yet: the Implementation tab is
+   * opened before `persistBrief` resolves, so reading `briefPersistence()` at entry finds `null`
+   * and the entry-time call guards itself out. The persist success arm passes its own id here.
+   *
+   * An EMPTY id is refused here along with `null`, and that is not an oversight. The service
+   * does return `demandGenEnabled` for a blank brief id — but the HTTP path never reaches that
+   * branch: `campaign.controller.ts` 400s on a blank `brief_id` before calling the service, and
+   * `campaign.controller.spec.ts` pins it. Sending one would spend a request per Implementation
+   * entry to receive an error, land in the arm below, and set the capability to `null` — the
+   * control stays hidden either way, with a spurious 400 added.
+   */
+  private loadCreateCapabilitiesFor(briefId: string | null): void {
+    const projectSlug = this.activeFoundationSlug();
+    if (projectSlug === '' || !briefId) return;
+
+    // Ordered by the SHARED capability generation — see `capabilityGeneration` — and checked
+    // against the foundation too. The counter orders this against every other capability writer,
+    // `loadBriefCampaigns` included; the slug is what makes a response from the previous
+    // foundation inapplicable rather than merely old.
+    const dispatchedAt = this.capabilityGeneration;
+    const mayWrite = (): boolean => dispatchedAt === this.capabilityGeneration && projectSlug === this.activeFoundationSlug();
+    this.campaignService
+      .listBriefCampaigns(projectSlug, briefId)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        // ONLY the capability. This must not touch `briefCampaigns` or the staleness flag —
+        // those belong to Optimize's own read, and writing them from here would render a list
+        // the operator did not ask for and cannot see.
+        next: (result) => {
+          if (!mayWrite()) return;
+          this.capabilityGeneration++;
+          this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
+        },
+        // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
+        // draft's selection on evidence a failed read does not have; leaving the previous value
+        // keeps offering the control on the strength of a read that has since started failing.
+        // Clears WITHOUT stamping. A failure establishes no capability value, so it must not
+        // take the success ordering with it: two reads dispatched together, the first failing,
+        // would otherwise advance the token and make the second's valid answer fail `mayWrite`.
+        error: () => {
+          if (!mayWrite()) return;
+          this.briefCampaignsDemandGenEnabled.set(null);
+        },
+      });
+  }
+
+  /**
    * Fetch the campaigns this brief created, for the Optimize tab's per-campaign controls.
    *
    * A failed read is REPORTED, not swallowed. An earlier revision left `briefCampaigns` at `null`
@@ -1272,6 +1392,12 @@ export class CampaignsComponent {
     // a request dispatched under the previous brief land afterwards and still pass `isCurrent()`.
     const generation = ++this.briefCampaignsGeneration;
     const isCurrent = (): boolean => generation === this.briefCampaignsGeneration;
+    // The capability is written from here too, under the SHARED answer ordering — see
+    // `capabilityGeneration`. Without it an older list read failing after a newer capability read
+    // succeeded would still pass `isCurrent` above (its own list generation is untouched by that
+    // reader) and reset a live answer to `null`.
+    const capabilityDispatchedAt = this.capabilityGeneration;
+    const mayWriteCapability = (): boolean => capabilityDispatchedAt === this.capabilityGeneration;
 
     // Cleared on EVERY entry, before dispatch — not only on the early return below.
     //
@@ -1314,7 +1440,10 @@ export class CampaignsComponent {
           this.briefCampaignsStale.set(result.possiblyStale);
           this.briefCampaignsUnavailable.set(false);
           this.briefCampaignsToggleEnabled.set(result.statusToggleEnabled);
-          this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
+          if (mayWriteCapability()) {
+            this.capabilityGeneration++;
+            this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
+          }
         },
         error: () => {
           if (!isCurrent()) {
@@ -1326,7 +1455,11 @@ export class CampaignsComponent {
           this.briefCampaignsStale.set(false);
           this.briefCampaignsUnavailable.set(true);
           this.briefCampaignsToggleEnabled.set(false);
-          this.briefCampaignsDemandGenEnabled.set(null);
+          // Cleared WITHOUT stamping, for the reason the sibling reader's error arm gives: a
+          // failure has established nothing and must not suppress an in-flight success.
+          if (mayWriteCapability()) {
+            this.briefCampaignsDemandGenEnabled.set(null);
+          }
         },
       });
   }
@@ -1607,6 +1740,12 @@ export class CampaignsComponent {
           // as a `message` on the SAVED state rather than a new status or an `error`: describing a
           // durable write as failed would be its own lie, and the banner already renders a message
           // in this state.
+          //
+          // The capability read needs a brief id, and THIS is where a first create gets one: the
+          // Implementation tab opened before the persist resolved, so the entry-time attempt
+          // guarded itself out. Without this the create path never learns the capability.
+          this.loadCreateCapabilitiesFor(result.briefId);
+
           this.briefPersistence.set({
             status: 'saved',
             briefId: result.briefId,
