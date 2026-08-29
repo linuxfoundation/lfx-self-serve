@@ -1077,14 +1077,43 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     return fixture.componentInstance as unknown as Record<string, { set(v: unknown): void } & (() => unknown)>;
   }
 
+  /**
+   * Put a url in the field that the component will read back as `eventName`, and return that
+   * read-back value.
+   *
+   * The round trip is NOT the identity: `extractEventName` title-cases each slug word, so
+   * "KubeCon NA 2026" comes back as "Kubecon Na 2026". Tests must use the value the COMPONENT
+   * derives, or `createInHubSpot`'s guard — which compares the live field against the event the
+   * offer was raised for — refuses a create a real user could make.
+   *
+   * Written without emitting: these tests drive `lookupHubSpot` directly, and letting the
+   * control fire would start a second, debounced lookup racing the one under test.
+   */
+  function setUrlFor(eventName: string): string {
+    const slug = eventName.toLowerCase().replace(/ /g, '-');
+    (
+      fixture.componentInstance as unknown as {
+        briefForm: { controls: { url: { setValue(v: string, o?: { emitEvent: boolean }): void } } };
+      }
+    ).briefForm.controls.url.setValue(`https://events.example.com/${slug}`, { emitEvent: false });
+    return slug
+      .split('-')
+      .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+      .join(' ');
+  }
+
   function runLookup(result: unknown, eventName = 'KubeCon NA 2026'): void {
+    // The lookup is driven with the name the FIELD yields, not the caller's spelling, so the
+    // panel and the field agree — which is the state a real user is ever in, and the only one
+    // in which createInHubSpot will act.
+    const derived = setUrlFor(eventName);
     lookup.mockReturnValue(
       new Observable((s) => {
         s.next(result);
         s.complete();
       })
     );
-    (fixture.componentInstance as unknown as { lookupHubSpot(name: string): void }).lookupHubSpot(eventName);
+    (fixture.componentInstance as unknown as { lookupHubSpot(name: string): void }).lookupHubSpot(derived);
     fixture.detectChanges();
   }
 
@@ -1218,7 +1247,9 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * a duplicate campaign gets made in a shared namespace.
    */
   it('does not let a stale create re-enable the button for a newer one', () => {
-    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = 'KubeCon NA 2026';
+    // Through the FIELD, so the panel and the url agree — createInHubSpot refuses to act
+    // otherwise, and a real user can only reach the button from that state.
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = setUrlFor('KubeCon NA 2026');
     const first = new Subject<unknown>();
     create.mockReturnValue(first);
     (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
@@ -1226,7 +1257,9 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     // The operator switches foundation; a create starts for the new one and is still running.
     TestBed.inject(ProjectContextService).setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
     fixture.detectChanges();
-    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = 'KubeCon NA 2026';
+    // Through the FIELD, so the panel and the url agree — createInHubSpot refuses to act
+    // otherwise, and a real user can only reach the button from that state.
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = setUrlFor('KubeCon NA 2026');
     const second = new Subject<unknown>();
     create.mockReturnValue(second);
     (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
@@ -1289,6 +1322,29 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   /**
+   * An EMPTY field is not permission either, and panelStillShows alone does not cover it: that
+   * helper deliberately keeps the captured event through a mid-edit url, which is right for
+   * deciding whether an in-flight ANSWER may be rendered and wrong for an irreversible write.
+   * restoreSavedBrief draws the same line.
+   */
+  it('refuses a create while the url field is empty', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: false });
+    // The offer is on screen, raised by that lookup.
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-hubspot-create-btn"]')).not.toBeNull();
+
+    // The operator clears the field. The offer REMAINS visible, deliberately -- but it now names
+    // an event the field does not.
+    (
+      fixture.componentInstance as unknown as {
+        briefForm: { controls: { url: { setValue(v: string, o?: { emitEvent: boolean }): void } } };
+      }
+    ).briefForm.controls.url.setValue('', { emitEvent: false });
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    expect(create, 'created a campaign from an empty url field').not.toHaveBeenCalled();
+  });
+
+  /**
    * campaign-service separates the create's outcomes by STATUS, and collapsing them here threw
    * that away at the last step: a 400/404/500 all prove nothing was created, so telling the
    * operator the campaign "may or may not" exist sends them to hunt for something never
@@ -1326,7 +1382,9 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * request -- the same duplicate hazard, reached by a different route.
    */
   it('does not let a create released by a round-trip foundation switch re-enable the button', () => {
-    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = 'KubeCon NA 2026';
+    // Through the FIELD, so the panel and the url agree — createInHubSpot refuses to act
+    // otherwise, and a real user can only reach the button from that state.
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = setUrlFor('KubeCon NA 2026');
     const first = new Subject<unknown>();
     create.mockReturnValue(first);
     (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
@@ -1338,7 +1396,9 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
     fixture.detectChanges();
 
-    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = 'KubeCon NA 2026';
+    // Through the FIELD, so the panel and the url agree — createInHubSpot refuses to act
+    // otherwise, and a real user can only reach the button from that state.
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = setUrlFor('KubeCon NA 2026');
     const second = new Subject<unknown>();
     create.mockReturnValue(second);
     (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();

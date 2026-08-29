@@ -603,6 +603,15 @@ export class PlanningTabComponent implements OnInit {
     if (!this.panelStillShows(this.lastLookedUpEvent, this.activeFoundationSlug())) {
       return;
     }
+    // The EMPTY/short field is refused on top of that, which panelStillShows deliberately does
+    // not do. Keeping the captured event through a mid-edit url is right for deciding whether an
+    // in-flight ANSWER may still be rendered — but "the field names nothing yet" is not
+    // permission to perform an irreversible write into a namespace shared portal-wide.
+    // restoreSavedBrief draws the same line. The offer stays VISIBLE either way; only acting on
+    // it is refused, so a user who clears the field mid-edit loses nothing by retyping.
+    if (this.extractEventName(this.briefForm.controls.url.value.trim()).length <= 3) {
+      return;
+    }
     this.hsCreating.set(true);
     this.hsStatus.set(null);
     // Captured for the same reason the lookup captures it: the create is slow enough for the
