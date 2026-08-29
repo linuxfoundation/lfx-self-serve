@@ -282,11 +282,11 @@ export class ProfileLinuxEmailComponent {
   }
 
   /**
-   * A claimed alias always has a forward target, but the server can only read it
-   * with a Flow C management token. When that token is absent the server flags
-   * `forwardAuthRequired`; redirect once to load the real target instead of
-   * silently showing the primary email. The one-shot guard prevents a loop if the
-   * round-trip returns still tokenless (or the user cancels).
+   * A claimed alias's forward target can only be read with a Flow C management
+   * token. When that token is absent the server flags `forwardAuthRequired`;
+   * redirect once to load the real target instead of silently showing the
+   * primary email. The one-shot guard prevents a loop if the round-trip returns
+   * still tokenless (or the user cancels).
    */
   private maybeReauthForForward(alias: LinuxAliasData | null): void {
     if (!isPlatformBrowser(this.platformId)) return;
