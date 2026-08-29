@@ -309,6 +309,14 @@ describe('WeeklyBriefController', () => {
       expect(weeklyBriefSvc.getCurrentBrief).toHaveBeenNthCalledWith(2, expect.anything(), COMMITTEE_ID, { includeCurrentActivity: true });
     });
 
+    it('trims whitespace before comparing — "false" surrounded by spaces still opts out, not silently falling back to included', async () => {
+      weeklyBriefSvc.getCurrentBrief.mockResolvedValue({ brief: null, throttle: null });
+
+      await controller.getCurrentBrief(buildReq({}, { includeCurrentActivity: ' false ' }), buildRes(), vi.fn());
+
+      expect(weeklyBriefSvc.getCurrentBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, { includeCurrentActivity: false });
+    });
+
     it('sets Cache-Control: no-store — the response can carry per-user, FGA-filtered activity/rating content', async () => {
       weeklyBriefSvc.getCurrentBrief.mockResolvedValue({ brief: null, throttle: null });
       const res = buildRes();

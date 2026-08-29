@@ -840,6 +840,32 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     }
   });
 
+  it("never asks for current_activity on a non-governance committee's poll — the initial load's deliberate opt-out (absent) must not be mistaken for a transient degrade", async () => {
+    const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
+    // null activityRefs on setup — matches what a real includeCurrentActivity: false initial
+    // load actually returns (current_activity key absent), not a governance committee's
+    // transient degrade.
+    await setup(WORKING_GROUP_COMMITTEE, null, generateWeeklyBrief);
+    expect(getWeeklyBrief.mock.calls).toHaveLength(1);
+
+    fakePollTimers();
+    try {
+      getWeeklyBrief.mockImplementation(() => of(pollTick(2)));
+
+      component.onGenerate();
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+
+      expect(getWeeklyBrief.mock.calls).toHaveLength(2);
+      // false, not true — before this fix, current_activity being absent alone would have made
+      // this tick ask, spending a wasted upstream fan-out on a committee the client already
+      // knows can never render the tally.
+      expect(getWeeklyBrief).toHaveBeenNthCalledWith(2, 'committee-wg', { includeCurrentActivity: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('stops re-asking for current_activity after WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS ticks, even though it is still absent', async () => {
     const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
     await setup(BOARD_COMMITTEE, null, generateWeeklyBrief);

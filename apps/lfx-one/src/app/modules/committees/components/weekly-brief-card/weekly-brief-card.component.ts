@@ -844,14 +844,25 @@ export class WeeklyBriefCardComponent {
           // treat that settled `null` the same as "unknown" and re-ask forever for exactly the
           // two cases that can never resolve differently within this poll cycle.
           //
+          // Also gated on isGoverningBoardCommittee() — a non-governance committee's initial
+          // load (see initBriefResponseSubscription) deliberately opts out too, which leaves
+          // current_activity absent (not the settled null a fan-out call would have produced).
+          // Without this extra gate, that deliberate client-side opt-out would look exactly like
+          // a transient degrade and cost one wasted ask on the first poll tick, before the
+          // server's own settled null ever had a chance to stop it — undoing part of the
+          // initial-load fix's savings in the one code path (a generating card) it runs in.
+          //
           // Also capped at WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS, separately from the
           // undefined check above — an upstream that keeps failing this specific fan-out (not
           // the brief generation itself) would otherwise get asked again on every one of up to
           // WEEKLY_BRIEF_MAX_POLL_ATTEMPTS ticks for an answer that keeps failing the same way.
           // Only increment on a tick that actually asks — a tick that already opted out (settled
-          // null/present, or the cap already hit) must not keep advancing the counter past the cap.
+          // null/present, not governance, or the cap already hit) must not keep advancing the
+          // counter past the cap.
           const shouldAskCurrentActivity =
-            this.briefResponse()?.current_activity === undefined && currentActivityAskAttempts < WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS;
+            this.isGoverningBoardCommittee() &&
+            this.briefResponse()?.current_activity === undefined &&
+            currentActivityAskAttempts < WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS;
           if (shouldAskCurrentActivity) currentActivityAskAttempts += 1;
           return this.weeklyBriefService.getWeeklyBrief(committeeUid, { includeCurrentActivity: shouldAskCurrentActivity }).pipe(
             timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS),
