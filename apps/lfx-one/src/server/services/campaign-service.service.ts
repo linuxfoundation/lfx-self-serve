@@ -1209,8 +1209,14 @@ export class CampaignServiceClient {
   /**
    * Find LF HubSpot campaigns by name, to read back an existing campaign's utm token.
    *
-   * THE ANSWER IS LF-GLOBAL: `projectSlug` gates permission, not visibility. HubSpot's campaign
-   * namespace is the whole portal, so this returns matches from every foundation's campaigns.
+   * THE ANSWER IS PORTAL-WIDE: HubSpot's campaign namespace is the whole portal, so this
+   * returns every campaign in it regardless of which project scoped the request.
+   *
+   * `projectSlug` gates permission AND selects WHICH portal is visible — campaign-service
+   * resolves the HubSpot credential from it, and connections are stored per project with their
+   * own token and portal_id. Two projects therefore see the same campaigns only when they point
+   * at the same portal, which is common under the LF umbrella but is not a guarantee. Calling
+   * this LF-global would have a future caller ignore a real connection-selection boundary.
    *
    * An empty `campaigns` array is a 200, not a 404 — "nothing is named that" is the answer the
    * caller acts on by offering to create one, so callers must check the array rather than
@@ -1230,7 +1236,10 @@ export class CampaignServiceClient {
   }
 
   /**
-   * Create an LF-global HubSpot campaign and return the token HubSpot assigns it.
+   * Create a portal-wide HubSpot campaign, returning the token when the response carries one.
+   *
+   * Which portal is the project's connection's, not necessarily the LF's own — see
+   * searchHubSpotCampaigns above.
    *
    * IT ALWAYS CREATES and performs no duplicate check — upstream documents why: a
    * search-then-create still races a concurrent caller and cannot prevent a duplicate, so the

@@ -24,14 +24,23 @@ export const EVENT_URL = 'https://events.example.com/kubecon-na-2026';
  */
 export const EVENT_NAME = 'Kubecon Na 2026';
 
-export function skipWhenAuthMissing(page: Page): void {
-  try {
-    const { hostname } = new URL(page.url());
-    if (hostname === 'auth0.com' || hostname.endsWith('.auth0.com')) {
-      test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
-    }
-  } catch {
-    // Malformed URL — let the test run and surface a useful failure.
+/**
+ * Gated on the ENV VARS, not on where the browser ended up.
+ *
+ * URL sniffing cannot tell "no credentials configured" from "login is broken": both land on
+ * Auth0, and both would then report a green skip. That matters most for these specs, which
+ * exercise a create path — a suite that goes green because authentication regressed is worse
+ * than one that fails, since nobody looks at a pass.
+ *
+ * Matches the newer helpers in this repo (groups-view-toggle, meeting-owner-organizer), which
+ * carry the same reasoning; the URL-based form is the older pattern and is deliberately not
+ * copied here.
+ */
+const AUTH_CREDS_PRESENT = !!process.env['TEST_USERNAME'] && !!process.env['TEST_PASSWORD'];
+
+export function skipWhenAuthMissing(): void {
+  if (!AUTH_CREDS_PRESENT) {
+    test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
   }
 }
 
@@ -106,9 +115,9 @@ export async function mockPlanningApis(page: Page, opts: PlanningMockOptions = {
 /** Open the Campaigns page's Planning tab for a foundation. */
 export async function gotoPlanningTab(page: Page, project = 'cncf'): Promise<void> {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
+  skipWhenAuthMissing();
   await page.goto(`/foundation/campaigns?project=${encodeURIComponent(project)}`, { waitUntil: 'domcontentloaded' });
-  skipWhenAuthMissing(page);
+  skipWhenAuthMissing();
 }
 
 /**
