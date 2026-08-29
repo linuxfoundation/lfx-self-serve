@@ -340,6 +340,16 @@ export class CampaignsComponent {
   /** The in-flight staging poll, so a second Stage cannot leave two pollers racing. */
   private stagingJobSubscription: Subscription | null = null;
 
+  /**
+   * Guards a late copy response against a stage the operator has since changed.
+   *
+   * `onSelectEmailType` clears `emailCopy` while a generate request may still be in flight, and
+   * the selector stays usable — so the older response resolves afterwards and repopulates the
+   * panel with the PREVIOUS stage's copy under the new stage's label. Clearing the signal cannot
+   * prevent that; only a counter can tell the two responses apart.
+   */
+  private emailCopyGeneration = 0;
+
   private briefPersistenceGeneration = 0;
 
   /**
@@ -1285,6 +1295,9 @@ export class CampaignsComponent {
       return;
     }
     this.selectedEmailTypeId.set(typeId);
+    // Invalidate any generate still in flight. Clearing the signals is not enough: the older
+    // response resolves afterwards and would repopulate the panel with the previous stage's copy.
+    this.emailCopyGeneration++;
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');
@@ -1307,6 +1320,12 @@ export class CampaignsComponent {
       return;
     }
 
+    // Bumped BEFORE any await. Every write below runs after one, and `onSelectEmailType` can
+    // change the stage in between — so an older response must be able to recognise that the
+    // request it belongs to is no longer the current one.
+    const generation = ++this.emailCopyGeneration;
+    const isCurrent = (): boolean => generation === this.emailCopyGeneration;
+
     this.emailCopyState.set('generating');
     this.emailCopyError.set('');
     // Drop the PREVIOUS copy before regenerating. Leaving it would put stale copy on screen beside
@@ -1317,6 +1336,9 @@ export class CampaignsComponent {
 
     try {
       const briefId = await this.ensureEmailBriefId(brief, projectSlug);
+      if (!isCurrent()) {
+        return;
+      }
       if (briefId === '') {
         this.emailCopyState.set('error');
         this.emailCopyError.set('The brief could not be saved, so no copy was generated.');
@@ -1324,6 +1346,12 @@ export class CampaignsComponent {
       }
 
       const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage()));
+      // The stage may have changed while this was in flight. Writing now would put the PREVIOUS
+      // stage's copy on screen under the new stage's label — copy that reads plausibly and is
+      // simply the wrong kind of email, which `onStageEmailSend` would then clone.
+      if (!isCurrent()) {
+        return;
+      }
 
       // The cutover flag being off is a steady state, not a failure.
       if (!result.enabled) {
@@ -1341,6 +1369,9 @@ export class CampaignsComponent {
       this.emailCopy.set(result.copy);
       this.emailCopyState.set('idle');
     } catch {
+      if (!isCurrent()) {
+        return;
+      }
       this.emailCopyState.set('error');
       this.emailCopyError.set('Could not generate the email. Try again.');
     }
@@ -1355,9 +1386,12 @@ export class CampaignsComponent {
    * persistence is keyed on (foundation, event) with no delivery type and the row it would find
    * is a PAID brief), so this persists first and uses the id that comes back.
    *
-   * The persist is deliberately NOT given a known id or ETag: this session has established no
-   * ownership of an email row, and passing a paid row's validator would let a stale-write guard
-   * pass against the wrong record.
+   * The persist goes through `ensureEmailBriefId`, which consults `knownBriefIds` for a row this
+   * session already owns at this (project, event) and RECORDS the row it persists. An earlier
+   * version noted that no ownership was established and none was passed; that stopped being true
+   * once the email persist began writing the cache, and the reason it had to is the same one the
+   * note gave — the paid path reads that cache, so an email save that left it empty created a
+   * SECOND brief for an event that already had one while paid went on addressing the first.
    *
    * `platforms: ['hubspot']` is legal here and only here — `CampaignCreateInput.platforms` is
    * typed `CampaignAnyPlatform[]`, the one request shape that admits the email channel.
@@ -1945,6 +1979,22 @@ export class CampaignsComponent {
     // short-circuits, a retry would never re-attempt the approval that is actually missing.
     if (briefId !== '' && persisted.approved) {
       this.emailBriefId.set(briefId);
+      // Record OWNERSHIP too, not just the id. `emailBriefId` is cleared by
+      // `resetEmailBriefDerivedState`, so caching only there meant the next save after a Proceed
+      // consulted an empty `knownBriefIds`, found no owned row, and CREATED a second brief for a
+      // (project, event) that already had one — while the paid path, which reads the same cache,
+      // went on addressing the first. Two rows for one event, each believed to be the only one.
+      //
+      // Same shape the paid save writes: a null etag is UNKNOWN rather than permission, so the
+      // overwrite licence is granted only where the write returned no validator at all.
+      if (ownershipKey !== null) {
+        const validator = persisted.etag ?? null;
+        this.knownBriefIds.set(ownershipKey, {
+          id: briefId,
+          etag: validator,
+          ...(validator === null ? { absence: 'overwrite' as const } : {}),
+        });
+      }
       return briefId;
     }
     return '';
@@ -2368,6 +2418,12 @@ export class CampaignsComponent {
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');
+    // Cancel the poll, do not merely relabel it. Setting the signal back to `idle` leaves the
+    // subscription running, so a job settling after a new brief or a foundation switch still
+    // writes `done` or `error` — announcing a HubSpot draft that belongs to the PREVIOUS brief as
+    // though it were this one's.
+    this.stagingJobSubscription?.unsubscribe();
+    this.stagingJobSubscription = null;
     this.emailStaging.set('idle');
     this.emailStagingMessage.set('');
   }

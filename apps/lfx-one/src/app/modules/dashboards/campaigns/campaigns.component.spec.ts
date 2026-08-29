@@ -16,6 +16,7 @@ import type {
   CampaignImplementationDraft,
   CampaignDeliveryType,
   CampaignIndexDoc,
+  CampaignJobOutcome,
   CampaignListResult,
   CampaignProgramType,
   CampaignTab,
@@ -2216,6 +2217,58 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().canGenerateEmailCopy()).toBe(true);
     });
 
+    /**
+     * A stage change mid-flight must invalidate the request it started.
+     *
+     * `onSelectEmailType` clears the copy while a generate may still be running, and the selector
+     * stays usable — so the older response resolves afterwards and repopulates the panel with the
+     * PREVIOUS stage's copy under the new stage's label. That copy reads plausibly and is simply
+     * the wrong kind of email, which `onStageEmailSend` would then clone.
+     */
+    it('discards copy that arrives after the operator changed the stage', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const late = new Subject<{ enabled: boolean; copy: EmailBriefCopy }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(late.asObservable() as never);
+
+      const pending = internals().onGenerateEmailCopy();
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+      late.next({ enabled: true, copy });
+      late.complete();
+      await pending;
+
+      expect(internals().emailCopy()).toBeNull();
+      expect(internals().emailCopyState()).toBe('idle');
+    });
+
+    /**
+     * `emailBriefId` is cleared by `resetEmailBriefDerivedState`, so caching the persisted id only
+     * there meant the next save after a Proceed found no owned row and CREATED a second brief for
+     * a (project, event) that already had one — while the paid path, reading the same cache, went
+     * on addressing the first.
+     */
+    it('records brief ownership so a later save replaces rather than creating a second row', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+      await internals().onGenerateEmailCopy();
+
+      // The reset clears `emailBriefId` — which is exactly the path that exposed this: with the id
+      // gone and ownership never recorded, the next persist had nothing to address and created a
+      // SECOND brief for a (project, event) that already had one.
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+      persist.mockClear();
+
+      await internals().onGenerateEmailCopy();
+      expect(persist).toHaveBeenCalled();
+      // The known id is the third argument: this save REPLACES the row rather than creating one.
+      expect(persist.mock.calls[0][2]).toBe('brief-77');
+    });
+
     it('persists the brief first, then generates against that id', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
@@ -2324,6 +2377,37 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       // Two writes for one event is the bug this guards: the id is cached after the first.
       expect(persist).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * A reset must CANCEL the staging poll, not merely relabel it.
+     *
+     * Setting `emailStaging` back to `idle` leaves the subscription running, so a job settling
+     * after a new brief or a foundation switch still writes `done` — announcing a HubSpot draft
+     * that belongs to the PREVIOUS brief as though it were this one's.
+     */
+    it('stops the staging poll when the brief-derived state resets', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      const late = new Subject<CampaignJobOutcome | null>();
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(late.asObservable());
+
+      await internals().onBuildAudience();
+      await internals().onStageEmailSend();
+
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+      // The job settles AFTER the reset. With the poll still subscribed this writes 'done'.
+      late.next({ campaigns: [{ id: 'c1' }], errors: [] } as unknown as CampaignJobOutcome);
+      late.complete();
+      fixture.detectChanges();
+
+      expect(internals().emailStaging()).toBe('idle');
+      expect(internals().emailStagingMessage()).toBe('');
     });
 
     it('reports a disabled cutover as a steady state, not an error', async () => {
