@@ -42,12 +42,13 @@ export class WeeklyBriefService {
    * `includeCurrentActivity: false` (GH-1922) opts out of the current_activity tally on this
    * read — see the BFF's `WeeklyBriefService#getCurrentBrief` doc comment for the upstream-cost
    * rationale. Two independent callers opt out, each on its own signal:
-   * `weekly-brief-card.component.ts`'s `initBriefResponseSubscription` opts out on the initial
-   * load whenever its own `isGoverningBoardCommittee()` is false — the template gates the whole
-   * tally section on that same signal regardless of what current_activity holds, so a
-   * non-governance committee's card load never needs the fan-out at all. Its `pollUntilTerminal`
+   * `weekly-brief-card.component.ts`'s `initBriefResponseSubscription` opts out on every
+   * non-poll load (initial load, and every `refresh$`-triggered re-fetch) whenever its own
+   * `isGoverningBoardCommittee()` is false — the template gates the whole tally section on that
+   * same signal regardless of what current_activity holds, so a non-governance committee never
+   * needs the fan-out on any of those loads. Its `pollUntilTerminal`
    * opts out on top of that (also gated on `isGoverningBoardCommittee()`, so it never mistakes
-   * that deliberate initial-load opt-out for a transient degrade) once the current_activity KEY
+   * that deliberate non-poll-load opt-out for a transient degrade) once the current_activity KEY
    * is present on what it already holds — `null` counts as present (a settled "doesn't apply"
    * answer for a non-governance committee, or a week whose activity fills a full page) and stops
    * the asking just as a real value would; only a genuinely absent key on a governance committee

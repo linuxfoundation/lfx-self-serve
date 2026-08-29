@@ -303,10 +303,12 @@ export class WeeklyBriefService {
    * (GH-1922) fan-out entirely. Two independent client callers do, on two different signals —
    * see `WeeklyBriefService#getWeeklyBrief` (the Angular client, `app/shared/services/`) for the
    * full breakdown:
-   *   - `weekly-brief-card.component.ts`'s `initBriefResponseSubscription` opts out on the
-   *     initial load for any committee its own `isGoverningBoardCommittee()` already reports as
-   *     non-governance — the tally section can never render for one regardless of what
-   *     current_activity holds, so the fan-out would be pure waste.
+   *   - `weekly-brief-card.component.ts`'s `initBriefResponseSubscription` opts out on every
+   *     non-poll load (initial load, and every `refresh$`-triggered re-fetch — retry, a save,
+   *     a share, the 409 branch of onGenerate) for any committee its own
+   *     `isGoverningBoardCommittee()` already reports as non-governance — the tally section can
+   *     never render for one regardless of what current_activity holds, so the fan-out would be
+   *     pure waste.
    *   - `weekly-brief-card.component.ts`'s `pollUntilTerminal` is this endpoint's heaviest caller
    *     — up to `WEEKLY_BRIEF_MAX_POLL_ATTEMPTS` hits at `WEEKLY_BRIEF_POLL_INTERVAL_MS` apart per
    *     generate/regenerate — and this week's activity cannot change mid-poll, so re-running the
@@ -321,7 +323,7 @@ export class WeeklyBriefService {
    *     governance-classified (so a deliberate initial-load opt-out, which also leaves the key
    *     absent, is never mistaken for a transient degrade worth re-asking for); or
    *     `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS` re-asks have already been spent on a
-   *     governance committee whose fan-out keeps genuinely failing. Absent none of those, a
+   *     governance committee whose fan-out keeps genuinely failing. When none of those holds, a
    *     transient degrade on the initial load can still self-heal on a later tick rather than
    *     staying blank for the rest of the poll and beyond.
    */
