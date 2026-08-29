@@ -4,11 +4,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors access-check.service.spec.ts / committee.controller.spec.ts: the `@lfx-one/shared/*`
-// alias IS wired into this app's vitest config, but the `utils` and `interfaces` barrels below
-// still need mocking — `utils/index.ts` re-exports form.utils.ts, which imports `@angular/forms`,
-// and importing that barrel unmocked triggers Angular JIT-compilation failure in this worker (see
+// alias IS wired into this app's vitest config, but the `utils` barrel below still needs a real
+// factory stub — `utils/index.ts` re-exports form.utils.ts, which imports `@angular/forms`, and
+// importing that barrel unmocked triggers Angular JIT-compilation failure in this worker (see
 // the deep `vi.importActual` on `committee.utils.ts` further down for the one function pulled
-// through the real module instead of a stub). `constants` is mocked too, not because the real
+// through the real module instead of a stub). `interfaces` carries no such barrel member, so it
+// loads via `importOriginal()` — see that mock's own comment for why. `constants` is mocked too,
+// not because the real
 // module can't load here, but for test control: the mock pins a deterministic
 // WEEKLY_BRIEF_DEFAULT_THROTTLE (MOCK_THROTTLE) so the throttle assertions below start from a
 // known zero-used baseline, without paying the real barrel's evaluation cost.
@@ -115,7 +117,13 @@ vi.mock('@lfx-one/shared/constants', () => ({
 // '../constants' (this app's server-only constants, not the `@lfx-one/shared` package) is
 // plain string/number literals with no transitive Angular imports — safe to leave unmocked,
 // unlike the shared-package mocks above.
-vi.mock('@lfx-one/shared/interfaces', () => ({}));
+// A bare `() => ({})` stub here would silently empty out real runtime exports this barrel
+// carries (e.g. DashboardDrawerType, LifecycleStage — dashboard-metric.interface.ts), the same
+// "well-intentioned partial stub drops real values" hazard validation.helper.spec.ts warns
+// about elsewhere in this repo. importOriginal() is safe: interfaces/index.ts carries only
+// enums/interfaces/constants, no Angular — weekly-brief.controller.spec.ts already proves this
+// barrel loads fine unmocked under this same vitest config.
+vi.mock('@lfx-one/shared/interfaces', async (importOriginal) => importOriginal());
 // `formatUtcDateRangeLabel` lives in the same `@lfx-one/shared/utils` barrel as
 // form.utils.ts, which imports `@angular/forms` — an unmocked import here would pull
 // in the real barrel and hit the same JIT-compilation failure the mocks above avoid, so it
@@ -937,6 +945,42 @@ describe('WeeklyBriefService', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it("does NOT settle to null when a full raw page is mostly unrecognized event types the mapper drops — same interaction as the window_end case, via mapActivityEventToCurrentActivityRef's default branch instead", async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+
+      // DeferredActivityEvent ('member_joined' et al.) is a real ActivityEvent union member —
+      // type-legal, never actually constructed by CommitteeActivityService today (see that
+      // interface's own doc comment) — that mapActivityEventToCurrentActivityRef's `default:
+      // return null` branch exists to handle. A full raw page dominated by these must filter down
+      // to the small genuine count, not settle to null the same way a full page of window_end-
+      // future noise must not (see the sibling test above).
+      const unrecognized = Array.from({ length: ACTIVITY_FEED_MAX_PAGE_SIZE - 2 }, () => ({
+        type: 'member_joined' as const,
+        occurred_at: '2026-01-12T10:00:00Z',
+        committee_uid: 'committee-1',
+        payload: {},
+      }));
+      const realActivity = Array.from({ length: 2 }, (_, i) => ({
+        type: 'meeting_held' as const,
+        occurred_at: '2026-01-12T10:00:00Z',
+        committee_uid: 'committee-1',
+        payload: { meeting_id: `m${i}`, meeting_occurrence_id: `m${i}-occ`, title: 'Board Sync', password: null },
+      }));
+      getCommitteeActivityMock.mockResolvedValue({ data: [...unrecognized, ...realActivity], page_token: undefined });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
+      expect(result.current_activity?.source_refs).toHaveLength(2);
+      expect(logger.warning).not.toHaveBeenCalledWith(
+        req,
+        'get_weekly_brief_current_activity',
+        expect.stringContaining('fills a full page'),
+        expect.anything()
+      );
     });
 
     it("does NOT omit current_activity merely because page_token is present with a short page — a committee with >fetchSize lifetime notes/surveys saturates those legs regardless of the current week (see buildCurrentActivity's own doc comment)", async () => {
