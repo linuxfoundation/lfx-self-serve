@@ -846,8 +846,8 @@ export class WeeklyBriefCardComponent {
           // two cases that can never resolve differently within this poll cycle.
           //
           // Also gated on isGoverningBoardCommittee() — a non-governance committee's every
-          // non-poll load (see initBriefResponseSubscription — initial load, and any
-          // refresh$-triggered re-fetch) deliberately opts out too, which leaves current_activity
+          // non-poll load (see initBriefResponseSubscription's own combineLatest sources for
+          // what triggers one) deliberately opts out too, which leaves current_activity
           // absent (not the settled null a fan-out call would have produced). Without this extra
           // gate, that deliberate client-side opt-out would look exactly like a transient degrade
           // and cost one wasted ask on the first poll tick, before the server's own settled null

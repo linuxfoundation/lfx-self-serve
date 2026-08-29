@@ -304,11 +304,11 @@ export class WeeklyBriefService {
    * see `WeeklyBriefService#getWeeklyBrief` (the Angular client, `app/shared/services/`) for the
    * full breakdown:
    *   - `weekly-brief-card.component.ts`'s `initBriefResponseSubscription` opts out on every
-   *     non-poll load (initial load, and every `refresh$`-triggered re-fetch — see that
-   *     component's own `refresh$.next()` call sites, not re-listed here to avoid this comment
-   *     drifting stale as they change) for any committee its own `isGoverningBoardCommittee()`
-   *     already reports as non-governance — the tally section can never render for one
-   *     regardless of what current_activity holds, so the fan-out would be pure waste.
+   *     non-poll load (see that method's `combineLatest` sources for what triggers one — not
+   *     re-listed here, since it's exactly the kind of detail that drifts stale as those sources
+   *     change) for any committee its own `isGoverningBoardCommittee()` already reports as
+   *     non-governance — the tally section can never render for one regardless of what
+   *     current_activity holds, so the fan-out would be pure waste.
    *   - `weekly-brief-card.component.ts`'s `pollUntilTerminal` is this endpoint's heaviest caller
    *     — up to `WEEKLY_BRIEF_MAX_POLL_ATTEMPTS` hits at `WEEKLY_BRIEF_POLL_INTERVAL_MS` apart per
    *     generate/regenerate — and this week's activity cannot change mid-poll, so re-running the
@@ -1231,8 +1231,8 @@ export class WeeklyBriefService {
    * determine", worth asking again), `null` is settled ("known not to apply", see below), and a
    * real object is "genuinely zero activity this week" or more. `undefined`'s three actual causes
    * (see this method's body): `getCommitteeBase` resolves with no body at all; it resolves with a
-   * committee that carries no usable `category`; or any other error thrown by either upstream
-   * call, caught below.
+   * committee that carries no usable `category`; or any other error thrown while building the
+   * tally, caught below.
    * `weekly-brief-card.component.ts`'s `hasCurrentActivityData` collapses `undefined`/`null`
    * alike for rendering (neither is a value to show), but its `pollUntilTerminal` poll loop
    * depends on keeping them apart — see `WeeklyBriefCurrentResponse.current_activity`'s doc
