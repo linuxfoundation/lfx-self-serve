@@ -1298,6 +1298,16 @@ export class CampaignsComponent {
       if (value === 'email' && this.selectedEmailTab() === 'implementation') {
         this.loadEmailTemplatesIfNeverAnswered();
       }
+
+      // Monitor needs the same treatment, and needs it MORE. Both containers stay mounted and
+      // `selectedEmailTab` survives a delivery-type round trip, so `selectTab` never fires and
+      // nothing re-read the metrics -- an operator returning to a Monitor tab they never left saw
+      // whatever was on screen before. Unlike the picker this is not merely stale-looking: these
+      // numbers change when a human presses send in HubSpot, entirely outside this app, which is
+      // the whole reason the tab is re-read on every entry rather than cached.
+      if (value === 'email' && this.selectedEmailTab() === 'insights') {
+        this.loadEmailMetrics();
+      }
     });
   }
 
@@ -2868,6 +2878,13 @@ export class CampaignsComponent {
     // campaigns; leaving them set would render the previous brief's sends under the new one.
     // Back to `null`/`idle` rather than an empty result, so the panel reads "nothing staged yet"
     // only when a read actually said so.
+    //
+    // The generation bump is what makes the clear STICK. Clearing the signals does nothing to a
+    // request already in flight: start a read on foundation A, switch away and back, and A's
+    // response resolves afterwards still holding the generation it was issued under, so
+    // `isCurrent()` passes and it writes A's rows into a panel now labelled B. The counter is the
+    // only thing that can tell those two apart.
+    this.emailMetricsGeneration++;
     this.emailMetrics.set(null);
     this.emailMetricsState.set('idle');
     this.emailMetricsError.set('');

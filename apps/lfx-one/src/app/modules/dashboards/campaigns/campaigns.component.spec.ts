@@ -4366,7 +4366,7 @@ describe('CampaignsComponent email monitor', () => {
 
   interface MonitorInternals {
     emailBriefId: { set(v: string): void };
-    emailMetrics: { set(v: BriefMetrics | null): void };
+    emailMetrics: { (): BriefMetrics | null; set(v: BriefMetrics | null): void };
     emailMetricsState: { (): string; set(v: string): void };
     emailMetricsRows(): BriefMetricsRow[];
     emailMetricsOkRows(): BriefMetricsRow[];
@@ -4642,6 +4642,52 @@ describe('CampaignsComponent email monitor', () => {
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('[data-testid="campaigns-email-metrics-empty"]')).toBeNull();
+  });
+
+  /**
+   * Clearing the signals does not stop a request already in flight.
+   *
+   * Start a read, reset the brief-derived state (what a foundation switch does), then let the
+   * original response resolve. Without the generation bump it still carries the generation it was
+   * issued under, passes `isCurrent()`, and writes the PREVIOUS context's rows into a panel now
+   * labelled with the new one.
+   */
+  it('discards a read that resolves after the brief-derived state was reset', async () => {
+    showMonitor();
+    const svc = TestBed.inject(CampaignService);
+    const late = new Subject<BriefMetrics>();
+    vi.spyOn(svc, 'getBriefMetrics').mockReturnValue(late.asObservable());
+
+    internals().emailBriefId.set('b1');
+    internals().loadEmailMetrics();
+
+    (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+    late.next(metrics([{ campaign_id: 'stale', platform: 'hubspot', status: 'not_ready', reason: 'x' } as BriefMetricsRow]));
+    late.complete();
+    fixture.detectChanges();
+
+    expect(internals().emailMetrics()).toBeNull();
+    expect(internals().emailMetricsRows()).toHaveLength(0);
+  });
+
+  /**
+   * A delivery-type round trip does not fire `selectTab`, so nothing re-read the metrics — an
+   * operator returning to a Monitor tab they never left saw whatever was on screen before. These
+   * numbers change when a human presses send in HubSpot, outside this app entirely.
+   */
+  it('re-reads the metrics when the delivery type returns to email on the monitor tab', () => {
+    showMonitor();
+    const svc = TestBed.inject(CampaignService);
+    const read = vi.spyOn(svc, 'getBriefMetrics').mockReturnValue(of(metrics([])));
+    internals().emailBriefId.set('b1');
+    read.mockClear();
+
+    const form = (fixture.componentInstance as unknown as { selectorForm: { controls: { deliveryType: { setValue(v: string): void } } } }).selectorForm;
+    form.controls.deliveryType.setValue('paid-marketing');
+    form.controls.deliveryType.setValue('email');
+    fixture.detectChanges();
+
+    expect(read).toHaveBeenCalled();
   });
 
   /**
