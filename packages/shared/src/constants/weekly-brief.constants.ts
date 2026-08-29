@@ -68,9 +68,11 @@ export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
  * Known v1 gap this cap doesn't cover: `pollUntilTerminal` (where this budget lives) only runs
  * while the brief itself is `generating` — a page load onto an already-terminal brief (the far
  * more common case) never invokes it at all. A transient `current_activity` degrade on that load
- * has no self-heal path here; the tally simply doesn't render until the next navigation or
- * reload. Not solved by this constant — a fix would need `initBriefResponseSubscription` to kick
- * off its own bounded re-ask, independent of the generating-poll's budget.
+ * has no DELIBERATE self-heal path here; the tally doesn't recover until the next authoritative
+ * fetch — a navigation, a reload, or an incidental `refresh$` emission (a saved edit, a share/save
+ * 409) that happens to re-run the same GET, none of which exist to retry this specifically. Not
+ * solved by this constant — a real fix would need `initBriefResponseSubscription` to kick off its
+ * own bounded re-ask, independent of the generating-poll's budget.
  */
 export const WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS = 3;
 
