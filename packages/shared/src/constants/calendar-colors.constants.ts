@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CalendarColor, CalendarColorPair } from '../interfaces/calendar.interface';
+import type { CalendarColor, CalendarColorPair, CalendarLegendItem } from '../interfaces/calendar.interface';
 import type { GroupBehavioralClass } from '../interfaces/committee.interface';
 
 import { lfxColors } from './colors.constants';
+import { BEHAVIORAL_CLASS_CONFIG } from './committees.constants';
 
 /** Hex color config per meeting type for FullCalendar events (Tailwind classes don't apply inside FullCalendar). */
 export const MEETING_TYPE_COLORS: Record<string, CalendarColorPair> = {
@@ -73,3 +74,24 @@ export const PAST_SURVEY_CALENDAR_COLOR: CalendarColor = {
   border: lfxColors.violet[400],
   text: lfxColors.violet[700],
 };
+
+/**
+ * Every color the public project calendar can paint an event, in render order: the six behavioral
+ * classes, then the fallbacks for an event with no publicly listed group, and the state treatments that
+ * override the group tint entirely.
+ *
+ * Exhaustive by design — `resolvePublicCalendarLegend` filters it down to the colors a given set of
+ * events actually uses, so a missing entry here silently drops a swatch from the rendered legend.
+ * Class labels are read from `BEHAVIORAL_CLASS_CONFIG` so the calendar and the public group directory
+ * cannot disagree on what a group type is called. The `bg` values must stay pairwise distinct, since
+ * that filtering matches on color.
+ */
+export const PUBLIC_CALENDAR_LEGEND: CalendarLegendItem[] = [
+  ...(Object.keys(BEHAVIORAL_CLASS_CALENDAR_COLORS) as GroupBehavioralClass[]).map((behavioralClass) => ({
+    label: BEHAVIORAL_CLASS_CONFIG[behavioralClass].label,
+    color: BEHAVIORAL_CLASS_CALENDAR_COLORS[behavioralClass].bg,
+  })),
+  { label: 'No group', color: MEETING_TYPE_COLORS['default'].bg },
+  { label: 'Past', color: PAST_MEETING_CALENDAR_COLOR.bg },
+  { label: 'Cancelled', color: CANCELLED_COLOR.bg },
+];

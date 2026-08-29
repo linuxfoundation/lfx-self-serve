@@ -10,7 +10,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { HeaderComponent } from '@components/header/header.component';
 import { SelectComponent } from '@components/select/select.component';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { BEHAVIORAL_CLASS_CALENDAR_COLORS, BEHAVIORAL_CLASS_CONFIG } from '@lfx-one/shared/constants';
+import { BEHAVIORAL_CLASS_CONFIG } from '@lfx-one/shared/constants';
 import {
   CalendarLegendItem,
   GroupBehavioralClass,
@@ -22,9 +22,10 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   getGroupBehavioralClass,
+  isUuid,
   publicMeetingToCalendarEvents,
   resolveMeetingCalendarClickRoute,
-  resolvePublicCalendarCommittee,
+  resolvePublicCalendarLegend,
 } from '@lfx-one/shared/utils';
 import { GroupService } from '@services/group.service';
 import { MeetingService } from '@services/meeting.service';
@@ -86,12 +87,24 @@ export class PublicProjectCalendarComponent {
   });
 
   /**
-   * True when `?committee=` names a group the public directory does not list — a stale bookmark or a
-   * hand-edited URL. Distinguished from "no meetings" so the reader is told the filter is the problem.
-   * Requires a loaded directory: an empty `groups()` means not-yet-loaded or a failed fetch, neither of
-   * which proves the UID is bad.
+   * True when `?committee=` cannot name a group anyone could reach — a stale bookmark or a hand-edited
+   * URL. Distinguished from "no meetings" so the reader is told the filter is the problem.
+   *
+   * A malformed value is decided without waiting for the directory: nothing that isn't a UUID can ever
+   * match, and the request is skipped for it. A well-formed value needs a loaded directory before it can
+   * be called unknown — an empty `groups()` means not-yet-loaded or a failed fetch, neither of which
+   * proves the UID is bad.
    */
-  protected readonly unknownCommittee: Signal<boolean> = computed(() => !!this.activeCommitteeUid() && this.groups().length > 0 && !this.activeCommittee());
+  protected readonly unknownCommittee: Signal<boolean> = computed(() => {
+    const uid = this.activeCommitteeUid();
+    if (!uid) {
+      return false;
+    }
+    if (!isUuid(uid)) {
+      return true;
+    }
+    return this.groups().length > 0 && !this.activeCommittee();
+  });
 
   // publicMeetingToCalendarEvents (not meetingToCalendarEvents) — the public mapper never places a
   // meeting password in extendedProps, so a click can't forward one into the join URL, history, or referrer.
@@ -151,36 +164,35 @@ export class PublicProjectCalendarComponent {
   private initCommitteesByUid(): Signal<Record<string, PublicCalendarCommittee>> {
     return computed(() =>
       this.groups().reduce<Record<string, PublicCalendarCommittee>>((byUid, group) => {
-        byUid[group.uid] = { uid: group.uid, name: group.name, behavioralClass: getGroupBehavioralClass(group.category) };
+        byUid[group.uid] = { uid: group.uid, name: group.name, behavioralClass: this.toBehavioralClass(group) };
         return byUid;
       }, {})
     );
   }
 
   /**
-   * Group types present in the rendered events, paired with the color those events carry. Renders only
-   * when unfiltered — under a filter every event shares one color and the dropdown already names it.
+   * The colors on screen and what each one means — see `resolvePublicCalendarLegend`.
+   *
+   * Suppressed below two entries: one color distinguishes nothing, so there is no key to explain, and a
+   * lone "No group" swatch (an unfiltered calendar with no group directory) is pure noise.
    */
   private initLegendItems(): Signal<CalendarLegendItem[]> {
     return computed(() => {
-      if (this.activeCommitteeUid()) {
-        return [];
-      }
-
-      const committeesByUid = this.committeesByUid();
-      const behavioralClasses = new Set<GroupBehavioralClass>();
-      for (const meeting of this.calendarData()?.meetings ?? []) {
-        const committee = resolvePublicCalendarCommittee(meeting, { committeesByUid });
-        if (committee) {
-          behavioralClasses.add(committee.behavioralClass);
-        }
-      }
-
-      return [...behavioralClasses].map((behavioralClass) => ({
-        label: BEHAVIORAL_CLASS_CONFIG[behavioralClass].label,
-        color: BEHAVIORAL_CLASS_CALENDAR_COLORS[behavioralClass].bg,
-      }));
+      const legend = resolvePublicCalendarLegend(this.calendarEvents());
+      return legend.length > 1 ? legend : [];
     });
+  }
+
+  /**
+   * Prefers the server-computed `behavioral_class` so the calendar's colors cannot drift from the badges
+   * the public group directory renders for the same groups. Falls back to deriving from `category` only
+   * when the field is missing or carries a class this build does not know.
+   */
+  private toBehavioralClass(group: PublicGroupSummary): GroupBehavioralClass {
+    if (group.behavioral_class && group.behavioral_class in BEHAVIORAL_CLASS_CONFIG) {
+      return group.behavioral_class as GroupBehavioralClass;
+    }
+    return getGroupBehavioralClass(group.category);
   }
 
   private initInitialView(): Signal<string> {
@@ -233,6 +245,15 @@ export class PublicProjectCalendarComponent {
         switchMap(({ slug, committeeUid }) => {
           this.loading.set(true);
           this.fetchError.set(false);
+
+          // The server rejects a non-UUID `committee` with a 400, which would surface as the generic
+          // "Unable to load calendar" error rather than the "group not found" state this actually is.
+          // Skip the round trip and let `unknownCommittee` render.
+          if (committeeUid && !isUuid(committeeUid)) {
+            this.loading.set(false);
+            return of(null);
+          }
+
           return this.meetingService.getPublicProjectMeetings(slug, committeeUid).pipe(
             map((response) => {
               this.loading.set(false);

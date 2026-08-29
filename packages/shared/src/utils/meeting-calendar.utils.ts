@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BEHAVIORAL_CLASS_CALENDAR_COLORS } from '../constants/calendar-colors.constants';
+import { BEHAVIORAL_CLASS_CALENDAR_COLORS, PUBLIC_CALENDAR_LEGEND } from '../constants/calendar-colors.constants';
 import { Meeting, MeetingOccurrenceRoute, PastMeeting, PublicCalendarMeeting } from '../interfaces';
 import type {
   CalendarColor,
+  CalendarLegendItem,
   MeetingCalendarClickProps,
   MeetingCalendarEventInput,
   PublicCalendarCommittee,
@@ -226,6 +227,20 @@ export function publicMeetingToCalendarEvents(meeting: PublicCalendarMeeting, co
       },
     },
   ];
+}
+
+/**
+ * Legend for a set of public calendar events, restricted to the colors those events actually use.
+ *
+ * Derived from the rendered events rather than from the meetings' committee associations because the
+ * cancelled and past treatments override the group tint: a month holding only finished oversight
+ * meetings renders entirely in the past color, and an association-derived legend would advertise a
+ * green "Oversight" swatch that appears nowhere on screen — worse than showing no legend at all, since
+ * the legend is what carries the color key for readers who cannot rely on hue (WCAG 1.4.1).
+ */
+export function resolvePublicCalendarLegend(events: Pick<MeetingCalendarEventInput, 'backgroundColor'>[]): CalendarLegendItem[] {
+  const colorsInUse = new Set(events.map((event) => event.backgroundColor));
+  return PUBLIC_CALENDAR_LEGEND.filter((entry) => colorsInUse.has(entry.color));
 }
 
 /**

@@ -21,6 +21,8 @@ beforeAll(installMatchMediaShim);
 
 const TSC_UID = '11111111-1111-4111-8111-111111111111';
 const BOARD_UID = '22222222-2222-4222-8222-222222222222';
+/** Comfortably ended, so the occurrence renders with the past treatment rather than its group colour. */
+const PAST_START = '2020-01-01T15:00:00Z';
 
 function meeting(over: Partial<PublicCalendarMeeting> = {}): PublicCalendarMeeting {
   return {
@@ -167,12 +169,24 @@ describe('PublicProjectCalendarComponent', () => {
     it('renders the filter and a colour legend once the public directory resolves', async () => {
       await render({
         groups: [group()],
-        response: response({ meetings: [meeting({ committee_uids: [TSC_UID] })] }),
+        response: response({
+          meetings: [meeting({ committee_uids: [TSC_UID] }), meeting({ id: 'meeting-2', start_time: PAST_START, committee_uids: [TSC_UID] })],
+        }),
       });
 
       expect(fixture.nativeElement.querySelector('[data-testid="public-project-calendar-filters"]')).not.toBeNull();
       const legend = fixture.nativeElement.querySelector('[data-testid="public-project-calendar-legend"]');
       expect(legend?.textContent).toContain('Oversight');
+      expect(legend?.textContent).toContain('Past');
+    });
+
+    it('suppresses a legend that would carry a single colour, which distinguishes nothing', async () => {
+      await render({
+        groups: [group()],
+        response: response({ meetings: [meeting({ committee_uids: [TSC_UID] })] }),
+      });
+
+      expect(fixture.nativeElement.querySelector('[data-testid="public-project-calendar-legend"]')).toBeNull();
     });
 
     it('does not render the filter when the directory has no groups', async () => {
@@ -211,7 +225,45 @@ describe('PublicProjectCalendarComponent', () => {
       const [event] = instance().calendarEvents();
       expect(event.title).toBe('Technical Steering Committee');
       expect(event.backgroundColor).toBe(BEHAVIORAL_CLASS_CALENDAR_COLORS['oversight-committee'].bg);
-      expect(fixture.nativeElement.querySelector('[data-testid="public-project-calendar-legend"]')).toBeNull();
+    });
+
+    it('prefers the server-computed behavioural class over one derived from the category', async () => {
+      // Guards against the calendar's colours drifting from the badges the public group directory
+      // renders, which read `behavioral_class` directly.
+      await render({
+        groups: [group({ behavioral_class: 'governing-board' })],
+        response: response({ meetings: [meeting({ committee_uids: [TSC_UID] })] }),
+      });
+
+      const [event] = instance().calendarEvents();
+      expect(event.backgroundColor).toBe(BEHAVIORAL_CLASS_CALENDAR_COLORS['governing-board'].bg);
+    });
+
+    it('names only the colours actually on the canvas, not the ones the groups imply', async () => {
+      // The oversight meeting has ended, so it renders in the past treatment rather than its group's
+      // colour. A legend built from committee associations would advertise an "Oversight" swatch that
+      // appears nowhere on screen — worse than no legend, since the legend is the colour key.
+      await render({
+        groups: [group(), group({ uid: BOARD_UID, name: 'Governing Board', behavioral_class: 'governing-board' })],
+        response: response({
+          meetings: [meeting({ committee_uids: [TSC_UID], start_time: PAST_START }), meeting({ id: 'meeting-2', committee_uids: [BOARD_UID] })],
+        }),
+      });
+
+      const legend = fixture.nativeElement.querySelector('[data-testid="public-project-calendar-legend"]');
+      expect(legend?.textContent).toContain('Past');
+      expect(legend?.textContent).toContain('Boards');
+      expect(legend?.textContent).not.toContain('Oversight');
+    });
+
+    it('treats a malformed committee param as an unknown group without calling the feed', async () => {
+      // The server rejects a non-UUID committee with a 400, which would otherwise surface as the
+      // generic page error rather than the group-not-found state it really is.
+      await render({ groups: [group()], query: new Map([['committee', 'tsc']]) });
+
+      expect(getPublicProjectMeetings).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.querySelector('[data-testid="public-project-calendar-unknown-committee"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="public-project-calendar-error"]')).toBeNull();
     });
 
     it('leaves committees missing from the public directory unlabelled', async () => {

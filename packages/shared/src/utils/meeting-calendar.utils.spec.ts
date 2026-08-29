@@ -5,9 +5,20 @@ import '@angular/compiler';
 
 import { describe, expect, it } from 'vitest';
 
-import { BEHAVIORAL_CLASS_CALENDAR_COLORS, CANCELLED_COLOR, PAST_MEETING_CALENDAR_COLOR } from '../constants/calendar-colors.constants';
+import {
+  BEHAVIORAL_CLASS_CALENDAR_COLORS,
+  CANCELLED_COLOR,
+  MEETING_TYPE_COLORS,
+  PAST_MEETING_CALENDAR_COLOR,
+  PUBLIC_CALENDAR_LEGEND,
+} from '../constants/calendar-colors.constants';
 
-import { meetingToCalendarEvents, publicMeetingToCalendarEvents, resolveMeetingCalendarClickRoute } from './meeting-calendar.utils';
+import {
+  meetingToCalendarEvents,
+  publicMeetingToCalendarEvents,
+  resolveMeetingCalendarClickRoute,
+  resolvePublicCalendarLegend,
+} from './meeting-calendar.utils';
 
 import type { PublicCalendarMeeting } from '../interfaces';
 import type { PublicCalendarCommittee, PublicCalendarCommitteeContext } from '../interfaces/calendar.interface';
@@ -158,5 +169,38 @@ describe('publicMeetingToCalendarEvents', () => {
       expect(cancelled.backgroundColor).toBe(CANCELLED_COLOR.bg);
       expect(past.backgroundColor).toBe(PAST_MEETING_CALENDAR_COLOR.bg);
     });
+  });
+});
+
+describe('resolvePublicCalendarLegend', () => {
+  it('lists only the colours the given events actually use', () => {
+    const legend = resolvePublicCalendarLegend([{ backgroundColor: BEHAVIORAL_CLASS_CALENDAR_COLORS['working-group'].bg }]);
+
+    expect(legend.map((entry) => entry.label)).toEqual(['Working Groups']);
+  });
+
+  it('names the state treatments that override a group colour', () => {
+    const legend = resolvePublicCalendarLegend([{ backgroundColor: PAST_MEETING_CALENDAR_COLOR.bg }, { backgroundColor: CANCELLED_COLOR.bg }]);
+
+    expect(legend.map((entry) => entry.label)).toEqual(['Past', 'Cancelled']);
+  });
+
+  it('returns nothing for an empty calendar', () => {
+    expect(resolvePublicCalendarLegend([])).toEqual([]);
+  });
+
+  it('covers every colour the public mapper can emit', () => {
+    // The legend filters a fixed table, so a colour missing from PUBLIC_CALENDAR_LEGEND is not a
+    // visible error — it silently drops that swatch and leaves the hue unexplained.
+    const emittable = [
+      ...Object.values(BEHAVIORAL_CLASS_CALENDAR_COLORS).map((color) => color.bg),
+      MEETING_TYPE_COLORS['default'].bg,
+      PAST_MEETING_CALENDAR_COLOR.bg,
+      CANCELLED_COLOR.bg,
+    ];
+
+    expect(resolvePublicCalendarLegend(emittable.map((backgroundColor) => ({ backgroundColor })))).toHaveLength(emittable.length);
+    // Pairwise-distinct colours, otherwise the filter above cannot tell two entries apart.
+    expect(new Set(PUBLIC_CALENDAR_LEGEND.map((entry) => entry.color)).size).toBe(PUBLIC_CALENDAR_LEGEND.length);
   });
 });
