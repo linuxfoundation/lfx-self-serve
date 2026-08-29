@@ -112,14 +112,10 @@ export interface WeeklyBriefCurrentActivitySection extends WeeklyBriefSourceSect
 
 /**
  * Verb-phrase singular/plural for one activity kind in the "this week so far" tally caption
- * (GH-1922) — see `WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES`. This is the single source of truth
- * for which kinds the tally recognizes and in what order — `weekly-brief-card.component.ts`
- * drives its section MEMBERSHIP from this list directly, not by cross-referencing
- * `WEEKLY_BRIEF_SOURCE_SECTIONS` by kind for that part, so a kind present here but missing there
- * can never produce a countText-less toggle. That component separately DOES look up the
- * section's display label from `WEEKLY_BRIEF_SOURCE_SECTIONS` (with a `?? kind` fallback for the
- * reverse gap), so this doc comment's "not by cross-referencing" claim is scoped to membership
- * only, not the whole section.
+ * (GH-1922) — see `WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES`'s own doc comment for the full
+ * membership/ordering/label contract (including its "recognized kinds only" scope and the
+ * trailing `other` catch-all it doesn't cover) — not restated here to avoid the two drifting
+ * apart.
  */
 export interface WeeklyBriefCurrentActivityPhrase {
   kind: string;

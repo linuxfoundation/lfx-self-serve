@@ -185,10 +185,16 @@ export const WEEKLY_BRIEF_SOURCE_SECTIONS: readonly WeeklyBriefSourceSection[] =
  * count text ("1 meeting held" / "2 meetings held"). Kept separate from
  * `WEEKLY_BRIEF_SOURCE_SECTIONS` because the two solve different problems: that constant is a
  * noun *label* for a disclosure section heading ("Meetings"), this is a verb *phrase* for a
- * count sentence — but `weekly-brief-card.component.ts` drives the tally's section MEMBERSHIP
- * (which kinds exist, and in what order) from THIS list alone, not by cross-referencing
- * `WEEKLY_BRIEF_SOURCE_SECTIONS` by kind for that part, so a kind missing here can never render a
- * countText-less toggle. The section's display LABEL, separately, IS looked up from
+ * count sentence — but `weekly-brief-card.component.ts` drives the RECOGNIZED sections' order and
+ * membership from THIS list alone (via `initCurrentActivitySections`' `WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES.map(...)`),
+ * not by cross-referencing `WEEKLY_BRIEF_SOURCE_SECTIONS` by kind for that part, so a kind present
+ * here always gets a real countText, never a placeholder. That's not the WHOLE membership story,
+ * though: the same method also appends a single trailing `other` section, its kind/label/countText
+ * all hardcoded inline rather than sourced from this list, for any `source_refs` kind this list
+ * doesn't recognize (currently `vote_opened` and `survey_published`/`survey_closed` — see
+ * `mapActivityEventToCurrentActivityRef`'s own doc comment in `weekly-brief.service.ts`) — so a
+ * kind missing from this list doesn't vanish, it just loses its own count text and its position in
+ * the display order. The section's display LABEL, separately, IS looked up from
  * `WEEKLY_BRIEF_SOURCE_SECTIONS` (with a `?? kind` fallback covering the reverse gap — a kind
  * present here but missing there) — see `WeeklyBriefCurrentActivityPhrase`'s doc comment.
  *
