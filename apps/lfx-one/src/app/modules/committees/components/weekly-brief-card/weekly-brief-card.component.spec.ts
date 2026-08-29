@@ -733,7 +733,12 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
 
-      expect(getWeeklyBrief).toHaveBeenLastCalledWith('committee-board', { includeCurrentActivity: false });
+      // Length asserted explicitly — every tick here carries the same includeCurrentActivity:
+      // false args, so toHaveBeenLastCalledWith alone would pass silently even if the poll kept
+      // ticking past the terminal revision (the "poll doesn't stop" regression this suite exists
+      // to catch), same reasoning as the sibling test below.
+      expect(getWeeklyBrief.mock.calls).toHaveLength(2);
+      expect(getWeeklyBrief).toHaveBeenNthCalledWith(2, 'committee-board', { includeCurrentActivity: false });
       // The tick's own response has no current_activity key — this must still read as present,
       // merged forward from before the tick, not blanked out.
       expect(component.hasCurrentActivityData()).toBe(true);
