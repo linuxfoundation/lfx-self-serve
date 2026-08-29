@@ -10,7 +10,7 @@ import type { CampaignBriefLoadResult, CampaignBriefOutput, CampaignProgramTypeO
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { Observable, Subject, throwError } from 'rxjs';
+import { EMPTY, Observable, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PlanningTabComponent } from './planning-tab.component';
@@ -109,6 +109,11 @@ describe('PlanningTabComponent brief read-back', () => {
 
     campaignService = { loadBrief: vi.fn() };
     vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(campaignService.loadBrief);
+    // A foundation change re-runs the HubSpot lookup (the panel must re-ask the new portal), so
+    // this block reaches it too even though it is about brief read-back. Stubbed to a completed
+    // observable: unstubbed, the real service is absent and `.pipe` on undefined throws an
+    // UNHANDLED error, which fails the suite while every test still reports as passing.
+    vi.spyOn(TestBed.inject(CampaignService), 'lookupHubSpotUtm').mockReturnValue(EMPTY);
     projectContextService = TestBed.inject(ProjectContextService);
 
     // Seed the foundation with a starting value so toObservable can emit it.
@@ -734,6 +739,10 @@ describe('PlanningTabComponent delivery-type mode', () => {
     // the component advancing past 'generating' and clearing the state under test.
     generateBrief = vi.fn().mockReturnValue(new Subject());
     vi.spyOn(TestBed.inject(CampaignService), 'generateBrief').mockImplementation(generateBrief);
+    // Same reason as the read-back block: a foundation change re-runs the HubSpot lookup, and an
+    // unstubbed service makes `.pipe` on undefined throw an UNHANDLED error — which fails the
+    // suite while every test still reports as passing, so it is easy to miss locally.
+    vi.spyOn(TestBed.inject(CampaignService), 'lookupHubSpotUtm').mockReturnValue(EMPTY);
 
     const projectContextService = TestBed.inject(ProjectContextService);
     projectContextService.setRouteLensKind('foundation');
@@ -1058,7 +1067,12 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
       ],
     }).compileComponents();
 
-    lookup = vi.fn();
+    // A DEFAULT return, because the component re-runs the lookup on a foundation change and
+    // tests that switch foundations do not always set one first. Without it the spy returns
+    // undefined and `.pipe` throws an UNHANDLED error — which does not fail any individual
+    // test, so the suite reports all-green locally while CI fails the run on the error count.
+    // Tests that care about the answer override this with their own mockReturnValue.
+    lookup = vi.fn(() => EMPTY);
     create = vi.fn();
     vi.spyOn(TestBed.inject(CampaignService), 'lookupHubSpotUtm').mockImplementation(lookup);
     vi.spyOn(TestBed.inject(CampaignService), 'createHubSpotUtm').mockImplementation(create);
