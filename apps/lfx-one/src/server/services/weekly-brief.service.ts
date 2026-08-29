@@ -1236,11 +1236,11 @@ export class WeeklyBriefService {
     try {
       logger.debug(req, 'get_weekly_brief_current_activity', 'Building current-week activity tally', { committee_id: committeeId });
       const category = await this.committeeService.getCommitteeCategory(req, committeeId);
-      // undefined `category` here means upstream resolved with no committee body at all (see
-      // getCommitteeCategory's own doc comment) — a genuine 404/upstream error throws instead
-      // and is caught below, same as any other failure in this method. Either way this is an
-      // anomaly, not a governance verdict, so it falls through to undefined rather than being
-      // asserted as "not governance".
+      // undefined `category` here means upstream resolved with no `category` on the body —
+      // absent/null field, or an empty body (see getCommitteeCategory's own doc comment) — a
+      // genuine 404/upstream error throws instead and is caught below, same as any other
+      // failure in this method. Either way this is an anomaly, not a governance verdict, so it
+      // falls through to undefined rather than being asserted as "not governance".
       if (category === undefined) {
         logger.warning(req, 'get_weekly_brief_current_activity', 'Committee category lookup returned nothing, omitting the tally', {
           committee_id: committeeId,

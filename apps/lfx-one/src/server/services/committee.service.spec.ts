@@ -80,6 +80,7 @@ vi.mock('../services/logger.service', () => ({
 
 import type { Request } from 'express';
 
+import { MicroserviceError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
@@ -898,9 +899,17 @@ describe('CommitteeService.getCommitteeCategory', () => {
   });
 
   it('propagates a genuine upstream error (e.g. 404) rather than normalizing it to undefined', async () => {
-    const upstreamError = new Error('not found');
-    proxyRequest.mockRejectedValueOnce(upstreamError);
+    const upstreamError = MicroserviceError.fromMicroserviceResponse(
+      404,
+      'Not Found',
+      undefined,
+      'LFX_V2_SERVICE',
+      `/committees/${COMMITTEE_UID}`,
+      'get_committee'
+    );
+    proxyRequest.mockRejectedValue(upstreamError);
 
-    await expect(service.getCommitteeCategory(req, COMMITTEE_UID)).rejects.toBe(upstreamError);
+    await expect(service.getCommitteeCategory(req, COMMITTEE_UID)).rejects.toBeInstanceOf(MicroserviceError);
+    await expect(service.getCommitteeCategory(req, COMMITTEE_UID)).rejects.toMatchObject({ statusCode: 404 });
   });
 });

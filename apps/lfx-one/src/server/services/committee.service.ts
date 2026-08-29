@@ -426,8 +426,9 @@ export class CommitteeService {
    * `category` alone (e.g. weekly-brief.service.ts's governance gate on the weekly-brief tally),
    * and `getCommitteeById`'s default options still cost three upstream calls — base GET,
    * settings, and an access-check — for data this caller throws away. `undefined` here means
-   * upstream resolved with no `category` on the body (including the empty-body-parses-to-`null`
-   * case `proxyRequest` itself documents) — NOT "committee not found": a genuine 404 or other
+   * upstream resolved with no `category` on the body — absent/null field, or an empty body
+   * (which `ApiClientService.executeRequest` parses to `null` via `text ? JSON.parse(text) :
+   * null`) — NOT "committee not found": a genuine 404 or other
    * upstream error status throws a `MicroserviceError` out of `proxyRequest` before this method
    * ever gets a value to read `.category` off of, same as `getCommitteeById`'s own upstream call.
    * Deliberately doesn't catch that throw and normalize it to `undefined` — existing callers of
