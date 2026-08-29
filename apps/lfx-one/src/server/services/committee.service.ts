@@ -425,11 +425,16 @@ export class CommitteeService {
    * A single field read, not a `getCommitteeById` call with the rest discarded: this needs
    * `category` alone (e.g. weekly-brief.service.ts's governance gate on the weekly-brief tally),
    * and `getCommitteeById`'s default options still cost three upstream calls — base GET,
-   * settings, and an access-check — for data this caller throws away. `undefined`, not a thrown
-   * error, on a genuinely missing committee: existing callers of `getCommitteeById` already have
-   * their own not-found handling for the write/detail paths that need it; a caller reaching only
-   * for `category` has nothing to write to and no detail page to 404, so failing soft here keeps
-   * that decision (log and degrade, or propagate) with the caller instead of forcing one.
+   * settings, and an access-check — for data this caller throws away. `undefined` here means
+   * upstream resolved with no `category` on the body (including the empty-body-parses-to-`null`
+   * case `proxyRequest` itself documents) — NOT "committee not found": a genuine 404 or other
+   * upstream error status throws a `MicroserviceError` out of `proxyRequest` before this method
+   * ever gets a value to read `.category` off of, same as `getCommitteeById`'s own upstream call.
+   * Deliberately doesn't catch that throw and normalize it to `undefined` — existing callers of
+   * `getCommitteeById` already have their own not-found handling for the write/detail paths that
+   * need it; a caller reaching only for `category` has nothing to write to and no detail page to
+   * 404, so leaving the throw uncaught keeps that decision (log and degrade, or propagate) with
+   * the caller instead of forcing one.
    */
   public async getCommitteeCategory(req: Request, committeeId: string): Promise<string | undefined> {
     const committee = await this.microserviceProxy.proxyRequest<Committee | null>(

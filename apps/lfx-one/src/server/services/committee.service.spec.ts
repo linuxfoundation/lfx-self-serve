@@ -410,27 +410,6 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
     });
   });
 
-  describe('getCommitteeCategory', () => {
-    it("returns category from a single plain GET, not getCommitteeById's enriched fan-out", async () => {
-      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', category: 'Board' });
-
-      const result = await service.getCommitteeCategory(req, COMMITTEE_UID);
-
-      expect(result).toBe('Board');
-      // Exactly one upstream call — no settings, no access-check, unlike getCommitteeById above.
-      expect(proxyRequest).toHaveBeenCalledOnce();
-      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/committees/${COMMITTEE_UID}`, 'GET');
-    });
-
-    it('returns undefined (not a thrown error) when the committee is not found', async () => {
-      proxyRequest.mockResolvedValueOnce(null);
-
-      const result = await service.getCommitteeCategory(req, COMMITTEE_UID);
-
-      expect(result).toBeUndefined();
-    });
-  });
-
   describe('updateCommittee', () => {
     it('rejects a chat_webhook_url change (409 FEATURE_DISABLED) when the server-side kill switch is off, before touching upstream — independent of WG_WEEKLY_BRIEF_SLACK_FLAG, which is UI-only and never reaches this method', async () => {
       delete process.env[ServerFeatureFlag.WeeklyBriefSlack];
@@ -887,5 +866,41 @@ describe('CommitteeService.getCommitteesByIds', () => {
 
     await expect(service.getCommitteesByIds(req, [...firstBatch, ...secondBatch])).rejects.toThrow('boom');
     expect(logger.warning).toHaveBeenCalledWith(req, 'get_committees_by_ids', expect.any(String), expect.objectContaining({ batch_size: secondBatch.length }));
+  });
+});
+
+describe('CommitteeService.getCommitteeCategory', () => {
+  let service: CommitteeService;
+  const COMMITTEE_UID = 'committee-1';
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new CommitteeService();
+  });
+
+  it("returns category from a single plain GET, not getCommitteeById's enriched fan-out", async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', category: 'Board' });
+
+    const result = await service.getCommitteeCategory(req, COMMITTEE_UID);
+
+    expect(result).toBe('Board');
+    // Exactly one upstream call — no settings, no access-check, unlike getCommitteeById.
+    expect(proxyRequest).toHaveBeenCalledOnce();
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/committees/${COMMITTEE_UID}`, 'GET');
+  });
+
+  it('returns undefined when upstream resolves with no committee body (the empty-body-parses-to-null case, not a 404)', async () => {
+    proxyRequest.mockResolvedValueOnce(null);
+
+    const result = await service.getCommitteeCategory(req, COMMITTEE_UID);
+
+    expect(result).toBeUndefined();
+  });
+
+  it('propagates a genuine upstream error (e.g. 404) rather than normalizing it to undefined', async () => {
+    const upstreamError = new Error('not found');
+    proxyRequest.mockRejectedValueOnce(upstreamError);
+
+    await expect(service.getCommitteeCategory(req, COMMITTEE_UID)).rejects.toBe(upstreamError);
   });
 });

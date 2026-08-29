@@ -286,7 +286,7 @@ export class WeeklyBriefService {
    * `pollUntilTerminal`) is this endpoint's heaviest caller — up to `WEEKLY_BRIEF_MAX_POLL_ATTEMPTS`
    * hits at `WEEKLY_BRIEF_POLL_INTERVAL_MS` apart per generate/regenerate — and this week's
    * activity cannot change mid-poll, so re-running the tally on every tick multiplies its real
-   * upstream cost (getCommitteeById's 3 calls, plus getCommitteeActivity's own multi-call
+   * upstream cost (getCommitteeCategory's one call, plus getCommitteeActivity's own multi-call
    * aggregation for a governance committee) for a value that's already correct from the poll's
    * first tick. The poll passes `includeCurrentActivity: false` only once the current_activity
    * KEY is present on what it already holds (see `WeeklyBriefCurrentResponse.current_activity`'s
@@ -307,9 +307,9 @@ export class WeeklyBriefService {
     // Only built here, not inside fetchBriefResponse — every internal caller that reuses that
     // helper (getActionItems, shareBrief, shareToSlack, resolveRatableBrief) only ever reads
     // brief/caller_rating off the result, so building the tally for them too would pay a real
-    // upstream fan-out (getCommitteeById, and for a governance committee, CommitteeActivityService's
-    // own multi-call aggregation) for a field they'd discard on every write path (share, rate) and
-    // every read of just the AI-extracted action items.
+    // upstream fan-out (getCommitteeCategory, and for a governance committee,
+    // CommitteeActivityService's own multi-call aggregation) for a field they'd discard on every
+    // write path (share, rate) and every read of just the AI-extracted action items.
     const [response, currentActivity] = await Promise.all([
       this.fetchBriefResponse(req, committeeId),
       includeCurrentActivity ? this.buildCurrentActivity(req, committeeId) : Promise.resolve(undefined),
@@ -1187,11 +1187,14 @@ export class WeeklyBriefService {
    * load never pays for `getCommitteeActivity`'s own 9-call upstream fan-out. The gating read
    * itself is `getCommitteeCategory` (a single plain GET), not `getCommitteeById` — this needs
    * `category` alone, and `getCommitteeById`'s default options cost three upstream calls
-   * (including its own access-check, redundant with the controller's `assertCommitteeRead` on the
-   * same request) for data this call would only discard. Fails soft to `undefined` (never an
-   * empty array) on a genuine error — one of three states, not two: `undefined` is transient
-   * ("couldn't determine", worth asking again), `null` is settled ("known not to apply", see
-   * below), and a real object is "genuinely zero activity this week" or more.
+   * (base GET, settings, an access-check) for data this call would only discard.
+   * `getCommitteeCategory` performs no access check of its own — safe here only because this
+   * method's one caller, `getCurrentBrief`, is reachable exclusively through the controller's
+   * `assertCommitteeRead` gate; a new caller of `getCommitteeCategory` would need its own. Fails
+   * soft to `undefined` (never an empty array) on a genuine error — one of three states, not two:
+   * `undefined` is transient ("couldn't determine", worth asking again), `null` is settled
+   * ("known not to apply", see below), and a real object is "genuinely zero activity this week"
+   * or more.
    * `weekly-brief-card.component.ts`'s `hasCurrentActivityData` collapses `undefined`/`null`
    * alike for rendering (neither is a value to show), but its `pollUntilTerminal` poll loop
    * depends on keeping them apart — see `WeeklyBriefCurrentResponse.current_activity`'s doc
@@ -1233,10 +1236,11 @@ export class WeeklyBriefService {
     try {
       logger.debug(req, 'get_weekly_brief_current_activity', 'Building current-week activity tally', { committee_id: committeeId });
       const category = await this.committeeService.getCommitteeCategory(req, committeeId);
-      // undefined `category` here means the lookup itself came back empty (e.g. the committee
-      // vanished between the controller's assertCommitteeRead and this read) — a transient
-      // anomaly, not a governance verdict, so this falls through to the catch-equivalent
-      // undefined below rather than being asserted as "not governance".
+      // undefined `category` here means upstream resolved with no committee body at all (see
+      // getCommitteeCategory's own doc comment) — a genuine 404/upstream error throws instead
+      // and is caught below, same as any other failure in this method. Either way this is an
+      // anomaly, not a governance verdict, so it falls through to undefined rather than being
+      // asserted as "not governance".
       if (category === undefined) {
         logger.warning(req, 'get_weekly_brief_current_activity', 'Committee category lookup returned nothing, omitting the tally', {
           committee_id: committeeId,

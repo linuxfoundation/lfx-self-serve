@@ -934,7 +934,7 @@ describe('WeeklyBriefService', () => {
       expect(result.current_activity).toBeNull();
     });
 
-    it('skips the entire fan-out (getCommitteeById and getCommitteeActivity) when includeCurrentActivity is false, even for a governance committee', async () => {
+    it('skips the entire fan-out (getCommitteeCategory and getCommitteeActivity) when includeCurrentActivity is false, even for a governance committee', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeCategoryMock.mockResolvedValue('Board');
 
