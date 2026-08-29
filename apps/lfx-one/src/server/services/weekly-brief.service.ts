@@ -130,13 +130,12 @@ export function currentWeekInProgressWindow(): { window_start: string; window_en
  * "vote opened" entry), and an in-progress, not-yet-closed vote isn't that yet. It still can't be
  * dropped outright (the `null` this file used to return here): the "Recent Activity" feed on the
  * same committee-overview page renders `vote_opened` directly for any voting-enabled committee, so
- * a week that opened but hasn't yet closed a vote must not report itself as "no activity yet"
- * while the feed right below it proves otherwise. `document_uploaded` and `notes_added` both
- * collapse to kind `doc` — both are
- * "a document-like artifact was added this week," and the tally doesn't need to distinguish
- * committee-document files/folders/links from meeting-attachment notes — but their ids DO carry
- * the same namespace discriminants `committee-activity.service.ts`'s own `eventKey()` uses
- * (`document_type` / `meeting_scope`), not just a `document_uid`, since — per `ActivityEvent`'s
+ * a week that opened but hasn't yet closed a vote must not report itself as "no activity yet" while
+ * the feed right below it proves otherwise. `document_uploaded` and `notes_added` both collapse to
+ * kind `doc` — both are "a document-like artifact was added this week," and the tally doesn't need
+ * to distinguish committee-document files/folders/links from meeting-attachment notes — but their
+ * ids DO carry the same namespace discriminants `committee-activity.service.ts`'s own `eventKey()`
+ * uses (`document_type` / `meeting_scope`), not just a `document_uid`, since — per `ActivityEvent`'s
  * own doc comments — those are two distinct upstream uid namespaces that could otherwise collide
  * (e.g. a folder and a meeting-attachment note coincidentally sharing a uid), and a collision here
  * would produce two refs with the same `id` in the same rendered `doc` section (an Angular
