@@ -666,21 +666,16 @@ export class ProfileController {
         const managementToken = isImpersonating(req) ? null : this.profileAuthService.getManagementToken(req);
         const forward = managementToken ? await this.forwardsService.getForward(req, managementToken, domain) : null;
 
-        // A claimed alias always has a forward target. If we had a management token but the read
-        // still came back null, the forwards-service was unreachable (timeout/no-responder) — degrade
-        // to service_unavailable (retry panel) rather than emitting a claimed state with a null
-        // forward, which the client could misread and overwrite on Save.
+        // Null with a token means forwards-service was unreachable — degrade to service_unavailable
+        // instead of emitting a claimed state with a null forward the client could overwrite on Save.
         if (managementToken && forward === null) {
           logger.success(req, 'get_linux_alias', startTime, { state: 'service_unavailable' });
           res.json(this.linuxAliasState('service_unavailable', domain));
           return;
         }
 
-        // A claimed alias always has a forward target, but reading it needs the Flow C
-        // management token. When it's absent (and the flow is configured), tell the client
-        // to re-authorize so it can load the real target instead of defaulting to primary.
-        // Suppress the re-auth prompt during impersonation — it is a write-path the impersonator
-        // must not trigger against their own session while viewing the target read-only.
+        // Needs the Flow C management token to read the forward; ask the client to re-authorize
+        // when it's absent (flow configured). Suppressed during impersonation — a write-path only the real user can trigger.
         const forwardAuthRequired = !isImpersonating(req) && !managementToken && this.profileAuthService.isProfileAuthConfigured();
 
         logger.success(req, 'get_linux_alias', startTime, { state: 'claimed' });
