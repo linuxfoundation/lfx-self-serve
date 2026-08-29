@@ -23,7 +23,7 @@ import { UserService } from '@services/user.service';
 import { WeeklyBriefService } from '@services/weekly-brief.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { of, throwError } from 'rxjs';
+import { of, throwError, TimeoutError } from 'rxjs';
 
 import { WeeklyBriefCardComponent } from './weekly-brief-card.component';
 
@@ -979,6 +979,45 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       expect(getWeeklyBrief).toHaveBeenNthCalledWith(3 + WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS, 'committee-board', { includeCurrentActivity: false });
 
       // Terminate the poll cleanly so no open subscription leaks past this test.
+      getWeeklyBrief.mockImplementation(() => of(pollTick(2)));
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(component.generating()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('DOES burn the ask-attempt cap on a tick that times out waiting for a response — the server may still be doing the fan-out work the client gave up on', async () => {
+    const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
+    await setup(BOARD_COMMITTEE, null, generateWeeklyBrief);
+    expect(getWeeklyBrief.mock.calls).toHaveLength(1);
+
+    fakePollTimers();
+    try {
+      component.onGenerate();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Unlike the sibling "fails before reaching the server" test above, a TimeoutError DOES
+      // count against the cap — aborting the client-side wait doesn't cancel the BFF's in-flight
+      // getCommitteeBase + getCommitteeActivity fan-out, so this tick genuinely cost what the cap
+      // exists to bound, even though no response ever came back.
+      getWeeklyBrief.mockImplementationOnce(() => throwError(() => new TimeoutError()));
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief).toHaveBeenNthCalledWith(2, 'committee-board', { includeCurrentActivity: true });
+      expect(component.generating()).toBe(true);
+
+      // Only WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS - 1 further real asks remain — the
+      // timed-out tick above already spent one slot.
+      getWeeklyBrief.mockImplementation(() => of(pollTick(1)));
+      for (let attempt = 0; attempt < WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS - 1; attempt++) {
+        await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+        expect(getWeeklyBrief).toHaveBeenNthCalledWith(3 + attempt, 'committee-board', { includeCurrentActivity: true });
+      }
+      // The cap is already spent — one tick earlier than the sibling network-failure test, since
+      // the timed-out tick counted.
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief).toHaveBeenNthCalledWith(2 + WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS, 'committee-board', { includeCurrentActivity: false });
+
       getWeeklyBrief.mockImplementation(() => of(pollTick(2)));
       await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
       expect(component.generating()).toBe(false);

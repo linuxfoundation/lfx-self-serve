@@ -882,13 +882,16 @@ export class WeeklyBriefCardComponent {
             timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS),
             catchError((err: unknown) => {
               console.error('[weekly-brief-card] poll tick failed, will retry', err);
-              // Undo the optimistic increment above: a tick that never reached the server (this
-              // tick's own HTTP timeout, or any other error) never got a chance to answer, so it
-              // must not count against the cap the same way a tick that DID answer — even with a
-              // transient `undefined` — does. Without this, a run of ordinary network hiccups
-              // could exhaust WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS on its own, before
-              // the fan-out this cap actually exists to bound ever got asked.
-              if (shouldAskCurrentActivity) currentActivityAskAttempts -= 1;
+              // Undo the optimistic increment above only for a request that never reached the
+              // BFF at all (a genuine network/connection failure) — NOT for this tick's own
+              // `timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS)` above. Aborting the client-side XHR on
+              // that timeout does not cancel the server-side work already in flight — the BFF
+              // still pays getCommitteeBase + getCommitteeActivity's fan-out for a tick this
+              // client gave up waiting on. Refunding the slot for a TimeoutError would let a
+              // persistently slow (not erroring) upstream — the exact case
+              // WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS exists to bound — re-ask on every
+              // one of up to WEEKLY_BRIEF_MAX_POLL_ATTEMPTS ticks instead of stopping at the cap.
+              if (shouldAskCurrentActivity && !(err instanceof TimeoutError)) currentActivityAskAttempts -= 1;
               return of(null as WeeklyBriefCurrentResponse | null);
             })
           );
