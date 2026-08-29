@@ -712,7 +712,30 @@ export class CampaignsComponent {
     // reorder what survived -- a matching template on row 501 would be cut before it could rise,
     // which is exactly the template the operator was looking for.
     const ranked = this.rankTemplatesForSelectedType(templates);
-    return ranked.length > HUBSPOT_TEMPLATE_RENDER_LIMIT ? ranked.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT) : ranked;
+    if (ranked.length <= HUBSPOT_TEMPLATE_RENDER_LIMIT) {
+      return ranked;
+    }
+    const drawn = ranked.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT);
+
+    // The SELECTED row is always drawn, even when reranking pushes it past the cap.
+    //
+    // Ranking depends on the chosen email TYPE, so switching type reorders the list under a
+    // selection the operator already made: with enough matches for the new type, the selected row
+    // drops below the cap and vanishes. Nothing else notices — `canStageEmail` stays enabled and
+    // `onStageEmailSend` still clones that now-invisible template, so the operator stages a clone
+    // of something they can no longer see or change. Hiding the current choice is the one thing a
+    // ranking heuristic must never do.
+    //
+    // Splicing to the TOP rather than re-ranking: it is the row the operator chose, so it belongs
+    // where they will look for it. The cap is still honoured — this replaces a row, never appends.
+    const selectedId = this.selectedEmailTemplateId();
+    if (selectedId !== '' && !drawn.some((t) => t.id === selectedId)) {
+      const selected = ranked.find((t) => t.id === selectedId);
+      if (selected) {
+        return [selected, ...drawn.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT - 1)];
+      }
+    }
+    return drawn;
   });
 
   /** How many rows the search returned, as opposed to how many are drawn. */

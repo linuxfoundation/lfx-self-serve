@@ -2907,6 +2907,35 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailTemplatesRendered()[0].id).toBe('match');
     });
 
+    /**
+     * Reranking must never HIDE the operator's current choice.
+     *
+     * Ranking depends on the chosen type, so switching type reorders the list under a selection
+     * already made: with enough matches for the new type the selected row drops below the render
+     * cap and disappears. Nothing else notices — `canStageEmail` stays enabled and staging still
+     * clones that now-invisible template, so the operator stages a clone of something they can no
+     * longer see or change.
+     */
+    it('keeps the selected template visible after a type change reranks the list', () => {
+      selectEmail();
+      // The operator's pick names no type keyword, so reranking sinks it; the 600 rows that follow
+      // all match the new type and crowd it out of the first 100 drawn.
+      const templates: { id: string; name: string; subject: string }[] = [{ id: 'chosen', name: 'Bespoke template', subject: 'Nothing in particular' }];
+      for (let i = 0; i < 600; i++) {
+        templates.push({ id: `t${i}`, name: 'Post-event thank you', subject: 'Survey inside' });
+      }
+      internals().emailTemplates.set(templates as never);
+      (internals() as unknown as { onSelectEmailTemplate(id: string): void }).onSelectEmailTemplate('chosen');
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      const rendered = internals().emailTemplatesRendered();
+      expect(rendered.some((t) => t.id === 'chosen')).toBe(true);
+      // At the TOP: it is the row the operator chose, so it belongs where they will look.
+      expect(rendered[0].id).toBe('chosen');
+      // The cap is still honoured — the splice replaces a row rather than appending one.
+      expect(rendered.length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+    });
+
     it('renders the selector defaulted to the registration push type', () => {
       selectEmail();
       internals().selectedEmailTab.set('implementation');
