@@ -26,6 +26,17 @@ describe('WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS', () => {
   it('stays under WEEKLY_BRIEF_POLL_INTERVAL_MS — its own doc comment claims a slow poll tick can now resolve server-side, inside this budget, before the client abandons the tick; a later edit to either constant that breaks that ordering would otherwise silently revert the claimed behavior with no other test failing', () => {
     expect(WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS).toBeLessThan(WEEKLY_BRIEF_POLL_INTERVAL_MS);
   });
+
+  // Absolute pin, alongside the relative one above — weekly-brief.service.spec.ts's own budget
+  // test imports this identifier through that file's `vi.mock('@lfx-one/shared/constants', ...)`
+  // hand-copy (currently 3_000, kept in sync by hand), so a real-value change here would leave
+  // that test silently exercising a value production no longer uses, with only the relative
+  // ordering test above (which a value change could still satisfy) standing between that drift
+  // and going unnoticed. Same rationale as activity-event.constants.spec.ts's pin on
+  // ACTIVITY_FEED_MAX_PAGE_SIZE for the identical hand-copy hazard.
+  it('is 3000ms', () => {
+    expect(WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS).toBe(3_000);
+  });
 });
 
 describe('WEEKLY_BRIEF_DEFAULT_THROTTLE', () => {
