@@ -18,9 +18,45 @@
             Calendar
           }
         </h1>
-        <p class="text-sm text-gray-500" data-testid="public-project-calendar-subtitle">{{ total() }} {{ total() === 1 ? 'meeting' : 'meetings' }}</p>
+        <p class="text-sm text-gray-500" data-testid="public-project-calendar-subtitle">
+          {{ total() }} {{ total() === 1 ? 'meeting' : 'meetings' }}
+          @if (activeCommittee(); as committee) {
+            in {{ committee.name }}
+          }
+        </p>
       }
     </header>
+
+    <!-- Group filter — only rendered once the public group directory has loaded -->
+    @if (committeeOptions().length > 1) {
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="public-project-calendar-filters">
+        <div class="flex items-center gap-2">
+          <label for="public-calendar-committee-filter" class="text-sm text-gray-700">Group</label>
+          <lfx-select
+            inputId="public-calendar-committee-filter"
+            ariaLabel="Filter calendar by group"
+            [form]="committeeForm"
+            control="committee"
+            [options]="committeeOptions()"
+            placeholder="All groups"
+            styleClass="w-full sm:w-64"
+            (onChange)="onCommitteeChange($event)"
+            dataTest="public-project-calendar-committee-filter" />
+        </div>
+
+        <!-- Legend: the color key is duplicated in each event's title suffix, so color is never the only cue -->
+        @if (legendItems().length) {
+          <ul class="flex flex-wrap items-center gap-x-4 gap-y-2" data-testid="public-project-calendar-legend">
+            @for (item of legendItems(); track item.label) {
+              <li class="flex items-center gap-1.5 text-xs text-gray-600">
+                <span class="h-2.5 w-2.5 rounded-sm" [style.background-color]="item.color" aria-hidden="true"></span>
+                {{ item.label }}
+              </li>
+            }
+          </ul>
+        }
+      </div>
+    }
 
     <!-- Error state -->
     @if (fetchError()) {
@@ -34,6 +70,28 @@
       <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="public-project-calendar-skeleton">
         <p-skeleton width="100%" height="24rem" />
       </div>
+    } @else if (unknownCommittee()) {
+      <lfx-empty-state
+        icon="fa-light fa-users-slash"
+        title="Group not found"
+        subtitle="This link points to a group that is not part of this project's public directory. It may have been renamed, made private, or removed."
+        ctaLabel="View all meetings"
+        ctaIcon="fa-light fa-calendar"
+        (ctaClick)="clearCommitteeFilter()"
+        data-testid="public-project-calendar-unknown-committee" />
+    } @else if (total() === 0) {
+      <lfx-empty-state
+        icon="fa-light fa-calendar-xmark"
+        title="No public meetings"
+        [subtitle]="
+          activeCommittee()
+            ? 'This group has no public meetings on the calendar yet.'
+            : 'This project has no public meetings on the calendar yet. Check back soon.'
+        "
+        [ctaLabel]="activeCommittee() ? 'View all meetings' : undefined"
+        ctaIcon="fa-light fa-calendar"
+        (ctaClick)="clearCommitteeFilter()"
+        data-testid="public-project-calendar-empty" />
     } @else {
       <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="public-project-calendar-container">
         <lfx-fullcalendar

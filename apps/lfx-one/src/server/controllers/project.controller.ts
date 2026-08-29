@@ -1150,6 +1150,10 @@ export class ProjectController {
       cancelled_occurrences: meeting.cancelled_occurrences,
       scheduled_start_time: pastRow.scheduled_start_time,
       meeting_and_occurrence_id: pastRow.meeting_and_occurrence_id,
+      // UIDs only. `MeetingCommittee.name` is not published here: a PUBLIC meeting can be associated
+      // with a committee the public group directory does not list, and forwarding its name would leak
+      // an otherwise non-public group. Clients label from the directory instead.
+      committee_uids: [...new Set((meeting.committees ?? []).map((committee) => committee.uid).filter((uid): uid is string => !!uid))],
     };
   }
 }

@@ -1470,6 +1470,14 @@ export interface PublicCalendarMeeting {
   scheduled_start_time?: string;
   /** Composite past-meeting id (e.g. "99152950841-1630560600000"); present only on `v1_past_meeting` rows */
   meeting_and_occurrence_id?: string;
+  /**
+   * Committee UIDs this meeting is associated with — opaque identifiers used to filter, label, and
+   * color-code the public calendar. Names are deliberately excluded: a PUBLIC meeting can be tied to a
+   * committee that the public group directory does not list, and that committee's name is not otherwise
+   * public. Clients resolve display names from `GET /public/api/projects/:id/groups`, so only publicly
+   * listed committees ever surface a visible label.
+   */
+  committee_uids?: string[];
 }
 
 /**

@@ -126,6 +126,18 @@ export class MeetingsDashboardComponent {
   public project: Signal<ProjectContext | null>;
   protected readonly canWrite = this.projectContextService.canWrite;
   protected readonly canWriteMeetings: Signal<boolean> = this.initCanWriteMeetings();
+  /**
+   * Anonymous, shareable view of this project's PUBLIC meetings — the link a maintainer hands to their
+   * community. Null until the active project context resolves, and on the Me lens, which spans projects
+   * and so has no single public calendar to point at.
+   */
+  protected readonly publicCalendarUrl: Signal<string | null> = computed(() => {
+    const slug = this.project()?.slug;
+    if (!slug || this.activeLens() === 'me') {
+      return null;
+    }
+    return `/projects/${encodeURIComponent(slug)}/calendar`;
+  });
   protected readonly isFiltered = this.initIsFiltered();
   public loadingMore = signal(false);
   public hasMore: Signal<boolean>;

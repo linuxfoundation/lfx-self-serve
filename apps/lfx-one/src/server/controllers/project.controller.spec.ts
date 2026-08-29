@@ -373,7 +373,18 @@ describe('ProjectController.getProjectMeetings', () => {
     // Exact key set, not a list of absent keys — a delete-based strip would pass an "is X absent"
     // check for every field named here while still shipping the next sensitive field added upstream.
     expect(Object.keys(response.meetings[0]).sort()).toEqual(
-      ['cancelled_occurrences', 'duration', 'id', 'meeting_and_occurrence_id', 'occurrences', 'scheduled_start_time', 'start_time', 'timezone', 'title'].sort()
+      [
+        'cancelled_occurrences',
+        'committee_uids',
+        'duration',
+        'id',
+        'meeting_and_occurrence_id',
+        'occurrences',
+        'scheduled_start_time',
+        'start_time',
+        'timezone',
+        'title',
+      ].sort()
     );
     expect(response.total).toBe(1);
     expect(response.project).toEqual({ uid: PROJECT_UID, name: 'CNCF' });
@@ -396,6 +407,53 @@ describe('ProjectController.getProjectMeetings', () => {
     for (const key of ['password', 'passcode', 'host_key', 'zoom_config', 'organizers', 'created_by', 'owner']) {
       expect(serialized).not.toContain(key);
     }
+  });
+
+  it('publishes committee UIDs but never committee names', async () => {
+    // A PUBLIC meeting can be tied to a committee the public group directory does not list. The UID is
+    // opaque and already part of the `?committee=` contract; the name is not otherwise public, so the
+    // client resolves labels from the directory instead of trusting this payload.
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data:
+          resourceType === 'v1_meeting'
+            ? [
+                buildMeeting({
+                  committees: [
+                    { uid: 'committee-uid-1234', name: 'Private Security Committee' },
+                    { uid: 'committee-uid-5678', name: 'Board' },
+                  ],
+                }),
+              ]
+            : [],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json.mock.calls[0][0].meetings[0].committee_uids).toEqual(['committee-uid-1234', 'committee-uid-5678']);
+    const serialized = JSON.stringify(res.json.mock.calls[0][0]);
+    expect(serialized).not.toContain('Private Security Committee');
+    expect(serialized).not.toContain('Board');
+  });
+
+  it('drops committee entries with no UID and collapses duplicates', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data:
+          resourceType === 'v1_meeting'
+            ? [buildMeeting({ committees: [{ uid: 'committee-uid-1234' }, { uid: 'committee-uid-1234' }, { uid: '' }] as any })]
+            : [],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json.mock.calls[0][0].meetings[0].committee_uids).toEqual(['committee-uid-1234']);
   });
 
   it('projects occurrences down to timestamps and status, dropping per-occurrence titles', async () => {
