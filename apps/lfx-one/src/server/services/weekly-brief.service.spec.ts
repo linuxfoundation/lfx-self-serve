@@ -437,7 +437,7 @@ describe('WeeklyBriefService', () => {
     it('never triggers the current_activity fan-out (GH-1922) — getActionItems only ever reads brief_text', async () => {
       // A governance committee, so a regression back to `this.getCurrentBrief` here would
       // actually trigger the fan-out this test exists to catch — not pass vacuously.
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       extractBriefActionItems.mockResolvedValue({ items: [] });
 
       await service.getActionItems(req, 'committee-1');
@@ -737,7 +737,7 @@ describe('WeeklyBriefService', () => {
       ],
     ])('populates current_activity for a governance committee, mapping kinds and excluding an in-progress vote (%s)', async (_label, setBackend) => {
       setBackend();
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       getCommitteeActivityMock.mockResolvedValue({
         data: [
           {
@@ -771,9 +771,10 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      // not.toBeNull(), not toBeDefined() — toBeDefined() passes on null too, and null-vs-object
-      // is exactly the distinction this feature's three-state contract depends on.
-      expect(result.current_activity).not.toBeNull();
+      // Asserts the real-object shape directly, not not.toBeNull()/toBeDefined() — both of those
+      // also pass on the OTHER two states (undefined, or toBeDefined() on null), and this
+      // feature's whole point is that absent/null/present are three distinct states, not two.
+      expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
       const refs = result.current_activity?.source_refs ?? [];
       expect(refs).toHaveLength(3);
       expect(refs.map((ref) => ref.kind).sort()).toEqual(['doc', 'meeting', 'vote']);
@@ -790,7 +791,7 @@ describe('WeeklyBriefService', () => {
 
     it('folds survey events into the "other" kind rather than dropping them', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       getCommitteeActivityMock.mockResolvedValue({
         data: [
           {
@@ -810,7 +811,7 @@ describe('WeeklyBriefService', () => {
 
     it('maps notes_added to kind "doc", and its id carries the meeting_scope discriminant so it cannot collide with a document_uploaded event sharing the same document_uid', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       getCommitteeActivityMock.mockResolvedValue({
         data: [
           {
@@ -845,7 +846,7 @@ describe('WeeklyBriefService', () => {
 
     it('sets current_activity to null (a settled, not a transient, absence) when the returned page itself is full', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       getCommitteeActivityMock.mockResolvedValue({
         // ACTIVITY_FEED_MAX_PAGE_SIZE worth of in-window events — the actual signal that some of
         // them may have been cut, unlike a bare page_token (see the next test). Built from the
@@ -877,7 +878,7 @@ describe('WeeklyBriefService', () => {
 
     it("does NOT omit current_activity merely because page_token is present with a short page — a committee with >fetchSize lifetime notes/surveys saturates those legs regardless of the current week (see buildCurrentActivity's own doc comment)", async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       getCommitteeActivityMock.mockResolvedValue({
         data: [
           {
@@ -895,13 +896,15 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.current_activity).not.toBeNull();
+      // Asserts the real-object shape directly — see the sibling test above for why not
+      // not.toBeNull()/toBeDefined() alone.
+      expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
       expect(result.current_activity?.source_refs).toHaveLength(1);
     });
 
     it('renders a genuine quiet week as current_activity present with an empty source_refs array, not absent', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       getCommitteeActivityMock.mockResolvedValue({ data: [], page_token: undefined });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
@@ -915,7 +918,7 @@ describe('WeeklyBriefService', () => {
 
     it('passes currentWeekInProgressWindow().window_start as since, and never briefWindow()', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
 
       vi.useFakeTimers();
       try {
@@ -929,7 +932,7 @@ describe('WeeklyBriefService', () => {
           req,
           'committee-1',
           { since: '2026-01-11T00:00:00.000Z', limit: ACTIVITY_FEED_MAX_PAGE_SIZE },
-          { category: 'Board' }
+          { uid: 'committee-1', category: 'Board' }
         );
         expect(result.current_activity?.window_start).toBe('2026-01-11T00:00:00.000Z');
         expect(result.current_activity?.window_end).toBe('2026-01-14T12:00:00.000Z');
@@ -950,7 +953,7 @@ describe('WeeklyBriefService', () => {
 
     it('excludes an event whose occurred_at is after window_end — getCommitteeActivity has no upper-bound param of its own to enforce this', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
 
       vi.useFakeTimers();
       try {
@@ -1009,7 +1012,7 @@ describe('WeeklyBriefService', () => {
 
     it('skips the entire fan-out (getCommitteeBase and getCommitteeActivity) when includeCurrentActivity is false, even for a governance committee', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
 
       const result = await service.getCurrentBrief(req, 'committee-1', { includeCurrentActivity: false });
 
@@ -1066,7 +1069,7 @@ describe('WeeklyBriefService', () => {
 
     it('degrades to current_activity: undefined (not a thrown error) when the activity fetch fails', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       getCommitteeActivityMock.mockRejectedValue(new Error('upstream unavailable'));
 
       const result = await service.getCurrentBrief(req, 'committee-1');
@@ -1085,7 +1088,7 @@ describe('WeeklyBriefService', () => {
     it('never triggers the current_activity fan-out (GH-1922) — rateBrief/clearBriefRating only ever read brief/caller_rating', async () => {
       // A governance committee, so a regression back to `this.getCurrentBrief` inside
       // resolveRatableBrief would actually trigger the fan-out this test exists to catch.
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const briefUid = initial.brief!.uid;
       getCommitteeActivityMock.mockClear(); // the setup call above is allowed to fan out; only what follows is under test.
@@ -1449,7 +1452,7 @@ describe('WeeklyBriefService', () => {
     it('never triggers the current_activity fan-out (GH-1922) — shareToSlack only ever reads brief', async () => {
       // A governance committee, so a regression back to `this.getCurrentBrief` here would
       // actually trigger the fan-out this test exists to catch.
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       mockShareableBrief();
       mockCommittee();
       proxyRequest.mockResolvedValueOnce(undefined);
@@ -1612,7 +1615,7 @@ describe('WeeklyBriefService', () => {
       // calls getCommitteeById (for name/project_uid), while buildCurrentActivity — reachable
       // only via the regression this test guards against — calls getCommitteeBase.
       getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', name: 'Test Committee', project_uid: 'project-1', category: 'Board' });
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       mockShareableBrief();
 
       await service.shareBrief(nonImpersonatingReq, 'committee-1', 1);

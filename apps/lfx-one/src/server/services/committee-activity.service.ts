@@ -198,8 +198,14 @@ export class CommitteeActivityService {
    * own fetch, with the same fail-closed contract (see fetchCommittee's doc comment) resting on the
    * caller instead when this parameter is used. Not inert data, so a mismatched `uid` is rejected
    * rather than silently trusted: `committee.enable_voting` (read below) decides whether the
-   * entire vote leg is surfaced, so a future caller passing the wrong committee here would silently
-   * add or hide a committee's votes with no error anywhere else in the request.
+   * entire vote leg is surfaced, so passing the wrong committee here would otherwise silently add
+   * or hide a committee's votes. This rejection is loud to a direct caller (throws
+   * `ServiceValidationError`), but this method's one production caller —
+   * `weekly-brief.service.ts`'s `buildCurrentActivity` — wraps the whole call in a try/catch that
+   * degrades ANY thrown error the same way (log a warning, omit the tally, let the poll retry), so
+   * in production this specific bug wouldn't surface as a distinguishable failure either — the
+   * guard's real value is as a tripwire for a caller reachable directly (tests, a future non-degrading
+   * caller), and as a precondition the type signature alone can't express.
    */
   public async getCommitteeActivity(
     req: Request,
