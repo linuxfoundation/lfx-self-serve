@@ -200,12 +200,15 @@ export class CommitteeActivityService {
    * rather than silently trusted: `committee.enable_voting` (read below) decides whether the
    * entire vote leg is surfaced, so passing the wrong committee here would otherwise silently add
    * or hide a committee's votes. This rejection is loud to a direct caller (throws
-   * `ServiceValidationError`), but this method's one production caller —
-   * `weekly-brief.service.ts`'s `buildCurrentActivity` — wraps the whole call in a try/catch that
-   * degrades ANY thrown error the same way (log a warning, omit the tally, let the poll retry), so
-   * in production this specific bug wouldn't surface as a distinguishable failure either — the
-   * guard's real value is as a tripwire for a caller reachable directly (tests, a future non-degrading
-   * caller), and as a precondition the type signature alone can't express.
+   * `ServiceValidationError`) — this method's other production caller, `committee-activity.controller.ts`'s
+   * "Recent Activity" feed endpoint, never passes `knownCommittee` at all, so the guard is
+   * unreachable on that path — but the one caller that DOES pass it, `weekly-brief.service.ts`'s
+   * `buildCurrentActivity`, wraps the whole call in a try/catch that degrades ANY thrown error the
+   * same way (log a warning, omit the tally, let the poll retry), so in production this specific
+   * bug wouldn't surface there as a distinguishable failure either — the guard's real value is as
+   * a tripwire for a caller reachable directly (tests, or a future `knownCommittee` caller that
+   * doesn't degrade the way `buildCurrentActivity` does), and as a precondition the type signature
+   * alone can't express.
    */
   public async getCommitteeActivity(
     req: Request,

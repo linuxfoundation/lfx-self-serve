@@ -280,7 +280,7 @@ describe('WeeklyBriefService', () => {
     // committee with an empty activity feed, so every test elsewhere in this file that calls
     // getCurrentBrief (the vast majority) never needs to know these mocks exist. Tests that
     // specifically exercise current_activity override both below.
-    getCommitteeBaseMock.mockResolvedValue({ category: 'Working Group' });
+    getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Working Group' });
     getCommitteeActivityMock.mockResolvedValue({ data: [], page_token: undefined });
     // shareBrief's own committee collaborator (unrelated to buildCurrentActivity — see
     // getCommitteeBaseMock above) — a safe default so tests elsewhere that incidentally
@@ -999,7 +999,7 @@ describe('WeeklyBriefService', () => {
 
     it('never calls getCommitteeActivity for a non-governance committee, and current_activity settles to null (not undefined)', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeBaseMock.mockResolvedValue({ category: 'Working Group' });
+      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Working Group' });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
