@@ -1472,16 +1472,17 @@ export interface PublicCalendarMeeting {
   meeting_and_occurrence_id?: string;
   /**
    * Committee UIDs this meeting is associated with — opaque identifiers used to filter, label, and
-   * color-code the public calendar. Names are deliberately excluded from *this* payload: a PUBLIC
-   * meeting can be tied to a committee the public group directory does not list, and forwarding its
-   * name here would publish that group's label alongside every meeting in the feed. Clients resolve
-   * display names from `GET /public/api/projects/:id/groups`, so only publicly listed committees ever
-   * surface a visible label on the calendar.
+   * color-code the public calendar.
    *
-   * Not a claim that the name is unavailable anywhere else: `GET /public/api/meetings/:id` still
-   * returns `committees[].name` to anonymous callers for a PUBLIC, non-restricted meeting. Narrowing
-   * that endpoint to `{uid, allowed_voting_statuses}` — and letting its join page label from the
-   * directory, as this calendar does — is a separate change against a pre-existing surface.
+   * Restricted server-side to committees the public group directory lists, and never accompanied by a
+   * name. A PUBLIC meeting can be tied to a non-public committee; publishing that UID would let an
+   * anonymous caller correlate meetings by a group the directory deliberately hides, and the name would
+   * label the feed with that hidden group. Clients resolve display names from
+   * `GET /public/api/projects/:id/groups`, so a withheld UID would have been unusable to them anyway.
+   *
+   * Not a claim that a non-public committee's name is unreachable everywhere: `GET /public/api/meetings/:id`
+   * still returns `committees[].name` to anonymous callers for a PUBLIC, non-restricted meeting. Narrowing
+   * that endpoint is a separate change against a pre-existing surface.
    */
   committee_uids?: string[];
 }

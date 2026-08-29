@@ -10,9 +10,11 @@
   } @else {
     <div class="mt-3 mb-8">
       <div class="mb-6">
-        <div class="flex justify-between items-center w-full gap-4">
+        <!-- Stacks below sm: the heading plus two labelled actions cannot fit the mobile content width,
+             and the actions wrap so neither is clipped at high zoom. -->
+        <div class="flex flex-col gap-3 w-full sm:flex-row sm:justify-between sm:items-center sm:gap-4">
           <h1 class="font-display font-light text-2xl">{{ activeLens() === 'me' ? 'My Meetings' : 'Meetings' }}</h1>
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <!-- Gated independently of Create Meeting: the public calendar is a read-only view anyone
                  with project context can share, so it is not behind meeting write access. -->
             @if (publicCalendarUrl(); as calendarUrl) {

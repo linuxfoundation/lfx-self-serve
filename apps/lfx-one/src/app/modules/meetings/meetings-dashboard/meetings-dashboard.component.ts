@@ -353,13 +353,17 @@ export class MeetingsDashboardComponent {
 
   /**
    * Anonymous, shareable view of this project's PUBLIC meetings — the link a maintainer hands to their
-   * community. Null until the active project context resolves, and on the Me lens, which spans projects
-   * and so has no single public calendar to point at.
+   * community. Null until the active project context resolves.
+   *
+   * Restricted to the two project-scoped lenses. `me` spans projects, and `org` keeps a retained
+   * foundation/project selection that the reader is not currently looking at — linking from there would
+   * point at unrelated context. `NavLens` names exactly this pair.
    */
   private initPublicCalendarUrl(): Signal<string | null> {
     return computed(() => {
       const slug = this.project()?.slug;
-      if (!slug || this.activeLens() === 'me') {
+      const lens = this.activeLens();
+      if (!slug || (lens !== 'foundation' && lens !== 'project')) {
         return null;
       }
       return `/projects/${encodeURIComponent(slug)}/calendar`;

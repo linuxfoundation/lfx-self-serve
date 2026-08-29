@@ -11,7 +11,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { HeaderComponent } from '@components/header/header.component';
 import { SelectComponent } from '@components/select/select.component';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { BEHAVIORAL_CLASS_CONFIG } from '@lfx-one/shared/constants';
+import { BEHAVIORAL_CLASS_CONFIG, MEETING_TYPE_COLORS } from '@lfx-one/shared/constants';
 import {
   CalendarLegendItem,
   GroupBehavioralClass,
@@ -76,7 +76,9 @@ export class PublicProjectCalendarComponent {
     { label: 'All groups', value: null },
     ...this.groups()
       .map((group) => ({ label: group.name, value: group.uid }))
-      .sort((a, b) => a.label.localeCompare(b.label)),
+      // Locale pinned because this page is server-rendered: an unpinned sort can order names one way in
+      // Node and another in the browser, which would reshuffle the options during hydration.
+      .sort((a, b) => a.label.localeCompare(b.label, 'en')),
   ]);
 
   protected readonly activeCommittee: Signal<PublicCalendarCommittee | undefined> = computed(() => {
@@ -146,13 +148,18 @@ export class PublicProjectCalendarComponent {
   /**
    * The colors on screen and what each one means — see `resolvePublicCalendarLegend`.
    *
-   * Suppressed below two entries: one color distinguishes nothing, so there is no key to explain, and a
-   * lone "No group" swatch (an unfiltered calendar with no group directory) is pure noise.
+   * Only a lone unattributed swatch is suppressed: it names the absence of a group, which tells a reader
+   * nothing the calendar does not already show. Every other single-entry legend is kept, because the
+   * cancelled and past fills are the sole carrier of that state — those events keep their ordinary
+   * titles, so dropping the key would leave color as the only signal (WCAG 1.4.1).
    */
   private initLegendItems(): Signal<CalendarLegendItem[]> {
     return computed(() => {
       const legend = resolvePublicCalendarLegend(this.calendarEvents());
-      return legend.length > 1 ? legend : [];
+      if (legend.length === 1 && legend[0].color === MEETING_TYPE_COLORS['default'].bg) {
+        return [];
+      }
+      return legend;
     });
   }
 

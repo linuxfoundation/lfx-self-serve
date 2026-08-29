@@ -23,6 +23,8 @@ const TSC_UID = '11111111-1111-4111-8111-111111111111';
 const BOARD_UID = '22222222-2222-4222-8222-222222222222';
 /** Comfortably ended, so the occurrence renders with the past treatment rather than its group colour. */
 const PAST_START = '2020-01-01T15:00:00Z';
+/** Far enough out that the occurrence is never past, isolating the cancelled treatment. */
+const FUTURE_START = '2999-09-01T15:00:00Z';
 
 function meeting(over: Partial<PublicCalendarMeeting> = {}): PublicCalendarMeeting {
   return {
@@ -180,13 +182,33 @@ describe('PublicProjectCalendarComponent', () => {
       expect(legend?.textContent).toContain('Past');
     });
 
-    it('suppresses a legend that would carry a single colour, which distinguishes nothing', async () => {
-      await render({
-        groups: [group()],
-        response: response({ meetings: [meeting({ committee_uids: [TSC_UID] })] }),
-      });
+    it('suppresses a lone unattributed swatch, which names only an absence', async () => {
+      // No directory match, so every event takes the fallback fill. "No publicly listed group" as the
+      // only key tells the reader nothing the calendar does not already show.
+      await render({ groups: [], response: response({ meetings: [meeting()] }) });
 
       expect(fixture.nativeElement.querySelector('[data-testid="public-project-calendar-legend"]')).toBeNull();
+    });
+
+    // A cancelled or past event keeps its ordinary title — the fill is the only thing marking its state,
+    // so dropping a single-entry legend here would leave colour as the sole carrier of meaning.
+    it('keeps a single-entry legend when that colour is the only cancellation cue', async () => {
+      await render({
+        groups: [group()],
+        response: response({
+          meetings: [
+            meeting({
+              committee_uids: [TSC_UID],
+              occurrences: [{ occurrence_id: 'o1', start_time: FUTURE_START, duration: 30 }],
+              cancelled_occurrences: ['o1'],
+            }),
+          ],
+        }),
+      });
+
+      const legend = fixture.nativeElement.querySelector('[data-testid="public-project-calendar-legend"]');
+      expect(legend).not.toBeNull();
+      expect(legend.textContent).toContain('Cancelled');
     });
 
     it('does not render the filter when the directory has no groups', async () => {
