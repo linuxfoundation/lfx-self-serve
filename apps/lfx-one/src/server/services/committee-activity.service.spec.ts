@@ -897,6 +897,9 @@ describe('CommitteeActivityService', () => {
       await expect(
         service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { uid: 'some-other-committee', enable_voting: true } as Committee)
       ).rejects.toThrow(ServiceValidationError);
+      // Pins the guard's value as a cheap tripwire — it must reject BEFORE the 5-leg upstream
+      // fan-out starts, not just eventually throw after paying for it.
+      expect(proxyRequest).not.toHaveBeenCalled();
     });
 
     it('logs the aggregation start/completion at DEBUG, not INFO, when quietAggregationLog is passed — this caller is a per-poll-tick tally, not the controller-driven feed the INFO rationale was written for', async () => {

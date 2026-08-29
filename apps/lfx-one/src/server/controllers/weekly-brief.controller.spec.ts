@@ -64,7 +64,7 @@ vi.mock('../services/logger.service', () => ({
 
 import { WeeklyBriefController } from './weekly-brief.controller';
 
-function buildReq(body: unknown = {}, query: Record<string, string> = {}): any {
+function buildReq(body: unknown = {}, query: Record<string, string | string[]> = {}): any {
   return { params: { committeeId: COMMITTEE_ID }, query, body, path: '/test', log: {} };
 }
 
@@ -315,6 +315,14 @@ describe('WeeklyBriefController', () => {
       await controller.getCurrentBrief(buildReq({}, { includeCurrentActivity: ' false ' }), buildRes(), vi.fn());
 
       expect(weeklyBriefSvc.getCurrentBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, { includeCurrentActivity: false });
+    });
+
+    it('keeps the default-included behavior for a repeated-key array — getStringQueryParam narrows that to undefined, not a string', async () => {
+      weeklyBriefSvc.getCurrentBrief.mockResolvedValue({ brief: null, throttle: null });
+
+      await controller.getCurrentBrief(buildReq({}, { includeCurrentActivity: ['false', 'false'] }), buildRes(), vi.fn());
+
+      expect(weeklyBriefSvc.getCurrentBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, { includeCurrentActivity: true });
     });
 
     it('sets Cache-Control: no-store — the response can carry per-user, FGA-filtered activity/rating content', async () => {

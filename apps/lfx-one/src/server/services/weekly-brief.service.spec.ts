@@ -855,10 +855,11 @@ describe('WeeklyBriefService', () => {
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       getCommitteeActivityMock.mockResolvedValue({
         // ACTIVITY_FEED_MAX_PAGE_SIZE worth of in-window events — the actual signal that some of
-        // them may have been cut, unlike a bare page_token (see the next test). Built from the
-        // real (mocked) constant, not a bare literal, so this test can't silently drift out of
-        // sync with the production `data.length >= ACTIVITY_FEED_MAX_PAGE_SIZE` gate it exists to
-        // exercise.
+        // them may have been cut, unlike a bare page_token (see the next test). `ACTIVITY_FEED_MAX_PAGE_SIZE`
+        // here resolves through this file's own `vi.mock('@lfx-one/shared/constants', ...)`, which
+        // hand-copies the real value rather than re-deriving it — so this only tracks production if
+        // that copy stays correct. `activity-event.constants.spec.ts` is the one place the REAL
+        // value is pinned; that's what actually guards this test against drifting out of sync.
         data: Array.from({ length: ACTIVITY_FEED_MAX_PAGE_SIZE }, (_, i) => ({
           type: 'meeting_held',
           occurred_at: '2026-01-12T10:00:00Z',
@@ -985,13 +986,25 @@ describe('WeeklyBriefService', () => {
               committee_uid: 'committee-1',
               payload: { meeting_id: 'm2', meeting_occurrence_id: 'm2-occ', title: 'Real Meeting', password: null },
             },
+            {
+              // Exactly ON window_end (not after it) — pins the filter's boundary as inclusive
+              // (`>`, not `>=`), since window_end IS "now" and an event landing exactly there is
+              // real in-window activity, not a future-dated anomaly like the vote above.
+              type: 'meeting_held',
+              occurred_at: '2026-01-14T12:00:00.000Z',
+              committee_uid: 'committee-1',
+              payload: { meeting_id: 'm3', meeting_occurrence_id: 'm3-occ', title: 'Boundary Meeting', password: null },
+            },
           ],
           page_token: undefined,
         });
 
         const result = await service.getCurrentBrief(req, 'committee-1');
 
-        expect(result.current_activity?.source_refs).toEqual([{ id: 'm2-occ', kind: 'meeting', title: 'Real Meeting' }]);
+        expect(result.current_activity?.source_refs).toEqual([
+          { id: 'm2-occ', kind: 'meeting', title: 'Real Meeting' },
+          { id: 'm3-occ', kind: 'meeting', title: 'Boundary Meeting' },
+        ]);
         // DEBUG, not WARN — this is a modeled, expected shape for an administratively-closed
         // vote (see mapVoteToEvent), not a data-quality anomaly; still logged, just not at a
         // level that pages someone for something the system already understands.
@@ -1027,6 +1040,10 @@ describe('WeeklyBriefService', () => {
       expect(getCommitteeBaseMock).not.toHaveBeenCalled();
       expect(getCommitteeActivityMock).not.toHaveBeenCalled();
       expect(result.current_activity).toBeUndefined();
+      // toBeUndefined() alone can't tell "key absent" from "key present as undefined" apart — the
+      // exact distinction getCurrentBrief's conditional spread exists to maintain and the client's
+      // `=== undefined` gate reads. Load-bearing specifically on this opt-out path.
+      expect('current_activity' in result).toBe(false);
     });
 
     it('degrades to current_activity: undefined (not a thrown error) when the committee lookup fails', async () => {
