@@ -76,11 +76,14 @@ export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
  * — just don't read it as protecting the poll response's timing, which the client's own timeout
  * already owns. When this constant's value resolves the race, it degrades to `undefined`, the
  * same transient/"worth asking again" value any other `buildCurrentActivity` failure produces —
- * on the initial-load path that's what lets `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS`
- * self-heal on the next poll tick once the brief starts generating. Note the retries that budget
- * enables are not free: the loser of the race in `buildCurrentActivityWithBudget` is never
- * cancelled, so a persistently slow upstream can end up serving multiple overlapping fan-outs at
- * once (one per ask attempt) rather than being asked once and left alone.
+ * self-heal from that is exactly as good (and exactly as limited) as
+ * `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS`'s own doc comment already describes: it only
+ * happens while the card is actively polling (a generating brief), not on an initial load that
+ * lands on an already-terminal one — that known v1 gap applies here unchanged, not restated.
+ * Note the retries that budget enables are not free: the loser of the race in
+ * `buildCurrentActivityWithBudget` is never cancelled, so a persistently slow upstream can end up
+ * serving multiple overlapping fan-outs at once (one per ask attempt) rather than being asked
+ * once and left alone.
  */
 export const WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS = 10_000;
 

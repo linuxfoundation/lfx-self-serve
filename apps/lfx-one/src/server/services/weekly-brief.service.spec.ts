@@ -1078,6 +1078,15 @@ describe('WeeklyBriefService', () => {
 
       expect(result.current_activity).toBeUndefined();
       expect(result.brief).toMatchObject({ state: expect.any(String), brief_text: expect.any(String) });
+      // Pins the BUDGET_ELAPSED sentinel's whole reason for existing: a plain buildCurrentActivity
+      // undefined (this test) must not be misread as a budget-elapsed degrade, which would fire
+      // the wrong warning message and mislead anyone debugging from CloudWatch alone.
+      expect(logger.warning).not.toHaveBeenCalledWith(
+        req,
+        'get_weekly_brief_current_activity',
+        'Current-activity budget elapsed, omitting the tally',
+        expect.anything()
+      );
     });
 
     it('degrades to current_activity: undefined once WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS elapses, rather than letting a slow (not erroring) upstream hold the whole response hostage', async () => {
