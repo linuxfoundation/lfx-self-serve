@@ -1180,18 +1180,35 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * so nothing else re-runs the lookup. Left in place it rolls into B's brief, and A's Create
    * button stays live against B's portal.
    */
-  it('clears settled HubSpot state when the foundation changes', () => {
-    runLookup({ found: true, hs_utm: 'foundation-a-token', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false });
+  it('re-asks the HubSpot question under the new foundation, rather than clearing and stopping', () => {
+    // Put a url in the field, since the re-lookup reads the event from it.
+    (fixture.componentInstance as unknown as { briefForm: { controls: { url: { setValue(v: string): void } } } }).briefForm.controls.url.setValue(
+      'https://events.example.com/kubecon-na-2026'
+    );
+    runLookup(
+      { found: true, hs_utm: 'foundation-a-token', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false },
+      // extractEventName title-cases the slug, and the guard compares against THAT -- so the
+      // captured event must be what the component would derive from the field, not the raw slug.
+      'Kubecon Na 2026'
+    );
     expect(instance()['hsUtm']()).toBe('foundation-a-token');
 
+    // The new foundation's portal answers differently.
+    const before = lookup.mock.calls.length;
+    lookup.mockReturnValue(
+      new Observable((s) => {
+        s.next({ found: true, hs_utm: 'foundation-b-token', campaign_name: 'KubeCon NA 2026', all_matches: [], capped: false, inconclusive: false });
+        s.complete();
+      })
+    );
     TestBed.inject(ProjectContextService).setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
     fixture.detectChanges();
 
-    expect(instance()['hsUtm'](), "foundation A's token survived into foundation B").toBeNull();
-    expect(instance()['hsStatus']()).toBeNull();
-    // And the event key is cleared, or lookupHubSpot's early return would swallow the re-lookup
-    // for the same event under the new foundation.
-    expect((fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent).toBe('');
+    // Clearing alone left the panel DEAD: the component stays mounted and the url does not
+    // change, so urlInput$ never fires and nothing else starts a lookup. The block stayed
+    // hidden -- no create, no re-check -- until the operator retyped the same url.
+    expect(lookup.mock.calls.length, 'the foundation change cleared the panel without re-asking').toBe(before + 1);
+    expect(instance()['hsUtm'](), "foundation A's token survived into foundation B").toBe('foundation-b-token');
   });
 
   /**

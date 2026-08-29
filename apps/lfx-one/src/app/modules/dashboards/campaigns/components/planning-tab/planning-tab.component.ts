@@ -404,6 +404,17 @@ export class PlanningTabComponent implements OnInit {
       this.hsStatus.set(null);
       this.hsSearching.set(false);
       this.hsCreating.set(false);
+      // And RE-ASK the question under the new foundation. Clearing alone left the panel dead:
+      // the component stays mounted and the url does not change, so `urlInput$` never fires and
+      // nothing else starts a lookup — the whole HubSpot block stayed hidden, with no create and
+      // no re-check, until the operator retyped the same url. The event is still in the field,
+      // and it is a different question now that a different portal answers it.
+      const eventName = this.extractEventName(this.briefForm.controls.url.value.trim());
+      // Same length gate `onUrlInput` applies before it will issue a lookup at all: a short or
+      // half-typed url names no event, and asking about one would be a request nobody made.
+      if (eventName.length > 3) {
+        this.lookupHubSpot(eventName);
+      }
     });
   }
 
