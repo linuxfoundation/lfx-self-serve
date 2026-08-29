@@ -674,8 +674,8 @@ export class ProfileController {
           return;
         }
 
-        // Needs the Flow C management token to read the forward; ask the client to re-authorize
-        // when it's absent (flow configured). Suppressed during impersonation — a write-path only the real user can trigger.
+        // Needs the Flow C management token to read the forward; prompt the client to re-authorize when
+        // it's absent. Suppressed under impersonation — the re-auth would rewrite the impersonator's own session.
         const forwardAuthRequired = !isImpersonating(req) && !managementToken && this.profileAuthService.isProfileAuthConfigured();
 
         logger.success(req, 'get_linux_alias', startTime, { state: 'claimed' });
