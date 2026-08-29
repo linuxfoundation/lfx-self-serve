@@ -1200,23 +1200,38 @@ export class WeeklyBriefService {
    * not hold the whole `GET /current` response hostage). Resolving to `undefined` on a lost race,
    * not rejecting, is deliberate: it's the same value `buildCurrentActivity` itself already
    * produces for any other transient failure, so `getCurrentBrief`'s caller — and the client's
-   * poll self-heal — can't tell a timeout apart from any other degrade, and don't need to. The
-   * loser of the race is not cancelled (`buildCurrentActivity` has no cancellation hook — its
-   * underlying upstream calls keep running until they settle or their own timeout fires). The
-   * trailing `.catch()` on it is defense-in-depth, not a live path today: `buildCurrentActivity`'s
-   * own try/catch already wraps everything it does, so it can never actually reject as written —
-   * kept so a late rejection stays harmless rather than an unhandled one if that invariant ever
-   * changes, same rationale as this file's other "unreached in practice" guards.
+   * poll self-heal — can't tell a timeout apart from any other degrade, and don't need to. Still
+   * warns when the budget is the one that wins, matching this method's every sibling exit
+   * (`buildCurrentActivity` itself warns on each of its own omit-the-tally paths) — otherwise a
+   * budget that starts firing regularly in production would be invisible in CloudWatch. A
+   * dedicated sentinel (not plain `undefined`) distinguishes "the budget elapsed" from
+   * "`buildCurrentActivity` itself resolved to `undefined` well within budget", which needs no
+   * warning of its own (it already logs its own reason for degrading). The loser of the race is
+   * not cancelled (`buildCurrentActivity` has no cancellation hook — its underlying upstream
+   * calls keep running until they settle or their own timeout fires). The trailing `.catch()` on
+   * it is defense-in-depth, not a live path today: `buildCurrentActivity`'s own try/catch already
+   * wraps everything it does, so it can never actually reject as written — kept so a late
+   * rejection stays harmless rather than an unhandled one if that invariant ever changes, same
+   * rationale as this file's other "unreached in practice" guards.
    */
   private async buildCurrentActivityWithBudget(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | null | undefined> {
+    const BUDGET_ELAPSED = Symbol('current_activity_budget_elapsed');
     let timer: NodeJS.Timeout;
-    const timeout = new Promise<undefined>((resolve) => {
-      timer = setTimeout(() => resolve(undefined), WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS);
+    const timeout = new Promise<typeof BUDGET_ELAPSED>((resolve) => {
+      timer = setTimeout(() => resolve(BUDGET_ELAPSED), WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS);
     });
     const result = this.buildCurrentActivity(req, committeeId);
     result.catch(() => undefined);
     try {
-      return await Promise.race([result, timeout]);
+      const winner = await Promise.race([result, timeout]);
+      if (winner === BUDGET_ELAPSED) {
+        logger.warning(req, 'get_weekly_brief_current_activity', 'Current-activity budget elapsed, omitting the tally', {
+          committee_id: committeeId,
+          budget_ms: WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS,
+        });
+        return undefined;
+      }
+      return winner;
     } finally {
       clearTimeout(timer!);
     }

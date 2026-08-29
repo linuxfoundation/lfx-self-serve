@@ -1096,6 +1096,12 @@ describe('WeeklyBriefService', () => {
 
         expect(result.current_activity).toBeUndefined();
         expect(result.brief).toMatchObject({ state: expect.any(String), brief_text: expect.any(String) });
+        // A budget-driven omission must be visible in CloudWatch, same as this method's other
+        // omit-the-tally exits — see buildCurrentActivityWithBudget's own doc comment.
+        expect(logger.warning).toHaveBeenCalledWith(req, 'get_weekly_brief_current_activity', 'Current-activity budget elapsed, omitting the tally', {
+          committee_id: 'committee-1',
+          budget_ms: WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS,
+        });
       } finally {
         vi.useRealTimers();
       }

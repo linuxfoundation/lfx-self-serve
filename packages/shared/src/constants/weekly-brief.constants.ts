@@ -64,9 +64,23 @@ export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
  * add real seconds to a response that should return in well under one. Deliberately generous
  * relative to a normal aggregation (this isn't tuned from production latency data, just picked to
  * be comfortably longer than typical completion and clearly shorter than any single leg's own
- * timeout) — a timeout here resolves to `undefined`, the same transient/"worth asking again"
- * value any other `buildCurrentActivity` failure produces, so the existing poll self-heal
- * (`WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS`) already knows how to recover from it.
+ * timeout).
+ *
+ * In practice this only binds `weekly-brief-card.component.ts`'s initial (non-poll) load of
+ * `GET /current`, which has no client-side timeout of its own — that's the truly unbounded case
+ * this constant exists for. On the polling path (`pollUntilTerminal`), the client already wraps
+ * every tick in its own `timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS)` (4s, well under this budget), so
+ * a slow fan-out there gets abandoned client-side first; this budget never gets the chance to be
+ * the thing that resolves it. It still isn't wasted work on that path — bounding the server-side
+ * fan-out itself, independent of whether a client is still listening, is worth doing on its own
+ * — just don't read it as protecting the poll response's timing, which the client's own timeout
+ * already owns. When this constant's value resolves the race, it degrades to `undefined`, the
+ * same transient/"worth asking again" value any other `buildCurrentActivity` failure produces —
+ * on the initial-load path that's what lets `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS`
+ * self-heal on the next poll tick once the brief starts generating. Note the retries that budget
+ * enables are not free: the loser of the race in `buildCurrentActivityWithBudget` is never
+ * cancelled, so a persistently slow upstream can end up serving multiple overlapping fan-outs at
+ * once (one per ask attempt) rather than being asked once and left alone.
  */
 export const WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS = 10_000;
 
