@@ -9,13 +9,15 @@ import { describe, expect, it, vi } from 'vitest';
 // test bed (confirmed directly: importing this module without this mock throws "JIT compilation
 // failed for injectable PlatformLocation"). `@lfx-one/shared/constants` does NOT need mocking — it
 // is plain-Node-safe by invariant; see `packages/shared/src/constants/index.spec.ts`, the single
-// source of truth for that guarantee — and must not be mocked either: `validation.helper.ts`
-// evaluates `AKRITES_*.map(...)` at module scope, which would throw against a stubbed-empty
-// barrel. getStringQueryParam itself has zero dependency on either import; this mock exists
-// solely to let the module load. Every controller spec that exercises `getStringQueryParam`
-// mocks `../helpers/validation.helper` wholesale instead, for the same reason; this file is the
-// one place the real narrowing behavior (string | string[] | ParsedQs | undefined -> string |
-// undefined) is actually pinned.
+// source of truth for that guarantee — and should not be mocked here regardless: a well-intentioned
+// partial stub (e.g. faking the `AKRITES_*` arrays this file's other exports read at module scope
+// with `[]`) doesn't even throw, it just silently empties out those exports' real allow-lists —
+// worse than the loud failure an entirely-missing stub would produce. getStringQueryParam itself
+// has zero dependency on either import; the `utils` mock below exists solely to let the module
+// load. `weekly-brief.controller.spec.ts` also now loads the real `getStringQueryParam` (via the
+// same `importOriginal` pattern, real `constants` included), so this is no longer the only place
+// it runs — but it's still the one place its narrowing behavior (string | string[] | ParsedQs |
+// undefined -> string | undefined) is directly, exhaustively pinned by name.
 vi.mock('@lfx-one/shared/utils', () => ({}));
 
 import { getStringQueryParam } from './validation.helper';

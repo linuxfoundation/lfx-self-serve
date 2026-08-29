@@ -24,22 +24,14 @@ const { weeklyBriefSvc, assertCommitteeRead, assertCommitteeWrite } = vi.hoisted
 vi.mock('../helpers/committee-read-access.helper', () => ({ assertCommitteeRead }));
 vi.mock('../helpers/committee-write-access.helper', () => ({ assertCommitteeWrite }));
 
-// The `@lfx-one/shared/*` alias isn't wired into the server-side vitest config —
-// mocked defensively even though this controller's usage is type-only (matches
-// committee.controller.spec.ts's convention).
-vi.mock('@lfx-one/shared/interfaces', () => ({}));
-// `constants` is a real runtime import here (WEEKLY_BRIEF_TEXT_MAX_LENGTH), unlike
-// `interfaces` above — must be mocked or the real module load re-triggers the
-// Angular JIT-compilation failure this file's mocks otherwise avoid. The three AKRITES_* entries
-// exist only to satisfy validation.helper.ts's real (unmocked, see below) module-level
-// `AKRITES_*.map(...)` statements at import time — unrelated to anything this file's own tests
-// exercise.
-vi.mock('@lfx-one/shared/constants', () => ({
-  WEEKLY_BRIEF_TEXT_MAX_LENGTH: 20_000,
-  AKRITES_STEWARD_ROLE_OPTIONS: [],
-  AKRITES_ESCALATION_PATHS: [],
-  AKRITES_INACTIVE_REASON_OPTIONS: [],
-}));
+// `@lfx-one/shared` (the whole scope, not just `constants`/`interfaces`) IS wired into the
+// server-side vitest config (see vitest.config.ts's `resolve.alias`), so both barrels below are
+// real, unmocked modules loaded via `importOriginal` — not stubs. Kept as explicit `vi.mock(...,
+// importOriginal)` calls rather than left unmocked outright only so a future addition to this file
+// that genuinely needs a stub has an obvious place to add one, matching meeting.controller.spec.ts's
+// established idiom for the same three barrels.
+vi.mock('@lfx-one/shared/interfaces', async (importOriginal) => importOriginal());
+vi.mock('@lfx-one/shared/constants', async (importOriginal) => importOriginal());
 // validation.helper.ts's other exports (unrelated to getStringQueryParam/validateUidParameter)
 // import `@lfx-one/shared/utils` for `resolvePeriodRange`, which fails to JIT-compile outside an
 // Angular test bed — see validation.helper.spec.ts's own header comment for the full mechanism.
