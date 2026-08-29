@@ -4368,6 +4368,7 @@ describe('CampaignsComponent email monitor', () => {
     emailBriefId: { set(v: string): void };
     emailMetrics: { (): BriefMetrics | null; set(v: BriefMetrics | null): void };
     emailMetricsState: { (): string; set(v: string): void };
+    emailMetricsError: { (): string; set(v: string): void };
     emailMetricsRows(): BriefMetricsRow[];
     emailMetricsOkRows(): BriefMetricsRow[];
     emailMetricsPendingRows(): BriefMetricsRow[];
@@ -4642,6 +4643,30 @@ describe('CampaignsComponent email monitor', () => {
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('[data-testid="campaigns-email-metrics-empty"]')).toBeNull();
+  });
+
+  /**
+   * Refresh is otherwise silent to a screen reader: the spinner and the changing numbers are both
+   * visual only, so activating it announced nothing about running, finished or failed.
+   *
+   * The announcement states MEASURED against TOTAL rather than a bare count, because that
+   * difference is the point of the panel — a count alone would imply every staged email reported
+   * numbers.
+   */
+  it('announces the metrics read to a screen reader', () => {
+    showMonitor();
+    const live = (): string => fixture.nativeElement.querySelector('[data-testid="campaigns-email-metrics-live"]')?.textContent?.trim() ?? '';
+
+    // Silent before anything has happened, so it does not speak on unrelated tabs.
+    expect(live()).toBe('');
+
+    load([okRow(), { campaign_id: 'c2', platform: 'hubspot', status: 'not_ready', reason: 'not sent yet' } as BriefMetricsRow]);
+    expect(live()).toContain('1 of 2');
+
+    internals().emailMetricsState.set('error');
+    internals().emailMetricsError.set('Could not read email performance.');
+    fixture.detectChanges();
+    expect(live()).toContain('Could not read email performance.');
   });
 
   /**

@@ -1003,6 +1003,38 @@ export class CampaignsComponent {
   protected readonly emailMetricsError = signal<string>('');
 
   /**
+   * Screen-reader announcement for the metrics read.
+   *
+   * The Refresh button's feedback is otherwise purely visual — a spinner appears, numbers change —
+   * so a screen-reader user who activates it is told nothing about whether it is running, finished
+   * or failed. This mirrors `emailTemplatesAnnouncement`, and its region is mounted outside the
+   * `@switch` for the reason documented there: an aria-live element inserted with its text already
+   * present is not reliably announced.
+   *
+   * Empty in `idle`, so it stays silent on the tabs and states where no read has happened.
+   */
+  protected readonly emailMetricsAnnouncement = computed<string>(() => {
+    switch (this.emailMetricsState()) {
+      case 'loading':
+        return 'Reading email performance';
+      case 'error':
+        return this.emailMetricsError();
+      case 'loaded': {
+        const rows = this.emailMetricsRows().length;
+        if (rows === 0) {
+          return 'No email staged for this brief';
+        }
+        const measured = this.emailMetricsOkRows().length;
+        // Says what was MEASURED against what exists, because that difference is the whole point
+        // of the panel and a count alone would imply every row carried numbers.
+        return `Email performance updated: ${measured} of ${rows} staged ${rows === 1 ? 'email' : 'emails'} reporting numbers`;
+      }
+      default:
+        return '';
+    }
+  });
+
+  /**
    * Only the rows this tab is about.
    *
    * A brief is shared across delivery types, so its metrics read returns the paid campaigns too.

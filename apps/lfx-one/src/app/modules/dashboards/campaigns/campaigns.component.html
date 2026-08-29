@@ -185,6 +185,17 @@
     -->
       <div role="status" aria-live="polite" class="sr-only" data-testid="campaigns-email-templates-live">{{ emailTemplatesAnnouncement() }}</div>
 
+      <!--
+      Metrics-read status, mounted OUTSIDE the @switch for the same reason as the region above:
+      `selectTab` calls `loadEmailMetrics` synchronously BEFORE the Monitor case renders, so a
+      region inside the case would be created with its text already in place and announce nothing
+      on the entry path -- which is the main path.
+
+      Refresh is otherwise silent to a screen reader: the spinner and the changing numbers are
+      both visual only.
+    -->
+      <div role="status" aria-live="polite" class="sr-only" data-testid="campaigns-email-metrics-live">{{ emailMetricsAnnouncement() }}</div>
+
       @switch (selectedEmailTab()) {
         @case ('implementation') {
           <div role="tabpanel" id="email-panel-implementation" aria-labelledby="email-tab-implementation" data-testid="campaigns-email-implementation-panel">
