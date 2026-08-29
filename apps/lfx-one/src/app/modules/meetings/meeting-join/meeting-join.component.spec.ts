@@ -2,14 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard } from '@angular/cdk/clipboard';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { Meeting, MeetingRegistrant, PublicMeetingProject, User } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
+import { installMatchMediaShim } from '@shared/testing/header-test-providers';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -84,6 +88,7 @@ describe('MeetingJoinComponent', () => {
   };
 
   beforeEach(() => {
+    installMatchMediaShim();
     registrantUidCounter = 0;
     authenticated = signal(true);
     paramMap$ = new BehaviorSubject<ParamMap>(convertToParamMap({ id: MEETING_ID }));
@@ -93,7 +98,10 @@ describe('MeetingJoinComponent', () => {
     getMyMeetingRegistrants = vi.fn().mockReturnValue(of([]));
 
     TestBed.configureTestingModule({
+      imports: [MeetingJoinComponent],
       providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
         {
           provide: ActivatedRoute,
           useValue: {
@@ -113,9 +121,35 @@ describe('MeetingJoinComponent', () => {
             getMyMeetingRegistrants,
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRsvpForCurrentUser: vi.fn().mockReturnValue(of(null)),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            getPastMeetingParticipants: vi.fn().mockReturnValue(of([])),
+            stripMetadata: vi.fn(),
+            createRegistrantFormGroup: vi.fn(
+              () =>
+                new FormGroup({
+                  first_name: new FormControl(''),
+                  last_name: new FormControl(''),
+                  email: new FormControl(''),
+                  job_title: new FormControl(''),
+                  org_name: new FormControl(''),
+                  host: new FormControl(false),
+                  linkedin_profile: new FormControl(''),
+                })
+            ),
           },
         },
-        { provide: UserService, useValue: { authenticated, user: signal<User | null>({ email: 'me@example.com' } as unknown as User) } },
+        {
+          provide: UserService,
+          useValue: {
+            authenticated,
+            user: signal<User | null>({ email: 'me@example.com' } as unknown as User),
+            impersonating: signal(false),
+            impersonator: signal(null),
+            viewerUsername: signal<string | null>('me'),
+            effectiveAvatarUrl: signal(''),
+            getCurrentUserProfile: vi.fn().mockReturnValue(of(null)),
+          },
+        },
         { provide: ProjectContextService, useValue: { setFoundation: vi.fn() } },
         { provide: PlausibleService, useValue: { ready: signal(true), trackPage: vi.fn() } },
         { provide: Clipboard, useValue: { copy: vi.fn() } },
@@ -189,7 +223,12 @@ describe('MeetingJoinComponent', () => {
     const component = await createComponent();
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(3);
 
+    // The meeting-fetch pipeline debounces route-param changes via a real (non-zone-tracked) RxJS
+    // timer, so `whenStable()` alone can resolve before it fires. Fake timers hang here because they
+    // also intercept Angular's own zoneless scheduling internals — a real macrotask tick is required
+    // to flush the debounce deterministically.
     paramMap$.next(convertToParamMap({ id: MEETING_ID_2 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     await TestBed.inject(ApplicationRef).whenStable();
 
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toEqual([]);
