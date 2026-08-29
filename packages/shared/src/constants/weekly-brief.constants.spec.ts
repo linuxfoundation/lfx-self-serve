@@ -1,13 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Pins this module's constants against the values their own consumers assume — either an
-// upstream-documented bound, or a value a server spec's `vi.mock('@lfx-one/shared/constants', ...)`
-// hand-copies (which real-value drift wouldn't otherwise be caught against; see each `it()` below
-// for which applies and why). NOT the BFF's vitest config that could otherwise be blamed for
-// needing this: that only aliases `@lfx-one/shared` to the real source
-// (`apps/lfx-one/vitest.config.ts`'s own comment: "server specs exercise the real shared barrels
-// instead of drift-prone vi.mock stubs") — any hand-copying happens per spec file, not centrally.
+// Pins this module's constants against the values their own consumers assume. Each `it()` below
+// states its own rationale.
 
 import { describe, expect, it } from 'vitest';
 
