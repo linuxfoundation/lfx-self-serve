@@ -1151,8 +1151,10 @@ export class ProjectController {
       scheduled_start_time: pastRow.scheduled_start_time,
       meeting_and_occurrence_id: pastRow.meeting_and_occurrence_id,
       // UIDs only. `MeetingCommittee.name` is not published here: a PUBLIC meeting can be associated
-      // with a committee the public group directory does not list, and forwarding its name would leak
-      // an otherwise non-public group. Clients label from the directory instead.
+      // with a committee the public group directory does not list, and forwarding its name would put
+      // that group's label on every meeting in the feed. Clients label from the directory instead.
+      // See `PublicCalendarMeeting.committee_uids` for what this does and does not guarantee — the
+      // pre-existing `GET /public/api/meetings/:id` still returns committee names anonymously.
       committee_uids: [...new Set((meeting.committees ?? []).map((committee) => committee.uid).filter((uid): uid is string => !!uid))],
     };
   }
