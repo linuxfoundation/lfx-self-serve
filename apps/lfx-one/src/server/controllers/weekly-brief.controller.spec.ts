@@ -44,9 +44,12 @@ vi.mock('../helpers/validation.helper', () => ({
     }
     return true;
   },
-  // Real implementation (not a stub) — this spec's includeCurrentActivity tests exercise the
-  // actual narrowing behavior (undefined on a missing/non-string query value), not a canned
-  // return.
+  // A hand-copy of the real narrowing logic (undefined on a missing/non-string query value), not
+  // a canned return — this spec's includeCurrentActivity tests exercise this copy, not the real
+  // function (the real module can't load here; its other exports pull in `@lfx-one/shared/utils`,
+  // which fails to JIT-compile outside an Angular test bed). `validation.helper.spec.ts` is the
+  // one place the real `getStringQueryParam` is loaded and its narrowing behavior actually pinned
+  // — this copy staying faithful to that is what makes the tests below meaningful.
   getStringQueryParam: (req: { query: Record<string, unknown> }, name: string): string | undefined => {
     const value = req.query[name];
     return typeof value === 'string' ? value : undefined;
