@@ -1259,17 +1259,23 @@ export class WeeklyBriefService {
     try {
       logger.debug(req, 'get_weekly_brief_current_activity', 'Building current-week activity tally', { committee_id: committeeId });
       const committee = await this.committeeService.getCommitteeBase(req, committeeId);
-      // undefined `committee`, OR a resolved committee with no `category` (its type declares
-      // `category` required — committee.interface.ts — but that's a contract on well-formed
-      // upstream data, not a runtime guarantee against a malformed body), means upstream
-      // resolved with no usable category to classify on. A genuine 404/upstream error throws
-      // instead and is caught below, same as any other failure in this method. Either way this
-      // is an anomaly, not a governance verdict, so it falls through to undefined rather than
-      // being asserted as "not governance" — isGoverningBoard(undefined) below would otherwise
-      // return false and this would settle to `null` (permanent) for what might just be a
-      // transient partial response, worth asking again on the next poll tick.
-      if (committee === undefined || committee.category === undefined) {
-        logger.warning(req, 'get_weekly_brief_current_activity', 'Committee lookup returned nothing usable to classify on, omitting the tally', {
+      if (committee === undefined) {
+        logger.warning(req, 'get_weekly_brief_current_activity', 'Committee lookup returned nothing, omitting the tally', { committee_id: committeeId });
+        return undefined;
+      }
+      // Falsy, not just `=== undefined` — a resolved committee with no `category` (its type
+      // declares `category` required — committee.interface.ts — but that's a contract on
+      // well-formed upstream data, not a runtime guarantee against a malformed body) is
+      // unclassifiable the same way `getGroupBehavioralClass` itself already treats `undefined`,
+      // `null`, and `''` identically (`if (!category) return 'other'` — committee.utils.ts). A
+      // genuine 404/upstream error throws instead and is caught below, same as any other failure
+      // in this method. Either way this is an anomaly, not a governance verdict, so it falls
+      // through to undefined rather than being asserted as "not governance" —
+      // isGoverningBoard('')/isGoverningBoard(undefined) both return false, which would settle
+      // this to `null` (permanent) for what might just be a transient partial response, worth
+      // asking again on the next poll tick.
+      if (!committee.category) {
+        logger.warning(req, 'get_weekly_brief_current_activity', 'Committee resolved with no usable category, omitting the tally', {
           committee_id: committeeId,
         });
         return undefined;

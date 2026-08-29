@@ -978,20 +978,27 @@ describe('WeeklyBriefService', () => {
       expect(result.brief).toBeDefined();
     });
 
-    it('degrades to current_activity: undefined (not null) when the committee resolves with no category — an anomaly, not a "not governance" verdict', async () => {
-      delete process.env['WEEKLY_BRIEF_BACKEND'];
-      // No `category` field at all — a malformed/partial body, not the empty-body case
-      // getCommitteeBase's own doc comment covers (that resolves to undefined, not an object).
-      getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1' });
+    it.each([
+      ['absent entirely', { uid: 'committee-1' }],
+      ['an empty string', { uid: 'committee-1', category: '' }],
+    ])(
+      'degrades to current_activity: undefined (not null) when the committee resolves with category %s — an anomaly, not a "not governance" verdict',
+      async (_label, committee) => {
+        delete process.env['WEEKLY_BRIEF_BACKEND'];
+        // Not the empty-body case getCommitteeBase's own doc comment covers (that resolves to
+        // undefined, not an object) — a resolved committee whose category isn't usable.
+        getCommitteeBaseMock.mockResolvedValue(committee);
 
-      const result = await service.getCurrentBrief(req, 'committee-1');
+        const result = await service.getCurrentBrief(req, 'committee-1');
 
-      // undefined, not null: isGoverningBoard(undefined) is false, so a naive category-only
-      // check would settle this to null (permanent "not governance") — this is a transient
-      // anomaly worth asking again on the next poll tick instead.
-      expect(result.current_activity).toBeUndefined();
-      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
-    });
+        // undefined, not null: isGoverningBoard('')/isGoverningBoard(undefined) are both false,
+        // so a naive falsy-only check on the RESULT of isGoverningBoard would settle this to null
+        // (permanent "not governance") — this is a transient anomaly worth asking again on the
+        // next poll tick instead.
+        expect(result.current_activity).toBeUndefined();
+        expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+      }
+    );
 
     it('degrades to current_activity: undefined (not a thrown error) when the activity fetch fails', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
