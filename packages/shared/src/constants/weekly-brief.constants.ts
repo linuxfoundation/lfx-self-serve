@@ -134,10 +134,12 @@ export const WEEKLY_BRIEF_SOURCE_SECTIONS: readonly WeeklyBriefSourceSection[] =
  * count text ("1 meeting held" / "2 meetings held"). Kept separate from
  * `WEEKLY_BRIEF_SOURCE_SECTIONS` because the two solve different problems: that constant is a
  * noun *label* for a disclosure section heading ("Meetings"), this is a verb *phrase* for a
- * count sentence — but `weekly-brief-card.component.ts` drives the tally's sections from THIS
- * list alone (not by cross-referencing `WEEKLY_BRIEF_SOURCE_SECTIONS` by kind), so a kind
- * missing here can never render a phrase-less, blank-labeled toggle — see
- * `WeeklyBriefCurrentActivityPhrase`'s doc comment.
+ * count sentence — but `weekly-brief-card.component.ts` drives the tally's section MEMBERSHIP
+ * (which kinds exist, and in what order) from THIS list alone, not by cross-referencing
+ * `WEEKLY_BRIEF_SOURCE_SECTIONS` by kind for that part, so a kind missing here can never render a
+ * countText-less toggle. The section's display LABEL, separately, IS looked up from
+ * `WEEKLY_BRIEF_SOURCE_SECTIONS` (with a `?? kind` fallback covering the reverse gap — a kind
+ * present here but missing there) — see `WeeklyBriefCurrentActivityPhrase`'s doc comment.
  *
  * `mailing-list` and `members` are forward-declared, not currently reachable: the server-side
  * builder (`weekly-brief.service.ts#buildCurrentActivity`) sources `source_refs` from
