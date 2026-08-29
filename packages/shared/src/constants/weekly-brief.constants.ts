@@ -68,9 +68,12 @@ export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
  * Known v1 gap this cap doesn't cover: `pollUntilTerminal` (where this budget lives) only runs
  * while the brief itself is `generating` — a page load onto an already-terminal brief (the far
  * more common case) never invokes it at all. A transient `current_activity` degrade on that load
- * has no DELIBERATE self-heal path here; the tally doesn't recover until the next authoritative
- * fetch — a navigation, a reload, or an incidental `refresh$` emission (a saved edit, a share/save
- * 409) that happens to re-run the same GET, none of which exist to retry this specifically. Not
+ * has no self-heal PURPOSE-BUILT for it — nothing in `weekly-brief-card.component.ts` exists to
+ * retry the tally specifically. It can still recover incidentally, any time something else causes
+ * `initBriefResponseSubscription`'s GET to re-run (a navigation, a reload, `refresh$`, or a
+ * visible retry control in another render branch) — deliberately not enumerated here, since which
+ * call sites/buttons do that is exactly the kind of detail that drifts out of sync with its
+ * source as the component evolves; see that file's own call sites for the current list. Not
  * solved by this constant — a real fix would need `initBriefResponseSubscription` to kick off its
  * own bounded re-ask, independent of the generating-poll's budget.
  */
