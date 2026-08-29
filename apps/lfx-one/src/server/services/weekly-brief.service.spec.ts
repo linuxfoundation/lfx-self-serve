@@ -26,6 +26,7 @@ const {
   buildCacheKey,
   checkSingleAccessStrictMock,
   getCommitteeByIdMock,
+  getCommitteeCategoryMock,
   hasMailingListStrictMock,
   createNewsletterMock,
   sendNewsletterMock,
@@ -78,6 +79,12 @@ const {
     // shareBrief's (LFXV2-2914 / LFXV2-3093) own committee + newsletter collaborators —
     // controlled per-test in the 'shareBrief' describe block below.
     getCommitteeByIdMock: vi.fn(),
+    // buildCurrentActivity's (GH-1922) OWN gating collaborator — a separate mock from
+    // getCommitteeByIdMock above, matching the production split (buildCurrentActivity calls
+    // CommitteeService#getCommitteeCategory, not #getCommitteeById — see its doc comment for
+    // why). Controlled per-test in the 'current_activity (GH-1922)' describe block and in each
+    // internal caller's "never triggers the fan-out" regression guard.
+    getCommitteeCategoryMock: vi.fn(),
     hasMailingListStrictMock: vi.fn(),
     createNewsletterMock: vi.fn(),
     sendNewsletterMock: vi.fn(),
@@ -132,6 +139,7 @@ vi.mock('./logger.service', () => ({
 vi.mock('./committee.service', () => ({
   CommitteeService: class {
     public getCommitteeById = getCommitteeByIdMock;
+    public getCommitteeCategory = getCommitteeCategoryMock;
     public hasMailingListStrict = hasMailingListStrictMock;
   },
 }));
@@ -271,8 +279,12 @@ describe('WeeklyBriefService', () => {
     // committee with an empty activity feed, so every test elsewhere in this file that calls
     // getCurrentBrief (the vast majority) never needs to know these mocks exist. Tests that
     // specifically exercise current_activity override both below.
-    getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Working Group' });
+    getCommitteeCategoryMock.mockResolvedValue('Working Group');
     getCommitteeActivityMock.mockResolvedValue({ data: [], page_token: undefined });
+    // shareBrief's own committee collaborator (unrelated to buildCurrentActivity — see
+    // getCommitteeCategoryMock above) — a safe default so tests elsewhere that incidentally
+    // route through fetchBriefResponse's internal callers don't need their own override.
+    getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', name: 'Test Committee', project_uid: 'project-1', category: 'Working Group' });
   });
 
   afterEach(() => {
@@ -424,7 +436,7 @@ describe('WeeklyBriefService', () => {
     it('never triggers the current_activity fan-out (GH-1922) — getActionItems only ever reads brief_text', async () => {
       // A governance committee, so a regression back to `this.getCurrentBrief` here would
       // actually trigger the fan-out this test exists to catch — not pass vacuously.
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeCategoryMock.mockResolvedValue('Board');
       extractBriefActionItems.mockResolvedValue({ items: [] });
 
       await service.getActionItems(req, 'committee-1');
@@ -724,7 +736,7 @@ describe('WeeklyBriefService', () => {
       ],
     ])('populates current_activity for a governance committee, mapping kinds and excluding an in-progress vote (%s)', async (_label, setBackend) => {
       setBackend();
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeCategoryMock.mockResolvedValue('Board');
       getCommitteeActivityMock.mockResolvedValue({
         data: [
           {
@@ -768,7 +780,7 @@ describe('WeeklyBriefService', () => {
 
     it('folds survey events into the "other" kind rather than dropping them', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeCategoryMock.mockResolvedValue('Board');
       getCommitteeActivityMock.mockResolvedValue({
         data: [
           {
@@ -788,7 +800,7 @@ describe('WeeklyBriefService', () => {
 
     it('maps notes_added to kind "doc", and its id carries the meeting_scope discriminant so it cannot collide with a document_uploaded event sharing the same document_uid', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeCategoryMock.mockResolvedValue('Board');
       getCommitteeActivityMock.mockResolvedValue({
         data: [
           {
@@ -823,7 +835,7 @@ describe('WeeklyBriefService', () => {
 
     it('sets current_activity to null (a settled, not a transient, absence) when the returned page itself is full', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeCategoryMock.mockResolvedValue('Board');
       getCommitteeActivityMock.mockResolvedValue({
         // ACTIVITY_FEED_MAX_PAGE_SIZE (mocked to 50) worth of in-window events — the actual signal
         // that some of them may have been cut, unlike a bare page_token (see the next test).
@@ -852,7 +864,7 @@ describe('WeeklyBriefService', () => {
 
     it("does NOT omit current_activity merely because page_token is present with a short page — a committee with >fetchSize lifetime notes/surveys saturates those legs regardless of the current week (see buildCurrentActivity's own doc comment)", async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeCategoryMock.mockResolvedValue('Board');
       getCommitteeActivityMock.mockResolvedValue({
         data: [
           {
@@ -876,7 +888,7 @@ describe('WeeklyBriefService', () => {
 
     it('renders a genuine quiet week as current_activity present with an empty source_refs array, not absent', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeCategoryMock.mockResolvedValue('Board');
       getCommitteeActivityMock.mockResolvedValue({ data: [], page_token: undefined });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
@@ -890,7 +902,7 @@ describe('WeeklyBriefService', () => {
 
     it('passes currentWeekInProgressWindow().window_start as since, and never briefWindow()', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeCategoryMock.mockResolvedValue('Board');
 
       vi.useFakeTimers();
       try {
@@ -911,7 +923,7 @@ describe('WeeklyBriefService', () => {
 
     it('never calls getCommitteeActivity for a non-governance committee, and current_activity settles to null (not undefined)', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Working Group' });
+      getCommitteeCategoryMock.mockResolvedValue('Working Group');
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
@@ -924,18 +936,18 @@ describe('WeeklyBriefService', () => {
 
     it('skips the entire fan-out (getCommitteeById and getCommitteeActivity) when includeCurrentActivity is false, even for a governance committee', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeCategoryMock.mockResolvedValue('Board');
 
       const result = await service.getCurrentBrief(req, 'committee-1', { includeCurrentActivity: false });
 
-      expect(getCommitteeByIdMock).not.toHaveBeenCalled();
+      expect(getCommitteeCategoryMock).not.toHaveBeenCalled();
       expect(getCommitteeActivityMock).not.toHaveBeenCalled();
       expect(result.current_activity).toBeUndefined();
     });
 
     it('degrades to current_activity: undefined (not a thrown error) when the committee lookup fails', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeByIdMock.mockRejectedValue(new Error('upstream unavailable'));
+      getCommitteeCategoryMock.mockRejectedValue(new Error('upstream unavailable'));
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
@@ -945,7 +957,7 @@ describe('WeeklyBriefService', () => {
 
     it('degrades to current_activity: undefined (not a thrown error) when the activity fetch fails', async () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeCategoryMock.mockResolvedValue('Board');
       getCommitteeActivityMock.mockRejectedValue(new Error('upstream unavailable'));
 
       const result = await service.getCurrentBrief(req, 'committee-1');
@@ -964,7 +976,7 @@ describe('WeeklyBriefService', () => {
     it('never triggers the current_activity fan-out (GH-1922) — rateBrief/clearBriefRating only ever read brief/caller_rating', async () => {
       // A governance committee, so a regression back to `this.getCurrentBrief` inside
       // resolveRatableBrief would actually trigger the fan-out this test exists to catch.
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeCategoryMock.mockResolvedValue('Board');
       const initial = await service.getCurrentBrief(userReq, 'committee-1');
       const briefUid = initial.brief!.uid;
       getCommitteeActivityMock.mockClear(); // the setup call above is allowed to fan out; only what follows is under test.
@@ -1328,7 +1340,7 @@ describe('WeeklyBriefService', () => {
     it('never triggers the current_activity fan-out (GH-1922) — shareToSlack only ever reads brief', async () => {
       // A governance committee, so a regression back to `this.getCurrentBrief` here would
       // actually trigger the fan-out this test exists to catch.
-      getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
+      getCommitteeCategoryMock.mockResolvedValue('Board');
       mockShareableBrief();
       mockCommittee();
       proxyRequest.mockResolvedValueOnce(undefined);
@@ -1487,8 +1499,11 @@ describe('WeeklyBriefService', () => {
 
     it('never triggers the current_activity fan-out (GH-1922) — shareBrief only ever reads brief', async () => {
       // A governance committee, so a regression back to `this.getCurrentBrief` here would
-      // actually trigger the fan-out this test exists to catch.
+      // actually trigger the fan-out this test exists to catch. Both mocks: shareBrief itself
+      // calls getCommitteeById (for name/project_uid), while buildCurrentActivity — reachable
+      // only via the regression this test guards against — calls getCommitteeCategory.
       getCommitteeByIdMock.mockResolvedValue({ uid: 'committee-1', name: 'Test Committee', project_uid: 'project-1', category: 'Board' });
+      getCommitteeCategoryMock.mockResolvedValue('Board');
       mockShareableBrief();
 
       await service.shareBrief(nonImpersonatingReq, 'committee-1', 1);

@@ -1185,27 +1185,17 @@ export class WeeklyBriefService {
    * not-yet-closed week. Gated to governance (Board/Government Advisory Council) committees only
    * — the only ones the client renders the tally for — so a non-Board committee's weekly-brief
    * load never pays for `getCommitteeActivity`'s own 9-call upstream fan-out. The gating read
-   * itself is NOT free, though: `getCommitteeById` fans out to three upstream calls of its own
-   * (base committee GET, settings, access-check) to read a `category` a plain GET would suffice
-   * for — every committee, governance or not, pays that regardless. Two cheaper alternatives were
-   * considered and both declined: a bare `proxyRequest` GET (the pattern `shareToSlack` uses
-   * above, for the same lightweight need) would run concurrently with `fetchBriefResponse`'s own
-   * `proxyRequest` call in live mode via the `Promise.all` above, and this spec file already has
-   * over a dozen order-sensitive `proxyRequest.mockResolvedValueOnce` queues elsewhere that a
-   * second, path-dispatched consumer risks silently shifting; `getCommitteesByIds` (a batched
-   * query-service read, used by `getMyCommittees`/`getMyPendingInvitations` — though for their own
-   * richer needs, not just `category`) avoids that mock family entirely, but `getMyCommittees`
-   * has to fall back to `membership.committee_category` when the indexed `category` comes back
-   * empty — an unquantified reliability gap, and a false negative on it would hide the tally for a
-   * real governance committee, worse than the extra calls this took instead. `getCommitteeById`
-   * reads the authoritative committee-service record directly, accepting the known extra cost
-   * over that unverified gap. Fails soft to `undefined` (never an empty array) on a genuine
-   * error — one of three states, not two: `undefined` is transient ("couldn't determine",
-   * worth asking again), `null` is settled ("known not to apply", see below), and a real object
-   * is "genuinely zero activity this week" or more. `weekly-brief-card.component.ts`'s
-   * `hasCurrentActivityData` collapses `undefined`/`null` alike for rendering (neither is a
-   * value to show), but its `pollUntilTerminal` poll loop depends on keeping them apart — see
-   * `WeeklyBriefCurrentResponse.current_activity`'s doc comment for the full contract.
+   * itself is `getCommitteeCategory` (a single plain GET), not `getCommitteeById` — this needs
+   * `category` alone, and `getCommitteeById`'s default options cost three upstream calls
+   * (including its own access-check, redundant with the controller's `assertCommitteeRead` on the
+   * same request) for data this call would only discard. Fails soft to `undefined` (never an
+   * empty array) on a genuine error — one of three states, not two: `undefined` is transient
+   * ("couldn't determine", worth asking again), `null` is settled ("known not to apply", see
+   * below), and a real object is "genuinely zero activity this week" or more.
+   * `weekly-brief-card.component.ts`'s `hasCurrentActivityData` collapses `undefined`/`null`
+   * alike for rendering (neither is a value to show), but its `pollUntilTerminal` poll loop
+   * depends on keeping them apart — see `WeeklyBriefCurrentResponse.current_activity`'s doc
+   * comment for the full contract.
    *
    * `limit: ACTIVITY_FEED_MAX_PAGE_SIZE` is a single, unfollowed page — `getCommitteeActivity`
    * hard-rejects any larger `limit`, so that's the ceiling one call can ever return. Deliberately
@@ -1242,11 +1232,21 @@ export class WeeklyBriefService {
   private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | null | undefined> {
     try {
       logger.debug(req, 'get_weekly_brief_current_activity', 'Building current-week activity tally', { committee_id: committeeId });
-      const committee = await this.committeeService.getCommitteeById(req, committeeId);
+      const category = await this.committeeService.getCommitteeCategory(req, committeeId);
+      // undefined `category` here means the lookup itself came back empty (e.g. the committee
+      // vanished between the controller's assertCommitteeRead and this read) — a transient
+      // anomaly, not a governance verdict, so this falls through to the catch-equivalent
+      // undefined below rather than being asserted as "not governance".
+      if (category === undefined) {
+        logger.warning(req, 'get_weekly_brief_current_activity', 'Committee category lookup returned nothing, omitting the tally', {
+          committee_id: committeeId,
+        });
+        return undefined;
+      }
       // null, not undefined — see WeeklyBriefCurrentResponse.current_activity's doc comment.
       // This committee will never become governance-classified mid-poll, so a caller (the
       // client's pollUntilTerminal) can treat this as a settled answer and stop asking.
-      if (!isGoverningBoard(committee.category)) return null;
+      if (!isGoverningBoard(category)) return null;
 
       const { window_start, window_end } = currentWeekInProgressWindow();
       const { data } = await this.committeeActivityService.getCommitteeActivity(req, committeeId, {

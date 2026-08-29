@@ -6,7 +6,9 @@
     <!--
       "This week so far" activity tally (GH-1922) — a raw count of the current, not-yet-closed
       week's activity, separate from the AI Assistant card's own completed-week brief below (a
-      board meeting held today won't appear in that brief until next week). No card border, no
+      board meeting held today won't appear in that brief until next week, Sunday through
+      Friday — briefWindow()'s own Saturday branch makes the brief cover the current week too on
+      that one day, so the two can describe the same window then). No card border, no
       AI iconography, no "contains private source data" banner: this is a count query, not
       generated prose. Board/Government Advisory Council committees only for v1
       (isGoverningBoardCommittee). role="group" makes the container naming-capable so
@@ -20,11 +22,12 @@
       <span>This week so far:</span>
       @if (currentActivity().length) {
         @for (section of currentActivity(); track section.kind; let last = $last) {
+          @let sectionExpanded = expandedActivityKinds().has(section.kind);
           <button
             type="button"
             class="inline border-0 bg-transparent p-0 text-xs text-gray-500 underline decoration-dotted cursor-pointer hover:text-gray-700 transition-colors"
-            [attr.aria-expanded]="expandedActivityKinds().has(section.kind)"
-            [attr.aria-controls]="expandedActivityKinds().has(section.kind) ? 'weekly-brief-card-current-activity-items-' + section.kind : null"
+            [attr.aria-expanded]="sectionExpanded"
+            [attr.aria-controls]="sectionExpanded ? 'weekly-brief-card-current-activity-items-' + section.kind : null"
             (click)="onToggleActivityKind(section.kind)"
             [attr.data-testid]="'weekly-brief-card-current-activity-toggle-' + section.kind">
             <!-- Comma is part of the button's own text, not a sibling flex item — a separate

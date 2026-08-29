@@ -410,6 +410,27 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
     });
   });
 
+  describe('getCommitteeCategory', () => {
+    it("returns category from a single plain GET, not getCommitteeById's enriched fan-out", async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', category: 'Board' });
+
+      const result = await service.getCommitteeCategory(req, COMMITTEE_UID);
+
+      expect(result).toBe('Board');
+      // Exactly one upstream call — no settings, no access-check, unlike getCommitteeById above.
+      expect(proxyRequest).toHaveBeenCalledOnce();
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/committees/${COMMITTEE_UID}`, 'GET');
+    });
+
+    it('returns undefined (not a thrown error) when the committee is not found', async () => {
+      proxyRequest.mockResolvedValueOnce(null);
+
+      const result = await service.getCommitteeCategory(req, COMMITTEE_UID);
+
+      expect(result).toBeUndefined();
+    });
+  });
+
   describe('updateCommittee', () => {
     it('rejects a chat_webhook_url change (409 FEATURE_DISABLED) when the server-side kill switch is off, before touching upstream — independent of WG_WEEKLY_BRIEF_SLACK_FLAG, which is UI-only and never reaches this method', async () => {
       delete process.env[ServerFeatureFlag.WeeklyBriefSlack];
