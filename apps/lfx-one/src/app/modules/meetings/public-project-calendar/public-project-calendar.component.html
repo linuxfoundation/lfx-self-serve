@@ -20,15 +20,22 @@
         </h1>
         <p class="text-sm text-gray-500" data-testid="public-project-calendar-subtitle">
           {{ total() }} {{ total() === 1 ? 'meeting' : 'meetings' }}
+          <!-- The count is filtered whenever the URL carries a group, so it must be labelled as such even
+               when the directory is unavailable to name that group — an unqualified count reads as the
+               project's whole calendar. -->
           @if (activeCommittee(); as committee) {
             in {{ committee.name }}
+          } @else if (activeCommitteeUid()) {
+            in the selected group
           }
         </p>
       }
     </header>
 
-    <!-- Filter needs the public group directory; the legend only needs rendered events, so they gate apart -->
-    @if (committeeOptions().length > 1 || legendItems().length) {
+    <!-- Filter needs the public group directory; the legend only needs rendered events, so they gate apart.
+         An applied filter also opens this row on its own, so the escape hatch below stays reachable when
+         the directory is unavailable and the dropdown cannot render. -->
+    @if (committeeOptions().length > 1 || activeCommitteeUid() || legendItems().length) {
       <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="public-project-calendar-filters">
         @if (committeeOptions().length > 1) {
           <div class="flex items-center gap-2">
@@ -45,6 +52,17 @@
               (onChange)="onCommitteeChange($event)"
               data-testid="public-project-calendar-committee-filter" />
           </div>
+        } @else if (activeCommitteeUid()) {
+          <!-- Filtered, but the directory that populates the dropdown is unavailable. Without this the
+               reader is stuck on a filtered calendar with no control that clears it. -->
+          <lfx-button
+            icon="fa-light fa-calendar"
+            severity="secondary"
+            [outlined]="true"
+            label="View all meetings"
+            size="small"
+            (click)="clearCommitteeFilter()"
+            data-testid="public-project-calendar-clear-filter" />
         }
 
         <!-- Names every colour on the canvas, including the past and cancelled treatments that override
@@ -84,15 +102,17 @@
         (ctaClick)="clearCommitteeFilter()"
         data-testid="public-project-calendar-unknown-committee" />
     } @else if (total() === 0) {
+      <!-- Keyed on the raw UID, not the resolved group: the filter is applied whether or not the
+           directory could name it, and claiming the project has no meetings would be false. -->
       <lfx-empty-state
         icon="fa-light fa-calendar-xmark"
         title="No public meetings"
         [subtitle]="
-          activeCommittee()
-            ? 'This group has no public meetings on the calendar yet.'
+          activeCommitteeUid()
+            ? 'No public meetings on the calendar for the selected group yet.'
             : 'This project has no public meetings on the calendar yet. Check back soon.'
         "
-        [ctaLabel]="activeCommittee() ? 'View all meetings' : undefined"
+        [ctaLabel]="activeCommitteeUid() ? 'View all meetings' : undefined"
         ctaIcon="fa-light fa-calendar"
         (ctaClick)="clearCommitteeFilter()"
         data-testid="public-project-calendar-empty" />

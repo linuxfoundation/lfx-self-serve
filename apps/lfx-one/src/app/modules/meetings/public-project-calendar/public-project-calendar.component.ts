@@ -6,6 +6,7 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FullCalendarComponent } from '@app/shared/components/fullcalendar/fullcalendar.component';
+import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { HeaderComponent } from '@components/header/header.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -35,7 +36,7 @@ import { catchError, combineLatest, distinctUntilChanged, map, of, switchMap } f
 
 @Component({
   selector: 'lfx-public-project-calendar',
-  imports: [FullCalendarComponent, EmptyStateComponent, HeaderComponent, SelectComponent, SkeletonModule],
+  imports: [ButtonComponent, FullCalendarComponent, EmptyStateComponent, HeaderComponent, SelectComponent, SkeletonModule],
   templateUrl: './public-project-calendar.component.html',
 })
 export class PublicProjectCalendarComponent {

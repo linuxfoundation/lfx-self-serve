@@ -232,11 +232,16 @@ export function publicMeetingToCalendarEvents(meeting: PublicCalendarMeeting, co
 /**
  * Legend for a set of public calendar events, restricted to the colors those events actually use.
  *
- * Derived from the rendered events rather than from the meetings' committee associations because the
- * cancelled and past treatments override the group tint: a month holding only finished oversight
- * meetings renders entirely in the past color, and an association-derived legend would advertise a
- * green "Oversight" swatch that appears nowhere on screen — worse than showing no legend at all, since
- * the legend is what carries the color key for readers who cannot rely on hue (WCAG 1.4.1).
+ * Derived from the resolved events rather than from the meetings' committee associations because the
+ * cancelled and past treatments override the group tint: a feed of only finished oversight meetings
+ * resolves entirely to the past color, and an association-derived legend would advertise a green
+ * "Oversight" swatch that is painted nowhere — worse than showing no legend at all, since the legend is
+ * what carries the color key for readers who cannot rely on hue (WCAG 1.4.1).
+ *
+ * Scoped to the events passed in, which callers supply as the whole loaded feed rather than the visible
+ * date range — so a swatch can still describe an event in a month the reader has not scrolled to. That
+ * narrows the mismatch above rather than eliminating it; closing it entirely would mean feeding this the
+ * viewport range from FullCalendar's `datesSet`.
  */
 export function resolvePublicCalendarLegend(events: Pick<MeetingCalendarEventInput, 'backgroundColor'>[]): CalendarLegendItem[] {
   const colorsInUse = new Set(events.map((event) => event.backgroundColor));

@@ -301,6 +301,39 @@ describe('PublicProjectCalendarComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="public-project-calendar-unknown-committee"]')).toBeNull();
     });
 
+    // The directory resolves the group's *name*; the URL decides whether a filter is applied at all.
+    // Keying the filtered affordances on the name conflated the two, so a directory outage silently
+    // presented a filtered calendar as the project's whole calendar, with no control that cleared it.
+    describe('filter applied while the group directory is unavailable', () => {
+      it('does not claim the project has no meetings, and still offers the escape', async () => {
+        await render({
+          groupsFail: true,
+          query: new Map([['committee', TSC_UID]]),
+          response: response({ meetings: [], total: 0 }),
+        });
+
+        const empty = fixture.nativeElement.querySelector('[data-testid="public-project-calendar-empty"]');
+        expect(empty).not.toBeNull();
+        expect(empty.textContent).toContain('selected group');
+        expect(empty.textContent).not.toContain('This project has no public meetings');
+        expect(empty.textContent).toContain('View all meetings');
+        // Not the unknown-group state: an empty directory cannot prove the UID is bad.
+        expect(fixture.nativeElement.querySelector('[data-testid="public-project-calendar-unknown-committee"]')).toBeNull();
+      });
+
+      it('labels the filtered count and renders a clear-filter control in place of the dropdown', async () => {
+        await render({
+          groupsFail: true,
+          query: new Map([['committee', TSC_UID]]),
+          response: response({ meetings: [meeting({ committee_uids: [TSC_UID] })] }),
+        });
+
+        expect(fixture.nativeElement.querySelector('[data-testid="public-project-calendar-subtitle"]').textContent).toContain('in the selected group');
+        expect(fixture.nativeElement.querySelector('[data-testid="public-project-calendar-committee-filter"]')).toBeNull();
+        expect(fixture.nativeElement.querySelector('[data-testid="public-project-calendar-clear-filter"]')).not.toBeNull();
+      });
+    });
+
     it('clears the filter through the URL so the view stays shareable', async () => {
       await render({ groups: [group()], query: new Map([['committee', TSC_UID]]) });
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
