@@ -845,13 +845,14 @@ export class WeeklyBriefCardComponent {
           // treat that settled `null` the same as "unknown" and re-ask forever for exactly the
           // two cases that can never resolve differently within this poll cycle.
           //
-          // Also gated on isGoverningBoardCommittee() — a non-governance committee's initial
-          // load (see initBriefResponseSubscription) deliberately opts out too, which leaves
-          // current_activity absent (not the settled null a fan-out call would have produced).
-          // Without this extra gate, that deliberate client-side opt-out would look exactly like
-          // a transient degrade and cost one wasted ask on the first poll tick, before the
-          // server's own settled null ever had a chance to stop it — undoing part of the
-          // initial-load fix's savings in the one code path (a generating card) it runs in.
+          // Also gated on isGoverningBoardCommittee() — a non-governance committee's every
+          // non-poll load (see initBriefResponseSubscription — initial load, and any
+          // refresh$-triggered re-fetch) deliberately opts out too, which leaves current_activity
+          // absent (not the settled null a fan-out call would have produced). Without this extra
+          // gate, that deliberate client-side opt-out would look exactly like a transient degrade
+          // and cost one wasted ask on the first poll tick, before the server's own settled null
+          // ever had a chance to stop it — undoing part of that opt-out's savings in the one code
+          // path (a generating card) it runs in.
           //
           // Also capped at WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS, separately from the
           // undefined check above — an upstream that keeps failing this specific fan-out (not

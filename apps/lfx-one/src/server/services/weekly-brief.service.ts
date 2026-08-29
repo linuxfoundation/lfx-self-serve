@@ -304,11 +304,11 @@ export class WeeklyBriefService {
    * see `WeeklyBriefService#getWeeklyBrief` (the Angular client, `app/shared/services/`) for the
    * full breakdown:
    *   - `weekly-brief-card.component.ts`'s `initBriefResponseSubscription` opts out on every
-   *     non-poll load (initial load, and every `refresh$`-triggered re-fetch — retry, a save,
-   *     a share, the 409 branch of onGenerate) for any committee its own
-   *     `isGoverningBoardCommittee()` already reports as non-governance — the tally section can
-   *     never render for one regardless of what current_activity holds, so the fan-out would be
-   *     pure waste.
+   *     non-poll load (initial load, and every `refresh$`-triggered re-fetch — see that
+   *     component's own `refresh$.next()` call sites, not re-listed here to avoid this comment
+   *     drifting stale as they change) for any committee its own `isGoverningBoardCommittee()`
+   *     already reports as non-governance — the tally section can never render for one
+   *     regardless of what current_activity holds, so the fan-out would be pure waste.
    *   - `weekly-brief-card.component.ts`'s `pollUntilTerminal` is this endpoint's heaviest caller
    *     — up to `WEEKLY_BRIEF_MAX_POLL_ATTEMPTS` hits at `WEEKLY_BRIEF_POLL_INTERVAL_MS` apart per
    *     generate/regenerate — and this week's activity cannot change mid-poll, so re-running the
@@ -320,12 +320,12 @@ export class WeeklyBriefService {
    *     KEY is present on what it already holds (see `WeeklyBriefCurrentResponse.current_activity`'s
    *     doc comment for the absent/null/present contract this depends on — `null` is a settled
    *     answer and stops the asking same as a real value); the committee isn't
-   *     governance-classified (so a deliberate initial-load opt-out, which also leaves the key
+   *     governance-classified (so a deliberate non-poll-load opt-out, which also leaves the key
    *     absent, is never mistaken for a transient degrade worth re-asking for); or
    *     `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS` re-asks have already been spent on a
    *     governance committee whose fan-out keeps genuinely failing. When none of those holds, a
-   *     transient degrade on the initial load can still self-heal on a later tick rather than
-   *     staying blank for the rest of the poll and beyond.
+   *     transient degrade on an earlier non-poll load can still self-heal on a later poll tick
+   *     rather than staying blank for the rest of the poll and beyond.
    */
   public async getCurrentBrief(req: Request, committeeId: string, options: { includeCurrentActivity?: boolean } = {}): Promise<WeeklyBriefCurrentResponse> {
     const includeCurrentActivity = options.includeCurrentActivity ?? true;
@@ -1227,10 +1227,12 @@ export class WeeklyBriefService {
    * own — safe here only because this method's one caller, `getCurrentBrief`, is reachable
    * exclusively through the controller's `assertCommitteeRead` gate; a new caller of
    * `getCommitteeBase` would need its own. Fails soft to `undefined` (never an empty array) on a
-   * genuine error — one of three states, not two:
-   * `undefined` is transient ("couldn't determine", worth asking again), `null` is settled
-   * ("known not to apply", see below), and a real object is "genuinely zero activity this week"
-   * or more.
+   * genuine error — one of three states, not two: `undefined` is transient ("couldn't
+   * determine", worth asking again), `null` is settled ("known not to apply", see below), and a
+   * real object is "genuinely zero activity this week" or more. `undefined`'s three actual causes
+   * (see this method's body): `getCommitteeBase` resolves with no body at all; it resolves with a
+   * committee that carries no usable `category`; or any other error thrown by either upstream
+   * call, caught below.
    * `weekly-brief-card.component.ts`'s `hasCurrentActivityData` collapses `undefined`/`null`
    * alike for rendering (neither is a value to show), but its `pollUntilTerminal` poll loop
    * depends on keeping them apart — see `WeeklyBriefCurrentResponse.current_activity`'s doc

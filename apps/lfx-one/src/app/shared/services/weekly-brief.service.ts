@@ -52,9 +52,10 @@ export class WeeklyBriefService {
    * is present on what it already holds — `null` counts as present (a settled "doesn't apply"
    * answer for a non-governance committee, or a week whose activity fills a full page) and stops
    * the asking just as a real value would; only a genuinely absent key on a governance committee
-   * (a transient lookup/fetch failure) keeps the poll asking, up to its own attempt cap — see
+   * keeps the poll asking, up to its own attempt cap — see
    * `WeeklyBriefCurrentResponse.current_activity`'s doc comment for the three-state
-   * absent/null/present contract this depends on.
+   * absent/null/present contract this depends on, including exactly what can leave the key
+   * absent on a governance committee.
    */
   public getWeeklyBrief(committeeId: string, options: { includeCurrentActivity?: boolean } = {}): Observable<WeeklyBriefCurrentResponse> {
     const params = options.includeCurrentActivity === false ? { includeCurrentActivity: 'false' } : undefined;
