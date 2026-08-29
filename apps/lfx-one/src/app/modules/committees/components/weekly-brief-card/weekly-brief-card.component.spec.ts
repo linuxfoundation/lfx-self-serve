@@ -753,6 +753,10 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       // with the poll never stopping — only a further advance catches it).
       await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
       expect(getWeeklyBrief.mock.calls).toHaveLength(2);
+      // A stopped stream must also have cleared the spinner — pollUntilTerminal's finalize does
+      // double duty (releases pollActive AND clears generating), and a poll that stops without
+      // clearing generating strands the card on "Generating…" with no way out but a reload.
+      expect(component.generating()).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -800,6 +804,8 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       // tell "stopped" apart from "haven't looked far enough yet".
       await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
       expect(getWeeklyBrief.mock.calls).toHaveLength(3);
+      // A stopped stream must also have cleared the spinner — see the sibling test above.
+      expect(component.generating()).toBe(false);
     } finally {
       vi.useRealTimers();
     }
