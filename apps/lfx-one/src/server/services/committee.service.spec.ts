@@ -870,7 +870,7 @@ describe('CommitteeService.getCommitteesByIds', () => {
   });
 });
 
-describe('CommitteeService.getCommitteeCategory', () => {
+describe('CommitteeService.getCommitteeBase', () => {
   let service: CommitteeService;
   const COMMITTEE_UID = 'committee-1';
 
@@ -879,12 +879,12 @@ describe('CommitteeService.getCommitteeCategory', () => {
     service = new CommitteeService();
   });
 
-  it("returns category from a single plain GET, not getCommitteeById's enriched fan-out", async () => {
+  it("returns the base committee from a single plain GET, not getCommitteeById's enriched fan-out", async () => {
     proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', category: 'Board' });
 
-    const result = await service.getCommitteeCategory(req, COMMITTEE_UID);
+    const result = await service.getCommitteeBase(req, COMMITTEE_UID);
 
-    expect(result).toBe('Board');
+    expect(result).toMatchObject({ uid: COMMITTEE_UID, category: 'Board' });
     // Exactly one upstream call — no settings, no access-check, unlike getCommitteeById.
     expect(proxyRequest).toHaveBeenCalledOnce();
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/committees/${COMMITTEE_UID}`, 'GET');
@@ -893,7 +893,7 @@ describe('CommitteeService.getCommitteeCategory', () => {
   it('returns undefined when upstream resolves with no committee body (the empty-body-parses-to-null case, not a 404)', async () => {
     proxyRequest.mockResolvedValueOnce(null);
 
-    const result = await service.getCommitteeCategory(req, COMMITTEE_UID);
+    const result = await service.getCommitteeBase(req, COMMITTEE_UID);
 
     expect(result).toBeUndefined();
   });
@@ -912,6 +912,6 @@ describe('CommitteeService.getCommitteeCategory', () => {
     // Identity, not just type/status — proves the exact upstream error propagates rather than
     // getting caught and re-thrown as a freshly constructed lookalike (which a type/status-only
     // assertion couldn't tell apart from this).
-    await expect(service.getCommitteeCategory(req, COMMITTEE_UID)).rejects.toBe(upstreamError);
+    await expect(service.getCommitteeBase(req, COMMITTEE_UID)).rejects.toBe(upstreamError);
   });
 });

@@ -5,7 +5,11 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { WEEKLY_BRIEF_POLL_INTERVAL_MS, WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD } from '@lfx-one/shared/constants';
+import {
+  WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS,
+  WEEKLY_BRIEF_POLL_INTERVAL_MS,
+  WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD,
+} from '@lfx-one/shared/constants';
 import { Committee, GenerateWeeklyBriefResponse, WeeklyBriefCurrentResponse, WeeklyBriefRating, WeeklyBriefSourceRef } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
@@ -820,6 +824,49 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
       expect(getWeeklyBrief.mock.calls).toHaveLength(3);
       // A stopped stream must also have cleared the spinner — see the sibling test above.
+      expect(component.generating()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops re-asking for current_activity after WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS ticks, even though it is still absent', async () => {
+    const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
+    await setup(BOARD_COMMITTEE, null, generateWeeklyBrief);
+    expect(getWeeklyBrief.mock.calls).toHaveLength(1);
+
+    fakePollTimers();
+    try {
+      // Every tick keeps the same (non-terminal) revision and never carries current_activity —
+      // models a persistently failing tally fan-out (e.g. an upstream error caught inside
+      // buildCurrentActivity), not a one-off transient degrade the poll should keep retrying
+      // forever for.
+      getWeeklyBrief.mockImplementation(() => of(pollTick(1)));
+
+      component.onGenerate();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // The first WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS ticks after setup's own initial
+      // call each still ask.
+      for (let attempt = 0; attempt < WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS; attempt++) {
+        await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+        expect(getWeeklyBrief).toHaveBeenNthCalledWith(2 + attempt, 'committee-board', { includeCurrentActivity: true });
+      }
+
+      // The next tick — past the cap — stops asking, even though current_activity is still
+      // absent and nothing has changed about the committee's governance status.
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief).toHaveBeenNthCalledWith(2 + WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS, 'committee-board', { includeCurrentActivity: false });
+
+      // And stays capped — a further tick still doesn't ask, proving this is a permanent cap for
+      // the rest of this poll cycle, not a one-tick skip that resumes asking right after.
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief).toHaveBeenNthCalledWith(3 + WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS, 'committee-board', { includeCurrentActivity: false });
+
+      // Terminate the poll cleanly (a new terminal revision) so no open subscription leaks past
+      // this test.
+      getWeeklyBrief.mockImplementation(() => of(pollTick(2)));
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
       expect(component.generating()).toBe(false);
     } finally {
       vi.useRealTimers();

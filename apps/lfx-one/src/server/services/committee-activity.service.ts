@@ -188,7 +188,22 @@ export class CommitteeActivityService {
     this.voteService = new VoteService();
   }
 
-  public async getCommitteeActivity(req: Request, committeeUid: string, options: CommitteeActivityQuery): Promise<PaginatedResponse<ActivityEvent>> {
+  /**
+   * `knownCommittee` (optional): a caller that already fetched this committee for its own reasons
+   * (e.g. weekly-brief.service.ts's `buildCurrentActivity`, which must read `category` before it
+   * can even decide whether to call this method) can pass it here to skip this method's own
+   * `fetchCommittee` — otherwise every caller pays that GET twice for a committee it already had in
+   * hand. Only an optimization: omitting it costs one extra upstream call, not a correctness
+   * difference — this method still trusts a caller-supplied committee exactly as it would trust its
+   * own fetch, with the same fail-closed contract (see fetchCommittee's doc comment) resting on the
+   * caller instead when this parameter is used.
+   */
+  public async getCommitteeActivity(
+    req: Request,
+    committeeUid: string,
+    options: CommitteeActivityQuery,
+    knownCommittee?: Committee
+  ): Promise<PaginatedResponse<ActivityEvent>> {
     const { since: rawSince, cursor, limit } = options;
     // Same reject-not-degrade policy as the cursor/since checks below, for the same reason:
     // parseCommitteeActivityQuery already bounds page_size on the HTTP path, but this method is
@@ -350,7 +365,7 @@ export class CommitteeActivityService {
     logger.info(req, 'get_committee_activity', 'Starting committee activity aggregation', { committee_uid: committeeUid, fetch_size: fetchSize });
 
     const [committee, pastMeetingResult, voteResult, surveyResult, documentResult, notesResult] = await Promise.all([
-      this.fetchCommittee(req, committeeUid),
+      knownCommittee ? Promise.resolve(knownCommittee) : this.fetchCommittee(req, committeeUid),
       this.fetchPastMeetingEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch past-meeting activity, continuing without it', { committee_uid: committeeUid, err });
         return { events: [], saturated: false };

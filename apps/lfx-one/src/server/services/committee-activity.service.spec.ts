@@ -78,7 +78,7 @@ vi.mock('./microservice-proxy.service', () => ({
 }));
 
 import { PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
-import type { ActivityPageCursor, CommitteeActivityNoteAttachment, PastMeeting, Survey, Vote } from '@lfx-one/shared/interfaces';
+import type { ActivityPageCursor, Committee, CommitteeActivityNoteAttachment, PastMeeting, Survey, Vote } from '@lfx-one/shared/interfaces';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { CommitteeActivityService } from './committee-activity.service';
@@ -864,6 +864,30 @@ describe('CommitteeActivityService', () => {
       await expect(service.getCommitteeActivity(req, uidNeedingEncoding, { limit: 8 })).rejects.toMatchObject({
         path: '/committees/committee%201',
       });
+    });
+  });
+
+  describe('knownCommittee (caller already resolved the committee)', () => {
+    it('uses the passed-in committee instead of fetching it again', async () => {
+      getVotes.mockResolvedValue({ data: [vote()] });
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (/^\/committees\/[^/]+$/.test(path)) throw new Error('fetchCommittee should not run when knownCommittee is provided');
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { uid: COMMITTEE_UID, enable_voting: true } as Committee);
+
+      // enable_voting: true on the passed-in committee — votes are included, proving the
+      // knownCommittee value (not a stubbed-out default) actually drove the gating decision.
+      expect(result.data.map((e) => e.type)).toEqual(['vote_opened']);
+    });
+
+    it('still gates on enable_voting from the knownCommittee, not just skips the fetch', async () => {
+      getVotes.mockResolvedValue({ data: [vote()] });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { uid: COMMITTEE_UID, enable_voting: false } as Committee);
+
+      expect(result.data).toEqual([]);
     });
   });
 

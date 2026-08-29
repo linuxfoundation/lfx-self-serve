@@ -422,29 +422,30 @@ export class CommitteeService {
   }
 
   /**
-   * A single field read, not a `getCommitteeById` call with the rest discarded: this needs
-   * `category` alone (e.g. weekly-brief.service.ts's governance gate on the weekly-brief tally),
-   * and `getCommitteeById`'s default options still cost three upstream calls — base GET,
-   * settings, and an access-check — for data this caller throws away. `undefined` here means
-   * upstream resolved with no `category` on the body — absent/null field, or an empty body
-   * (which `ApiClientService.executeRequest` parses to `null` via `text ? JSON.parse(text) :
-   * null`) — NOT "committee not found": a genuine 404 or other
-   * upstream error status throws a `MicroserviceError` out of `proxyRequest` before this method
-   * ever gets a value to read `.category` off of, same as `getCommitteeById`'s own upstream call.
-   * Deliberately doesn't catch that throw and normalize it to `undefined` — existing callers of
-   * `getCommitteeById` already have their own not-found handling for the write/detail paths that
-   * need it; a caller reaching only for `category` has nothing to write to and no detail page to
-   * 404, so leaving the throw uncaught keeps that decision (log and degrade, or propagate) with
-   * the caller instead of forcing one.
+   * A single plain GET, not a `getCommitteeById` call with the rest discarded: a caller reaching
+   * only for the base record (e.g. weekly-brief.service.ts's `buildCurrentActivity`, which reads
+   * `category` for its governance gate and then passes this same resolved committee into
+   * `CommitteeActivityService.getCommitteeActivity` so that method doesn't pay an identical second
+   * fetch for a committee the caller already has) shouldn't pay `getCommitteeById`'s default-options
+   * cost of three upstream calls — base GET, settings, and an access-check — for data it throws
+   * away. `undefined` here means upstream resolved with no body at all — an empty body (which
+   * `ApiClientService.executeRequest` parses to `null` via `text ? JSON.parse(text) : null`) — NOT
+   * "committee not found": a genuine 404 or other upstream error status throws a `MicroserviceError`
+   * out of `proxyRequest` before this method ever gets a value to return, same as `getCommitteeById`'s
+   * own upstream call. Deliberately doesn't catch that throw and normalize it to `undefined` —
+   * existing callers of `getCommitteeById` already have their own not-found handling for the
+   * write/detail paths that need it; a caller reaching only for the base record has nothing to write
+   * to and no detail page to 404, so leaving the throw uncaught keeps that decision (log and degrade,
+   * or propagate) with the caller instead of forcing one.
    */
-  public async getCommitteeCategory(req: Request, committeeId: string): Promise<string | undefined> {
+  public async getCommitteeBase(req: Request, committeeId: string): Promise<Committee | undefined> {
     const committee = await this.microserviceProxy.proxyRequest<Committee | null>(
       req,
       'LFX_V2_SERVICE',
       `/committees/${encodeURIComponent(committeeId)}`,
       'GET'
     );
-    return committee?.category;
+    return committee ?? undefined;
   }
 
   /**

@@ -134,26 +134,33 @@ export function currentWeekInProgressWindow(): { window_start: string; window_en
  * own doc comments — those are two distinct upstream uid namespaces that could otherwise collide
  * (e.g. a folder and a meeting-attachment note coincidentally sharing a uid), and a collision here
  * would produce two refs with the same `id` in the same rendered `doc` section (an Angular
- * duplicate-`@for`-track-key error, not a silent dedupe). `survey_published`/`survey_closed` map
- * to kind `other` — not one of `WEEKLY_BRIEF_SOURCE_SECTIONS`' five kinds, but real governance
- * activity the client's existing "other" catch-all already surfaces rather than silently
- * dropping. `member_joined`/`member_left`/other deferred types: `CommitteeActivityService` never
- * actually constructs these today (see `DeferredActivityEvent`'s own doc comment), so this
- * default branch is unreached in practice, not dead by construction.
+ * duplicate-`@for`-track-key error, not a silent dedupe). `meeting` and `vote` do NOT carry this
+ * same kind-prefix, deliberately — `weekly-brief.utils.ts`'s `resolveSourceRefAction` passes a
+ * `meeting` ref's raw `id` straight through as `meetingId`, and a `vote` ref's as `voteUid`; both
+ * are already unique on their own upstream uid (one uid namespace each, unlike doc's two), and a
+ * `meeting:`/`vote:` prefix would reach that click-through action as a corrupted id instead of a
+ * real one. `survey_published`/`survey_closed` map to kind `other` — not one of
+ * `WEEKLY_BRIEF_SOURCE_SECTIONS`' five kinds, but real governance activity the client's existing
+ * "other" catch-all already surfaces rather than silently dropping; `other` has no
+ * `resolveSourceRefAction` case (falls to its `default: return null`), so it carries no id
+ * contract to protect either way, but is left unprefixed for the same "already unique on its own
+ * uid" reason as meeting/vote. `member_joined`/`member_left`/other deferred types:
+ * `CommitteeActivityService` never actually constructs these today (see `DeferredActivityEvent`'s
+ * own doc comment), so this default branch is unreached in practice, not dead by construction.
  */
 function mapActivityEventToCurrentActivityRef(event: ActivityEvent): WeeklyBriefSourceRef | null {
   switch (event.type) {
     case 'meeting_held':
-      return { id: `meeting:${event.payload.meeting_occurrence_id}`, kind: 'meeting', title: event.payload.title };
+      return { id: event.payload.meeting_occurrence_id, kind: 'meeting', title: event.payload.title };
     case 'vote_closed':
-      return { id: `vote:${event.payload.vote_uid}`, kind: 'vote', title: event.payload.name };
+      return { id: event.payload.vote_uid, kind: 'vote', title: event.payload.name };
     case 'document_uploaded':
       return { id: `document:${event.payload.document_type}:${event.payload.document_uid}`, kind: 'doc', title: event.payload.name };
     case 'notes_added':
       return { id: `note:${event.payload.meeting_scope}:${event.payload.document_uid}`, kind: 'doc', title: event.payload.name };
     case 'survey_published':
     case 'survey_closed':
-      return { id: `survey:${event.payload.survey_uid}`, kind: 'other', title: event.payload.title };
+      return { id: event.payload.survey_uid, kind: 'other', title: event.payload.title };
     default:
       return null;
   }
@@ -286,8 +293,9 @@ export class WeeklyBriefService {
    * `pollUntilTerminal`) is this endpoint's heaviest caller — up to `WEEKLY_BRIEF_MAX_POLL_ATTEMPTS`
    * hits at `WEEKLY_BRIEF_POLL_INTERVAL_MS` apart per generate/regenerate — and this week's
    * activity cannot change mid-poll, so re-running the tally on every tick multiplies its real
-   * upstream cost (getCommitteeCategory's one call, plus getCommitteeActivity's own multi-call
-   * aggregation for a governance committee) for a value that's already correct from the poll's
+   * upstream cost (getCommitteeBase's one call, plus getCommitteeActivity's own multi-call
+   * aggregation for a governance committee — see buildCurrentActivity's doc comment for how the
+   * two share a single committee fetch) for a value that's already correct from the poll's
    * first tick. The poll passes `includeCurrentActivity: false` only once the current_activity
    * KEY is present on what it already holds (see `WeeklyBriefCurrentResponse.current_activity`'s
    * doc comment for the absent/null/present contract this depends on — `null` is a settled
@@ -307,7 +315,7 @@ export class WeeklyBriefService {
     // Only built here, not inside fetchBriefResponse — every internal caller that reuses that
     // helper (getActionItems, shareBrief, shareToSlack, resolveRatableBrief) only ever reads
     // brief/caller_rating off the result, so building the tally for them too would pay a real
-    // upstream fan-out (getCommitteeCategory, and for a governance committee,
+    // upstream fan-out (getCommitteeBase, and for a governance committee,
     // CommitteeActivityService's own multi-call aggregation) for a field they'd discard on every
     // write path (share, rate) and every read of just the AI-extracted action items.
     const [response, currentActivity] = await Promise.all([
@@ -1185,13 +1193,17 @@ export class WeeklyBriefService {
    * not-yet-closed week. Gated to governance (Board/Government Advisory Council) committees only
    * — the only ones the client renders the tally for — so a non-Board committee's weekly-brief
    * load never pays for `getCommitteeActivity`'s own 9-call upstream fan-out. The gating read
-   * itself is `getCommitteeCategory` (a single plain GET), not `getCommitteeById` — this needs
-   * `category` alone, and `getCommitteeById`'s default options cost three upstream calls
-   * (base GET, settings, an access-check) for data this call would only discard.
-   * `getCommitteeCategory` performs no access check of its own — safe here only because this
-   * method's one caller, `getCurrentBrief`, is reachable exclusively through the controller's
-   * `assertCommitteeRead` gate; a new caller of `getCommitteeCategory` would need its own. Fails
-   * soft to `undefined` (never an empty array) on a genuine error — one of three states, not two:
+   * itself is `getCommitteeBase` (a single plain GET), not `getCommitteeById` — this needs the
+   * base record alone, and `getCommitteeById`'s default options cost three upstream calls
+   * (base GET, settings, an access-check) for data this call would only discard. The resolved
+   * committee is then passed into `getCommitteeActivity` below as its `knownCommittee` — that
+   * method's own `fetchCommittee` leg needs the same record (for `enable_voting`), and without
+   * passing it down explicitly a governance committee's weekly-brief load would pay for the
+   * identical `GET /committees/:id` twice. `getCommitteeBase` performs no access check of its
+   * own — safe here only because this method's one caller, `getCurrentBrief`, is reachable
+   * exclusively through the controller's `assertCommitteeRead` gate; a new caller of
+   * `getCommitteeBase` would need its own. Fails soft to `undefined` (never an empty array) on a
+   * genuine error — one of three states, not two:
    * `undefined` is transient ("couldn't determine", worth asking again), `null` is settled
    * ("known not to apply", see below), and a real object is "genuinely zero activity this week"
    * or more.
@@ -1235,14 +1247,14 @@ export class WeeklyBriefService {
   private async buildCurrentActivity(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | null | undefined> {
     try {
       logger.debug(req, 'get_weekly_brief_current_activity', 'Building current-week activity tally', { committee_id: committeeId });
-      const category = await this.committeeService.getCommitteeCategory(req, committeeId);
-      // undefined `category` here means upstream resolved with no `category` on the body —
-      // absent/null field, or an empty body (see getCommitteeCategory's own doc comment) — a
-      // genuine 404/upstream error throws instead and is caught below, same as any other
-      // failure in this method. Either way this is an anomaly, not a governance verdict, so it
-      // falls through to undefined rather than being asserted as "not governance".
-      if (category === undefined) {
-        logger.warning(req, 'get_weekly_brief_current_activity', 'Committee category lookup returned nothing, omitting the tally', {
+      const committee = await this.committeeService.getCommitteeBase(req, committeeId);
+      // undefined `committee` here means upstream resolved with no body at all (see
+      // getCommitteeBase's own doc comment) — a genuine 404/upstream error throws instead and
+      // is caught below, same as any other failure in this method. Either way this is an
+      // anomaly, not a governance verdict, so it falls through to undefined rather than being
+      // asserted as "not governance".
+      if (committee === undefined) {
+        logger.warning(req, 'get_weekly_brief_current_activity', 'Committee lookup returned nothing, omitting the tally', {
           committee_id: committeeId,
         });
         return undefined;
@@ -1250,13 +1262,20 @@ export class WeeklyBriefService {
       // null, not undefined — see WeeklyBriefCurrentResponse.current_activity's doc comment.
       // This committee will never become governance-classified mid-poll, so a caller (the
       // client's pollUntilTerminal) can treat this as a settled answer and stop asking.
-      if (!isGoverningBoard(category)) return null;
+      if (!isGoverningBoard(committee.category)) return null;
 
       const { window_start, window_end } = currentWeekInProgressWindow();
-      const { data } = await this.committeeActivityService.getCommitteeActivity(req, committeeId, {
-        since: window_start,
-        limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
-      });
+      // Passing `committee` (already resolved above) as getCommitteeActivity's knownCommittee —
+      // see this method's own doc comment for why.
+      const { data } = await this.committeeActivityService.getCommitteeActivity(
+        req,
+        committeeId,
+        {
+          since: window_start,
+          limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
+        },
+        committee
+      );
       logger.debug(req, 'get_weekly_brief_current_activity', 'Fetched current-week activity', { committee_id: committeeId, event_count: data.length });
       if (data.length >= ACTIVITY_FEED_MAX_PAGE_SIZE) {
         logger.warning(

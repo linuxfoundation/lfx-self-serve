@@ -14,6 +14,7 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { WeeklyBriefArchiveDrawerComponent } from '../weekly-brief-archive-drawer/weekly-brief-archive-drawer.component';
 import { SourceChipContextDirective } from './source-chip-context.directive';
 import {
+  WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS,
   WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES,
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_MAX_POLL_ATTEMPTS,
@@ -801,6 +802,10 @@ export class WeeklyBriefCardComponent {
     this.pollTimedOut.set(false);
     let ticks = 0;
     let observedTerminal = false;
+    // Bounds how many ticks keep re-asking for current_activity while it stays undefined — see
+    // WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS's own doc comment for why this needs its
+    // own, smaller cap than the poll's overall WEEKLY_BRIEF_MAX_POLL_ATTEMPTS.
+    let currentActivityAskAttempts = 0;
     const isNewTerminal = (response: WeeklyBriefCurrentResponse): boolean => {
       const b = response.brief;
       if (!b || !WEEKLY_BRIEF_TERMINAL_STATES.has(b.state)) return false;
@@ -823,7 +828,7 @@ export class WeeklyBriefCardComponent {
         // exhaustMap wait itself — otherwise a single hung request would block `complete`
         // (and the attempt cap) indefinitely, since exhaustMap only completes once its
         // last active inner subscription settles.
-        exhaustMap(() =>
+        exhaustMap(() => {
           // includeCurrentActivity (GH-1922): only opt out once the current_activity KEY is
           // actually present on the response — `=== undefined` here, not a falsy/truthy check,
           // because the BFF distinguishes "couldn't determine yet" (key absent — transient,
@@ -832,14 +837,24 @@ export class WeeklyBriefCardComponent {
           // WeeklyBriefCurrentResponse.current_activity's doc comment). A `!value` check would
           // treat that settled `null` the same as "unknown" and re-ask forever for exactly the
           // two cases that can never resolve differently within this poll cycle.
-          this.weeklyBriefService.getWeeklyBrief(committeeUid, { includeCurrentActivity: this.briefResponse()?.current_activity === undefined }).pipe(
+          //
+          // Also capped at WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS, separately from the
+          // undefined check above — an upstream that keeps failing this specific fan-out (not
+          // the brief generation itself) would otherwise get asked again on every one of up to
+          // WEEKLY_BRIEF_MAX_POLL_ATTEMPTS ticks for an answer that keeps failing the same way.
+          // Only increment on a tick that actually asks — a tick that already opted out (settled
+          // null/present, or the cap already hit) must not keep advancing the counter past the cap.
+          const shouldAskCurrentActivity =
+            this.briefResponse()?.current_activity === undefined && currentActivityAskAttempts < WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS;
+          if (shouldAskCurrentActivity) currentActivityAskAttempts += 1;
+          return this.weeklyBriefService.getWeeklyBrief(committeeUid, { includeCurrentActivity: shouldAskCurrentActivity }).pipe(
             timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS),
             catchError((err: unknown) => {
               console.error('[weekly-brief-card] poll tick failed, will retry', err);
               return of(null as WeeklyBriefCurrentResponse | null);
             })
-          )
-        ),
+          );
+        }),
         // Drop failed ticks entirely rather than feeding `null` into takeWhile below —
         // a transient poll failure must not look like a terminal state and stop the poll.
         filter((response): response is WeeklyBriefCurrentResponse => response !== null),

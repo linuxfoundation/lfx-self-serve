@@ -54,6 +54,19 @@ export const WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH = 100;
 export const WEEKLY_BRIEF_POLL_INTERVAL_MS = 4000;
 export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
 
+/**
+ * Caps how many poll ticks (GH-1922) keep asking the BFF to rebuild `current_activity` while it
+ * stays absent (`undefined` — see `WeeklyBriefCurrentResponse.current_activity`'s doc comment).
+ * That fan-out isn't free — a governance committee's tally costs an upstream committee read plus
+ * `CommitteeActivityService`'s own multi-call aggregation — and a persistently failing upstream
+ * would otherwise get asked again on every one of `WEEKLY_BRIEF_MAX_POLL_ATTEMPTS` ticks for an
+ * answer that keeps failing the same way. Deliberately smaller than that cap: this only bounds the
+ * *tally's* self-heal retries, not the brief's own terminal-state poll, which keeps running
+ * regardless — a card can still finish generating and simply render without the "this week so
+ * far" line once this is exhausted.
+ */
+export const WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS = 3;
+
 /** States a poll of GET /current should stop on — everything else (`empty`, `generating`) keeps it running. */
 export const WEEKLY_BRIEF_TERMINAL_STATES: ReadonlySet<WeeklyBriefState> = new Set(['generated', 'edited', 'approved', 'error']);
 
