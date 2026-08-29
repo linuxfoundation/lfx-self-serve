@@ -928,6 +928,15 @@ describe('WeeklyBriefService', () => {
         expect(result.current_activity?.window_start).toBe('2026-01-11T00:00:00.000Z');
         expect(result.current_activity?.window_end).toBe('2026-01-14T12:00:00.000Z');
         expect(result.brief?.window_start).toBe('2026-01-04T00:00:00.000Z');
+        // The dropped-events warning must stay off the healthy path — pins the
+        // droppedAfterWindowEnd > 0 guard itself, not just the warning's payload shape (which
+        // the sibling "excludes an event..." test already covers).
+        expect(logger.warning).not.toHaveBeenCalledWith(
+          req,
+          'get_weekly_brief_current_activity',
+          'Dropped one or more events stamped after window_end',
+          expect.anything()
+        );
       } finally {
         vi.useRealTimers();
       }

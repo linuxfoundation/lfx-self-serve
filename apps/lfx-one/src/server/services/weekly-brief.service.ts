@@ -1309,12 +1309,15 @@ export class WeeklyBriefService {
 
       // Filtered to occurred_at <= window_end, not just >= window_start (the `since` param
       // above already narrows that half) — getCommitteeActivity has no `before`/upper-bound
-      // param of its own, and at least two legs can report an occurred_at ahead of "now": a
-      // vote administratively ended (status ENDED) with its own end_time still in the future
-      // stamps occurred_at from that future end_time (see mapVoteToEvent), and the survey leg's
-      // cutoff-driven occurred_at has the same shape (see fetchSurveyEvents in
-      // committee-activity.service.ts). Without this filter, window_end would advertise a bound
-      // the response doesn't actually honor. Numeric (Date.parse), not string, comparison —
+      // param of its own, and the vote leg can report an occurred_at arbitrarily far ahead of
+      // "now": a vote administratively ended (status ENDED) with its own end_time still in the
+      // future stamps occurred_at from that future end_time (see mapVoteToEvent). The survey
+      // leg's cutoff-driven occurred_at can NOT do the same — isCutoffDrivenClosure
+      // (committee-activity.service.ts) only adopts a cutoff once it's already passed, so the
+      // most it can exceed window_end by is this request's own in-flight latency between
+      // snapshotting window_end (above) and evaluating the cutoff, not an arbitrary future value.
+      // Without this filter, window_end would advertise a bound the response doesn't actually
+      // honor. Numeric (Date.parse), not string, comparison —
       // matches committee-activity.service.ts's own timestampValue convention rather than
       // assuming every occurred_at is byte-identically formatted to window_end's toISOString()
       // output. An unparseable occurred_at (NaN) is let through rather than dropped — unreachable
