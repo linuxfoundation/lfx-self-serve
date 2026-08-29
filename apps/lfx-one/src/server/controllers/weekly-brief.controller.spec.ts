@@ -30,29 +30,35 @@ vi.mock('../helpers/committee-write-access.helper', () => ({ assertCommitteeWrit
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 // `constants` is a real runtime import here (WEEKLY_BRIEF_TEXT_MAX_LENGTH), unlike
 // `interfaces` above — must be mocked or the real module load re-triggers the
-// Angular JIT-compilation failure this file's mocks otherwise avoid.
-vi.mock('@lfx-one/shared/constants', () => ({ WEEKLY_BRIEF_TEXT_MAX_LENGTH: 20_000 }));
+// Angular JIT-compilation failure this file's mocks otherwise avoid. The three AKRITES_* entries
+// exist only to satisfy validation.helper.ts's real (unmocked, see below) module-level
+// `AKRITES_*.map(...)` statements at import time — unrelated to anything this file's own tests
+// exercise.
+vi.mock('@lfx-one/shared/constants', () => ({
+  WEEKLY_BRIEF_TEXT_MAX_LENGTH: 20_000,
+  AKRITES_STEWARD_ROLE_OPTIONS: [],
+  AKRITES_ESCALATION_PATHS: [],
+  AKRITES_INACTIVE_REASON_OPTIONS: [],
+}));
+// validation.helper.ts's other exports (unrelated to getStringQueryParam/validateUidParameter)
+// import `@lfx-one/shared/utils` for `resolvePeriodRange`, which fails to JIT-compile outside an
+// Angular test bed — see validation.helper.spec.ts's own header comment for the full mechanism.
+vi.mock('@lfx-one/shared/utils', () => ({}));
 
-// validation.helper.ts pulls in @lfx-one/shared/constants + /utils for functions this
-// controller never calls (only validateUidParameter is used) — mock the whole module
-// rather than let those unrelated imports execute (matches committee.controller.spec.ts).
-vi.mock('../helpers/validation.helper', () => ({
+// Real getStringQueryParam (importOriginal), not a hand-copy — validation.helper.spec.ts already
+// proves the module loads once @lfx-one/shared/utils is stubbed, so there's no reason for this
+// spec's includeCurrentActivity tests to exercise a re-implementation that could silently drift
+// from what's actually shipped. validateUidParameter stays a custom stub — this controller's own
+// use of it needs no real upstream-shaped validation, just the has-a-uid gate the real one buries
+// under committee-uid-specific messaging.
+vi.mock('../helpers/validation.helper', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../helpers/validation.helper')>()),
   validateUidParameter: (uid: unknown, req: unknown, next: (err: Error) => void): uid is string => {
     if (typeof uid !== 'string' || uid.trim() === '') {
       next(new Error('uid is required'));
       return false;
     }
     return true;
-  },
-  // A hand-copy of the real narrowing logic (undefined on a missing/non-string query value), not
-  // a canned return — this spec's includeCurrentActivity tests exercise this copy, not the real
-  // function (the real module can't load here; its other exports pull in `@lfx-one/shared/utils`,
-  // which fails to JIT-compile outside an Angular test bed). `validation.helper.spec.ts` is the
-  // one place the real `getStringQueryParam` is loaded and its narrowing behavior actually pinned
-  // — this copy staying faithful to that is what makes the tests below meaningful.
-  getStringQueryParam: (req: { query: Record<string, unknown> }, name: string): string | undefined => {
-    const value = req.query[name];
-    return typeof value === 'string' ? value : undefined;
   },
 }));
 
