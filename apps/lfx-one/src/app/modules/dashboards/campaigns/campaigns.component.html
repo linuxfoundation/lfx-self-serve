@@ -627,7 +627,7 @@
                 icon="fa-light fa-arrows-rotate"
                 [outlined]="true"
                 size="small"
-                [disabled]="emailMetricsState() === 'loading'"
+                [disabled]="emailMetricsState() === 'loading' || emailMetricsState() === 'idle'"
                 (onClick)="loadEmailMetrics()"
                 data-testid="campaigns-email-metrics-refresh" />
             </div>
@@ -689,7 +689,8 @@
                         data-testid="campaigns-email-metrics-nothing-sent">
                         <i class="fa-light fa-circle-info mt-0.5 text-amber-600" aria-hidden="true"></i>
                         <p class="text-sm text-amber-900">
-                          HubSpot reports this email exists but has sent nothing yet. Open and click rates will appear once it has been sent.
+                          HubSpot answered for every measured email on this brief and counted no sends. Open and click rates appear once something has been
+                          sent.
                         </p>
                       </div>
                     }
@@ -705,7 +706,7 @@
                           totals.delivered | number: '1.0-0'
                         }}</span>
                         <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-delivery-rate"
-                          >{{ formatRate(emailMetricsRates().delivery) }} of sent</span
+                          >{{ emailMetricsRates().delivery | metricPercent }} of sent</span
                         >
                       </div>
                       <div class="flex flex-col gap-1 rounded-lg border border-gray-200 px-4 py-3">
@@ -716,7 +717,7 @@
                         open, and HubSpot's own reporting uses the same denominator.
                       -->
                         <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-open-rate"
-                          >{{ formatRate(emailMetricsRates().open) }} of delivered</span
+                          >{{ emailMetricsRates().open | metricPercent }} of delivered</span
                         >
                       </div>
                       <div class="flex flex-col gap-1 rounded-lg border border-gray-200 px-4 py-3">
@@ -725,7 +726,7 @@
                           totals.clicks | number: '1.0-0'
                         }}</span>
                         <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-click-rate"
-                          >{{ formatRate(emailMetricsRates().click) }} of delivered</span
+                          >{{ emailMetricsRates().click | metricPercent }} of delivered</span
                         >
                       </div>
                       <div class="flex flex-col gap-1 rounded-lg border border-gray-200 px-4 py-3">
@@ -734,7 +735,7 @@
                           totals.bounces | number: '1.0-0'
                         }}</span>
                         <span class="text-xs text-gray-500" data-testid="campaigns-email-metric-bounce-rate"
-                          >{{ formatRate(emailMetricsRates().bounce) }} of sent</span
+                          >{{ emailMetricsRates().bounce | metricPercent }} of sent</span
                         >
                       </div>
                       <div class="flex flex-col gap-1 rounded-lg border border-gray-200 px-4 py-3">
@@ -769,13 +770,24 @@
                       <div class="flex items-center gap-2">
                         <i class="fa-light fa-paper-plane text-blue-600" aria-hidden="true"></i>
                         <h3 class="text-sm font-semibold text-blue-900">
-                          {{ emailMetricsPendingRows().length }} staged {{ emailMetricsPendingRows().length === 1 ? 'email has' : 'emails have' }} not been sent
+                          {{ emailMetricsPendingRows().length }} {{ emailMetricsPendingRows().length === 1 ? 'email is' : 'emails are' }} not reporting numbers
                           yet
                         </h3>
                       </div>
-                      <p class="text-sm text-blue-900">
-                        These drafts exist in HubSpot and are waiting for someone to send them. They report no numbers until then.
-                      </p>
+                      <!--
+                        Deliberately hedged. `not_ready` covers three states the upstream response
+                        cannot tell apart -- never sent, sent OUTSIDE the window that selected which
+                        emails were in scope, or no platform campaign id yet -- so "these drafts exist
+                        in HubSpot" and "was never sent" are both claims this read does not license.
+                        campaign-service's own `reason` hedges for the same reason, so it is rendered
+                        per row rather than paraphrased into a certainty here.
+                      -->
+                      <p class="text-sm text-blue-900">A staged draft reports nothing until someone sends it in HubSpot.</p>
+                      <ul class="flex flex-col gap-1">
+                        @for (row of emailMetricsPendingRows(); track row.campaign_id) {
+                          <li class="text-sm text-blue-900">{{ row.reason || 'No detail was reported for this campaign.' }}</li>
+                        }
+                      </ul>
                     </div>
                   }
 
@@ -795,7 +807,7 @@
                           operator-supplied account identifiers. Rendered as-is rather than
                           remapped here, so the advice stays the advice upstream chose.
                         -->
-                          <li class="text-sm text-amber-900">{{ row.reason }}</li>
+                          <li class="text-sm text-amber-900">{{ row.reason || 'No reason was reported for this campaign.' }}</li>
                         }
                       </ul>
                     </div>

@@ -4375,7 +4375,7 @@ describe('CampaignsComponent email monitor', () => {
     emailMetricsTotals(): CampaignServiceEmailMetrics | null;
     emailMetricsNothingSent(): boolean;
     emailMetricsRates(): { delivery: number | null; open: number | null; click: number | null; bounce: number | null };
-    formatRate(rate: number | null): string;
+    emailMetricsUnaccountedRows(): BriefMetricsRow[];
     loadEmailMetrics(): void;
   }
 
@@ -4521,10 +4521,73 @@ describe('CampaignsComponent email monitor', () => {
     expect(rates.bounce).toBeCloseTo((95 / 9400) * 100, 6);
   });
 
-  /** An em dash, not `0.0%` — the whole point of carrying `null` this far rather than defaulting. */
-  it('renders a missing rate as an em dash and a real zero as 0.0%', () => {
-    expect(internals().formatRate(null)).toBe('—');
-    expect(internals().formatRate(0)).toBe('0.0%');
+  /**
+   * An em dash, not `0.0%` — the whole point of carrying `null` this far rather than defaulting.
+   *
+   * Asserted on the RENDERED text rather than on a formatter in isolation, because the formatting
+   * now happens in `MetricPercentPipe`. A unit test of the pipe would pass even if the template
+   * stopped using it.
+   */
+  it('renders a missing rate as an em dash, and a real measured zero as 0.0%', () => {
+    load([okRow({ sent: 100, delivered: 0, opens: 0, clicks: 0, bounces: 0, unsubscribes: 0 })]);
+
+    const el = fixture.nativeElement as HTMLElement;
+    // delivered is 0, so open rate has no denominator -> em dash, NOT 0.0%.
+    expect(el.querySelector('[data-testid="campaigns-email-metric-open-rate"]')?.textContent).toContain('—');
+    // delivery rate DOES have a denominator (sent=100) and is a genuine measured zero.
+    expect(el.querySelector('[data-testid="campaigns-email-metric-delivery-rate"]')?.textContent).toContain('0.0%');
+  });
+
+  /**
+   * The regression that three reviewers converged on, and that the mutation sweep had missed.
+   *
+   * `emailMetricsOkRows` once stopped at `metrics !== undefined`, so a row whose `metrics` existed
+   * WITHOUT an `email` object passed the filter, was skipped by the reducer, and was counted on
+   * both sides of the partial-coverage comparison — so no disclosure fired. With such a row alone,
+   * the reducer's zero seed survived and six zeroes rendered as a measurement.
+   */
+  it('renders no totals when the only ok row carries no email counters', () => {
+    load([
+      {
+        campaign_id: 'c-noemail',
+        platform: 'hubspot',
+        status: 'ok',
+        metrics: { campaign_id: 'c-noemail', platform_campaign_id: '77', window: 'last_30_days', impressions: 0, clicks: 0, cost_micros: 0, ctr: 0 },
+      } as unknown as BriefMetricsRow,
+    ]);
+
+    expect(internals().emailMetricsTotals()).toBeNull();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="campaigns-email-metrics-totals"]')).toBeNull();
+    // And it must not claim HubSpot counted no sends — nothing was counted at all.
+    expect(el.querySelector('[data-testid="campaigns-email-metrics-nothing-sent"]')).toBeNull();
+    // It must be VISIBLE somewhere rather than vanishing from every bucket.
+    expect(el.querySelector('[data-testid="campaigns-email-metrics-problems"]')).not.toBeNull();
+  });
+
+  /**
+   * A status this UI does not know must surface, not blank the panel.
+   *
+   * With an allow-listed problem bucket the row matched nothing, and because `emailMetricsRows()`
+   * was non-empty the empty state was suppressed too — the operator got a header and a Refresh
+   * button over nothing. `BriefMetricsRowStatus` is a closed union, so TypeScript cannot catch a
+   * status campaign-service adds later; the complement is what makes the failure visible.
+   */
+  it('surfaces a row whose status this UI does not recognise', () => {
+    load([{ campaign_id: 'cx', platform: 'hubspot', status: 'throttled', reason: 'rate limited upstream' } as unknown as BriefMetricsRow]);
+
+    expect(internals().emailMetricsProblemRows()).toHaveLength(1);
+    const problems = fixture.nativeElement.querySelector('[data-testid="campaigns-email-metrics-problems"]');
+    expect(problems).not.toBeNull();
+    expect(problems?.textContent).toContain('rate limited upstream');
+  });
+
+  /** A failure row with no `reason` must not render an empty bullet under a non-zero count. */
+  it('names a problem row that reported no reason', () => {
+    load([{ campaign_id: 'c-noreason', platform: 'hubspot', status: 'failed' } as unknown as BriefMetricsRow]);
+
+    const problems = fixture.nativeElement.querySelector('[data-testid="campaigns-email-metrics-problems"]');
+    expect(problems?.textContent).toContain('No reason was reported');
   });
 
   /**
@@ -4534,6 +4597,30 @@ describe('CampaignsComponent email monitor', () => {
   it('discloses when totals cover only some of the staged emails', () => {
     load([okRow(), { campaign_id: 'c2', platform: 'hubspot', status: 'not_ready', reason: 'not sent yet' } as BriefMetricsRow]);
 
+    const partial = fixture.nativeElement.querySelector('[data-testid="campaigns-email-metrics-partial"]');
+    expect(partial).not.toBeNull();
+    expect(partial?.textContent).toContain('1 of 2');
+  });
+
+  /**
+   * The mixed case the original disclosure test could not catch.
+   *
+   * An `ok` row missing its `email` object used to be counted on BOTH sides of the comparison, so
+   * the totals covered one of two emails with no caveat at all — a plausible half-total presented
+   * as the channel's performance, which is worse than an obviously-wrong zero.
+   */
+  it('discloses partial coverage when an ok row carries no email counters', () => {
+    load([
+      okRow(),
+      {
+        campaign_id: 'c-noemail',
+        platform: 'hubspot',
+        status: 'ok',
+        metrics: { campaign_id: 'c-noemail', platform_campaign_id: '77', window: 'last_30_days', impressions: 0, clicks: 0, cost_micros: 0, ctr: 0 },
+      } as unknown as BriefMetricsRow,
+    ]);
+
+    expect(internals().emailMetricsOkRows()).toHaveLength(1);
     const partial = fixture.nativeElement.querySelector('[data-testid="campaigns-email-metrics-partial"]');
     expect(partial).not.toBeNull();
     expect(partial?.textContent).toContain('1 of 2');

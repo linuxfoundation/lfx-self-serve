@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe, isPlatformBrowser } from '@angular/common';
+import { MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -56,6 +57,7 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
   selector: 'lfx-campaigns',
   imports: [
     DecimalPipe,
+    MetricPercentPipe,
     ReactiveFormsModule,
     ButtonComponent,
     SelectComponent,
@@ -1016,12 +1018,23 @@ export class CampaignsComponent {
   /**
    * Rows carrying an actual measurement.
    *
-   * `status === 'ok'` is the ONLY status the contract permits reading `metrics` from — every other
-   * row omits it rather than zero-filling — so this is what any total must be computed over, and
-   * `emailMetricsRows().length` is what it must be compared against before being presented.
+   * The predicate reaches all the way to `metrics.email`, and that depth is load-bearing: it must
+   * be the SAME predicate the totals are summed over. An earlier version stopped at
+   * `metrics !== undefined`, so a row whose `metrics` existed WITHOUT an `email` object passed
+   * this filter, was then skipped by the reducer, and was counted on BOTH sides of the
+   * partial-coverage comparison — which therefore never fired. The totals silently covered fewer
+   * emails than the panel claimed, and where such a row was the only one the reducer's zero seed
+   * survived and six confident zeroes rendered as a measurement. That is precisely the
+   * substitution this panel exists to prevent, reintroduced one layer in.
+   *
+   * For a `hubspot` row this shape is a CONTRACT VIOLATION, not an expected state:
+   * `internal/platform/hubspot/statistics.go` constructs `Email` unconditionally on every success
+   * return, so no upstream path yields an `ok` HubSpot row without it. It is excluded defensively
+   * — a row that cannot be measured must not be counted as measured — and the problem bucket
+   * below keeps it visible rather than letting it vanish from the panel.
    */
   protected readonly emailMetricsOkRows = computed<BriefMetricsRow[]>(() =>
-    this.emailMetricsRows().filter((row) => row.status === 'ok' && row.metrics !== undefined)
+    this.emailMetricsRows().filter((row) => row.status === 'ok' && row.metrics?.email !== undefined)
   );
 
   /**
@@ -1036,9 +1049,21 @@ export class CampaignsComponent {
    */
   protected readonly emailMetricsPendingRows = computed<BriefMetricsRow[]>(() => this.emailMetricsRows().filter((row) => row.status === 'not_ready'));
 
-  /** Rows whose read genuinely could not be completed — a real problem worth surfacing apart. */
+  /**
+   * Rows whose read could not be completed — surfaced apart from the measured totals.
+   *
+   * Defined as the COMPLEMENT of measured-and-pending rather than as an allow-list of
+   * `connection_problem | failed | unsupported`. An allow-list silently drops anything it does not
+   * enumerate, and two such rows exist: an `ok` row missing its `email` object, and any status
+   * campaign-service adds later. `BriefMetricsRowStatus` is a closed union in TypeScript, so the
+   * compiler cannot catch an upstream addition — with an allow-list the new status matched no
+   * bucket, and because `emailMetricsRows()` was non-empty the empty state was suppressed too, so
+   * the operator got a header and a Refresh button over nothing. The complement inverts that
+   * failure mode from invisible to surfaced, which is the only safe direction for a row the panel
+   * does not understand.
+   */
   protected readonly emailMetricsProblemRows = computed<BriefMetricsRow[]>(() =>
-    this.emailMetricsRows().filter((row) => row.status === 'connection_problem' || row.status === 'failed' || row.status === 'unsupported')
+    this.emailMetricsRows().filter((row) => !(row.status === 'ok' && row.metrics?.email !== undefined) && row.status !== 'not_ready')
   );
 
   /**
@@ -1056,10 +1081,9 @@ export class CampaignsComponent {
     return rows.reduce<CampaignServiceEmailMetrics>(
       (acc, row) => {
         const email = row.metrics?.email;
-        // A row can be `ok` on its ad-platform counters and still carry no `email` object — the
-        // upstream design notes `email` is optional even where the row succeeded. Skipping such a
-        // row keeps the total honest; defaulting its absent counters to 0 would silently widen the
-        // denominator this total is read against.
+        // Cannot fire: `emailMetricsOkRows` already requires `metrics.email`. Kept because the two
+        // predicates must not drift — a filter and a reducer disagreeing about what "measured"
+        // means is exactly the defect this replaced — and because the narrowing is needed anyway.
         if (email === undefined) {
           return acc;
         }
@@ -1970,25 +1994,6 @@ export class CampaignsComponent {
       this.knownBriefIds.set(key, { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) });
     }
     this.onProceedToImplementation(brief, true, approved);
-  }
-
-  /**
-   * Render one rate for display, or an em dash where the rate does not exist.
-   *
-   * `null` means the denominator was 0, and the em dash is the point: a `0.0%` in this slot would
-   * assert that the rate was measured and found to be zero. For an email nobody has sent, or one
-   * that reached no inbox, that assertion is false — and it is exactly the false reading this tab
-   * exists to prevent.
-   *
-   * One decimal place, matching the paid dashboard's percentage formatting. Rates below 0.05%
-   * therefore render as `0.0%`, which is a real rounding of a real measurement rather than a
-   * substitution for a missing one — the em dash keeps those two cases apart.
-   */
-  protected formatRate(rate: number | null): string {
-    if (rate === null) {
-      return '—';
-    }
-    return `${rate.toFixed(1)}%`;
   }
 
   /**
