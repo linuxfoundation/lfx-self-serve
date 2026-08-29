@@ -376,8 +376,17 @@ export class CommitteeActivityService {
     // (the closest precedent in this repo: a comparable multi-source read aggregation), not the
     // single-source enrichment services that stay at DEBUG throughout. A merge across 5
     // independently-paginated upstream sources with cursor/saturation logic is exactly the
-    // "complex multi-step orchestration" case logging-patterns.md reserves INFO for.
-    logger.info(req, 'get_committee_activity', 'Starting committee activity aggregation', { committee_uid: committeeUid, fetch_size: fetchSize });
+    // "complex multi-step orchestration" case logging-patterns.md reserves INFO for — but only for
+    // the controller-driven "Recent Activity" feed call this rationale was written for.
+    // `knownCommittee` (only ever passed by `weekly-brief.service.ts#buildCurrentActivity`, GH-1922)
+    // identifies the other caller: a per-poll-tick tally fan-out that can run up to
+    // `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS` times per generate cycle, well past
+    // "significant business operation" frequency — DEBUG there instead, same call, same shape.
+    const aggregationLogLevel = knownCommittee ? 'debug' : 'info';
+    logger[aggregationLogLevel](req, 'get_committee_activity', 'Starting committee activity aggregation', {
+      committee_uid: committeeUid,
+      fetch_size: fetchSize,
+    });
 
     const [committee, pastMeetingResult, voteResult, surveyResult, documentResult, notesResult] = await Promise.all([
       knownCommittee ? Promise.resolve(knownCommittee) : this.fetchCommittee(req, committeeUid),
@@ -484,7 +493,8 @@ export class CommitteeActivityService {
     const hasMore = (windowed.length > limit || anyLegSaturated) && !!lastPageItem;
     const pageToken = hasMore && lastPageItem ? encodeActivityPageToken({ before: lastPageItem.event.occurred_at, key: lastPageItem.key }) : undefined;
 
-    logger.info(req, 'get_committee_activity', 'Completed committee activity aggregation', {
+    // Same knownCommittee-gated level as the "Starting" log above — see that call's comment.
+    logger[aggregationLogLevel](req, 'get_committee_activity', 'Completed committee activity aggregation', {
       committee_uid: committeeUid,
       meeting_count: pastMeetingResult.events.length,
       vote_count: voteResult.events.length,

@@ -125,10 +125,14 @@ export function currentWeekInProgressWindow(): { window_start: string; window_en
  * aggregation that already powers the committee "Recent Activity" feed, not a weekly-brief-
  * specific upstream call).
  *
- * `vote_opened` returns `null` deliberately — the tally's phrase is literally "vote closed"
- * (`WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES`), and an in-progress, not-yet-closed vote isn't that
- * yet. `document_uploaded` and `notes_added` both collapse to kind `doc` — both are "a
- * document-like artifact was added this week," and the tally doesn't need to distinguish
+ * `vote_opened` folds into kind `other`, not the `vote` kind `vote_closed` uses — the tally's
+ * only vote phrase is literally "vote closed" (`WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES` has no
+ * "vote opened" entry), and an in-progress, not-yet-closed vote isn't that yet. It still can't be
+ * dropped outright (the `null` this file used to return here): the "Recent Activity" feed on the
+ * same committee-overview page renders `vote_opened` directly, so a week that opened but hasn't
+ * yet closed a vote must not report itself as "no activity yet" while the feed right below it
+ * proves otherwise. `document_uploaded` and `notes_added` both collapse to kind `doc` — both are
+ * "a document-like artifact was added this week," and the tally doesn't need to distinguish
  * committee-document files/folders/links from meeting-attachment notes — but their ids DO carry
  * the same namespace discriminants `committee-activity.service.ts`'s own `eventKey()` uses
  * (`document_type` / `meeting_scope`), not just a `document_uid`, since — per `ActivityEvent`'s
@@ -151,14 +155,17 @@ export function currentWeekInProgressWindow(): { window_start: string; window_en
  * `WeeklyBriefSourceRef` to carry the navigation id separately from the tracking id, not done
  * here since nothing consumes this mapper's meeting refs as click targets yet.
  *
- * `survey_published`/`survey_closed` map to kind `other` — not one of
+ * `survey_published`/`survey_closed` (and `vote_opened`, above) map to kind `other` — not one of
  * `WEEKLY_BRIEF_SOURCE_SECTIONS`' five kinds, but real governance activity the client's existing
  * "other" catch-all already surfaces rather than silently dropping; `other` has no
  * `resolveSourceRefAction` case (falls to its `default: return null`), so it carries no id
  * contract to protect either way, but is left unprefixed for the same "already unique on its own
- * uid" reason as vote. `member_joined`/`member_left`/other deferred types:
- * `CommitteeActivityService` never actually constructs these today (see `DeferredActivityEvent`'s
- * own doc comment), so this default branch is unreached in practice, not dead by construction.
+ * uid" reason as vote.
+ *
+ * `member_joined`/`member_left`/other deferred types are the only ones that actually reach the
+ * `default: return null` branch below in practice: `CommitteeActivityService` never constructs
+ * those today (see `DeferredActivityEvent`'s own doc comment). It exists to stay exhaustive
+ * against `ActivityEvent`'s full union, not because any currently-constructed event type needs it.
  */
 function mapActivityEventToCurrentActivityRef(event: ActivityEvent): WeeklyBriefSourceRef | null {
   switch (event.type) {
@@ -166,6 +173,13 @@ function mapActivityEventToCurrentActivityRef(event: ActivityEvent): WeeklyBrief
       return { id: event.payload.meeting_occurrence_id, kind: 'meeting', title: event.payload.title };
     case 'vote_closed':
       return { id: event.payload.vote_uid, kind: 'vote', title: event.payload.name };
+    // Folds into `other`, not dropped: an open-but-not-yet-closed vote isn't "vote closed" (the
+    // tally's only vote phrase), but dropping it produced a same-page contradiction — the
+    // "Recent Activity" feed (mapActivityEventToDisplayText, activity-feed.utils.ts) already
+    // renders vote_opened, so a week that opened a vote and this tally alone showed "no activity
+    // yet" directly beneath a feed proving otherwise (general-code-reviewer, full-branch sweep).
+    case 'vote_opened':
+      return { id: event.payload.vote_uid, kind: 'other', title: event.payload.name };
     case 'document_uploaded':
       return { id: `document:${event.payload.document_type}:${event.payload.document_uid}`, kind: 'doc', title: event.payload.name };
     case 'notes_added':
@@ -1208,11 +1222,16 @@ export class WeeklyBriefService {
    * "`buildCurrentActivity` itself resolved to `undefined` well within budget", which needs no
    * warning of its own (it already logs its own reason for degrading). The loser of the race is
    * not cancelled (`buildCurrentActivity` has no cancellation hook — its underlying upstream
-   * calls keep running until they settle or their own timeout fires). The trailing `.catch()` on
-   * it is defense-in-depth, not a live path today: `buildCurrentActivity`'s own try/catch already
-   * wraps everything it does, so it can never actually reject as written — kept so a late
-   * rejection stays harmless rather than an unhandled one if that invariant ever changes, same
-   * rationale as this file's other "unreached in practice" guards.
+   * calls keep running until they settle or their own timeout fires).
+   *
+   * The `catch` below is this method's OWN fail-soft guarantee, not defense-in-depth borrowed
+   * from `buildCurrentActivity`'s: `Promise.race` rejects if whichever promise wins the race
+   * rejects, and a `try/finally` with no `catch` re-throws, which would fail this method — and
+   * therefore `getCurrentBrief`'s whole `Promise.all` (the brief itself, not just the tally) —
+   * even though `buildCurrentActivity`'s own try/catch means that path isn't reachable as written
+   * today. This method doesn't lean on that distant invariant staying true; it degrades to
+   * `undefined` and warns on any rejection it sees directly, the same way it already does for a
+   * lost race.
    */
   private async buildCurrentActivityWithBudget(req: Request, committeeId: string): Promise<WeeklyBriefCurrentActivity | null | undefined> {
     const BUDGET_ELAPSED = Symbol('current_activity_budget_elapsed');
@@ -1232,6 +1251,12 @@ export class WeeklyBriefService {
         return undefined;
       }
       return winner;
+    } catch (err) {
+      logger.warning(req, 'get_weekly_brief_current_activity', 'Current-activity fan-out rejected unexpectedly, omitting the tally', {
+        committee_id: committeeId,
+        err,
+      });
+      return undefined;
     } finally {
       clearTimeout(timer!);
     }

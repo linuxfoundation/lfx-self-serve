@@ -61,31 +61,42 @@ export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
  * the same `Promise.all` as the brief fetch, `buildCurrentActivity` already degrades any error to
  * `undefined` (fails soft), but that only helps if the failure is fast — a slow-but-not-erroring
  * upstream (each of its several legs defaults to a much longer per-call timeout) would otherwise
- * add real seconds to a response that should return in well under one. Deliberately generous
- * relative to a normal aggregation (this isn't tuned from production latency data, just picked to
- * be comfortably longer than typical completion and clearly shorter than any single leg's own
- * timeout).
+ * add real seconds to a response that should return in well under one.
  *
- * In practice this only binds `weekly-brief-card.component.ts`'s initial (non-poll) load of
- * `GET /current`, which has no client-side timeout of its own — that's the truly unbounded case
- * this constant exists for. On the polling path (`pollUntilTerminal`), the client already wraps
- * every tick in its own `timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS)` (4s, well under this budget), so
- * a slow fan-out there gets abandoned client-side first; this budget never gets the chance to be
- * the thing that resolves it. It still isn't wasted work on that path — bounding the server-side
- * fan-out itself, independent of whether a client is still listening, is worth doing on its own
- * — just don't read it as protecting the poll response's timing, which the client's own timeout
- * already owns. When this constant's value resolves the race, it degrades to `undefined`, the
- * same transient/"worth asking again" value any other `buildCurrentActivity` failure produces —
- * self-heal from that is exactly as good (and exactly as limited) as
+ * Deliberately tighter than an aggregation's own per-leg timeout would suggest, and specifically
+ * NOT sized around "comfortably longer than typical completion" the way a generous fire-and-
+ * forget timeout would be: because the tally shares `getCurrentBrief`'s `Promise.all` with the
+ * brief fetch itself, this value is a direct, worst-case tax on the PRIMARY content — the AI-
+ * generated brief text a page load is actually waiting to see — not just on an optional
+ * enrichment. A larger budget (this constant started at 10s) buys the tally more time to recover
+ * on a slow-but-alive upstream, at the direct cost of making every viewer wait that much longer
+ * to see their brief on that upstream's bad days. 3s was chosen as a value still comfortably
+ * clear of any single leg's own 30s timeout, while keeping that worst-case tax small next to a
+ * page load a viewer already expects to take a moment.
+ *
+ * This also changes which path the budget actually binds. On `weekly-brief-card.component.ts`'s
+ * initial (non-poll) load — the truly unbounded case this constant exists for, since that GET has
+ * no client-side timeout of its own — it was always the deciding bound, before and after this
+ * value's tightening. On the polling path (`pollUntilTerminal`), each tick is separately wrapped
+ * in `timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS)` (4s client-side); at the original 10s this budget
+ * could never be what resolved a slow tick (the client gave up first), but at 3s — under that 4s
+ * client timeout — a slow-but-alive upstream now typically degrades server-side, inside this
+ * budget, before the client's own timeout would otherwise abandon the tick.
+ *
+ * When this constant's value resolves the race, it degrades to `undefined`, the same transient/
+ * "worth asking again" value any other `buildCurrentActivity` failure produces — self-heal from
+ * that is exactly as good (and exactly as limited) as
  * `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS`'s own doc comment already describes: it only
  * happens while the card is actively polling (a generating brief), not on an initial load that
  * lands on an already-terminal one — that known v1 gap applies here unchanged, not restated.
  * Note the retries that budget enables are not free: the loser of the race in
  * `buildCurrentActivityWithBudget` is never cancelled, so a persistently slow upstream can end up
  * serving multiple overlapping fan-outs at once (one per ask attempt) rather than being asked
- * once and left alone.
+ * once and left alone. Structurally decoupling the tally into its own request — so a slow
+ * upstream delays only the enrichment, never the brief — would remove this tax entirely; not done
+ * here (see this branch's PR description for why it's a deferred, not a dismissed, trade-off).
  */
-export const WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS = 10_000;
+export const WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS = 3_000;
 
 /**
  * Caps how many poll ticks (GH-1922) keep asking the BFF to rebuild `current_activity` while it

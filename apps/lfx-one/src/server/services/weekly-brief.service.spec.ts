@@ -98,7 +98,7 @@ const {
 
 vi.mock('@lfx-one/shared/constants', () => ({
   ACTIVITY_FEED_MAX_PAGE_SIZE: 50,
-  WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS: 10_000,
+  WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS: 3_000,
   WEEKLY_BRIEF_DEFAULT_THROTTLE: MOCK_THROTTLE,
   WEEKLY_BRIEF_SHAREABLE_STATES: ['generated', 'edited', 'approved'],
   WEEKLY_BRIEF_ERROR_REASON: { NO_SOURCES: 'no_sources' },
@@ -736,7 +736,7 @@ describe('WeeklyBriefService', () => {
           proxyRequest.mockResolvedValue({ brief: { uid: 'b1', state: 'generated' }, throttle: null });
         },
       ],
-    ])('populates current_activity for a governance committee, mapping kinds and excluding an in-progress vote (%s)', async (_label, setBackend) => {
+    ])('populates current_activity for a governance committee, mapping kinds and folding an in-progress vote into "other" (%s)', async (_label, setBackend) => {
       setBackend();
       getCommitteeBaseMock.mockResolvedValue({ uid: 'committee-1', category: 'Board' });
       getCommitteeActivityMock.mockResolvedValue({
@@ -753,7 +753,9 @@ describe('WeeklyBriefService', () => {
             committee_uid: 'committee-1',
             payload: { vote_uid: 'v1', name: 'Q3 Resolution', status: 'Ended' },
           },
-          // Deliberately excluded from the tally — see mapActivityEventToCurrentActivityRef's doc comment.
+          // Not "vote closed" (the tally's only vote phrase), but also not dropped — folds into
+          // "other" instead of null, so an open-but-not-yet-closed vote doesn't produce a "no
+          // activity yet" tally directly beneath a "Recent Activity" feed that shows otherwise.
           {
             type: 'vote_opened',
             occurred_at: '2026-01-12T09:00:00Z',
@@ -777,10 +779,10 @@ describe('WeeklyBriefService', () => {
       // feature's whole point is that absent/null/present are three distinct states, not two.
       expect(result.current_activity).toEqual(expect.objectContaining({ source_refs: expect.any(Array) }));
       const refs = result.current_activity?.source_refs ?? [];
-      expect(refs).toHaveLength(3);
-      expect(refs.map((ref) => ref.kind).sort()).toEqual(['doc', 'meeting', 'vote']);
+      expect(refs).toHaveLength(4);
+      expect(refs.map((ref) => ref.kind).sort()).toEqual(['doc', 'meeting', 'other', 'vote']);
       expect(refs.find((ref) => ref.kind === 'vote')?.title).toBe('Q3 Resolution');
-      expect(refs.some((ref) => ref.title === 'Q4 Budget')).toBe(false);
+      expect(refs.find((ref) => ref.kind === 'other')?.title).toBe('Q4 Budget');
       // No kind prefix on meeting/vote — see mapActivityEventToCurrentActivityRef's doc comment
       // for why: a vote ref's id passes straight through as VoteDrawerActivityFeedAction.voteUid
       // (a `vote:` prefix would reach that action as a corrupted id), and a meeting ref's id is
@@ -788,6 +790,7 @@ describe('WeeklyBriefService', () => {
       // same doc comment covers that known v1 residual.
       expect(refs.find((ref) => ref.kind === 'meeting')?.id).toBe('m1-occ');
       expect(refs.find((ref) => ref.kind === 'vote')?.id).toBe('v1');
+      expect(refs.find((ref) => ref.kind === 'other')?.id).toBe('v2');
     });
 
     it('folds survey events into the "other" kind rather than dropping them', async () => {
@@ -1114,6 +1117,28 @@ describe('WeeklyBriefService', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it("degrades to current_activity: undefined (not a rejected getCurrentBrief) when the race itself rejects — buildCurrentActivityWithBudget must not lean on buildCurrentActivity's own try/catch to stay fail-soft", async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+      // Bypasses buildCurrentActivity's own try/catch entirely, to prove
+      // buildCurrentActivityWithBudget's catch is a real, load-bearing guard and not dead code
+      // riding on a distant invariant.
+      vi.spyOn(
+        service as unknown as { buildCurrentActivity: (req: Request, committeeId: string) => Promise<unknown> },
+        'buildCurrentActivity'
+      ).mockRejectedValue(new Error('unexpected rejection'));
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.current_activity).toBeUndefined();
+      expect(result.brief).toMatchObject({ state: expect.any(String), brief_text: expect.any(String) });
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'get_weekly_brief_current_activity',
+        'Current-activity fan-out rejected unexpectedly, omitting the tally',
+        { committee_id: 'committee-1', err: expect.any(Error) }
+      );
     });
   });
 

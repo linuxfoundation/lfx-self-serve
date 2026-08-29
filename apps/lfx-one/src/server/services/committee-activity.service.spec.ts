@@ -9,13 +9,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The vitest shared alias resolves enums/interfaces for real; constants/utils keep importActual subfile
 // stubs because their barrels reach Angular. The service's interfaces import is `import type` — erased, no mock needed.
-const { proxyRequest, getMeetings, getVotes, encodeActivityPageToken, warning, info } = vi.hoisted(() => ({
+const { proxyRequest, getMeetings, getVotes, encodeActivityPageToken, warning, info, debug } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getMeetings: vi.fn(),
   getVotes: vi.fn(),
   encodeActivityPageToken: vi.fn((cursor: { before: string; key: string }) => `token(${cursor.before}|${cursor.key})`),
   warning: vi.fn(),
   info: vi.fn(),
+  debug: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -60,7 +61,7 @@ vi.mock('../helpers/committee-activity-query.helper', async (importOriginal) => 
   ...(await importOriginal<typeof import('../helpers/committee-activity-query.helper')>()),
   encodeActivityPageToken,
 }));
-vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning, info, startOperation: vi.fn(), success: vi.fn() } }));
+vi.mock('./logger.service', () => ({ logger: { debug, warning, info, startOperation: vi.fn(), success: vi.fn() } }));
 vi.mock('./meeting.service', () => ({
   MeetingService: class {
     public getMeetings = getMeetings;
@@ -896,6 +897,28 @@ describe('CommitteeActivityService', () => {
       await expect(
         service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { uid: 'some-other-committee', enable_voting: true } as Committee)
       ).rejects.toThrow(ServiceValidationError);
+    });
+
+    it('logs the aggregation start/completion at DEBUG, not INFO, when knownCommittee is passed — this caller is a per-poll-tick tally, not the controller-driven feed the INFO rationale was written for', async () => {
+      getVotes.mockResolvedValue({ data: [vote()] });
+
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { uid: COMMITTEE_UID, enable_voting: true } as Committee);
+
+      expect(debug).toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
+      expect(debug).toHaveBeenCalledWith(req, 'get_committee_activity', 'Completed committee activity aggregation', expect.anything());
+      expect(info).not.toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
+      expect(info).not.toHaveBeenCalledWith(req, 'get_committee_activity', 'Completed committee activity aggregation', expect.anything());
+    });
+
+    it('logs the aggregation start/completion at INFO, as before, when the caller has not resolved the committee itself (the controller-driven feed path)', async () => {
+      getVotes.mockResolvedValue({ data: [vote()] });
+
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+
+      expect(info).toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
+      expect(info).toHaveBeenCalledWith(req, 'get_committee_activity', 'Completed committee activity aggregation', expect.anything());
+      expect(debug).not.toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
+      expect(debug).not.toHaveBeenCalledWith(req, 'get_committee_activity', 'Completed committee activity aggregation', expect.anything());
     });
   });
 
