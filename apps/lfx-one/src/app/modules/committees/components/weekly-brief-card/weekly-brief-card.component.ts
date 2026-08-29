@@ -744,7 +744,13 @@ export class WeeklyBriefCardComponent {
           this.fetchLoading.set(true);
           this.fetchError.set(false);
           this.pollTimedOut.set(false);
-          return this.weeklyBriefService.getWeeklyBrief(uid).pipe(
+          // includeCurrentActivity: this.isGoverningBoardCommittee() (GH-1922) — the template
+          // already gates the whole tally section on isGoverningBoardCommittee() independently
+          // of current_activity's presence (see the template's top-level @if), so for the
+          // majority of committees that aren't governance-classified, skipping the server's
+          // fan-out here costs nothing in the UI — the section wouldn't render either way — and
+          // saves a wasted upstream GET on every non-governance committee's card load.
+          return this.weeklyBriefService.getWeeklyBrief(uid, { includeCurrentActivity: this.isGoverningBoardCommittee() }).pipe(
             catchError((err: unknown) => {
               // A failed read (e.g. upstream 503) must not look like "no brief
               // yet" — flag it so the template can show a distinct, retryable

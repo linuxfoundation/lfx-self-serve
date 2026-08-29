@@ -898,6 +898,15 @@ describe('CommitteeService.getCommitteeBase', () => {
     expect(result).toBeUndefined();
   });
 
+  it('strips chat_webhook_url before returning — this is a raw-upstream-fetch read path, same invariant as every other Committee-returning method', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, category: 'Board', chat_webhook_url: 'https://hooks.slack.com/services/T1/B1/secret' });
+
+    const result = await service.getCommitteeBase(req, COMMITTEE_UID);
+
+    expect(result).not.toHaveProperty('chat_webhook_url');
+    expect(result).toMatchObject({ uid: COMMITTEE_UID, category: 'Board' });
+  });
+
   it('propagates a genuine upstream error (e.g. 404) rather than normalizing it to undefined', async () => {
     const upstreamError = MicroserviceError.fromMicroserviceResponse(
       404,

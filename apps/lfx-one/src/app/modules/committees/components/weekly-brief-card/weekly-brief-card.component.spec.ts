@@ -541,6 +541,16 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     return el!;
   }
 
+  it('hints includeCurrentActivity: true on the initial load for a governance committee — it already knows this from its own committee input', async () => {
+    await setup(BOARD_COMMITTEE, []);
+    expect(getWeeklyBrief).toHaveBeenCalledWith('committee-board', { includeCurrentActivity: true });
+  });
+
+  it('hints includeCurrentActivity: false on the initial load for a non-governance committee — the tally section can never render either way', async () => {
+    await setup(WORKING_GROUP_COMMITTEE, null);
+    expect(getWeeklyBrief).toHaveBeenCalledWith('committee-wg', { includeCurrentActivity: false });
+  });
+
   it('renders a comma-separated, kind-ordered caption for a governance committee with multi-kind activity', async () => {
     await setup(BOARD_COMMITTEE, [
       activityRef('meeting-1', 'meeting', 'Board Sync'),

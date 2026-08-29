@@ -8,7 +8,7 @@ import { NextFunction, Request, Response } from 'express';
 import { ServiceValidationError } from '../errors';
 import { assertCommitteeRead } from '../helpers/committee-read-access.helper';
 import { assertCommitteeWrite } from '../helpers/committee-write-access.helper';
-import { validateUidParameter } from '../helpers/validation.helper';
+import { getStringQueryParam, validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { WeeklyBriefService } from '../services/weekly-brief.service';
 
@@ -180,8 +180,9 @@ export class WeeklyBriefController {
       // Lets the client's own poll loop (weekly-brief-card.component.ts's pollUntilTerminal)
       // opt out of the current_activity (GH-1922) fan-out on every tick — see
       // WeeklyBriefService#getCurrentBrief's doc comment for why that matters. Only `=false`
-      // opts out; any other value (including absent) keeps the default-included behavior.
-      const includeCurrentActivity = req.query['includeCurrentActivity'] !== 'false';
+      // opts out; any other value (including absent, or a repeated-key array from
+      // getStringQueryParam narrowing that to undefined) keeps the default-included behavior.
+      const includeCurrentActivity = getStringQueryParam(req, 'includeCurrentActivity') !== 'false';
       const result = await this.weeklyBriefService.getCurrentBrief(req, committeeId, { includeCurrentActivity });
 
       logger.success(req, 'get_weekly_brief_current', startTime, {

@@ -437,6 +437,11 @@ export class CommitteeService {
    * write/detail paths that need it; a caller reaching only for the base record has nothing to write
    * to and no detail page to 404, so leaving the throw uncaught keeps that decision (log and degrade,
    * or propagate) with the caller instead of forcing one.
+   *
+   * Still runs the result through `stripChatWebhookUrl` — this is a public read path returning a raw
+   * upstream fetch, exactly the shape that helper's own doc comment says must be enrolled so
+   * `Committee.has_slack_webhook`'s "never returned by any read" invariant holds everywhere, not just
+   * the two hand-audited call sites its docblock predates this method by.
    */
   public async getCommitteeBase(req: Request, committeeId: string): Promise<Committee | undefined> {
     const committee = await this.microserviceProxy.proxyRequest<Committee | null>(
@@ -445,7 +450,7 @@ export class CommitteeService {
       `/committees/${encodeURIComponent(committeeId)}`,
       'GET'
     );
-    return committee ?? undefined;
+    return committee ? this.stripChatWebhookUrl(committee) : undefined;
   }
 
   /**
@@ -1896,7 +1901,7 @@ export class CommitteeService {
    * service via any HTTP response. Applied at every method that returns a `Committee`/`Committee[]`
    * built from a raw upstream fetch — `getCommittees`, `getDirectGrantCommittees`,
    * `searchCreatableCommittees`, `createCommittee`, `updateCommittee`, `getCommitteesByIds`
-   * (covers `getMyCommittees`) — so the "never returned by any read" invariant on
+   * (covers `getMyCommittees`), `getCommitteeBase` (GH-1922) — so the "never returned by any read" invariant on
    * {@link Committee.has_slack_webhook}'s doc comment holds everywhere, not just the two
    * hand-audited call sites. {@link getCommitteeById} calls this too, on top of (not instead of)
    * its own inline destructure of the base resource — the inline strip keeps the credential out

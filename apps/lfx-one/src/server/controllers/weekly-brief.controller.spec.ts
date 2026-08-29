@@ -44,6 +44,13 @@ vi.mock('../helpers/validation.helper', () => ({
     }
     return true;
   },
+  // Real implementation (not a stub) — this spec's includeCurrentActivity tests exercise the
+  // actual narrowing behavior (undefined on a missing/non-string query value), not a canned
+  // return.
+  getStringQueryParam: (req: { query: Record<string, unknown> }, name: string): string | undefined => {
+    const value = req.query[name];
+    return typeof value === 'string' ? value : undefined;
+  },
 }));
 
 vi.mock('../services/weekly-brief.service', () => ({
