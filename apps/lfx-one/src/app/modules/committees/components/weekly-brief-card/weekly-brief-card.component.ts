@@ -245,9 +245,11 @@ export class WeeklyBriefCardComponent {
   // brief's own completed week, so it isn't part of WeeklyBrief itself.
   public readonly currentActivity: Signal<WeeklyBriefCurrentActivitySection[]> = this.initCurrentActivitySections();
 
-  // Distinguishes "the field is absent" (non-governance committee, or the server-side
-  // lookup/fetch degraded — see weekly-brief.service.ts#buildCurrentActivity — nothing to say)
-  // from "the field is present but every kind is zero" (a genuine quiet week) — the template
+  // Distinguishes "no value to show" (absent — a transient server-side lookup/fetch degrade —
+  // or null — a settled non-governance/full-page answer; see weekly-brief.service.ts's
+  // WeeklyBriefCurrentResponse.current_activity doc comment for that three-state contract,
+  // which pollUntilTerminal's poll loop below depends on but rendering here doesn't) from "the
+  // field is a real object, every kind possibly zero" (a genuine quiet week) — the template
   // must render neither line nor "no activity yet" for the former, only the latter (GH-1922:
   // "do NOT fabricate ... degrade gracefully").
   public readonly hasCurrentActivityData: Signal<boolean> = computed(() => !!this.briefResponse()?.current_activity);

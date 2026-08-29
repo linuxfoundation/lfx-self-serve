@@ -5,7 +5,7 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD } from '@lfx-one/shared/constants';
+import { WEEKLY_BRIEF_POLL_INTERVAL_MS, WEEKLY_BRIEF_SOURCES_COLLAPSE_THRESHOLD } from '@lfx-one/shared/constants';
 import { Committee, GenerateWeeklyBriefResponse, WeeklyBriefCurrentResponse, WeeklyBriefRating, WeeklyBriefSourceRef } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
@@ -696,6 +696,83 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     expect(component.callerRating()).toBe('up');
     const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-current-activity"]');
     expect(el.textContent as string).toContain('1 meeting held');
+  });
+
+  /**
+   * `vi.useFakeTimers` must fake `setTimeout`/`clearTimeout`/`setInterval`/`clearInterval` — RxJS's
+   * `timer(delay, period)` schedules its periodic emissions via `setInterval`, not repeated
+   * `setTimeout` calls, so faking only `setTimeout` (as the two prior commits in this sequence
+   * tried) leaves the poll's own timer running on the real clock and `vi.advanceTimersByTimeAsync`
+   * advances nothing it's actually waiting on. Deliberately does NOT fake `Date`'s siblings this
+   * suite doesn't need, and — critically — the tests below never call `fixture.whenStable()` while
+   * fake timers are active: zoneless Angular's own change-detection stability tracking depends on
+   * some faked-by-default primitive (`requestAnimationFrame` is the prime suspect, though the
+   * exact mechanism wasn't root-caused), and calling it here hangs indefinitely. Assertions read
+   * component signals directly instead (`hasCurrentActivityData()`, the `getWeeklyBrief` spy's
+   * call args) — `vi.advanceTimersByTimeAsync`'s own microtask flushing is sufficient for those to
+   * be current by the time it resolves.
+   */
+  function fakePollTimers(): void {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+  }
+
+  it('a poll tick opts out (includeCurrentActivity: false) once current_activity is already present, and merges it forward since the tick carries none', async () => {
+    const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
+    await setup(BOARD_COMMITTEE, [activityRef('meeting-1', 'meeting', 'Board Sync')], generateWeeklyBrief);
+    expect(component.hasCurrentActivityData()).toBe(true);
+
+    fakePollTimers();
+    try {
+      // A new terminal revision with no current_activity of its own — a real
+      // includeCurrentActivity: false response shape — so the poll stops after this one tick.
+      getWeeklyBrief.mockImplementation(() => of({ brief: { ...briefResponse(null).brief, revision: 2 }, throttle: briefResponse(null).throttle }));
+
+      component.onGenerate();
+      // Flushes the generate POST's own response before the poll's timer(4000, 4000) has even
+      // started, then advances one full interval to trigger its first tick.
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+
+      expect(getWeeklyBrief).toHaveBeenLastCalledWith('committee-board', { includeCurrentActivity: false });
+      // The tick's own response has no current_activity key — this must still read as present,
+      // merged forward from before the tick, not blanked out.
+      expect(component.hasCurrentActivityData()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a poll tick keeps asking (includeCurrentActivity: true) while current_activity is absent, and a settled null it comes back with is not discarded as "no value" (the exact case ?? got wrong)', async () => {
+    const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
+    // null activityRefs — current_activity starts absent (e.g. a degraded initial lookup).
+    await setup(BOARD_COMMITTEE, null, generateWeeklyBrief);
+    expect(component.hasCurrentActivityData()).toBe(false);
+
+    fakePollTimers();
+    try {
+      // First tick: same revision as before (not terminal, so the poll keeps ticking) but WITH
+      // current_activity: null — a settled "doesn't apply" answer the merge must adopt. Second
+      // tick: a new terminal revision, to let the poll stop cleanly.
+      getWeeklyBrief
+        .mockImplementationOnce(() =>
+          of({ brief: { ...briefResponse(null).brief, revision: 1 }, throttle: briefResponse(null).throttle, current_activity: null })
+        )
+        .mockImplementation(() => of({ brief: { ...briefResponse(null).brief, revision: 2 }, throttle: briefResponse(null).throttle }));
+
+      component.onGenerate();
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief).toHaveBeenLastCalledWith('committee-board', { includeCurrentActivity: true });
+
+      // The second tick is the real proof: if the first tick's fresh null had been discarded by
+      // a `??` merge (rather than adopted via `!== undefined`), current_activity would still
+      // read as absent here and this second tick would ask again with `true` — forever, on every
+      // subsequent tick, which is the exact regression this commit exists to fix.
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief).toHaveBeenLastCalledWith('committee-board', { includeCurrentActivity: false });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('drops (not carries forward) caller_rating when the 202 envelope itself already carries a new brief', async () => {

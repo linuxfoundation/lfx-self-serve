@@ -1199,9 +1199,13 @@ export class WeeklyBriefService {
    * empty — an unquantified reliability gap, and a false negative on it would hide the tally for a
    * real governance committee, worse than the extra calls this took instead. `getCommitteeById`
    * reads the authoritative committee-service record directly, accepting the known extra cost
-   * over that unverified gap. Fails soft to `undefined` (never an empty array) on any error,
-   * matching the client's existing absent-vs-present distinction between "couldn't determine" and
-   * "genuinely zero activity this week" (weekly-brief-card.component.ts's `hasCurrentActivityData`).
+   * over that unverified gap. Fails soft to `undefined` (never an empty array) on a genuine
+   * error — one of three states, not two: `undefined` is transient ("couldn't determine",
+   * worth asking again), `null` is settled ("known not to apply", see below), and a real object
+   * is "genuinely zero activity this week" or more. `weekly-brief-card.component.ts`'s
+   * `hasCurrentActivityData` collapses `undefined`/`null` alike for rendering (neither is a
+   * value to show), but its `pollUntilTerminal` poll loop depends on keeping them apart — see
+   * `WeeklyBriefCurrentResponse.current_activity`'s doc comment for the full contract.
    *
    * `limit: ACTIVITY_FEED_MAX_PAGE_SIZE` is a single, unfollowed page — `getCommitteeActivity`
    * hard-rejects any larger `limit`, so that's the ceiling one call can ever return. Deliberately
@@ -1214,9 +1218,11 @@ export class WeeklyBriefService {
    * hide the tally for exactly the long-lived, active committees it exists to help.
    *
    * Gate on `data.length` instead — the merged, window-filtered, already-capped-at-`limit` result:
-   * when it fills the page (`>= limit`), real in-window rows may have been cut, so this is treated
-   * as "couldn't determine" (`undefined`) rather than a truncated count stated as fact, matching
-   * this method's own fail-soft contract.
+   * when it fills the page (`>= limit`), real in-window rows may have been cut, so this returns
+   * `null` (a settled "can't state a count as fact" answer, not a transient "couldn't determine")
+   * rather than a truncated count stated as fact — see
+   * `WeeklyBriefCurrentResponse.current_activity`'s doc comment for why `null` here, not
+   * `undefined`.
    *
    * Known v1 residual (accepted, not solved): `data.length < limit` is a heuristic, not a proof of
    * completeness. `committee-activity.service.ts` documents — in its own "Filter dimension" (its
@@ -1252,7 +1258,7 @@ export class WeeklyBriefService {
         logger.warning(
           req,
           'get_weekly_brief_current_activity',
-          'Current-week activity fills a full page — omitting rather than publishing a truncated count',
+          'Current-week activity fills a full page — publishing null (settled, not a count) rather than a truncated count stated as fact',
           {
             committee_id: committeeId,
           }
