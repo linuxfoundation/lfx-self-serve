@@ -256,11 +256,18 @@
                   <select
                     id="email-type"
                     class="w-full max-w-md rounded-md border border-gray-300 px-3 py-2 text-sm"
-                    [value]="selectedEmailTypeId()"
                     (change)="onSelectEmailType($any($event.target).value)"
                     data-testid="campaigns-email-type-select">
+                    <!--
+                      `selected` on the OPTION, not `[value]` on the select. A native <select>
+                      ignores a `value` binding applied before its options exist, so the control
+                      fell back to the FIRST option -- CFP Launch -- while the signal held the
+                      Main Registration Push default. Every operator who ignored the selector
+                      would have silently got CFP copy. Caught in the browser; the unit tests
+                      drove the handler directly and never rendered the control.
+                    -->
                     @for (t of emailTypes; track t.id) {
-                      <option [value]="t.id">{{ t.label }}</option>
+                      <option [value]="t.id" [selected]="t.id === selectedEmailTypeId()">{{ t.label }}</option>
                     }
                   </select>
                 </div>

@@ -2520,6 +2520,22 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(gen).toHaveBeenCalledWith('tlf', 'brief-77', 'Post-Event');
     });
 
+    it('renders the selector defaulted to the registration push type', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const sel = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-type-select"]') as HTMLSelectElement | null;
+      expect(sel).not.toBeNull();
+      expect(sel?.options.length).toBe(12);
+      // The RENDERED selection, not the signal. A native <select> ignores a `value` binding
+      // applied before its options exist and falls back to the FIRST option -- so the signal read
+      // "main-registration-push" while the control showed CFP Launch, and an operator who never
+      // touched the selector silently got CFP copy. Driving the handler directly cannot see this.
+      expect(sel?.value).toBe('main-registration-push');
+    });
+
     it('drops copy written for the previous type when the type changes', () => {
       selectEmail();
       internals().emailCopy.set({ subject: 'CFP copy', preheader: '', body: '<p>x</p>', cta: '' } as never);
