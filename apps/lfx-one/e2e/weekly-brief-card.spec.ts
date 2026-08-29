@@ -288,8 +288,12 @@ async function mockCurrentBrief(page: Page, initial: WeeklyBriefCurrentResponse)
   let current = initial;
   // Await the route registration so it's installed before any page.goto()
   // — `void page.route(...)` races with navigation and can leak through to
-  // the network on fast runs.
-  await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
+  // the network on fast runs. Trailing `*` on the glob (GH-1922) — the client now appends
+  // `?includeCurrentActivity=...` to this exact URL (weekly-brief.service.ts's getWeeklyBrief),
+  // and Playwright's route glob anchors against the full URL including the query string, so a
+  // bare glob silently stops matching and every test using this mock falls through to the live
+  // dev backend instead of the fixture.
+  await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current*`, async (route) => {
     if (route.request().method() !== 'GET') {
       await route.fallback();
       return;
@@ -1054,7 +1058,7 @@ test.describe('WG Weekly Brief card — Edit → Save round-trip', () => {
     const editedText = 'Edited brief — manish reviewed and tightened the language for the maintainers list.';
     const editedBrief: WeeklyBrief = { ...GENERATED_BRIEF, state: 'edited', brief_text: editedText, revision: GENERATED_BRIEF.revision + 1 };
 
-    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current*`, async (route) => {
       if (route.request().method() === 'PUT') {
         capturedPutBody = route.request().postDataJSON() as { brief_text?: string; revision?: number };
         // After save, GET should return the edited brief.
@@ -1120,7 +1124,7 @@ test.describe('WG Weekly Brief card — Generate from empty', () => {
     // re-evaluating and remounting the card) can add an extra initial-load GET that
     // would desync a count-based sequence.
     let generateAccepted = false;
-    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current*`, async (route) => {
       if (route.request().method() !== 'GET') {
         await route.fallback();
         return;
@@ -1196,7 +1200,7 @@ test.describe('WG Weekly Brief card — loads directly into the generating state
     // identical reason — this test hadn't been updated to match).
     let getCount = 0;
     let showTerminal = false;
-    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current*`, async (route) => {
       if (route.request().method() !== 'GET') {
         await route.fallback();
         return;
@@ -1242,7 +1246,7 @@ test.describe('WG Weekly Brief card — read failure (flag ON)', () => {
     // until the test itself flips `retried` right before the explicit Retry click, so any
     // number of incidental remount GETs still land on the failure branch.
     let retried = false;
-    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current`, async (route) => {
+    await page.route(`**/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/current*`, async (route) => {
       if (!retried) {
         await route.fulfill({
           status: 503,

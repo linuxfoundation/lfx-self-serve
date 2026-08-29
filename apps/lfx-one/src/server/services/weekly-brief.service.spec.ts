@@ -178,6 +178,7 @@ vi.mock('./valkey.service', () => ({
   valkeyService: valkeyServiceMock,
 }));
 
+import { ACTIVITY_FEED_MAX_PAGE_SIZE } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
@@ -770,7 +771,9 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.current_activity).toBeDefined();
+      // not.toBeNull(), not toBeDefined() — toBeDefined() passes on null too, and null-vs-object
+      // is exactly the distinction this feature's three-state contract depends on.
+      expect(result.current_activity).not.toBeNull();
       const refs = result.current_activity?.source_refs ?? [];
       expect(refs).toHaveLength(3);
       expect(refs.map((ref) => ref.kind).sort()).toEqual(['doc', 'meeting', 'vote']);
@@ -844,9 +847,12 @@ describe('WeeklyBriefService', () => {
       delete process.env['WEEKLY_BRIEF_BACKEND'];
       getCommitteeBaseMock.mockResolvedValue({ category: 'Board' });
       getCommitteeActivityMock.mockResolvedValue({
-        // ACTIVITY_FEED_MAX_PAGE_SIZE (mocked to 50) worth of in-window events — the actual signal
-        // that some of them may have been cut, unlike a bare page_token (see the next test).
-        data: Array.from({ length: 50 }, (_, i) => ({
+        // ACTIVITY_FEED_MAX_PAGE_SIZE worth of in-window events — the actual signal that some of
+        // them may have been cut, unlike a bare page_token (see the next test). Built from the
+        // real (mocked) constant, not a bare literal, so this test can't silently drift out of
+        // sync with the production `data.length >= ACTIVITY_FEED_MAX_PAGE_SIZE` gate it exists to
+        // exercise.
+        data: Array.from({ length: ACTIVITY_FEED_MAX_PAGE_SIZE }, (_, i) => ({
           type: 'meeting_held',
           occurred_at: '2026-01-12T10:00:00Z',
           committee_uid: 'committee-1',
@@ -889,7 +895,7 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.current_activity).toBeDefined();
+      expect(result.current_activity).not.toBeNull();
       expect(result.current_activity?.source_refs).toHaveLength(1);
     });
 
@@ -922,7 +928,7 @@ describe('WeeklyBriefService', () => {
         expect(getCommitteeActivityMock).toHaveBeenCalledWith(
           req,
           'committee-1',
-          { since: '2026-01-11T00:00:00.000Z', limit: expect.any(Number) },
+          { since: '2026-01-11T00:00:00.000Z', limit: ACTIVITY_FEED_MAX_PAGE_SIZE },
           { category: 'Board' }
         );
         expect(result.current_activity?.window_start).toBe('2026-01-11T00:00:00.000Z');
@@ -1019,7 +1025,10 @@ describe('WeeklyBriefService', () => {
       const result = await service.getCurrentBrief(req, 'committee-1');
 
       expect(result.current_activity).toBeUndefined();
-      expect(result.brief).toBeDefined(); // the brief itself still renders — only the tally degrades
+      // toMatchObject, not toBeDefined() — mock mode always synthesizes SOME brief object
+      // regardless of this path, so toBeDefined() alone can never fail here; this checks the
+      // brief actually carries its expected shape, not just "is not undefined".
+      expect(result.brief).toMatchObject({ state: expect.any(String), brief_text: expect.any(String) });
     });
 
     it('degrades to current_activity: undefined (not a thrown error) when the committee lookup returns nothing (the empty-body case)', async () => {
@@ -1030,7 +1039,7 @@ describe('WeeklyBriefService', () => {
 
       expect(result.current_activity).toBeUndefined();
       expect(getCommitteeActivityMock).not.toHaveBeenCalled();
-      expect(result.brief).toBeDefined();
+      expect(result.brief).toMatchObject({ state: expect.any(String), brief_text: expect.any(String) });
     });
 
     it.each([
@@ -1063,7 +1072,7 @@ describe('WeeklyBriefService', () => {
       const result = await service.getCurrentBrief(req, 'committee-1');
 
       expect(result.current_activity).toBeUndefined();
-      expect(result.brief).toBeDefined();
+      expect(result.brief).toMatchObject({ state: expect.any(String), brief_text: expect.any(String) });
     });
   });
 

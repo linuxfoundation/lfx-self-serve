@@ -910,6 +910,84 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     }
   });
 
+  it('resets the ask-attempt budget on a new poll cycle — currentActivityAskAttempts is scoped per pollUntilTerminal call, not the component instance', async () => {
+    const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
+    await setup(BOARD_COMMITTEE, null, generateWeeklyBrief);
+    expect(getWeeklyBrief.mock.calls).toHaveLength(1);
+
+    fakePollTimers();
+    try {
+      // First cycle: spend the entire ask-attempt budget, same as the sibling cap test above.
+      getWeeklyBrief.mockImplementation(() => of(pollTick(1)));
+      component.onGenerate();
+      await vi.advanceTimersByTimeAsync(0);
+      for (let attempt = 0; attempt < WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS; attempt++) {
+        await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      }
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief).toHaveBeenLastCalledWith('committee-board', { includeCurrentActivity: false });
+      // Terminate the first poll (revision 2) so a second Regenerate can start a fresh one.
+      getWeeklyBrief.mockImplementation(() => of(pollTick(2)));
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(component.generating()).toBe(false);
+      const callsAfterFirstCycle = getWeeklyBrief.mock.calls.length;
+
+      // Second cycle: current_activity is absent again (e.g. the tally keeps failing) — if the
+      // budget were a component field instead of scoped inside pollUntilTerminal, it would
+      // already read as exhausted here and this tick would never ask.
+      getWeeklyBrief.mockImplementation(() => of(pollTick(3)));
+      component.onGenerate();
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief).toHaveBeenNthCalledWith(callsAfterFirstCycle + 1, 'committee-board', { includeCurrentActivity: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('adopts a real current_activity a poll tick returns — hasCurrentActivityData flips false to true, the actual success case the retry budget exists to reach', async () => {
+    const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
+    await setup(BOARD_COMMITTEE, null, generateWeeklyBrief);
+    expect(component.hasCurrentActivityData()).toBe(false);
+
+    fakePollTimers();
+    try {
+      // First tick: same revision as before (not terminal — keeps polling), now WITH a real,
+      // non-empty current_activity — the success case, not just the settled-null case the
+      // sibling "keeps asking" test already covers. Second tick: a new terminal revision, so the
+      // poll stops cleanly.
+      getWeeklyBrief
+        .mockImplementationOnce(() =>
+          of(
+            pollTick(1, {
+              current_activity: {
+                window_start: '2026-08-24T00:00:00Z',
+                window_end: '2026-08-27T12:00:00Z',
+                source_refs: [activityRef('meeting-1', 'meeting', 'Board Sync')],
+              },
+            })
+          )
+        )
+        .mockImplementation(() => of(pollTick(2)));
+
+      component.onGenerate();
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+
+      // Signal-level assertions only — under fake timers (see fakePollTimers's own docblock)
+      // zoneless Angular's change-detection scheduler can't run, so a DOM query here would read
+      // stale content rather than proving anything about this tick's effect.
+      expect(component.hasCurrentActivityData()).toBe(true);
+      expect(component.currentActivity()).toEqual([expect.objectContaining({ kind: 'meeting', countText: '1 meeting held' })]);
+
+      // Let the poll terminate cleanly.
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(component.generating()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('drops (not carries forward) caller_rating when the 202 envelope itself already carries a new brief', async () => {
     const generateWeeklyBrief = vi.fn(() =>
       of({

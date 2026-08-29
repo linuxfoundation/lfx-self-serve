@@ -196,7 +196,10 @@ export class CommitteeActivityService {
    * hand. Only an optimization: omitting it costs one extra upstream call, not a correctness
    * difference — this method still trusts a caller-supplied committee exactly as it would trust its
    * own fetch, with the same fail-closed contract (see fetchCommittee's doc comment) resting on the
-   * caller instead when this parameter is used.
+   * caller instead when this parameter is used. Not inert data, so a mismatched `uid` is rejected
+   * rather than silently trusted: `committee.enable_voting` (read below) decides whether the
+   * entire vote leg is surfaced, so a future caller passing the wrong committee here would silently
+   * add or hide a committee's votes with no error anywhere else in the request.
    */
   public async getCommitteeActivity(
     req: Request,
@@ -204,6 +207,9 @@ export class CommitteeActivityService {
     options: CommitteeActivityQuery,
     knownCommittee?: Committee
   ): Promise<PaginatedResponse<ActivityEvent>> {
+    if (knownCommittee && knownCommittee.uid !== committeeUid) {
+      throw ServiceValidationError.forField('knownCommittee', 'knownCommittee.uid must match committeeUid', { operation: 'get_committee_activity' });
+    }
     const { since: rawSince, cursor, limit } = options;
     // Same reject-not-degrade policy as the cursor/since checks below, for the same reason:
     // parseCommitteeActivityQuery already bounds page_size on the HTTP path, but this method is
@@ -389,7 +395,9 @@ export class CommitteeActivityService {
     ]);
 
     // A committee-lookup failure already rejected the whole Promise.all above (see fetchCommittee's
-    // doc comment) — by this line `committee` is always a resolved Committee.
+    // doc comment), or `committee` came from a caller-supplied `knownCommittee` — validated against
+    // `committeeUid` above and carrying the same fail-closed contract per this method's own doc
+    // comment. Either way, by this line `committee` is always a resolved, trustworthy Committee.
     const votingEnabled = committee.enable_voting;
     const sources: ActivityEvent[][] = [
       pastMeetingResult.events,

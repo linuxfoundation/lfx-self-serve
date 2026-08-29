@@ -662,14 +662,18 @@ export class WeeklyBriefCardComponent {
     });
   }
 
-  // Groups current_activity.source_refs into fixed-order kind-sections driven by
-  // WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES — NOT by cross-referencing WEEKLY_BRIEF_SOURCE_SECTIONS
-  // by kind, since that could silently produce a phrase-less, blank-labeled toggle for a kind
-  // present in one list but not the other (PHRASES is the sole source of truth for which kinds
-  // the tally recognizes; see its doc comment). Any ref whose kind ISN'T recognized there rolls
-  // into a trailing "N other updates" bucket, mirroring initSourceChipSections's "Other"
-  // catch-all — without it, a week whose only activity is an unrecognized kind would render the
-  // misleading "no activity yet" line instead of admitting the tally just can't name it.
+  // Groups current_activity.source_refs into fixed-order kind-sections. Section MEMBERSHIP (which
+  // kinds exist, and in what order) is driven by WEEKLY_BRIEF_CURRENT_ACTIVITY_PHRASES alone — NOT
+  // by cross-referencing WEEKLY_BRIEF_SOURCE_SECTIONS by kind, since that could silently produce a
+  // countText-less section for a kind present in one list but not the other (PHRASES is the sole
+  // source of truth for which kinds the tally recognizes; see its doc comment). The section's
+  // display LABEL, in contrast, is looked up from WEEKLY_BRIEF_SOURCE_SECTIONS below — reusing the
+  // Sources row's existing label strings rather than duplicating them in PHRASES too — with a
+  // `?? kind` fallback that's what actually prevents a blank label if the two lists ever diverge on
+  // a kind's presence. Any ref whose kind ISN'T recognized by PHRASES rolls into a trailing "N
+  // other updates" bucket, mirroring initSourceChipSections's "Other" catch-all — without it, a
+  // week whose only activity is an unrecognized kind would render the misleading "no activity yet"
+  // line instead of admitting the tally just can't name it.
   private initCurrentActivitySections(): Signal<WeeklyBriefCurrentActivitySection[]> {
     return computed(() => {
       const refs = this.briefResponse()?.current_activity?.source_refs ?? [];

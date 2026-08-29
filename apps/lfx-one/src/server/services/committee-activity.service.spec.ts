@@ -889,6 +889,14 @@ describe('CommitteeActivityService', () => {
 
       expect(result.data).toEqual([]);
     });
+
+    it('rejects a knownCommittee whose uid does not match committeeUid, rather than silently trusting it', async () => {
+      // enable_voting decides the entire vote leg's visibility — a mismatched committee here
+      // would silently add or hide votes for the real committeeUid with no error anywhere else.
+      await expect(
+        service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { uid: 'some-other-committee', enable_voting: true } as Committee)
+      ).rejects.toThrow(ServiceValidationError);
+    });
   });
 
   describe('notes_added leg', () => {
