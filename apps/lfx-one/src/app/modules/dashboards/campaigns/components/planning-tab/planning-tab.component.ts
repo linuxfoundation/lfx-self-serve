@@ -591,11 +591,14 @@ export class PlanningTabComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
-          // Released FIRST and unconditionally: hsCreating tracks whether a request is in
-          // flight, which is a fact about this subscription, not about which event is on
-          // screen. Returning before it left the button disabled and the "Creating..." label
-          // frozen on the new event's panel forever.
-          this.hsCreating.set(false);
+          // Released before the render guard, but only by the create that still owns the flag.
+          // Ordering matters because returning first left the button disabled and "Creating..."
+          // frozen on the new event's panel forever; ownership matters because releasing
+          // unconditionally lets an OLDER create re-enable the button while a newer one is
+          // still running, which is how a duplicate gets made.
+          if (this.createIsCurrent(capturedFoundation)) {
+            this.hsCreating.set(false);
+          }
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
           // `created` alone decides success. HubSpot assigns the token, and not necessarily by
           // the time the create returns — so requiring hs_utm too would report a campaign that
@@ -624,7 +627,9 @@ export class PlanningTabComponent implements OnInit {
           }
         },
         error: () => {
-          this.hsCreating.set(false);
+          if (this.createIsCurrent(capturedFoundation)) {
+            this.hsCreating.set(false);
+          }
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
           // The outcome is UNKNOWN, not failed. Upstream reports an id-less 2xx as an error
           // precisely because the campaign may already exist, and every other failure is
@@ -1108,6 +1113,22 @@ export class PlanningTabComponent implements OnInit {
 
   private lookupIsCurrent(capturedEvent: string, capturedFoundation: string): boolean {
     return this.lastLookedUpEvent === capturedEvent && this.activeFoundationSlug() === capturedFoundation;
+  }
+
+  /**
+   * Whether this create still OWNS the shared `hsCreating` flag.
+   *
+   * The flag is shared, not per-subscription — a foundation change clears state and can start a
+   * second create while the first is still in flight. An older create releasing the flag
+   * unconditionally then re-enables the button while the NEWER request is still running, which
+   * is how a duplicate campaign gets made in a shared namespace.
+   *
+   * Keyed on the foundation alone, deliberately narrower than `lookupIsCurrent`. The event may
+   * legitimately move on while a create is in flight, and the request still needs to release the
+   * flag it took; what must not happen is one foundation's create clearing another's.
+   */
+  private createIsCurrent(capturedFoundation: string): boolean {
+    return this.activeFoundationSlug() === capturedFoundation;
   }
 
   private panelStillShows(capturedEvent: string, capturedFoundation: string): boolean {

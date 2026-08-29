@@ -1212,6 +1212,34 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   /**
+   * `hsCreating` is shared, not per-subscription. A foundation change clears state and can start
+   * a SECOND create while the first is still in flight -- so an older create releasing the flag
+   * unconditionally re-enables the button while the newer request is still running, which is how
+   * a duplicate campaign gets made in a shared namespace.
+   */
+  it('does not let a stale create re-enable the button for a newer one', () => {
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = 'KubeCon NA 2026';
+    const first = new Subject<unknown>();
+    create.mockReturnValue(first);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+
+    // The operator switches foundation; a create starts for the new one and is still running.
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    (fixture.componentInstance as unknown as { lastLookedUpEvent: string }).lastLookedUpEvent = 'KubeCon NA 2026';
+    const second = new Subject<unknown>();
+    create.mockReturnValue(second);
+    (fixture.componentInstance as unknown as { createInHubSpot(): void }).createInHubSpot();
+    expect(instance()['hsCreating']()).toBe(true);
+
+    // The OLD foundation's create now settles.
+    first.error(new Error('stale create failed'));
+    fixture.detectChanges();
+
+    expect(instance()['hsCreating'](), 'a stale create re-enabled the button while a newer one was still running').toBe(true);
+  });
+
+  /**
    * The spinner must clear even when the user has retyped the url mid-flight.
    *
    * `panelStillShows` also asks whether the LIVE url still names the captured event, which goes
