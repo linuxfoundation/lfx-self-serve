@@ -9,11 +9,22 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { WEEKLY_BRIEF_DEFAULT_THROTTLE, WEEKLY_BRIEF_TEXT_MAX_LENGTH } from './weekly-brief.constants';
+import {
+  WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS,
+  WEEKLY_BRIEF_DEFAULT_THROTTLE,
+  WEEKLY_BRIEF_POLL_INTERVAL_MS,
+  WEEKLY_BRIEF_TEXT_MAX_LENGTH,
+} from './weekly-brief.constants';
 
 describe('WEEKLY_BRIEF_TEXT_MAX_LENGTH', () => {
   it('matches upstream UpdateCurrentWeeklyBriefRequestBody.brief_text maxLength', () => {
     expect(WEEKLY_BRIEF_TEXT_MAX_LENGTH).toBe(20_000);
+  });
+});
+
+describe('WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS', () => {
+  it('stays under WEEKLY_BRIEF_POLL_INTERVAL_MS — its own doc comment claims a slow poll tick can now resolve server-side, inside this budget, before the client abandons the tick; a later edit to either constant that breaks that ordering would otherwise silently revert the claimed behavior with no other test failing', () => {
+    expect(WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS).toBeLessThan(WEEKLY_BRIEF_POLL_INTERVAL_MS);
   });
 });
 

@@ -899,10 +899,10 @@ describe('CommitteeActivityService', () => {
       ).rejects.toThrow(ServiceValidationError);
     });
 
-    it('logs the aggregation start/completion at DEBUG, not INFO, when knownCommittee is passed — this caller is a per-poll-tick tally, not the controller-driven feed the INFO rationale was written for', async () => {
+    it('logs the aggregation start/completion at DEBUG, not INFO, when quietAggregationLog is passed — this caller is a per-poll-tick tally, not the controller-driven feed the INFO rationale was written for', async () => {
       getVotes.mockResolvedValue({ data: [vote()] });
 
-      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { uid: COMMITTEE_UID, enable_voting: true } as Committee);
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { uid: COMMITTEE_UID, enable_voting: true } as Committee, true);
 
       expect(debug).toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
       expect(debug).toHaveBeenCalledWith(req, 'get_committee_activity', 'Completed committee activity aggregation', expect.anything());
@@ -910,7 +910,7 @@ describe('CommitteeActivityService', () => {
       expect(info).not.toHaveBeenCalledWith(req, 'get_committee_activity', 'Completed committee activity aggregation', expect.anything());
     });
 
-    it('logs the aggregation start/completion at INFO, as before, when the caller has not resolved the committee itself (the controller-driven feed path)', async () => {
+    it('logs the aggregation start/completion at INFO, as before, when quietAggregationLog is omitted (the controller-driven feed path)', async () => {
       getVotes.mockResolvedValue({ data: [vote()] });
 
       await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
@@ -919,6 +919,15 @@ describe('CommitteeActivityService', () => {
       expect(info).toHaveBeenCalledWith(req, 'get_committee_activity', 'Completed committee activity aggregation', expect.anything());
       expect(debug).not.toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
       expect(debug).not.toHaveBeenCalledWith(req, 'get_committee_activity', 'Completed committee activity aggregation', expect.anything());
+    });
+
+    it('still logs at INFO when knownCommittee is passed but quietAggregationLog is not — passing knownCommittee alone must not silence the log, since it exists only to skip a redundant fetch and says nothing about call frequency', async () => {
+      getVotes.mockResolvedValue({ data: [vote()] });
+
+      await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { uid: COMMITTEE_UID, enable_voting: true } as Committee);
+
+      expect(info).toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
+      expect(debug).not.toHaveBeenCalledWith(req, 'get_committee_activity', 'Starting committee activity aggregation', expect.anything());
     });
   });
 

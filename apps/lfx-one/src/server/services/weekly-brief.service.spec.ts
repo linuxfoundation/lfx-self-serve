@@ -790,7 +790,9 @@ describe('WeeklyBriefService', () => {
       // same doc comment covers that known v1 residual.
       expect(refs.find((ref) => ref.kind === 'meeting')?.id).toBe('m1-occ');
       expect(refs.find((ref) => ref.kind === 'vote')?.id).toBe('v1');
-      expect(refs.find((ref) => ref.kind === 'other')?.id).toBe('v2');
+      // Prefixed (unlike vote/meeting): "other" mixes vote_uid and survey_uid, two upstream
+      // uid namespaces that could otherwise collide in the same rendered @for section.
+      expect(refs.find((ref) => ref.kind === 'other')?.id).toBe('vote:v2');
     });
 
     it('folds survey events into the "other" kind rather than dropping them', async () => {
@@ -810,7 +812,7 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.current_activity?.source_refs).toEqual([{ id: 's1', kind: 'other', title: 'Annual Review' }]);
+      expect(result.current_activity?.source_refs).toEqual([{ id: 'survey:s1', kind: 'other', title: 'Annual Review' }]);
     });
 
     it('maps notes_added to kind "doc", and its id carries the meeting_scope discriminant so it cannot collide with a document_uploaded event sharing the same document_uid', async () => {
@@ -936,7 +938,8 @@ describe('WeeklyBriefService', () => {
           req,
           'committee-1',
           { since: '2026-01-11T00:00:00.000Z', limit: ACTIVITY_FEED_MAX_PAGE_SIZE },
-          { uid: 'committee-1', category: 'Board' }
+          { uid: 'committee-1', category: 'Board' },
+          true
         );
         expect(result.current_activity?.window_start).toBe('2026-01-11T00:00:00.000Z');
         expect(result.current_activity?.window_end).toBe('2026-01-14T12:00:00.000Z');

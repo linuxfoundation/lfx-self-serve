@@ -214,7 +214,8 @@ export class CommitteeActivityService {
     req: Request,
     committeeUid: string,
     options: CommitteeActivityQuery,
-    knownCommittee?: Committee
+    knownCommittee?: Committee,
+    quietAggregationLog = false
   ): Promise<PaginatedResponse<ActivityEvent>> {
     if (knownCommittee && knownCommittee.uid !== committeeUid) {
       throw ServiceValidationError.forField('knownCommittee', 'knownCommittee.uid must match committeeUid', { operation: 'get_committee_activity' });
@@ -377,12 +378,14 @@ export class CommitteeActivityService {
     // single-source enrichment services that stay at DEBUG throughout. A merge across 5
     // independently-paginated upstream sources with cursor/saturation logic is exactly the
     // "complex multi-step orchestration" case logging-patterns.md reserves INFO for — but only for
-    // the controller-driven "Recent Activity" feed call this rationale was written for.
-    // `knownCommittee` (only ever passed by `weekly-brief.service.ts#buildCurrentActivity`, GH-1922)
-    // identifies the other caller: a per-poll-tick tally fan-out that can run up to
+    // a call at that frequency. `quietAggregationLog` (an explicit intent flag, deliberately NOT
+    // inferred from `knownCommittee` — that param exists only to skip a redundant committee fetch
+    // and says nothing about call frequency, so a future caller passing it purely for that saving
+    // must not silently lose its INFO logs) is set by `weekly-brief.service.ts#buildCurrentActivity`
+    // (GH-1922): a per-poll-tick tally fan-out that can run up to
     // `WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS` times per generate cycle, well past
     // "significant business operation" frequency — DEBUG there instead, same call, same shape.
-    const aggregationLogLevel = knownCommittee ? 'debug' : 'info';
+    const aggregationLogLevel = quietAggregationLog ? 'debug' : 'info';
     logger[aggregationLogLevel](req, 'get_committee_activity', 'Starting committee activity aggregation', {
       committee_uid: committeeUid,
       fetch_size: fetchSize,

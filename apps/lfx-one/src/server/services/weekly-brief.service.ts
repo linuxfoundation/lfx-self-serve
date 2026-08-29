@@ -159,8 +159,11 @@ export function currentWeekInProgressWindow(): { window_start: string; window_en
  * `WEEKLY_BRIEF_SOURCE_SECTIONS`' five kinds, but real governance activity the client's existing
  * "other" catch-all already surfaces rather than silently dropping; `other` has no
  * `resolveSourceRefAction` case (falls to its `default: return null`), so it carries no id
- * contract to protect either way, but is left unprefixed for the same "already unique on its own
- * uid" reason as vote.
+ * contract to protect the way `vote`'s or `meeting`'s does — but unlike those two, `other` mixes
+ * TWO upstream uid namespaces (`vote_uid` and `survey_uid`) in one rendered section, the same
+ * shape `doc`'s `document_type`/`meeting_scope` prefixing above already exists to guard, so both
+ * get the `vote:`/`survey:` prefix for the same reason, not left raw the way a single-namespace
+ * kind can be.
  *
  * `member_joined`/`member_left`/other deferred types are the only ones that actually reach the
  * `default: return null` branch below in practice: `CommitteeActivityService` never constructs
@@ -178,15 +181,19 @@ function mapActivityEventToCurrentActivityRef(event: ActivityEvent): WeeklyBrief
     // "Recent Activity" feed (mapActivityEventToDisplayText, activity-feed.utils.ts) already
     // renders vote_opened, so a week that opened a vote and this tally alone showed "no activity
     // yet" directly beneath a feed proving otherwise (general-code-reviewer, full-branch sweep).
+    // Prefixed, unlike `vote_closed` above: `other` now holds two upstream uid namespaces
+    // (vote_uid here, survey_uid below), the same two-namespace situation `doc`'s prefixing
+    // already exists to guard against, not the single-namespace case the unprefixed `vote` kind's
+    // own doc comment describes.
     case 'vote_opened':
-      return { id: event.payload.vote_uid, kind: 'other', title: event.payload.name };
+      return { id: `vote:${event.payload.vote_uid}`, kind: 'other', title: event.payload.name };
     case 'document_uploaded':
       return { id: `document:${event.payload.document_type}:${event.payload.document_uid}`, kind: 'doc', title: event.payload.name };
     case 'notes_added':
       return { id: `note:${event.payload.meeting_scope}:${event.payload.document_uid}`, kind: 'doc', title: event.payload.name };
     case 'survey_published':
     case 'survey_closed':
-      return { id: event.payload.survey_uid, kind: 'other', title: event.payload.title };
+      return { id: `survey:${event.payload.survey_uid}`, kind: 'other', title: event.payload.title };
     default:
       return null;
   }
@@ -1350,7 +1357,9 @@ export class WeeklyBriefService {
 
       const { window_start, window_end } = currentWeekInProgressWindow();
       // Passing `committee` (already resolved above) as getCommitteeActivity's knownCommittee —
-      // see this method's own doc comment for why.
+      // see this method's own doc comment for why. `quietAggregationLog: true` separately, since
+      // this is a per-poll-tick call, not the controller-driven feed read that method's own
+      // INFO-logging rationale is written for — see that call site's own comment.
       const { data } = await this.committeeActivityService.getCommitteeActivity(
         req,
         committeeId,
@@ -1358,7 +1367,8 @@ export class WeeklyBriefService {
           since: window_start,
           limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
         },
-        committee
+        committee,
+        /* quietAggregationLog */ true
       );
       logger.debug(req, 'get_weekly_brief_current_activity', 'Fetched current-week activity', { committee_id: committeeId, event_count: data.length });
       if (data.length >= ACTIVITY_FEED_MAX_PAGE_SIZE) {

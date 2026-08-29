@@ -94,7 +94,7 @@ export const WEEKLY_BRIEF_MAX_POLL_ATTEMPTS = 20;
  * serving multiple overlapping fan-outs at once (one per ask attempt) rather than being asked
  * once and left alone. Structurally decoupling the tally into its own request — so a slow
  * upstream delays only the enrichment, never the brief — would remove this tax entirely; not done
- * here (see this branch's PR description for why it's a deferred, not a dismissed, trade-off).
+ * here — a deferred, not a dismissed, trade-off (linuxfoundation/lfx-self-serve#1922).
  */
 export const WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS = 3_000;
 
