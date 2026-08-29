@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Pins WEEKLY_BRIEF_TEXT_MAX_LENGTH against upstream's documented bound, and
-// WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS against the value the server spec's mock hand-copies
-// (see that constant's own test below). The BFF's server-side vitest config mocks
-// `@lfx-one/shared/constants` wholesale (to avoid re-triggering an Angular JIT-compilation
-// failure — see weekly-brief.controller.spec.ts), so its mocked values can't catch drift if
-// either constant ever changes. This is the one place the real values are loaded and checked.
+// Pins this module's constants against the values their own consumers assume — either an
+// upstream-documented bound, or a value a server spec's `vi.mock('@lfx-one/shared/constants', ...)`
+// hand-copies (which real-value drift wouldn't otherwise be caught against; see each `it()` below
+// for which applies and why). NOT the BFF's vitest config that could otherwise be blamed for
+// needing this: that only aliases `@lfx-one/shared` to the real source
+// (`apps/lfx-one/vitest.config.ts`'s own comment: "server specs exercise the real shared barrels
+// instead of drift-prone vi.mock stubs") — any hand-copying happens per spec file, not centrally.
 
 import { describe, expect, it } from 'vitest';
 
