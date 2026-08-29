@@ -8,12 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // still need mocking — `utils/index.ts` re-exports form.utils.ts, which imports `@angular/forms`,
 // and importing that barrel unmocked triggers Angular JIT-compilation failure in this worker (see
 // the deep `vi.importActual` on `committee.utils.ts` further down for the one function pulled
-// through the real module instead of a stub). `constants` also needs mocking, since this service
-// spreads WEEKLY_BRIEF_DEFAULT_THROTTLE at runtime (not just a type import) and MOCK_THROTTLE is
-// shared between the mock factory and the test assertions below so the two can't drift from each
-// other. (Deliberately not cross-checked against the real constants module here — `vi.importActual`
-// on the full `@lfx-one/shared/*` barrel would re-trigger the same JIT-compilation failure and
-// contaminate other spec files sharing the test worker.)
+// through the real module instead of a stub). `constants` is mocked too, not because the real
+// module can't load here, but for test control: the mock pins a deterministic
+// WEEKLY_BRIEF_DEFAULT_THROTTLE (MOCK_THROTTLE), shared between the factory and the assertions
+// below so the two can't drift from each other, without paying the real barrel's evaluation cost.
+// weekly-brief.constants.spec.ts is the named spec pinning MOCK_THROTTLE's shape against the real
+// constant, same pattern as that file's ACTIVITY_FEED_MAX_PAGE_SIZE pin further down.
 // A real Map-backed fake (not just call-arg assertions) so the rating tests below prove actual
 // upsert/clear round-trip behavior through the public API, not just "was called with X". Shared
 // by the action-items tests too — `weekly-brief.service.ts`'s rating and action-items code paths
