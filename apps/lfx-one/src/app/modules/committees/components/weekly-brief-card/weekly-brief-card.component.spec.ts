@@ -493,6 +493,12 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     };
   }
 
+  /** A poll-tick response at `revision` — terminal by state; whether it's *newly* terminal (and so stops the poll) depends on the caller's priorRevision. */
+  function pollTick(revision: number, extra: Partial<WeeklyBriefCurrentResponse> = {}): WeeklyBriefCurrentResponse {
+    const base = briefResponse(null);
+    return { brief: { ...base.brief!, revision }, throttle: base.throttle, ...extra };
+  }
+
   async function setup(
     committee: Committee,
     activityRefs: WeeklyBriefSourceRef[] | null,
@@ -728,7 +734,7 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     try {
       // A new terminal revision with no current_activity of its own — a real
       // includeCurrentActivity: false response shape — so the poll stops after this one tick.
-      getWeeklyBrief.mockImplementation(() => of({ brief: { ...briefResponse(null).brief, revision: 2 }, throttle: briefResponse(null).throttle }));
+      getWeeklyBrief.mockImplementation(() => of(pollTick(2)));
 
       component.onGenerate();
       // Flushes the generate POST's own response before the poll's timer(4000, 4000) has even
@@ -764,7 +770,7 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       // it — a deeper version of the same dead end. Proven by actually regenerating again and
       // confirming a new poll tick fires. A genuinely new terminal revision (not the same 2 as
       // before) so this second poll settles too, rather than leaving an open subscription behind.
-      getWeeklyBrief.mockImplementation(() => of({ brief: { ...briefResponse(null).brief, revision: 3 }, throttle: briefResponse(null).throttle }));
+      getWeeklyBrief.mockImplementation(() => of(pollTick(3)));
       component.onGenerate();
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
@@ -789,11 +795,7 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       // First tick: same revision as before (not terminal, so the poll keeps ticking) but WITH
       // current_activity: null — a settled "doesn't apply" answer the merge must adopt. Second
       // tick: a new terminal revision, to let the poll stop cleanly.
-      getWeeklyBrief
-        .mockImplementationOnce(() =>
-          of({ brief: { ...briefResponse(null).brief, revision: 1 }, throttle: briefResponse(null).throttle, current_activity: null })
-        )
-        .mockImplementation(() => of({ brief: { ...briefResponse(null).brief, revision: 2 }, throttle: briefResponse(null).throttle }));
+      getWeeklyBrief.mockImplementationOnce(() => of(pollTick(1, { current_activity: null }))).mockImplementation(() => of(pollTick(2)));
 
       component.onGenerate();
       await vi.advanceTimersByTimeAsync(0);
