@@ -1128,13 +1128,14 @@ export class WeeklyBriefService {
 
   /**
    * Enriches `getCurrentBrief`'s result with a staleness signal (GH-1966): whether real
-   * committee activity has occurred for this committee, since the brief's text was last
-   * generated/edited, while the brief's own window is still open. No brief, a non-shareable
-   * state, or an already-closed window leave `staleness` absent/`null` (see the inline comment
-   * below for why a closed window is never actionable). Mock mode, an unparseable `updated_at`,
-   * or a fetch fault also resolve to `staleness: null` rather than throwing. This is an honest
-   * best-effort indicator, never a precondition for anything, and must never consume
-   * generate/regenerate quota.
+   * committee activity has occurred, inside this brief's own window and after its text was last
+   * generated/edited, up to the earlier of "now" or the window's own close. No brief or a
+   * non-shareable state leave `staleness` absent entirely. Mock mode, an unparseable
+   * `updated_at`/`window_end`, an inconclusive fetch (see below), or a fetch fault all resolve
+   * to `staleness: null` rather than throwing. A brief (re)generated after its own window had
+   * already closed confidently reports `stale: false` — see the inline comment below for why
+   * that's provable, not a guess. This is an honest best-effort indicator, never a precondition
+   * for anything, and must never consume generate/regenerate quota.
    *
    * Mock mode: `CommitteeActivityService` always calls live upstream (committee/meeting/vote/
    * query-service) — it has no mock-data branch of its own. Comparing that live activity
@@ -1163,20 +1164,28 @@ export class WeeklyBriefService {
       });
       return { ...response, staleness: null };
     }
-    const nowMs = Date.now();
-    // `briefWindow()`'s own doc comment (and upstream's identical `WeeklyWindow` selection,
-    // confirmed against committee-service's Go source) means `window_end` names the PREVIOUS,
-    // already-closed week on 6 of 7 days. A closed-week brief is a retrospective summary;
-    // regenerating it re-summarizes that same closed period and cannot incorporate activity
-    // from whatever week is current now — so activity after `window_end` has no bearing on
-    // whether THIS brief's text is accurate, and confidently flagging it as "stale" would send
-    // the user to spend limited regeneration quota on a click that changes nothing. Only while
-    // the window is still open (`window_end >= now`, which `briefWindow()` only ever produces
-    // same-day on Saturday) can new activity actually invalidate this brief's own narrative —
-    // that narrow case is also the one the original GH-1966 report describes (general review
-    // finding, full-branch sweep: the first version of this check dropped `window_end`
-    // entirely, which fixed the no-op but reintroduced exactly this cross-week false-positive).
-    if (windowEndMs < nowMs) return { ...response, staleness: null };
+    // `briefWindow()`'s own selection (and upstream's identical `WeeklyWindow`, confirmed
+    // against committee-service's Go source) keeps ONE window "current" — retrievable via
+    // GET /current — from the Saturday it opens through the following Friday, rolling over only
+    // on the next Saturday. A brief first generated any day other than that anchor Saturday is
+    // therefore always generated AFTER its own window already closed (`updated_at > window_end`)
+    // — and since the generator had the complete, already-closed window available at that exact
+    // moment, nothing can have been missed: `stale: false` here is provable, not a guess, and
+    // skipping the fetch entirely avoids paying committee-activity's fan-out for a brief that
+    // can never be stale. This is also the case the *previous* version of this check got wrong
+    // in the other direction — gating on "is the window closed right now" instead of "was the
+    // window already closed when this brief was written" silently suppressed the one case that
+    // (general review finding, full-branch sweep, ×2): a brief generated on the anchor Saturday
+    // itself remains checkable for the rest of that week, since `updated_at` stays before
+    // `window_end` regardless of how much later "now" is.
+    if (sinceMs > windowEndMs) {
+      return { ...response, staleness: { stale: false, event_count: 0, event_count_is_floor: false } };
+    }
+    // The upper bound is whichever is earlier: the window's own close (activity after it belongs
+    // to a later week this brief can never cover) or "now" (an event can't have "already
+    // happened" before it has) — the feed can return future-dated events (e.g. a vote already
+    // ENDED but stamped with a still-future `end_time`), so this also guards against those.
+    const ceilingMs = Math.min(Date.now(), windowEndMs);
     try {
       const { data, page_token } = await this.withStalenessFetchTimeout(
         this.committeeActivityService.getCommitteeActivity(req, committeeId, {
@@ -1184,16 +1193,24 @@ export class WeeklyBriefService {
           limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
         })
       );
-      // The feed can return future-dated events (e.g. a vote already ENDED but stamped with a
-      // still-future `end_time`) — clamp to `now` so a not-yet-real event can't count as
-      // "activity that already happened" (general review finding).
-      const relevant = data.filter((event) => Date.parse(event.occurred_at) <= nowMs);
-      // getCommitteeActivity sorts descending by occurred_at, so future-dated events (excluded
-      // above) sort ahead of the real ones. If the fetch itself saturated (page_token set) and
-      // nothing relevant turned up on this page, genuinely relevant activity could still be
-      // sitting on a page never fetched — reporting a confident `false` there would be a false
-      // negative, not a floor-qualified true. Degrade to "unknown" instead.
-      if (page_token && relevant.length === 0) return { ...response, staleness: null };
+      const relevant = data.filter((event) => {
+        const ms = Date.parse(event.occurred_at);
+        return !Number.isNaN(ms) && ms <= ceilingMs;
+      });
+      // getCommitteeActivity sorts descending by occurred_at, so events past the ceiling sort
+      // ahead of relevant ones. If the fetch returned data at all but every event fell outside
+      // it, genuinely relevant activity could still be sitting on a page never fetched (whether
+      // or not this particular page saturated) — reporting a confident `false` there would be a
+      // false negative, not a floor-qualified true. Degrade to "unknown" instead (general review
+      // finding: originally gated on `page_token` alone, which missed the unpaginated case).
+      if (data.length > 0 && relevant.length === 0) {
+        logger.warning(req, 'weekly_brief_staleness', 'Activity fetch returned only out-of-range events, degrading staleness to null', {
+          committee_id: committeeId,
+          brief_uid: brief.uid,
+          fetched: data.length,
+        });
+        return { ...response, staleness: null };
+      }
       const staleness: WeeklyBriefStaleness = {
         stale: relevant.length > 0,
         event_count: relevant.length,

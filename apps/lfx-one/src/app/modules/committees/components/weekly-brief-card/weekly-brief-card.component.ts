@@ -247,8 +247,10 @@ export class WeeklyBriefCardComponent {
 
   // BFF enrichment on the response envelope (GH-1966), not on `WeeklyBrief` itself — read from
   // `briefResponse`, same pattern as `callerRating`. `null` whenever staleness couldn't be
-  // computed (non-shareable state, mock mode, or a soft-failed upstream fetch); purely
-  // informational — never gates canGenerate/canRegenerate.
+  // computed (non-shareable state, mock mode, an unparseable timestamp, or an inconclusive or
+  // soft-failed upstream fetch); a brief generated after its own window closed instead
+  // confidently reports `stale: false`. Purely informational — never gates
+  // canGenerate/canRegenerate.
   public readonly staleness: Signal<WeeklyBriefStaleness | null> = computed(() => this.briefResponse()?.staleness ?? null);
 
   // Precomputed here rather than resolved inline in the template (repo rule:

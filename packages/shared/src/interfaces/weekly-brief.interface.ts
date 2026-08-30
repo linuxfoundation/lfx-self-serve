@@ -157,14 +157,14 @@ export interface WeeklyBriefCurrentResponse {
   caller_rating?: WeeklyBriefRating | null;
   /**
    * BFF-side enrichment (not part of upstream's contract, GH-1966): whether real committee
-   * activity has occurred for this committee, since `brief` was last touched, while `brief`'s
-   * own window is still open (see `WeeklyBriefService#withStaleness`'s doc comment for why a
-   * closed window is never actionable). Absent entirely when `brief` is null or in a
-   * non-shareable state — a stricter gate than `caller_rating`'s (which has no state check of
-   * its own). `null` when staleness specifically couldn't be computed, or isn't applicable, for
-   * a shareable brief — an already-closed window, mock mode, an unparseable
-   * `updated_at`/`window_end`, an inconclusive fetch, or a fetch fault (see
-   * `WeeklyBriefService#withStaleness`'s doc comment). Never a hard failure of `getCurrentBrief`.
+   * activity has occurred inside `brief`'s own window, after `brief` was last touched, up to
+   * the earlier of "now" or the window's own close (see `WeeklyBriefService#withStaleness`'s
+   * doc comment for the full reasoning, including why a brief generated after its own window
+   * closed confidently reports `stale: false` rather than `null`). Absent entirely when `brief`
+   * is null or in a non-shareable state — a stricter gate than `caller_rating`'s (which has no
+   * state check of its own). `null` when staleness specifically couldn't be computed for a
+   * shareable brief — mock mode, an unparseable `updated_at`/`window_end`, an inconclusive
+   * fetch, or a fetch fault. Never a hard failure of `getCurrentBrief`.
    */
   staleness?: WeeklyBriefStaleness | null;
 }
@@ -174,11 +174,11 @@ export type WeeklyBriefRating = 'up' | 'down';
 
 /**
  * BFF-side enrichment (GH-1966, not part of upstream's contract): whether real committee
- * activity has occurred for this committee since this brief's text was last generated/edited
- * (`updated_at`), while the brief's own window (`window_end`) is still open, and how much (see
- * `WeeklyBriefService#withStaleness`'s doc comment for why a closed window is excluded).
- * Computed from `CommitteeActivityService` — purely informational, never affects the brief's
- * own state, content, or generate/regenerate quota.
+ * activity has occurred inside this brief's own window (`window_end`), after its text was last
+ * generated/edited (`updated_at`), up to the earlier of "now" or the window's own close, and how
+ * much (see `WeeklyBriefService#withStaleness`'s doc comment for the full reasoning). Computed
+ * from `CommitteeActivityService` — purely informational, never affects the brief's own state,
+ * content, or generate/regenerate quota.
  */
 export interface WeeklyBriefStaleness {
   /** True when at least one qualifying event was found. */
