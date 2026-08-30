@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { ActivityEventType } from '../interfaces/activity-event.interface';
 import { WeeklyBriefSourceSection, WeeklyBriefState } from '../interfaces/weekly-brief.interface';
 
 /**
@@ -102,3 +103,17 @@ export const WEEKLY_BRIEF_SOURCE_SECTIONS: readonly WeeklyBriefSourceSection[] =
   { kind: 'doc', label: 'Documents' },
   { kind: 'members', label: 'Membership' },
 ] as const;
+
+/**
+ * Committee-activity-feed event types (GH-1966) that map onto the brief's own source kinds
+ * above — the only ones `WeeklyBriefService#withStaleness` counts toward its staleness signal.
+ * Deliberately narrower than the feed's full `ActivityEventType` union: `survey_published` /
+ * `survey_closed` and `notes_added` are real feed events but not brief sources (surveys and
+ * meeting-notes attachments never feed the generator), so counting them would flag a brief
+ * stale for activity regenerating it could never reflect. Conversely, `mailing-list` and
+ * `members` ARE brief source kinds with no matching feed event at all — `member_joined`/
+ * `member_left` are still `DeferredActivityEvent` (never emitted, see
+ * `activity-event.interface.ts`) and there is no mailing-list event type — so mailing-list and
+ * membership activity is a known, currently unfixable blind spot for this signal.
+ */
+export const WEEKLY_BRIEF_STALENESS_EVENT_TYPES: readonly ActivityEventType[] = ['meeting_held', 'vote_opened', 'vote_closed', 'document_uploaded'];

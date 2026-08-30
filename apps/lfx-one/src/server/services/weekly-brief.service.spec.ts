@@ -97,6 +97,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   AI_MODEL: 'mock-ai-model',
   VALKEY_CACHE: { WEEKLY_BRIEF_RATING_TTL_SECONDS: 7_776_000, WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 604800 },
   ACTIVITY_FEED_MAX_PAGE_SIZE: 50,
+  WEEKLY_BRIEF_STALENESS_EVENT_TYPES: ['meeting_held', 'vote_opened', 'vote_closed', 'document_uploaded'],
 }));
 // '../constants' (this app's server-only constants, not the `@lfx-one/shared` package) is
 // plain string/number literals with no transitive Angular imports — safe to leave unmocked,
@@ -723,6 +724,35 @@ describe('WeeklyBriefService', () => {
         event_count: 2,
         event_count_is_floor: false,
       });
+    });
+
+    it('excludes a survey/notes event from the count — those feed event types are not brief sources, so regenerating could never reflect them', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          { type: 'survey_published', occurred_at: '2026-01-17T10:00:00.000Z' },
+          { type: 'notes_added', occurred_at: '2026-01-17T11:00:00.000Z' },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+    });
+
+    it('counts a document_uploaded event, and still counts a meeting/vote event alongside an excluded survey event', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          { type: 'survey_closed', occurred_at: '2026-01-17T09:00:00.000Z' },
+          { type: 'document_uploaded', occurred_at: '2026-01-17T10:00:00.000Z' },
+          { type: 'vote_opened', occurred_at: '2026-01-17T11:00:00.000Z' },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: true, event_count: 2, event_count_is_floor: false });
     });
 
     it('carries both caller_rating and staleness together in the merged response (general review finding — the parallel-await merge is otherwise untested with both enrichments actually populated)', async () => {

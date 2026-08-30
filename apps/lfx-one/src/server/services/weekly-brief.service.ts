@@ -10,6 +10,7 @@ import {
   WEEKLY_BRIEF_DEFAULT_THROTTLE,
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_SHAREABLE_STATES,
+  WEEKLY_BRIEF_STALENESS_EVENT_TYPES,
 } from '@lfx-one/shared/constants';
 import {
   Committee,
@@ -1170,9 +1171,10 @@ export class WeeklyBriefService {
       return { ...response, staleness: null };
     }
     // `briefWindow()`'s own selection (and upstream's identical `WeeklyWindow`, confirmed
-    // against committee-service's Go source) keeps ONE window "current" — retrievable via
-    // GET /current — from the Saturday it opens through the following Friday, rolling over only
-    // on the next Saturday. A brief first generated any day other than that anchor Saturday is
+    // against committee-service's Go source) is a Sun 00:00 → Sat 23:59:59.999 window, but keeps
+    // ONE window "current" — retrievable via GET /current — from the Saturday it CLOSES (the day
+    // it first becomes selectable) through the following Friday, rolling over only on the next
+    // Saturday. A brief first generated any day other than that anchor Saturday is
     // therefore always generated AFTER its own window already closed (`updated_at > window_end`)
     // — and since the generator had the complete, already-closed window available at that exact
     // moment, nothing can have been missed: `stale: false` here is provable — modulo the
@@ -1197,7 +1199,13 @@ export class WeeklyBriefService {
           limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
         })
       );
+      // WEEKLY_BRIEF_STALENESS_EVENT_TYPES narrows the feed's full event vocabulary down to the
+      // types that actually map onto a brief source kind — the feed also emits survey and
+      // meeting-notes events, which aren't brief sources and would flag activity regenerating
+      // could never reflect (see that constant's own doc comment for the full reasoning,
+      // including the mailing-list/membership blind spot it does NOT solve).
       const relevant = data.filter((event) => {
+        if (!(WEEKLY_BRIEF_STALENESS_EVENT_TYPES as readonly string[]).includes(event.type)) return false;
         const ms = Date.parse(event.occurred_at);
         return !Number.isNaN(ms) && ms <= ceilingMs;
       });
