@@ -233,25 +233,24 @@ export class WeeklyBriefService {
    * `shareBrief`, `shareToSlack`) call `fetchCurrentBrief` directly instead: `withStaleness`'s
    * committee-activity fan-out is real upstream cost that only the card's own read needs, and
    * paying it on every action-item extraction, share, and rating write for a value those paths
-   * immediately discard would multiply that cost for nothing (general review finding).
+   * immediately discard would multiply that cost for nothing.
    */
   public async getCurrentBrief(req: Request, committeeId: string): Promise<WeeklyBriefCurrentResponse> {
     const { response, live } = await this.fetchCurrentBrief(req, committeeId);
     // Both enrichments read only `response.brief`, which neither one mutates — run them
     // concurrently rather than serially chaining rating → staleness, since withStaleness's
-    // committee-activity fetch is the endpoint's single most expensive step (general review
-    // finding, full-branch sweep). The no-brief passthrough case is asserted by `toBe` against
-    // the raw upstream object in the existing "getCurrentBrief proxies straight through and
-    // does not swallow a 404" spec — falling back to the original `response` reference when
-    // neither enrichment added anything keeps that pre-existing contract intact rather than
-    // spreading into a fresh object unconditionally.
+    // committee-activity fetch is the endpoint's single most expensive step. The no-brief
+    // passthrough case is asserted by `toBe` against the raw upstream object in the existing
+    // "getCurrentBrief proxies straight through and does not swallow a 404" spec — falling back
+    // to the original `response` reference when neither enrichment added anything keeps that
+    // pre-existing contract intact rather than spreading into a fresh object unconditionally.
     const [withRating, withStale] = await Promise.all([
       this.withCallerRating(req, committeeId, response),
       this.withStaleness(req, committeeId, response, live),
     ]);
     // Composed explicitly over `response` (not `{ ...withRating, ...withStale }`) so neither
     // enrichment's key can be silently dropped if the other one's return shape ever changes —
-    // each helper's own object is only a source of its own field (general review finding).
+    // each helper's own object is only a source of its own field.
     if (withRating === response && withStale === response) return response;
     return {
       ...response,
@@ -1135,14 +1134,13 @@ export class WeeklyBriefService {
    * to `staleness: null` rather than throwing. A brief (re)generated after its own window had
    * already closed confidently reports `stale: false` — see the inline comment below for the
    * reasoning, and its caveat: this assumes `updated_at` only ever advances when the brief's
-   * text actually changes. Upstream documents `updated_at` as a generic record-write stamp
-   * (not scoped to text-producing writes) with a separate `last_edited_at` for chair edits only
-   * — `last_edited_at` isn't a safe substitute either, since a regenerate doesn't set it. Using
-   * `updated_at` is still the best available signal (see the git history for the original
-   * reasoning), but a non-text upstream write landing after window close, if one exists, could
-   * in principle move this short-circuit early (general review finding, full-branch sweep — not
-   * resolved here, flagged for review). This is an honest best-effort indicator, never a
-   * precondition for anything, and must never consume generate/regenerate quota.
+   * text actually changes. Upstream documents `updated_at` as a generic record-write stamp (not
+   * scoped to text-producing writes), with a separate `last_edited_at` for chair edits only —
+   * `last_edited_at` isn't a safe substitute either, since a regenerate doesn't set it. Using
+   * `updated_at` is still the best available signal; a non-text upstream write landing after
+   * window close, if one exists, could in principle move this short-circuit early. This is an
+   * honest best-effort indicator, never a precondition for anything, and must never consume
+   * generate/regenerate quota.
    *
    * Mock mode: `CommitteeActivityService` always calls live upstream (committee/meeting/vote/
    * query-service) — it has no mock-data branch of its own. Comparing that live activity
@@ -1159,7 +1157,7 @@ export class WeeklyBriefService {
     // non-optional `string` here — this guard is deliberately stricter than the declared type,
     // not redundant with it. An absent `updated_at` would otherwise reach `getCommitteeActivity`
     // as `since: undefined`, silently dropping the lower bound and returning the most recent
-    // activity of ANY age as if it were "since generated" (general review finding).
+    // activity of ANY age as if it were "since generated".
     const sinceMs = Date.parse(brief.updated_at ?? '');
     const windowEndMs = Date.parse(brief.window_end ?? '');
     if (Number.isNaN(sinceMs) || Number.isNaN(windowEndMs)) {
@@ -1177,13 +1175,13 @@ export class WeeklyBriefService {
     // on the next Saturday. A brief first generated any day other than that anchor Saturday is
     // therefore always generated AFTER its own window already closed (`updated_at > window_end`)
     // — and since the generator had the complete, already-closed window available at that exact
-    // moment, nothing can have been missed: `stale: false` here is provable, not a guess, and
+    // moment, nothing can have been missed: `stale: false` here is provable — modulo the
+    // `updated_at` assumption this method's own doc comment caveats above — not a guess, and
     // skipping the fetch entirely avoids paying committee-activity's fan-out for a brief that
-    // can never be stale. An earlier version of this check gated on "is the window closed right
-    // now" instead — that suppressed the one case that actually matters: a brief generated on
-    // the anchor Saturday itself remains checkable for the rest of that week, since `updated_at`
-    // stays before `window_end` regardless of how much later "now" is (general review finding,
-    // full-branch sweep).
+    // can never be stale. A brief generated on the anchor Saturday itself remains checkable for
+    // the rest of that week, since `updated_at` stays before `window_end` regardless of how much
+    // later "now" is — gating on "is the window closed right now" instead would wrongly suppress
+    // that case.
     if (sinceMs > windowEndMs) {
       return { ...response, staleness: { stale: false, event_count: 0, event_count_is_floor: false } };
     }
@@ -1210,11 +1208,16 @@ export class WeeklyBriefService {
       // exists was returned, and if none of it is relevant, that's a confident `false`, not a
       // degrade. Only when `page_token` IS set and nothing relevant turned up on this page could
       // real relevant activity still be sitting on a page never fetched — that's the genuine
-      // false-negative risk. (An earlier version of this broadened the condition to `data.length
-      // > 0` regardless of `page_token`, on the mistaken belief that an untrucated page could
-      // still hide something — general review finding, full-branch sweep: reverted, since that
-      // made the common case (any post-window activity on an anchor-Saturday brief) degrade to
-      // null on every read instead of the provable `stale: false`.)
+      // false-negative risk this guards against.
+      //
+      // Known residual, not covered by this guard: `getCommitteeActivity` can also return
+      // `data: []` with no `page_token` even though a later upstream page (of a saturated leg)
+      // holds rows this caller is authorized to see — its own `hasMore` computation forces
+      // `false` whenever every leg's page happens to filter down to zero FGA-visible rows
+      // (committee-activity.service.ts's own comment on this). That case is indistinguishable
+      // here from "genuinely no activity at all" and reports a confident `stale: false`; fixing
+      // it would mean surfacing `getCommitteeActivity`'s own per-leg saturation flag as a new
+      // field on its response, which is a shared-service change out of scope for this fix.
       if (page_token && relevant.length === 0) {
         logger.warning(req, 'weekly_brief_staleness', 'Activity fetch saturated with no in-range events, degrading staleness to null', {
           committee_id: committeeId,
