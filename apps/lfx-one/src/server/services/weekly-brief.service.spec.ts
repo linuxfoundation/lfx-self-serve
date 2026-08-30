@@ -686,11 +686,11 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false, most_recent_event_at: undefined });
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
       expect(getCommitteeActivityMock).toHaveBeenCalledWith(req, 'committee-1', { since: liveBrief.updated_at, limit: 50 });
     });
 
-    it('reports stale with the in-window event count and most-recent timestamp', async () => {
+    it('reports stale with the in-window event count', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
       getCommitteeActivityMock.mockResolvedValueOnce({
         data: [
@@ -705,7 +705,23 @@ describe('WeeklyBriefService', () => {
         stale: true,
         event_count: 2,
         event_count_is_floor: false,
-        most_recent_event_at: '2026-08-27T18:00:00.000Z',
+      });
+    });
+
+    it('carries both caller_rating and staleness together in the merged response (general review finding — the parallel-await merge is otherwise untested with both enrichments actually populated)', async () => {
+      const brief = { ...liveBrief, revision: 1 };
+      proxyRequest.mockResolvedValueOnce({ brief, throttle: null });
+      const key = buildWeeklyBriefRatingCacheKeyMock('committee-1', brief.uid, brief.revision, 'alice')!;
+      valkeyStore.set(key, { rating: 'up' });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [{ type: 'meeting_held', occurred_at: '2026-08-27T18:00:00.000Z' }],
+      });
+
+      const result = await service.getCurrentBrief(userReq, 'committee-1');
+
+      expect(result).toMatchObject({
+        caller_rating: 'up',
+        staleness: { stale: true, event_count: 1, event_count_is_floor: false },
       });
     });
 
@@ -717,7 +733,7 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false, most_recent_event_at: undefined });
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
     });
 
     it('marks event_count as a floor when the activity fetch itself paginated', async () => {

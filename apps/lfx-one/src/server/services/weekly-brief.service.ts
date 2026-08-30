@@ -1184,7 +1184,6 @@ export class WeeklyBriefService {
         stale: inWindow.length > 0,
         event_count: inWindow.length,
         event_count_is_floor: !!page_token,
-        most_recent_event_at: inWindow[0]?.occurred_at,
       };
       return { ...response, staleness };
     } catch (error) {

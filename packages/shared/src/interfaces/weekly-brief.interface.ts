@@ -188,8 +188,6 @@ export interface WeeklyBriefStaleness {
    * back) — `event_count` is then a floor, not an exact count.
    */
   event_count_is_floor: boolean;
-  /** `occurred_at` of the most recent qualifying event, when any exist. */
-  most_recent_event_at?: string;
 }
 
 /**
