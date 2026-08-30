@@ -654,11 +654,22 @@ describe('WeeklyBriefService', () => {
   });
 
   describe('getCurrentBrief — staleness enrichment (GH-1966)', () => {
+    // window_end deliberately far in the future (year 2030) rather than relative to "today" —
+    // this is the ONLY case briefWindow() can produce a still-open window (same-day Saturday),
+    // and pinning it far ahead keeps the fixture valid regardless of the real date this suite
+    // runs on, with no fake-timer dependency. updated_at doesn't need to be "real" — the code
+    // never compares it to "now", only to activity-event timestamps the test controls directly.
     const liveBrief = {
       uid: 'b1',
       state: 'generated',
-      updated_at: '2026-08-24T00:00:00.000Z',
-      window_end: '2026-08-30T23:59:59.999Z',
+      updated_at: '2030-01-03T00:00:00.000Z',
+      window_end: '2030-01-10T23:59:59.999Z', // window still open relative to any real test-run time
+    };
+    // Same brief, but for a window that already closed — the common case (6 of 7 days) per
+    // briefWindow(), and the one staleness must now stay silent on (general review finding).
+    const closedWindowBrief = {
+      ...liveBrief,
+      window_end: '2020-01-04T23:59:59.999Z', // safely in the past
     };
 
     beforeEach(() => {
@@ -690,12 +701,12 @@ describe('WeeklyBriefService', () => {
       expect(getCommitteeActivityMock).toHaveBeenCalledWith(req, 'committee-1', { since: liveBrief.updated_at, limit: 50 });
     });
 
-    it('reports stale with the in-window event count', async () => {
+    it('reports stale with the event count, while the window is still open', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
       getCommitteeActivityMock.mockResolvedValueOnce({
         data: [
-          { type: 'meeting_held', occurred_at: '2026-08-27T18:00:00.000Z' },
-          { type: 'vote_closed', occurred_at: '2026-08-26T09:00:00.000Z' },
+          { type: 'meeting_held', occurred_at: '2025-06-15T18:00:00.000Z' },
+          { type: 'vote_closed', occurred_at: '2025-06-14T09:00:00.000Z' },
         ],
       });
 
@@ -714,7 +725,7 @@ describe('WeeklyBriefService', () => {
       const key = buildWeeklyBriefRatingCacheKeyMock('committee-1', brief.uid, brief.revision, 'alice')!;
       valkeyStore.set(key, { rating: 'up' });
       getCommitteeActivityMock.mockResolvedValueOnce({
-        data: [{ type: 'meeting_held', occurred_at: '2026-08-27T18:00:00.000Z' }],
+        data: [{ type: 'meeting_held', occurred_at: '2025-06-15T18:00:00.000Z' }],
       });
 
       const result = await service.getCurrentBrief(userReq, 'committee-1');
@@ -725,21 +736,47 @@ describe('WeeklyBriefService', () => {
       });
     });
 
-    it('counts activity after brief.window_end as stale too — not scoped to the nominal week (GH-1966 fix: window_end almost always precedes updated_at by design, see briefWindow())', async () => {
+    it("skips the fetch entirely and reports null when the brief's own window has already closed — the common case (general review finding: a closed-week brief can't be updated by regenerating against a later week's activity)", async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: closedWindowBrief, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
+    it('excludes a future-dated event from the count (general review finding: the feed can return a vote already ENDED but stamped with a still-future end_time)', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
       getCommitteeActivityMock.mockResolvedValueOnce({
-        data: [{ type: 'meeting_held', occurred_at: '2026-09-02T10:00:00.000Z' }], // after liveBrief.window_end
+        data: [{ type: 'vote_closed', occurred_at: '2030-01-05T00:00:00.000Z' }], // after "now", still before window_end
       });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.staleness).toEqual({ stale: true, event_count: 1, event_count_is_floor: false });
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+    });
+
+    it('reports unknown (null), not a false negative, when the fetch saturated and nothing relevant turned up on this page', async () => {
+      // getCommitteeActivity sorts descending by occurred_at, so future-dated events (excluded
+      // by the "now" ceiling) sort ahead of genuinely relevant ones. If the fetch itself
+      // saturated (page_token set) and every returned event is future-dated, real relevant
+      // activity could still be sitting on a page never fetched — a confident `stale: false`
+      // there would be a false negative, not a floor-qualified true.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [{ type: 'vote_closed', occurred_at: '2030-01-05T00:00:00.000Z' }],
+        page_token: 'next-page',
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
     });
 
     it('marks event_count as a floor when the activity fetch itself paginated', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
       getCommitteeActivityMock.mockResolvedValueOnce({
-        data: [{ type: 'meeting_held', occurred_at: '2026-08-27T18:00:00.000Z' }],
+        data: [{ type: 'meeting_held', occurred_at: '2025-06-15T18:00:00.000Z' }],
         page_token: 'next-page',
       });
 
@@ -756,7 +793,12 @@ describe('WeeklyBriefService', () => {
       expect(result.staleness).toBeNull();
       expect(getCommitteeActivityMock).not.toHaveBeenCalled();
       expect(logger.warning).toHaveBeenCalledTimes(1);
-      expect(logger.warning).toHaveBeenCalledWith(req, 'weekly_brief_staleness', expect.any(String), expect.objectContaining({ updated_at: null }));
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'weekly_brief_staleness',
+        expect.any(String),
+        expect.objectContaining({ updated_at: null, window_end: liveBrief.window_end })
+      );
     });
 
     it('degrades to null and logs the offending raw value when the brief has an unparseable updated_at', async () => {
@@ -768,6 +810,17 @@ describe('WeeklyBriefService', () => {
       expect(getCommitteeActivityMock).not.toHaveBeenCalled();
       expect(logger.warning).toHaveBeenCalledTimes(1);
       expect(logger.warning).toHaveBeenCalledWith(req, 'weekly_brief_staleness', expect.any(String), expect.objectContaining({ updated_at: 'not-a-date' }));
+    });
+
+    it('degrades to null and logs the offending raw value when the brief has an unparseable window_end', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, window_end: 'not-a-date' }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+      expect(logger.warning).toHaveBeenCalledWith(req, 'weekly_brief_staleness', expect.any(String), expect.objectContaining({ window_end: 'not-a-date' }));
     });
 
     it('degrades to null and logs a warning (not an error) when the activity fetch throws, without failing getCurrentBrief', async () => {
