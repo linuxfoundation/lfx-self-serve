@@ -126,6 +126,7 @@ export class MeetingsDashboardComponent {
   public project: Signal<ProjectContext | null>;
   protected readonly canWrite = this.projectContextService.canWrite;
   protected readonly canWriteMeetings: Signal<boolean> = this.initCanWriteMeetings();
+  protected readonly publicCalendarUrl: Signal<string | null> = this.initPublicCalendarUrl();
   protected readonly isFiltered = this.initIsFiltered();
   public loadingMore = signal(false);
   public hasMore: Signal<boolean>;
@@ -348,6 +349,25 @@ export class MeetingsDashboardComponent {
     } else {
       this.loadMoreUpcoming$.next(pageToken);
     }
+  }
+
+  /**
+   * Anonymous, shareable view of this project's PUBLIC meetings — the link a maintainer hands to their
+   * community. Null until the active project context resolves.
+   *
+   * Restricted to the two project-scoped lenses. `me` spans projects, and `org` keeps a retained
+   * foundation/project selection that the reader is not currently looking at — linking from there would
+   * point at unrelated context. `NavLens` names exactly this pair.
+   */
+  private initPublicCalendarUrl(): Signal<string | null> {
+    return computed(() => {
+      const slug = this.project()?.slug;
+      const lens = this.activeLens();
+      if (!slug || (lens !== 'foundation' && lens !== 'project')) {
+        return null;
+      }
+      return `/projects/${encodeURIComponent(slug)}/calendar`;
+    });
   }
 
   private initCanWriteMeetings(): Signal<boolean> {
