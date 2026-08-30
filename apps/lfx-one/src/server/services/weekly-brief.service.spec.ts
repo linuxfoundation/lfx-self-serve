@@ -707,7 +707,7 @@ describe('WeeklyBriefService', () => {
       expect(getCommitteeActivityMock).toHaveBeenCalledWith(req, 'committee-1', { since: liveBrief.updated_at, limit: 50 });
     });
 
-    it('reports stale for activity inside the window after the brief was generated, even though the window has long since closed by the time this is checked (the actual GH-1966 scenario)', async () => {
+    it('reports stale for activity inside the window after the brief was generated, even though the window has long since closed by the time this is checked (the class of scenario GH-1966 describes)', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
       getCommitteeActivityMock.mockResolvedValueOnce({
         data: [
@@ -751,7 +751,10 @@ describe('WeeklyBriefService', () => {
       expect(getCommitteeActivityMock).not.toHaveBeenCalled();
     });
 
-    it('excludes an event after the window closed from the count — that activity belongs to a later week this brief can never cover', async () => {
+    it('confidently reports not stale (not a degrade) when the fetch returned data but none of it was in range, and nothing was truncated', async () => {
+      // No page_token back means the fetch was NOT truncated (committee-activity's hasMore only
+      // ever sets one alongside a real lastPageItem) — everything that exists was returned, so an
+      // all-irrelevant result here is a genuine, confident "not stale", not an unknown.
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
       getCommitteeActivityMock.mockResolvedValueOnce({
         data: [{ type: 'meeting_held', occurred_at: '2026-01-18T10:00:00.000Z' }], // after window_end
@@ -759,8 +762,25 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.staleness).toBeNull(); // fetch returned data, none of it relevant — unknown, not a confident false
-      expect(logger.warning).toHaveBeenCalledTimes(1);
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+
+    it('excludes an event after "now" from the count, even though it is still before window_end — an event cannot count as "already happened" before it has', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-01-17T12:00:00.000Z')); // same Saturday as liveBrief, before its window_end
+        proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+        getCommitteeActivityMock.mockResolvedValueOnce({
+          data: [{ type: 'vote_closed', occurred_at: '2026-01-17T18:00:00.000Z' }], // after pinned "now", still before window_end
+        });
+
+        const result = await service.getCurrentBrief(req, 'committee-1');
+
+        expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('reports unknown (null), not a false negative, when the fetch saturated and nothing relevant turned up on this page', async () => {
@@ -778,6 +798,7 @@ describe('WeeklyBriefService', () => {
       const result = await service.getCurrentBrief(req, 'committee-1');
 
       expect(result.staleness).toBeNull();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
     });
 
     it('marks event_count as a floor when the activity fetch itself paginated', async () => {

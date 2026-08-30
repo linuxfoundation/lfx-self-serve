@@ -1133,9 +1133,16 @@ export class WeeklyBriefService {
    * non-shareable state leave `staleness` absent entirely. Mock mode, an unparseable
    * `updated_at`/`window_end`, an inconclusive fetch (see below), or a fetch fault all resolve
    * to `staleness: null` rather than throwing. A brief (re)generated after its own window had
-   * already closed confidently reports `stale: false` — see the inline comment below for why
-   * that's provable, not a guess. This is an honest best-effort indicator, never a precondition
-   * for anything, and must never consume generate/regenerate quota.
+   * already closed confidently reports `stale: false` — see the inline comment below for the
+   * reasoning, and its caveat: this assumes `updated_at` only ever advances when the brief's
+   * text actually changes. Upstream documents `updated_at` as a generic record-write stamp
+   * (not scoped to text-producing writes) with a separate `last_edited_at` for chair edits only
+   * — `last_edited_at` isn't a safe substitute either, since a regenerate doesn't set it. Using
+   * `updated_at` is still the best available signal (see the git history for the original
+   * reasoning), but a non-text upstream write landing after window close, if one exists, could
+   * in principle move this short-circuit early (general review finding, full-branch sweep — not
+   * resolved here, flagged for review). This is an honest best-effort indicator, never a
+   * precondition for anything, and must never consume generate/regenerate quota.
    *
    * Mock mode: `CommitteeActivityService` always calls live upstream (committee/meeting/vote/
    * query-service) — it has no mock-data branch of its own. Comparing that live activity
@@ -1172,12 +1179,11 @@ export class WeeklyBriefService {
     // — and since the generator had the complete, already-closed window available at that exact
     // moment, nothing can have been missed: `stale: false` here is provable, not a guess, and
     // skipping the fetch entirely avoids paying committee-activity's fan-out for a brief that
-    // can never be stale. This is also the case the *previous* version of this check got wrong
-    // in the other direction — gating on "is the window closed right now" instead of "was the
-    // window already closed when this brief was written" silently suppressed the one case that
-    // (general review finding, full-branch sweep, ×2): a brief generated on the anchor Saturday
-    // itself remains checkable for the rest of that week, since `updated_at` stays before
-    // `window_end` regardless of how much later "now" is.
+    // can never be stale. An earlier version of this check gated on "is the window closed right
+    // now" instead — that suppressed the one case that actually matters: a brief generated on
+    // the anchor Saturday itself remains checkable for the rest of that week, since `updated_at`
+    // stays before `window_end` regardless of how much later "now" is (general review finding,
+    // full-branch sweep).
     if (sinceMs > windowEndMs) {
       return { ...response, staleness: { stale: false, event_count: 0, event_count_is_floor: false } };
     }
@@ -1198,13 +1204,19 @@ export class WeeklyBriefService {
         return !Number.isNaN(ms) && ms <= ceilingMs;
       });
       // getCommitteeActivity sorts descending by occurred_at, so events past the ceiling sort
-      // ahead of relevant ones. If the fetch returned data at all but every event fell outside
-      // it, genuinely relevant activity could still be sitting on a page never fetched (whether
-      // or not this particular page saturated) — reporting a confident `false` there would be a
-      // false negative, not a floor-qualified true. Degrade to "unknown" instead (general review
-      // finding: originally gated on `page_token` alone, which missed the unpaginated case).
-      if (data.length > 0 && relevant.length === 0) {
-        logger.warning(req, 'weekly_brief_staleness', 'Activity fetch returned only out-of-range events, degrading staleness to null', {
+      // ahead of relevant ones. `page_token` is only ever set when a real `lastPageItem` exists
+      // (committee-activity.service.ts's `hasMore` computation) — so its absence, whenever
+      // `data.length > 0`, is a reliable signal the fetch was NOT truncated: everything that
+      // exists was returned, and if none of it is relevant, that's a confident `false`, not a
+      // degrade. Only when `page_token` IS set and nothing relevant turned up on this page could
+      // real relevant activity still be sitting on a page never fetched — that's the genuine
+      // false-negative risk. (An earlier version of this broadened the condition to `data.length
+      // > 0` regardless of `page_token`, on the mistaken belief that an untrucated page could
+      // still hide something — general review finding, full-branch sweep: reverted, since that
+      // made the common case (any post-window activity on an anchor-Saturday brief) degrade to
+      // null on every read instead of the provable `stale: false`.)
+      if (page_token && relevant.length === 0) {
+        logger.warning(req, 'weekly_brief_staleness', 'Activity fetch saturated with no in-range events, degrading staleness to null', {
           committee_id: committeeId,
           brief_uid: brief.uid,
           fetched: data.length,
