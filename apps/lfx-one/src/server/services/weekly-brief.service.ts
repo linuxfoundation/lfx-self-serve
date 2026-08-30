@@ -1092,10 +1092,10 @@ export class WeeklyBriefService {
 
   /**
    * Enriches a current-brief response (from `getCurrentBrief` or `resolveRatableBrief`) with
-   * the caller's own rating on that exact brief revision (LFXV2-3042). Fails soft on every
-   * edge: no brief, no resolvable username, or a cache miss/fault all resolve to
-   * `caller_rating: null` rather than throwing — this is a convenience read for the UI's
-   * pre-lit thumb state, not a precondition for anything.
+   * the caller's own rating on that exact brief revision (LFXV2-3042). No state check of its
+   * own: no brief, no resolvable username, or an unbuildable rating key leave `caller_rating`
+   * absent entirely (never throwing); only a cache miss/fault resolves it to `null`. This is a
+   * convenience read for the UI's pre-lit thumb state, not a precondition for anything.
    */
   private async withCallerRating(req: Request, committeeId: string, response: WeeklyBriefCurrentResponse): Promise<WeeklyBriefCurrentResponse> {
     if (!response.brief) return response;
@@ -1110,12 +1110,10 @@ export class WeeklyBriefService {
   /**
    * Enriches `getCurrentBrief`'s result with a staleness signal (GH-1966): whether real
    * committee activity has occurred inside the brief's own window since it was last
-   * generated/edited. Fails soft on every edge: no brief or a non-shareable state leave
-   * `staleness` absent entirely — `caller_rating` shares this convention only on the no-brief
-   * edge; unlike `staleness`, `caller_rating` is still populated (as `null`) for a
-   * non-shareable brief, since `withCallerRating` has no state check of its own. Mock mode, an
-   * unparseable `updated_at`/`window_end`, an inconclusive fetch (see below), or a fetch fault
-   * all resolve to `staleness: null` rather than throwing. This is an honest best-effort
+   * generated/edited. No brief or a non-shareable state leave `staleness` absent entirely — a
+   * stricter gate than `withCallerRating`'s (which has no state check of its own). Mock mode,
+   * an unparseable `updated_at`/`window_end`, an inconclusive fetch (see below), or a fetch
+   * fault all resolve to `staleness: null` rather than throwing. This is an honest best-effort
    * indicator, never a precondition for anything, and must never consume generate/regenerate
    * quota.
    *
@@ -1139,13 +1137,19 @@ export class WeeklyBriefService {
     // `<= windowEndMs` filter, silently reporting "not stale" instead of "unknown". Widening
     // `WeeklyBrief.updated_at`/`.window_end` to optional, so every other reader of this type
     // (briefWindow-adjacent date logic, `listBriefs`, the card's `weekLabel`) gets the same
-    // guarantee, is a larger, riskier change than this fix — flagged for follow-up, not done here.
+    // guarantee, is a larger, riskier change than this fix — a deliberate, currently untracked
+    // trade-off, not attempted here.
     const sinceMs = Date.parse(brief.updated_at ?? '');
     const windowEndMs = Date.parse(brief.window_end ?? '');
     if (Number.isNaN(sinceMs) || Number.isNaN(windowEndMs)) {
+      // Both raw values in the payload (not just the uid) so an operator can tell which of the
+      // four possible causes (either field missing, either field unparseable) actually tripped
+      // this — timestamps, not PII.
       logger.warning(req, 'weekly_brief_staleness', 'Brief has an unparseable or missing updated_at/window_end, degrading staleness to null', {
         committee_id: committeeId,
         brief_uid: brief.uid,
+        updated_at: brief.updated_at ?? null,
+        window_end: brief.window_end ?? null,
       });
       return { ...response, staleness: null };
     }

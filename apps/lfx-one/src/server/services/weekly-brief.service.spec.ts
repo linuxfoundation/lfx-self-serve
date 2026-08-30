@@ -743,14 +743,14 @@ describe('WeeklyBriefService', () => {
       expect(logger.warning).toHaveBeenCalledTimes(1);
     });
 
-    it('degrades to null and logs a warning instead of a silent "stale: false" when the brief has an unparseable window_end', async () => {
+    it('degrades to null and logs the offending raw value instead of a silent "stale: false" when the brief has an unparseable window_end', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, window_end: 'not-a-date' }, throttle: null });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
       expect(result.staleness).toBeNull();
       expect(getCommitteeActivityMock).not.toHaveBeenCalled();
-      expect(logger.warning).toHaveBeenCalledTimes(1);
+      expect(logger.warning).toHaveBeenCalledWith(req, 'weekly_brief_staleness', expect.any(String), expect.objectContaining({ window_end: 'not-a-date' }));
     });
 
     it('degrades to null and logs a warning (not an error) when the activity fetch throws, without failing getCurrentBrief', async () => {
