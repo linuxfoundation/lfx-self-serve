@@ -25,6 +25,7 @@ import {
   filterPastMeetingParticipants,
   getRegistrantAttendanceStatus,
   getPastMeetingResourceId,
+  isMeetingInviteResponsesEnabled,
   markFormControlsAsTouched,
   resolveMeetingBaseCount,
   resolveRsvpOccurrenceId,
@@ -73,6 +74,7 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
   public readonly pastMeetingParticipants: Signal<EnrichedPastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
   public readonly registrants: Signal<MeetingRegistrant[]> = this.initRegistrants();
+  public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => !this.pastMeeting() && isMeetingInviteResponsesEnabled(this.meeting()));
   public readonly registrantsLoading: Signal<boolean> = computed(() => {
     if (this.externallyManaged() && !this.pastMeeting()) {
       return this.initialRegistrantsLoading();
@@ -446,7 +448,9 @@ export class MeetingRegistrantsDisplayComponent {
       return registrants
         .map((registrant) => ({
           ...registrant,
-          attendanceStatus: getRegistrantAttendanceStatus(registrant),
+          attendanceStatus: getRegistrantAttendanceStatus(registrant, {
+            inviteResponsesEnabled: this.inviteResponsesEnabled(),
+          }),
         }))
         .filter((registrant) => {
           // Search filter

@@ -999,6 +999,39 @@ export function parseTranscriptVtt(vtt: string | null | undefined): TranscriptCu
 }
 
 /**
+ * Maps the indexed `v1_meeting` flag `use_new_invite_email_address` onto
+ * `is_invite_responses_enabled` when the ITX field is absent.
+ *
+ * ITX GET omits `is_invite_responses_enabled` when false (Go `omitempty`); the
+ * query-service projection stores the same boolean as `use_new_invite_email_address`.
+ * Explicit `is_invite_responses_enabled` wins. Missing both layers becomes `false`
+ * so Self Serve can hide RSVP UI for pre-feature meetings (GH-1951).
+ */
+export function normalizeIndexedMeetingInviteResponses<
+  T extends {
+    is_invite_responses_enabled?: boolean;
+    use_new_invite_email_address?: boolean;
+  },
+>(meeting: T): T {
+  if (meeting.is_invite_responses_enabled !== undefined) {
+    return meeting;
+  }
+
+  return {
+    ...meeting,
+    is_invite_responses_enabled: meeting.use_new_invite_email_address === true,
+  };
+}
+
+/**
+ * True only when LFX invite-response (RSVP) tracking is enabled for the meeting.
+ * Missing/undefined is treated as false to match PCC's `*ngIf="meeting.is_invite_responses_enabled"`.
+ */
+export function isMeetingInviteResponsesEnabled(meeting: Pick<Meeting, 'is_invite_responses_enabled'> | null | undefined): boolean {
+  return meeting?.is_invite_responses_enabled === true;
+}
+
+/**
  * Derives top-level AI-summary fields from indexed `zoom_config` when the query-service projection omits them.
  * Explicit top-level values win (`??`); returns the input unchanged when `zoom_config` is absent.
  */

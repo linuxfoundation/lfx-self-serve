@@ -49,7 +49,9 @@ import {
   codePointLength,
   getCurrentOrNextOccurrence,
   hasMeetingEnded,
+  isMeetingInviteResponsesEnabled,
   normalizeIndexedMeetingAiSummary,
+  normalizeIndexedMeetingInviteResponses,
   parseToInt,
   resolveRsvpOccurrenceId,
   selectApplicableRsvp,
@@ -514,7 +516,7 @@ export class UserService {
 
     logger.debug(req, 'get_user_meetings', 'Fetched meetings from query service', { count: meetings.length });
 
-    const normalizedMeetings = meetings.map(normalizeIndexedMeetingAiSummary);
+    const normalizedMeetings = meetings.map((meeting) => normalizeIndexedMeetingInviteResponses(normalizeIndexedMeetingAiSummary(meeting)));
 
     // Enrich each meeting with the current user's RSVP (null when no response). Reuses the same
     // query-service pattern that powers `getUserPendingActions` → `transformMissingRsvpsToActions`.
@@ -1577,6 +1579,8 @@ export class UserService {
     for (const meeting of meetings) {
       if (!meeting.id) continue;
       if (respondedMeetingIds.has(meeting.id)) continue;
+      // Meetings that predate LFX RSVP tracking have no collectable response (GH-1951).
+      if (!isMeetingInviteResponsesEnabled(meeting)) continue;
       // Suppress the action when the user is not a registrant for this specific meeting.
       // The pending-actions list comes from `filter_grants: 'direct'` on `v1_meeting`, which
       // includes hosts/organizers and committee-inherited grants — none of which carry a
