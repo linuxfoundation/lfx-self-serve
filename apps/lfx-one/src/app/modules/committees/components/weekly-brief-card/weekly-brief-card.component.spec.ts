@@ -441,3 +441,108 @@ describe('WeeklyBriefCardComponent — Sources disclosure (LFXV2-3335)', () => {
     expect(component.expandedSourceGroups().size).toBe(0);
   });
 });
+
+describe('WeeklyBriefCardComponent — staleness indicator (GH-1966)', () => {
+  let fixture: ComponentFixture<WeeklyBriefCardComponent>;
+
+  const COMMITTEE: Committee = { uid: 'committee-1', name: 'Test Committee', project_uid: 'project-1' } as Committee;
+
+  function briefResponse(overrides: Partial<WeeklyBriefCurrentResponse> = {}): WeeklyBriefCurrentResponse {
+    return {
+      brief: {
+        uid: 'brief-1',
+        committee_uid: 'committee-1',
+        window_start: '2026-08-23T00:00:00Z',
+        window_end: '2026-08-29T23:59:59Z',
+        state: 'generated',
+        brief_text: 'Weekly summary.',
+        source_refs: [],
+        prompt_version: 'v1',
+        model: 'test-model',
+        regeneration_count: 0,
+        private_source_present: false,
+        created_at: '2026-08-24T00:00:00Z',
+        updated_at: '2026-08-24T00:00:00Z',
+        revision: 1,
+      },
+      throttle: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3, window_resets_at: '2026-08-30T00:00:00Z' },
+      caller_rating: null,
+      ...overrides,
+    };
+  }
+
+  async function setup(response: WeeklyBriefCurrentResponse): Promise<void> {
+    await TestBed.configureTestingModule({
+      imports: [WeeklyBriefCardComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: WeeklyBriefService,
+          useValue: { getWeeklyBrief: vi.fn(() => of(response)), listWeeklyBriefs: vi.fn(() => of({ data: [] })) },
+        },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(WeeklyBriefCardComponent);
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    await fixture.whenStable();
+  }
+
+  function stalenessTag(): HTMLElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-staleness-tag"]');
+  }
+
+  function regenerateButton(): HTMLButtonElement {
+    const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-regenerate-button"] button');
+    if (!el) throw new Error('no native button rendered inside weekly-brief-card-regenerate-button');
+    return el as HTMLButtonElement;
+  }
+
+  it('renders the staleness tag when stale', async () => {
+    await setup(briefResponse({ staleness: { stale: true, event_count: 3, event_count_is_floor: false } }));
+
+    expect(stalenessTag()).not.toBeNull();
+  });
+
+  it('does not render the staleness tag when not stale', async () => {
+    await setup(briefResponse({ staleness: { stale: false, event_count: 0, event_count_is_floor: false } }));
+
+    expect(stalenessTag()).toBeNull();
+  });
+
+  it('does not render the staleness tag when staleness is null (uncomputable)', async () => {
+    await setup(briefResponse({ staleness: null }));
+
+    expect(stalenessTag()).toBeNull();
+  });
+
+  it('leaves the Regenerate button enabled when stale, even with a fresh quota', async () => {
+    await setup(
+      briefResponse({
+        staleness: { stale: true, event_count: 1, event_count_is_floor: false },
+        throttle: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3, window_resets_at: '2026-08-30T00:00:00Z' },
+      })
+    );
+
+    expect(stalenessTag()).not.toBeNull();
+    expect(regenerateButton().disabled).toBeFalsy();
+  });
+
+  it('leaves the Regenerate button disabled on exhausted quota even when not stale — staleness never overrides the throttle gate', async () => {
+    await setup(
+      briefResponse({
+        staleness: { stale: false, event_count: 0, event_count_is_floor: false },
+        throttle: { generates_used: 2, generates_limit: 2, regenerations_used: 3, regenerations_limit: 3, window_resets_at: '2026-08-30T00:00:00Z' },
+      })
+    );
+
+    expect(stalenessTag()).toBeNull();
+    expect(regenerateButton().disabled).toBeTruthy();
+  });
+});

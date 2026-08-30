@@ -154,10 +154,40 @@ export interface WeeklyBriefCurrentResponse {
    * per-user rating store, not upstream — see `weekly-brief.service.ts#getCurrentBrief`.
    */
   caller_rating?: WeeklyBriefRating | null;
+  /**
+   * BFF-side enrichment (not part of upstream's contract, GH-1966): whether real committee
+   * activity has occurred inside `brief`'s own window since it was last touched. `null` when
+   * staleness couldn't be computed — brief is in a non-shareable state, the underlying
+   * committee-activity fetch failed, or mock mode has no comparable live activity source (see
+   * `WeeklyBriefService#withStaleness`'s doc comment). Absent entirely when `brief` is null.
+   * Never a hard failure of `getCurrentBrief`.
+   */
+  staleness?: WeeklyBriefStaleness | null;
 }
 
 /** A caller's one-tap quality rating on a specific weekly-brief revision. BFF-only — no upstream equivalent. */
 export type WeeklyBriefRating = 'up' | 'down';
+
+/**
+ * BFF-side enrichment (GH-1966, not part of upstream's contract): whether real committee
+ * activity has occurred inside this brief's own window since it was last generated/edited
+ * (`updated_at`), and how much. Computed by `WeeklyBriefService#withStaleness` from
+ * `CommitteeActivityService` — purely informational, never affects the brief's own state,
+ * content, or generate/regenerate quota.
+ */
+export interface WeeklyBriefStaleness {
+  /** True when at least one qualifying event was found. */
+  stale: boolean;
+  /** Count of qualifying events found in the fetched page — see `event_count_is_floor`. */
+  event_count: number;
+  /**
+   * True when the underlying committee-activity fetch itself paginated (a `page_token` came
+   * back) — `event_count` is then a floor, not an exact count.
+   */
+  event_count_is_floor: boolean;
+  /** `occurred_at` of the most recent qualifying event, when any exist. */
+  most_recent_event_at?: string;
+}
 
 /**
  * Request body for `POST /committees/:committeeId/weekly-briefs/:briefUid/rating`. `revision` is

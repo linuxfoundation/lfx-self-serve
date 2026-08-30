@@ -30,6 +30,7 @@ const {
   createNewsletterMock,
   sendNewsletterMock,
   deleteNewsletterMock,
+  getCommitteeActivityMock,
 } = vi.hoisted(() => {
   const valkeyStore = new Map<string, unknown>();
   const valkeyServiceMock = {
@@ -81,6 +82,8 @@ const {
     createNewsletterMock: vi.fn(),
     sendNewsletterMock: vi.fn(),
     deleteNewsletterMock: vi.fn(),
+    // withStaleness' (GH-1966) collaborator — controlled per-test in its own describe block below.
+    getCommitteeActivityMock: vi.fn(),
   };
 });
 
@@ -93,6 +96,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   NEWSLETTER_BODY_MAX_LENGTH: 100_000,
   AI_MODEL: 'mock-ai-model',
   VALKEY_CACHE: { WEEKLY_BRIEF_RATING_TTL_SECONDS: 7_776_000, WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 604800 },
+  ACTIVITY_FEED_MAX_PAGE_SIZE: 50,
 }));
 // '../constants' (this app's server-only constants, not the `@lfx-one/shared` package) is
 // plain string/number literals with no transitive Angular imports — safe to leave unmocked,
@@ -139,6 +143,15 @@ vi.mock('./access-check.service', () => ({
 vi.mock('./ai.service', () => ({
   AiService: class {
     public extractBriefActionItems = extractBriefActionItems;
+  },
+}));
+// withStaleness' (GH-1966) collaborator — real committee-activity.service.ts transitively
+// imports meeting/project services that need @lfx-one/shared/interfaces at runtime (an enum
+// value, not just types), which this file mocks to `{}` above — leaving this unmocked would
+// crash the module graph, same reasoning as every other sibling-service mock in this file.
+vi.mock('./committee-activity.service', () => ({
+  CommitteeActivityService: class {
+    public getCommitteeActivity = getCommitteeActivityMock;
   },
 }));
 // Single mock for both weekly-brief.service.ts collaborators that live in valkey.service —
@@ -622,6 +635,120 @@ describe('WeeklyBriefService', () => {
       proxyRequest.mockResolvedValueOnce({ brief: null, throttle: null });
       await service.getCurrentBrief(req, 'a/b c');
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/a%2Fb%20c/weekly-briefs/current', 'GET');
+    });
+  });
+
+  describe('getCurrentBrief — staleness enrichment (GH-1966)', () => {
+    const liveBrief = {
+      uid: 'b1',
+      state: 'generated',
+      updated_at: '2026-08-24T00:00:00.000Z',
+      window_end: '2026-08-30T23:59:59.999Z',
+    };
+
+    beforeEach(() => {
+      process.env['WEEKLY_BRIEF_BACKEND'] = 'live';
+    });
+
+    it('reports not stale when no qualifying activity is found', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({ data: [] });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false, most_recent_event_at: undefined });
+      expect(getCommitteeActivityMock).toHaveBeenCalledWith(req, 'committee-1', { since: liveBrief.updated_at, limit: 50 });
+    });
+
+    it('reports stale with the in-window event count and most-recent timestamp', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          { type: 'meeting_held', occurred_at: '2026-08-27T18:00:00.000Z' },
+          { type: 'vote_closed', occurred_at: '2026-08-26T09:00:00.000Z' },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({
+        stale: true,
+        event_count: 2,
+        event_count_is_floor: false,
+        most_recent_event_at: '2026-08-27T18:00:00.000Z',
+      });
+    });
+
+    it('excludes events after the brief window_end (a later, unrelated week)', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [{ type: 'meeting_held', occurred_at: '2026-09-02T10:00:00.000Z' }],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false, most_recent_event_at: undefined });
+    });
+
+    it('marks event_count as a floor when the activity fetch itself paginated', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [{ type: 'meeting_held', occurred_at: '2026-08-27T18:00:00.000Z' }],
+        page_token: 'next-page',
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness?.event_count_is_floor).toBe(true);
+    });
+
+    it('degrades to null and logs a warning (not an error) when the activity fetch throws, without failing getCurrentBrief', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockRejectedValueOnce(new Error('upstream unavailable'));
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.brief).toBe(liveBrief);
+      expect(result.staleness).toBeNull();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('skips the activity fetch entirely for a brief in a non-shareable state', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, state: 'generating' }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeUndefined();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
+    it('skips the activity fetch entirely when there is no brief', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: null, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeUndefined();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
+    it("generateBrief's response carries no staleness field — only getCurrentBrief computes it", async () => {
+      const data = { brief: { uid: 'b1', state: 'generating' }, throttle: {} };
+      proxyRequestWithResponse.mockResolvedValueOnce({ status: 202, data, statusText: 'Accepted', headers: {} });
+
+      const result = await service.generateBrief(req, 'committee-1', { force: true });
+
+      expect(result.data).not.toHaveProperty('staleness');
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
+    it('mock mode never invokes the activity fetch — staleness is always null (documented gap: CommitteeActivityService has no mock branch)', async () => {
+      delete process.env['WEEKLY_BRIEF_BACKEND'];
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
     });
   });
 

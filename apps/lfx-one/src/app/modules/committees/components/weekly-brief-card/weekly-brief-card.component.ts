@@ -35,6 +35,7 @@ import {
   WeeklyBriefSourceChip,
   WeeklyBriefSourceChipAction,
   WeeklyBriefSourceChipSection,
+  WeeklyBriefStaleness,
   WeeklyBriefThrottle,
 } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel, mapWeeklyBriefSourceRefsToChips } from '@lfx-one/shared/utils';
@@ -242,6 +243,22 @@ export class WeeklyBriefCardComponent {
     const override = this.optimisticRating();
     if (b && override && override.briefUid === b.uid && override.revision === b.revision) return override.value;
     return this.briefResponse()?.caller_rating ?? null;
+  });
+
+  // BFF enrichment on the response envelope (GH-1966), not on `WeeklyBrief` itself — read from
+  // `briefResponse`, same pattern as `callerRating`. `null` whenever staleness couldn't be
+  // computed (non-shareable state, mock mode, or a soft-failed upstream fetch); purely
+  // informational — never gates canGenerate/canRegenerate.
+  public readonly staleness: Signal<WeeklyBriefStaleness | null> = computed(() => this.briefResponse()?.staleness ?? null);
+
+  // Precomputed here rather than resolved inline in the template (repo rule:
+  // docs/reviews/frontend-checklist.md §4) — also avoids a nested ternary in markup.
+  public readonly stalenessTooltip: Signal<string> = computed(() => {
+    const s = this.staleness();
+    if (!s) return '';
+    const suffix = s.event_count_is_floor ? '+' : '';
+    const noun = s.event_count === 1 ? 'event' : 'events';
+    return `${s.event_count}${suffix} new ${noun} since this brief was generated`;
   });
 
   public readonly canGenerate: Signal<boolean> = computed(() => {

@@ -82,13 +82,23 @@
             <span class="font-semibold">AI Assistant</span>
             <span class="text-xs text-gray-500">{{ weekLabel() }}</span>
           </div>
-          @if (b.state === 'generated') {
-            <span class="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700" data-testid="weekly-brief-card-state-badge">Generated</span>
-          } @else if (b.state === 'edited') {
-            <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700" data-testid="weekly-brief-card-state-badge">Edited</span>
-          } @else if (b.state === 'approved') {
-            <span class="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700" data-testid="weekly-brief-card-state-badge">Approved</span>
-          }
+          <div class="flex items-center gap-2">
+            @if (staleness()?.stale) {
+              <lfx-tag
+                value="May be out of date"
+                severity="warn"
+                icon="fa-light fa-clock-rotate-left"
+                [tooltip]="stalenessTooltip()"
+                data-testid="weekly-brief-card-staleness-tag" />
+            }
+            @if (b.state === 'generated') {
+              <span class="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700" data-testid="weekly-brief-card-state-badge">Generated</span>
+            } @else if (b.state === 'edited') {
+              <span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700" data-testid="weekly-brief-card-state-badge">Edited</span>
+            } @else if (b.state === 'approved') {
+              <span class="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700" data-testid="weekly-brief-card-state-badge">Approved</span>
+            }
+          </div>
         </div>
 
         @if (b.private_source_present) {

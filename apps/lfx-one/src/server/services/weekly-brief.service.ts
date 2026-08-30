@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  ACTIVITY_FEED_MAX_PAGE_SIZE,
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
   VALKEY_CACHE,
@@ -27,6 +28,7 @@ import {
   WeeklyBriefActionItem,
   WeeklyBriefCurrentResponse,
   WeeklyBriefRating,
+  WeeklyBriefStaleness,
 } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -38,6 +40,7 @@ import { getEffectiveSub, getEffectiveUsername, getRealEmail, resolveRealAccessT
 
 import { AccessCheckService } from './access-check.service';
 import { AiService } from './ai.service';
+import { CommitteeActivityService } from './committee-activity.service';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -215,6 +218,7 @@ export class WeeklyBriefService {
   private newsletterService: NewsletterService = new NewsletterService();
   private accessCheckService: AccessCheckService = new AccessCheckService();
   private aiService: AiService = new AiService();
+  private committeeActivityService: CommitteeActivityService = new CommitteeActivityService();
 
   /**
    * GET /committees/:committeeId/weekly-briefs/current
@@ -225,8 +229,9 @@ export class WeeklyBriefService {
    * over.
    */
   public async getCurrentBrief(req: Request, committeeId: string): Promise<WeeklyBriefCurrentResponse> {
+    const live = this.isLive(req);
     let response: WeeklyBriefCurrentResponse;
-    if (!this.isLive(req)) {
+    if (!live) {
       const brief = currentMockBrief(committeeId);
       response = {
         brief,
@@ -246,7 +251,8 @@ export class WeeklyBriefService {
         'GET'
       );
     }
-    return this.withCallerRating(req, committeeId, response);
+    const withRating = await this.withCallerRating(req, committeeId, response);
+    return this.withStaleness(req, committeeId, withRating, live);
   }
 
   /**
@@ -1085,6 +1091,48 @@ export class WeeklyBriefService {
     if (!key) return response;
     const stored = await valkeyService.getJson<RateWeeklyBriefResponse>(key, isStoredRating);
     return { ...response, caller_rating: stored?.rating ?? null };
+  }
+
+  /**
+   * Enriches `getCurrentBrief`'s result with a staleness signal (GH-1966): whether real
+   * committee activity has occurred inside the brief's own window since it was last
+   * generated/edited. Fails soft on every edge — no brief, non-shareable state, mock mode, or
+   * a fetch fault all resolve to `staleness: null` rather than throwing. This is an honest
+   * best-effort indicator, never a precondition for anything, and must never consume
+   * generate/regenerate quota.
+   *
+   * Mock mode: `CommitteeActivityService` always calls live upstream (committee/meeting/vote/
+   * query-service) — it has no mock-data branch of its own. Comparing that live activity
+   * against a synthetic in-memory mock brief would produce a meaningless signal (or simply
+   * fail against an unreachable local stack), so staleness is unconditionally `null` in mock
+   * mode rather than faked. Known gap, not silently papered over — see PR description.
+   */
+  private async withStaleness(req: Request, committeeId: string, response: WeeklyBriefCurrentResponse, live: boolean): Promise<WeeklyBriefCurrentResponse> {
+    const brief = response.brief;
+    if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) return response;
+    if (!live) return { ...response, staleness: null };
+    try {
+      const { data, page_token } = await this.committeeActivityService.getCommitteeActivity(req, committeeId, {
+        since: brief.updated_at,
+        limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
+      });
+      const windowEndMs = new Date(brief.window_end).getTime();
+      const inWindow = data.filter((event) => new Date(event.occurred_at).getTime() <= windowEndMs);
+      const staleness: WeeklyBriefStaleness = {
+        stale: inWindow.length > 0,
+        event_count: inWindow.length,
+        event_count_is_floor: !!page_token,
+        most_recent_event_at: inWindow[0]?.occurred_at,
+      };
+      return { ...response, staleness };
+    } catch (error) {
+      logger.warning(req, 'weekly_brief_staleness', 'Failed to compute weekly-brief staleness, degrading to null', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return { ...response, staleness: null };
+    }
   }
 
   /**
