@@ -750,6 +750,7 @@ describe('WeeklyBriefService', () => {
 
       expect(result.staleness).toBeNull();
       expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
       expect(logger.warning).toHaveBeenCalledWith(req, 'weekly_brief_staleness', expect.any(String), expect.objectContaining({ window_end: 'not-a-date' }));
     });
 

@@ -149,9 +149,10 @@ export interface WeeklyBriefCurrentResponse {
   throttle: WeeklyBriefThrottle | null;
   /**
    * BFF-side enrichment (not part of upstream's contract): the calling user's own rating on
-   * this specific `brief.uid` + `brief.revision`, or `null` if they haven't rated it (or no
-   * `brief` was returned). Absent entirely when `brief` is null. Read from the BFF's
-   * per-user rating store, not upstream — see `weekly-brief.service.ts#getCurrentBrief`.
+   * this specific `brief.uid` + `brief.revision`, or `null` on a cache miss/fault. Absent
+   * entirely when `brief` is null, no user identity is resolvable, or no rating cache key
+   * could be built. Read from the BFF's per-user rating store, not upstream — see
+   * `weekly-brief.service.ts#withCallerRating`.
    */
   caller_rating?: WeeklyBriefRating | null;
   /**
