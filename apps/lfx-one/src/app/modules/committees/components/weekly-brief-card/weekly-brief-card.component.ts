@@ -257,8 +257,11 @@ export class WeeklyBriefCardComponent {
     const s = this.staleness();
     if (!s) return '';
     const suffix = s.event_count_is_floor ? '+' : '';
-    const noun = s.event_count === 1 ? 'event' : 'events';
-    return `${s.event_count}${suffix} new ${noun} since this brief was generated`;
+    // `updated_at` (what staleness compares against) is the last edit time for an `edited`
+    // brief, not its original generation time — "last updated" covers both without
+    // misattributing an edit to a regenerate that never happened.
+    const noun = s.event_count === 1 && !s.event_count_is_floor ? 'event' : 'events';
+    return `${s.event_count}${suffix} new ${noun} since this brief was last updated`;
   });
 
   public readonly canGenerate: Signal<boolean> = computed(() => {

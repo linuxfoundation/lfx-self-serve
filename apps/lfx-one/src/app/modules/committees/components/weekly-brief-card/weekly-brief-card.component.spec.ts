@@ -471,7 +471,7 @@ describe('WeeklyBriefCardComponent — staleness indicator (GH-1966)', () => {
     };
   }
 
-  async function setup(response: WeeklyBriefCurrentResponse): Promise<void> {
+  async function setup(response: WeeklyBriefCurrentResponse): Promise<WeeklyBriefCardComponent> {
     await TestBed.configureTestingModule({
       imports: [WeeklyBriefCardComponent],
       providers: [
@@ -492,6 +492,7 @@ describe('WeeklyBriefCardComponent — staleness indicator (GH-1966)', () => {
     fixture.componentRef.setInput('committee', COMMITTEE);
     fixture.componentRef.setInput('canEdit', true);
     await fixture.whenStable();
+    return fixture.componentInstance;
   }
 
   function stalenessTag(): HTMLElement | null {
@@ -520,6 +521,24 @@ describe('WeeklyBriefCardComponent — staleness indicator (GH-1966)', () => {
     await setup(briefResponse({ staleness: null }));
 
     expect(stalenessTag()).toBeNull();
+  });
+
+  it('tooltip says "last updated", not "generated" — updated_at is the last edit time for an edited brief, not its original generation time', async () => {
+    const component = await setup(briefResponse({ staleness: { stale: true, event_count: 3, event_count_is_floor: false } }));
+
+    expect(component.stalenessTooltip()).toBe('3 new events since this brief was last updated');
+  });
+
+  it('pluralizes "event" for a floor count of exactly 1 (a "1+" count is never exactly one)', async () => {
+    const component = await setup(briefResponse({ staleness: { stale: true, event_count: 1, event_count_is_floor: true } }));
+
+    expect(component.stalenessTooltip()).toBe('1+ new events since this brief was last updated');
+  });
+
+  it('keeps the singular for a non-floor count of exactly 1', async () => {
+    const component = await setup(briefResponse({ staleness: { stale: true, event_count: 1, event_count_is_floor: false } }));
+
+    expect(component.stalenessTooltip()).toBe('1 new event since this brief was last updated');
   });
 
   it('leaves the Regenerate button enabled when stale, even with a fresh quota', async () => {

@@ -227,30 +227,16 @@ export class WeeklyBriefService {
    * exists yet for the window — a 404 here means "committee not found", a
    * real error the caller needs to see, not an empty-brief state to paper
    * over.
+   *
+   * This is the controller's read path — it carries both `caller_rating` and `staleness`
+   * (GH-1966). Internal callers that only need `brief`/`throttle` (`getActionItems`,
+   * `shareBrief`, `shareToSlack`) call `fetchCurrentBrief` directly instead: `withStaleness`'s
+   * committee-activity fan-out is real upstream cost that only the card's own read needs, and
+   * paying it on every action-item extraction, share, and rating write for a value those paths
+   * immediately discard would multiply that cost for nothing (general review finding).
    */
   public async getCurrentBrief(req: Request, committeeId: string): Promise<WeeklyBriefCurrentResponse> {
-    const live = this.isLive(req);
-    let response: WeeklyBriefCurrentResponse;
-    if (!live) {
-      const brief = currentMockBrief(committeeId);
-      response = {
-        brief,
-        throttle: {
-          ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
-          generates_used: 1,
-          regenerations_used: brief.regeneration_count,
-          window_resets_at: nextSundayIso(),
-        },
-      };
-    } else {
-      logger.debug(req, 'get_weekly_brief_current', 'Proxying to committee-service', { committee_id: committeeId });
-      response = await this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
-        req,
-        'LFX_V2_SERVICE',
-        `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
-        'GET'
-      );
-    }
+    const { response, live } = await this.fetchCurrentBrief(req, committeeId);
     const withRating = await this.withCallerRating(req, committeeId, response);
     return this.withStaleness(req, committeeId, withRating, live);
   }
@@ -435,7 +421,7 @@ export class WeeklyBriefService {
    * (a miss, same as an actual cache miss) — that narrower case isn't covered here.
    */
   public async getActionItems(req: Request, committeeId: string): Promise<GetWeeklyBriefActionItemsResponse> {
-    const { brief } = await this.getCurrentBrief(req, committeeId);
+    const { brief } = (await this.fetchCurrentBrief(req, committeeId)).response;
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state) || !brief.brief_text?.trim()) {
       return { items: [] };
     }
@@ -670,7 +656,7 @@ export class WeeklyBriefService {
    * this service — impersonation still shows staff what the target sees.
    */
   public async shareBrief(req: Request, committeeId: string, expectedRevision: number): Promise<ShareWeeklyBriefResult> {
-    const { brief } = await this.getCurrentBrief(req, committeeId);
+    const { brief } = (await this.fetchCurrentBrief(req, committeeId)).response;
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', committeeId, {
         operation: 'share_weekly_brief',
@@ -908,7 +894,7 @@ export class WeeklyBriefService {
       });
     }
 
-    const { brief } = await this.getCurrentBrief(req, committeeId);
+    const { brief } = (await this.fetchCurrentBrief(req, committeeId)).response;
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', committeeId, {
         operation: 'share_weekly_brief_slack',
@@ -1047,6 +1033,33 @@ export class WeeklyBriefService {
     return {};
   }
 
+  /** Fetches the current brief/throttle with no BFF-side enrichment — the shared collaborator for `getCurrentBrief` and the internal callers that don't need `caller_rating`/`staleness`. */
+  private async fetchCurrentBrief(req: Request, committeeId: string): Promise<{ response: WeeklyBriefCurrentResponse; live: boolean }> {
+    const live = this.isLive(req);
+    let response: WeeklyBriefCurrentResponse;
+    if (!live) {
+      const brief = currentMockBrief(committeeId);
+      response = {
+        brief,
+        throttle: {
+          ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
+          generates_used: 1,
+          regenerations_used: brief.regeneration_count,
+          window_resets_at: nextSundayIso(),
+        },
+      };
+    } else {
+      logger.debug(req, 'get_weekly_brief_current', 'Proxying to committee-service', { committee_id: committeeId });
+      response = await this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
+        'GET'
+      );
+    }
+    return { response, live };
+  }
+
   /**
    * Refuses mock mode outright in production instead of silently serving
    * fabricated brief content. `assertCommitteeRead`/`assertCommitteeWrite` gate
@@ -1096,7 +1109,9 @@ export class WeeklyBriefService {
   /**
    * Enriches `getCurrentBrief`'s result with a staleness signal (GH-1966): whether real
    * committee activity has occurred inside the brief's own window since it was last
-   * generated/edited. Fails soft on every edge — no brief, non-shareable state, mock mode, or
+   * generated/edited. Fails soft on every edge: no brief or a non-shareable state leave
+   * `staleness` absent entirely (same convention as `caller_rating` on those same edges);
+   * mock mode, an unparseable `updated_at`/`window_end`, an inconclusive fetch (see below), or
    * a fetch fault all resolve to `staleness: null` rather than throwing. This is an honest
    * best-effort indicator, never a precondition for anything, and must never consume
    * generate/regenerate quota.
@@ -1111,13 +1126,28 @@ export class WeeklyBriefService {
     const brief = response.brief;
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) return response;
     if (!live) return { ...response, staleness: null };
+    // Upstream marks both fields Required, but this BFF proxies the object straight through
+    // with no runtime validation of its own — an absent `updated_at` would otherwise reach
+    // `getCommitteeActivity` as `since: undefined`, silently dropping the lower bound and
+    // returning the most recent activity of ANY age as if it were "since generated" (general
+    // review finding); an absent/unparseable `window_end` would make every event fail the
+    // `<= windowEndMs` filter, silently reporting "not stale" instead of "unknown".
+    const sinceMs = Date.parse(brief.updated_at ?? '');
+    const windowEndMs = Date.parse(brief.window_end ?? '');
+    if (Number.isNaN(sinceMs) || Number.isNaN(windowEndMs)) return { ...response, staleness: null };
     try {
       const { data, page_token } = await this.committeeActivityService.getCommitteeActivity(req, committeeId, {
         since: brief.updated_at,
         limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
       });
-      const windowEndMs = new Date(brief.window_end).getTime();
       const inWindow = data.filter((event) => new Date(event.occurred_at).getTime() <= windowEndMs);
+      // getCommitteeActivity sorts descending by occurred_at, so events newer than window_end
+      // (irrelevant to this brief) sort ahead of genuine in-window ones. If the fetch itself
+      // saturated (page_token set) and nothing in-window turned up on this page, real in-window
+      // activity could still be sitting on a page never fetched — reporting a confident `false`
+      // there would be a false negative, not a floor-qualified true. Degrade to "unknown"
+      // instead (general review finding).
+      if (page_token && inWindow.length === 0) return { ...response, staleness: null };
       const staleness: WeeklyBriefStaleness = {
         stale: inWindow.length > 0,
         event_count: inWindow.length,
@@ -1168,7 +1198,8 @@ export class WeeklyBriefService {
     expectedRevision: number,
     operation: string
   ): Promise<{ brief: WeeklyBrief; callerRating: WeeklyBriefRating | null }> {
-    const response = await this.getCurrentBrief(req, committeeId);
+    const { response: fetched } = await this.fetchCurrentBrief(req, committeeId);
+    const response = await this.withCallerRating(req, committeeId, fetched);
     const { brief } = response;
     if (!brief || brief.uid !== briefUid || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', briefUid, { operation, service: 'weekly_brief_service' });

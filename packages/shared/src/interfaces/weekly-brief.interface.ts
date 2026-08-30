@@ -156,11 +156,13 @@ export interface WeeklyBriefCurrentResponse {
   caller_rating?: WeeklyBriefRating | null;
   /**
    * BFF-side enrichment (not part of upstream's contract, GH-1966): whether real committee
-   * activity has occurred inside `brief`'s own window since it was last touched. `null` when
-   * staleness couldn't be computed — brief is in a non-shareable state, the underlying
-   * committee-activity fetch failed, or mock mode has no comparable live activity source (see
-   * `WeeklyBriefService#withStaleness`'s doc comment). Absent entirely when `brief` is null.
-   * Never a hard failure of `getCurrentBrief`.
+   * activity has occurred inside `brief`'s own window since it was last touched. Absent
+   * entirely when `brief` is null or in a non-shareable state (same convention as
+   * `caller_rating` on those edges). `null` when staleness specifically couldn't be computed
+   * for a shareable brief — mock mode, an unparseable `updated_at`/`window_end`, an
+   * inconclusive committee-activity fetch, or a fetch fault (see
+   * `WeeklyBriefService#withStaleness`'s doc comment). Never a hard failure of
+   * `getCurrentBrief`.
    */
   staleness?: WeeklyBriefStaleness | null;
 }

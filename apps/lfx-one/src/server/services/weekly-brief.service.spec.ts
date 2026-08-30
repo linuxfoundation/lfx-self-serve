@@ -433,6 +433,21 @@ describe('WeeklyBriefService', () => {
       expect(buildCacheKey).not.toHaveBeenCalled();
     });
 
+    it('never triggers the committee-activity staleness fan-out even for a shareable live-mode brief (GH-1966 perf regression guard)', async () => {
+      process.env['WEEKLY_BRIEF_BACKEND'] = 'live';
+      proxyRequest.mockResolvedValueOnce({
+        brief: { uid: 'b1', state: 'generated', revision: 1, brief_text: 'Hello committee' },
+        throttle: null,
+      });
+      extractBriefActionItems.mockResolvedValueOnce({ items: [] });
+
+      await service.getActionItems(req, 'committee-1');
+
+      // getActionItems only needs `brief` — it must fetch via fetchCurrentBrief, not the
+      // enriched getCurrentBrief, so withStaleness' committee-activity fan-out never fires here.
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
     it('skips extraction and returns {items: []} when the cache key is null (fail-closed on an unsafe brief uid), logging a warning', async () => {
       buildCacheKey.mockReturnValueOnce(null);
 
@@ -700,6 +715,40 @@ describe('WeeklyBriefService', () => {
       const result = await service.getCurrentBrief(req, 'committee-1');
 
       expect(result.staleness?.event_count_is_floor).toBe(true);
+    });
+
+    it('reports unknown (null), not a false negative, when the fetch saturated and nothing turned up in-window on this page', async () => {
+      // getCommitteeActivity sorts descending by occurred_at, so if the fetch paginated
+      // (page_token set) and every returned event is newer than window_end, real in-window
+      // activity could still be sitting on a page never fetched — a confident `stale: false`
+      // here would be a false negative, not a floor-qualified true.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [{ type: 'meeting_held', occurred_at: '2026-09-02T10:00:00.000Z' }],
+        page_token: 'next-page',
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+    });
+
+    it('degrades to null instead of a silent false-negative "stale: true" when the brief has no updated_at (no lower bound to send upstream)', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, updated_at: undefined }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
+    it('degrades to null instead of a silent "stale: false" when the brief has an unparseable window_end', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, window_end: 'not-a-date' }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
     });
 
     it('degrades to null and logs a warning (not an error) when the activity fetch throws, without failing getCurrentBrief', async () => {
@@ -1005,6 +1054,18 @@ describe('WeeklyBriefService', () => {
 
       expect(result.caller_rating).toBeNull();
     });
+
+    it('rateBrief resolves caller_rating via resolveRatableBrief without triggering the staleness fan-out, in live mode (GH-1966 perf regression guard)', async () => {
+      process.env['WEEKLY_BRIEF_BACKEND'] = 'live';
+      const liveBrief = { uid: 'b1', state: 'generated', revision: 1, brief_text: 'Hello committee' };
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null }); // resolveRatableBrief's fetchCurrentBrief
+
+      await service.rateBrief(userReq, 'committee-1', 'b1', 'up', 1);
+
+      // resolveRatableBrief genuinely needs caller_rating (for the log line's previous_rating),
+      // so it still calls withCallerRating explicitly — but never withStaleness.
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('shareToSlack (LFXV2-3080)', () => {
@@ -1106,6 +1167,10 @@ describe('WeeklyBriefService', () => {
       expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', '/committees/committee-1/weekly-briefs/share-to-chat', 'POST', undefined, {
         revision: 1,
       });
+      // GH-1966 perf regression guard: this method only needs `brief`, so it must fetch via
+      // fetchCurrentBrief, not the enriched getCurrentBrief — the committee-activity fan-out
+      // withStaleness would trigger for this shareable ('generated') brief must never fire here.
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
     });
 
     it('logs the sending user (as their opaque sub, not the human-readable username) on a successful send — the committee-service call carries no caller identity of its own beyond the bearer token, so this is the only record of who shared it', async () => {
@@ -1253,6 +1318,8 @@ describe('WeeklyBriefService', () => {
         expect.objectContaining({ ed_reply_email: 'writer@example.com', committee_uids: ['committee-1'] })
       );
       expect(nonImpersonatingReq.bearerToken).toBe('writer-token');
+      // GH-1966 perf regression guard — same rationale as shareToSlack's equivalent assertion.
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
     });
 
     it("impersonating: authorizes and sends under the REAL staff member's token/email, not the impersonated target's, and restores the impersonation token afterward", async () => {

@@ -66,7 +66,7 @@ function buildRatingReq(body: unknown = {}): any {
 }
 
 function buildRes(): any {
-  return { status: vi.fn().mockReturnThis(), json: vi.fn(), send: vi.fn() };
+  return { status: vi.fn().mockReturnThis(), json: vi.fn(), send: vi.fn(), setHeader: vi.fn() };
 }
 
 describe('WeeklyBriefController', () => {
@@ -282,6 +282,15 @@ describe('WeeklyBriefController', () => {
 
       expect(weeklyBriefSvc.getCurrentBrief).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(forbidden);
+    });
+
+    it('sets Cache-Control: no-store — the response carries per-user caller_rating and staleness (GH-1966), both derived from FGA-filtered data', async () => {
+      weeklyBriefSvc.getCurrentBrief.mockResolvedValue({ brief: null, throttle: null });
+      const res = buildRes();
+
+      await controller.getCurrentBrief(buildReq(), res, vi.fn());
+
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     });
   });
 
