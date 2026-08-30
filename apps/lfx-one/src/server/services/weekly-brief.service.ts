@@ -1199,7 +1199,7 @@ export class WeeklyBriefService {
 
   /**
    * Races the staleness enrichment's committee-activity fetch against
-   * `WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS` — see that constant's doc comment for why 3s
+   * `WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS` — see that constant's doc comment for why this
    * tightens, rather than introduces, a deadline on this call. A lost race rejects;
    * `withStaleness`'s own catch handles it the same as any other fetch fault. Mirrors
    * `ValkeyService#withTimeout`'s pattern: the abandoned op's eventual settlement is swallowed
