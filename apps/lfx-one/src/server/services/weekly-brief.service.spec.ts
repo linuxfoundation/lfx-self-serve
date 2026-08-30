@@ -671,12 +671,13 @@ describe('WeeklyBriefService', () => {
       getCommitteeActivityMock.mockResolvedValueOnce({ data: [] });
 
       void service.getCurrentBrief(userReq, 'committee-1'); // not awaited — the rating lookup above never resolves
-      await Promise.resolve();
-      await Promise.resolve();
-
-      // If withStaleness were still chained after withCallerRating, this could never fire while
-      // the rating lookup is stuck — it firing anyway proves the two now run concurrently.
-      expect(getCommitteeActivityMock).toHaveBeenCalled();
+      // vi.waitFor, not a fixed number of chained microtask flushes — a correct microtask count
+      // is an implementation detail of fetchCurrentBrief's own await depth, and would make this
+      // test fail with a misleading "still serial" result if that depth ever changes for an
+      // unrelated reason (general review finding). If withStaleness were still chained after
+      // withCallerRating, this could never resolve while the rating lookup is stuck — it
+      // resolving anyway proves the two now run concurrently.
+      await vi.waitFor(() => expect(getCommitteeActivityMock).toHaveBeenCalled());
     });
 
     it('reports not stale when no qualifying activity is found', async () => {

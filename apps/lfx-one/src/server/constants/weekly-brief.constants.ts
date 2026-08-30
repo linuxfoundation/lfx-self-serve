@@ -14,9 +14,11 @@ export const WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID = 'wb-mock-quiet-week';
 
 /**
  * Deadline for `WeeklyBriefService#withStaleness`'s committee-activity fetch (GH-1966).
- * `MicroserviceProxyService` sets no request timeout of its own, and a purely informational
- * badge must never be able to stall the brief's own primary content (the card's initial load
- * has no client-side timeout either) — this guard degrades to `staleness: null` on expiry
- * instead of hanging `getCurrentBrief` indefinitely (general review finding, full-branch sweep).
+ * `MicroserviceProxyService` itself sets no timeout, but every proxied call still inherits
+ * `ApiClientService`'s per-request `AbortSignal.timeout` (30s by default) — so the pre-existing
+ * ceiling was ~30s, not unbounded. Still far too long for a purely informational badge to
+ * potentially delay the brief's own primary content (the card's initial load has no
+ * client-side timeout of its own), so this tightens it to 3s and degrades to `staleness: null`
+ * on expiry rather than waiting out the full request budget (general review finding, full-branch sweep).
  */
 export const WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS = 3_000;

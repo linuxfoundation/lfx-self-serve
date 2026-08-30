@@ -240,9 +240,11 @@ export class WeeklyBriefService {
     // Both enrichments read only `response.brief`, which neither one mutates — run them
     // concurrently rather than serially chaining rating → staleness, since withStaleness's
     // committee-activity fetch is the endpoint's single most expensive step (general review
-    // finding, full-branch sweep). Falling back to the original `response` reference when
-    // neither enrichment added anything preserves reference equality for callers that compare
-    // by identity (e.g. the no-brief passthrough case).
+    // finding, full-branch sweep). The no-brief passthrough case is asserted by `toBe` against
+    // the raw upstream object in the existing "getCurrentBrief proxies straight through and
+    // does not swallow a 404" spec — falling back to the original `response` reference when
+    // neither enrichment added anything keeps that pre-existing contract intact rather than
+    // spreading into a fresh object unconditionally.
     const [withRating, withStale] = await Promise.all([
       this.withCallerRating(req, committeeId, response),
       this.withStaleness(req, committeeId, response, live),
@@ -1197,12 +1199,11 @@ export class WeeklyBriefService {
 
   /**
    * Races the staleness enrichment's committee-activity fetch against
-   * `WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS` — `MicroserviceProxyService` sets no request
-   * timeout of its own, so an upstream hang would otherwise stall `getCurrentBrief` itself for a
-   * purely informational badge. A lost race rejects; `withStaleness`'s own catch handles it the
-   * same as any other fetch fault. Mirrors `ValkeyService#withTimeout`'s pattern: the abandoned
-   * op's eventual settlement is swallowed so a late rejection never surfaces as an unhandled
-   * rejection.
+   * `WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS` — see that constant's doc comment for why 3s
+   * tightens, rather than introduces, a deadline on this call. A lost race rejects;
+   * `withStaleness`'s own catch handles it the same as any other fetch fault. Mirrors
+   * `ValkeyService#withTimeout`'s pattern: the abandoned op's eventual settlement is swallowed
+   * so a late rejection never surfaces as an unhandled rejection.
    */
   private async withStalenessFetchTimeout<T>(op: Promise<T>): Promise<T> {
     let timer: NodeJS.Timeout;
