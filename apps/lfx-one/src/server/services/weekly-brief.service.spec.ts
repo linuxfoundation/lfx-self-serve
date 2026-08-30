@@ -165,7 +165,7 @@ vi.mock('./valkey.service', () => ({
 
 import type { Request } from 'express';
 
-import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
+import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID, WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS } from '../constants';
 import { MicroserviceError } from '../errors';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
@@ -665,6 +665,20 @@ describe('WeeklyBriefService', () => {
       process.env['WEEKLY_BRIEF_BACKEND'] = 'live';
     });
 
+    it('starts the staleness fetch without waiting for the caller-rating lookup to resolve first (parallel, not serial — perf fix)', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      valkeyServiceMock.getJson.mockReturnValueOnce(new Promise(() => {})); // caller-rating lookup hangs forever
+      getCommitteeActivityMock.mockResolvedValueOnce({ data: [] });
+
+      void service.getCurrentBrief(userReq, 'committee-1'); // not awaited — the rating lookup above never resolves
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // If withStaleness were still chained after withCallerRating, this could never fire while
+      // the rating lookup is stuck — it firing anyway proves the two now run concurrently.
+      expect(getCommitteeActivityMock).toHaveBeenCalled();
+    });
+
     it('reports not stale when no qualifying activity is found', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
       getCommitteeActivityMock.mockResolvedValueOnce({ data: [] });
@@ -764,6 +778,24 @@ describe('WeeklyBriefService', () => {
       expect(result.staleness).toBeNull();
       expect(logger.warning).toHaveBeenCalledTimes(1);
       expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('degrades to null after WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS instead of blocking getCurrentBrief indefinitely when the activity fetch hangs', async () => {
+      vi.useFakeTimers();
+      try {
+        proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+        getCommitteeActivityMock.mockReturnValueOnce(new Promise(() => {})); // never settles
+
+        const resultPromise = service.getCurrentBrief(req, 'committee-1');
+        await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS);
+        const result = await resultPromise;
+
+        expect(result.brief).toBe(liveBrief);
+        expect(result.staleness).toBeNull();
+        expect(logger.warning).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('skips the activity fetch entirely for a brief in a non-shareable state', async () => {

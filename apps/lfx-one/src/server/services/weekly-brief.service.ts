@@ -33,7 +33,7 @@ import {
 import { formatUtcDateRangeLabel } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
+import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID, WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS } from '../constants';
 import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getEffectiveSub, getEffectiveUsername, getRealEmail, resolveRealAccessToken } from '../utils/auth-helper';
@@ -237,8 +237,18 @@ export class WeeklyBriefService {
    */
   public async getCurrentBrief(req: Request, committeeId: string): Promise<WeeklyBriefCurrentResponse> {
     const { response, live } = await this.fetchCurrentBrief(req, committeeId);
-    const withRating = await this.withCallerRating(req, committeeId, response);
-    return this.withStaleness(req, committeeId, withRating, live);
+    // Both enrichments read only `response.brief`, which neither one mutates — run them
+    // concurrently rather than serially chaining rating → staleness, since withStaleness's
+    // committee-activity fetch is the endpoint's single most expensive step (general review
+    // finding, full-branch sweep). Falling back to the original `response` reference when
+    // neither enrichment added anything preserves reference equality for callers that compare
+    // by identity (e.g. the no-brief passthrough case).
+    const [withRating, withStale] = await Promise.all([
+      this.withCallerRating(req, committeeId, response),
+      this.withStaleness(req, committeeId, response, live),
+    ]);
+    if (withRating === response && withStale === response) return response;
+    return { ...withRating, ...withStale };
   }
 
   /**
@@ -1154,10 +1164,12 @@ export class WeeklyBriefService {
       return { ...response, staleness: null };
     }
     try {
-      const { data, page_token } = await this.committeeActivityService.getCommitteeActivity(req, committeeId, {
-        since: brief.updated_at,
-        limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
-      });
+      const { data, page_token } = await this.withStalenessFetchTimeout(
+        this.committeeActivityService.getCommitteeActivity(req, committeeId, {
+          since: brief.updated_at,
+          limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
+        })
+      );
       const inWindow = data.filter((event) => new Date(event.occurred_at).getTime() <= windowEndMs);
       // getCommitteeActivity sorts descending by occurred_at, so events newer than window_end
       // (irrelevant to this brief) sort ahead of genuine in-window ones. If the fetch itself
@@ -1180,6 +1192,28 @@ export class WeeklyBriefService {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       return { ...response, staleness: null };
+    }
+  }
+
+  /**
+   * Races the staleness enrichment's committee-activity fetch against
+   * `WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS` — `MicroserviceProxyService` sets no request
+   * timeout of its own, so an upstream hang would otherwise stall `getCurrentBrief` itself for a
+   * purely informational badge. A lost race rejects; `withStaleness`'s own catch handles it the
+   * same as any other fetch fault. Mirrors `ValkeyService#withTimeout`'s pattern: the abandoned
+   * op's eventual settlement is swallowed so a late rejection never surfaces as an unhandled
+   * rejection.
+   */
+  private async withStalenessFetchTimeout<T>(op: Promise<T>): Promise<T> {
+    let timer: NodeJS.Timeout;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('weekly_brief_staleness_fetch_timeout')), WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS);
+    });
+    op.catch(() => undefined);
+    try {
+      return await Promise.race([op, timeout]);
+    } finally {
+      clearTimeout(timer!);
     }
   }
 
