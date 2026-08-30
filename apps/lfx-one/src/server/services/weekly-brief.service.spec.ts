@@ -733,22 +733,24 @@ describe('WeeklyBriefService', () => {
       expect(result.staleness).toBeNull();
     });
 
-    it('degrades to null instead of a silent false-negative "stale: true" when the brief has no updated_at (no lower bound to send upstream)', async () => {
+    it('degrades to null and logs a warning instead of a silent false-negative "stale: true" when the brief has no updated_at (no lower bound to send upstream)', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, updated_at: undefined }, throttle: null });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
       expect(result.staleness).toBeNull();
       expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
     });
 
-    it('degrades to null instead of a silent "stale: false" when the brief has an unparseable window_end', async () => {
+    it('degrades to null and logs a warning instead of a silent "stale: false" when the brief has an unparseable window_end', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, window_end: 'not-a-date' }, throttle: null });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
       expect(result.staleness).toBeNull();
       expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
     });
 
     it('degrades to null and logs a warning (not an error) when the activity fetch throws, without failing getCurrentBrief', async () => {

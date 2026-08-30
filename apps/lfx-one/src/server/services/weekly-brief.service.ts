@@ -1091,10 +1091,11 @@ export class WeeklyBriefService {
   }
 
   /**
-   * Enriches a `getCurrentBrief` result with the caller's own rating on that exact brief
-   * revision (LFXV2-3042). Fails soft on every edge: no brief, no resolvable username, or a
-   * cache miss/fault all resolve to `caller_rating: null` rather than throwing — this is a
-   * convenience read for the UI's pre-lit thumb state, not a precondition for anything.
+   * Enriches a current-brief response (from `getCurrentBrief` or `resolveRatableBrief`) with
+   * the caller's own rating on that exact brief revision (LFXV2-3042). Fails soft on every
+   * edge: no brief, no resolvable username, or a cache miss/fault all resolve to
+   * `caller_rating: null` rather than throwing — this is a convenience read for the UI's
+   * pre-lit thumb state, not a precondition for anything.
    */
   private async withCallerRating(req: Request, committeeId: string, response: WeeklyBriefCurrentResponse): Promise<WeeklyBriefCurrentResponse> {
     if (!response.brief) return response;
@@ -1110,11 +1111,13 @@ export class WeeklyBriefService {
    * Enriches `getCurrentBrief`'s result with a staleness signal (GH-1966): whether real
    * committee activity has occurred inside the brief's own window since it was last
    * generated/edited. Fails soft on every edge: no brief or a non-shareable state leave
-   * `staleness` absent entirely (same convention as `caller_rating` on those same edges);
-   * mock mode, an unparseable `updated_at`/`window_end`, an inconclusive fetch (see below), or
-   * a fetch fault all resolve to `staleness: null` rather than throwing. This is an honest
-   * best-effort indicator, never a precondition for anything, and must never consume
-   * generate/regenerate quota.
+   * `staleness` absent entirely — `caller_rating` shares this convention only on the no-brief
+   * edge; unlike `staleness`, `caller_rating` is still populated (as `null`) for a
+   * non-shareable brief, since `withCallerRating` has no state check of its own. Mock mode, an
+   * unparseable `updated_at`/`window_end`, an inconclusive fetch (see below), or a fetch fault
+   * all resolve to `staleness: null` rather than throwing. This is an honest best-effort
+   * indicator, never a precondition for anything, and must never consume generate/regenerate
+   * quota.
    *
    * Mock mode: `CommitteeActivityService` always calls live upstream (committee/meeting/vote/
    * query-service) — it has no mock-data branch of its own. Comparing that live activity
@@ -1126,15 +1129,26 @@ export class WeeklyBriefService {
     const brief = response.brief;
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) return response;
     if (!live) return { ...response, staleness: null };
-    // Upstream marks both fields Required, but this BFF proxies the object straight through
-    // with no runtime validation of its own — an absent `updated_at` would otherwise reach
+    // Upstream marks NEITHER field Required (confirmed against committee-service's Goa design —
+    // neither carries a `dsl.Required` entry), even though `WeeklyBrief` declares both as
+    // non-optional `string` here — this guard is deliberately stricter than the declared type,
+    // not redundant with it. Without it, an absent `updated_at` would reach
     // `getCommitteeActivity` as `since: undefined`, silently dropping the lower bound and
     // returning the most recent activity of ANY age as if it were "since generated" (general
     // review finding); an absent/unparseable `window_end` would make every event fail the
-    // `<= windowEndMs` filter, silently reporting "not stale" instead of "unknown".
+    // `<= windowEndMs` filter, silently reporting "not stale" instead of "unknown". Widening
+    // `WeeklyBrief.updated_at`/`.window_end` to optional, so every other reader of this type
+    // (briefWindow-adjacent date logic, `listBriefs`, the card's `weekLabel`) gets the same
+    // guarantee, is a larger, riskier change than this fix — flagged for follow-up, not done here.
     const sinceMs = Date.parse(brief.updated_at ?? '');
     const windowEndMs = Date.parse(brief.window_end ?? '');
-    if (Number.isNaN(sinceMs) || Number.isNaN(windowEndMs)) return { ...response, staleness: null };
+    if (Number.isNaN(sinceMs) || Number.isNaN(windowEndMs)) {
+      logger.warning(req, 'weekly_brief_staleness', 'Brief has an unparseable or missing updated_at/window_end, degrading staleness to null', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+      });
+      return { ...response, staleness: null };
+    }
     try {
       const { data, page_token } = await this.committeeActivityService.getCommitteeActivity(req, committeeId, {
         since: brief.updated_at,
@@ -1186,10 +1200,11 @@ export class WeeklyBriefService {
    * the thumb against content the rater never actually reviewed (PR #1361 review). Matches the
    * optimistic-concurrency contract `saveBrief`/`shareBrief` already enforce for their own writes.
    *
-   * Also returns the brief's `caller_rating` (already resolved by `getCurrentBrief` →
-   * `withCallerRating` for this exact key) as `callerRating`, so `rateBrief`/`clearBriefRating`
-   * can use it as `previous_rating` in their log line without a second, identical Valkey read for
-   * a key this call already read.
+   * Also returns the brief's `caller_rating` (already resolved by this method's own
+   * `withCallerRating` call for this exact key — via `fetchCurrentBrief`, not the full
+   * `getCurrentBrief`, since this call has no need for `staleness`; see GH-1966) as
+   * `callerRating`, so `rateBrief`/`clearBriefRating` can use it as `previous_rating` in their
+   * log line without a second, identical Valkey read for a key this call already read.
    */
   private async resolveRatableBrief(
     req: Request,
