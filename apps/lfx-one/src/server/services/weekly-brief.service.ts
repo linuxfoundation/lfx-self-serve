@@ -249,8 +249,15 @@ export class WeeklyBriefService {
       this.withCallerRating(req, committeeId, response),
       this.withStaleness(req, committeeId, response, live),
     ]);
+    // Composed explicitly over `response` (not `{ ...withRating, ...withStale }`) so neither
+    // enrichment's key can be silently dropped if the other one's return shape ever changes —
+    // each helper's own object is only a source of its own field (general review finding).
     if (withRating === response && withStale === response) return response;
-    return { ...withRating, ...withStale };
+    return {
+      ...response,
+      ...(withRating !== response && { caller_rating: withRating.caller_rating }),
+      ...(withStale !== response && { staleness: withStale.staleness }),
+    };
   }
 
   /**
@@ -1121,13 +1128,13 @@ export class WeeklyBriefService {
 
   /**
    * Enriches `getCurrentBrief`'s result with a staleness signal (GH-1966): whether real
-   * committee activity has occurred inside the brief's own window since it was last
-   * generated/edited. No brief or a non-shareable state leave `staleness` absent entirely — a
-   * stricter gate than `withCallerRating`'s (which has no state check of its own). Mock mode,
-   * an unparseable `updated_at`/`window_end`, an inconclusive fetch (see below), or a fetch
-   * fault all resolve to `staleness: null` rather than throwing. This is an honest best-effort
-   * indicator, never a precondition for anything, and must never consume generate/regenerate
-   * quota.
+   * committee activity has occurred for this committee since the brief's text was last
+   * generated/edited — NOT scoped to `brief.window_end` (see the inline comment below for why
+   * that bound made the check a near-total no-op). No brief or a non-shareable state leave
+   * `staleness` absent entirely — a stricter gate than `withCallerRating`'s (which has no state
+   * check of its own). Mock mode, an unparseable `updated_at`, or a fetch fault all resolve to
+   * `staleness: null` rather than throwing. This is an honest best-effort indicator, never a
+   * precondition for anything, and must never consume generate/regenerate quota.
    *
    * Mock mode: `CommitteeActivityService` always calls live upstream (committee/meeting/vote/
    * query-service) — it has no mock-data branch of its own. Comparing that live activity
@@ -1139,29 +1146,29 @@ export class WeeklyBriefService {
     const brief = response.brief;
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) return response;
     if (!live) return { ...response, staleness: null };
-    // Upstream marks NEITHER field Required (confirmed against committee-service's Goa design —
-    // neither carries a `dsl.Required` entry), even though `WeeklyBrief` declares both as
-    // non-optional `string` here — this guard is deliberately stricter than the declared type,
-    // not redundant with it. Without it, an absent `updated_at` would reach
-    // `getCommitteeActivity` as `since: undefined`, silently dropping the lower bound and
-    // returning the most recent activity of ANY age as if it were "since generated" (general
-    // review finding); an absent/unparseable `window_end` would make every event fail the
-    // `<= windowEndMs` filter, silently reporting "not stale" instead of "unknown". Widening
-    // `WeeklyBrief.updated_at`/`.window_end` to optional, so every other reader of this type
-    // (briefWindow-adjacent date logic, `listBriefs`, the card's `weekLabel`) gets the same
-    // guarantee, is a larger, riskier change than this fix — a deliberate, currently untracked
-    // trade-off, not attempted here.
-    const sinceMs = Date.parse(brief.updated_at ?? '');
-    const windowEndMs = Date.parse(brief.window_end ?? '');
-    if (Number.isNaN(sinceMs) || Number.isNaN(windowEndMs)) {
-      // Both raw values in the payload (not just the uid) so an operator can tell which of the
-      // four possible causes (either field missing, either field unparseable) actually tripped
-      // this — timestamps, not PII.
-      logger.warning(req, 'weekly_brief_staleness', 'Brief has an unparseable or missing updated_at/window_end, degrading staleness to null', {
+    // Deliberately NOT bounded by `brief.window_end`. `briefWindow()`'s own doc comment (and
+    // upstream's identical `WeeklyWindow` selection, confirmed against committee-service's Go
+    // source) means `window_end` is the PREVIOUS, already-closed week on 6 of 7 days — a brief
+    // generated today for that closed window already has `updated_at` after `window_end` by
+    // design, every time. Filtering activity to `<= window_end` therefore intersected an
+    // always-empty range on every day but the one (Saturday) a brief happens to be generated for
+    // the still-open current week — making the very first version of this check a near-total
+    // no-op (general review finding, full-branch sweep). What the tooltip already promises, and
+    // what actually reproduces the reported bug, is simpler: any real committee activity for
+    // this committee since the brief's text was last written, full stop — not scoped to which
+    // nominal "week" that activity falls in.
+    //
+    // Upstream marks `updated_at` NOT Required (confirmed against committee-service's Goa design
+    // — no `dsl.Required` entry), even though `WeeklyBrief` declares it non-optional `string`
+    // here — this guard is deliberately stricter than the declared type, not redundant with it.
+    // Without it, an absent `updated_at` would reach `getCommitteeActivity` as `since: undefined`,
+    // silently dropping the lower bound and returning the most recent activity of ANY age as if
+    // it were "since generated" (general review finding).
+    if (Number.isNaN(Date.parse(brief.updated_at ?? ''))) {
+      logger.warning(req, 'weekly_brief_staleness', 'Brief has an unparseable or missing updated_at, degrading staleness to null', {
         committee_id: committeeId,
         brief_uid: brief.uid,
         updated_at: brief.updated_at ?? null,
-        window_end: brief.window_end ?? null,
       });
       return { ...response, staleness: null };
     }
@@ -1172,17 +1179,9 @@ export class WeeklyBriefService {
           limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
         })
       );
-      const inWindow = data.filter((event) => new Date(event.occurred_at).getTime() <= windowEndMs);
-      // getCommitteeActivity sorts descending by occurred_at, so events newer than window_end
-      // (irrelevant to this brief) sort ahead of genuine in-window ones. If the fetch itself
-      // saturated (page_token set) and nothing in-window turned up on this page, real in-window
-      // activity could still be sitting on a page never fetched — reporting a confident `false`
-      // there would be a false negative, not a floor-qualified true. Degrade to "unknown"
-      // instead (general review finding).
-      if (page_token && inWindow.length === 0) return { ...response, staleness: null };
       const staleness: WeeklyBriefStaleness = {
-        stale: inWindow.length > 0,
-        event_count: inWindow.length,
+        stale: data.length > 0,
+        event_count: data.length,
         event_count_is_floor: !!page_token,
       };
       return { ...response, staleness };

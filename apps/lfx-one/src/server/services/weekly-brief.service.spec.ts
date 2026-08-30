@@ -725,15 +725,15 @@ describe('WeeklyBriefService', () => {
       });
     });
 
-    it('excludes events after the brief window_end (a later, unrelated week)', async () => {
+    it('counts activity after brief.window_end as stale too — not scoped to the nominal week (GH-1966 fix: window_end almost always precedes updated_at by design, see briefWindow())', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
       getCommitteeActivityMock.mockResolvedValueOnce({
-        data: [{ type: 'meeting_held', occurred_at: '2026-09-02T10:00:00.000Z' }],
+        data: [{ type: 'meeting_held', occurred_at: '2026-09-02T10:00:00.000Z' }], // after liveBrief.window_end
       });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+      expect(result.staleness).toEqual({ stale: true, event_count: 1, event_count_is_floor: false });
     });
 
     it('marks event_count as a floor when the activity fetch itself paginated', async () => {
@@ -748,22 +748,6 @@ describe('WeeklyBriefService', () => {
       expect(result.staleness?.event_count_is_floor).toBe(true);
     });
 
-    it('reports unknown (null), not a false negative, when the fetch saturated and nothing turned up in-window on this page', async () => {
-      // getCommitteeActivity sorts descending by occurred_at, so if the fetch paginated
-      // (page_token set) and every returned event is newer than window_end, real in-window
-      // activity could still be sitting on a page never fetched — a confident `stale: false`
-      // here would be a false negative, not a floor-qualified true.
-      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
-      getCommitteeActivityMock.mockResolvedValueOnce({
-        data: [{ type: 'meeting_held', occurred_at: '2026-09-02T10:00:00.000Z' }],
-        page_token: 'next-page',
-      });
-
-      const result = await service.getCurrentBrief(req, 'committee-1');
-
-      expect(result.staleness).toBeNull();
-    });
-
     it('degrades to null and logs a warning instead of a silent false-negative "stale: true" when the brief has no updated_at (no lower bound to send upstream)', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, updated_at: undefined }, throttle: null });
 
@@ -772,17 +756,18 @@ describe('WeeklyBriefService', () => {
       expect(result.staleness).toBeNull();
       expect(getCommitteeActivityMock).not.toHaveBeenCalled();
       expect(logger.warning).toHaveBeenCalledTimes(1);
+      expect(logger.warning).toHaveBeenCalledWith(req, 'weekly_brief_staleness', expect.any(String), expect.objectContaining({ updated_at: null }));
     });
 
-    it('degrades to null and logs the offending raw value instead of a silent "stale: false" when the brief has an unparseable window_end', async () => {
-      proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, window_end: 'not-a-date' }, throttle: null });
+    it('degrades to null and logs the offending raw value when the brief has an unparseable updated_at', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, updated_at: 'not-a-date' }, throttle: null });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
       expect(result.staleness).toBeNull();
       expect(getCommitteeActivityMock).not.toHaveBeenCalled();
       expect(logger.warning).toHaveBeenCalledTimes(1);
-      expect(logger.warning).toHaveBeenCalledWith(req, 'weekly_brief_staleness', expect.any(String), expect.objectContaining({ window_end: 'not-a-date' }));
+      expect(logger.warning).toHaveBeenCalledWith(req, 'weekly_brief_staleness', expect.any(String), expect.objectContaining({ updated_at: 'not-a-date' }));
     });
 
     it('degrades to null and logs a warning (not an error) when the activity fetch throws, without failing getCurrentBrief', async () => {
