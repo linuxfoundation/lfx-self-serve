@@ -266,23 +266,23 @@
                 -->
                 <div class="flex flex-col gap-1">
                   <label for="email-type" class="font-mono text-xs uppercase tracking-wide text-gray-400">Email type</label>
-                  <select
+                  <!--
+                    A FORM CONTROL, not a native <select> with `selected` on each option. The raw
+                    control ignored a `[value]` binding applied before its options existed and fell
+                    back to the FIRST option -- CFP Launch -- while the signal held the Main
+                    Registration Push default, so every operator who ignored the selector silently
+                    got CFP copy. A form-driven wrapper has no such ordering hazard, and
+                    `frontend-checklist.md` 14.1 requires it for a changed control.
+                  -->
+                  <lfx-select
+                    [form]="selectorForm"
+                    control="emailType"
+                    [options]="emailTypes"
+                    optionLabel="label"
+                    optionValue="id"
                     id="email-type"
-                    class="w-full max-w-md rounded-md border border-gray-300 px-3 py-2 text-sm"
-                    (change)="onSelectEmailType($any($event.target).value)"
-                    data-testid="campaigns-email-type-select">
-                    <!--
-                      `selected` on the OPTION, not `[value]` on the select. A native <select>
-                      ignores a `value` binding applied before its options exist, so the control
-                      fell back to the FIRST option -- CFP Launch -- while the signal held the
-                      Main Registration Push default. Every operator who ignored the selector
-                      would have silently got CFP copy. Caught in the browser; the unit tests
-                      drove the handler directly and never rendered the control.
-                    -->
-                    @for (t of emailTypes; track t.id) {
-                      <option [value]="t.id" [selected]="t.id === selectedEmailTypeId()">{{ t.label }}</option>
-                    }
-                  </select>
+                    styleClass="w-full max-w-md"
+                    dataTest="campaigns-email-type-select" />
                 </div>
 
                 <div class="flex items-center gap-3">
