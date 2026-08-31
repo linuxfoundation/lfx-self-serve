@@ -26,6 +26,22 @@ export function emailsEqual(a: string | null | undefined, b: string | null | und
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
+// Same shape as EMAIL_REGEX but unanchored + global, so it can find every address embedded in a
+// larger string (e.g. upstream error copy) rather than testing the whole string as one address.
+const EMBEDDED_EMAIL_REGEX = /[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+/g;
+
+/**
+ * Replace every email address embedded in `text` with `[redacted-email]`. Some upstream error
+ * copy (e.g. meeting-invite validation failures) includes the mailbox in the message — this keeps
+ * that text safe to pass to WARN-level logs, which persist in production.
+ */
+export function redactEmailAddresses(text: string | null | undefined): string {
+  if (!text) {
+    return text ?? '';
+  }
+  return text.replace(EMBEDDED_EMAIL_REGEX, '[redacted-email]');
+}
+
 /**
  * True when `value` is the meeting-service "clear the override" sentinel rather than an address.
  * The upstream match is case-insensitive, so mirror that here — callers use this to skip the

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { emailsEqual, isMeetingInvitePrimarySentinel, isValidEmail, parseEmailList } from './email.utils';
+import { emailsEqual, isMeetingInvitePrimarySentinel, isValidEmail, parseEmailList, redactEmailAddresses } from './email.utils';
 
 describe('isValidEmail', () => {
   it('accepts a well-formed address', () => {
@@ -81,6 +81,28 @@ describe('emailsEqual', () => {
     ['', ''],
   ])('returns false when either side is missing (%p, %p)', (a, b) => {
     expect(emailsEqual(a, b)).toBe(false);
+  });
+});
+
+describe('redactEmailAddresses', () => {
+  it('replaces a single embedded address', () => {
+    expect(redactEmailAddresses('alice@example.com is not an active, verified address')).toBe('[redacted-email] is not an active, verified address');
+  });
+
+  it('replaces every address when more than one is embedded', () => {
+    expect(redactEmailAddresses('alice@example.com and bob@example.com both failed')).toBe('[redacted-email] and [redacted-email] both failed');
+  });
+
+  it('leaves text unchanged when no address is present', () => {
+    expect(redactEmailAddresses('something else broke')).toBe('something else broke');
+  });
+
+  it.each([
+    ['', ''],
+    [null, ''],
+    [undefined, ''],
+  ])('returns an empty string for %p', (value, expected) => {
+    expect(redactEmailAddresses(value)).toBe(expected);
   });
 });
 

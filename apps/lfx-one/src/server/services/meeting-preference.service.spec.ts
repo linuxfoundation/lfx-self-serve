@@ -89,6 +89,16 @@ describe('MeetingPreferenceService', () => {
       expect(loggerMock.warning).toHaveBeenCalledWith(req, 'get_meeting_invite_email', expect.any(String), { error: 'v1 lookup failed' });
     });
 
+    it('redacts an address embedded in the upstream error before logging it', async () => {
+      natsRequest.mockResolvedValue(reply({ error: `${ALTERNATE_EMAIL} is not an active, verified address` }));
+
+      await service.getMeetingInviteEmail(req, V1_TOKEN);
+
+      expect(loggerMock.warning).toHaveBeenCalledWith(req, 'get_meeting_invite_email', expect.any(String), {
+        error: '[redacted-email] is not an active, verified address',
+      });
+    });
+
     it('fails open to null when the transport throws', async () => {
       natsRequest.mockRejectedValue(new Error('timeout'));
 
@@ -173,6 +183,21 @@ describe('MeetingPreferenceService', () => {
       });
     });
 
+    // The installed NATS 2.x client reports a real request expiry as a NatsError with an
+    // uppercase `code`/`message` of "TIMEOUT" — must not be misclassified as `upstream` (502).
+    it.each([
+      ['uppercase TIMEOUT message', new Error('TIMEOUT')],
+      ['NatsError-shaped code', Object.assign(new Error('some transport message'), { code: 'TIMEOUT' })],
+    ])('maps a %s to unavailable', async (_label, natsError) => {
+      natsRequest.mockRejectedValue(natsError);
+
+      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
+        success: false,
+        reason: 'unavailable',
+        error: 'Service temporarily unavailable',
+      });
+    });
+
     it('maps any other transport failure to upstream', async () => {
       natsRequest.mockRejectedValue(new Error('connection refused'));
 
@@ -189,7 +214,7 @@ describe('MeetingPreferenceService', () => {
   describe('PII', () => {
     it.each([
       ['success', () => natsRequest.mockResolvedValue(reply({ email_id: 'email-1', email: ALTERNATE_EMAIL }))],
-      ['upstream error', () => natsRequest.mockResolvedValue(reply({ error: 'is not an active, verified address' }))],
+      ['upstream error', () => natsRequest.mockResolvedValue(reply({ error: `${ALTERNATE_EMAIL} is not an active, verified address` }))],
       ['transport failure', () => natsRequest.mockRejectedValue(new Error('timeout'))],
     ])('keeps the raw address out of the logs on %s', async (_label, arrange) => {
       arrange();

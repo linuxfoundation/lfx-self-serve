@@ -4,7 +4,7 @@
 import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import { MeetingInviteEmail, SetMeetingInviteResult } from '@lfx-one/shared/interfaces';
-import { isMeetingInvitePrimarySentinel } from '@lfx-one/shared/utils';
+import { isMeetingInvitePrimarySentinel, redactEmailAddresses } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -47,8 +47,10 @@ export class MeetingPreferenceService {
       const parsed = JSON.parse(codec.decode(response.data));
 
       if (parsed.error) {
+        // Upstream error copy can embed the mailbox (e.g. validation messages) — redact before
+        // it reaches the WARN log, which persists in production.
         logger.warning(req, 'get_meeting_invite_email', 'NATS preferred_email.get returned an error', {
-          error: parsed.error,
+          error: redactEmailAddresses(parsed.error),
         });
         return null;
       }
@@ -90,9 +92,11 @@ export class MeetingPreferenceService {
       const parsed = JSON.parse(codec.decode(response.data));
 
       if (parsed.error) {
-        // Warning-level logs are emitted in production; omit the raw email to avoid persisting PII.
+        // Warning-level logs are emitted in production; redact the address the validation copy
+        // can embed rather than persisting it as PII. The returned `error` stays raw — the
+        // controller substitutes fixed user-facing copy per `reason`, so nothing leaks to the client.
         logger.warning(req, 'set_meeting_invite_email', 'NATS preferred_email.set returned an error', {
-          error: parsed.error,
+          error: redactEmailAddresses(parsed.error),
         });
         return { success: false, reason: this.classifyPreferredEmailError(parsed.error), error: parsed.error };
       }
@@ -104,7 +108,12 @@ export class MeetingPreferenceService {
         err: error,
       });
 
-      if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
+      // The installed NATS 2.x client reports a request expiry as a NatsError with an uppercase
+      // `code`/`message` of "TIMEOUT" — check both, case-insensitively, so a real timeout isn't
+      // misclassified as `upstream` (502) instead of the intended retryable `unavailable` (503).
+      const message = error instanceof Error ? error.message.toLowerCase() : '';
+      const code = String((error as { code?: unknown })?.code ?? '').toUpperCase();
+      if (code === 'TIMEOUT' || message.includes('timeout') || message.includes('503')) {
         return { success: false, reason: 'unavailable', error: 'Service temporarily unavailable' };
       }
 
