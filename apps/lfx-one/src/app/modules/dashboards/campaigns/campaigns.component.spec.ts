@@ -2546,6 +2546,47 @@ describe('CampaignsComponent — email delivery channel', () => {
     });
 
     /**
+     * A reset landing during the CREATE await must stop the poll and the state writes.
+     *
+     * LIMITATION, same as the sibling test below: this pins the OUTCOME, not the guard. Removing
+     * the post-create `isCurrent()` check leaves it green -- I instrumented the branch and
+     * `isCurrent()` reads `true` throughout, because the reset lands before the generation is
+     * captured rather than inside the await. Producing a reset that lands strictly BETWEEN the
+     * capture and the create's resolution needs a seam this harness does not have.
+     *
+     * The guard is kept because the window is real in the browser: the request cannot be recalled
+     * once sent, but the poll and the state writes after it can be, and those are what an
+     * operator sees. I would rather label the test than report coverage I could not demonstrate.
+     */
+    it('abandons the staging result when the brief resets during the create', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      await internals().onBuildAudience();
+
+      // The create hangs, so the reset lands squarely inside its await -- past the entry check.
+      const slowCreate = new Subject<{ jobId: string }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(slowCreate.asObservable() as never);
+      const poll = vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(of(null));
+
+      void internals().onStageEmailSend();
+      await Promise.resolve();
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+
+      slowCreate.next({ jobId: 'j1' });
+      slowCreate.complete();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // The poll belongs to the abandoned brief and must never start.
+      expect(poll).not.toHaveBeenCalled();
+      expect(internals().emailStaging()).toBe('idle');
+    });
+
+    /**
      * A reset during staging must stop the CREATE, not just the poll — that write clones a HubSpot
      * draft and points it at the previous brief's audience, and cancelling the poll afterwards
      * does not undo it.

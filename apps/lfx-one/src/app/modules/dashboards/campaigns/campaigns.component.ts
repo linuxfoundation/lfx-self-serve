@@ -1517,6 +1517,14 @@ export class CampaignsComponent {
       };
 
       const outcome = await firstValueFrom(this.campaignService.createCampaign(request, projectSlug, briefId));
+      // Checked here TOO, not only after the persist above. A reset landing during THIS await
+      // leaves the request already sent -- the draft may well exist upstream -- but everything
+      // after it belongs to the previous brief: the poll would run under the new context and
+      // write `done` or `error` for a job nobody on screen is waiting for. The request cannot be
+      // recalled; the state writes can be, and those are what the operator sees.
+      if (!isCurrent()) {
+        return;
+      }
 
       if (outcome.error) {
         this.emailStaging.set('error');
