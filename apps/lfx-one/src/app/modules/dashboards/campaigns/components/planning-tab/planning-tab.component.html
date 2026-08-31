@@ -394,33 +394,15 @@
           <div class="flex flex-col gap-3" data-testid="planning-email-brief-edit">
             <div class="flex flex-col gap-1">
               <label for="eb-name" class="font-mono text-xs uppercase tracking-wide text-gray-400">Event name</label>
-              <input
-                id="eb-name"
-                type="text"
-                class="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                [value]="emailEditName()"
-                (input)="emailEditName.set($any($event.target).value)"
-                data-testid="planning-email-edit-name" />
+              <lfx-input-text [form]="emailEditForm" control="name" id="eb-name" type="text" dataTest="planning-email-edit-name" />
             </div>
             <div class="flex flex-col gap-1">
               <label for="eb-dates" class="font-mono text-xs uppercase tracking-wide text-gray-400">Dates</label>
-              <input
-                id="eb-dates"
-                type="text"
-                class="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                [value]="emailEditDates()"
-                (input)="emailEditDates.set($any($event.target).value)"
-                data-testid="planning-email-edit-dates" />
+              <lfx-input-text [form]="emailEditForm" control="dates" id="eb-dates" type="text" dataTest="planning-email-edit-dates" />
             </div>
             <div class="flex flex-col gap-1">
               <label for="eb-city" class="font-mono text-xs uppercase tracking-wide text-gray-400">Location</label>
-              <input
-                id="eb-city"
-                type="text"
-                class="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                [value]="emailEditCity()"
-                (input)="emailEditCity.set($any($event.target).value)"
-                data-testid="planning-email-edit-city" />
+              <lfx-input-text [form]="emailEditForm" control="city" id="eb-city" type="text" dataTest="planning-email-edit-city" />
             </div>
             <div class="flex flex-col gap-1">
               <label for="eb-country" class="font-mono text-xs uppercase tracking-wide text-gray-400">Country code</label>
@@ -429,35 +411,15 @@
               empty rather than guessing 'US', which is the honest answer -- but without a field to
               correct it an operator could not build a country-scoped audience at all.
             -->
-              <input
-                id="eb-country"
-                type="text"
-                maxlength="2"
-                placeholder="e.g. KE"
-                class="rounded-md border border-gray-300 px-2 py-1.5 text-sm uppercase"
-                [value]="emailEditCountryCode()"
-                (input)="emailEditCountryCode.set($any($event.target).value)"
-                data-testid="planning-email-edit-country" />
+              <lfx-input-text [form]="emailEditForm" control="countryCode" id="eb-country" type="text" dataTest="planning-email-edit-country" />
             </div>
             <div class="flex flex-col gap-1">
               <label for="eb-aud" class="font-mono text-xs uppercase tracking-wide text-gray-400">Audience</label>
-              <input
-                id="eb-aud"
-                type="text"
-                class="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                [value]="emailEditAudience()"
-                (input)="emailEditAudience.set($any($event.target).value)"
-                data-testid="planning-email-edit-audience" />
+              <lfx-input-text [form]="emailEditForm" control="audience" id="eb-aud" type="text" dataTest="planning-email-edit-audience" />
             </div>
             <div class="flex flex-col gap-1">
               <label for="eb-url" class="font-mono text-xs uppercase tracking-wide text-gray-400">Registration URL</label>
-              <input
-                id="eb-url"
-                type="url"
-                class="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                [value]="emailEditRegistrationUrl()"
-                (input)="emailEditRegistrationUrl.set($any($event.target).value)"
-                data-testid="planning-email-edit-url" />
+              <lfx-input-text [form]="emailEditForm" control="registrationUrl" id="eb-url" type="text" dataTest="planning-email-edit-url" />
             </div>
             <div class="flex items-center gap-2">
               <lfx-button

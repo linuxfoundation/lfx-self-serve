@@ -94,6 +94,11 @@ export class CampaignsComponent {
   protected readonly selectorForm = new FormGroup({
     programType: new FormControl<CampaignProgramType>('events', { nonNullable: true }),
     deliveryType: new FormControl<CampaignDeliveryType>('paid-marketing', { nonNullable: true }),
+    // Same reason as the two above, and it replaces a raw <select>: `frontend-checklist.md` 14.1
+    // makes `lfx-select` mandatory for changed controls, and the wrapper is form-driven. The
+    // native control also needed `selected` on each OPTION, because a `[value]` binding applied
+    // before the options exist is ignored -- a form control has no such ordering hazard.
+    emailType: new FormControl<string>(DEFAULT_CAMPAIGN_EMAIL_TYPE_ID, { nonNullable: true }),
   });
 
   /**
@@ -841,7 +846,10 @@ export class CampaignsComponent {
   );
 
   /** The full type list, for the selector. */
-  protected readonly emailTypes = CAMPAIGN_EMAIL_TYPES;
+  // A mutable COPY for the template. `lfx-select` types `options` as `any[]`, and a readonly
+  // array is not assignable to it -- widening the wrapper's input would relax it for every caller
+  // to satisfy one. The shared constant stays readonly, which is what protects it.
+  protected readonly emailTypes = [...CAMPAIGN_EMAIL_TYPES];
 
   /** The chosen template's id — what `hubspotConfig.sourceEmailId` takes on create. */
   protected readonly selectedEmailTemplateId = signal<string>('');
@@ -1313,6 +1321,13 @@ export class CampaignsComponent {
     // differ: Email has no Optimize (see emailTabs). A shared signal would leave the page on
     // a tab this side does not render after a switch away from Optimize — a blank panel with a
     // tablist that agrees with nothing.
+    // The email-type control drives the existing handler rather than duplicating it: the guard
+    // against a no-op change, the generation bump and the copy reset all live there, and a second
+    // copy of that sequence is one edit away from disagreeing with the first.
+    this.selectorForm.controls.emailType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      this.onSelectEmailType(value);
+    });
+
     this.selectorForm.controls.deliveryType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (value === this.selectedDeliveryType()) {
         return;
