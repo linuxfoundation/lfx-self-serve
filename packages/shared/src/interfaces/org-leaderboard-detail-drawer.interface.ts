@@ -99,7 +99,7 @@ export interface OrgLeaderboardDetailCategoryRow {
   pct: number;
   /** The organization's count, or null for a category with no count to show (membership tier). */
   count: number | null;
-  /** Range-scoped project-wide total, or null when the category has no ratio. */
+  /** Range-scoped denominator, or null when the category has no ratio. Project-wide or foundation-wide by category, as on the figure it maps from. */
   projectTotal: number | null;
   /**
    * True when the project never runs this activity at all — rendered differently from a zero count.

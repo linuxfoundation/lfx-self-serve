@@ -710,7 +710,8 @@ export class OrgLensProjectDetailService {
 
   /**
    * The clicked leaderboard row's score breakdown for one dimension: every scoring category with the
-   * points it contributed, the org's count, the project-wide total behind that count, and its share.
+   * points it contributed, the org's count, and the total that count is measured against — project-wide
+   * for some categories and foundation-wide for others, as the category map below records per category.
    *
    * The categories reconcile to `totalScore` because both come from the same warehouse row — the
    * total is read, never summed here, so the drawer cannot disagree with the board that opened it.
