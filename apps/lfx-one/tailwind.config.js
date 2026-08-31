@@ -36,6 +36,8 @@ export default {
     // Social Listening analytics distribution bars (barClass on MENTION_PLATFORM_CONFIG / MENTION_SENTIMENT_CONFIG)
     ...Object.values(MENTION_PLATFORM_CONFIG).map((c) => c.barClass),
     ...Object.values(MENTION_SENTIMENT_CONFIG).map((c) => c.barClass),
+    // Social Listening mention-card sentiment rail (railClass / textClass on MENTION_SENTIMENT_CONFIG, not scanned here)
+    ...Object.values(MENTION_SENTIMENT_CONFIG).flatMap((c) => [c.railClass, c.textClass]),
     // Stat card grid columns/dividers: `GRID_COLS_CLASS`/`GRID_DIVIDER_CLASS` are defined in
     // @lfx-one/shared (outside `content`), and their responsive/arbitrary utilities need to be
     // scanned directly since they never appear as literal strings inside `content`.
