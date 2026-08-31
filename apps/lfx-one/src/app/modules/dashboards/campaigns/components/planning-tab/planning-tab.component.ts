@@ -1285,6 +1285,13 @@ export class PlanningTabComponent implements OnInit {
             this.hsStatus.set(`Found: ${result.campaign_name} — no UTM token set in HubSpot`);
           } else {
             this.hsNotFound.set(true);
+            // Carried on the NOT-FOUND path too. An ambiguous lookup — a tie, or a match too weak
+            // to apply unattended — deliberately reports found:false while still returning the
+            // candidates it refused to choose between. Dropping them here left the operator with
+            // nothing: no picker, and no Create either, because inconclusive hides that too.
+            // The whole point of refusing to auto-apply is to let a human pick, which requires
+            // the candidates to survive the refusal.
+            this.hsMatches.set(result?.all_matches ?? []);
             // Set from the SAME response that reported the absence, so the two can never
             // disagree about which search they describe.
             // hsCapped gates the CREATE, so it takes the union answer: any reason a match might

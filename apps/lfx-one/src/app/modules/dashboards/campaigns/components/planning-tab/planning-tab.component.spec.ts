@@ -1153,6 +1153,38 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   /**
+   * An AMBIGUOUS lookup must still reach the picker.
+   *
+   * The mapper deliberately reports found:false for a tie or a too-weak match, rather than
+   * applying a token nobody chose — but it returns the candidates it refused to choose between.
+   * Those arrive on the not-found path, which previously dropped them, leaving the operator with
+   * no picker AND no create (inconclusive suppresses that too): a dead end where the one thing
+   * they need, choosing between two named campaigns, was the thing removed.
+   */
+  it('renders the picker for an ambiguous lookup that returned candidates', () => {
+    runLookup({
+      found: false,
+      hs_utm: null,
+      campaign_name: '',
+      all_matches: [
+        { name: 'KubeCon Europe 2026', hs_utm: 'eu-token' },
+        { name: 'KubeCon China 2026', hs_utm: 'cn-token' },
+      ],
+      capped: false,
+      inconclusive: true,
+    });
+
+    const el = fixture.nativeElement as HTMLElement;
+    const picker = el.querySelector('[data-testid="planning-hubspot-matches"]');
+    expect(picker, 'the picker must render when candidates came back').toBeTruthy();
+    expect(picker?.textContent).toContain('KubeCon Europe 2026');
+    expect(picker?.textContent).toContain('KubeCon China 2026');
+    // Create stays suppressed on purpose: one of these may BE this event under another name,
+    // and creating would duplicate it in a namespace shared portal-wide.
+    expect(!!el.querySelector('[data-testid="planning-hubspot-create-btn"]')).toBe(false);
+  });
+
+  /**
    * An unconfirmed create withdraws the create offer, deliberately — the campaign may already
    * exist. That leaves a fresh lookup as the only way to establish what happened, and
    * `lookupHubSpot` returns early while the event is unchanged, so retyping the same url is a
