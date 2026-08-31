@@ -6,10 +6,10 @@
 }
 
 .mention-card {
-  @apply relative rounded-lg border border-gray-200 bg-white shadow-sm transition-all;
+  @apply relative rounded-2xl border border-gray-200 bg-white shadow-sm transition-all;
 
   &:hover {
-    @apply border-gray-400 shadow-md;
+    @apply border-gray-300 shadow-lg;
   }
 
   &--read {
@@ -17,6 +17,8 @@
     @apply bg-gray-50;
   }
 }
+
+// Fixed-width gutter so every card's text column starts at the same x regardless of the sentiment icon's glyph width.
 
 // Stretched link: an invisible anchor covering the entire card, giving native link/keyboard
 // behavior without nesting interactive elements inside it.
@@ -65,7 +67,7 @@
 }
 
 .icon-btn {
-  @apply flex h-6 w-6 cursor-pointer items-center justify-center rounded text-sm text-gray-400 transition-all;
+  @apply flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-gray-400 transition-all;
 
   &:hover {
     @apply bg-gray-100 text-gray-600;

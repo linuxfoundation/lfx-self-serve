@@ -2,23 +2,41 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto flex w-full flex-col gap-4 px-4 sm:px-6 lg:px-8" data-testid="social-listening-page">
-  <div class="flex flex-col gap-1">
-    <h1 class="text-2xl font-semibold text-gray-900" data-testid="social-listening-title">Social Listening</h1>
-    <p class="text-sm text-gray-500" data-testid="social-listening-subtitle">Mentions and sentiment across your foundation's projects.</p>
-  </div>
+  <!-- One sticky stack for both pinned rows: separate stickies need a fixed offset that breaks when the header wraps on narrow screens. z-20 lifts the stack above the cards' stretched-link content (z-10). -->
+  <div class="sticky top-0 z-20 flex flex-col">
+    <div class="social-listening-header flex flex-wrap items-center justify-between gap-3" data-testid="social-listening-header">
+      <div class="flex flex-col gap-1">
+        <h1 class="text-2xl font-semibold text-gray-900" data-testid="social-listening-title">Social Listening</h1>
+        <p class="text-sm text-gray-500" data-testid="social-listening-subtitle">Brand mentions and sentiment across social, forums, and podcasts.</p>
+      </div>
 
-  @if (!hasFoundation()) {
-    <lfx-empty-state
-      icon="fa-light fa-ear-listen"
-      title="Select a foundation"
-      subtitle="Choose a foundation from the sidebar context picker to see its social listening feed."
-      data-testid="social-listening-no-foundation" />
-  } @else {
-    <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="social-listening-card">
-      <!-- Positioning context for the filters panel dropdown (ports PCC's relative wrapper) -->
-      <div class="relative z-20">
+      <!-- Tabs are meaningless without a foundation — the body renders the empty state either way -->
+      @if (hasFoundation()) {
+        <div
+          class="inline-flex items-center gap-1 rounded-full bg-gray-100 p-1"
+          role="group"
+          aria-label="Social listening view"
+          data-testid="social-listening-tabs">
+          @for (tab of tabOptions; track tab.id) {
+            <button
+              type="button"
+              class="cursor-pointer rounded-full border-0 px-4 py-1.5 text-xs font-medium transition-colors"
+              [class]="activeTab() === tab.id ? 'bg-white text-gray-900 shadow-sm' : 'bg-transparent text-gray-500 hover:text-gray-700'"
+              [attr.aria-pressed]="activeTab() === tab.id"
+              [attr.data-testid]="'social-listening-tab-' + tab.id"
+              (click)="onTabSelected(tab.id)">
+              {{ tab.label }}
+            </button>
+          }
+        </div>
+      }
+    </div>
+
+    @if (hasFoundation()) {
+      <!-- Positioning context for the filters panel dropdown -->
+      <div class="social-listening-filter-row">
         <lfx-feed-header
-          [(activeTab)]="activeTab"
+          [activeTab]="activeTab()"
           [(selectedPeriod)]="selectedPeriod"
           [(selectedProject)]="selectedProject"
           [(selectedPlatform)]="selectedPlatform"
@@ -33,7 +51,29 @@
           [exporting]="exporting()"
           [exportDisabled]="analyticsPanelsLoading()"
           (filtersPrefetch)="prefetchFilterOptions()"
-          (exportAnalytics)="onExportAnalytics()" />
+          (exportAnalytics)="onExportAnalytics()">
+          <!-- Views dropdown (feed tab only) — backdrop closes; the panel's own Escape/rows handle keyboard -->
+          @if (viewsOpen() && activeTab() === 'feed') {
+            <ng-container data-views-dropdown>
+              <div class="fixed inset-0 z-10" aria-hidden="true" data-testid="social-listening-views-backdrop" (click)="viewsOpen.set(false)"></div>
+              <lfx-views-dropdown
+                class="absolute right-0 top-full z-20 mt-1 max-sm:right-auto max-sm:left-0"
+                [savedViews]="savedFilters()"
+                [activeViewId]="activeViewId()"
+                [canSaveCurrentView]="canSaveCurrentView()"
+                [atSavedViewLimit]="atSavedViewLimit()"
+                [savedViewLimit]="savedViewLimit"
+                [readOnly]="savedViewsReadOnly()"
+                [isLoading]="savedFiltersLoading()"
+                [deletingViewIds]="deletingViewIds()"
+                (viewSelected)="onViewSelected($event)"
+                (defaultViewSelected)="onDefaultViewSelected()"
+                (viewDeleted)="onSavedViewDeleted($event.id)"
+                (saveCurrentViewRequested)="openSaveDialog()"
+                (close)="viewsOpen.set(false)" />
+            </ng-container>
+          }
+        </lfx-feed-header>
 
         @if (filtersOpen() && activeTab() === 'feed') {
           <lfx-filters-panel
@@ -66,136 +106,132 @@
             (filtersCleared)="clearAllFilters()"
             (saveViewRequested)="openSaveDialog()" />
         }
-
-        <!-- Views dropdown (feed tab only) — backdrop closes; the panel's own Escape/rows handle keyboard -->
-        @if (viewsOpen() && activeTab() === 'feed') {
-          <div class="fixed inset-0 z-10" aria-hidden="true" data-testid="social-listening-views-backdrop" (click)="viewsOpen.set(false)"></div>
-          <lfx-views-dropdown
-            class="absolute right-0 top-full z-20 mt-1"
-            [savedViews]="savedFilters()"
-            [activeViewId]="activeViewId()"
-            [canSaveCurrentView]="canSaveCurrentView()"
-            [atSavedViewLimit]="atSavedViewLimit()"
-            [savedViewLimit]="savedViewLimit"
-            [readOnly]="savedViewsReadOnly()"
-            [isLoading]="savedFiltersLoading()"
-            [deletingViewIds]="deletingViewIds()"
-            (viewSelected)="onViewSelected($event)"
-            (defaultViewSelected)="onDefaultViewSelected()"
-            (viewDeleted)="onSavedViewDeleted($event.id)"
-            (saveCurrentViewRequested)="openSaveDialog()"
-            (close)="viewsOpen.set(false)" />
-        }
       </div>
+    }
+  </div>
 
-      <div class="flex flex-col gap-4 px-5 py-5">
-        <!-- Active-filter summary on BOTH tabs: analytics applies the feed predicate too (M1), so the pills are the only on-tab indication. Click a pill to remove that filter -->
-        @if (activeFilterPills().length > 0) {
-          <div class="flex flex-wrap items-center gap-2" aria-label="Active filters" data-testid="social-listening-filter-pills">
-            <lfx-filter-pills [options]="activeFilterPills()" selectedFilter="" (filterChange)="removeFilterPill($event)" />
+  @if (!hasFoundation()) {
+    <lfx-empty-state
+      icon="fa-light fa-ear-listen"
+      title="Select a foundation"
+      subtitle="Choose a foundation from the sidebar context picker to see its social listening feed."
+      data-testid="social-listening-no-foundation" />
+  } @else {
+    <div class="flex flex-col gap-4">
+      <!-- Active-filter summary on BOTH tabs: analytics applies the feed predicate too (M1), so the pills are the only on-tab indication. Click a pill to remove that filter -->
+      @if (activeFilterPills().length) {
+        <div class="flex flex-wrap items-center gap-2" aria-label="Active filters" data-testid="social-listening-filter-pills">
+          <lfx-filter-pills [options]="activeFilterPills()" selectedFilter="" (filterChange)="removeFilterPill($event)" />
+          <button
+            type="button"
+            class="cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+            data-testid="social-listening-filter-pills-clear-all"
+            (click)="clearAllFilters()">
+            Clear all
+          </button>
+        </div>
+      }
+
+      @if (activeTab() === 'feed') {
+        <p-confirmdialog data-testid="social-listening-confirm-dialog" />
+
+        @if (foreignViewBannerVisible()) {
+          <div
+            class="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800"
+            data-testid="social-listening-foreign-view-banner">
+            <i class="fa-light fa-circle-info flex-shrink-0 text-blue-500"></i>
+            <span class="flex-1">These filters were shared as a preset view — they were saved by the person who shared this link.</span>
+            @if (canSaveCurrentView() && !atSavedViewLimit()) {
+              <button
+                type="button"
+                class="whitespace-nowrap font-medium text-blue-600 underline"
+                data-testid="social-listening-foreign-view-save"
+                (click)="onSaveFromForeignBanner()">
+                Save as my view
+              </button>
+            }
             <button
               type="button"
-              class="cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
-              data-testid="social-listening-filter-pills-clear-all"
-              (click)="clearAllFilters()">
-              Clear all
+              class="ml-1 flex-shrink-0 text-blue-400 hover:text-blue-600"
+              title="Dismiss"
+              aria-label="Dismiss"
+              data-testid="social-listening-foreign-view-dismiss"
+              (click)="dismissForeignViewBanner()">
+              <i class="fa-light fa-xmark"></i>
             </button>
           </div>
         }
 
-        @if (activeTab() === 'feed') {
-          <p-confirmDialog data-testid="social-listening-confirm-dialog" />
-
-          @if (foreignViewBannerVisible()) {
-            <div
-              class="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800"
-              data-testid="social-listening-foreign-view-banner">
-              <i class="fa-light fa-circle-info flex-shrink-0 text-blue-500"></i>
-              <span class="flex-1">These filters were shared as a preset view — they were saved by the person who shared this link.</span>
-              @if (canSaveCurrentView() && !atSavedViewLimit()) {
-                <button
-                  type="button"
-                  class="whitespace-nowrap font-medium text-blue-600 underline"
-                  data-testid="social-listening-foreign-view-save"
-                  (click)="onSaveFromForeignBanner()">
-                  Save as my view
-                </button>
-              }
-              <button
-                type="button"
-                class="ml-1 flex-shrink-0 text-blue-400 hover:text-blue-600"
-                title="Dismiss"
-                aria-label="Dismiss"
-                data-testid="social-listening-foreign-view-dismiss"
-                (click)="dismissForeignViewBanner()">
-                <i class="fa-light fa-xmark"></i>
-              </button>
-            </div>
-          }
-
+        <!-- A failure past the initial load keeps the loaded feed mounted — the list renders an inline retry instead -->
+        @if (loadedCount() === 0) {
           @if (error(); as errorMessage) {
             <lfx-message severity="error" [text]="errorMessage" data-testid="social-listening-error" />
           }
-
-          @if (countError(); as countErrorMessage) {
-            <lfx-message severity="error" [text]="countErrorMessage" data-testid="social-listening-count-error" />
-          }
-
-          @if (readStateError()) {
-            <lfx-message
-              severity="error"
-              text="Your read state could not be loaded, so the unread view is unavailable. Refresh the page and try again."
-              data-testid="social-listening-read-state-error" />
-          }
-
-          @if (bookmarkStateError()) {
-            <lfx-message
-              severity="error"
-              text="Your bookmarks could not be loaded, so the bookmarked view is unavailable. Refresh the page and try again."
-              data-testid="social-listening-bookmark-state-error" />
-          }
-
-          <!-- The list (and its empty state) stays hidden behind an error banner so the two never contradict -->
-          @if (!error() && !readStateError() && !bookmarkStateError()) {
-            <lfx-mentions-list
-              [mentions]="mentions()"
-              [loading]="loading()"
-              [bookmarkedIds]="bookmarkedIds()"
-              [readMentionIds]="readMentionIds()"
-              [unreadView]="selectedReadFilter() === 'unread'"
-              (bookmarkToggled)="onBookmarkToggled($event)"
-              (readToggled)="onReadToggled($event)"
-              (markAllRead)="onMarkAllAsRead()"
-              (markAllUnread)="onMarkAllAsUnread()"
-              [totalMentions]="totalRecords()"
-              [paginatorTotalRecords]="paginatorTotalRecords()"
-              [first]="first()"
-              [rows]="pageSize()"
-              [rowsPerPageOptions]="rowsPerPageOptions"
-              [dataComputedAt]="dataComputedAt()"
-              [timeTick]="timeTick()"
-              [phase2Failed]="phase2Failed()"
-              [countError]="countError() !== null"
-              (pageChange)="onPageChange($event)"
-              (retry)="retryWindow()" />
-          }
-
-          <!-- Octolens data attribution (legal requirement — ported verbatim from PCC) -->
-          <p class="text-center text-xs text-gray-400" data-testid="social-listening-attribution">
-            The social listening data displayed here is provided by Octolens and consists exclusively of publicly available content sourced from third-party
-            platforms across the web. The Linux Foundation does not independently collect, enrich, or modify this data.
-          </p>
-        } @else {
-          <lfx-social-listening-analytics
-            [foundationSlug]="foundationSlug()"
-            [period]="selectedPeriod()"
-            [platform]="selectedPlatform()"
-            [filters]="analyticsFilters()"
-            [exportNonce]="exportNonce()"
-            [(isExporting)]="exporting"
-            [(panelsLoading)]="analyticsPanelsLoading" />
         }
-      </div>
-    </lfx-card>
+
+        @if (countError(); as countErrorMessage) {
+          <lfx-message severity="error" [text]="countErrorMessage" data-testid="social-listening-count-error" />
+        }
+
+        @if (readStateError()) {
+          <lfx-message
+            severity="error"
+            text="Your read state could not be loaded, so the unread view is unavailable. Refresh the page and try again."
+            data-testid="social-listening-read-state-error" />
+        }
+
+        @if (bookmarkStateError()) {
+          <lfx-message
+            severity="error"
+            text="Your bookmarks could not be loaded, so the bookmarked view is unavailable. Refresh the page and try again."
+            data-testid="social-listening-bookmark-state-error" />
+        }
+
+        <!-- The list stays hidden behind a blocking error/state banner so the two never contradict; a Load More failure is non-blocking (rows stay mounted) -->
+        @if ((!error() || loadedCount() > 0) && !readStateError() && !bookmarkStateError()) {
+          <lfx-mentions-list
+            [mentions]="mentions()"
+            [loading]="loading()"
+            [bookmarkedIds]="bookmarkedIds()"
+            [readMentionIds]="readMentionIds()"
+            [unreadView]="selectedReadFilter() === 'unread'"
+            (bookmarkToggled)="onBookmarkToggled($event)"
+            (readToggled)="onReadToggled($event)"
+            (markAllRead)="onMarkAllAsRead()"
+            (markAllUnread)="onMarkAllAsUnread()"
+            [totalMentions]="totalRecords()"
+            [loadedCount]="loadedCount()"
+            [servableTotal]="servableTotal()"
+            [hasMore]="hasMore()"
+            [renderCapped]="renderCapped()"
+            [loadingMore]="loadingMore()"
+            [dataComputedAt]="dataComputedAt()"
+            [timeTick]="timeTick()"
+            [phase2Failed]="phase2Failed()"
+            [loadError]="!!error() && loadedCount() > 0"
+            [countError]="countError() !== null"
+            [countLoading]="countLoading()"
+            (loadMore)="onLoadMore()"
+            (clearFilters)="resetToDefaultViewState()"
+            (retry)="retryWindow()" />
+        }
+
+        <!-- Octolens data attribution (legal requirement — ported verbatim from PCC) -->
+        <p class="text-center text-xs text-gray-400" data-testid="social-listening-attribution">
+          The social listening data displayed here is provided by Octolens and consists exclusively of publicly available content sourced from third-party
+          platforms across the web. The Linux Foundation does not independently collect, enrich, or modify this data.
+        </p>
+      } @else {
+        <lfx-social-listening-analytics
+          [foundationSlug]="foundationSlug()"
+          [period]="selectedPeriod()"
+          [platform]="selectedPlatform()"
+          [filters]="analyticsFilters()"
+          [exportNonce]="exportNonce()"
+          [(isExporting)]="exporting"
+          [(panelsLoading)]="analyticsPanelsLoading"
+          (platformSelected)="onAnalyticsPlatformSelected($event)" />
+      }
+    </div>
   }
 </div>

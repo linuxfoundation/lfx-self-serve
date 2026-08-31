@@ -23,6 +23,7 @@ import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { getStringQueryParam, validateUidParameter } from '../helpers/validation.helper';
+import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { ProjectService } from '../services/project.service';
@@ -38,6 +39,7 @@ export class ProjectController {
   private projectService: ProjectService = new ProjectService();
   // Injected here (not on ProjectService) to avoid circular dependency — mirrors CommitteeController.
   private meetingService: MeetingService = new MeetingService();
+  private committeeService: CommitteeService = new CommitteeService();
 
   /**
    * GET /projects
@@ -55,6 +57,25 @@ export class ProjectController {
       });
 
       res.json(projects);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /projects/slugs
+   */
+  public async getProjectSlugs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_project_slugs');
+
+    try {
+      const slugs = await this.projectService.getProjectSlugs(req);
+
+      logger.success(req, 'get_project_slugs', startTime, {
+        slug_count: slugs.length,
+      });
+
+      res.json(slugs);
     } catch (error) {
       next(error);
     }
@@ -990,7 +1011,7 @@ export class ProjectController {
       const projectUid = await this.resolveProjectIdentifier(req, id);
       const query = committeeUid ? { tags_all: [`project_uid:${projectUid}`, `committee_uid:${committeeUid}`] } : { tags: `project_uid:${projectUid}` };
 
-      const [upcoming, past, project] = await Promise.all([
+      const [upcoming, past, project, publicCommitteeUids] = await Promise.all([
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_meeting', false)),
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
         // Project metadata only feeds the page header — degrade gracefully rather than failing the whole
@@ -1002,7 +1023,23 @@ export class ProjectController {
           });
           return undefined;
         }),
+        this.getPublicCommitteeUids(req, projectUid),
       ]);
+
+      // A committee the public directory does not list is not a valid filter here. Serving it would let an
+      // anonymous caller confirm which meetings belong to a non-public group, which is the correlation the
+      // UID projection below is meant to prevent — so answer as though the group simply has no meetings.
+      if (committeeUid && !publicCommitteeUids.has(committeeUid)) {
+        logger.success(req, 'get_project_meetings', startTime, {
+          project_id: id,
+          committee_uid: committeeUid,
+          meeting_count: 0,
+          rejected_non_public_committee: true,
+        });
+        res.setHeader('Cache-Control', 'public, max-age=300');
+        res.json({ meetings: [], total: 0, project: { uid: projectUid, name: project?.name ?? '' } } satisfies PublicProjectMeetingsResponse);
+        return;
+      }
 
       // Filter PRIVATE meetings from the public feed. Restricted (invited-guests-only) public meetings are
       // still listed so their existence is discoverable; join authorization is enforced separately at join time.
@@ -1011,7 +1048,7 @@ export class ProjectController {
       // must stay out of the payload even as new Meeting fields land upstream (LFXV2-2802).
       const meetings: PublicCalendarMeeting[] = [...upcoming, ...past]
         .filter((m) => m.visibility === MeetingVisibility.PUBLIC)
-        .map((m) => this.toPublicCalendarMeeting(m));
+        .map((m) => this.toPublicCalendarMeeting(m, publicCommitteeUids));
       const response: PublicProjectMeetingsResponse = {
         meetings,
         total: meetings.length,
@@ -1108,11 +1145,32 @@ export class ProjectController {
   }
 
   /**
+   * UIDs of this project's committees that the public group directory lists — the same `public` filter
+   * `getPublicGroupsByProject` applies, so the two surfaces cannot disagree on what is publicly visible.
+   *
+   * Fails closed: a committee-service error yields an empty set, so the feed degrades to an unlabelled
+   * calendar rather than falling back to publishing every association. The directory powering the client's
+   * labels comes from the same service, so it is unavailable in that window too.
+   */
+  private async getPublicCommitteeUids(req: Request, projectUid: string): Promise<ReadonlySet<string>> {
+    try {
+      const committees = await this.committeeService.getCommittees(req, { tags: `project_uid:${projectUid}` }, { skipMailingListEnrichment: true });
+      return new Set(committees.filter((committee) => committee.public && committee.uid).map((committee) => committee.uid));
+    } catch (error) {
+      logger.warning(req, 'get_project_meetings', 'Public committee lookup failed; serving the calendar without group attribution', {
+        project_uid: projectUid,
+        err: error,
+      });
+      return new Set<string>();
+    }
+  }
+
+  /**
    * Projects an indexed `v1_meeting` / `v1_past_meeting` record onto the credential-free shape served
    * by `GET /public/api/projects/:id/meetings`. Field-by-field allowlist, deliberately not a spread with
    * deletes — anything not named here can never reach an anonymous caller.
    */
-  private toPublicCalendarMeeting(meeting: Meeting | PastMeeting): PublicCalendarMeeting {
+  private toPublicCalendarMeeting(meeting: Meeting | PastMeeting, publicCommitteeUids: ReadonlySet<string>): PublicCalendarMeeting {
     const pastRow = meeting as Partial<PastMeeting>;
     return {
       id: meeting.id,
@@ -1131,6 +1189,14 @@ export class ProjectController {
       cancelled_occurrences: meeting.cancelled_occurrences,
       scheduled_start_time: pastRow.scheduled_start_time,
       meeting_and_occurrence_id: pastRow.meeting_and_occurrence_id,
+      // Restricted to committees the public group directory lists, and UIDs only. A PUBLIC meeting can be
+      // associated with a non-public committee; publishing that committee's UID would let an anonymous
+      // caller correlate meetings by a group the directory deliberately hides, and its name would put a
+      // hidden group's label on the feed. Clients label from the directory, so a filtered UID would have
+      // been unusable to them anyway.
+      committee_uids: [
+        ...new Set((meeting.committees ?? []).map((committee) => committee.uid).filter((uid): uid is string => !!uid && publicCommitteeUids.has(uid))),
+      ],
     };
   }
 }

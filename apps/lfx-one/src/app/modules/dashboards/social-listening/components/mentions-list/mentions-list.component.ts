@@ -1,12 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser } from '@angular/common';
-import { Component, computed, ElementRef, inject, input, output, PLATFORM_ID, Signal, viewChild } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { Component, computed, input, output, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
-import { DEFAULT_MENTION_PAGE_SIZE, MENTION_PAGE_SIZE_OPTIONS } from '@lfx-one/shared/constants';
 import { SkeletonModule } from 'primeng/skeleton';
 
 import type { Mention } from '@lfx-one/shared/interfaces';
@@ -14,8 +13,8 @@ import type { Mention } from '@lfx-one/shared/interfaces';
 import { MentionCardComponent } from '../mention-card/mention-card.component';
 
 /**
- * The Social Listening feed list (LFXV2-3016): one `lfx-mention-card` per row inside a lazy
- * `lfx-table`; the page feeds the current window slice, `totalRecords` comes from the count endpoint.
+ * The Social Listening feed list (LFXV2-3016): one `lfx-mention-card` per row inside a paginator-less
+ * `lfx-table`; the page feeds the cumulative loaded rows and a Load More footer advances the feed.
  */
 @Component({
   selector: 'lfx-mentions-list',
@@ -24,24 +23,30 @@ import { MentionCardComponent } from '../mention-card/mention-card.component';
   styleUrl: './mentions-list.component.scss',
 })
 export class MentionsListComponent {
-  private readonly platformId = inject(PLATFORM_ID);
-
   public readonly mentions = input<Mention[]>([]);
   public readonly loading = input(false);
   public readonly totalMentions = input(0);
-  /** Paginator-navigable total — the page caps this at the server's deepest servable offset; `totalMentions` keeps the true count. */
-  public readonly paginatorTotalRecords = input(0);
-  public readonly first = input(0);
-  public readonly rows = input(DEFAULT_MENTION_PAGE_SIZE);
-  public readonly rowsPerPageOptions = input<number[]>(MENTION_PAGE_SIZE_OPTIONS);
+  /** Rows rendered so far — the Load More footer reports it against `servableTotal`. */
+  public readonly loadedCount = input(0);
+  /** Reachable total — the page caps this at the server's deepest servable offset; `totalMentions` keeps the true count. */
+  public readonly servableTotal = input(0);
+  public readonly hasMore = input(false);
+  /** A Load More fetch is in flight — the footer spins while the loaded rows stay on screen. */
+  public readonly loadingMore = input(false);
+  /** Rendered rows hit MENTION_FEED_RENDER_LIMIT with more still servable — the footer swaps the button for a refine note. */
+  public readonly renderCapped = input(false);
   /** "Data as of" watermark — the feed response's `computedAt`, converted to a Date by the page. */
   public readonly dataComputedAt = input<Date | null>(null);
   /** Shared relative-time heartbeat from the page, passed through to each card. */
   public readonly timeTick = input(0);
   /** Current window's background fill failed past its auto-retry — the empty state swaps to a retry row. */
   public readonly phase2Failed = input(false);
-  /** Count endpoint failed while the feed has rows — keeps the paginator visible so the user isn't stranded. */
+  /** A Load More window fetch failed with rows on screen — the list stays mounted and offers an inline retry. */
+  public readonly loadError = input(false);
+  /** Count endpoint failed while the feed has rows — keeps the Load More footer visible so the user isn't stranded. */
   public readonly countError = input(false);
+  /** Count request still in flight — the footer label reports only the rendered rows until the total lands. */
+  public readonly countLoading = input(false);
   /** Bookmarked mention IDs for the current foundation (LFXV2-3002 Block 1) — decorates each card's bookmark toggle. */
   public readonly bookmarkedIds = input<Set<string>>(new Set());
   /** Read mention IDs for the current foundation (LFXV2-3002 Block 2) — decorates each card's read toggle. */
@@ -49,7 +54,9 @@ export class MentionsListComponent {
   /** Unread view — selects the "all caught up" empty state variant. Totals stay visible: the server returns the exact unread count. */
   public readonly unreadView = input(false);
 
-  public readonly pageChange = output<{ page: number; rows: number }>();
+  public readonly loadMore = output<void>();
+  /** Empty-state escape hatch — the page owns the reset via resetToDefaultViewState() (scope + filters). */
+  public readonly clearFilters = output<void>();
   /** Manual retry of a phase-2-failed window. */
   public readonly retry = output<void>();
   /** Re-emitted card toggle — the page owns the write via MentionBookmarkService. */
@@ -62,13 +69,18 @@ export class MentionsListComponent {
 
   public readonly isBookmarkedFn: Signal<(id: string) => boolean> = this.initIsBookmarkedFn();
   public readonly isReadFn: Signal<(id: string) => boolean> = this.initIsReadFn();
-
-  private readonly listContainer = viewChild<ElementRef<HTMLElement>>('listContainer');
-
-  protected onTablePage(event: { first: number; rows: number }): void {
-    this.pageChange.emit({ page: event.rows > 0 ? Math.floor(event.first / event.rows) : 0, rows: event.rows });
-    this.scrollListIntoView();
-  }
+  /** Load More footer visibility — gated on a landed row so an early advance can't cancel the in-flight window-0 fetch. */
+  public readonly showLoadMore = computed(() => this.hasMore() && this.loadedCount() > 0 && !this.phase2Failed() && !this.loadError());
+  /** Exhausted feed with rows on screen — the count persists below the feed; the servable-total gate keeps an in-flight count from flashing a bogus "of 0" total. */
+  public readonly showExhaustedCount = computed(
+    () => !this.showLoadMore() && !this.renderCapped() && this.loadedCount() > 0 && this.servableTotal() > 0 && !this.phase2Failed() && !this.loadError()
+  );
+  /** Running-count label shared by the Load More and exhausted footers — a failed or in-flight count drops the total rather than inventing one. */
+  public readonly showingLabel = computed(() => {
+    const count = this.loadedCount();
+    const noun = count === 1 ? 'mention' : 'mentions';
+    return this.countError() || this.countLoading() ? `Showing ${count} ${noun}` : `Showing ${count} of ${this.servableTotal()} ${noun}`;
+  });
 
   /** Per-card bookmark lookup (PCC port): one computed over the input set, not a per-row method call. */
   private initIsBookmarkedFn(): Signal<(id: string) => boolean> {
@@ -84,16 +96,5 @@ export class MentionsListComponent {
       const ids = this.readMentionIds();
       return (id: string) => ids.has(id);
     });
-  }
-
-  // Scrolls the list, not the window — paging shouldn't yank the user past the page header.
-  private scrollListIntoView(): void {
-    if (!isPlatformBrowser(this.platformId)) {
-      return;
-    }
-
-    const container = this.listContainer()?.nativeElement;
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    container?.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
   }
 }

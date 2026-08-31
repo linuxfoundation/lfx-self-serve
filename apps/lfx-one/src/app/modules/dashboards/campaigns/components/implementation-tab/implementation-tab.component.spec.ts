@@ -199,6 +199,41 @@ describe('ImplementationTabComponent submit gate', () => {
 
     expect(canSubmit()).toBe(true);
   });
+
+  /**
+   * `applyDraft` runs under `untracked` during mount, so it reads `demandGenEnabled` once.
+   * If the tab mounts while the request is pending (`null`), it preserves the draft's
+   * `includeDemandGen: true`. A later `false` hides the checkbox but `applyDraft` does not
+   * re-run — so without this guard a hidden `true` would still satisfy the "Google needs at
+   * least one sub-type" check and let the user submit with `demand-gen` silently appended.
+   */
+  it('blocks submit when Google is selected with only a hidden DemandGen checked', async () => {
+    const c = fixture.componentInstance as unknown as {
+      selectedPlatforms: { set(v: string[]): void };
+      campaignForm: {
+        controls: Record<string, { setValue(v: unknown): void }>;
+        get(name: string): { controls: { setValue(v: unknown): void }[] } | null;
+      };
+    };
+    c.selectedPlatforms.set(['google-ads']);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    c.campaignForm.controls['includeSearch'].setValue(false);
+    // DemandGen is checked in the form (draft restored before capability arrived)
+    c.campaignForm.controls['includeDemandGen'].setValue(true);
+    c.campaignForm.get('headlines')?.controls.forEach((ctrl) => ctrl.setValue('Attend KubeCon'));
+    c.campaignForm.get('descriptions')?.controls.forEach((ctrl) => ctrl.setValue('Join us in September'));
+    fixture.detectChanges();
+
+    // Capability now resolves to false — the checkbox is hidden.
+    fixture.componentRef.setInput('demandGenEnabled', false);
+    fixture.detectChanges();
+
+    // A hidden DemandGen must not satisfy the "at least one Google sub-type" requirement.
+    expect(canSubmit()).toBe(false);
+  });
 });
 
 /**
@@ -3171,6 +3206,157 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
    * the control at all, and one that only read `demandGenEnabled()` would pass against a template
    * that ignores it entirely.
    */
+  /**
+   * The gate that actually keeps `demand-gen` off the wire.
+   *
+   * Hiding the checkbox is not sufficient on its own: `applyDraft` runs once at mount under
+   * `untracked`, so a tab that mounts while the capability is still `null` restores
+   * `includeDemandGen: true` onto the form. When the capability later resolves `false` the
+   * control disappears, but the FORM value remains true — and `submit` builds `campaignTypes`
+   * from the form, not from the input. Without this gate a create carrying `demand-gen` reaches
+   * a server that refuses it, and the user gets an error for a control they cannot see.
+   *
+   * Asserted on `canSubmit` rather than by driving `submit`, because reaching the builder needs
+   * a fully valid Google form (headlines, descriptions, budget) and that scaffolding would test
+   * the validators rather than this gate.
+   *
+   * The matching guard in the request builder is pinned separately, by `sends only search when a
+   * hidden Demand Gen selection accompanies Search` below — which reaches `submit()` with
+   * `canSubmit()` true and asserts the payload. That distinction matters: `canSubmit` only
+   * rejects Google with NEITHER type selected, so it does not cover Search plus a stale hidden
+   * Demand Gen, and the builder guard is the only thing keeping that off the wire.
+   */
+  it('does not treat a hidden Demand Gen selection as a submittable Google campaign', () => {
+    fixture.componentRef.setInput('demandGenEnabled', false);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    // Exactly the state a draft restore leaves behind: Demand Gen ticked, Search not, and the
+    // control hidden. Search alone would be submittable; a hidden Demand Gen alone must not be.
+    c['campaignForm'].patchValue({
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://example.com',
+      startDate: '2026-09-01',
+      endDate: '2026-09-30',
+      includeSearch: false,
+      includeDemandGen: true,
+    });
+    fixture.detectChanges();
+
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The generated campaign name must describe the request that will actually be sent.
+   *
+   * The preview reads the same form value the builder does, so a hidden `includeDemandGen: true`
+   * would render `Multi` while the request carries only `search` — naming a campaign that will
+   * not be created, in a name operators use to find it in the ad platform later.
+   */
+  it('previews a Search-only name when a hidden Demand Gen selection cannot be created', () => {
+    fixture.componentRef.setInput('demandGenEnabled', false);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    c['campaignForm'].patchValue({ includeSearch: true, includeDemandGen: true });
+    fixture.detectChanges();
+
+    // `Multi` is what the raw form value would produce; `Search` is what will be created.
+    expect(c['campaignName']()).toContain('| Search |');
+    expect(c['campaignName']()).not.toContain('| Multi |');
+  });
+
+  /**
+   * The preview must follow the capability, not just the form.
+   *
+   * `campaignName` is `toSignal` over `valueChanges`, so a signal read inside its `map` is NOT a
+   * reactive dependency — it re-evaluates only when the form changes. Gating the preview on the
+   * capability therefore froze it at whatever the capability was AT MOUNT: a tab that mounts with
+   * the capability still `null` previews Search, and a later `true` leaves the name saying Search
+   * while submit sends `demand-gen`.
+   */
+  it('updates the previewed name when the capability arrives after mount', () => {
+    fixture.componentRef.setInput('demandGenEnabled', null);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    c['campaignForm'].patchValue({ includeSearch: true, includeDemandGen: true });
+    fixture.detectChanges();
+    expect(c['campaignName']()).toContain('| Search |');
+
+    // The capability resolves AFTER mount, with no further form edit.
+    fixture.componentRef.setInput('demandGenEnabled', true);
+    fixture.detectChanges();
+
+    expect(c['campaignName']()).toContain('| Multi |');
+  });
+
+  /**
+   * The WIRE guard, reached with `canSubmit` passing — the case I previously and wrongly said
+   * `canSubmit` covered.
+   *
+   * It does not. `canSubmit` only rejects Google with NEITHER type selected; with Search also
+   * ticked it passes, and `campaignTypes.push('demand-gen')` at the builder is then the only
+   * thing keeping the hidden selection off the request. Deleting that line left the suite green.
+   *
+   * Search + a stale hidden Demand Gen is the ordinary shape of this bug: a draft saved when the
+   * capability was on, restored on a deployment where it is off.
+   */
+  it('sends only search when a hidden Demand Gen selection accompanies Search', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j-1' }));
+
+    // `null` AT MOUNT, so `applyDraft` PRESERVES the draft's `true` — the clear at :1636 fires
+    // only on an explicit `false`. This is the one sequence that puts a hidden `true` on the
+    // form, and therefore the only one the wire guard can be reached through.
+    fixture.componentRef.setInput('demandGenEnabled', null);
+    fixture.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://example.com',
+      includeSearch: true,
+      includeDemandGen: true,
+      budgetUsd: 500,
+      startDate: '2026-09-01',
+      endDate: '2026-09-30',
+      headlines: ['Join us at KubeCon'],
+      descriptions: ['Register today for KubeCon EU 2026.'],
+    } as unknown as CampaignImplementationDraft);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+
+    // The capability now resolves OFF. The control disappears; the form value does not change.
+    fixture.componentRef.setInput('demandGenEnabled', false);
+    fixture.detectChanges();
+
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    // The form really is submittable — otherwise this would pass without reaching the builder.
+    expect(c['canSubmit']()).toBe(true);
+    // The hidden `true` the wire guard exists for. If this were already false the guard would
+    // have nothing to guard and the test would pass against its deletion.
+    expect(c['campaignForm'].controls['includeDemandGen'].value).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(createCampaign).toHaveBeenCalled();
+    expect(createCampaign.mock.calls[0][0].campaignTypes).toEqual(['search']);
+  });
+
   it('hides the Demand Gen control when the deployment cannot create it', () => {
     fixture.componentRef.setInput('demandGenEnabled', false);
     fixture.detectChanges();

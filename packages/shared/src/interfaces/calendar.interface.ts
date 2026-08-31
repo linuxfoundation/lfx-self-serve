@@ -3,6 +3,8 @@
 
 import { EventInput } from '@fullcalendar/core';
 
+import type { GroupBehavioralClass } from './committee.interface';
+
 /** FullCalendar hex colors for event background and border. */
 export interface CalendarColorPair {
   bg: string;
@@ -25,6 +27,33 @@ export interface MeetingCalendarClickProps {
   pastMeetingResourceId?: string;
   voteId?: string;
   surveyId?: string;
+}
+
+/** A publicly listed group, resolved from the public group directory and keyed by committee UID. */
+export interface PublicCalendarCommittee {
+  uid: string;
+  /** Display name from the public group directory — safe to render, unlike the raw meeting association. */
+  name: string;
+  /** Behavioral class driving the event color; shared with the public group directory's taxonomy. */
+  behavioralClass: GroupBehavioralClass;
+}
+
+/** One swatch in a calendar color legend — the text counterpart to color-coded events. */
+export interface CalendarLegendItem {
+  label: string;
+  /** Hex fill matching the events it describes. */
+  color: string;
+}
+
+/** Committee context passed to `publicMeetingToCalendarEvents` for labelling and color-coding. */
+export interface PublicCalendarCommitteeContext {
+  /**
+   * Committee UID currently selected via `?committee=`. Disambiguates meetings tied to several
+   * committees, and suppresses the per-event label that every event would otherwise repeat.
+   */
+  activeCommitteeUid?: string;
+  /** Publicly listed committees by UID. Meetings whose committees are absent fall back to default styling. */
+  committeesByUid?: Record<string, PublicCalendarCommittee>;
 }
 
 /**
