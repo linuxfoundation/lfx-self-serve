@@ -403,6 +403,16 @@ export class OrgRoleGrantsService {
       )
     );
 
+    // Total-failure fail-closed: if EVERY chunk rejected, propagate so the caller sets
+    // `upstreamFailed: true` — otherwise `computeAccessAwareOrgs` would cache an empty grant
+    // list as successful for the ~30s TTL and hide a live outage from every caller that hits it.
+    // Partial failures still degrade (some chunks land, some are lost) since a caller with
+    // 400/500 grants shouldn't lose their entire session over one flaky chunk.
+    const rejected = settled.filter((result) => result.status === 'rejected');
+    if (rejected.length === settled.length) {
+      throw new Error(`fetchOrgDetailsByUids: every chunk failed (${rejected.length}/${settled.length}); refusing to cache empty result`);
+    }
+
     const map = new Map<string, B2bOrgIndexedDoc>();
     for (const result of settled) {
       if (result.status === 'rejected') {

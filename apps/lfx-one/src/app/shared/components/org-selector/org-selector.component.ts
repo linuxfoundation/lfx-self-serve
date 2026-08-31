@@ -43,6 +43,15 @@ export class OrgSelectorComponent {
   private keyDownListener: ((event: KeyboardEvent) => void) | null = null;
 
   /**
+   * Companion keyup listener paired with `keyDownListener`. Native buttons fire their `click`
+   * event on `keydown` for Enter but on `keyup` for Space (WHATWG HTML §"keyboard activation"),
+   * so a Space focus-restore queued on `keydown` runs BEFORE the button's native click, cancels
+   * the pending activation, and leaves the panel open on `body`. The Space branch is handled
+   * here — after the native click has already fired — instead.
+   */
+  private keyUpListener: ((event: KeyboardEvent) => void) | null = null;
+
+  /**
    * True from `onPopoverShow` (non-staff branch) until `focusInitialOption` successfully places
    * focus on a row. When the panel opens before the first item batch arrives (`/api/nav/org-items`
    * is async), the initial microtask in `focusInitialOption` sees an empty listbox and no-ops;
@@ -284,15 +293,23 @@ export class OrgSelectorComponent {
    * bubble to a host listener).
    */
   private attachKeyboardHandler(): void {
-    if (!isPlatformBrowser(this.platformId) || this.keyDownListener) return;
+    if (!isPlatformBrowser(this.platformId) || this.keyDownListener || this.keyUpListener) return;
     this.keyDownListener = (event: KeyboardEvent) => this.handleKeyDown(event);
+    this.keyUpListener = (event: KeyboardEvent) => this.handleKeyUp(event);
     document.addEventListener('keydown', this.keyDownListener);
+    document.addEventListener('keyup', this.keyUpListener);
   }
 
   private detachKeyboardHandler(): void {
-    if (!isPlatformBrowser(this.platformId) || !this.keyDownListener) return;
-    document.removeEventListener('keydown', this.keyDownListener);
-    this.keyDownListener = null;
+    if (!isPlatformBrowser(this.platformId)) return;
+    if (this.keyDownListener) {
+      document.removeEventListener('keydown', this.keyDownListener);
+      this.keyDownListener = null;
+    }
+    if (this.keyUpListener) {
+      document.removeEventListener('keyup', this.keyUpListener);
+      this.keyUpListener = null;
+    }
   }
 
   private handleKeyDown(event: KeyboardEvent): void {
@@ -349,19 +366,33 @@ export class OrgSelectorComponent {
         this.moveFocusTo(options, options.length - 1);
         return;
       case 'Enter':
-      case ' ':
-      case 'Spacebar':
-        // Native button behavior fires a click on the focused row (both Enter and Space activate
-        // a `role="option"` button), which invokes `selectItem` and hides the popover. No
-        // `preventDefault` / imperative `.click()` here — that combination double-fires under
-        // zone.js. The row is about to leave the DOM, so schedule the focus restore in a
-        // microtask: it lands after the click has processed and matches Escape's contract
-        // (focus returns to the combobox trigger, WAI-ARIA APG).
+        // Native button behavior fires a click on `keydown` for Enter (WHATWG HTML), which
+        // invokes `selectItem` and hides the popover. No `preventDefault` / imperative `.click()`
+        // here — that combination double-fires under zone.js. The row is about to leave the DOM,
+        // so schedule the focus restore in a microtask: it lands after the click has processed
+        // and matches Escape's contract (focus returns to the combobox trigger, WAI-ARIA APG).
         queueMicrotask(() => this.triggerRef()?.nativeElement.focus());
         return;
       default:
+        // Space is intentionally NOT handled here — native `<button>` activation for Space fires
+        // on `keyup`, so any focus-restore queued on `keydown` would run BEFORE the click and
+        // cancel the pending activation. See `handleKeyUp`.
         return;
     }
+  }
+
+  /**
+   * Space is dispatched to a native `<button>` click on keyup — running the focus restore here
+   * (rather than on keydown) guarantees the click has already fired and `selectItem` has
+   * completed before focus leaves the row.
+   */
+  private handleKeyUp(event: KeyboardEvent): void {
+    if (!this.isPanelOpen()) return;
+    if (!this.isEventInsidePanel(event)) return;
+    if (event.key !== ' ' && event.key !== 'Spacebar') return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || target.getAttribute('role') !== 'option') return;
+    queueMicrotask(() => this.triggerRef()?.nativeElement.focus());
   }
 
   /**

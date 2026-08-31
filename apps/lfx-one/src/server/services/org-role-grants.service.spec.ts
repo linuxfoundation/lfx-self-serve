@@ -309,6 +309,30 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
     expect(result.upstreamFailed).toBe(false);
     expect(result.orgDocByUid.size).toBe(CHUNK_SIZE);
   });
+
+  it('fails closed when EVERY details chunk rejects — refuses to cache an empty grant list as success', async () => {
+    checkSingleAccess.mockResolvedValue(false);
+    const orgUids = Array.from({ length: CHUNK_SIZE + 1 }, (_, i) => `org-${i.toString().padStart(4, '0')}`);
+    proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, _method: unknown, params?: Record<string, unknown>) => {
+      const type = params ? (params as { type?: string }).type : undefined;
+      if (type === 'b2b_org_settings') {
+        return { resources: orgUids.map(makeSettingsResource) };
+      }
+      if (type === 'b2b_org') {
+        throw new Error('every chunk down');
+      }
+      return { resources: [] };
+    });
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    // Total upstream failure MUST NOT cache an empty result as successful — a caller with 101
+    // grants would silently see "no orgs" for the entire TTL window. The service must set
+    // `upstreamFailed: true` so the caller's cache skips the poison entry and the switcher
+    // renders the "search unavailable" state on the next attempt.
+    expect(result.upstreamFailed).toBe(true);
+    expect(setJson).not.toHaveBeenCalled();
+  });
 });
 
 describe('OrgRoleGrantsService — isStaff cache round trip', () => {
