@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
+import type {
   GroupsIOServiceStatus,
   GroupsIOServiceType,
   MailingListAudienceAccess,
@@ -10,8 +10,8 @@ import {
   MailingListMemberType,
   MailingListType,
 } from '../enums/mailing-list.enum';
-import { CommitteeReference } from './committee.interface';
-import { UserInfo } from './project.interface';
+import type { CommitteeReference } from './committee.interface';
+import type { UserInfo } from './project.interface';
 
 /**
  * Linked group reference for mailing lists
@@ -297,4 +297,18 @@ export interface UpdateMailingListMemberRequest {
   delivery_mode?: MailingListMemberDeliveryMode;
   /** Moderation status */
   mod_status?: MailingListMemberModStatus;
+}
+
+/**
+ * A mailing-list-table row decorated with template-friendly link state (mirrors
+ * `CommitteeTableRowVm`): the entity fields pass through untouched, and the canonical view
+ * router commands + `?project=` params are pre-computed once per input change instead of per
+ * change-detection cycle (angular-reactive-data §3.5). `viewCommands` already contains the
+ * flat `/mailing-lists/:uid` fallback when the row carries no `is_foundation`, so the template
+ * never branches (GH-1567).
+ */
+export interface MailingListTableRowVm extends GroupsIOMailingList {
+  viewCommands: string[];
+  /** `?project=` for the view link — present only when the list carries a `project_slug`. */
+  linkQueryParams: { project: string } | null;
 }

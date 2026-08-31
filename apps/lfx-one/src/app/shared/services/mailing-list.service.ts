@@ -14,7 +14,8 @@ import {
   QueryServiceCountResponse,
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of } from 'rxjs';
+import { MAILING_LIST_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
+import { catchError, map, Observable, of, shareReplay, tap } from 'rxjs';
 
 /**
  * Service for managing mailing list data
@@ -26,6 +27,7 @@ import { catchError, map, Observable, of } from 'rxjs';
 export class MailingListService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = '/api/mailing-lists';
+  private readonly mailingListDetailCache = new Map<string, { observable: Observable<GroupsIOMailingList>; cachedAt: number }>();
 
   public getMailingListsByProject(projectUid: string): Observable<GroupsIOMailingList[]> {
     const params = new HttpParams().set('tags', `project_uid:${projectUid}`);
@@ -45,8 +47,28 @@ export class MailingListService {
     return this.http.get<MyMailingList[]>(`${this.baseUrl}/my-mailing-lists`).pipe(catchError(() => of([])));
   }
 
-  public getMailingList(uid: string): Observable<GroupsIOMailingList> {
-    return this.http.get<GroupsIOMailingList>(`${this.baseUrl}/${uid}`);
+  /**
+   * Mailing-list detail fetch with a short-TTL shared cache: the writerGuard entity probe and
+   * MailingListManageComponent's initMailingList both need the same payload within one
+   * navigation — sharing the request avoids a duplicate fetch on every edit-page load.
+   * Probe-friendly: no side effects. Entries evict on error and on write (updateMailingList).
+   * Pass `skipCache` to force a fresh fetch. Mirrors getMeetingDetail / fetchCommittee (GH-1567).
+   */
+  public getMailingList(uid: string, options?: { skipCache?: boolean }): Observable<GroupsIOMailingList> {
+    const cached = this.mailingListDetailCache.get(uid);
+    if (!options?.skipCache && cached && Date.now() - cached.cachedAt < MAILING_LIST_DETAIL_CACHE_TTL_MS) {
+      return cached.observable;
+    }
+    if (cached) {
+      this.mailingListDetailCache.delete(uid);
+    }
+    const request$ = this.http.get<GroupsIOMailingList>(`${this.baseUrl}/${uid}`).pipe(
+      tap({ error: () => this.mailingListDetailCache.delete(uid) }),
+      shareReplay(1)
+    );
+    this.pruneExpiredMailingListDetailCache();
+    this.mailingListDetailCache.set(uid, { observable: request$, cachedAt: Date.now() });
+    return request$;
   }
 
   public getMailingListsCount(query?: Record<string, string>): Observable<number> {
@@ -64,7 +86,7 @@ export class MailingListService {
   }
 
   public updateMailingList(uid: string, data: Partial<CreateMailingListRequest>): Observable<GroupsIOMailingList> {
-    return this.http.put<GroupsIOMailingList>(`${this.baseUrl}/${uid}`, data);
+    return this.http.put<GroupsIOMailingList>(`${this.baseUrl}/${uid}`, data).pipe(tap(() => this.mailingListDetailCache.delete(uid)));
   }
 
   public getServicesByProject(projectUid: string): Observable<GroupsIOService[]> {
@@ -99,5 +121,14 @@ export class MailingListService {
 
   public deleteMember(mailingListId: string, memberId: string): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/${mailingListId}/members/${memberId}`);
+  }
+
+  private pruneExpiredMailingListDetailCache(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.mailingListDetailCache) {
+      if (now - entry.cachedAt >= MAILING_LIST_DETAIL_CACHE_TTL_MS) {
+        this.mailingListDetailCache.delete(key);
+      }
+    }
   }
 }

@@ -18,6 +18,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess } from '@lfx-one/shared/enums';
 import { CommitteeReference, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
+import { getEntityCommands } from '@lfx-one/shared/utils';
 import { MailingListVisibilitySeverityPipe } from '@pipes/mailing-list-visibility-severity.pipe';
 import { StripHtmlPipe } from '@pipes/strip-html.pipe';
 import { MailingListService } from '@services/mailing-list.service';
@@ -82,6 +83,8 @@ export class MailingListViewComponent {
   public readonly visibilityLabel: Signal<string> = this.initVisibilityLabel();
   public readonly groupsIoUrl: Signal<string | null> = this.initGroupsIoUrl();
   public readonly editRoute: Signal<string[]> = this.initEditRoute();
+  public readonly editQueryParams: Signal<Record<string, string>> = this.initEditQueryParams();
+  public readonly manageGroupsQueryParams: Signal<Record<string, string>> = this.initManageGroupsQueryParams();
 
   public constructor() {
     syncEntityProjectContext(this.mailingList, this.projectContextService, this.router, this.destroyRef);
@@ -173,10 +176,30 @@ export class MailingListViewComponent {
     return computed(() => this.mailingList()?.service?.url || null);
   }
 
+  // Canonical edit URL derives from the LIST's own project tier (is_foundation), not the
+  // viewer's transient active lens; falls back to the flat path (lensRedirectGuard) when the
+  // tier is unenriched (GH-1567).
   private initEditRoute(): Signal<string[]> {
     return computed(() => {
-      const uid = this.mailingList()?.uid;
-      return uid ? ['/mailing-lists', uid, 'edit'] : ['/mailing-lists'];
+      const list = this.mailingList();
+      const uid = list?.uid;
+      if (!uid) return ['/mailing-lists'];
+      return getEntityCommands('mailing-lists', uid, list?.is_foundation, 'edit') ?? ['/mailing-lists', uid, 'edit'];
     });
+  }
+
+  // `?project=` rides along when the payload carries a slug — the manage page's context sync
+  // keys off it, and it keeps writerGuard's authorization project correct on deep links.
+  private initEditQueryParams(): Signal<Record<string, string>> {
+    return computed(() => {
+      const list = this.mailingList();
+      const params: Record<string, string> = {};
+      if (list?.project_slug) params['project'] = list.project_slug;
+      return params;
+    });
+  }
+
+  private initManageGroupsQueryParams(): Signal<Record<string, string>> {
+    return computed(() => ({ ...this.editQueryParams(), step: '3' }));
   }
 }

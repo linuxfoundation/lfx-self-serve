@@ -19,6 +19,7 @@ import {
   ProjectContext,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
+import { getEntityCommands } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { PersonaService } from '@services/persona.service';
@@ -135,11 +136,13 @@ export class MailingListDashboardComponent {
     this.refresh.next();
   }
 
-  /**
-   * Handle mailing list row click - navigate to detail page
-   */
   public onMailingListClick(mailingList: GroupsIOMailingList): void {
-    this.router.navigate(['/mailing-lists', mailingList.uid], {
+    // Canonical tier-prefixed view link (GH-1567): the list's own `is_foundation` picks
+    // /foundation vs /project instead of the viewer's transient active lens; `?project=` rides
+    // along when the row carries a slug. The flat /mailing-lists/:uid fallback remains for
+    // any row that resolves no tier (lensRedirectGuard handles it as before).
+    this.router.navigate(getEntityCommands('mailing-lists', mailingList.uid, mailingList.is_foundation) ?? ['/mailing-lists', mailingList.uid], {
+      queryParams: mailingList.project_slug ? { project: mailingList.project_slug } : undefined,
       state: { backLabel: this.isMeLens() ? `My ${this.mailingListLabelPlural}` : this.mailingListLabelPlural },
     });
   }
