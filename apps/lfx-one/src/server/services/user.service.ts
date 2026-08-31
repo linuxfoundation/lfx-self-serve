@@ -1335,21 +1335,22 @@ export class UserService {
     const voteActions = this.transformVotesToActions(pendingVotes);
     const invitationActions = this.transformInvitationsToActions(pendingInvitations);
 
-    // Phase 2: RSVP + registrant lookups are only meaningful when there are in-window meetings
-    // to evaluate. Skip them otherwise — avoids two full paginated per-user scans per request
-    // for users with no upcoming meetings in the window.
+    // Phase 2: RSVP + registrant lookups only pay off when at least one in-window meeting
+    // collects LFX RSVPs. Pre-feature series still produce Review Agenda actions, but they
+    // cannot emit Set RSVP — skip the two paginated scans in that case (GH-1951).
     //
     // Fail closed on the RSVP prerequisites: if either lookup errors, we can't distinguish
     // "user hasn't RSVPed" from "we don't know", and a transient failure must not turn every
     // in-window meeting into a bogus Set RSVP nag. Suppress the whole source on error.
     let rsvpActions: PendingActionItem[] = [];
-    if (inWindowMeetings.length > 0) {
+    const rsvpEligibleMeetings = inWindowMeetings.filter((meeting) => isMeetingInviteResponsesEnabled(meeting));
+    if (rsvpEligibleMeetings.length > 0) {
       try {
         const [userRsvps, activeRegistrants] = await Promise.all([
           this.fetchAllUserRsvps(req, email, username),
           this.fetchUserActiveRegistrantIdentities(req, email, username),
         ]);
-        rsvpActions = this.transformMissingRsvpsToActions(inWindowMeetings, userRsvps, activeRegistrants);
+        rsvpActions = this.transformMissingRsvpsToActions(rsvpEligibleMeetings, userRsvps, activeRegistrants);
       } catch (error) {
         logger.warning(req, 'get_user_pending_actions', 'RSVP prerequisite lookup failed, suppressing Set RSVP actions', { err: error });
       }

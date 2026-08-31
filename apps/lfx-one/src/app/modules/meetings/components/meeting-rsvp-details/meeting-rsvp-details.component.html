@@ -86,7 +86,7 @@
 
       <!-- Response Breakdown -->
       @if (!pastMeeting()) {
-        <div class="flex items-center justify-between text-gray-600">
+        <div class="flex items-center justify-between text-gray-600" data-testid="rsvp-details-breakdown">
           <div class="flex items-center gap-1">
             <i class="flex fa-light fa-check-circle text-xs text-blue-500"></i>
             <span class="text-xs tracking-wide">{{ acceptedCount() }} Yes</span>

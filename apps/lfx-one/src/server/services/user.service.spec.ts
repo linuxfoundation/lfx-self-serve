@@ -435,5 +435,34 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
       'Review Legacy Board Agenda and Materials',
       'Review Tracked Board Agenda and Materials',
     ]);
+    expect(queriedTypes()).toEqual(expect.arrayContaining(['v1_meeting', 'v1_meeting_registrant', 'v1_meeting_rsvp']));
+  });
+
+  it('skips RSVP and registrant scans when every in-window meeting predates invite-response tracking', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === 'v1_meeting') {
+        return queryPage([
+          {
+            id: 'legacy-meeting',
+            title: 'Legacy Board',
+            start_time: tomorrow,
+            duration: '60',
+            use_new_invite_email_address: false,
+          } satisfies Partial<Meeting>,
+        ]);
+      }
+      return queryPage([]);
+    });
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.filter((action) => action.type === 'RSVP')).toHaveLength(0);
+    expect(actions.some((action) => action.type === 'Agenda')).toBe(true);
+    expect(queriedTypes()).not.toContain('v1_meeting_registrant');
+    expect(queriedTypes()).not.toContain('v1_meeting_rsvp');
   });
 });
+
+function queriedTypes(): string[] {
+  return proxyRequest.mock.calls.map((call) => (call[4] as { type?: string } | undefined)?.type).filter((type): type is string => !!type);
+}
