@@ -1182,6 +1182,10 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     // Create stays suppressed on purpose: one of these may BE this event under another name,
     // and creating would duplicate it in a namespace shared portal-wide.
     expect(!!el.querySelector('[data-testid="planning-hubspot-create-btn"]')).toBe(false);
+    // ...so the caption must not offer it either. Every path that fills the picker without a
+    // selected token also hides Create, so a caption naming it would contradict the notice
+    // directly above on the one screen where both appear.
+    expect(picker?.textContent).not.toContain('create a new campaign');
   });
 
   /**

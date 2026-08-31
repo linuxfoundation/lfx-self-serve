@@ -155,7 +155,7 @@
               @if (hsHasAlternatives()) {
                 <div class="flex flex-col gap-1" data-testid="planning-hubspot-matches">
                   <p class="text-xs text-gray-500">
-                    {{ hsUtm() ? 'Other matches — click to select:' : 'Similar campaigns — pick the right one, or create a new campaign:' }}
+                    {{ hsUtm() ? 'Other matches — click to select:' : 'Similar campaigns — pick the right one, or check HubSpot:' }}
                   </p>
                   @for (m of hsMatches(); track m.hs_utm) {
                     <button
