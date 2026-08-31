@@ -43,7 +43,7 @@ export class VoteService {
   /**
    * Fetches a single page of votes using cursor-based pagination — callers paginate via the returned page_token.
    */
-  public async getVotes(req: Request, query: Record<string, any> = {}): Promise<PaginatedResponse<Vote>> {
+  public async getVotes(req: Request, query: Record<string, unknown> = {}): Promise<PaginatedResponse<Vote>> {
     logger.debug(req, 'get_votes', 'Starting vote fetch', {
       query_params: Object.keys(query),
     });
@@ -74,7 +74,7 @@ export class VoteService {
   /**
    * Fetches the count of votes based on query parameters
    */
-  public async getVotesCount(req: Request, query: Record<string, any> = {}): Promise<number> {
+  public async getVotesCount(req: Request, query: Record<string, unknown> = {}): Promise<number> {
     logger.debug(req, 'get_votes_count', 'Fetching vote count', {
       query_params: Object.keys(query),
     });
@@ -105,13 +105,13 @@ export class VoteService {
       vote_uid: voteUid,
     });
 
-    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, 'GET');
+    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${encodeURIComponent(voteUid)}`, 'GET');
 
     if (!vote || !vote.uid) {
       throw new ResourceNotFoundError('Vote', voteUid, {
         operation: 'get_vote_by_id',
         service: 'vote_service',
-        path: `/votes/${voteUid}`,
+        path: `/votes/${encodeURIComponent(voteUid)}`,
       });
     }
 
@@ -180,7 +180,7 @@ export class VoteService {
     const sanitizedPayload = logger.sanitize({ voteData });
     logger.debug(req, 'update_vote', 'Updating vote payload', sanitizedPayload);
 
-    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, 'PUT', undefined, voteData);
+    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${encodeURIComponent(voteUid)}`, 'PUT', undefined, voteData);
 
     return vote;
   }
@@ -193,7 +193,7 @@ export class VoteService {
       vote_uid: voteUid,
     });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, 'DELETE');
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${encodeURIComponent(voteUid)}`, 'DELETE');
 
     // Poll the query service until the vote is removed from the index
     await pollEndpoint({
@@ -218,7 +218,7 @@ export class VoteService {
       vote_uid: voteUid,
     });
 
-    await this.microserviceProxy.proxyRequestWithResponse<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}/enable`, 'PUT');
+    await this.microserviceProxy.proxyRequestWithResponse<Vote>(req, 'LFX_V2_SERVICE', `/votes/${encodeURIComponent(voteUid)}/enable`, 'PUT');
 
     // Poll the query service until the indexed vote status is 'active'.
     let fetchedVote: Vote | undefined;
@@ -259,7 +259,7 @@ export class VoteService {
   public async getVoteResults(req: Request, voteUid: string): Promise<VoteResultsResponse> {
     logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid });
 
-    const results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}/results`, 'GET');
+    const results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', `/votes/${encodeURIComponent(voteUid)}/results`, 'GET');
 
     // The API client maps an empty response body to null; a 200 with no payload is anomalous
     // (the upstream results contract always returns a body), so fail loudly — passing null
@@ -269,7 +269,7 @@ export class VoteService {
       throw new MicroserviceError('Vote results response body was empty', 502, 'VOTE_RESULTS_EMPTY', {
         operation: 'get_vote_results',
         service: 'vote_service',
-        path: `/votes/${voteUid}/results`,
+        path: `/votes/${encodeURIComponent(voteUid)}/results`,
       });
     }
 
@@ -411,7 +411,7 @@ export class VoteService {
     const votes = await Promise.all(
       voteUids.map(async (uid): Promise<Vote | null> => {
         try {
-          const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${uid}`, 'GET');
+          const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${encodeURIComponent(uid)}`, 'GET');
           if (!vote) return vote;
           const decorated: Vote = {
             ...vote,
