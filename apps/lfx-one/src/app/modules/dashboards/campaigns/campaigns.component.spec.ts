@@ -4227,6 +4227,45 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().emailTemplateSuggestionId()).toBe('y2026');
     });
 
+    /**
+     * A template matched on its SUBJECT may carry no name, and announcing an empty string reads as
+     * "Template selected for this event: . Choose another" — which tells a screen-reader user
+     * nothing about what was chosen for them.
+     */
+    it('announces a subject-matched template by its subject rather than an empty name', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'subj', name: '', subject: 'MCP Dev Summit Nairobi — register now' }] as HubSpotMarketingEmail[],
+      });
+
+      const live = fixture.nativeElement.querySelector('[data-testid="campaigns-email-templates-live"]')?.textContent ?? '';
+      expect(live).toContain('register now');
+      expect(live).not.toContain('event: .');
+    });
+
+    /** The two announcements must not run together into one word. */
+    it('separates the two live-region announcements with a space', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+
+      const live = fixture.nativeElement.querySelector('[data-testid="campaigns-email-templates-live"]')?.textContent ?? '';
+      // No word boundary swallowed: a full stop is never immediately followed by a capital letter
+      // with no space between them.
+      expect(live).not.toMatch(/\.[A-Z]/);
+    });
+
     /** The year still cannot carry a suggestion on its own — the 2028 false positive stays shut. */
     it('does not let a year match alone justify a suggestion', () => {
       showPicker();

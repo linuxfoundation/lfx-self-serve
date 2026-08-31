@@ -747,12 +747,29 @@ export class CampaignsComponent {
    * them, and that it is the one staging will use. Routed through the picker's existing live
    * region, which is already mounted and only has its CONTENTS change.
    */
+  /**
+   * The live region's whole text, joined with a separating space.
+   *
+   * Concatenating the two computeds directly in the template ran them together --
+   * "…37 found.Template selected for this event: …" -- which a screen reader announces as one
+   * word. Joined here rather than by adding a space to either source, so neither ends with a
+   * dangling space when it is the only one present.
+   */
+  protected readonly emailTemplatesLiveAnnouncement = computed<string>(() =>
+    [this.emailTemplatesAnnouncement(), this.emailTemplateSuggestionAnnouncement()].filter((part) => part !== '').join(' ')
+  );
+
   protected readonly emailTemplateSuggestionAnnouncement = computed<string>(() => {
     const id = this.emailTemplateSuggestionId();
     if (id === '' || id !== this.selectedEmailTemplateId()) {
       return '';
     }
-    const name = this.emailTemplates()?.find((t) => t.id === id)?.name ?? '';
+    // A template can carry a subject and no name -- it is matched on either -- and announcing an
+    // empty string reads as "Template selected for this event: . Choose another", which tells a
+    // screen-reader user nothing about what was chosen. Fall back to the subject, then to a
+    // neutral phrase rather than a blank.
+    const template = this.emailTemplates()?.find((t) => t.id === id);
+    const name = (template?.name ?? '').trim() || (template?.subject ?? '').trim() || 'an untitled template';
     const terms = this.emailTemplateSuggestionTermsLabel();
     const matched = terms === '' ? '' : `, matched on ${terms}`;
     return `Template selected for this event: ${name}${matched}. Choose another to override it.`;
@@ -1222,6 +1239,15 @@ export class CampaignsComponent {
       bounce: perSent(totals.bounces),
     };
   });
+  /**
+   * Word-boundary matchers, cached by term.
+   *
+   * The same few patterns were recompiled for every template on every rank -- up to 500 rows,
+   * and once per selection click, since the splice makes ranking re-run when the selection
+   * changes. Terms come from the event and change only when the brief does, so the cache stays
+   * small and needs no invalidation: a new brief simply asks for different keys.
+   */
+  private readonly boundaryMatchers = new Map<string, RegExp>();
 
   public constructor() {
     // Discard the persistence state when the selected foundation changes — see
@@ -2588,6 +2614,19 @@ export class CampaignsComponent {
     return city + year;
   }
 
+  /** The cached boundary matcher for one term, compiled on first use. */
+  private boundaryMatcher(term: string): RegExp {
+    const cached = this.boundaryMatchers.get(term);
+    if (cached !== undefined) {
+      return cached;
+    }
+    // Terms carry only letters and digits (the tokenizer splits on everything else), so there
+    // are no regex metacharacters to escape.
+    const built = new RegExp(`(^|[^\\p{L}\\p{N}])${term}([^\\p{L}\\p{N}]|$)`, 'u');
+    this.boundaryMatchers.set(term, built);
+    return built;
+  }
+
   /**
    * Which of the event's terms a template actually matched, for the "why" shown to the operator.
    *
@@ -2606,7 +2645,7 @@ export class CampaignsComponent {
       // template name is a whole word rather than a letter-run interrupted by the accent.
       // Terms carry only letters and digits (the tokenizer splits on everything else), so there
       // are no regex metacharacters to escape.
-      const bounded = new RegExp(`(^|[^\\p{L}\\p{N}])${term}([^\\p{L}\\p{N}]|$)`, 'u');
+      const bounded = this.boundaryMatcher(term);
       return bounded.test(name) || bounded.test(subject);
     });
   }
@@ -2619,8 +2658,8 @@ export class CampaignsComponent {
    * own, this reads the event off the brief and asks HubSpot which templates look like it.
    *
    * The slug is split on its separators and the name on whitespace, then both are filtered:
-   * stopwords out (they match everything), tokens under three characters out (so "AI" cannot match
-   * "chain" and a stray "of" cannot score). What survives is the distinctive part of the event's
+   * stopwords out (they match everything), tokens under three characters out (too weak to
+   * identify an event on their own). What survives is the distinctive part of the event's
    * identity -- "kubecon", "nairobi", "pytorch".
    *
    * The city is included because operators frequently name templates by location where the event
