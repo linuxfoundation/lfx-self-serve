@@ -304,26 +304,29 @@ export class ProjectService {
    * Fetches all projects based on query parameters
    */
   public async getProjects(req: Request, query: Record<string, any> = {}): Promise<Project[]> {
-    const params = {
-      ...query,
-      type: 'project',
-      // Overrides any caller-supplied page_size — the query service's 50-result default turns
-      // a large org's project list into a long sequential page scan (GH-1735).
-      page_size: QUERY_SERVICE_PAGE_SIZE,
-    };
-
-    const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
-    );
-
-    // ROOT is an administrative pseudo-project used only for persona detection — never surface it in user lists.
-    const filtered = resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+    const filtered = await this.fetchAllProjectsFiltered(req, query);
 
     // Add writer access field to all projects
     return await this.accessCheckService.addAccessToResources(req, filtered, 'project');
+  }
+
+  /**
+   * Fetches slugs for all projects without an access-check round trip.
+   * Use this when the caller only needs slugs — it skips addAccessToResources
+   * entirely, eliminating the OpenFGA POST that getProjects() incurs.
+   *
+   * Note: the query-service payload is as wide as getProjects() (full Project
+   * objects); only the FGA round trip is eliminated, not the response payload
+   * size. If the upstream query service ever supports field projection, pass
+   * a 'fields' parameter here to further reduce transfer cost.
+   */
+  public async getProjectSlugs(req: Request): Promise<string[]> {
+    logger.debug(req, 'get_project_slugs', 'Fetching all project slugs', { page_size: QUERY_SERVICE_PAGE_SIZE });
+    // failOnPartial: a truncated slug list silently drops affiliations from CDP matching —
+    // a user whose project was on a failed page appears as not LFX-affiliated. Throw instead
+    // so the caller receives an error and can surface it rather than returning a stale/false view.
+    const filtered = await this.fetchAllProjectsFiltered(req, {}, true);
+    return filtered.map((p) => p.slug);
   }
 
   /**
@@ -7543,6 +7546,38 @@ export class ProjectService {
       return;
     }
     return new Promise((resolve) => gate.queue.push(resolve));
+  }
+
+  /**
+   * Shared paginated fetch for all public projects, with ROOT filtered out.
+   * Both `getProjects` (access-checked) and `getProjectSlugs` (slug-only) delegate here
+   * so the query params, pagination loop, and ROOT filter stay in one place.
+   * @param extraQuery Optional caller-supplied query overrides merged into params (e.g. from getProjects).
+   * @param failOnPartial When true, a pagination failure throws instead of returning a truncated
+   *   list. Pass true for slug-only callers where a partial slug set silently drops affiliations;
+   *   leave false (default) for access-checked callers where a partial list degrades gracefully.
+   */
+  private async fetchAllProjectsFiltered(req: Request, extraQuery: Record<string, any> = {}, failOnPartial: boolean = false): Promise<Project[]> {
+    const params = {
+      ...extraQuery,
+      type: 'project',
+      // Overrides any caller-supplied page_size — the query service's 50-result default turns
+      // a large org's project list into a long sequential page scan (GH-1735).
+      page_size: QUERY_SERVICE_PAGE_SIZE,
+    };
+
+    const resources = await fetchAllQueryResources<Project>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial }
+    );
+
+    // ROOT is an administrative pseudo-project used only for persona detection — never surface it in user lists.
+    return resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
   }
 
   /** Releases a traversal slot acquired via {@link acquireTraversalSlot}, waking the next queued caller if any. */

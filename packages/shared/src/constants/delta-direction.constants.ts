@@ -23,3 +23,10 @@ export const INVERTED_DELTA_DIRECTION_TEXT_CLASS: Record<StatCardDeltaDirection,
   down: DELTA_DIRECTION_TEXT_CLASS.up,
   flat: DELTA_DIRECTION_TEXT_CLASS.flat,
 };
+
+/** Screen-reader word per delta direction — the arrow icon is aria-hidden, so the direction needs a text alternative. */
+export const DELTA_DIRECTION_SR_LABEL: Record<StatCardDeltaDirection, string> = {
+  up: 'Increased',
+  down: 'Decreased',
+  flat: 'No change',
+};

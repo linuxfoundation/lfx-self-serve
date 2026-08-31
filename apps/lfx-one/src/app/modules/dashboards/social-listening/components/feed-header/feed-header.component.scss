@@ -4,3 +4,30 @@
 :host {
   @apply block;
 }
+
+// Ghost-pill treatment for the filters/export triggers: 12px label, tight height, no fill at rest.
+:host ::ng-deep .feed-header__pill {
+  @apply h-8 gap-1.5 whitespace-nowrap border-gray-200 px-3 text-xs text-gray-600;
+
+  &:not(:disabled):hover {
+    @apply border-gray-300 bg-gray-50 text-gray-900;
+  }
+}
+
+// Views trigger consumes the same small form-field tokens as the selects so it matches their chrome by construction.
+:host ::ng-deep .feed-header__view-trigger {
+  @apply inline-flex items-center justify-start gap-2 whitespace-nowrap font-normal;
+  padding: var(--p-form-field-sm-padding-y) var(--p-form-field-sm-padding-x);
+  font-size: var(--p-form-field-sm-font-size);
+  line-height: 1.25rem;
+  color: var(--p-form-field-color);
+  background: var(--p-form-field-background);
+  border: 1px solid var(--p-form-field-border-color);
+  border-radius: var(--p-form-field-border-radius);
+
+  &:not(:disabled):hover {
+    color: var(--p-form-field-color);
+    background: var(--p-form-field-background);
+    border-color: var(--p-form-field-hover-border-color);
+  }
+}

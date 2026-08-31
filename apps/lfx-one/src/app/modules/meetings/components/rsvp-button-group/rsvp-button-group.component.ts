@@ -7,7 +7,7 @@ import { Component, computed, inject, input, InputSignal, output, OutputEmitterR
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RsvpScopeModalComponent } from '@app/modules/meetings/components/rsvp-scope-modal/rsvp-scope-modal.component';
 import { CreateMeetingRsvpRequest, Meeting, MeetingRsvp, RsvpResponse, RsvpScope, User } from '@lfx-one/shared';
-import { resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
+import { isMeetingInviteResponsesEnabled, resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -58,8 +58,12 @@ export class RsvpButtonGroupComponent {
   public readonly isRecurring: Signal<boolean> = this.initializeIsRecurring();
   public readonly currentRsvp: Signal<MeetingRsvp | null> = this.initializeCurrentRsvp();
   public readonly selectedResponse: Signal<RsvpResponse | null> = this.initializeSelectedResponse();
+  public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
 
   public handleRsvpClick(response: RsvpResponse): void {
+    if (!this.inviteResponsesEnabled()) {
+      return;
+    }
     // For recurring meetings, show scope modal
     if (this.isRecurring()) {
       this.showScopeModal(response);
@@ -172,8 +176,8 @@ export class RsvpButtonGroupComponent {
     return toSignal(
       combineLatest([toObservable(this.meeting), toObservable(this.authenticated), toObservable(this.refreshTrigger)]).pipe(
         switchMap(([meeting, authenticated]) => {
-          // Skip fetch when component is disabled
-          if (this.disabled()) {
+          // Skip fetch when component is disabled or the meeting predates RSVP tracking.
+          if (this.disabled() || !isMeetingInviteResponsesEnabled(meeting)) {
             return of(null);
           }
           const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrenceId: this.occurrenceId() });

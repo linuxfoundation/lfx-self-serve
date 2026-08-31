@@ -69,6 +69,8 @@ export class MentionCardComponent {
     () => MENTION_RELEVANCE_CONFIG[this.mention().relevance] ?? MENTION_RELEVANCE_CONFIG.low
   );
   public readonly displayKeyword = computed(() => capitalizeFirst(this.mention().keyword));
+  /** Blank `SOURCE_PROJECT_NAME` rows still get a pill — the keyword is the closest thing the feed matched on. */
+  public readonly displayProject = computed(() => this.mention().sourceProjectName || this.displayKeyword());
   public readonly isReddit = computed(() => this.mention().platform === 'reddit');
   /** Subreddit directory link — distinct from the stretched card link, which opens the mention itself. */
   public readonly subredditUrl = computed(() => {
@@ -128,6 +130,8 @@ export class MentionCardComponent {
     const url = normalizeToUrl(this.mention().originalUrl);
     if (!url) return;
 
+    // Safe: normalizeToUrl only returns http(s) URLs or https-upgraded valid domains, else null (handled above).
+    // pi-lens-ignore: ast-grep:no-open-redirect
     window.open(url, '_blank', 'noopener,noreferrer');
     this.onCardClick();
   }

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ACCESS_CHECK_BATCH_SIZE } from '@lfx-one/shared/constants';
 import {
   AccessCheckAccessType,
   AccessCheckApiRequest,
@@ -30,6 +31,12 @@ export class AccessCheckService {
    * @param resources Array of resources to check access for
    * @param options Optional per-call overrides (e.g. explicit bearer token)
    * @returns Map keyed by "id#access" to their access status (e.g. "meeting-1#organizer")
+   *
+   * Note: for calls with more than ACCESS_CHECK_BATCH_SIZE resources, `performCheck` fans out
+   * with Promise.allSettled and absorbs per-chunk failures — failed chunks are absent from the
+   * result map (defaulting to false at lookup) rather than propagating. The all-false fallback
+   * map here is only returned when a single-batch call (≤ACCESS_CHECK_BATCH_SIZE resources)
+   * throws before any settling occurs.
    */
   public async checkAccess(req: Request, resources: AccessCheckRequest[], options?: ApiRequestOptions): Promise<Map<string, boolean>> {
     if (resources.length === 0) {
@@ -39,6 +46,7 @@ export class AccessCheckService {
     const { operationName, startTime } = this.beginCheckOperation(req, resources);
 
     try {
+      // success/warning logged inside performCheck; only error is logged here on propagation.
       return await this.performCheck(req, resources, operationName, startTime, options);
     } catch (error) {
       logger.error(req, operationName, startTime, error, {
@@ -59,6 +67,11 @@ export class AccessCheckService {
    * Check access permissions for multiple resources, letting upstream failures propagate instead
    * of degrading to "no access". For callers that must distinguish "resolved: no access" (403)
    * from "couldn't verify" (503) — `checkAccess`'s fallback collapses that distinction.
+   *
+   * When the resource count exceeds ACCESS_CHECK_BATCH_SIZE, requests are split into chunks and
+   * fanned out with Promise.allSettled. Any per-chunk failure (including total batch failure)
+   * causes this method to throw after all chunks have settled and per-chunk WARNs have been
+   * logged — preserving the strict error-propagation contract across all batch sizes.
    * @param req Express request object with auth context
    * @param resources Array of resources to check access for
    * @param options Optional per-call overrides (e.g. explicit bearer token)
@@ -71,7 +84,8 @@ export class AccessCheckService {
 
     const { operationName, startTime } = this.beginCheckOperation(req, resources);
     try {
-      return await this.performCheck(req, resources, operationName, startTime, options);
+      // success/warning logged inside performCheck; only error is logged here on propagation.
+      return await this.performCheck(req, resources, operationName, startTime, options, true);
     } catch (error) {
       // Unlike checkAccess, this rethrows rather than degrading — but still logs, so a failed
       // strict check leaves the same terminal error record as any other failed operation instead
@@ -197,16 +211,109 @@ export class AccessCheckService {
   }
 
   /**
-   * Performs the access-check request/response round trip with no error handling — callers decide
-   * whether to degrade (`checkAccess`) or propagate (`checkAccessStrict`).
+   * Performs the access-check request/response round trip and logs its own completion.
+   * Callers own error handling: `checkAccess` degrades, `checkAccessStrict` propagates.
+   *
+   * When the resource count exceeds ACCESS_CHECK_BATCH_SIZE the tuples are split into bounded
+   * chunks and fanned out with Promise.allSettled. Fulfilled chunks are merged; rejected chunks
+   * are logged at WARN. When `throwOnChunkFailure` is true (strict path), any chunk rejection
+   * causes a throw after all chunks settle and per-chunk WARNs are emitted. When false
+   * (degraded path), failed chunks fail closed (keys absent, defaulting to false at lookup).
+   * On clean completion logger.success is called; on partial failure logger.warning is called
+   * instead so monitoring alerts keyed on success do not fire.
+   *
+   * Concurrency: all chunks are issued in parallel (no pool cap). LFX has ~500 projects
+   * (ACCESS_CHECK_BATCH_SIZE = 100), so the maximum concurrent chunk count is ~5 — the same
+   * order of magnitude as sequential concurrent requests from different users, so no concurrency
+   * limiter is warranted. If a future caller drives chunk counts into the dozens, revisit with
+   * a traversal-slot or p-limit guard (see `acquireTraversalSlot` in project.service.ts).
    */
   private async performCheck(
     req: Request,
     resources: AccessCheckRequest[],
     operationName: string,
     startTime: number,
-    options?: ApiRequestOptions
+    options?: ApiRequestOptions,
+    throwOnChunkFailure: boolean = false
   ): Promise<Map<string, boolean>> {
+    if (resources.length <= ACCESS_CHECK_BATCH_SIZE) {
+      const resultMap = await this.performSingleCheck(req, resources, options);
+      logger.success(req, operationName, startTime, {
+        request_count: resources.length,
+        granted_count: Array.from(resultMap.values()).filter(Boolean).length,
+        batch_count: 1,
+      });
+      return resultMap;
+    }
+
+    const chunks: AccessCheckRequest[][] = [];
+    for (let i = 0; i < resources.length; i += ACCESS_CHECK_BATCH_SIZE) {
+      chunks.push(resources.slice(i, i + ACCESS_CHECK_BATCH_SIZE));
+    }
+
+    const settled = await Promise.allSettled(chunks.map((chunk) => this.performSingleCheck(req, chunk, options)));
+
+    const resultMap = new Map<string, boolean>();
+    let failedChunks = 0;
+
+    for (let i = 0; i < settled.length; i++) {
+      const result = settled[i];
+      if (result.status === 'fulfilled') {
+        for (const [key, value] of result.value) {
+          resultMap.set(key, value);
+        }
+      } else {
+        failedChunks++;
+        // Fail closed for the resources in this chunk — their keys are not in the result map,
+        // so callers' downstream key lookups will return undefined and default to false.
+        // chunk_index is 0-based — "chunk 0" is the first batch, "chunk 1" the second, etc.
+        logger.warning(req, operationName, `Access-check batch chunk ${i} failed, failing closed for its resources`, {
+          chunk_index: i,
+          chunk_count: chunks.length,
+          chunk_size: chunks[i].length,
+          err: result.reason,
+        });
+      }
+    }
+
+    const sharedMetadata = {
+      request_count: resources.length,
+      granted_count: Array.from(resultMap.values()).filter(Boolean).length,
+      batch_count: chunks.length,
+      failed_chunks: failedChunks,
+    };
+
+    if (failedChunks > 0) {
+      // Log at WARN rather than success — partial results are a recoverable degradation, not a
+      // clean completion. A monitoring alert keyed on "operation succeeded" should not fire here.
+      // logger.warning has no startTime param, so duration_ms is added manually to preserve
+      // latency data for incident correlation. logger.success (else branch) computes duration
+      // internally from startTime — this mirrors that same arithmetic for the degraded path.
+      logger.warning(req, operationName, `${failedChunks} of ${chunks.length} access-check chunks failed; results are partial`, {
+        ...sharedMetadata,
+        duration_ms: Date.now() - startTime,
+      });
+
+      // Strict callers must be able to distinguish "denied" from "couldn't verify" — throw
+      // after all chunks have settled and per-chunk WARNs have been emitted so the terminal
+      // warning above always appears in logs before the rethrow. The first rejection reason
+      // is surfaced; checkAccessStrict's catch block logs it at ERROR before rethrowing.
+      if (throwOnChunkFailure) {
+        const firstFailure = settled.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+        throw firstFailure.reason;
+      }
+    } else {
+      logger.success(req, operationName, startTime, sharedMetadata);
+    }
+
+    return resultMap;
+  }
+
+  /**
+   * Sends a single POST to the access-check service and parses the response into a map.
+   * No error handling — `performCheck` owns that boundary.
+   */
+  private async performSingleCheck(req: Request, resources: AccessCheckRequest[], options?: ApiRequestOptions): Promise<Map<string, boolean>> {
     // Transform requests to the expected API format
     const apiRequests = resources.map((resource) => `${resource.resource}:${resource.id}#${resource.access}`);
 
@@ -263,11 +370,6 @@ export class AccessCheckService {
       // Fail closed when the upstream response omits this tuple
       resultMap.set(`${resource.id}#${resource.access}`, result?.hasAccess ?? false);
     }
-
-    logger.success(req, operationName, startTime, {
-      request_count: resources.length,
-      granted_count: Array.from(resultMap.values()).filter(Boolean).length,
-    });
 
     return resultMap;
   }
