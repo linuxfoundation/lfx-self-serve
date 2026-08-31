@@ -420,6 +420,22 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
     }
   });
 
+  // The lifetime total is what the drawer reads to say "not tracked for this project", so it may only
+  // be served where the warehouse totals that activity per project. The fixture supplies every
+  // foundation-scoped lifetime column too: serving one would let a total that 265 sibling projects
+  // share decide a claim about this one.
+  it.each([
+    ['technical', []],
+    ['ecosystem', ['collab', 'meeting']],
+  ] as const)('serves a lifetime total for %s only where the warehouse totals it per project', async (dimension, projectScoped) => {
+    mockWarehouse({ breakdown: populatedBreakdownRow });
+
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y');
+
+    const served = breakdown!.categories.filter((figure) => figure.projectAllTimeTotal !== undefined).map((figure) => figure.key);
+    expect(served).toEqual([...projectScoped]);
+  });
+
   // The drawer prints a "Total score" row directly beneath the column of per-category points, so the
   // parts have to add up to the whole at the precision both are served at.
   it.each([

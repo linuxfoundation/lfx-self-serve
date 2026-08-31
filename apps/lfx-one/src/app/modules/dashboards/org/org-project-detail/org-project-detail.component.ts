@@ -175,6 +175,11 @@ export class OrgProjectDetailComponent {
     filter((uid): uid is string => !!uid),
     distinctUntilChanged()
   );
+  // Losing the organization is a change the open drawers must see, and orgUid$ cannot carry it: it
+  // filters the empty uid out. Clearing does not unmount this page either — the org-list empty
+  // response keeps the user under /org so they meet the empty state rather than bouncing to the me
+  // lens — so a drawer left open would hang on an organization the page no longer has.
+  private readonly orgUidOrCleared$ = toObservable(this.orgUid).pipe(distinctUntilChanged());
   private readonly slug$ = this.route.paramMap.pipe(
     map((params) => params.get('projectSlug')),
     filter((slug): slug is string => !!slug),
@@ -304,7 +309,7 @@ export class OrgProjectDetailComponent {
 
     // A refetch driver (range / org / slug change) re-scopes every range-scoped block server-side.
     // Close any open card drawer so it can never pair a new range label with a stale payload.
-    combineLatest([this.orgUid$, this.slug$, this.range$])
+    combineLatest([this.orgUidOrCleared$, this.slug$, this.range$])
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.closeCardDetail());
 
@@ -313,7 +318,7 @@ export class OrgProjectDetailComponent {
     // live inputs. Left open it would refetch that company against the project the user navigated
     // to, which they never clicked a row on. Range changes are excluded: they legitimately re-scope
     // the open row.
-    combineLatest([this.orgUid$, this.slug$])
+    combineLatest([this.orgUidOrCleared$, this.slug$])
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => {
         this.resetLeaderboardSearch();

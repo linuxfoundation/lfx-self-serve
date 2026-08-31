@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, type ParamMap, Router } from '@angular/router';
@@ -26,10 +26,13 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
   let component: OrgProjectDetailComponent;
 
   const ACCOUNT: Account = { accountId: 'acc-1', accountName: 'Test Org', uid: 'acc-1' } as Account;
+  // What AccountContextService.clearAccount() leaves behind: an account with no identifier at all.
+  const CLEARED_ACCOUNT: Account = { accountId: '', accountName: '', accountSlug: '', membershipTier: '' } as Account;
 
   // Replayed rather than a plain Subject: the component subscribes during construction and must see
   // the first slug, and a later emission stands in for navigating to another project.
   let paramMap: BehaviorSubject<ParamMap>;
+  let selectedAccount: WritableSignal<Account>;
 
   const makeRow = (overrides: Partial<BoardDisplayRow> = {}): BoardDisplayRow => ({
     rank: 1,
@@ -46,12 +49,13 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
 
   beforeEach(async () => {
     paramMap = new BehaviorSubject<ParamMap>(convertToParamMap({ projectSlug: 'k8s' }));
+    selectedAccount = signal(ACCOUNT);
 
     await TestBed.configureTestingModule({
       imports: [OrgProjectDetailComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: AccountContextService, useValue: { selectedAccount: signal(ACCOUNT) } },
+        { provide: AccountContextService, useValue: { selectedAccount } },
         // The page itself reads no flag; child components in its template do.
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         {
@@ -121,6 +125,20 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
     expect(component['leaderboardDetailOpen']()).toBe(true);
 
     paramMap.next(convertToParamMap({ projectSlug: 'envoy' }));
+    await fixture.whenStable();
+
+    expect(component['leaderboardDetailOpen']()).toBe(false);
+  });
+
+  // Losing the organization does not unmount this page — an empty org list keeps the user under /org
+  // to meet the empty state — so an open drawer would sit over that empty state waiting forever on an
+  // organization the page no longer has.
+  it('closes the drawer when the organization is cleared underneath it', async () => {
+    component['openLeaderboardDetail']('technical', makeRow());
+    await fixture.whenStable();
+    expect(component['leaderboardDetailOpen']()).toBe(true);
+
+    selectedAccount.set(CLEARED_ACCOUNT);
     await fixture.whenStable();
 
     expect(component['leaderboardDetailOpen']()).toBe(false);

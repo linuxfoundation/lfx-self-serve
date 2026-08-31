@@ -11,9 +11,10 @@ export interface OrgLeaderboardDetailCategory {
 
 /**
  * One category's figures as served by the BFF. The ratio fields are optional rather than nullable:
- * maintainers and board members are binary point awards and membership tier maps from the tier, so
- * those rows have no ratio at all — an absent field reads as "no ratio here", where a null would
- * invite the client to render "0 of 0".
+ * membership tier maps from the tier rather than from participation, so it has no count or
+ * denominator at all — an absent field reads as "no ratio here", where a null would invite the client
+ * to render "0 of 0". Maintainers and board members are binary point awards, but they still carry
+ * both figures: only their share is absent, so the drawer can say "3 of 41 maintainers".
  */
 export interface OrgLeaderboardDetailCategoryFigure {
   key: string;
@@ -26,6 +27,9 @@ export interface OrgLeaderboardDetailCategoryFigure {
    * Project-wide lifetime total for the activity, regardless of the active range. A zero means the
    * project does not run this activity at all, which is a different fact from an organization that
    * did not participate in one that it does run.
+   *
+   * Absent for every category whose warehouse denominator covers the whole foundation rather than
+   * this project, because a total its sibling projects share cannot support that claim either way.
    */
   projectAllTimeTotal?: number;
 }
@@ -88,11 +92,15 @@ export interface OrgLeaderboardDetailCategoryRow {
   points: number;
   /** Share of the total score this category's points represent. */
   pct: number;
-  /** The organization's count, or null for a category with no count to show (binary awards, membership tier). */
+  /** The organization's count, or null for a category with no count to show (membership tier). */
   count: number | null;
   /** Range-scoped project-wide total, or null when the category has no ratio. */
   projectTotal: number | null;
-  /** True when the project never runs this activity at all — rendered differently from a zero count. */
+  /**
+   * True when the project never runs this activity at all — rendered differently from a zero count.
+   * Only ever true for a category the warehouse totals per project; one totalled per foundation
+   * leaves this false rather than guessing from a figure its sibling projects share.
+   */
   notTrackedForProject: boolean;
   /** True when the server withheld this category's figures, so only its name is rendered. */
   withheld: boolean;

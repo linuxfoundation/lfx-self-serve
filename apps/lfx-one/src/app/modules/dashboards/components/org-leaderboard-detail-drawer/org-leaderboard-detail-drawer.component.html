@@ -89,7 +89,7 @@
                   @if (!row.withheld) {
                     @if (row.notTrackedForProject) {
                       <span class="font-normal text-gray-400">(not tracked for this project)</span>
-                    } @else if (row.count !== null && row.projectTotal !== null) {
+                    } @else if (row.count !== null && row.projectTotal) {
                       <span>({{ row.count | number }} of {{ row.projectTotal | number }})</span>
                     } @else if (row.count !== null) {
                       <span>({{ row.count | number }})</span>

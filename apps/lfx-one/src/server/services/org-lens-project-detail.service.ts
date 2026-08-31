@@ -205,16 +205,21 @@ interface ActivityBoardRow {
 }
 
 /**
- * One warehouse column set behind a single drawer category. Only `points` is mandatory: the binary
- * awards (maintainers, board members) have no share, and membership tier has no count or total at
- * all, because it maps from the tier rather than being scored on participation.
+ * One warehouse column set behind a single drawer category. Only `points` is mandatory: membership
+ * tier has no count or denominator at all, because it maps from the tier rather than being scored on
+ * participation. The binary awards (maintainers, board members) do carry both — the warehouse omits
+ * only their share, so the drawer can still say "3 of 41 maintainers".
  */
 interface CategorySource {
   key: string;
   points: string;
   count?: string;
   projectTotal?: string;
-  /** Lifetime project-wide total, which distinguishes "the project never runs this" from "nobody from this organization took part". */
+  /**
+   * Lifetime project-wide total, which distinguishes "the project never runs this" from "nobody from
+   * this organization took part". Set only where the warehouse total really is project-scoped: a
+   * foundation-wide total cannot tell those two apart on a child project's page.
+   */
   allTimeTotal?: string;
 }
 
@@ -299,54 +304,55 @@ export class OrgLensProjectDetailService {
     // rolls them up per foundation, so on a child project's page the denominator covers the whole
     // foundation and every sibling project shares it. The projectTotal slot is the generic
     // denominator slot for all thirteen categories, not a claim that this one is project-scoped.
+    //
+    // They deliberately carry no allTimeTotal. That column feeds one client decision — "this project
+    // does not run this activity at all" — and a foundation-wide lifetime total cannot support it in
+    // either direction: one committee roster of 1,917 is shared by 265 project slugs, so a project
+    // with no committees of its own still reads as tracked, while a foundation with an empty roster
+    // reads as untracked for every project under it. Committee and board totals are also identical
+    // across all three ranges (current-roster snapshots, not histories), so their "lifetime" figure
+    // says nothing their range figure does not.
     {
       key: 'event',
       points: 'EVENT_ATTENDANCE_POINTS',
       count: 'EVENT_ATTENDANCE_COUNT',
       projectTotal: 'EVENT_ATTENDANCE_FOUNDATION_TOTAL',
-      allTimeTotal: 'EVENT_ATTENDANCE_FOUNDATION_ALL_TIME_TOTAL',
     },
     {
       key: 'committee',
       points: 'COMMITTEE_MEMBERS_POINTS',
       count: 'COMMITTEE_MEMBERS_COUNT',
       projectTotal: 'COMMITTEE_MEMBERS_FOUNDATION_TOTAL',
-      allTimeTotal: 'COMMITTEE_MEMBERS_FOUNDATION_ALL_TIME_TOTAL',
     },
     {
       key: 'board',
       points: 'BOARD_MEMBERS_POINTS',
       count: 'BOARD_MEMBERS_COUNT',
       projectTotal: 'BOARD_MEMBERS_FOUNDATION_TOTAL',
-      allTimeTotal: 'BOARD_MEMBERS_FOUNDATION_ALL_TIME_TOTAL',
     },
     {
       key: 'speakers',
       points: 'EVENT_SPEAKERS_POINTS',
       count: 'EVENT_SPEAKERS_COUNT',
       projectTotal: 'EVENT_SPEAKERS_FOUNDATION_TOTAL',
-      allTimeTotal: 'EVENT_SPEAKERS_FOUNDATION_ALL_TIME_TOTAL',
     },
     {
       key: 'meetup',
       points: 'MEETUP_ATTENDANCE_POINTS',
       count: 'MEETUP_ATTENDANCE_COUNT',
       projectTotal: 'MEETUP_ATTENDANCE_FOUNDATION_TOTAL',
-      allTimeTotal: 'MEETUP_ATTENDANCE_FOUNDATION_ALL_TIME_TOTAL',
     },
     {
       key: 'sponsor',
       points: 'SPONSORSHIP_EVENTS_POINTS',
       count: 'SPONSORSHIP_EVENTS_COUNT',
       projectTotal: 'SPONSORSHIP_EVENTS_FOUNDATION_TOTAL',
-      allTimeTotal: 'SPONSORSHIP_EVENTS_FOUNDATION_ALL_TIME_TOTAL',
     },
     {
       key: 'certified',
       points: 'CERTIFIED_INDIVIDUALS_POINTS',
       count: 'CERTIFIED_INDIVIDUALS_COUNT',
       projectTotal: 'CERTIFIED_INDIVIDUALS_FOUNDATION_TOTAL',
-      allTimeTotal: 'CERTIFIED_INDIVIDUALS_FOUNDATION_ALL_TIME_TOTAL',
     },
     { key: 'tier', points: 'MEMBERSHIP_TIER_POINTS' },
   ];
