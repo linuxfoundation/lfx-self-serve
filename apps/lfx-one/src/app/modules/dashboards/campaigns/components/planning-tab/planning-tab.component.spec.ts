@@ -1384,6 +1384,37 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   });
 
   /**
+   * The ERROR arms need the generation guard too.
+   *
+   * Guarding only the success path left the failure path trusting panelStillShows alone, which
+   * matches again after A -> B -> A. A stale FAILURE then overwrites hsStatus and sets
+   * hsUnconfirmed on a newer search — and nothing on the success path clears hsUnconfirmed, so
+   * the panel stays stuck reporting a failure that never happened to it.
+   */
+  it('does not let a round-tripped stale lookup error overwrite a newer search', () => {
+    const first = new Subject<HubSpotUtmLookupResult>();
+    lookup.mockReturnValue(first);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+
+    const second = new Subject<HubSpotUtmLookupResult>();
+    lookup.mockReturnValue(second);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+
+    // The superseded lookup FAILS last.
+    first.error(new Error('stale lookup failed'));
+    fixture.detectChanges();
+
+    expect(instance()['hsStatus'](), 'a superseded lookup reported its failure on a newer search').not.toBe('HubSpot lookup failed');
+    expect(instance()['hsUnconfirmed'](), 'a superseded failure left the panel stuck unconfirmed').toBe(false);
+  });
+
+  /**
    * The create OFFER survives a url edit, deliberately -- the HubSpot state is not reset until
    * the 500ms debounced lookup starts. But acting on it in that window would create a campaign
    * for an event the operator has already left, into a namespace nobody can clean up from here.

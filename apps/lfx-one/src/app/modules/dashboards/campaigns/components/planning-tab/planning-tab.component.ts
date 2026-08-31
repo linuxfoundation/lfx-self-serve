@@ -634,6 +634,10 @@ export class PlanningTabComponent implements OnInit {
           if (this.createIsCurrent(generation)) {
             this.hsCreating.set(false);
           }
+          // Generation first, then panelStillShows — the same pair the lookup arms use. An
+          // A -> B -> A round trip makes panelStillShows match a SUPERSEDED create again, and
+          // rendering its result would write a token from a create the operator has moved past.
+          if (!this.createIsCurrent(generation)) return;
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
           // `created` alone decides success. HubSpot assigns the token, and not necessarily by
           // the time the create returns — so requiring hs_utm too would report a campaign that
@@ -674,6 +678,10 @@ export class PlanningTabComponent implements OnInit {
           if (this.createIsCurrent(generation)) {
             this.hsCreating.set(false);
           }
+          // Generation first, as on the other three arms: a superseded create's FAILURE says
+          // nothing about the current one, and rendering it would withdraw a live offer or
+          // strand the panel on a message belonging to a create the operator has left.
+          if (!this.createIsCurrent(generation)) return;
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
           // The STATUS is read, not discarded. campaign-service separates the outcomes
           // deliberately, and collapsing them here would throw that away at the last step:
@@ -1319,6 +1327,12 @@ export class PlanningTabComponent implements OnInit {
           if (this.lookupIsCurrent(generation)) {
             this.hsSearching.set(false);
           }
+          // Same pair of guards as the success arm, for the same reason. A superseded lookup's
+          // FAILURE is not evidence about the current one: after an A -> B -> A round trip
+          // panelStillShows matches again, so a stale error would overwrite hsStatus and set
+          // hsUnconfirmed on a newer search — and nothing on the success path clears
+          // hsUnconfirmed, so the panel stays stuck on a failure that did not happen to it.
+          if (!this.lookupIsCurrent(generation)) return;
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
           this.hsStatus.set('HubSpot lookup failed');
           // The control is restored, not left cleared. A lookup that FAILED established
