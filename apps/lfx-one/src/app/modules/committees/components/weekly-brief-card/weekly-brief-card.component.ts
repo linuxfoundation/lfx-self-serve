@@ -882,16 +882,19 @@ export class WeeklyBriefCardComponent {
             timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS),
             catchError((err: unknown) => {
               console.error('[weekly-brief-card] poll tick failed, will retry', err);
-              // Undo the optimistic increment above only for a request that never reached the
-              // BFF at all (a genuine network/connection failure) — NOT for this tick's own
-              // `timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS)` above. Aborting the client-side XHR on
-              // that timeout does not cancel the server-side work already in flight — the BFF
-              // still pays getCommitteeBase + getCommitteeActivity's fan-out for a tick this
-              // client gave up waiting on. Refunding the slot for a TimeoutError would let a
-              // persistently slow (not erroring) upstream — the exact case
+              // Undo the optimistic increment above ONLY for a transport-level failure — the
+              // request never reached, or never got a response from, the BFF at all
+              // (HttpErrorResponse.status === 0: connection refused, DNS failure, CORS block,
+              // etc.). Neither of the other two error shapes qualifies: this tick's own
+              // `timeout(WEEKLY_BRIEF_POLL_INTERVAL_MS)` above (TimeoutError) doesn't cancel the
+              // server-side work already in flight, and a real HTTP error response (4xx/5xx,
+              // status !== 0) means the BFF DID receive and process the request — it just failed
+              // to answer well. Refunding for either would let a persistently slow OR persistently
+              // erroring (not just erroring) upstream — the exact case
               // WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS exists to bound — re-ask on every
               // one of up to WEEKLY_BRIEF_MAX_POLL_ATTEMPTS ticks instead of stopping at the cap.
-              if (shouldAskCurrentActivity && !(err instanceof TimeoutError)) currentActivityAskAttempts -= 1;
+              const isTransportFailure = err instanceof HttpErrorResponse && err.status === 0;
+              if (shouldAskCurrentActivity && isTransportFailure) currentActivityAskAttempts -= 1;
               return of(null as WeeklyBriefCurrentResponse | null);
             })
           );

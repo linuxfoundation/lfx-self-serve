@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -954,11 +955,13 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       component.onGenerate();
       await vi.advanceTimersByTimeAsync(0);
 
-      // The first tick after generate fails outright (a stand-in for the tick's own HTTP timeout
-      // or a network error) before any response — this asked (includeCurrentActivity: true), but
-      // must NOT count against WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS, since the server
-      // never had a chance to answer.
-      getWeeklyBrief.mockImplementationOnce(() => throwError(() => new Error('network error')));
+      // A transport-level failure (status: 0 — connection refused, DNS failure, CORS block: the
+      // request never reached, or never got a response from, the BFF at all) — this asked
+      // (includeCurrentActivity: true), but must NOT count against
+      // WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS, since the server never had a chance to
+      // answer. Contrast the sibling tests below: a TimeoutError or a real HTTP error status BOTH
+      // mean the BFF received the request, so both count against the cap; only status === 0 does not.
+      getWeeklyBrief.mockImplementationOnce(() => throwError(() => new HttpErrorResponse({ status: 0 })));
       await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
       expect(getWeeklyBrief).toHaveBeenNthCalledWith(2, 'committee-board', { includeCurrentActivity: true });
       // A failed tick degrades gracefully — it must not look like a terminal state and stop the
@@ -1015,6 +1018,44 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
       }
       // The cap is already spent — one tick earlier than the sibling network-failure test, since
       // the timed-out tick counted.
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief).toHaveBeenNthCalledWith(2 + WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS, 'committee-board', { includeCurrentActivity: false });
+
+      getWeeklyBrief.mockImplementation(() => of(pollTick(2)));
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(component.generating()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('DOES burn the ask-attempt cap on a tick that gets a real HTTP error response — the BFF received and processed the request, it just failed to answer well', async () => {
+    const generateWeeklyBrief = vi.fn(() => of({} as GenerateWeeklyBriefResponse));
+    await setup(BOARD_COMMITTEE, null, generateWeeklyBrief);
+    expect(getWeeklyBrief.mock.calls).toHaveLength(1);
+
+    fakePollTimers();
+    try {
+      component.onGenerate();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Unlike the "fails before reaching the server" test above (status: 0), a real HTTP error
+      // status means the request DID reach the BFF and got a response — even a failing one. This
+      // is the exact bug a bot reviewer caught: refunding on "any non-TimeoutError" also refunded
+      // on a persistent 500/503, defeating the cap for a persistently-ERRORING (not just slow)
+      // upstream the same way the earlier TimeoutError bug did for a persistently-slow one.
+      getWeeklyBrief.mockImplementationOnce(() => throwError(() => new HttpErrorResponse({ status: 503 })));
+      await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+      expect(getWeeklyBrief).toHaveBeenNthCalledWith(2, 'committee-board', { includeCurrentActivity: true });
+      expect(component.generating()).toBe(true);
+
+      // Only WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS - 1 further real asks remain — the
+      // 503 tick above already spent one slot, same as the sibling TimeoutError test.
+      getWeeklyBrief.mockImplementation(() => of(pollTick(1)));
+      for (let attempt = 0; attempt < WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS - 1; attempt++) {
+        await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
+        expect(getWeeklyBrief).toHaveBeenNthCalledWith(3 + attempt, 'committee-board', { includeCurrentActivity: true });
+      }
       await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_POLL_INTERVAL_MS);
       expect(getWeeklyBrief).toHaveBeenNthCalledWith(2 + WEEKLY_BRIEF_CURRENT_ACTIVITY_MAX_ASK_ATTEMPTS, 'committee-board', { includeCurrentActivity: false });
 
