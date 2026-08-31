@@ -66,12 +66,21 @@ export interface MeetingHeldActivityEvent extends BaseActivityEvent {
  * `WeeklyBriefService#withStaleness`) can check it as a second, independent relevance signal
  * alongside `occurred_at` — without changing this leg's one-event-per-vote contract for its
  * original Recent Activity consumer.
+ *
+ * `end_time` (GH-1967 Copilot review): the vote's scheduled close — the one field upstream's
+ * weekly-brief `VoteSource` windows on (`date_field=end_time&date_from=windowStart&date_to=windowEnd`,
+ * `vote_source.go`: "we want votes that closed within the window"). Carried so a staleness caller
+ * can tell whether a regeneration could include this vote at all — an open moment alone never
+ * qualifies a vote upstream, so gating on `opened_at`/`occurred_at` without it flags activity a
+ * regenerate could never reflect. Absent when the row has no parseable end_time, which upstream's
+ * end_time filter treats as unselectable too.
  */
 export interface VoteActivityEventPayload {
   vote_uid: string;
   name: string;
   status: string;
   opened_at?: string;
+  end_time?: string;
 }
 
 export interface VoteOpenedActivityEvent extends BaseActivityEvent {
@@ -87,13 +96,19 @@ export interface VoteClosedActivityEvent extends BaseActivityEvent {
 /**
  * Survey lifecycle payload — shared by `survey_published` and `survey_closed`, same rationale as
  * votes. `opened_at` (GH-1967 review) is the survey's publish moment, same reasoning as
- * `VoteActivityEventPayload.opened_at`.
+ * `VoteActivityEventPayload.opened_at`. `cutoff_date` (GH-1967 Copilot review) is
+ * `survey_cutoff_date` — the field upstream's weekly-brief `SurveySource` windows on AND requires
+ * to have already passed (`survey_source.go` skips unparseable cutoffs and drops
+ * `cutoff.After(time.Now())` rows, "excluding surveys still collecting responses") — same
+ * staleness-gating role as `VoteActivityEventPayload.end_time`: publication alone never qualifies
+ * a survey upstream.
  */
 export interface SurveyActivityEventPayload {
   survey_uid: string;
   title: string;
   status: string;
   opened_at?: string;
+  cutoff_date?: string;
 }
 
 export interface SurveyPublishedActivityEvent extends BaseActivityEvent {

@@ -13,6 +13,7 @@ import {
   WEEKLY_BRIEF_STALENESS_EVENT_TYPES,
 } from '@lfx-one/shared/constants';
 import {
+  ActivityEvent,
   Committee,
   GenerateWeeklyBriefRequest,
   GenerateWeeklyBriefResponse,
@@ -1153,19 +1154,22 @@ export class WeeklyBriefService {
     const brief = response.brief;
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) return response;
     if (!live) return { ...response, staleness: null };
-    // Upstream marks NEITHER field Required (confirmed against committee-service's Goa design —
-    // neither carries a `dsl.Required` entry), even though `WeeklyBrief` declares both as
-    // non-optional `string` here — this guard is deliberately stricter than the declared type,
+    // Upstream marks NONE of these fields Required (confirmed against committee-service's Goa
+    // design — none carries a `dsl.Required` entry), even though `WeeklyBrief` declares all three
+    // as non-optional `string` here — this guard is deliberately stricter than the declared type,
     // not redundant with it. An absent `updated_at` would otherwise reach `getCommitteeActivity`
     // as `since: undefined`, silently dropping the lower bound and returning the most recent
-    // activity of ANY age as if it were "since generated".
+    // activity of ANY age as if it were "since generated"; an absent window bound would silently
+    // disable the per-source window alignment in isNewBriefSourceActivity below.
     const sinceMs = Date.parse(brief.updated_at ?? '');
+    const windowStartMs = Date.parse(brief.window_start ?? '');
     const windowEndMs = Date.parse(brief.window_end ?? '');
-    if (Number.isNaN(sinceMs) || Number.isNaN(windowEndMs)) {
-      logger.warning(req, 'weekly_brief_staleness', 'Brief has an unparseable or missing updated_at/window_end, degrading staleness to null', {
+    if (Number.isNaN(sinceMs) || Number.isNaN(windowStartMs) || Number.isNaN(windowEndMs)) {
+      logger.warning(req, 'weekly_brief_staleness', 'Brief has an unparseable or missing updated_at/window_start/window_end, degrading staleness to null', {
         committee_id: committeeId,
         brief_uid: brief.uid,
         updated_at: brief.updated_at ?? null,
+        window_start: brief.window_start ?? null,
         window_end: brief.window_end ?? null,
       });
       return { ...response, staleness: null };
@@ -1207,31 +1211,12 @@ export class WeeklyBriefService {
         })
       );
       // WEEKLY_BRIEF_STALENESS_EVENT_TYPES narrows the feed's full event vocabulary down to the
-      // types that actually map onto a brief source kind — the feed also emits survey and
-      // meeting-notes events, which aren't brief sources and would flag activity regenerating
-      // could never reflect (see that constant's own doc comment for the full reasoning,
-      // including the mailing-list/membership blind spot it does NOT solve).
-      const relevant = data.filter((event) => {
-        if (!(WEEKLY_BRIEF_STALENESS_EVENT_TYPES as readonly string[]).includes(event.type)) return false;
-        const ms = Date.parse(event.occurred_at);
-        // `getCommitteeActivity`'s own `since` filter (isAtOrAfterSince) is inclusive (`ms >=
-        // since`), so without this, an event stamped at the exact same instant as brief.updated_at
-        // would count as "new" activity — the strict lower bound here is what actually enforces
-        // "happened after the brief was generated" (GH-1967 review).
-        if (!Number.isNaN(ms) && ms > sinceMs && ms <= ceilingMs) return true;
-        // Collapsed-lifecycle fallback (GH-1967 review): getCommitteeActivity collapses each
-        // vote/survey to one event reflecting only its CURRENT state — a vote/survey that opened
-        // in-window but has since closed shows up only as vote_closed/survey_closed at its (now
-        // out-of-window) close moment, otherwise invisible here. payload.opened_at (always
-        // populated, independent of the event's own type) carries the original open/publish
-        // moment for exactly this check; vote_opened/survey_published events never need it, their
-        // occurred_at already IS the opened_at.
-        if (event.type === 'vote_closed' || event.type === 'survey_closed') {
-          const openedMs = event.payload?.opened_at ? Date.parse(event.payload.opened_at) : NaN;
-          return !Number.isNaN(openedMs) && openedMs > sinceMs && openedMs <= ceilingMs;
-        }
-        return false;
-      });
+      // types that actually map onto a brief source kind (see that constant's own doc comment for
+      // the full reasoning, including the mailing-list/membership blind spot it does NOT solve);
+      // isNewBriefSourceActivity then additionally applies each source's OWN upstream window rule
+      // (meeting start, vote end_time, survey cutoff-date-and-already-passed — GH-1967 Copilot
+      // review) so activity a regeneration could never consume can't flag this brief stale.
+      const relevant = data.filter((event) => this.isNewBriefSourceActivity(event, { sinceMs, ceilingMs, windowStartMs, windowEndMs }));
       // getCommitteeActivity sorts descending by occurred_at, so events past the ceiling sort
       // ahead of relevant ones. If `page_token`/`any_leg_saturated`/`any_leg_failed` are all unset,
       // everything that exists was returned and known-complete, so an all-irrelevant result here is
@@ -1279,6 +1264,68 @@ export class WeeklyBriefService {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       return { ...response, staleness: null };
+    }
+  }
+
+  /**
+   * Whether one activity-feed event is BOTH new (after the brief's `updated_at`, at or before the
+   * ceiling) AND something a regeneration of this brief could actually consume — aligned with
+   * upstream's per-source window rules (GH-1967 Copilot review), verified against
+   * committee-service's Go sources:
+   *
+   * - `MeetingSource` windows on the meeting's `start_time` (`start_time[gte/lte]`,
+   *   meeting_source.go) — which IS `meeting_held`'s occurred_at, so the in-range occurrence check
+   *   alone is already fully aligned.
+   * - `VoteSource` qualifies a vote SOLELY on `end_time` ∈ [window_start, window_end]
+   *   (`date_field=end_time`, vote_source.go — "we want votes that closed within the window"; no
+   *   already-passed guard) — an open moment alone never qualifies, and even an in-window EARLY
+   *   close doesn't when the scheduled end_time falls outside the window. payload.end_time
+   *   (absent only when the row has no parseable end_time, which upstream's end_time filter treats
+   *   as unselectable too) is what makes that rule checkable here.
+   * - `SurveySource` windows on `survey_cutoff_date` the same way AND drops cutoffs still in the
+   *   future (`cutoff.After(time.Now())`, survey_source.go — "excluding surveys still collecting
+   *   responses"), skipping rows with unparseable cutoffs entirely — so a survey_published event
+   *   (a publish moment) can never qualify on its own. `cutoffMs <= ceilingMs` IS upstream's
+   *   `cutoff <= now` here because the ceiling is min(now, window_end).
+   *
+   * Without the payload gates this predicate was broader than what regeneration consumes: a vote
+   * opened after generation but ending outside the window (or a survey published while still
+   * collecting responses) flagged the brief stale even though regenerating could never pull it
+   * in — a false positive that burns one of the week's regenerations for no new content.
+   *
+   * Newness: strict `> sinceMs` / `<= ceilingMs` on occurred_at — `getCommitteeActivity`'s own
+   * `since` filter (isAtOrAfterSince) is inclusive (`ms >= since`), so the strict lower bound is
+   * what actually enforces "happened after the brief was generated" (GH-1967 review). The
+   * payload.opened_at fallback covers the collapsed lifecycle (GH-1967 review): the feed collapses
+   * each vote/survey to one event reflecting only its CURRENT state, so one that opened in-window
+   * but has since closed shows up only as vote_closed/survey_closed at its (now out-of-window)
+   * close moment, otherwise invisible here. For vote_opened/survey_published the fallback is
+   * provably identical to the occurred_at check (both read the same creation/publish moment) —
+   * applied uniformly anyway so the newness rule lives in exactly one place.
+   */
+  private isNewBriefSourceActivity(event: ActivityEvent, bounds: { sinceMs: number; ceilingMs: number; windowStartMs: number; windowEndMs: number }): boolean {
+    if (!(WEEKLY_BRIEF_STALENESS_EVENT_TYPES as readonly string[]).includes(event.type)) return false;
+    const occurredMs = Date.parse(event.occurred_at);
+    const occurredInRange = !Number.isNaN(occurredMs) && occurredMs > bounds.sinceMs && occurredMs <= bounds.ceilingMs;
+    switch (event.type) {
+      case 'meeting_held':
+        return occurredInRange;
+      case 'vote_opened':
+      case 'vote_closed': {
+        const endMs = Date.parse(event.payload.end_time ?? '');
+        if (Number.isNaN(endMs) || endMs < bounds.windowStartMs || endMs > bounds.windowEndMs) return false;
+        const openedMs = Date.parse(event.payload.opened_at ?? '');
+        return occurredInRange || (!Number.isNaN(openedMs) && openedMs > bounds.sinceMs && openedMs <= bounds.ceilingMs);
+      }
+      case 'survey_published':
+      case 'survey_closed': {
+        const cutoffMs = Date.parse(event.payload.cutoff_date ?? '');
+        if (Number.isNaN(cutoffMs) || cutoffMs < bounds.windowStartMs || cutoffMs > bounds.ceilingMs) return false;
+        const openedMs = Date.parse(event.payload.opened_at ?? '');
+        return occurredInRange || (!Number.isNaN(openedMs) && openedMs > bounds.sinceMs && openedMs <= bounds.ceilingMs);
+      }
+      default:
+        return false;
     }
   }
 

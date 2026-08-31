@@ -716,8 +716,17 @@ export class CommitteeActivityService {
       // opened_at (GH-1967 review) — always the vote's own creation_time, independent of isClosed,
       // so a closed vote's collapsed occurred_at (its close moment) doesn't hide the fact that it
       // opened at a different, potentially independently-relevant time. See
-      // VoteActivityEventPayload's own doc comment for why.
-      payload: { vote_uid: vote.uid, name: vote.name, status: vote.status, opened_at: firstValidTimestamp(vote.creation_time) || undefined },
+      // VoteActivityEventPayload's own doc comment for why. end_time (GH-1967 Copilot review) is
+      // carried for the same caller: upstream's weekly-brief VoteSource windows on end_time alone
+      // (NOT early_end_time — vote_source.go's date_field=end_time), so an in-window early close of
+      // a vote whose scheduled end_time falls outside the window is still not brief-relevant.
+      payload: {
+        vote_uid: vote.uid,
+        name: vote.name,
+        status: vote.status,
+        opened_at: firstValidTimestamp(vote.creation_time) || undefined,
+        end_time: firstValidTimestamp(vote.end_time) || undefined,
+      },
     };
   }
 
@@ -790,7 +799,16 @@ export class CommitteeActivityService {
       // independent of displayStatus, so a closed survey's collapsed occurred_at (its cutoff-driven
       // closure) doesn't hide the fact that it published at a different, potentially
       // independently-relevant time. See SurveyActivityEventPayload's own doc comment for why.
-      payload: { survey_uid: survey.uid, title: survey.survey_title, status: displayStatus, opened_at: firstValidTimestamp(survey.created_at) || undefined },
+      // cutoff_date (GH-1967 Copilot review) — upstream's weekly-brief SurveySource windows on
+      // survey_cutoff_date and requires it to have already passed, so publication alone is never
+      // brief-relevant; carried so the staleness signal can apply the same rule.
+      payload: {
+        survey_uid: survey.uid,
+        title: survey.survey_title,
+        status: displayStatus,
+        opened_at: firstValidTimestamp(survey.created_at) || undefined,
+        cutoff_date: firstValidTimestamp(survey.survey_cutoff_date ?? undefined) || undefined,
+      },
     };
   }
 

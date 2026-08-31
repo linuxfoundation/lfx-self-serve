@@ -667,6 +667,7 @@ describe('WeeklyBriefService', () => {
       uid: 'b1',
       state: 'generated',
       updated_at: '2026-01-17T08:00:00.000Z', // generated the same Saturday its window closes
+      window_start: '2026-01-11T00:00:00.000Z', // the Sunday opening that window
       window_end: '2026-01-17T23:59:59.999Z',
     };
     // Same brief shape, but generated AFTER its own window had already closed — the common case
@@ -676,6 +677,7 @@ describe('WeeklyBriefService', () => {
       uid: 'b1',
       state: 'generated',
       updated_at: '2026-01-15T09:00:00.000Z', // Thursday, after the window below already closed
+      window_start: '2026-01-04T00:00:00.000Z',
       window_end: '2026-01-10T23:59:59.999Z', // the previous Saturday
     };
 
@@ -713,7 +715,13 @@ describe('WeeklyBriefService', () => {
       getCommitteeActivityMock.mockResolvedValueOnce({
         data: [
           { type: 'meeting_held', occurred_at: '2026-01-17T18:00:00.000Z' },
-          { type: 'vote_closed', occurred_at: '2026-01-17T10:00:00.000Z' },
+          // vote_closed's payload.end_time is what upstream's VoteSource windows on — in-window
+          // here, so the vote is regeneration-consumable and the event counts (GH-1967 Copilot).
+          {
+            type: 'vote_closed',
+            occurred_at: '2026-01-17T10:00:00.000Z',
+            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Ended', end_time: '2026-01-17T10:00:00.000Z' },
+          },
         ],
       });
 
@@ -755,13 +763,27 @@ describe('WeeklyBriefService', () => {
       // Verified against lfx-v2-committee-service's buildClaimsAndRefs (group_weekly_brief_generator.go):
       // it emits Kind: "survey" (fed into ClaimEvidence, the generator's actual LLM input) but never
       // a "document"/"doc" kind — the original event-type list had this backwards.
+      // Vote/survey events carry the payload field upstream windows on (end_time / cutoff_date —
+      // GH-1967 Copilot review); each one here is in-window and (for surveys) already passed.
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
       getCommitteeActivityMock.mockResolvedValueOnce({
         data: [
-          { type: 'survey_published', occurred_at: '2026-01-17T08:30:00.000Z' },
-          { type: 'survey_closed', occurred_at: '2026-01-17T09:00:00.000Z' },
+          {
+            type: 'survey_published',
+            occurred_at: '2026-01-17T08:30:00.000Z',
+            payload: { survey_uid: 's1', title: 'Q1 Survey', status: 'Sent', cutoff_date: '2026-01-17T12:00:00.000Z' },
+          },
+          {
+            type: 'survey_closed',
+            occurred_at: '2026-01-17T09:00:00.000Z',
+            payload: { survey_uid: 's2', title: 'Q2 Survey', status: 'Closed', cutoff_date: '2026-01-17T09:00:00.000Z' },
+          },
           { type: 'document_uploaded', occurred_at: '2026-01-17T10:00:00.000Z' },
-          { type: 'vote_opened', occurred_at: '2026-01-17T11:00:00.000Z' },
+          {
+            type: 'vote_opened',
+            occurred_at: '2026-01-17T11:00:00.000Z',
+            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Active', end_time: '2026-01-17T18:00:00.000Z' },
+          },
         ],
       });
 
@@ -770,17 +792,19 @@ describe('WeeklyBriefService', () => {
       expect(result.staleness).toEqual({ stale: true, event_count: 3, event_count_is_floor: false });
     });
 
-    it('counts a vote_closed event whose collapsed occurred_at is out-of-window when its payload.opened_at falls in the window (GH-1967 review)', async () => {
+    it('still counts a vote_closed event whose collapsed occurred_at is out-of-range when its end_time is in-window and its payload.opened_at is new — the fallback surviving source-window alignment (GH-1967 review)', async () => {
       // getCommitteeActivity collapses each vote to one event reflecting only its current state —
-      // a vote opened in-window that has since closed shows up only as vote_closed at its (now
-      // out-of-window) close moment. payload.opened_at is the fallback signal that catches this.
+      // a vote whose EARLY close landed after window_end while its scheduled end_time was in-window
+      // shows up only as vote_closed at that (out-of-range) close moment. Upstream's VoteSource
+      // windows on end_time alone, so a regeneration WOULD include this vote — payload.opened_at
+      // (in-window, after updated_at) is the fallback newness signal that catches it.
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
       getCommitteeActivityMock.mockResolvedValueOnce({
         data: [
           {
             type: 'vote_closed',
-            occurred_at: '2026-01-18T10:00:00.000Z', // after window_end
-            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Ended', opened_at: '2026-01-17T12:00:00.000Z' }, // inside window
+            occurred_at: '2026-01-18T10:00:00.000Z', // after window_end (early_end_time)
+            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Ended', opened_at: '2026-01-17T12:00:00.000Z', end_time: '2026-01-17T22:00:00.000Z' }, // opened in-window after generation; end_time in-window
           },
         ],
       });
@@ -790,16 +814,101 @@ describe('WeeklyBriefService', () => {
       expect(result.staleness).toEqual({ stale: true, event_count: 1, event_count_is_floor: false });
     });
 
-    it('does not count a vote_closed event when neither its occurred_at nor its payload.opened_at falls in the window', async () => {
-      // Negative control for the fallback above — a vote that both opened and closed outside the
-      // relevant window must not count, even though it has a payload.opened_at present.
+    it("does not count a vote_closed event whose opened_at falls in the window when its end_time does not — the opened_at fallback can no longer override upstream's source window (GH-1967 Copilot review)", async () => {
+      // The pre-alignment false positive Copilot flagged: a vote opened after generation but ending
+      // OUTSIDE the brief window — upstream's VoteSource (date_field=end_time) could never include
+      // it in a regeneration, so it must not flag the brief stale on its open moment alone.
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
       getCommitteeActivityMock.mockResolvedValueOnce({
         data: [
           {
             type: 'vote_closed',
             occurred_at: '2026-01-18T10:00:00.000Z', // after window_end
-            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Ended', opened_at: '2026-01-16T00:00:00.000Z' }, // before updated_at
+            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Ended', opened_at: '2026-01-17T12:00:00.000Z', end_time: '2026-01-18T10:00:00.000Z' }, // opened in-window, but end_time outside it
+          },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+    });
+
+    it('does not count a vote_closed event when neither its occurred_at nor its payload.opened_at falls in the window', async () => {
+      // Negative control for the fallback above — an upstream-selectable vote (end_time in-window)
+      // with NO new moment since generation (opened before updated_at, closed after window_end)
+      // must not count: staleness requires source-window qualification AND newness together.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          {
+            type: 'vote_closed',
+            occurred_at: '2026-01-18T10:00:00.000Z', // after window_end
+            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Ended', opened_at: '2026-01-16T00:00:00.000Z', end_time: '2026-01-17T22:00:00.000Z' }, // opened before updated_at; end_time in-window
+          },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+    });
+
+    it('does not count a vote_opened event whose end_time falls outside the window — an open moment alone never qualifies a vote upstream (GH-1967 Copilot review)', async () => {
+      // Upstream's VoteSource selects votes solely by end_time ∈ [window_start, window_end]
+      // (vote_source.go: date_field=end_time), so a vote opened after generation but ending next
+      // week is invisible to a regeneration — flagging it stale would burn a weekly regeneration
+      // for no new content.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          {
+            type: 'vote_opened',
+            occurred_at: '2026-01-17T11:00:00.000Z', // in-window, after updated_at
+            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Active', end_time: '2026-01-24T10:00:00.000Z' }, // next week — outside the window
+          },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+    });
+
+    it('does not count a survey_published event whose cutoff has not passed yet — upstream excludes surveys still collecting responses (GH-1967 Copilot review)', async () => {
+      // SurveySource drops cutoffs in the future even inside the window (survey_source.go:
+      // cutoff.After(time.Now()) — "excluding surveys still collecting responses"), so a publish
+      // moment alone must not qualify.
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-01-17T12:00:00.000Z')); // same Saturday as liveBrief
+        proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+        getCommitteeActivityMock.mockResolvedValueOnce({
+          data: [
+            {
+              type: 'survey_published',
+              occurred_at: '2026-01-17T11:00:00.000Z', // in-window, after updated_at, before pinned now
+              payload: { survey_uid: 's1', title: 'Q1 Survey', status: 'Sent', cutoff_date: '2026-01-17T20:00:00.000Z' }, // in-window but after pinned now
+            },
+          ],
+        });
+
+        const result = await service.getCurrentBrief(req, 'committee-1');
+
+        expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not count a survey_published event whose cutoff falls outside the window (GH-1967 Copilot review)', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          {
+            type: 'survey_published',
+            occurred_at: '2026-01-17T11:00:00.000Z', // in-window, after updated_at
+            payload: { survey_uid: 's1', title: 'Q1 Survey', status: 'Sent', cutoff_date: '2026-01-24T12:00:00.000Z' }, // next week — outside the window
           },
         ],
       });
@@ -868,7 +977,15 @@ describe('WeeklyBriefService', () => {
         vi.setSystemTime(new Date('2026-01-17T12:00:00.000Z')); // same Saturday as liveBrief, before its window_end
         proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
         getCommitteeActivityMock.mockResolvedValueOnce({
-          data: [{ type: 'vote_closed', occurred_at: '2026-01-17T18:00:00.000Z' }], // after pinned "now", still before window_end
+          // end_time in-window (upstream-selectable) so the ONLY thing excluding this event is the
+          // ceiling — occurred_at is after the pinned "now", still before window_end.
+          data: [
+            {
+              type: 'vote_closed',
+              occurred_at: '2026-01-17T18:00:00.000Z',
+              payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Ended', end_time: '2026-01-17T18:00:00.000Z' },
+            },
+          ],
         });
 
         const result = await service.getCurrentBrief(req, 'committee-1');
@@ -987,6 +1104,17 @@ describe('WeeklyBriefService', () => {
       expect(getCommitteeActivityMock).not.toHaveBeenCalled();
       expect(logger.warning).toHaveBeenCalledTimes(1);
       expect(logger.warning).toHaveBeenCalledWith(req, 'weekly_brief_staleness', expect.any(String), expect.objectContaining({ window_end: 'not-a-date' }));
+    });
+
+    it('degrades to null and logs the offending raw value when the brief has an unparseable window_start — the per-source window alignment has no lower bound without it (GH-1967 Copilot review)', async () => {
+      proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, window_start: 'not-a-date' }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+      expect(logger.warning).toHaveBeenCalledWith(req, 'weekly_brief_staleness', expect.any(String), expect.objectContaining({ window_start: 'not-a-date' }));
     });
 
     it('degrades to null and logs a warning (not an error) when the activity fetch throws, without failing getCurrentBrief', async () => {

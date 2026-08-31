@@ -117,6 +117,16 @@ export const WEEKLY_BRIEF_SOURCE_SECTIONS: readonly WeeklyBriefSourceSection[] =
  * `DeferredActivityEvent` (never emitted, see `activity-event.interface.ts`) and there is no
  * mailing-list event type — so mailing-list and membership activity is a known, currently
  * unfixable blind spot for this signal.
+ *
+ * Event-type narrowing is only half of the upstream alignment (GH-1967 Copilot review): these
+ * types alone are broader than what a regeneration can consume — upstream's VoteSource qualifies
+ * votes solely on `end_time` ∈ [window_start, window_end] (`date_field=end_time`, vote_source.go)
+ * and SurveySource on `survey_cutoff_date` ∈ window AND already passed (`cutoff.After(time.Now())`,
+ * survey_source.go) — so an open/publish moment by itself never qualifies a vote or survey.
+ * `WeeklyBriefService#withStaleness` (via `isNewBriefSourceActivity`) therefore additionally gates
+ * each event on its payload's `end_time` / `cutoff_date` — carried on `VoteActivityEventPayload` /
+ * `SurveyActivityEventPayload` for exactly that check — so activity a regeneration could never
+ * reflect can't flag the brief stale.
  */
 export const WEEKLY_BRIEF_STALENESS_EVENT_TYPES: readonly ActivityEventType[] = [
   'meeting_held',
