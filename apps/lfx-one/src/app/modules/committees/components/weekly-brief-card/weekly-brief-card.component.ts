@@ -35,6 +35,7 @@ import {
   WeeklyBriefSourceChip,
   WeeklyBriefSourceChipAction,
   WeeklyBriefSourceChipSection,
+  WeeklyBriefStaleness,
   WeeklyBriefThrottle,
 } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel, mapWeeklyBriefSourceRefsToChips } from '@lfx-one/shared/utils';
@@ -242,6 +243,27 @@ export class WeeklyBriefCardComponent {
     const override = this.optimisticRating();
     if (b && override && override.briefUid === b.uid && override.revision === b.revision) return override.value;
     return this.briefResponse()?.caller_rating ?? null;
+  });
+
+  // BFF enrichment on the response envelope (GH-1966), not on `WeeklyBrief` itself — read from
+  // `briefResponse`, same pattern as `callerRating`. `null` whenever staleness couldn't be
+  // computed (non-shareable state, mock mode, an unparseable timestamp, or an inconclusive or
+  // soft-failed upstream fetch); a brief generated after its own window closed instead
+  // confidently reports `stale: false`. Purely informational — never gates
+  // canGenerate/canRegenerate.
+  public readonly staleness: Signal<WeeklyBriefStaleness | null> = computed(() => this.briefResponse()?.staleness ?? null);
+
+  // Precomputed here rather than resolved inline in the template (repo rule:
+  // docs/reviews/frontend-checklist.md §4) — also avoids a nested ternary in markup.
+  public readonly stalenessTooltip: Signal<string> = computed(() => {
+    const s = this.staleness();
+    if (!s) return '';
+    const suffix = s.event_count_is_floor ? '+' : '';
+    // `updated_at` (what staleness compares against) is the last edit time for an `edited`
+    // brief, not its original generation time — "last updated" covers both without
+    // misattributing an edit to a regenerate that never happened.
+    const noun = s.event_count === 1 && !s.event_count_is_floor ? 'event' : 'events';
+    return `${s.event_count}${suffix} new ${noun} since this brief was last updated`;
   });
 
   public readonly canGenerate: Signal<boolean> = computed(() => {
