@@ -101,7 +101,13 @@ export default defineConfig({
     // there and `--cwd apps/lfx-one` resolved to apps/lfx-one/apps/lfx-one. Locally
     // reuseExistingServer hides it by adopting a server someone already started; CI has it off,
     // so the server never launches and the whole suite fails there.
-    command: `yarn ng serve --port ${E2E_PORT}`,
+    //
+    // docs:build first, for the same class of reason. The app's `start` script is
+    // `yarn docs:build && ng serve`, and DocsManifestService STATICALLY imports
+    // src/app/modules/docs/generated/docs-manifest, which is gitignored. Calling `ng serve`
+    // alone works on a machine that has built before and cannot compile on a clean checkout —
+    // so the suite would fail to launch in CI while passing locally.
+    command: `yarn docs:build && yarn ng serve --port ${E2E_PORT}`,
     url: E2E_BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
