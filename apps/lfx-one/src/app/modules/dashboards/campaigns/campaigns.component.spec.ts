@@ -1180,6 +1180,311 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
       }
 
+      /**
+       * The first-create path, which is the one that was broken.
+       *
+       * `onProceedToImplementation` sets the tab DIRECTLY rather than through `selectTab`, so the
+       * Optimize-entry load never ran and the capability stayed `null` — the Implementation tab
+       * then withheld Demand Gen on every deployment, including ones that support it.
+       *
+       * Asserted through the PARENT rather than by setting the tab's input, because the input
+       * always worked; nothing populated it. A test that sets `demandGenEnabled` by hand passes
+       * against exactly the bug this covers.
+       */
+      it('loads the demand-gen capability on a first-create Planning to Implementation flow', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        // The real value, not `null`: the tab renders the control only on an explicit `true`.
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+      });
+
+      /**
+       * The disabled-persist path deliberately does NOT dispatch a capability read.
+       *
+       * It is tempting to send one: `result.briefId` is `''` there, and the service really does
+       * return `demandGenEnabled` for a blank brief id. But the HTTP path never reaches that
+       * branch — `campaign.controller.ts` 400s on a blank `brief_id` first, which
+       * `campaign.controller.spec.ts` pins. Dispatching would spend a request per Implementation
+       * entry to receive an error, land in the error arm, and set the capability to `null`; the
+       * control stays hidden either way, with a spurious 400 added.
+       *
+       * So the assertion is that NOTHING was sent, and the capability stays unknown. Fixing this
+       * properly needs a capability read that does not require a brief id at all.
+       */
+      it('sends no capability request when brief persistence is disabled', async () => {
+        const list = vi
+          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
+          .mockReturnValue(of({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true }));
+
+        persistBrief.mockReturnValue(of({ enabled: false, briefId: '', etag: null, created: false, approved: false }));
+        proceed();
+        await fixture.whenStable();
+
+        expect(list).not.toHaveBeenCalled();
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBeNull();
+      });
+
+      /**
+       * A failed read leaves the capability `null`, never `false` — because the tab's draft restore
+       * clears a saved Demand Gen selection on an explicit `false`, and a failed read has
+       * established nothing.
+       */
+      it('leaves the capability unknown when the capability read fails', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBeNull();
+      });
+
+      /**
+       * The return-entry trigger — the second of the two triggers at lines 947-949.
+       *
+       * A first-create persist calls `loadCreateCapabilitiesFor` on success, but if that read
+       * fails the user has no way to retry except by leaving and re-entering the tab. That
+       * re-entry goes through `selectTab`, which is the path under test here. Removing the
+       * `tab === 'implementation'` branch from `selectTab` leaves the tests above green — the
+       * persist-success path still fires its own read — but this case stays broken.
+       */
+      it('retries the capability read when the user re-enters Implementation via the tab bar', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+
+        // First create: persist succeeds, capability read fails.
+        await withSavedBrief();
+        await fixture.whenStable();
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBeNull();
+
+        // User navigates away and comes back via the tab bar.
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+        (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('planning', 'paid-marketing');
+        (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab(
+          'implementation',
+          'paid-marketing'
+        );
+        await fixture.whenStable();
+
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+      });
+
+      /**
+       * An Optimize visit landing on top of a capability read must not lose the answer.
+       *
+       * The guard shared Optimize's list counter at first, which `loadBriefCampaigns` increments
+       * on every entry — so an ordinary Optimize click discarded an in-flight capability response
+       * and left the control hidden.
+       *
+       * Both mocked responses return `true`. What is asserted is that the answer SURVIVES the
+       * overlap — whichever of the two requests delivers it first, a `true` lands on the signal
+       * rather than being overwritten to `null` by the later arrival.
+       *
+       * NOT that the two reads must agree. They can disagree: during a rolling deployment
+       * identical `/list` calls land on pods with different flag values, which is the pod-local
+       * hazard recorded on #1885. This pins ordering, never agreement.
+       */
+      it('keeps a capability answer when an Optimize load races it', async () => {
+        const capability = new Subject<CampaignListResult>();
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(capability.asObservable());
+
+        await withSavedBrief();
+
+        // Optimize entry lands on top of the still-open capability request.
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+        load();
+        await fixture.whenStable();
+
+        // ...and the original request answers only now.
+        capability.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true });
+        capability.complete();
+        await fixture.whenStable();
+
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+      });
+
+      /**
+       * The reverse race, and the one a single-reader token cannot close: `loadBriefCampaigns`
+       * writes this signal too. An older list read failing AFTER a newer capability read
+       * succeeded must not reset a live answer to `null` — a failure has established nothing.
+       */
+      it('does not let an older failing list read wipe a newer capability answer', async () => {
+        const staleList = new Subject<CampaignListResult>();
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(staleList.asObservable());
+
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+
+        // A newer capability read answers while that list request is still open.
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+        (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
+        await fixture.whenStable();
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+
+        // The superseded list read now fails. It must not touch the newer answer.
+        staleList.error(new Error('query service down'));
+        await fixture.whenStable();
+
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+      });
+
+      /**
+       * The RESTORE path, which knows its brief id and still missed the capability.
+       *
+       * `onProceedToImplementation` originally asked for the capability before the
+       * `alreadyPersisted` branch wrote the restored id onto `briefPersistence`, so the read saw
+       * the PREVIOUS id and guarded itself out. Unlike a first create there is no persist to
+       * follow, so nothing retried and the capability stayed unknown for the whole session.
+       */
+      it('loads the capability for a brief restored from campaign-service', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true })
+        );
+
+        restore(brief, 'brief-9', true);
+        await fixture.whenStable();
+
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+      });
+
+      /**
+       * A read that starts failing must not leave the previous answer standing.
+       *
+       * The error arm wrote nothing at first, which reads as "left null" only on the FIRST read.
+       * Once a successful read had set `true`, a later failure kept offering the control on the
+       * strength of a read that no longer succeeds. Asserts the value, not merely that the arm ran.
+       */
+      it('clears a previously known capability when a later read fails', async () => {
+        const list = vi
+          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
+          .mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+
+        await withSavedBrief();
+        await fixture.whenStable();
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+
+        list.mockReturnValue(throwError(() => new Error('query service down')));
+        (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
+        await fixture.whenStable();
+
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBeNull();
+      });
+
+      /**
+       * Out-of-order completion WITHIN one foundation — the case a foundation-only guard misses.
+       *
+       * The first version of this guard shared Optimize's counter and dropped valid responses.
+       * The second guarded on the foundation alone, which drops nothing valid but imposes no
+       * ORDER: two Implementation entries in the same foundation can complete in either order,
+       * and an older request failing after a newer one succeeded would wipe a live `true` back
+       * to `null`, hiding Demand Gen on a deployment that had just confirmed it.
+       */
+      it('ignores an older capability read that fails after a newer one succeeded', async () => {
+        const older = new Subject<CampaignListResult>();
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(older.asObservable());
+
+        await withSavedBrief();
+
+        // A second Implementation entry supersedes the first, and answers first.
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+        (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
+        await fixture.whenStable();
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+
+        // The superseded request now fails. It must not touch the newer answer.
+        older.error(new Error('query service down'));
+        await fixture.whenStable();
+
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+      });
+
+      /**
+       * The half the generation counter cannot cover.
+       *
+       * A foundation switch clears the capability but dispatches no capability read of its own,
+       * so it never bumps `capabilityGeneration`. An in-flight read from the previous
+       * foundation therefore still looks current BY GENERATION, and only the slug check stops it
+       * writing foundation A's answer onto foundation B — a stale answer for a slug the user
+       * is no longer viewing.
+       */
+      it('drops a capability answer that arrives after the foundation changed', async () => {
+        const pending = new Subject<CampaignListResult>();
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(pending.asObservable());
+
+        await withSavedBrief();
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        // The previous foundation's read answers only now.
+        pending.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true });
+        pending.complete();
+        await fixture.whenStable();
+
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBeNull();
+      });
+
+      /**
+       * A failure must not take the success ordering with it.
+       *
+       * Stamping the shared token on the ERROR arm looked symmetrical and was wrong: two reads
+       * dispatched together, the first failing, would advance the token and make the second's
+       * valid answer fail its own write check — a failure suppressing a success, which is the one
+       * thing the ordering exists to prevent.
+       */
+      it('lets a success land after an earlier read has already failed', async () => {
+        const first = new Subject<CampaignListResult>();
+        const second = new Subject<CampaignListResult>();
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(first.asObservable());
+
+        await withSavedBrief();
+
+        // A second read dispatches while the first is still open.
+        list.mockReturnValue(second.asObservable());
+        (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
+        await fixture.whenStable();
+
+        // The FIRST fails...
+        first.error(new Error('query service down'));
+        await fixture.whenStable();
+
+        // ...and the second still succeeds. Its answer must land.
+        second.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true });
+        second.complete();
+        await fixture.whenStable();
+
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+      });
+
+      /**
+       * The capability is a DEPLOYMENT fact, so re-entering Implementation must not re-read it.
+       *
+       * Without the `null` guard this spent a full `listBriefCampaigns` round trip per tab entry
+       * to learn the same boolean. Asserted as a CALL COUNT rather than a value, because the
+       * value is identical either way — only the number of requests distinguishes them.
+       */
+      it('does not refetch the capability once it is known', async () => {
+        const list = vi
+          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
+          .mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+
+        await withSavedBrief();
+        await fixture.whenStable();
+        const afterFirst = list.mock.calls.length;
+
+        // Leave and re-enter Implementation: the answer is already known.
+        (fixture.componentInstance as unknown as { selectTab(t: string, o: string): void }).selectTab('planning', 'paid-marketing');
+        (fixture.componentInstance as unknown as { selectTab(t: string, o: string): void }).selectTab('implementation', 'paid-marketing');
+        await fixture.whenStable();
+
+        expect(list.mock.calls.length).toBe(afterFirst);
+        expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+      });
+
       it('clears the previous brief campaigns when the foundation changes', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
