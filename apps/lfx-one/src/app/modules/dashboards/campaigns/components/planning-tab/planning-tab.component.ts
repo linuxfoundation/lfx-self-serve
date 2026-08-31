@@ -6,6 +6,7 @@ import { Component, computed, DestroyRef, inject, input, OnInit, output, PLATFOR
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -36,7 +37,7 @@ type PlanningStep = 'input' | 'generating' | 'review';
 
 @Component({
   selector: 'lfx-planning-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, NgClass],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, NgClass],
   templateUrl: './planning-tab.component.html',
   styleUrl: './planning-tab.component.scss',
 })
@@ -128,21 +129,29 @@ export class PlanningTabComponent implements OnInit {
    * what the scrape actually returned rather than the last thing typed.
    */
   protected readonly isEditingEmailBrief = signal<boolean>(false);
-  protected readonly emailEditName = signal<string>('');
-  protected readonly emailEditDates = signal<string>('');
-  protected readonly emailEditCity = signal<string>('');
 
   /**
-   * The event's country, editable because the audience build depends on it.
+   * The email brief editor, as a FormGroup rather than six signals.
    *
-   * It became editable when the fallback stopped inventing 'US': an extraction that produces
-   * nothing now leaves this empty, and empty is the honest answer -- but without a field to
-   * correct it, an operator had no way to build a country-scoped audience at all. The three
-   * fields beside it were already repairable; this one carried the consequence.
+   * `frontend-checklist.md` 14.1 makes the `lfx-input-text` wrapper mandatory for changed form
+   * controls, and the wrapper takes a FormGroup plus a control name -- `ngModel` is not supported.
+   * Raw `<input>` bound to signals worked but recreated the wrapper's label/validation behaviour
+   * by hand, which is the duplication the rule exists to stop.
+   *
+   * `countryCode` is here for a reason the others are not: it became editable when the fallback
+   * stopped inventing 'US'. An extraction that produces nothing now leaves it empty -- the honest
+   * answer -- but without a field to correct it an operator could not build a country-scoped
+   * audience at all. The fields beside it were already repairable; this one carried the
+   * consequence.
    */
-  protected readonly emailEditCountryCode = signal<string>('');
-  protected readonly emailEditAudience = signal<string>('');
-  protected readonly emailEditRegistrationUrl = signal<string>('');
+  protected readonly emailEditForm = this.fb.group({
+    name: [''],
+    dates: [''],
+    city: [''],
+    countryCode: [''],
+    audience: [''],
+    registrationUrl: [''],
+  });
   protected readonly copyBuffer = signal('');
   protected readonly structuredCopy = signal<Record<string, unknown> | null>(null);
   protected readonly hsUtm = signal<string | null>(null);
@@ -698,12 +707,14 @@ export class PlanningTabComponent implements OnInit {
     if (d === null) {
       return;
     }
-    this.emailEditName.set(d.name);
-    this.emailEditDates.set(d.dates);
-    this.emailEditCity.set(d.city);
-    this.emailEditCountryCode.set(d.countryCode);
-    this.emailEditAudience.set(d.audience);
-    this.emailEditRegistrationUrl.set(d.registrationUrl);
+    this.emailEditForm.setValue({
+      name: d.name,
+      dates: d.dates,
+      city: d.city,
+      countryCode: d.countryCode,
+      audience: d.audience,
+      registrationUrl: d.registrationUrl,
+    });
     this.isEditingEmailBrief.set(true);
   }
 
@@ -721,14 +732,14 @@ export class PlanningTabComponent implements OnInit {
     }
     this.eventDetails.set({
       ...d,
-      name: this.emailEditName().trim(),
-      dates: this.emailEditDates().trim(),
-      city: this.emailEditCity().trim(),
+      name: (this.emailEditForm.controls.name.value ?? '').trim(),
+      dates: (this.emailEditForm.controls.dates.value ?? '').trim(),
+      city: (this.emailEditForm.controls.city.value ?? '').trim(),
       // Upper-cased: `countryNameFor` looks the code up case-sensitively after its own
       // normalisation, and an operator typing "ke" should not silently produce no country.
-      countryCode: this.emailEditCountryCode().trim().toUpperCase(),
-      audience: this.emailEditAudience().trim(),
-      registrationUrl: this.emailEditRegistrationUrl().trim(),
+      countryCode: (this.emailEditForm.controls.countryCode.value ?? '').trim().toUpperCase(),
+      audience: (this.emailEditForm.controls.audience.value ?? '').trim(),
+      registrationUrl: (this.emailEditForm.controls.registrationUrl.value ?? '').trim(),
     });
     this.isEditingEmailBrief.set(false);
   }

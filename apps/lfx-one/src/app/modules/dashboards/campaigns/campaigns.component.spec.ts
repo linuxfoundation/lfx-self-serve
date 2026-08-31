@@ -1841,6 +1841,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     onProceedToImplementation(brief: CampaignBriefOutput): void;
     onEmailProceedToImplementation(brief: CampaignBriefOutput): void;
     selectedEmailTemplateId: WritableSignal<string>;
+    selectedEmailTypeId: WritableSignal<string>;
     emailCopy: WritableSignal<EmailBriefCopy | null>;
     emailAudience: WritableSignal<CampaignAudience | null>;
     emailAudienceState: WritableSignal<'idle' | 'building' | 'error'>;
@@ -3009,14 +3010,22 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
 
-      const sel = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-type-select"]') as HTMLSelectElement | null;
-      expect(sel).not.toBeNull();
-      expect(sel?.options.length).toBe(12);
-      // The RENDERED selection, not the signal. A native <select> ignores a `value` binding
-      // applied before its options exist and falls back to the FIRST option -- so the signal read
-      // "main-registration-push" while the control showed CFP Launch, and an operator who never
-      // touched the selector silently got CFP copy. Driving the handler directly cannot see this.
-      expect(sel?.value).toBe('main-registration-push');
+      // `data-test`, not `data-testid`: that is the attribute `lfx-select` renders from its
+      // `dataTest` input, and querying the wrong one returns null on a control that IS present.
+      const sel = (fixture.nativeElement as HTMLElement).querySelector('[data-test="campaigns-email-type-select"]');
+      expect(sel, 'the email-type selector is not rendered').not.toBeNull();
+
+      // The RENDERED label, not the signal, and not the form value either. The raw <select> this
+      // replaced ignored a `[value]` binding applied before its options existed and fell back to
+      // the FIRST option -- so the signal read "main-registration-push" while the control showed
+      // CFP Launch, and an operator who never touched the selector silently got CFP copy. Reading
+      // the control's own text is the only assertion that can see that class of bug; driving the
+      // handler, or reading the FormControl, cannot.
+      expect(sel?.textContent).toContain('Main Registration Push');
+      expect(sel?.textContent).not.toContain('CFP Launch');
+
+      // The signal the rest of the component reads must agree with what is on screen.
+      expect(internals().selectedEmailTypeId()).toBe('main-registration-push');
     });
 
     it('drops copy written for the previous type when the type changes', () => {

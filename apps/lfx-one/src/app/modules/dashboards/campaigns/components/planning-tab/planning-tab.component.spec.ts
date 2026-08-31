@@ -1056,8 +1056,7 @@ describe('PlanningTabComponent email brief editing', () => {
       (): { name: string; dates: string; city: string; audience: string; registrationUrl: string } | null;
     };
     isEditingEmailBrief(): boolean;
-    emailEditName: { set(v: string): void; (): string };
-    emailEditDates: { set(v: string): void; (): string };
+    emailEditForm: { controls: Record<string, { value: string | null; setValue(v: string): void }> };
     enterEmailEditMode(): void;
     saveEmailEdit(): void;
     cancelEmailEdit(): void;
@@ -1110,14 +1109,14 @@ describe('PlanningTabComponent email brief editing', () => {
     await buildWithScrape();
     internals().enterEmailEditMode();
     // An editor that opened blank would silently blank the brief on save.
-    expect(internals().emailEditName()).toBe('MCP Dev Summit Nairobi');
+    expect(internals().emailEditForm.controls['name'].value).toBe('MCP Dev Summit Nairobi');
     expect(internals().isEditingEmailBrief()).toBe(true);
   });
 
   it('writes the edit back into eventDetails, which is what generation reads', async () => {
     await buildWithScrape();
     internals().enterEmailEditMode();
-    internals().emailEditDates.set('March 10-11, 2026');
+    internals().emailEditForm.controls['dates'].setValue('March 10-11, 2026');
     internals().saveEmailEdit();
     // Asserting the DESTINATION: an edit that stopped at the form would show the corrected date
     // on screen while content generation still sent the wrong one upstream.
@@ -1128,7 +1127,7 @@ describe('PlanningTabComponent email brief editing', () => {
   it('discards edits on cancel', async () => {
     await buildWithScrape();
     internals().enterEmailEditMode();
-    internals().emailEditName.set('Something else entirely');
+    internals().emailEditForm.controls['name'].setValue('Something else entirely');
     internals().cancelEmailEdit();
     expect(internals().eventDetails()?.name).toBe('MCP Dev Summit Nairobi');
   });
@@ -1141,7 +1140,7 @@ describe('PlanningTabComponent email brief editing', () => {
     );
 
     internals().enterEmailEditMode();
-    internals().emailEditDates.set('March 10-11, 2026');
+    internals().emailEditForm.controls['dates'].setValue('March 10-11, 2026');
     // Deliberately NOT calling saveEmailEdit: clicking Proceed straight from an open editor is
     // the ordinary path, and dropping the correction there sends the stale scrape to generation
     // while the user is looking at their edit on screen.
@@ -1175,7 +1174,7 @@ describe('PlanningTabComponent email brief editing', () => {
 
     internals().enterEmailEditMode();
     // Lower-case in, upper-case out: `countryNameFor` looks the code up case-sensitively.
-    (internals() as unknown as { emailEditCountryCode: { set(v: string): void } }).emailEditCountryCode.set('ke');
+    internals().emailEditForm.controls['countryCode'].setValue('ke');
     (fixture.componentInstance as unknown as { onProceedToImplementation(): void }).onProceedToImplementation();
 
     expect((emitted[0] as { eventDetails: { countryCode: string } }).eventDetails.countryCode).toBe('KE');
