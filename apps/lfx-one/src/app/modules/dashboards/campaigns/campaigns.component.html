@@ -633,12 +633,18 @@
               -->
                 <p class="text-sm text-gray-500">Counters are each email's totals to date, as reported by HubSpot.</p>
               </div>
+              <!--
+              Disabled only while a read is IN FLIGHT. It was also disabled in `idle`, on the
+              grounds that it was a no-op there -- but a reset parks the tab in `idle`, so that
+              left an operator returning to Monitor with no way to load anything. `idle` is now
+              recoverable: the load falls back to the owned brief id.
+            -->
               <lfx-button
                 label="Refresh"
                 icon="fa-light fa-arrows-rotate"
                 [outlined]="true"
                 size="small"
-                [disabled]="emailMetricsState() === 'loading' || emailMetricsState() === 'idle'"
+                [disabled]="emailMetricsState() === 'loading'"
                 (onClick)="loadEmailMetrics()"
                 data-testid="campaigns-email-metrics-refresh" />
             </div>

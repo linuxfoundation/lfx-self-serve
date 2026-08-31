@@ -2055,7 +2055,14 @@ export class CampaignsComponent {
    */
   protected loadEmailMetrics(): void {
     const projectSlug = this.activeFoundationSlug();
-    const briefId = this.emailBriefId();
+    // Fall back to the OWNED id when the signal is empty. `resetEmailBriefDerivedState` clears
+    // `emailBriefId`, which parked the tab in `idle` -- and because Refresh is disabled there, an
+    // operator returning to Monitor after a reset had no way to load anything at all. The
+    // ownership cache survives the reset and names the same row, so the read is recoverable
+    // without a re-persist.
+    const brief = this.emailBriefOutput();
+    const ownershipKey = brief === null ? null : this.ownershipKey(projectSlug, brief);
+    const briefId = this.emailBriefId() || (ownershipKey === null ? '' : (this.knownBriefIds.get(ownershipKey)?.id ?? ''));
 
     // Bumped BEFORE the early return as well as before the request, for the reason
     // `loadBriefCampaigns` gives: the early return is itself a context change ("this context has

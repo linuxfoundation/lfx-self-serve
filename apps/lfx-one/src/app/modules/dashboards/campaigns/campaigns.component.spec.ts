@@ -4645,6 +4645,47 @@ describe('CampaignsComponent email monitor', () => {
   });
 
   /**
+   * A reset must not strand the Monitor tab.
+   *
+   * It clears `emailBriefId`, which parked the read in `idle` — and Refresh was disabled there on
+   * the grounds that it was a no-op, so an operator returning to Monitor had no way to load
+   * anything at all. The ownership cache survives the reset and names the same row, so the read
+   * recovers from it without a re-persist.
+   */
+  it('recovers the brief from ownership after a reset cleared the id', async () => {
+    showMonitor();
+    const svc = TestBed.inject(CampaignService);
+    const read = vi.spyOn(svc, 'getBriefMetrics').mockReturnValue(of(metrics([])));
+
+    // `persistBrief` is not mocked in this describe, so it would hit the testing backend and
+    // never resolve -- ownership would never be recorded and the test would fail for a reason
+    // unrelated to the fallback.
+    vi.spyOn(svc, 'persistBrief').mockReturnValue(of({ status: 'saved', approved: true, briefId: 'b1', etag: null } as unknown as CampaignBriefPersistResult));
+
+    // Ownership is what survives the reset, so it has to be established the way the real flow
+    // does -- a persist that records it -- rather than by setting `emailBriefId` alone.
+    const c = fixture.componentInstance as unknown as {
+      emailBriefOutput: { set(v: CampaignBriefOutput): void };
+      ensureEmailBriefId(b: CampaignBriefOutput, slug: string): Promise<string>;
+      activeFoundationSlug(): string;
+      resetEmailBriefDerivedState(): void;
+    };
+    const brief = { eventDetails: { slug: 'kubecon-eu-2026' } } as unknown as CampaignBriefOutput;
+    c.emailBriefOutput.set(brief);
+    fixture.detectChanges();
+    await c.ensureEmailBriefId(brief, c.activeFoundationSlug());
+    read.mockClear();
+
+    c.resetEmailBriefDerivedState();
+    // The brief output survives the reset (it is the operator's, not derived state); the ID does
+    // not. Without the ownership fallback the load returns early and never issues a read.
+    c.emailBriefOutput.set(brief);
+    internals().loadEmailMetrics();
+
+    expect(read).toHaveBeenCalled();
+  });
+
+  /**
    * Refresh is otherwise silent to a screen reader: the spinner and the changing numbers are both
    * visual only, so activating it announced nothing about running, finished or failed.
    *
