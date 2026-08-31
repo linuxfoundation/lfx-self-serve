@@ -350,6 +350,27 @@ export class CampaignsComponent {
    */
   private emailCopyGeneration = 0;
 
+  /**
+   * Guards a late audience response against a brief the page no longer holds.
+   *
+   * Same hazard as `emailCopyGeneration`, and the reset alone cannot close it: clearing
+   * `emailAudience` does nothing to a build already in flight, whose response then reports a
+   * BUILT audience belonging to the previous brief -- and `canStageEmail` gates on exactly that
+   * status, so the stale success re-enables staging against the wrong brief.
+   */
+  private emailAudienceGeneration = 0;
+
+  /**
+   * The persist a concurrent caller can join instead of starting a second one.
+   *
+   * `ensureEmailBriefId` caches the id only AFTER its persist resolves, so two email actions
+   * started close together -- generate copy and build audience, say -- each saw an empty cache
+   * and each issued a first-save persist for the same (project, event). Whichever landed second
+   * either created a duplicate brief or lost the ownership race. Sharing the in-flight promise
+   * makes the second caller await the first rather than race it.
+   */
+  private emailBriefPersistInFlight: Promise<string> | null = null;
+
   private briefPersistenceGeneration = 0;
 
   /**
@@ -1247,11 +1268,18 @@ export class CampaignsComponent {
       return;
     }
 
+    // Bumped BEFORE any await, like the copy path: every write below runs after one.
+    const generation = ++this.emailAudienceGeneration;
+    const isCurrent = (): boolean => generation === this.emailAudienceGeneration;
+
     this.emailAudienceState.set('building');
     this.emailAudienceMessage.set('');
 
     try {
       const briefId = await this.ensureEmailBriefId(brief, projectSlug);
+      if (!isCurrent()) {
+        return;
+      }
       if (briefId === '') {
         this.emailAudienceState.set('error');
         this.emailAudienceMessage.set('The brief could not be saved, so no audience was built.');
@@ -1259,6 +1287,11 @@ export class CampaignsComponent {
       }
 
       const result = await firstValueFrom(this.campaignService.buildAudience(projectSlug, briefId));
+      // A BUILT audience for the previous brief would re-enable staging against the wrong one:
+      // `canStageEmail` gates on `emailAudience()?.status === 'built'`.
+      if (!isCurrent()) {
+        return;
+      }
 
       // `enabled: false` is the cutover flag being off — a steady state, not a failure.
       if (!result.enabled) {
@@ -1276,6 +1309,9 @@ export class CampaignsComponent {
       this.emailAudience.set(result.audience);
       this.emailAudienceState.set('idle');
     } catch {
+      if (!isCurrent()) {
+        return;
+      }
       this.emailAudienceState.set('error');
       this.emailAudienceMessage.set('The audience could not be built. Try again.');
     }
@@ -1953,6 +1989,25 @@ export class CampaignsComponent {
    * rather than proceeding with an empty path segment.
    */
   private async ensureEmailBriefId(brief: CampaignBriefOutput, projectSlug: string): Promise<string> {
+    // Join a persist already running rather than starting a second. The cache below is only
+    // written once the request RESOLVES, so without this two concurrent email actions both find
+    // it empty and both save.
+    if (this.emailBriefPersistInFlight !== null) {
+      return this.emailBriefPersistInFlight;
+    }
+    const pending = this.persistEmailBrief(brief, projectSlug);
+    this.emailBriefPersistInFlight = pending;
+    try {
+      return await pending;
+    } finally {
+      // Cleared whatever the outcome: a failed persist must not wedge every later attempt into
+      // returning the same rejected promise.
+      this.emailBriefPersistInFlight = null;
+    }
+  }
+
+  /** The persist itself, wrapped by `ensureEmailBriefId`'s in-flight dedup. */
+  private async persistEmailBrief(brief: CampaignBriefOutput, projectSlug: string): Promise<string> {
     const known = this.emailBriefId();
     if (known !== '') {
       return known;
@@ -2418,6 +2473,14 @@ export class CampaignsComponent {
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');
+    // Invalidate everything already in flight. Clearing the signals cannot reach a request
+    // still on the wire: a copy or audience response landing after this reports work for the
+    // PREVIOUS brief -- and for the audience that is not merely stale, it re-enables staging,
+    // since `canStageEmail` gates on the audience status. Unsubscribing the poll below is the
+    // same idea for the one path that owns a subscription.
+    this.emailCopyGeneration++;
+    this.emailAudienceGeneration++;
+
     // Cancel the poll, do not merely relabel it. Setting the signal back to `idle` leaves the
     // subscription running, so a job settling after a new brief or a foundation switch still
     // writes `done` or `error` — announcing a HubSpot draft that belongs to the PREVIOUS brief as

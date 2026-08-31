@@ -144,10 +144,14 @@ export class CampaignService {
    * Generate email copy for a brief. Brief-scoped upstream, so both ids are required.
    */
   public generateEmailCopy(projectSlug: string, briefId: string, stage?: CampaignEmailStage): Observable<GenerateEmailCopyResult> {
-    // `stage` travels in the BODY, not the query string, because that is where upstream declares
-    // it -- `generate-email-copy` takes project and brief as PATH segments and stage as a body
-    // attribute. Omitted when absent rather than sent empty: upstream reads absence as "the caller
-    // did not say" and defaults, while an empty string would fail its enum.
+    // `stage` travels in the QUERY STRING. Declared as a body attribute it made the whole request
+    // body mandatory -- Goa emits `requestBody.required: true` and answers `MissingPayloadError`
+    // on EOF -- so every body-less POST began failing with a 400.
+    //
+    // Omitted when absent rather than sent empty, because those mean different things to a caller
+    // reading the request: absence is "did not say". Upstream resolves BOTH to Registration Push
+    // (LFXV2-1940 specifies a fallback, and the enum that would have rejected a typo was removed
+    // for it), so an unrecognised value returns 200 with registration copy rather than an error.
     return this.http.post<GenerateEmailCopyResult>('/api/campaigns/email-copy', stage ? { stage } : {}, {
       params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
     });

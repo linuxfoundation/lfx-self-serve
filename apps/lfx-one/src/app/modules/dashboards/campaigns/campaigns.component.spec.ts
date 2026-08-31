@@ -2269,6 +2269,88 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(persist.mock.calls[0][2]).toBe('brief-77');
     });
 
+    /** A BUILT audience, which is what `canStageEmail` gates on. */
+    const builtAudience: CampaignAudience = {
+      id: 'aud-1',
+      projectId: 'tlf',
+      briefId: 'brief-77',
+      platform: 'hubspot',
+      inclusionSummary: 'Past registrants',
+      status: 'built',
+      version: 1,
+    };
+
+    /**
+     * A late AUDIENCE response is worse than a stale one: `canStageEmail` gates on
+     * `emailAudience()?.status === 'built'`, so a build resolving after the reset re-enables
+     * staging against a brief the page no longer holds.
+     *
+     * LIMITATION, stated rather than implied: this test pins the OUTCOME, not the generation
+     * guard specifically. Removing the guard's bump from `resetEmailBriefDerivedState` leaves it
+     * green, because the reset's own `emailAudience.set(null)` already satisfies the assertion in
+     * this harness — the mocked persist resolves in a microtask, so the reset lands before the
+     * response and the clear is what the assertion observes. Driving the guard itself needs a
+     * fake that suspends INSIDE `ensureEmailBriefId`, which this suite has no seam for. The guard
+     * is kept because the write it protects (`emailAudience.set(result.audience)`) is
+     * unconditional, and a late response would otherwise overwrite the cleared signal.
+     */
+    it('discards an audience that arrives after the brief-derived state reset', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const late = new Subject<{ enabled: boolean; audience: CampaignAudience }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(late.asObservable() as never);
+
+      const pending = internals().onBuildAudience();
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+      late.next({ enabled: true, audience: builtAudience });
+      late.complete();
+      await pending;
+
+      expect(internals().emailAudience()).toBeNull();
+      expect(internals().canStageEmail()).toBe(false);
+    });
+
+    /**
+     * The same for copy. Carries the same limitation as the audience test above: it pins the
+     * outcome, not the generation bump, which the reset's own clear can satisfy in this harness.
+     */
+    it('discards copy that arrives after the brief-derived state reset', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const late = new Subject<{ enabled: boolean; copy: EmailBriefCopy }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(late.asObservable() as never);
+
+      const pending = internals().onGenerateEmailCopy();
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+      late.next({ enabled: true, copy });
+      late.complete();
+      await pending;
+
+      expect(internals().emailCopy()).toBeNull();
+    });
+
+    /**
+     * Two email actions started together each found an empty cache and each issued a first-save
+     * persist for the same (project, event) — a duplicate brief, or a lost ownership race.
+     */
+    it('issues one persist when two email actions start concurrently', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience: builtAudience }));
+      persist.mockClear();
+
+      await Promise.all([internals().onGenerateEmailCopy(), internals().onBuildAudience()]);
+
+      expect(persist).toHaveBeenCalledTimes(1);
+    });
+
     it('persists the brief first, then generates against that id', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
