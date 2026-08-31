@@ -162,6 +162,12 @@ describe('MeetingPreferenceService', () => {
       ['is not an active, verified address', 'validation'],
       ['Email is not yet available, please retry', 'sync_pending'],
       ['retry shortly', 'sync_pending'],
+      // The meeting-service's user-service client wraps network failures as "user-service request
+      // failed: <cause>" and maps HTTP 429/502/503/504 to a retryable error with no error-type
+      // field on the wire — both must classify as retryable rather than falling to `upstream`.
+      ['user-service request failed: connection reset', 'unavailable'],
+      ['HTTP 503 error: upstream unavailable', 'unavailable'],
+      ['HTTP 502 error', 'unavailable'],
       ['something else broke', 'upstream'],
     ])('classifies the upstream error %j as %s', async (upstreamError, reason) => {
       natsRequest.mockResolvedValue(reply({ error: upstreamError }));

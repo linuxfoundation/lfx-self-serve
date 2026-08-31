@@ -28,7 +28,9 @@ export function emailsEqual(a: string | null | undefined, b: string | null | und
 
 // Same shape as EMAIL_REGEX but unanchored + global, so it can find every address embedded in a
 // larger string (e.g. upstream error copy) rather than testing the whole string as one address.
-const EMBEDDED_EMAIL_REGEX = /[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+/g;
+// Quantifiers are length-bounded (RFC 5321 local-part/label limits) so a long run of non-matching
+// characters can't trigger the polynomial backtracking the unbounded version was vulnerable to.
+const EMBEDDED_EMAIL_REGEX = /[^\s@]{1,64}@[^\s@.]{1,63}(?:\.[^\s@.]{1,63})+/g;
 
 /**
  * Replace every email address embedded in `text` with `[redacted-email]`. Some upstream error

@@ -117,6 +117,11 @@ export class AccountSettingsComponent {
   // have two independent PUTs land out of order, leaving the losing address selected.
   public savingMeetingInvite = signal(false);
 
+  // Address currently mid-delete (auth-status check through confirm/reject), null otherwise. The
+  // deleteEmail() guard only checks meetingInviteEmail() at click time — this closes the window
+  // where that same address is picked as the meeting-invite override while the delete is pending.
+  private deletingEmailAddress = signal<string | null>(null);
+
   public allEmails = computed((): UserEmail[] => {
     const data = this.emailData();
     if (!data) return [];
@@ -332,7 +337,7 @@ export class AccountSettingsComponent {
     // so only a non-reset re-pick of the current override is a no-op.
     const isNoop = isReset ? inviteEmail === null : emailsEqual(email.email, inviteEmail);
 
-    if (!email.verified || isNoop || this.savingMeetingInvite()) {
+    if (!email.verified || isNoop || this.savingMeetingInvite() || emailsEqual(email.email, this.deletingEmailAddress())) {
       return;
     }
 
@@ -385,12 +390,14 @@ export class AccountSettingsComponent {
     }
 
     const userId = email.user_id;
+    this.deletingEmailAddress.set(email.email);
 
     this.userService
       .getProfileAuthStatus()
       .pipe(take(1))
       .subscribe((status) => {
         if (!status.authorized) {
+          this.deletingEmailAddress.set(null);
           this.redirectToProfileAuth('/api/profile/auth/start?returnTo=/profile/settings');
           return;
         }
@@ -403,10 +410,25 @@ export class AccountSettingsComponent {
           acceptButtonStyleClass: 'p-button-danger p-button-sm',
           rejectButtonStyleClass: 'p-button-outlined p-button-sm',
           accept: () => {
+            // Re-check: the user may have picked this same address as the meeting-invite
+            // override while the auth-status lookup/confirm dialog was pending.
+            if (emailsEqual(email.email, this.meetingInviteEmail())) {
+              this.deletingEmailAddress.set(null);
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'This email is now set for meeting invitations — choose a different one before deleting it.',
+              });
+              return;
+            }
+
             const identityId = `auth0:${userId}`;
             this.userService
               .rejectIdentity(identityId, 'email', userId)
-              .pipe(take(1))
+              .pipe(
+                take(1),
+                finalize(() => this.deletingEmailAddress.set(null))
+              )
               .subscribe({
                 next: () => {
                   this.emailRefresh.next();
@@ -420,6 +442,9 @@ export class AccountSettingsComponent {
                   this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || 'Failed to delete email address' });
                 },
               });
+          },
+          reject: () => {
+            this.deletingEmailAddress.set(null);
           },
         });
       });

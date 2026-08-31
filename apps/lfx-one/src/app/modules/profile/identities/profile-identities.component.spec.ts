@@ -24,6 +24,7 @@ describe('ProfileIdentitiesComponent — Flow C vs identity-link error ownership
       impersonating: signal(false),
       identitiesRefresh$: EMPTY,
       getIdentities: vi.fn(() => of([])),
+      getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
       refreshUserIdentities: vi.fn(),
     };
 

@@ -137,9 +137,16 @@ export class ProfileIdentitiesComponent implements OnInit {
   }
 
   public onRemove(identity: ConnectedIdentityFull): void {
-    // Defensive guard: never remove the email selected as the meeting-invitation preference.
-    // The menu already disables this action; this covers any programmatic call path.
+    // Guard: never remove the email selected as the meeting-invitation preference. The verified
+    // list disables its "Remove" menu item with an explanation instead of reaching here; the
+    // unverified list's "This is not me" button has no disabled state, so surface the same
+    // explanation via toast rather than letting the click silently do nothing.
     if (this.isMeetingInviteIdentity(identity)) {
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Meeting invitation email',
+        detail: 'This email is set for meeting invitations. Choose a different meeting-invitation email in Account Settings before removing it.',
+      });
       return;
     }
 
