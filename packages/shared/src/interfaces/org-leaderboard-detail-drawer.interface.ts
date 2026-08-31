@@ -21,7 +21,12 @@ export interface OrgLeaderboardDetailCategoryFigure {
   points: number;
   /** The organization's own count. Absent for membership tier, which is not scored on participation. */
   count?: number;
-  /** Range-scoped project-wide total the count is measured against. */
+  /**
+   * Range-scoped total the count is measured against. This is the generic denominator slot for every
+   * category, not a claim of project scope: the warehouse totals four technical and two ecosystem
+   * categories per project and the remaining seven per foundation, so on a child project's page those
+   * seven denominators cover the whole foundation and its sibling projects share them.
+   */
   projectTotal?: number;
   /**
    * Project-wide lifetime total for the activity, regardless of the active range. A zero means the
