@@ -1290,6 +1290,16 @@ describe('CommitteeActivityService', () => {
       expect(result.data[0].type).toBe('vote_closed');
     });
 
+    it("carries the vote's creation_time as payload.opened_at even once closed, independent of the collapsed occurred_at (GH-1967 review)", async () => {
+      getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ENDED, creation_time: '2026-01-02T10:00:00Z', end_time: '2026-01-10T00:00:00Z' })] });
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data[0]).toMatchObject({
+        type: 'vote_closed',
+        occurred_at: '2026-01-10T00:00:00Z',
+        payload: expect.objectContaining({ opened_at: '2026-01-02T10:00:00Z' }),
+      });
+    });
+
     it('maps an active vote to vote_opened only', async () => {
       getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ACTIVE })] });
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
@@ -1449,6 +1459,35 @@ describe('CommitteeActivityService', () => {
       const byType = Object.fromEntries(result.data.map((e) => [e.type, e]));
       expect(byType['survey_closed']).toMatchObject({ payload: { survey_uid: 'survey-closed' } });
       expect(byType['survey_published']).toMatchObject({ payload: { survey_uid: 'survey-open' } });
+    });
+
+    it("carries the survey's created_at as payload.opened_at even once closed, independent of the collapsed occurred_at (GH-1967 review)", async () => {
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'survey') {
+          return Promise.resolve({
+            resources: [
+              {
+                type: 'survey',
+                id: 'survey-closed',
+                data: survey({
+                  uid: 'survey-closed',
+                  survey_status: SurveyStatus.CLOSED,
+                  created_at: '2026-01-01T00:00:00Z',
+                  last_modified_at: '2026-01-05T00:00:00Z',
+                }),
+              },
+            ],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data[0]).toMatchObject({
+        type: 'survey_closed',
+        occurred_at: '2026-01-05T00:00:00Z',
+        payload: expect.objectContaining({ opened_at: '2026-01-01T00:00:00Z' }),
+      });
     });
   });
 });

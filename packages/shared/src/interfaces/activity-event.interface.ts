@@ -57,11 +57,21 @@ export interface MeetingHeldActivityEvent extends BaseActivityEvent {
  * Vote lifecycle payload — shared by both `vote_opened` and `vote_closed`. `status` carries the
  * full upstream `PollStatus` value (not collapsed into the coarse event type) so a client can still
  * render the exact status label ("Vote Disabled: X") the same way the old stop-gap did.
+ *
+ * `opened_at` (GH-1967 review): this leg collapses each vote to a single event reflecting only its
+ * current lifecycle state (`mapVoteToEvent`'s own doc comment) — so once a vote that opened inside
+ * some window has since closed, only its close moment is visible via `occurred_at`, and its opening
+ * is otherwise unrecoverable. Always populated (from the same row already read to build the rest of
+ * this payload) regardless of the event's own type, so a completeness-sensitive caller (e.g.
+ * `WeeklyBriefService#withStaleness`) can check it as a second, independent relevance signal
+ * alongside `occurred_at` — without changing this leg's one-event-per-vote contract for its
+ * original Recent Activity consumer.
  */
 export interface VoteActivityEventPayload {
   vote_uid: string;
   name: string;
   status: string;
+  opened_at?: string;
 }
 
 export interface VoteOpenedActivityEvent extends BaseActivityEvent {
@@ -74,11 +84,16 @@ export interface VoteClosedActivityEvent extends BaseActivityEvent {
   payload: VoteActivityEventPayload;
 }
 
-/** Survey lifecycle payload — shared by `survey_published` and `survey_closed`, same rationale as votes. */
+/**
+ * Survey lifecycle payload — shared by `survey_published` and `survey_closed`, same rationale as
+ * votes. `opened_at` (GH-1967 review) is the survey's publish moment, same reasoning as
+ * `VoteActivityEventPayload.opened_at`.
+ */
 export interface SurveyActivityEventPayload {
   survey_uid: string;
   title: string;
   status: string;
+  opened_at?: string;
 }
 
 export interface SurveyPublishedActivityEvent extends BaseActivityEvent {

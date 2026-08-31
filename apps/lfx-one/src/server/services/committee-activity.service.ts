@@ -713,7 +713,11 @@ export class CommitteeActivityService {
       type: isClosed ? 'vote_closed' : 'vote_opened',
       occurred_at: occurredAt,
       committee_uid: committeeUid,
-      payload: { vote_uid: vote.uid, name: vote.name, status: vote.status },
+      // opened_at (GH-1967 review) — always the vote's own creation_time, independent of isClosed,
+      // so a closed vote's collapsed occurred_at (its close moment) doesn't hide the fact that it
+      // opened at a different, potentially independently-relevant time. See
+      // VoteActivityEventPayload's own doc comment for why.
+      payload: { vote_uid: vote.uid, name: vote.name, status: vote.status, opened_at: firstValidTimestamp(vote.creation_time) || undefined },
     };
   }
 
@@ -782,7 +786,11 @@ export class CommitteeActivityService {
       type: displayStatus === SurveyStatus.CLOSED ? 'survey_closed' : 'survey_published',
       occurred_at: occurredAt,
       committee_uid: committeeUid,
-      payload: { survey_uid: survey.uid, title: survey.survey_title, status: displayStatus },
+      // opened_at (GH-1967 review) — always the survey's own created_at (its publish moment),
+      // independent of displayStatus, so a closed survey's collapsed occurred_at (its cutoff-driven
+      // closure) doesn't hide the fact that it published at a different, potentially
+      // independently-relevant time. See SurveyActivityEventPayload's own doc comment for why.
+      payload: { survey_uid: survey.uid, title: survey.survey_title, status: displayStatus, opened_at: firstValidTimestamp(survey.created_at) || undefined },
     };
   }
 

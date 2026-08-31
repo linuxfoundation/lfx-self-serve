@@ -1184,7 +1184,14 @@ export class WeeklyBriefService {
     // the rest of that week, since `updated_at` stays before `window_end` regardless of how much
     // later "now" is — gating on "is the window closed right now" instead would wrongly suppress
     // that case.
-    if (sinceMs > windowEndMs) {
+    //
+    // `>=`, not `>` (GH-1967 review): the relevant-events filter below requires a strict
+    // `occurred_at > sinceMs` lower bound and an `occurred_at <= ceilingMs <= windowEndMs` upper
+    // bound — when `sinceMs === windowEndMs` exactly, that interval is provably empty (nothing can
+    // be both strictly greater than and at-most-equal-to the same instant), so `stale: false` is
+    // just as provable here as the strictly-greater case, and skipping the fetch avoids degrading
+    // an already-known-false result to `null` on a timeout/failure/saturation that can't change it.
+    if (sinceMs >= windowEndMs) {
       return { ...response, staleness: { stale: false, event_count: 0, event_count_is_floor: false } };
     }
     // The upper bound is whichever is earlier: the window's own close (activity after it belongs
@@ -1211,7 +1218,19 @@ export class WeeklyBriefService {
         // since`), so without this, an event stamped at the exact same instant as brief.updated_at
         // would count as "new" activity — the strict lower bound here is what actually enforces
         // "happened after the brief was generated" (GH-1967 review).
-        return !Number.isNaN(ms) && ms > sinceMs && ms <= ceilingMs;
+        if (!Number.isNaN(ms) && ms > sinceMs && ms <= ceilingMs) return true;
+        // Collapsed-lifecycle fallback (GH-1967 review): getCommitteeActivity collapses each
+        // vote/survey to one event reflecting only its CURRENT state — a vote/survey that opened
+        // in-window but has since closed shows up only as vote_closed/survey_closed at its (now
+        // out-of-window) close moment, otherwise invisible here. payload.opened_at (always
+        // populated, independent of the event's own type) carries the original open/publish
+        // moment for exactly this check; vote_opened/survey_published events never need it, their
+        // occurred_at already IS the opened_at.
+        if (event.type === 'vote_closed' || event.type === 'survey_closed') {
+          const openedMs = event.payload?.opened_at ? Date.parse(event.payload.opened_at) : NaN;
+          return !Number.isNaN(openedMs) && openedMs > sinceMs && openedMs <= ceilingMs;
+        }
+        return false;
       });
       // getCommitteeActivity sorts descending by occurred_at, so events past the ceiling sort
       // ahead of relevant ones. If `page_token`/`any_leg_saturated`/`any_leg_failed` are all unset,

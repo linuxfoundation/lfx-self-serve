@@ -770,6 +770,57 @@ describe('WeeklyBriefService', () => {
       expect(result.staleness).toEqual({ stale: true, event_count: 3, event_count_is_floor: false });
     });
 
+    it('counts a vote_closed event whose collapsed occurred_at is out-of-window when its payload.opened_at falls in the window (GH-1967 review)', async () => {
+      // getCommitteeActivity collapses each vote to one event reflecting only its current state —
+      // a vote opened in-window that has since closed shows up only as vote_closed at its (now
+      // out-of-window) close moment. payload.opened_at is the fallback signal that catches this.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          {
+            type: 'vote_closed',
+            occurred_at: '2026-01-18T10:00:00.000Z', // after window_end
+            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Ended', opened_at: '2026-01-17T12:00:00.000Z' }, // inside window
+          },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: true, event_count: 1, event_count_is_floor: false });
+    });
+
+    it('does not count a vote_closed event when neither its occurred_at nor its payload.opened_at falls in the window', async () => {
+      // Negative control for the fallback above — a vote that both opened and closed outside the
+      // relevant window must not count, even though it has a payload.opened_at present.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          {
+            type: 'vote_closed',
+            occurred_at: '2026-01-18T10:00:00.000Z', // after window_end
+            payload: { vote_uid: 'v1', name: 'Q1 Budget', status: 'Ended', opened_at: '2026-01-16T00:00:00.000Z' }, // before updated_at
+          },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+    });
+
+    it('confidently reports not stale — and skips the fetch entirely — when updated_at exactly equals window_end (GH-1967 review)', async () => {
+      // The qualifying interval (updated_at, window_end] is provably empty here (nothing can be
+      // strictly greater than and at-most-equal-to the same instant) — the >= short-circuit (not
+      // just >) is what catches this without paying the fetch fan-out.
+      proxyRequest.mockResolvedValueOnce({ brief: { ...liveBrief, updated_at: liveBrief.window_end }, throttle: null });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+      expect(getCommitteeActivityMock).not.toHaveBeenCalled();
+    });
+
     it('carries both caller_rating and staleness together in the merged response (general review finding — the parallel-await merge is otherwise untested with both enrichments actually populated)', async () => {
       const brief = { ...liveBrief, revision: 1 };
       proxyRequest.mockResolvedValueOnce({ brief, throttle: null });
