@@ -685,12 +685,14 @@ export class PlanningTabComponent implements OnInit {
           //   else — UNCONFIRMED. The campaign may already exist, so the offer is WITHDRAWN and
           //         only a fresh lookup can establish what happened.
           //
-          // 500 is UNCONFIRMED, not a definite failure, even though one of its causes (an
-          // undecryptable credential) proves nothing was sent. It is the CATCH-ALL: the same
-          // status covers "the campaign was not returned after creation", where the campaign
-          // may well exist. A status cannot distinguish those, so the ambiguous reading is the
-          // only safe one for a non-idempotent create — the cost of being wrong the other way
-          // is a duplicate nobody can remove from this UI.
+          // 500 is UNCONFIRMED here, and stays that way even though campaign-service now
+          // reserves 500 for pre-send faults alone (it moved "the campaign was not returned
+          // after creation" to a 503). Trusting 500 as "definitely not created" would need
+          // every layer in the path to honour that rule, and this UI cannot verify that from
+          // here: only the service's own 500s carry the pre-send guarantee, and a status code
+          // does not say who produced it. The BFF's transport failures are 503 for the same
+          // reason, so the ambiguous reading costs a re-check, while being wrong the other way
+          // costs a duplicate campaign nobody can remove from this UI.
           //
           // Treating every status as "may have been created" hid two actionable failures behind
           // a message telling the operator to check HubSpot for a campaign never attempted; the

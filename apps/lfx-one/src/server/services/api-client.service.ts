@@ -126,9 +126,15 @@ export class ApiClientService {
           });
         }
 
+        // 503, not 500. A transport failure here happens AFTER the request went out, so the
+        // upstream may well have processed it — we only lost the answer. campaign-service
+        // reserves 500 for "the service faulted before the request was sent, nothing happened"
+        // and 503 for "the outcome is unconfirmed"; emitting 500 for a lost connection would
+        // tell a caller a non-idempotent write definitely did not happen, and the retry that
+        // invites is how a duplicate campaign gets created.
         const errorWithCause = error as Error & { cause?: { code?: string } };
         if (errorWithCause.cause?.code) {
-          throw new MicroserviceError(`Request failed: ${error.message}`, 500, errorWithCause.cause.code || 'NETWORK_ERROR', {
+          throw new MicroserviceError(`Request failed: ${error.message}`, 503, errorWithCause.cause.code || 'NETWORK_ERROR', {
             operation: 'api_client_stream_network_error',
             service: 'api_client_service',
             path: url,
@@ -137,7 +143,7 @@ export class ApiClientService {
         }
 
         // Fallback for any other Error subclass — keep all transport failures classified.
-        throw new MicroserviceError(`Request failed: ${error.message}`, 500, 'NETWORK_ERROR', {
+        throw new MicroserviceError(`Request failed: ${error.message}`, 503, 'NETWORK_ERROR', {
           operation: 'api_client_stream_network_error',
           service: 'api_client_service',
           path: url,
@@ -318,9 +324,11 @@ export class ApiClientService {
           });
         }
 
+        // 503, not 500 — see the stream path above: a lost connection is an UNCONFIRMED
+        // outcome, not a proof that nothing happened.
         const errorWithCause = error as Error & { cause?: { code?: string } };
         if (errorWithCause.cause?.code) {
-          throw new MicroserviceError(`Request failed: ${error.message}`, 500, errorWithCause.cause.code || 'NETWORK_ERROR', {
+          throw new MicroserviceError(`Request failed: ${error.message}`, 503, errorWithCause.cause.code || 'NETWORK_ERROR', {
             operation: options.binary ? 'api_client_binary_network_error' : 'api_client_network_error',
             service: 'api_client_service',
             path: url,
