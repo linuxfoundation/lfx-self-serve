@@ -1546,6 +1546,12 @@ export class CampaignsComponent {
 
       this.pollStagingJob(outcome.jobId, projectSlug);
     } catch {
+      // Guarded like every other write in this method. A reset mid-stage would otherwise raise a
+      // failure banner for a brief nobody is looking at -- and on the email tab that reads as
+      // "your staging failed" about work the operator has already navigated away from.
+      if (!isCurrent()) {
+        return;
+      }
       // The cause is not surfaced: a create failure can carry upstream detail, and the job
       // result collapses every dispatcher error to one string anyway.
       this.emailStaging.set('error');
