@@ -1826,6 +1826,7 @@ describe('CampaignsComponent — email delivery channel', () => {
   interface Internals {
     /** The rows the picker draws, after type ranking and the render cap. */
     emailTemplatesRendered: Signal<{ id: string }[]>;
+    emailTemplatesRenderCapMessage: Signal<string>;
     emailTemplates: WritableSignal<unknown[] | null>;
     selectedDeliveryType: Signal<CampaignDeliveryType>;
     selectedTab: WritableSignal<CampaignTab>;
@@ -2896,7 +2897,7 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     it('ranks before the render cap, so a match beyond it can still surface', () => {
       selectEmail();
-      // 600 unmatched rows, then the match -- past HUBSPOT_TEMPLATE_RENDER_LIMIT (500).
+      // 600 unmatched rows, then the match -- comfortably past HUBSPOT_TEMPLATE_RENDER_LIMIT.
       const templates = Array.from({ length: 600 }, (_, i) => ({ id: `u${i}`, name: 'Unrelated', subject: 'Monthly update' }));
       templates.push({ id: 'match', name: 'Post-event thank you', subject: 'Survey inside' });
       internals().emailTemplates.set(templates as never);
@@ -2916,6 +2917,48 @@ describe('CampaignsComponent — email delivery channel', () => {
      * clones that now-invisible template, so the operator stages a clone of something they can no
      * longer see or change.
      */
+    /**
+     * The index tie-break at a NON-ZERO score. Testing it only at score 0 leaves the comparator's
+     * `|| a.index - b.index` unverified for the case it exists for: several templates matching the
+     * type equally, where the server's newest-first order must survive the sort.
+     */
+    it('keeps the server order among templates that score equally above zero', () => {
+      selectEmail();
+      // All three carry the same type keyword, so they score identically and only `index` orders
+      // them. Ids are deliberately NOT alphabetical, so a comparator falling back to any other
+      // key would reorder them visibly.
+      internals().emailTemplates.set([
+        { id: 'zebra', name: 'Post-event thank you', subject: 'Survey inside' },
+        { id: 'alpha', name: 'Post-event thank you', subject: 'Survey inside' },
+        { id: 'mike', name: 'Post-event thank you', subject: 'Survey inside' },
+      ] as never);
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      expect(
+        internals()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toEqual(['zebra', 'alpha', 'mike']);
+    });
+
+    /**
+     * The cap banner must not claim "the FIRST 100" once a spliced row is among them — that is
+     * false in exactly the case the splice exists for.
+     */
+    it('does not claim the drawn rows are the first N when a selection was spliced in', () => {
+      selectEmail();
+      const templates: { id: string; name: string; subject: string }[] = [{ id: 'chosen', name: 'Bespoke', subject: 'Nothing' }];
+      for (let i = 0; i < 600; i++) {
+        templates.push({ id: `t${i}`, name: 'Post-event thank you', subject: 'Survey inside' });
+      }
+      internals().emailTemplates.set(templates as never);
+      (internals() as unknown as { onSelectEmailTemplate(id: string): void }).onSelectEmailTemplate('chosen');
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      expect(internals().emailTemplatesRendered()[0].id).toBe('chosen');
+      expect(internals().emailTemplatesRenderCapMessage()).not.toContain('first');
+    });
+
     it('keeps the selected template visible after a type change reranks the list', () => {
       selectEmail();
       // The operator's pick names no type keyword, so reranking sinks it; the 600 rows that follow
@@ -4214,7 +4257,7 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
    * thousands of rows. The render is capped — and the UI must SAY the render was capped.
    *
    * Asserts the exact sentence and both numbers, not merely that a banner exists: a banner
-   * reading "Showing the first 100 of 100" would satisfy an existence check while telling the
+   * reading "Showing 100 of 100" would satisfy an existence check while telling the
    * user nothing true.
    */
   it('caps how many templates it renders and says so, without discarding the rest', () => {
@@ -4233,10 +4276,10 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
 
     // The truth about the cut is stated, with the real total — not the drawn count.
     const banner = root.querySelector('[data-testid="campaigns-email-templates-render-capped"]')?.textContent?.trim();
-    expect(banner).toBe(`Showing the first ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${HUBSPOT_TEMPLATE_RENDER_LIMIT + 37}. Search to narrow the list.`);
+    expect(banner).toBe(`Showing ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${HUBSPOT_TEMPLATE_RENDER_LIMIT + 37}. Search to narrow the list.`);
 
     // A screen-reader user cannot see the banner, so the same fact reaches the live region.
-    expect(picker().emailTemplatesAnnouncement()).toContain(`Showing the first ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${HUBSPOT_TEMPLATE_RENDER_LIMIT + 37}`);
+    expect(picker().emailTemplatesAnnouncement()).toContain(`Showing ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${HUBSPOT_TEMPLATE_RENDER_LIMIT + 37}`);
 
     // The rows were not thrown away — the cap is a render limit, not a truncation of the result.
     expect(picker().emailTemplates()?.length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT + 37);

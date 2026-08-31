@@ -709,7 +709,7 @@ export class CampaignsComponent {
     const templates = this.emailTemplates();
     if (templates === null) return [];
     // RANK BEFORE SLICING. The cap keeps the first N rows, so ranking afterwards could only
-    // reorder what survived -- a matching template on row 501 would be cut before it could rise,
+    // reorder what survived -- a matching template past the cap would be cut before it could rise,
     // which is exactly the template the operator was looking for.
     const ranked = this.rankTemplatesForSelectedType(templates);
     if (ranked.length <= HUBSPOT_TEMPLATE_RENDER_LIMIT) {
@@ -755,7 +755,11 @@ export class CampaignsComponent {
    */
   protected readonly emailTemplatesRenderCapMessage = computed<string>(() =>
     this.emailTemplatesRenderCapped()
-      ? `Showing the first ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${this.emailTemplateRenderTotal()}. Search to narrow the list.`
+      ? // "Showing N of M", not "the FIRST N of M". When a selected template ranks past the cap it
+        // is spliced to the top, so the drawn rows are that row plus the first N-1 -- and the
+        // stronger claim would be false in exactly the case the splice exists for. The count and
+        // the total are both still true; only the word "first" was not.
+        `Showing ${HUBSPOT_TEMPLATE_RENDER_LIMIT} of ${this.emailTemplateRenderTotal()}. Search to narrow the list.`
       : ''
   );
 
