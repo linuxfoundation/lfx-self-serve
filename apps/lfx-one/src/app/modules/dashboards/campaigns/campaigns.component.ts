@@ -3313,6 +3313,17 @@ export class CampaignsComponent {
     // silently suppresses the new suggestion, since the derivation only ever fills an empty
     // selection. That is the feature failing exactly where it is most useful -- the second event.
     this.selectedEmailTemplateId.set('');
+    // Cleared WITH the id it describes: the flag means "the CURRENT selection is system-owned",
+    // and there is no current selection once the line above runs.
+    //
+    // No bug reachable today -- the only writers of a non-empty selection are
+    // `onSelectEmailTemplate`, which sets the flag false, and the suggestion itself, which sets it
+    // true, so a stale `true` can at worst re-clear an already-empty id. It is cleared anyway
+    // because the invariant is what the rest of the class reads: `releaseSuggestedSelection` and
+    // the type-change path both branch on this flag to decide whether a selection is the
+    // operator's, and leaving it describing a discarded brief is one new writer away from
+    // discarding a hand-picked template.
+    this.emailTemplateSelectionIsSuggested = false;
     // The suggestion is derived from THIS brief's event, so it and the override that rejected it
     // both belong to the brief. Carrying the override into a new event would suppress a suggestion
     // the operator has never seen.
