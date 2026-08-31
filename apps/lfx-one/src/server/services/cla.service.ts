@@ -10,6 +10,7 @@
 // authenticated user before searching and reports unverifiable keys in
 // `skippedIdentities` — SS surfaces that as identity-gap telemetry.
 
+import { MY_CLAS_PATH } from '@lfx-one/shared/constants';
 import {
   Auth0Identity,
   ClaGroupOption,
@@ -59,10 +60,6 @@ const SERVICE = 'cla_service';
 // whole request, so the collected set is capped rather than letting a pathological account
 // (many verified + linked-identity emails) break the page instead of degrading.
 const MAX_CLA_EMAILS = 100;
-
-// Where the Contributor Console returns a contributor after signing (#1251). Mirrors the
-// `clas` child route under /profile in profile.routes.ts.
-const MY_CLAS_PATH = '/profile/clas';
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested in isolation). No I/O.
