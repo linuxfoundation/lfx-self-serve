@@ -184,7 +184,7 @@ describe('SavedFilterService', () => {
     expect(messageService.add).toHaveBeenCalledWith({
       severity: 'warn',
       summary: 'Saved view limit reached',
-      detail: `You can save up to ${MAX_SAVED_FILTERS_PER_PROJECT} views per project.`,
+      detail: `You can save up to ${MAX_SAVED_FILTERS_PER_PROJECT} views per foundation.`,
     });
     expect(socialListeningService.upsertPreference).not.toHaveBeenCalled();
   });
