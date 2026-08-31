@@ -24,11 +24,13 @@ try {
  * and for the case where 4200 is already serving another session.
  */
 const E2E_PORT = process.env['E2E_PORT'] ?? '4200';
-// 127.0.0.1, not localhost. `ng serve` binds IPv4-only, while Chromium resolves localhost to
-// ::1 first — so every navigation came back ERR_CONNECTION_REFUSED against a server that was
-// up and serving, and the run read as six spec failures rather than a name-resolution problem.
-// Overridable for anyone whose setup needs a different host.
-const E2E_HOST = process.env['E2E_HOST'] ?? '127.0.0.1';
+// localhost, to match PCC_BASE_URL. express-openid-connect uses that value as its baseURL, so a
+// login started at 127.0.0.1 returns to localhost and saves a host-only session cookie that
+// later 127.0.0.1 navigations never send — the run then fails as "unauthenticated" for a reason
+// that has nothing to do with the specs. An IPv4-only dev-server bind is a real problem but it
+// belongs at the binding layer, not here: changing the browser origin to work around it breaks
+// the auth cookie instead. Overridable for a setup that genuinely needs another host.
+const E2E_HOST = process.env['E2E_HOST'] ?? 'localhost';
 const E2E_BASE_URL = `http://${E2E_HOST}:${E2E_PORT}`;
 
 export default defineConfig({

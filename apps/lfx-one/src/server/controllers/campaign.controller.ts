@@ -30,6 +30,7 @@ import {
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
   MICROSOFT_MAX_GEO_TARGETS,
+  MAX_BULK_KEYWORD_ACTIONS,
   MICROSOFT_MAX_KEYWORDS,
   MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
   MICROSOFT_MIN_CPC_BID,
@@ -1161,6 +1162,22 @@ export class CampaignController {
 
     if (!body.keywords || !Array.isArray(body.keywords) || body.keywords.length === 0) {
       next(ServiceValidationError.forField('keywords', 'keywords array is required', { operation: 'keyword_actions', service: 'campaign_controller' }));
+      return;
+    }
+
+    // Bounded before grouping, because the cost is per CAMPAIGN in the body: each one is a
+    // resolver call and then a mutation call, made sequentially while the request is held open.
+    // Only a non-empty array was required here, so one authenticated request could amplify into
+    // thousands of upstream calls against a live ad account and trip rate limiting that fails
+    // campaigns for reasons unrelated to the request. The cap is above anything this UI can
+    // produce, so it bounds abuse rather than the product.
+    if (body.keywords.length > MAX_BULK_KEYWORD_ACTIONS) {
+      next(
+        ServiceValidationError.forField('keywords', `keywords array must contain at most ${MAX_BULK_KEYWORD_ACTIONS} rows`, {
+          operation: 'keyword_actions',
+          service: 'campaign_controller',
+        })
+      );
       return;
     }
 

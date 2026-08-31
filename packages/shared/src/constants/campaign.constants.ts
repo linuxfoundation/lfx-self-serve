@@ -615,6 +615,18 @@ export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
  * FAILED JOB the operator has to go and read rather than a refusal of the request they made — the
  * same class as the CPC bid range below.
  */
+/**
+ * Maximum keyword rows one bulk pause/remove request may carry.
+ *
+ * This bounds SERVER FAN-OUT, not a platform limit. Each distinct campaign in the body costs a
+ * resolver call and then a mutation call, made sequentially while the request is held open, so
+ * an unbounded array turns one authenticated request into thousands of upstream calls against
+ * a live ad account — the shape most likely to trip upstream rate limiting and fail campaigns
+ * for a reason that has nothing to do with the request. 50 is the most rows this UI's keyword
+ * table exposes at once, so it cannot be reached by the product's own flows.
+ */
+export const MAX_BULK_KEYWORD_ACTIONS = 50;
+
 export const MICROSOFT_MAX_KEYWORDS = 60;
 export const MICROSOFT_MAX_KEYWORD_TEXT_LENGTH = 100;
 export const MICROSOFT_MAX_GEO_TARGETS = 30;

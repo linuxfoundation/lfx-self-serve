@@ -4,6 +4,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MAX_BULK_KEYWORD_ACTIONS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
@@ -2157,6 +2158,34 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
       applied_count: 1,
       results: [{ ad_group_id: 'ag-1', criterion_id: '1', action: 'PAUSE' }],
     });
+  });
+
+  it('refuses a bulk request above the fan-out cap before calling upstream', async () => {
+    // The cost is per CAMPAIGN in the body: a resolver call and then a mutation call each,
+    // sequentially, while the request is held open. Unbounded, one authenticated request
+    // amplifies into thousands of upstream calls against a live ad account. Refused BEFORE any
+    // upstream call, so an oversized request costs nothing rather than being half-applied.
+    const tooMany = Array.from({ length: MAX_BULK_KEYWORD_ACTIONS + 1 }, (_, i) => keyword(String(24183781329 + i), String(i)));
+
+    await controller.executeKeywordActions(actionsReq(tooMany), res, next);
+
+    // The operator-facing text lives in validationErrors, not on the error's own message.
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validationErrors: expect.arrayContaining([expect.objectContaining({ field: 'keywords', message: expect.stringContaining('at most') })]),
+      })
+    );
+    expect(svcResolveCampaign).not.toHaveBeenCalled();
+    expect(svcApplyKeywordActions).not.toHaveBeenCalled();
+  });
+
+  it('allows a bulk request exactly at the fan-out cap', async () => {
+    // The boundary is inclusive: a request the UI can actually produce must not be refused.
+    const atCap = Array.from({ length: MAX_BULK_KEYWORD_ACTIONS }, (_, i) => keyword(String(24183781329 + i), String(i)));
+
+    await controller.executeKeywordActions(actionsReq(atCap), res, next);
+
+    expect(svcResolveCampaign).toHaveBeenCalled();
   });
 
   it('resolves the campaign and applies the batch under its brief', async () => {
