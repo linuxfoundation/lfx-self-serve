@@ -12,6 +12,7 @@ import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid
 import {
   ANALYTICS_TOP_PROJECTS_LIMIT,
   DELTA_DIRECTION_ICON,
+  DELTA_DIRECTION_SR_LABEL,
   DELTA_DIRECTION_TEXT_CLASS,
   INVERTED_DELTA_DIRECTION_TEXT_CLASS,
   lfxColors,
@@ -179,6 +180,7 @@ export class SocialListeningAnalyticsComponent {
   };
 
   protected readonly deltaIcon = DELTA_DIRECTION_ICON;
+  protected readonly deltaDirectionSrLabel = DELTA_DIRECTION_SR_LABEL;
   protected readonly deltaTextClass = DELTA_DIRECTION_TEXT_CLASS;
   /** Negative-sentiment trends invert: an increase is bad, so up renders red and down emerald. */
   protected readonly invertedDeltaTextClass = INVERTED_DELTA_DIRECTION_TEXT_CLASS;

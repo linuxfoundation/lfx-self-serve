@@ -112,6 +112,9 @@
               icon="fa-light fa-circle-check"
               title="You're all caught up"
               subtitle="No unread mentions match the current filters."
+              ctaLabel="Clear filters"
+              ctaIcon="fa-light fa-filter-slash"
+              (ctaClick)="clearFilters.emit()"
               data-testid="mentions-list-all-read-state" />
           } @else {
             <lfx-empty-state

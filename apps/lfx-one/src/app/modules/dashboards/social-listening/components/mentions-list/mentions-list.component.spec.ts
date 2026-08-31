@@ -223,6 +223,12 @@ describe('MentionsListComponent', () => {
     const allRead = fixture.nativeElement.querySelector('[data-testid="mentions-list-all-read-state"]');
     expect(allRead).not.toBeNull();
     expect(allRead.textContent).toContain('No unread mentions match the current filters.');
+
+    // The unread branch carries the same one-click filter reset as the generic empty state (#1821).
+    let emitted = 0;
+    fixture.componentInstance.clearFilters.subscribe(() => (emitted += 1));
+    (allRead.querySelector('button') as HTMLButtonElement).click();
+    expect(emitted).toBe(1);
   });
 
   it('offers a one-click filter reset from the empty state', async () => {

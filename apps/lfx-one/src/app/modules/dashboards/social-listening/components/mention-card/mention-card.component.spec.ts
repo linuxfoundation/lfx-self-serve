@@ -281,11 +281,9 @@ describe('MentionCardComponent', () => {
     expect(querySelector('[data-testid="mention-card-project"]')?.textContent?.trim()).toBe('Kubernetes');
   });
 
-  it('expands the clamped body and keeps the toggle reachable so it can be collapsed again', async () => {
+  it('keeps the body clamped and points to the original post once truncated', async () => {
     setMention(baseMention());
     await fixture.whenStable();
-
-    expect(querySelector('[data-testid="mention-card-body-toggle"]')).toBeNull();
 
     // jsdom reports zero heights — stub the layout boxes so the clamp measure sees overflow.
     const body = querySelector('.mention-body') as HTMLElement;
@@ -294,24 +292,8 @@ describe('MentionCardComponent', () => {
     fixture.componentRef.setInput('timeTick', 1);
     await fixture.whenStable();
 
-    const toggle = querySelector('[data-testid="mention-card-body-toggle"]') as HTMLButtonElement;
-    expect(toggle.textContent?.trim()).toBe('Show more');
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(querySelector('.mention-body')?.className).toContain('line-clamp-4');
-
-    toggle.click();
-    await fixture.whenStable();
-
-    // Expanding drops the clamp, which makes the measurement report "not truncated" — the toggle must survive it.
-    const expandedToggle = querySelector('[data-testid="mention-card-body-toggle"]') as HTMLButtonElement;
-    expect(expandedToggle.textContent?.trim()).toBe('See less');
-    expect(expandedToggle.getAttribute('aria-expanded')).toBe('true');
-    expect(querySelector('.mention-body')?.className).not.toContain('line-clamp-4');
-
-    expandedToggle.click();
-    await fixture.whenStable();
-
-    expect(querySelector('.mention-body')?.className).toContain('line-clamp-4');
+    expect(querySelector('[data-testid="mention-card-read-more"]')?.textContent).toContain('Read full post on Reddit');
   });
 
   it('exposes the stretched link as the sole keyboard tab stop to the original URL', async () => {

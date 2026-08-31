@@ -570,7 +570,8 @@ export class SocialListeningComponent {
 
   public onLoadMore(): void {
     // The footer stays hidden until the first row lands — advancing mid-fetch would cancel the in-flight window request.
-    if (this.loading()) return;
+    // A queued second click can outrun the footer's unmount, so re-check hasMore() instead of trusting the button's visibility.
+    if (this.loading() || !this.hasMore()) return;
     this.lastLoadedPage.update((page) => page + 1);
   }
 

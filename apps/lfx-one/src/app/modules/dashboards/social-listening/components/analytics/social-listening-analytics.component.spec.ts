@@ -275,6 +275,8 @@ describe('SocialListeningAnalyticsComponent', () => {
     const panel = fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-sentiment"]');
     expect(panel.querySelector('[data-testid="social-listening-analytics-sentiment-trend-positive"]')).toBeNull();
     expect(panel.querySelector('[data-testid="social-listening-analytics-sentiment-trend-negative"]').className).toContain('text-emerald-700');
+    // The arrow is aria-hidden — the sr-only direction word carries the sign for screen readers.
+    expect(panel.querySelector('[data-testid="social-listening-analytics-sentiment-trend-negative"]').textContent).toContain('Decreased');
   });
 
   it('reports panelsLoading while any panel is in flight and clears it once all settle', async () => {

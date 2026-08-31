@@ -54,9 +54,6 @@ export class MentionCardComponent {
   public readonly failedImageUrl = signal<string | null>(null);
   /** Drives the fade + "Read full post" affordance; measured against the clamped body after each render. */
   public readonly truncated = signal(false);
-  /** Keyed by mention id (same reuse hazard as failedImageUrl) — a recycled row never renders the next mention expanded. */
-  private readonly expandedMentionId = signal<string | null>(null);
-  public readonly bodyExpanded = computed(() => this.expandedMentionId() === this.mention().id);
   private copyTimeoutId: ReturnType<typeof setTimeout> | null = null;
   private readonly bodyEl = viewChild<ElementRef<HTMLElement>>('bodyEl');
 
@@ -74,8 +71,6 @@ export class MentionCardComponent {
   public readonly displayKeyword = computed(() => capitalizeFirst(this.mention().keyword));
   /** Blank `SOURCE_PROJECT_NAME` rows still get a pill — the keyword is the closest thing the feed matched on. */
   public readonly displayProject = computed(() => this.mention().sourceProjectName || this.displayKeyword());
-  /** Expanding removes the clamp, so `truncated` reads false — latch on `bodyExpanded` to keep the toggle and full-post link in place. */
-  public readonly bodyExpandable = computed(() => this.truncated() || this.bodyExpanded());
   public readonly isReddit = computed(() => this.mention().platform === 'reddit');
   /** Subreddit directory link — distinct from the stretched card link, which opens the mention itself. */
   public readonly subredditUrl = computed(() => {
@@ -114,10 +109,6 @@ export class MentionCardComponent {
     this.bookmarkToggled.emit(this.mention());
   }
 
-  public onToggleBody(): void {
-    this.expandedMentionId.update((id) => (id === this.mention().id ? null : this.mention().id));
-  }
-
   /** Re-emits the toggle intent — the loading gate lives in the service. */
   public onToggleRead(): void {
     this.readToggled.emit(this.mention());
@@ -139,6 +130,8 @@ export class MentionCardComponent {
     const url = normalizeToUrl(this.mention().originalUrl);
     if (!url) return;
 
+    // Safe: normalizeToUrl only returns http(s) URLs or https-upgraded valid domains, else null (handled above).
+    // pi-lens-ignore: ast-grep:no-open-redirect
     window.open(url, '_blank', 'noopener,noreferrer');
     this.onCardClick();
   }

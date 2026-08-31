@@ -224,6 +224,7 @@
                         class="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium"
                         [class]="(trend.inverted ? invertedDeltaTextClass : deltaTextClass)[trend.direction]"
                         [attr.data-testid]="'social-listening-analytics-sentiment-trend-' + row.sentiment">
+                        <span class="sr-only">{{ deltaDirectionSrLabel[trend.direction] }}</span>
                         <i [class]="deltaIcon[trend.direction]" aria-hidden="true"></i>
                         {{ trend.label }}
                       </span>
