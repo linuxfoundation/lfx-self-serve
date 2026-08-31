@@ -97,10 +97,8 @@ export class MailingListManageComponent {
 
   public constructor() {
     evictOnWriteAccessLoss();
-    // Sync context from the loaded list itself — an edit deep link can arrive under the wrong
-    // tier (/project/* for a foundation-owned list) or with no `?project=` at all (GH-1567).
-    // preferEntityKind lets the list's own is_foundation re-point the lens kind when it
-    // contradicts the route prefix. The uid-only fallback covers unenriched payloads.
+    // Sync context from the loaded list itself — an edit deep link can arrive under the wrong tier
+    // or with no `?project=` (GH-1567); preferEntityKind lets the list's own is_foundation re-point the lens kind.
     syncEntityProjectContext(this.mailingListEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
     this.initMailingListContextFallback();
     this.form()
@@ -250,9 +248,8 @@ export class MailingListManageComponent {
   }
 
   /**
-   * Maps the loaded list to the {@link EntityWithProject} shape consumed by
-   * syncEntityProjectContext — pre-enrichment payloads can lack the project fields entirely
-   * (or carry the v1-sync empty-string slug), so absent values map to null there.
+   * Adapts the loaded list to {@link EntityWithProject}; a falsy `project_slug` (absent or the
+   * v1-sync empty string) reads as "unenriched" to both consumers.
    */
   private initMailingListEntityContext(): Signal<EntityWithProject | null> {
     return computed(() => {
@@ -271,13 +268,8 @@ export class MailingListManageComponent {
   }
 
   /**
-   * Fallback context sync for when the BFF project enrichment failed (the detail payload has
-   * `project_uid` but no usable `project_slug`): resolve the project by uid and set context from
-   * it. `getProject(uid, false)` — `current: false` so the fetch doesn't clobber ProjectService's
-   * shared `project` state — already resolves to null on failure, so a failed fallback leaves the
-   * (stale) context untouched rather than erroring the page. As in syncEntityProjectContext,
-   * NavigationEnd re-applies the correction: query-param step navigations re-assert the route's
-   * declared lens kind via syncLensFromRoute without re-running guards (GH-1567).
+   * Unenriched-payload fallback (project_uid but no usable project_slug): resolve the project by
+   * uid and set context from it; NavigationEnd re-applies it, mirroring syncEntityProjectContext (GH-1567).
    */
   private initMailingListContextFallback(): void {
     const unresolvedEntity$ = toObservable(this.mailingListEntityContext).pipe(
@@ -290,6 +282,7 @@ export class MailingListManageComponent {
     merge(unresolvedEntity$, navigationReapply$)
       .pipe(
         filter((entity): entity is EntityWithProject => !!entity?.project_uid && !entity.project_slug),
+        // current: false — don't clobber ProjectService's shared state; null on failure leaves the stale context untouched.
         switchMap((entity) =>
           this.projectService.getProject(entity.project_uid, false).pipe(
             map((project) => {

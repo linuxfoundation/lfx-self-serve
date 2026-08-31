@@ -15,7 +15,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, MAILING_LIST_LABEL, MAILING_LIST_MAX_VISIBLE_GROUPS } from '@lfx-one/shared';
 import { FilterOption, GroupsIOMailingList, MailingListTableRowVm } from '@lfx-one/shared/interfaces';
-import { getEntityCommands } from '@lfx-one/shared/utils';
+import { getMailingListCommands, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
 import { GroupEmailPipe } from '@pipes/group-email.pipe';
 import { MailingListTypeLabelPipe } from '@pipes/mailing-list-type-label.pipe';
 import { RemainingGroupsTooltipPipe } from '@pipes/remaining-groups-tooltip.pipe';
@@ -69,7 +69,7 @@ export class MailingListTableComponent {
 
   // Outputs
   public readonly refresh = output<void>();
-  public readonly rowClick = output<GroupsIOMailingList>();
+  public readonly rowClick = output<MailingListTableRowVm>();
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();
 
@@ -87,21 +87,8 @@ export class MailingListTableComponent {
 
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.mailingLists().length > 10 ? [10, 25, 50] : undefined));
 
-  /**
-   * Rows decorated with their canonical view link state (GH-1567): `getEntityCommands`
-   * prefixes the path with the row's OWN project tier (`is_foundation`) instead of the viewer's
-   * transient active lens, and `?project=` rides along when the row carries a `project_slug`.
-   * Rows without tier data keep the flat `/mailing-lists/:uid` fallback (the `??` inside the
-   * mapping), which `lensRedirectGuard` handles as before. Pre-computed once per input change
-   * rather than per change-detection cycle (angular-reactive-data §3.5).
-   */
-  protected readonly tableRows = computed<MailingListTableRowVm[]>(() =>
-    this.mailingLists().map((mailingList) => ({
-      ...mailingList,
-      viewCommands: getEntityCommands('mailing-lists', mailingList.uid, mailingList.is_foundation) ?? ['/mailing-lists', mailingList.uid],
-      linkQueryParams: mailingList.project_slug ? { project: mailingList.project_slug } : null,
-    }))
-  );
+  /** Rows decorated with canonical view-link state (GH-1567) — pre-computed once per input change (angular-reactive-data §3.5). */
+  protected readonly tableRows: Signal<MailingListTableRowVm[]> = this.initTableRows();
 
   // Event Handlers
   protected onRowSelect(event: { data: MailingListTableRowVm }): void {
@@ -112,5 +99,15 @@ export class MailingListTableComponent {
     this.searchForm().patchValue({ search: '', committee: null, status: null, foundationFilter: null, projectFilter: null });
     this.foundationFilterChange.emit(null);
     this.projectFilterChange.emit(null);
+  }
+
+  private initTableRows(): Signal<MailingListTableRowVm[]> {
+    return computed(() =>
+      this.mailingLists().map((mailingList) => ({
+        ...mailingList,
+        viewCommands: getMailingListCommands(mailingList),
+        linkQueryParams: getMailingListLinkQueryParams(mailingList),
+      }))
+    );
   }
 }

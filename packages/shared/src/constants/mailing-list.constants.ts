@@ -81,8 +81,7 @@ export const MAILING_LIST_STEP_TITLES = ['Basic Information', 'Settings', 'Peopl
 export const MAILING_LIST_TOTAL_STEPS = MAILING_LIST_STEP_TITLES.length;
 
 /**
- * Short TTL for the mailing-list-detail cache — just long enough for the writerGuard
- * entity probe and MailingListManageComponent's immediate refetch to share one request, without
- * serving stale data across edits (write paths evict explicitly). Mirrors MEETING_DETAIL_CACHE_TTL_MS.
+ * Short TTL so the writerGuard probe and manage-page refetch share one request; writes evict
+ * explicitly. Mirrors MEETING_DETAIL_CACHE_TTL_MS.
  */
 export const MAILING_LIST_DETAIL_CACHE_TTL_MS = 10 * 1000;

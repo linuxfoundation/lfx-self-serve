@@ -41,7 +41,7 @@ const MOCK_COMMITTEE_UID = 'c0000000-0000-0000-0000-00000000d001';
 const OTHER_PROJECT_SLUG = 'other-project';
 const OTHER_PROJECT_UID = 'p0000000-0000-0000-0000-00000000d003';
 const MOCK_MEETING_UID = 'm0000000-0000-0000-0000-00000000d001';
-const MOCK_MAILING_LIST_UID = '1i000000-0000-0000-0000-00000000d001';
+const MOCK_MAILING_LIST_UID = 'l1000000-0000-0000-0000-00000000d001';
 
 function buildProjectStub(uid: string, slug: string, name: string) {
   return {
@@ -279,9 +279,8 @@ async function stubMeetingEditDetail(page: Page, meeting: ReturnType<typeof buil
 }
 
 /**
- * Mailing list detail payload for the edit page. `enriched: false` mirrors the v1-sync index
- * gap the BFF enrichment covers (GH-1567): project_slug/project_name come back as empty
- * strings and is_foundation is absent, so the component's resolve-by-uid fallback runs.
+ * Edit-page detail payload; `enriched: false` mirrors the v1-sync gap (empty slug/name, no
+ * is_foundation) so the component's resolve-by-uid fallback runs (GH-1567).
  */
 function buildMailingListStub(enriched: boolean) {
   return {
@@ -307,8 +306,7 @@ function buildMailingListStub(enriched: boolean) {
 }
 
 async function stubMailingListEditDetail(page: Page, list: ReturnType<typeof buildMailingListStub>): Promise<void> {
-  // Catch-all registered FIRST (Playwright matches routes in reverse registration order) so
-  // incidental list/count calls from the edit page don't escape to the real BFF. `*` does not
+  // Catch-all registered FIRST (Playwright matches in reverse registration order); `*` doesn't
   // cross `/`, so the services and detail routes need their own patterns.
   await page.route('**/api/mailing-lists*', (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
@@ -588,9 +586,8 @@ test.describe('Mailing list edit deep-link resolves the list’s project context
   });
 
   test('writerGuard authorizes the edit page against the list’s project, not the stale context (GH-1567)', async ({ page }) => {
-    // Non-ED persona: no synchronous fast path — the guard must probe the list for its
-    // project slug. The stale cookie context (Other Project) is intentionally NOT writable:
-    // if the guard authorizes against it, the page redirects to /project/overview?_notice=...
+    // Non-ED persona: the guard must probe the list for its project slug; the stale cookie
+    // context (Other Project) is intentionally NOT writable — it would redirect to /project/overview.
     await setPersonaAndLensCookies(page, ['maintainer'], 'project');
     await stubPersona(page, ['maintainer']);
     await page.route(`**/api/projects/${OTHER_PROJECT_SLUG}*`, (route) =>
@@ -616,9 +613,8 @@ test.describe('Mailing list edit deep-link resolves the list’s project context
   });
 
   test('edit link without ?project= falls back to resolving the project by uid when enrichment is absent', async ({ page }) => {
-    // Enrichment-failed payload: project_uid only (v1-sync empty-string slug). The component
-    // fallback fetches the project by uid — this route satisfies computeIsFoundation (Funded +
-    // Membership + Active), so the resolved context lands in the foundation slot like the enriched path.
+    // Enrichment-failed payload (project_uid only, v1-sync empty-string slug): the fallback
+    // fetches the project by uid — this stub satisfies computeIsFoundation, landing the foundation slot.
     await stubMailingListEditDetail(page, buildMailingListStub(false));
     await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}*`, (route) =>
       route.fulfill({

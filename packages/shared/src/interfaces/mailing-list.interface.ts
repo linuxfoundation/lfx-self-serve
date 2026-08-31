@@ -300,12 +300,8 @@ export interface UpdateMailingListMemberRequest {
 }
 
 /**
- * A mailing-list-table row decorated with template-friendly link state (mirrors
- * `CommitteeTableRowVm`): the entity fields pass through untouched, and the canonical view
- * router commands + `?project=` params are pre-computed once per input change instead of per
- * change-detection cycle (angular-reactive-data §3.5). `viewCommands` already contains the
- * flat `/mailing-lists/:uid` fallback when the row carries no `is_foundation`, so the template
- * never branches (GH-1567).
+ * Table row decorated with canonical view-link state (GH-1567); `viewCommands` already holds the
+ * flat fallback, so the template never branches. Mirrors `CommitteeTableRowVm`.
  */
 export interface MailingListTableRowVm extends GroupsIOMailingList {
   viewCommands: string[];

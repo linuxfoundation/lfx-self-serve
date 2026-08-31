@@ -258,9 +258,8 @@ export class MailingListService {
     ]);
     const mailingList = enriched[0];
 
-    // The groupsio_mailing_list index never emits is_foundation, and v1-sync rows carry
-    // project_slug/project_name as empty strings — the edit page's context sync and
-    // writerGuard's entity-scoped probe need the enriched fields (GH-1567).
+    // The index never emits is_foundation and v1-sync rows carry empty-string project fields —
+    // the edit page's context sync and writerGuard's probe need the enriched fields (GH-1567).
     if (project) {
       Object.assign(mailingList, toEntityProjectFields(project));
     }

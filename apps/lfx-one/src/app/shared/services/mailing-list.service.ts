@@ -48,11 +48,8 @@ export class MailingListService {
   }
 
   /**
-   * Mailing-list detail fetch with a short-TTL shared cache: the writerGuard entity probe and
-   * MailingListManageComponent's initMailingList both need the same payload within one
-   * navigation — sharing the request avoids a duplicate fetch on every edit-page load.
-   * Probe-friendly: no side effects. Entries evict on error and on write (updateMailingList).
-   * Pass `skipCache` to force a fresh fetch. Mirrors getMeetingDetail / fetchCommittee (GH-1567).
+   * Short-TTL detail cache so the writerGuard probe and the manage-page load share one request (GH-1567).
+   * Evicts on error and on writes (updateMailingList, member mutations); `skipCache` forces a fresh fetch.
    */
   public getMailingList(uid: string, options?: { skipCache?: boolean }): Observable<GroupsIOMailingList> {
     const cached = this.mailingListDetailCache.get(uid);
@@ -112,15 +109,17 @@ export class MailingListService {
   }
 
   public createMember(mailingListId: string, data: CreateMailingListMemberRequest): Observable<MailingListMember> {
-    return this.http.post<MailingListMember>(`${this.baseUrl}/${mailingListId}/members`, data);
+    return this.http.post<MailingListMember>(`${this.baseUrl}/${mailingListId}/members`, data).pipe(tap(() => this.mailingListDetailCache.delete(mailingListId)));
   }
 
   public updateMember(mailingListId: string, memberId: string, data: UpdateMailingListMemberRequest): Observable<MailingListMember> {
-    return this.http.put<MailingListMember>(`${this.baseUrl}/${mailingListId}/members/${memberId}`, data);
+    return this.http
+      .put<MailingListMember>(`${this.baseUrl}/${mailingListId}/members/${memberId}`, data)
+      .pipe(tap(() => this.mailingListDetailCache.delete(mailingListId)));
   }
 
   public deleteMember(mailingListId: string, memberId: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/${mailingListId}/members/${memberId}`);
+    return this.http.delete<void>(`${this.baseUrl}/${mailingListId}/members/${memberId}`).pipe(tap(() => this.mailingListDetailCache.delete(mailingListId)));
   }
 
   private pruneExpiredMailingListDetailCache(): void {
