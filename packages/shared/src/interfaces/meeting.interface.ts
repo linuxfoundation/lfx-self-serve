@@ -1470,6 +1470,21 @@ export interface PublicCalendarMeeting {
   scheduled_start_time?: string;
   /** Composite past-meeting id (e.g. "99152950841-1630560600000"); present only on `v1_past_meeting` rows */
   meeting_and_occurrence_id?: string;
+  /**
+   * Committee UIDs this meeting is associated with — opaque identifiers used to filter, label, and
+   * color-code the public calendar.
+   *
+   * Restricted server-side to committees the public group directory lists, and never accompanied by a
+   * name. A PUBLIC meeting can be tied to a non-public committee; publishing that UID would let an
+   * anonymous caller correlate meetings by a group the directory deliberately hides, and the name would
+   * label the feed with that hidden group. Clients resolve display names from
+   * `GET /public/api/projects/:id/groups`, so a withheld UID would have been unusable to them anyway.
+   *
+   * Not a claim that a non-public committee's name is unreachable everywhere: `GET /public/api/meetings/:id`
+   * still returns `committees[].name` to anonymous callers for a PUBLIC, non-restricted meeting. Narrowing
+   * that endpoint is a separate change against a pre-existing surface.
+   */
+  committee_uids?: string[];
 }
 
 /**

@@ -17,7 +17,7 @@
 }
 
 // The mentions feed renders cards, not a data grid — strip the table chrome (borders, cell
-// padding, header row) so the wrapper reads as a stacked card list with a paginator.
+// padding, header row) so the wrapper reads as a stacked card list.
 :host ::ng-deep .mentions-table {
   .p-datatable-thead,
   .p-datatable-tfoot {
@@ -29,15 +29,8 @@
 
     > td {
       border: 0;
-      padding: 0 0 var(--spacing-3, 0.75rem);
+      padding: 0 0 var(--spacing-6, 1.5rem);
       background: transparent;
     }
-  }
-
-  // The paginator is the only visible table chrome; align it with the card list.
-  .p-paginator {
-    border: 0;
-    background: transparent;
-    padding-inline: 0;
   }
 }

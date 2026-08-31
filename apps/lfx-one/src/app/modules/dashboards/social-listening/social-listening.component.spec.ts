@@ -36,7 +36,7 @@ import { SocialListeningComponent } from './social-listening.component';
 
 /**
  * Container-level coverage for the two things the child specs cannot see: the windowed pagination
- * arithmetic (windowIndex/serverOffset/localOffset, ±2-window cache eviction) and the bidirectional
+ * arithmetic (windowIndex/serverOffset/localOffset, cumulative window rendering) and the bidirectional
  * query-param sync. The template is blanked out — nothing here needs the rendered tree.
  */
 describe('SocialListeningComponent', () => {
@@ -124,6 +124,14 @@ describe('SocialListeningComponent', () => {
 
   function mentionIds(): string[] {
     return fixture.componentInstance.mentions().map((mention: Mention) => mention.id);
+  }
+
+  /** Load More advances one batch at a time — there is no arbitrary page jump to emulate. */
+  async function loadMore(times = 1): Promise<void> {
+    for (let i = 0; i < times; i++) {
+      fixture.componentInstance.onLoadMore();
+      await settle();
+    }
   }
 
   beforeEach(async () => {
@@ -225,55 +233,50 @@ describe('SocialListeningComponent', () => {
     await settle();
   });
 
-  describe('windowed pagination', () => {
-    it('fetches window 0 in two phases, then pages within it without a refetch', async () => {
-      // Phase 1 paints the visible page; phase 2 fills the rest of the 100-row window.
+  describe('windowed load more', () => {
+    it('fetches window 0 in two phases, then appends within it without a refetch', async () => {
+      // Phase 1 paints the first batch; phase 2 fills the rest of the 100-row window.
       expect(feedCalls()).toEqual([expect.objectContaining({ limit: 20, offset: 0 }), expect.objectContaining({ limit: 80, offset: 20 })]);
       expect(cachedWindows()).toEqual([0]);
       expect(mentionIds()).toHaveLength(20);
 
-      // Page 4 (rows 80–99) still lives in window 0 — no new fetch.
-      fixture.componentInstance.onPageChange({ page: 4, rows: 20 });
-      await settle();
+      // Batches 2–5 (rows 20–99) still live in window 0 — no new fetch.
+      await loadMore(4);
 
       expect(getMentionsFeed).toHaveBeenCalledTimes(2);
-      expect(mentionIds()[0]).toBe('m80');
+      expect(mentionIds()).toHaveLength(100);
+      expect(mentionIds()[0]).toBe('m0');
+      expect(mentionIds().at(-1)).toBe('m99');
     });
 
-    it('fetches the next window when the page crosses the window edge', async () => {
-      fixture.componentInstance.onPageChange({ page: 5, rows: 20 });
-      await settle();
+    it('appends the next batch below the rows already rendered', async () => {
+      await loadMore();
+
+      expect(mentionIds()).toHaveLength(40);
+      expect(mentionIds().slice(0, 20)).toEqual(Array.from({ length: 20 }, (_, i) => `m${i}`));
+      expect(mentionIds().slice(20)).toEqual(Array.from({ length: 20 }, (_, i) => `m${20 + i}`));
+    });
+
+    it('renders cumulatively across a window boundary', async () => {
+      await loadMore(5);
 
       expect(feedCalls().at(-2)).toEqual(expect.objectContaining({ limit: 20, offset: 100 }));
       expect(cachedWindows()).toEqual([0, 1]);
-      expect(mentionIds()[0]).toBe('m100');
+      // Window 0 stays on screen — the boundary batch is appended, not swapped in.
+      expect(mentionIds()).toHaveLength(120);
+      expect(mentionIds()[0]).toBe('m0');
+      expect(mentionIds().at(-1)).toBe('m119');
     });
 
-    it('a page-size change mid-window slices the cached window instead of refetching', async () => {
-      fixture.componentInstance.onPageChange({ page: 1, rows: 50 });
-      await settle();
+    it('retains every window it has walked into, so a loaded batch is never refetched', async () => {
+      await loadMore(20);
 
-      // Offset 50 sits inside window 0 (rows 0–99) — the cache serves it.
-      expect(getMentionsFeed).toHaveBeenCalledTimes(2);
-      expect(mentionIds()).toHaveLength(50);
-      expect(mentionIds()[0]).toBe('m50');
-
-      // Offset 150 lands past the window edge — a new window fetch is required.
-      fixture.componentInstance.onPageChange({ page: 3, rows: 50 });
-      await settle();
-
-      expect(feedCalls().at(-1)).toEqual(expect.objectContaining({ offset: 100 }));
-      expect(mentionIds()[0]).toBe('m150');
-    });
-
-    it('evicts windows farther than ±2 from the current window', async () => {
-      for (const page of [5, 10, 15, 20]) {
-        fixture.componentInstance.onPageChange({ page, rows: 20 });
-        await settle();
-      }
-
-      // Window 4 is current (page 20 at rows 20); windows 0 and 1 fell out of the ±2 band.
-      expect(cachedWindows()).toEqual([2, 3, 4]);
+      expect(cachedWindows()).toEqual([0, 1, 2, 3, 4]);
+      // Two calls per window (20 + 80) and not one repeat: nothing was evicted and re-fetched.
+      expect(feedCalls()).toHaveLength(10);
+      expect(new Set(feedCalls().map((req) => req.offset)).size).toBe(10);
+      expect(mentionIds()).toHaveLength(420);
+      expect(mentionIds().at(-1)).toBe('m419');
     });
 
     it('auto-refetches a window once when its phase-2 fill fails, then serves it complete', async () => {
@@ -287,20 +290,18 @@ describe('SocialListeningComponent', () => {
         return of(feedResponse(req));
       });
 
-      fixture.componentInstance.onPageChange({ page: 5, rows: 20 });
-      await settle();
+      await loadMore(5);
 
       // Failed fill (120) + forced refetch of the window (100 + 120 again).
       expect(feedCalls().filter((req) => req.offset === 120)).toHaveLength(2);
       expect(cachedWindows()).toEqual([0, 1]);
-      expect(mentionIds()[0]).toBe('m100');
+      expect(mentionIds()).toHaveLength(120);
 
-      // The recovered window is complete — in-window paging serves it without another fetch.
+      // The recovered window is complete — the next batch is served without another fetch.
       const calls = getMentionsFeed.mock.calls.length;
-      fixture.componentInstance.onPageChange({ page: 6, rows: 20 });
-      await settle();
+      await loadMore();
       expect(getMentionsFeed).toHaveBeenCalledTimes(calls);
-      expect(mentionIds()[0]).toBe('m120');
+      expect(mentionIds().at(-1)).toBe('m139');
     });
 
     it('flags the window for manual retry when the phase-2 fill keeps failing, and retry recovers it', async () => {
@@ -308,8 +309,7 @@ describe('SocialListeningComponent', () => {
         req.offset === 120 ? throwError(() => new Error('phase 2 failed')) : of(feedResponse(req))
       );
 
-      fixture.componentInstance.onPageChange({ page: 5, rows: 20 });
-      await settle();
+      await loadMore(5);
 
       // One failed fill + one failed refetch — then the partial window stays cached, flagged for manual retry.
       expect(feedCalls().filter((req) => req.offset === 120)).toHaveLength(2);
@@ -323,7 +323,8 @@ describe('SocialListeningComponent', () => {
 
       expect(feedCalls().filter((req) => req.offset === 120)).toHaveLength(3);
       expect(fixture.componentInstance.phase2Failed()).toBe(false);
-      expect(mentionIds()[0]).toBe('m100');
+      expect(mentionIds()).toHaveLength(120);
+      expect(mentionIds().at(-1)).toBe('m119');
     });
   });
 
@@ -337,7 +338,7 @@ describe('SocialListeningComponent', () => {
 
       expect(fixture.componentInstance.countError()).toBe('Failed to load the mention count');
       // No zero-total masquerade: the provisional total (serverOffset 0 + 100 loaded rows + one pageSize)
-      // keeps Next enabled past the loaded window until the count recovers.
+      // keeps Load More reachable past the loaded window until the count recovers.
       expect(fixture.componentInstance.totalRecords()).toBe(120);
     });
   });
@@ -608,9 +609,8 @@ describe('SocialListeningComponent', () => {
     it('re-queries unread from page 1 when mark-all-as-read refreshes the snapshot', async () => {
       fixture.componentInstance.selectedReadFilter.set('unread');
       await settle();
-      fixture.componentInstance.onPageChange({ page: 4, rows: 20 });
-      await settle();
-      expect(fixture.componentInstance.currentPage()).toBe(4);
+      await loadMore(4);
+      expect(fixture.componentInstance.lastLoadedPage()).toBe(4);
 
       // Unread mode narrows the feed, so mark-all first resolves the foundation-global newest via a limit-1 fetch.
       // Mirror the production ordering inside the mock: the store's optimistic commit lands
@@ -623,7 +623,7 @@ describe('SocialListeningComponent', () => {
 
       expect(markAllAsRead).toHaveBeenCalledWith('2026-08-01T00:00:00Z');
       // Then the refreshed snapshot re-queries with the new cutoff, restarting at page 1.
-      expect(fixture.componentInstance.currentPage()).toBe(0);
+      expect(fixture.componentInstance.lastLoadedPage()).toBe(0);
       expect(feedCalls().at(-1)).toMatchObject({ unreadOnly: true, readBeforeTs: '2026-08-01T00:00:00Z' });
     });
 
@@ -725,8 +725,7 @@ describe('SocialListeningComponent', () => {
       await settle();
 
       // pageSize 20 × page 5 = offset 100 → window 1 (serverWindowSize is 100).
-      fixture.componentInstance.onPageChange({ page: 5, rows: 20 });
-      await settle();
+      await loadMore(5);
       expect(cachedWindows()).toEqual([0, 1]);
 
       fixture.componentInstance.onMarkAllAsRead();
@@ -734,8 +733,8 @@ describe('SocialListeningComponent', () => {
       expect(markAllAsRead).toHaveBeenCalledWith('2026-08-01T00:00:00Z');
     });
 
-    it('retains the global-newest mark-all cutoff after window 0 is pruned from the cache', async () => {
-      // Window 0 rows stamp newer than every deeper window — the retained cutoff must survive window 0's eviction.
+    it('retains the global-newest mark-all cutoff after loading deep into the feed', async () => {
+      // Window 0 rows stamp newer than every deeper window — the retained cutoff must stay pinned to them.
       getMentionsFeed.mockImplementation((req: SocialListeningFeedRequest) => {
         const response = feedResponse(req);
         const ts = (req.offset ?? 0) === 0 ? '2026-08-01T00:00:00Z' : '2026-07-01T00:00:00Z';
@@ -746,12 +745,9 @@ describe('SocialListeningComponent', () => {
       fixture.detectChanges();
       await settle();
 
-      // Page into window 4 — windows 0 and 1 fall out of the ±2 band.
-      for (const page of [5, 10, 15, 20]) {
-        fixture.componentInstance.onPageChange({ page, rows: 20 });
-        await settle();
-      }
-      expect(cachedWindows()).toEqual([2, 3, 4]);
+      // Load through to window 4 — every window walked into stays cached.
+      await loadMore(20);
+      expect(cachedWindows()).toEqual([0, 1, 2, 3, 4]);
 
       fixture.componentInstance.onMarkAllAsRead();
 
@@ -760,16 +756,15 @@ describe('SocialListeningComponent', () => {
 
     it('resets the page and re-queries with the snapshot params on read-filter change', async () => {
       readState.set(readStateWith({ readIds: ['m7'] }));
-      fixture.componentInstance.onPageChange({ page: 4, rows: 20 });
-      await settle();
-      expect(fixture.componentInstance.currentPage()).toBe(4);
+      await loadMore(4);
+      expect(fixture.componentInstance.lastLoadedPage()).toBe(4);
       expect(cachedWindows()).toEqual([0]);
       const feedCallCount = getMentionsFeed.mock.calls.length;
 
       fixture.componentInstance.selectedReadFilter.set('unread');
       await settle();
 
-      expect(fixture.componentInstance.currentPage()).toBe(0);
+      expect(fixture.componentInstance.lastLoadedPage()).toBe(0);
       // The window cache went cold and refilled — the server now filters, so cached unfiltered windows no longer apply.
       expect(cachedWindows()).toEqual([0]);
       expect(getMentionsFeed.mock.calls.length).toBeGreaterThan(feedCallCount);
