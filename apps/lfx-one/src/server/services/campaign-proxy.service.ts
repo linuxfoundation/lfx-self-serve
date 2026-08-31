@@ -247,6 +247,24 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
   // counts as a match for `found` (which is what suppresses the duplicate create); it just has
   // nothing to select.
   const tokened = matches.filter((m): m is typeof m & { hsUtm: string } => m.hsUtm !== null);
+
+  // A CAPPED search cannot auto-apply a token, even when it found a match. The result set is
+  // incomplete by definition, so an equal-or-better campaign may be sitting outside it, and the
+  // planning tab applies a `found` token immediately — it only consults `inconclusive` on the
+  // not-found path. Returning found:true here would silently pick a worse match and write its
+  // UTM into the event's links. The candidates still travel, so the operator picks.
+  if (capped) {
+    return {
+      found: false,
+      hsUtm: null,
+      campaignName: '',
+      campaignId: null,
+      allMatches: tokened.map((m) => ({ name: m.name, hsUtm: m.hsUtm })),
+      capped,
+      inconclusive: true,
+    };
+  }
+
   return {
     found: true,
     hsUtm: best.hsUtm,

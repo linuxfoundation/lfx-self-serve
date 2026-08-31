@@ -2057,6 +2057,40 @@ describe('OptimizationTabComponent — keyword action outcome states', () => {
     return outcome.state === 'unconfirmed';
   }
 
+  /**
+   * A browser-to-BFF failure carries NO structured result, so the message predicate cannot see it.
+   *
+   * If the connection drops, times out, or the BFF returns a 5xx AFTER it dispatched the
+   * mutation, the change may already have applied. Classifying that as "Failed" tells the
+   * operator nothing happened and invites a retry — and a retried REMOVE is irreversible. Only a
+   * 4xx (other than 408) is a definite refusal: the BFF rejected the request at its boundary
+   * before anything reached the platform.
+   */
+  function transportState(status: number): string {
+    return (
+      fixture.componentInstance as unknown as {
+        toTransportOutcome(err: unknown): { state: string };
+      }
+    ).toTransportOutcome({ status, message: 'Http failure response' }).state;
+  }
+
+  it.each([
+    [0, 'network failure'],
+    [408, 'timeout'],
+    [500, 'BFF 5xx'],
+    [503, 'BFF unavailable'],
+  ])('treats a post-dispatch transport failure (%i, %s) as unconfirmed', (status) => {
+    expect(transportState(status), 'a change that may have applied read as a definite failure').toBe('unconfirmed');
+  });
+
+  it.each([
+    [400, 'bad payload'],
+    [422, 'validation refusal'],
+  ])('treats a boundary refusal (%i, %s) as a definite failure', (status) => {
+    // Refused before dispatch, so nothing reached the platform and a retry is safe to withhold.
+    expect(transportState(status)).toBe('failed');
+  });
+
   it('distinguishes an unconfirmed outcome from a definite failure', () => {
     expect(isUnconfirmed({ success: false, message: unconfirmedMessage }), 'an unconfirmed change read as a definite failure').toBe(true);
   });

@@ -78,8 +78,9 @@ describe('toUtmLookupResult', () => {
   });
 
   /**
-   * Upstream returns matches in HubSpot's relevance order. Equal scores must preserve it —
-   * re-ordering them would put a worse upstream match first for no reason this layer knows.
+   * Upstream order is HubSpot's OBJECT-CREATION order, not relevance — the search is token-based
+   * and carries no ranking. Equal scores must still preserve it: re-ordering would invent a
+   * ranking neither layer has, and this layer knows no reason to prefer either row.
    */
   it('preserves upstream order within an equal score band', () => {
     const res = toUtmLookupResult(payload({ id: '1', name: 'KubeCon alpha', utm: 'a' }, { id: '2', name: 'KubeCon beta', utm: 'b' }), 'KubeCon');

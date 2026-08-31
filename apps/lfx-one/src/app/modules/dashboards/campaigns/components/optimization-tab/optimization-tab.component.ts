@@ -863,7 +863,7 @@ export class OptimizationTabComponent implements OnInit {
           this.actionInProgress.update((map) => ({ ...map, [key]: false }));
           this.actionResults.update((map) => ({
             ...map,
-            [key]: this.toActionOutcome(false, err?.error?.message || err?.message || 'Action failed'),
+            [key]: this.toTransportOutcome(err),
           }));
         },
       });
@@ -944,6 +944,33 @@ export class OptimizationTabComponent implements OnInit {
    * Deriving here also means every write site gets the same classification for free, rather than
    * each one remembering to.
    */
+  /**
+   * Classify a browser-to-BFF failure, which carries no structured result to read.
+   *
+   * The BFF may already have dispatched the mutation when the connection dropped, timed out, or
+   * returned a 5xx — so the outcome is UNKNOWN, not failed. Reporting `failed` for a
+   * spend-affecting pause/remove tells the operator nothing happened and invites a retry of a
+   * change that may have applied; on a REMOVE that is irreversible.
+   *
+   * Only a 4xx the BFF produced BEFORE dispatching is a definite failure: those are validation
+   * refusals (a bad payload, too many rows), and a request refused at the boundary never
+   * reached the platform. 0 (network), 408 (timeout) and 5xx are all unconfirmed.
+   */
+  private toTransportOutcome(err: unknown): KeywordActionOutcome {
+    const e = err as { status?: number; error?: { message?: string }; message?: string };
+    const status = typeof e?.status === 'number' ? e.status : 0;
+    const message = e?.error?.message || e?.message || 'Action failed';
+    const definitelyRefused = status >= 400 && status < 500 && status !== 408;
+    if (definitelyRefused) {
+      return { success: false, message, state: 'failed' };
+    }
+    return {
+      success: false,
+      message: `${message} — this may or may not have been applied; check the platform before retrying.`,
+      state: 'unconfirmed',
+    };
+  }
+
   private toActionOutcome(success: boolean, message: string): KeywordActionOutcome {
     if (success) {
       return { success, message, state: 'done' };

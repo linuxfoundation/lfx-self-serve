@@ -11,12 +11,17 @@ import type {
 // ---------------------------------------------------------------------------
 // campaign-service → UI conversion for the HubSpot UTM lookup
 //
-// Upstream returns every match in HubSpot's own relevance order and leaves the choosing to the
-// caller. The UI contract predates that: it wants a single best match plus the rest. So the
-// scoring lives here, ported from the legacy path so the ordering a user sees does not change
-// under them mid-cutover.
+// Upstream returns every match in the order HubSpot returned them — OBJECT-CREATION order, not
+// relevance: campaign-service documents the search as token-based with no relevance sort, so
+// position carries no ranking information. It leaves the choosing to the caller. The UI contract
+// predates that: it wants a single best match plus the rest. So the scoring lives here, ported
+// from the legacy path so the ordering a user sees does not change under them mid-cutover.
 //
-// ONE BEHAVIOUR DOES CHANGE, deliberately — see utmTokenOf.
+// TWO BEHAVIOURS DO CHANGE, deliberately:
+//   - a missing token is reported as missing rather than fabricated — see utmTokenOf.
+//   - a token is auto-applied only for an UNAMBIGUOUS winner. A tie, or a match too weak to
+//     stand alone, returns the candidates for a human to pick instead of letting creation order
+//     decide which campaign's UTM lands in an event's links.
 // ---------------------------------------------------------------------------
 
 /**
