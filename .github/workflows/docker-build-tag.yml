@@ -167,15 +167,15 @@ jobs:
         uses: aws-actions/aws-secretsmanager-get-secrets@3a411b6ec5cace3d626412dd917e7bfeac242cfa # v3.0.0
         with:
           secret-ids: |
-            OPENER, /cloudops/managed-secrets/cloud/github/linuxfoundation/lfx-version-bump-opener
+            TRIGGER, /cloudops/managed-secrets/cloud/github/linuxfoundation/lfx-self-serve-release-triggerer-app
           parse-json-secrets: true
 
       - name: Mint GitHub App installation token
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ env.OPENER_APP_ID }}
-          private-key: ${{ env.OPENER_PRIVATE_KEY }}
+          client-id: ${{ env.TRIGGER_CLIENT_ID }}
+          private-key: ${{ env.TRIGGER_PRIVATE_KEY }}
           owner: linuxfoundation
           repositories: lfx-v2-argocd
 
