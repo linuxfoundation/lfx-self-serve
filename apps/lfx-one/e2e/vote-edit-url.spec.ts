@@ -142,9 +142,7 @@ async function stubShellFeeds(page: Page): Promise<void> {
   });
   // Detail stub for the vote-manage writeAccess committee leg — the foundation row's edit link
   // carries ?committee_uid=, and without this the fetch falls through the catch-all to the real BFF.
-  await page.route(`**/api/committees/${COMMITTEE_UID}`, (route) =>
-    fulfillJson(route, { uid: COMMITTEE_UID, name: 'Governing Board', writer: true })
-  );
+  await page.route(`**/api/committees/${COMMITTEE_UID}`, (route) => fulfillJson(route, { uid: COMMITTEE_UID, name: 'Governing Board', writer: true }));
 }
 
 /**

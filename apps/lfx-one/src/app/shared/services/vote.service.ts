@@ -116,7 +116,7 @@ export class VoteService {
   }
 
   public getVote(voteUid: string): Observable<Vote> {
-    return this.http.get<Vote>(`/api/votes/${voteUid}`).pipe(tap((vote) => this.vote.set(vote)));
+    return this.http.get<Vote>(`/api/votes/${encodeURIComponent(voteUid)}`).pipe(tap((vote) => this.vote.set(vote)));
   }
 
   /**
@@ -126,7 +126,7 @@ export class VoteService {
    * vote-detail cache, so the manage component's refetch pays one extra lightweight detail GET.
    */
   public fetchVote(voteUid: string): Observable<Vote> {
-    return this.http.get<Vote>(`/api/votes/${voteUid}`).pipe(take(1));
+    return this.http.get<Vote>(`/api/votes/${encodeURIComponent(voteUid)}`).pipe(take(1));
   }
 
   public createVote(voteData: CreateVoteRequest): Observable<Vote> {
@@ -134,19 +134,19 @@ export class VoteService {
   }
 
   public updateVote(voteUid: string, voteData: UpdateVoteRequest): Observable<Vote> {
-    return this.http.put<Vote>(`/api/votes/${voteUid}`, voteData).pipe(take(1));
+    return this.http.put<Vote>(`/api/votes/${encodeURIComponent(voteUid)}`, voteData).pipe(take(1));
   }
 
   public deleteVote(voteUid: string): Observable<void> {
-    return this.http.delete<void>(`/api/votes/${voteUid}`).pipe(take(1));
+    return this.http.delete<void>(`/api/votes/${encodeURIComponent(voteUid)}`).pipe(take(1));
   }
 
   public getVoteResults(voteUid: string): Observable<VoteResultsResponse> {
-    return this.http.get<VoteResultsResponse>(`/api/votes/${voteUid}/results`);
+    return this.http.get<VoteResultsResponse>(`/api/votes/${encodeURIComponent(voteUid)}/results`);
   }
 
   public enableVote(voteUid: string): Observable<Vote> {
-    return this.http.put<Vote>(`/api/votes/${voteUid}/enable`, {}).pipe(take(1));
+    return this.http.put<Vote>(`/api/votes/${encodeURIComponent(voteUid)}/enable`, {}).pipe(take(1));
   }
 
   public createVoteResponse(payload: CreateVoteResponseRequest): Observable<void> {
@@ -175,7 +175,7 @@ export class VoteService {
   }
 
   public getMyVoteResponse(voteUid: string): Observable<MyVoteResponse | null> {
-    return this.http.get<MyVoteResponse | null>(`/api/votes/${voteUid}/my-response`).pipe(
+    return this.http.get<MyVoteResponse | null>(`/api/votes/${encodeURIComponent(voteUid)}/my-response`).pipe(
       catchError((err: HttpErrorResponse) => {
         // 404 = the user genuinely has no invitation row for this vote — return null so
         // callers can surface the "no invitation" UX. Any other error (500, network, etc.)
