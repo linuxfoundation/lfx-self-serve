@@ -38,6 +38,7 @@ const MOCK_COMMITTEE_UID = 'c0000000-0000-0000-0000-00000000d001';
 const OTHER_PROJECT_SLUG = 'other-project';
 const OTHER_PROJECT_UID = 'p0000000-0000-0000-0000-00000000d003';
 const MOCK_MEETING_UID = 'm0000000-0000-0000-0000-00000000d001';
+const MOCK_VOTE_UID = 'v0000000-0000-0000-0000-00000000d001';
 
 function buildProjectStub(uid: string, slug: string, name: string) {
   return {
@@ -274,6 +275,36 @@ async function stubMeetingEditDetail(page: Page, meeting: ReturnType<typeof buil
   });
 }
 
+/**
+ * Vote detail payload for the edit page. `enriched: false` simulates the BFF project
+ * enrichment having failed (project_slug/project_name/is_foundation absent from the detail
+ * payload) so the component's resolve-by-uid fallback is exercised instead.
+ */
+function buildVoteStub(enriched: boolean) {
+  return {
+    uid: MOCK_VOTE_UID,
+    name: 'Test Foundation Board Ballot',
+    description: 'Vote stub for project-context deep-link specs',
+    status: 'disabled',
+    project_uid: MOCK_FOUNDATION_UID,
+    ...(enriched ? { project_slug: MOCK_FOUNDATION_SLUG, project_name: 'Test Foundation', is_foundation: true } : {}),
+    end_time: '2099-06-01T18:00:00Z',
+  };
+}
+
+async function stubVoteEditDetail(page: Page, vote: ReturnType<typeof buildVoteStub>): Promise<void> {
+  // Catch-all registered FIRST (Playwright matches routes in reverse registration order) so
+  // incidental list/count calls from the edit page don't escape to the real BFF.
+  await page.route('**/api/votes*', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+  });
+  await page.route(`**/api/votes/${MOCK_VOTE_UID}`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(vote) });
+  });
+}
+
 // Gated on env vars rather than on URL sniffing so genuine auth-flow regressions (expired
 // storageState, broken Auth0 login helper) still fail loudly when creds ARE configured.
 const AUTH_CREDS_PRESENT = !!process.env.TEST_USERNAME && !!process.env.TEST_PASSWORD;
@@ -491,6 +522,110 @@ test.describe('Meeting edit deep-link resolves the meeting’s project context (
 
     await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('sidebar-item-meetings')).toHaveAttribute('href', /[?&]project=test-foundation/, { timeout: ELEMENT_TIMEOUT });
+
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+});
+
+test.describe('Vote edit deep-link resolves the vote’s project context (GH-1568)', () => {
+  test.beforeEach(async ({ page }) => {
+    // Mirror the issue: the user was last working in an unrelated PROJECT (cookie-restored),
+    // then opens a context-less edit link for a vote owned by Test Foundation.
+    await setPersonaAndLensCookies(page, ['executive-director'], 'project');
+    await setProjectCookie(page, OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project');
+    await stubPersona(page, ['executive-director']);
+    await stubProjectApi(page);
+    await stubCommittees(page, buildCommittees());
+    await stubLensItems(page);
+    await page.route(`**/api/projects/${OTHER_PROJECT_SLUG}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(buildProjectStub(OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project')),
+      })
+    );
+  });
+
+  test('edit link without ?project= switches context to the vote’s foundation (BFF-enriched payload)', async ({ page }) => {
+    await stubVoteEditDetail(page, buildVoteStub(true));
+
+    await gotoSpa(page, `/project/votes/${MOCK_VOTE_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('vote-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // The sync derives context from the loaded vote (Test Foundation), replacing the
+    // cookie-restored Other Project — the selector and sidebar links follow the correction.
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('sidebar-item-votes')).toHaveAttribute('href', /[?&]project=test-foundation/, { timeout: ELEMENT_TIMEOUT });
+
+    // The context correction must NOT inject ?project= into the entity URL (syncUrl guard) —
+    // give any NavigationEnd-driven backfill a tick to (not) fire before asserting absence.
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+
+  test('writerGuard authorizes the edit page against the vote’s project, not the stale context (Bug 2)', async ({ page }) => {
+    // Non-ED persona: no synchronous fast path — the guard must probe the vote (tap-free
+    // fetchVote via the entityProbes registry) for its project slug. The stale cookie context
+    // (Other Project) is intentionally NOT writable: if the guard authorizes against it, the
+    // page redirects to /project/overview?_notice=...
+    await setPersonaAndLensCookies(page, ['maintainer'], 'project');
+    await stubPersona(page, ['maintainer']);
+    await page.route(`**/api/projects/${OTHER_PROJECT_SLUG}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...buildProjectStub(OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project'), writer: false }),
+      })
+    );
+    await stubVoteEditDetail(page, buildVoteStub(true));
+
+    await gotoSpa(page, `/project/votes/${MOCK_VOTE_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('vote-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    // Still on the edit page (no access-denied redirect), and the context follows the vote.
+    expect(page.url()).toContain(`/project/votes/${MOCK_VOTE_UID}/edit`);
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('edit link without ?project= falls back to resolving the project by uid when enrichment is absent', async ({ page }) => {
+    // Enrichment-failed payload: project_uid only. The component fallback fetches the project
+    // by uid — this route satisfies computeIsFoundation (Funded + Membership + Active), so the
+    // resolved context lands in the foundation slot just like the enriched path.
+    await stubVoteEditDetail(page, buildVoteStub(false));
+    await page.route(`**/api/projects/${MOCK_FOUNDATION_UID}*`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...buildProjectStub(MOCK_FOUNDATION_UID, MOCK_FOUNDATION_SLUG, 'Test Foundation'),
+          funding: 'Funded',
+          funding_model: ['Membership'],
+          legal_entity_type: 'Series LLC',
+        }),
+      })
+    );
+
+    await gotoSpa(page, `/project/votes/${MOCK_VOTE_UID}/edit`, {
+      uid: OTHER_PROJECT_UID,
+      slug: OTHER_PROJECT_SLUG,
+      name: 'Other Project',
+      foundation: false,
+    });
+    await expect(page.getByTestId('vote-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('sidebar-item-votes')).toHaveAttribute('href', /[?&]project=test-foundation/, { timeout: ELEMENT_TIMEOUT });
 
     await page.waitForTimeout(500);
     expect(new URL(page.url()).searchParams.has('project')).toBe(false);

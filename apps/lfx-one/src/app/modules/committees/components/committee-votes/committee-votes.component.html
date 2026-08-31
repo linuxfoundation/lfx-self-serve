@@ -8,7 +8,6 @@
       [hasPMOAccess]="canEdit()"
       [loading]="loading()"
       [totalRecords]="votes().length"
-      [editQueryParams]="editVoteQueryParams()"
       (viewResults)="viewVoteResults($event)"
       (viewVote)="viewVoteResults($event)"
       (refresh)="refreshVotes()">

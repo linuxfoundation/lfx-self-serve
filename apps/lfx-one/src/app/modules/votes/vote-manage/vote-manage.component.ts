@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, NavigationEnd, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
@@ -15,28 +15,32 @@ import {
   VOTE_QUESTION_MIN_LENGTH,
   VOTE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
-import { Committee, CommitteeReference, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
+import { Committee, CommitteeReference, EntityWithProject, ProjectContext, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import {
   buildCreateVoteRequest,
   buildDraftUpdateVoteRequest,
   buildDraftVoteRequest,
   buildUpdateVoteRequest,
+  computeIsFoundation,
   mapVoteToFormValue,
   markFormControlsAsTouched,
 } from '@lfx-one/shared/utils';
 import { maxCodePointsValidator, trimmedMinLength, trimmedRequired, validCommitteeReference } from '@lfx-one/shared/validators';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, merge, Observable, of, switchMap, take, tap } from 'rxjs';
 
 import { VoteBasicsComponent } from '../components/vote-basics/vote-basics.component';
 import { VoteQuestionComponent } from '../components/vote-question/vote-question.component';
 import { VoteReviewComponent } from '../components/vote-review/vote-review.component';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
+import { applyEntityProjectContext, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
+import { resolveEntityWriteSlug } from '@shared/utils/write-access.util';
 
 @Component({
   selector: 'lfx-vote-manage',
@@ -64,6 +68,8 @@ export class VoteManageComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly voteService = inject(VoteService);
   private readonly committeeService = inject(CommitteeService);
+  private readonly projectService = inject(ProjectService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Committee context — when navigated from a committee tab with ?committee_uid=
   public readonly committeeContext = signal<Committee | null>(null);
@@ -83,6 +89,8 @@ export class VoteManageComponent {
   public readonly confirmingOpenVote = signal<boolean>(false);
   public readonly loading = signal<boolean>(false);
   private readonly internalStep = signal<number>(1);
+  private readonly contextFallbackRetried = new Set<string>();
+  private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
 
   // Complex computed/toSignal signals
   public readonly isEditMode: Signal<boolean> = this.initIsEditMode();
@@ -95,17 +103,29 @@ export class VoteManageComponent {
   public readonly isLastStep: Signal<boolean> = this.initIsLastStep();
   public currentStep: Signal<number> = this.initCurrentStep();
   public readonly isDraftSavable: Signal<boolean> = this.initIsDraftSavable();
+  public readonly voteEntityContext: Signal<EntityWithProject | null> = this.initVoteEntityContext();
+  private readonly writeAccess: Signal<boolean> = this.initWriteAccess();
 
   public constructor() {
     this.initCommitteeContext();
-    evictOnWriteAccessLoss();
+    evictOnWriteAccessLoss(this.writeAccess);
+
+    // Derive the project context from the loaded vote so a context-less edit link
+    // (/project/votes/:id/edit) lands in the vote's project, not the cookie-restored
+    // last-visited project. The fallback covers BFF project-enrichment failure.
+    // preferEntityKind: a foundation-owned vote can be edited under a /project/* URL, so the
+    // vote's own is_foundation (not the route prefix) picks the slot and re-points the route
+    // lens kind. Opt-in — the other syncEntityProjectContext callers keep URL-prefix
+    // behavior (see the util's doc).
+    syncEntityProjectContext(this.voteEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
+    this.initVoteContextFallback();
   }
 
   public nextStep(): void {
     const next = this.currentStep() + 1;
     if (next <= this.totalSteps && this.canNavigateToStep(next)) {
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step: next } });
+        this.router.navigate([], { queryParams: { step: next }, queryParamsHandling: 'merge' });
       } else {
         this.internalStep.set(next);
       }
@@ -116,7 +136,7 @@ export class VoteManageComponent {
     const previous = this.currentStep() - 1;
     if (previous >= 1) {
       if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step: previous } });
+        this.router.navigate([], { queryParams: { step: previous }, queryParamsHandling: 'merge' });
       } else {
         this.internalStep.set(previous);
       }
@@ -127,7 +147,7 @@ export class VoteManageComponent {
     if (step !== undefined && step >= 1 && step <= this.totalSteps) {
       if (this.isEditMode()) {
         // In edit mode, allow navigation to any step via query params
-        this.router.navigate([], { queryParams: { step } });
+        this.router.navigate([], { queryParams: { step }, queryParamsHandling: 'merge' });
       } else {
         // In create mode, allow backwards navigation freely
         // For forward navigation, validate that we can navigate to that step
@@ -507,6 +527,27 @@ export class VoteManageComponent {
     );
   }
 
+  /**
+   * Maps the loaded vote to the {@link EntityWithProject} shape consumed by
+   * syncEntityProjectContext — pre-enrichment payloads can lack the project fields
+   * entirely, so absent values map to null there.
+   */
+  private initVoteEntityContext(): Signal<EntityWithProject | null> {
+    return computed(() => {
+      const vote = this.vote();
+      if (!vote) {
+        return null;
+      }
+      return {
+        uid: vote.uid,
+        project_uid: vote.project_uid,
+        project_slug: vote.project_slug,
+        project_name: vote.project_name,
+        is_foundation: vote.is_foundation ?? null,
+      };
+    });
+  }
+
   private initProject(): Signal<ReturnType<typeof this.projectContextService.selectedProject>> {
     return computed(() => this.projectContextService.activeContext());
   }
@@ -571,6 +612,168 @@ export class VoteManageComponent {
       const committeeValid = !!this.committeeContext() || !!this.form().get('committee')?.valid;
       return title.trim().length > 0 && committeeValid;
     });
+  }
+
+  /**
+   * Access predicate driving evictOnWriteAccessLoss. The default predicate (canWrite) is
+   * project-writer-only, but writerGuard also admits votes editors via writer on the
+   * ?committee_uid= committee. The committee leg uses the side-effect-free fetchCommittee
+   * (the guard's getCommittee tap is for its own deny/allow flow) and the URL snapshot —
+   * the param survives step navigations via merge.
+   *
+   * Two properties keep this from evicting guard-admitted users on transient false:
+   *
+   * 1. In edit mode the project leg keys off the VOTE's own project (slug, falling back to
+   *    uid — the BFF getProject route sniffs UUIDs), the same target writerGuard authorized
+   *    against. Keying off activeContext instead would evaluate the stale cookie-restored boot
+   *    context, and its false could win the race against syncEntityProjectContext's correction
+   *    (a cached boot project resolves faster than the vote fetch that triggers the switch).
+   *    Create mode has no vote, so the guard-checked active context (?project=) is the key.
+   * 2. Each leg is pending (undefined) until its first resolution, and the predicate stays
+   *    provisionally true while any applicable leg is pending — writerGuard already authorized
+   *    this navigation, so an unresolved leg is not an access-lost signal. Eviction fires only
+   *    once every applicable leg has re-checked false; an error or non-writer response still
+   *    resolves false there.
+   */
+  private initWriteAccess(): Signal<boolean> {
+    const editVoteId = this.route.snapshot.paramMap.get('id');
+    const projectKey$: Observable<string | null | undefined> = editVoteId
+      ? toObservable(this.vote).pipe(
+          map((vote) => {
+            if (!vote) {
+              // Pending — in edit mode the authorization target comes from the vote itself.
+              return undefined;
+            }
+            // Mirror writerGuard's resolution order; the active-context fallback covers a vote
+            // carrying neither slug nor uid (the manage component owns that error path).
+            return resolveEntityWriteSlug(vote, this.projectContextService.activeContext()?.slug ?? null);
+          })
+        )
+      : toObservable(this.projectContextService.activeContext).pipe(map((ctx) => ctx?.slug ?? null));
+
+    const projectAccess = toSignal(
+      projectKey$.pipe(
+        filter((key): key is string | null => key !== undefined),
+        distinctUntilChanged(),
+        switchMap((key) => {
+          if (!key) {
+            return of(false);
+          }
+          // writerGuard admits no coordinator-style role for votes — project.writer only.
+          return this.projectService.getProject(key, false).pipe(
+            map((project) => project?.writer === true),
+            catchError(() => of(false))
+          );
+        })
+      )
+      // No initialValue: undefined doubles as the leg's pending state (see the doc above).
+    );
+    const committeeAccess = toSignal(
+      this.committeeUidFromUrl
+        ? this.committeeService.fetchCommittee(this.committeeUidFromUrl).pipe(
+            map((committee) => committee?.writer === true),
+            catchError(() => of(false))
+          )
+        : of(false)
+      // No initialValue: undefined doubles as the leg's pending state. Without a committee_uid
+      // param the synchronous of(false) resolves the leg immediately, so it never counts as pending.
+    );
+    return computed(() => {
+      const project = projectAccess();
+      const committee = committeeAccess();
+      if (project === true || committee === true) {
+        return true;
+      }
+      if (project === undefined || committee === undefined) {
+        return true; // provisional — a pending leg can still grant access
+      }
+      return false;
+    });
+  }
+
+  /**
+   * Fallback context sync for when the BFF project enrichment failed (the detail payload has
+   * `project_uid` but no `project_slug`): resolve the project by uid and set context from it.
+   * `getProject(uid, false)` — `current: false` so the fetch doesn't clobber
+   * ProjectService's shared `project` state — already resolves to null on failure, so a failed
+   * fallback leaves the (stale) context untouched rather than erroring the page.
+   *
+   * Runs whenever the payload lacks `project_slug`, even when the uid already matches the active
+   * context: the lookup is also what corrects the lens *kind* via `computeIsFoundation` — e.g.
+   * `/project/votes/:id/edit?project=<foundation>` seeds the foundation into the project slot
+   * under the route's declared `project` kind, and only the resolved project record reveals the
+   * mismatch. As in syncEntityProjectContext, NavigationEnd re-applies the correction: query-param
+   * step navigations re-assert the route's declared kind via syncLensFromRoute without re-running
+   * guards. The re-apply hits the shareReplay-cached getProject, so it costs no extra request.
+   *
+   * When the uid lookup resolves null — the project GET is relation-gated, so an organizer without
+   * a direct viewer relation gets nothing back — the vote detail is re-fetched fresh: its BFF
+   * enrichment is query-service backed and not relation-gated, so a fresh payload can carry the
+   * `project_slug` the first one lacked. Only if that also comes back unenriched is the context
+   * left alone (it self-corrects on the next navigation).
+   */
+  private initVoteContextFallback(): void {
+    const unresolvedEntity$ = toObservable(this.voteEntityContext).pipe(distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.project_uid === b?.project_uid));
+    const navigationReapply$ = this.router.events.pipe(
+      filter((event) => event instanceof NavigationEnd),
+      map(() => this.voteEntityContext())
+    );
+    merge(unresolvedEntity$, navigationReapply$)
+      .pipe(
+        filter((entity): entity is EntityWithProject => !!entity?.project_uid && !entity.project_slug),
+        switchMap((entity) =>
+          this.projectService.getProject(entity.project_uid, false).pipe(
+            switchMap((project) => {
+              if (!project) {
+                return this.resolveContextFromFreshVote(entity);
+              }
+              const context: ProjectContext = { uid: project.uid, name: project.name, slug: project.slug };
+              return of({ context, isFoundation: computeIsFoundation(project) });
+            })
+          )
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((resolved) => {
+        if (!resolved) {
+          return;
+        }
+        // Mirror syncEntityProjectContext: only write ?project= to the URL when already present.
+        const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
+        applyEntityProjectContext(this.projectContextService, resolved.context, resolved.isFoundation, syncUrl);
+      });
+  }
+
+  // Last resort for initVoteContextFallback: the ungated detail enrichment can supply the
+  // project the relation-gated lookup withheld. Emits null when it can't, leaving context untouched.
+  private resolveContextFromFreshVote(entity: EntityWithProject): Observable<{ context: ProjectContext; isFoundation: boolean } | null> {
+    if (this.contextFallbackRetried.has(entity.uid)) {
+      return of(null);
+    }
+    this.contextFallbackRetried.add(entity.uid);
+    // VoteService keeps no detail cache — a fresh fetchVote IS the uncached re-fetch
+    // (meeting-manage's getMeetingDetail equivalent needs skipCache; this doesn't).
+    return this.voteService.fetchVote(entity.uid).pipe(
+      map((vote) => {
+        if (!vote?.project_slug) {
+          console.warn(`Unable to resolve project context for vote ${entity.uid}: detail payload carries no project_slug`);
+          return null;
+        }
+        const context: ProjectContext = {
+          uid: vote.project_uid,
+          name: vote.project_name || vote.project_slug,
+          slug: vote.project_slug,
+        };
+        return { context, isFoundation: vote.is_foundation === true };
+      }),
+      catchError((error) => {
+        // Transient failures (network, 5xx) shouldn't burn the retry — release the uid so a later
+        // NavigationEnd re-apply can attempt the fresh fetch again.
+        this.contextFallbackRetried.delete(entity.uid);
+        console.warn(`Unable to resolve project context for vote ${entity.uid}:`, error);
+        return of(null);
+      })
+    );
   }
 
   private canNavigateToStep(step: number): boolean {

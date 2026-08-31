@@ -12,6 +12,7 @@ import { MeetingService } from '../services/meeting.service';
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
 import { ProjectService } from '../services/project.service';
+import { VoteService } from '../services/vote.service';
 import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-access.util';
 
 /**
@@ -28,7 +29,7 @@ import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-ac
  *    `'surveys'`, or `'votes'`. The backend ruleset allows committee:uid#writer to
  *    create resources associated with their committee.
  *
- * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting/group edit), resolves
+ * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting/group/vote edit), resolves
  * the slug from the entity itself first — the active context can belong to a different project
  * when the edit link carried no `?project=`. A non-404 failure on that read resolves no slug at all,
  * so the guard redirects instead of authorizing against a stale context; a flagged route with no
@@ -56,6 +57,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const projectService = inject(ProjectService);
   const committeeService = inject(CommitteeService);
   const meetingService = inject(MeetingService);
+  const voteService = inject(VoteService);
   const router = inject(Router);
 
   if (personaService.currentPersona() === 'executive-director') {
@@ -72,12 +74,15 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const writeFeature: string | undefined = route.data?.['writeFeature'];
   // Entity probes keyed by writeFeature — a new entity adds one registry line + the route's
   // entityScopedSlug flag. Probes must be tap-free: fetchCommittee, not getCommittee (which sets
-  // the shared committee signal), so a guard probe can't leak stale state into other pages. Both
-  // probes ride a short-TTL shared cache (getMeetingDetail / getCommitteeDetail via fetchCommittee),
-  // so the manage component's immediate refetch on the same navigation doesn't duplicate the request.
+  // the shared committee signal), so a guard probe can't leak stale state into other pages. The
+  // meetings/committees probes ride a short-TTL shared cache (getMeetingDetail / getCommitteeDetail
+  // via fetchCommittee), so the manage component's immediate refetch on the same navigation doesn't
+  // duplicate the request; the votes probe is uncached (VoteService keeps no detail cache), paying
+  // one extra lightweight detail GET per edit navigation.
   const entityProbes: Record<string, (id: string) => Observable<Pick<EntityWithProject, 'project_slug' | 'project_uid'> | null>> = {
     meetings: (id) => meetingService.getMeetingDetail(id),
     committees: (id) => committeeService.fetchCommittee(id),
+    votes: (id) => voteService.fetchVote(id),
   };
   const resolveSlug = (): Observable<string | null> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;

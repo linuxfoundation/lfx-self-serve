@@ -20,6 +20,7 @@ import { sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
+import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
@@ -90,8 +91,16 @@ export class VoteService {
 
   /**
    * Fetches a single vote by UID
+   *
+   * @param options.includeProject - When true, enrich the payload with the vote's project fields
+   * (`project_slug`, `project_name`, `is_foundation`) so clients can reconcile project context
+   * from the vote itself. Opt-in because list/index payloads already carry project fields and
+   * other callers only need the raw upstream vote — neither should pay for the extra project
+   * fetch. An options object (not a boolean positional) keeps call sites self-describing —
+   * see MeetingService.getMeetingById.
    */
-  public async getVoteById(req: Request, voteUid: string): Promise<Vote> {
+  public async getVoteById(req: Request, voteUid: string, options: { includeProject?: boolean } = {}): Promise<Vote> {
+    const { includeProject = false } = options;
     logger.debug(req, 'get_vote_by_id', 'Fetching vote by ID', {
       vote_uid: voteUid,
     });
@@ -104,6 +113,16 @@ export class VoteService {
         service: 'vote_service',
         path: `/votes/${voteUid}`,
       });
+    }
+
+    if (includeProject) {
+      const project = await fetchEntityProject(req, this.projectService, vote.project_uid, {
+        operation: 'get_vote_by_id',
+        vote_uid: vote.uid,
+      });
+      if (project) {
+        Object.assign(vote, toEntityProjectFields(project));
+      }
     }
 
     logger.debug(req, 'get_vote_by_id', 'Completed vote fetch', {

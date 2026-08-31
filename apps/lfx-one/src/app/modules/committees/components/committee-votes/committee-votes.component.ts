@@ -48,7 +48,6 @@ export class CommitteeVotesComponent {
   // Data
   public votes: Signal<Vote[]> = this.initVotes();
   public createVoteQueryParams: Signal<Record<string, string>> = this.initCreateVoteQueryParams();
-  public editVoteQueryParams: Signal<Record<string, string>> = this.createVoteQueryParams;
 
   public viewVoteResults(voteUid: string): void {
     const vote = this.votes().find((v) => v.uid === voteUid) || null;
