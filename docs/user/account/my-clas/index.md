@@ -4,7 +4,7 @@ description: View your signed Individual and Employee CLAs in LFX Self Serve, st
 audience: [all]
 product_area: Account
 tags: [account, cla, easycla, icla, ecla, ccla, identities, signing]
-last_updated: 2026-08-28
+last_updated: 2026-08-31
 intercom_collection: Account
 ---
 
@@ -26,13 +26,13 @@ Agreements are matched from your signed-in session and your linked [Email and Gi
 
 ## What is the difference between ICLA and ECLA?
 
-| Type                      | What it means                                                                                                  | On CLAs                                                                  | Document                                                                                       |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| **ICLA** (Individual CLA) | You signed as yourself for a project                                                                           | Listed                                                                   | **Download PDF** when EasyCLA has the signed file; otherwise the row offers no download        |
-| **ECLA** (Employee CLA)   | Your employer holds a Corporate CLA (CCLA) and you were approved under it via that company's **Approved List** | Listed (shows the employer name), and stays listed if the coverage ends  | No individual PDF — where the row has a **⋮** menu, it shows _Covered by Corporate CLA (CCLA)_ |
-| **CCLA** (Corporate CLA)  | Signed by a company CLA manager; covers employees via the company's **Approved List**                          | Not listed as its own row — it is the parent agreement an ECLA hangs off | Managed in the corporate EasyCLA flow, not on this tab                                         |
+An **ICLA** (Individual CLA) is _your_ paperwork, signed as yourself. An **ECLA** (Employee CLA) is coverage that came from your employer's **CCLA** (Corporate CLA) rather than from an agreement of your own. Both appear on the CLAs tab, and the **Status** column says whether each one still applies.
 
-In short: an **ICLA** is _your_ paperwork; an **ECLA** means you are covered under your company's **CCLA**.
+| Type                      | What it means                                                                                                  | On CLAs                                                                  | Document                                                                                                                    |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| **ICLA** (Individual CLA) | You signed as yourself for a project                                                                           | Listed                                                                   | **Download PDF** when EasyCLA has the signed file and the ICLA is not **Invalidated**; otherwise the row offers no download |
+| **ECLA** (Employee CLA)   | Your employer holds a Corporate CLA (CCLA) and you were approved under it via that company's **Approved List** | Listed (shows the employer name), and stays listed if the coverage ends  | No individual PDF — where the row has a **⋮** menu, it shows _Covered by Corporate CLA (CCLA)_                              |
+| **CCLA** (Corporate CLA)  | Signed by a company CLA manager; covers employees via the company's **Approved List**                          | Not listed as its own row — it is the parent agreement an ECLA hangs off | Managed in the corporate EasyCLA flow, not on this tab                                                                      |
 
 ## What does the CLAs list show?
 
@@ -41,7 +41,7 @@ When agreements are found, the CLAs tab shows a table with these columns:
 | Column      | Contents                                                                                                                                                 |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Project** | Project logo (or a placeholder), project name, and — when it differs — the CLA group name as secondary text                                              |
-| **Type**    | `ICLA`, or `ECLA · <company name>`                                                                                                                       |
+| **Type**    | `ICLA`, `ECLA · <company name>`, or just `ECLA` when the employer name is not on record                                                                  |
 | **Status**  | Whether the agreement is in force — see [What do the status labels mean?](#what-do-the-status-labels-mean)                                               |
 | **Signed**  | The date the agreement was signed, and — when EasyCLA recorded it — the account it was signed under                                                      |
 | ⋮ (actions) | The actions available for that row, such as **Download PDF** or **Request Removal** — see [What can I do from a CLA row?](#what-can-i-do-from-a-cla-row) |
@@ -58,6 +58,8 @@ If nothing matches your linked identities, you see:
 That does not always mean you never signed — see [Why don't my signed CLAs show up?](#why-don-t-my-signed-clas-show-up).
 
 ## What do the status labels mean?
+
+The **Status** column on the CLAs tab tells you whether an agreement still covers your contributions. These are the labels it uses:
 
 | Status              | What it means                                                                                                                                                                    | Applies to |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
@@ -79,7 +81,7 @@ When EasyCLA recorded the account used to sign, the **Signed** cell adds a secon
 - _Signed as \<username\> (Gerrit)_ — also used for agreements identified by LF login or email address, which have no separate platform of their own
 - _Signed as \<identity\>_ — with no platform label, when EasyCLA recorded an identity but no recognised platform for it
 
-This line is informational. It tells you which of your accounts an agreement is attached to, which is useful when you have several linked identities and are working out why a project still asks you to sign.
+This line is informational. It records the account used at signing time, which is useful when you sign from more than one account and are working out why a project still asks you to sign. It is historical: EasyCLA reports whatever it recorded when the agreement was signed, so the account named does not have to be an identity currently linked to your profile.
 
 The line is omitted when EasyCLA has no signing identity on record for that agreement. That applies equally to ICLAs and ECLAs — a missing line means missing data, not a difference between the two types.
 
@@ -89,7 +91,7 @@ Each row ends with a **⋮** menu listing only the actions available for that ag
 
 | Action                     | When it appears                                                                                                                            |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Download PDF**           | On an ICLA when EasyCLA has the signed file                                                                                                |
+| **Download PDF**           | On an ICLA that is not **Invalidated**, when EasyCLA has the signed file                                                                   |
 | **Download PDF** (greyed)  | On an ECLA that is not **Revoked**, annotated _Covered by Corporate CLA (CCLA)_ — employee coverage has no individual document to download |
 | **Request approval**       | On an ECLA that is no longer on your employer's **Approved List**                                                                          |
 | **Request Removal**        | On any ECLA that is not **Revoked**                                                                                                        |
@@ -104,13 +106,14 @@ You will not see a **⋮** on:
 
 ## How do I sign a new CLA?
 
-Select **Sign CLA** at the top right of the CLAs tab.
+You start signing from the CLAs tab and finish in the EasyCLA Contributor Console:
 
-1. In the **Sign a CLA** dialog, type at least three characters. You can search by project name, CLA group name, a linked GitHub, GitLab, or Gerrit organization, or by pasting a repository link.
-2. Each result shows why it matched — project name, CLA group name, linked organization, or repository link — so you can tell near-identical names apart.
-3. Select the right result and choose **Continue to sign**.
-4. Choose which of your linked GitHub accounts to sign under, then select **Continue to sign** again. Nothing is selected for you, and the step appears even when you have only one account linked — its job is to tell you which identity the agreement will be recorded against. If you have no GitHub account linked, the step says so and offers a link to [Identities](/profile/identities); you cannot continue past it until you link one.
-5. Self Serve hands you off to the EasyCLA Contributor Console, which presents and records the agreement. When you finish there, you are returned to the CLAs tab.
+1. Select **Sign CLA** at the top right of the CLAs tab.
+2. In the **Sign a CLA** dialog, type at least three characters. You can search by project name, CLA group name, a linked GitHub, GitLab, or Gerrit organization, or by pasting a repository link.
+3. Each result shows why it matched — project name, CLA group name, linked organization, or repository link — so you can tell near-identical names apart.
+4. Select the right result and choose **Continue to sign**.
+5. Choose which of your linked GitHub accounts to sign under, then select **Continue to sign** again. Nothing is selected for you, and the step appears even when you have only one account linked — its job is to tell you which identity the agreement will be recorded against. If you have no GitHub account linked, the step says so and offers a link to [Identities](/profile/identities); you cannot continue past it until you link one.
+6. Self Serve hands you off to the EasyCLA Contributor Console, which presents and records the agreement. When you finish there, you are returned to the CLAs tab.
 
 If the search returns more matches than it can display, narrow the term — the dialog tells you when results were truncated.
 
@@ -160,7 +163,7 @@ The info banner on the CLAs tab also points to the Identities flow (_Link your E
 
 ## Can I download my signed CLA PDF?
 
-Yes for an **ICLA**, when EasyCLA has the signed file — choose **Download PDF** from the row's **⋮** menu. When EasyCLA does not have the file, the row offers no download.
+Yes for an **ICLA**, when EasyCLA has the signed file — choose **Download PDF** from the row's **⋮** menu. When EasyCLA does not have the file, the row offers no download. An **Invalidated** ICLA is the exception: the row carries no **⋮** menu at all, so there is nothing to download from it even when EasyCLA still holds the signed file.
 
 No for an **ECLA**. Employee coverage is under your company's Corporate CLA (CCLA), so there is no individual PDF to download. On an ECLA that has a **⋮** menu, the menu shows **Download PDF** greyed out and annotated _Covered by Corporate CLA (CCLA)_. A **Revoked** ECLA has no menu at all, so it shows nothing.
 

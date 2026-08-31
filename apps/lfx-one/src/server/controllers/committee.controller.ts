@@ -1505,9 +1505,9 @@ export class CommitteeController {
     }
 
     try {
-      // When called from the public route there is no OIDC session, so use an
-      // M2M token. When called from the authenticated route the user's bearer
-      // token is already on req and no replacement is needed.
+      // This endpoint is mounted only under /public/api, so there is no OIDC session and no caller-
+      // supplied bearer token to reuse — hence M2M. The guard stays defensive in case it is ever
+      // additionally mounted behind auth.
       if (!req.bearerToken) {
         req.bearerToken = await generateM2MToken(req);
       }
@@ -1521,7 +1521,12 @@ export class CommitteeController {
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
         this.committeeService
           .getCommitteeById(req, id)
-          .then((committee) => committee.name)
+          // Anonymous endpoint, and a committee UID is obtainable anonymously from the public meetings
+          // feed — including for committees the public group directory withholds. Publishing the name in
+          // X-WR-CALNAME would hand back exactly the label that directory refuses to list, so gate it on
+          // the same `public` flag `getPublicGroupById` enforces. The committee's PUBLIC meetings stay
+          // listed either way; they are already discoverable through the project's public feed.
+          .then((committee) => (committee.public ? committee.name : undefined))
           .catch((error) => {
             logger.warning(req, 'get_committee_calendar', 'Failed to resolve committee name for X-WR-CALNAME', { committee_id: id, err: error });
             return undefined;

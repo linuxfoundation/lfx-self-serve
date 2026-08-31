@@ -2,19 +2,28 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe, isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, effect, ElementRef, inject, input, model, PLATFORM_ID, Signal, untracked, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, effect, ElementRef, inject, input, model, output, PLATFORM_ID, Signal, untracked, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
-import { ANALYTICS_TOP_PROJECTS_LIMIT, lfxColors } from '@lfx-one/shared/constants';
-import { buildAnalyticsDelta, buildOverTimeChartData, buildTagsChartData, mapPlatformDistributionRows, mapSentimentRows } from '@lfx-one/shared/utils';
+import {
+  ANALYTICS_TOP_PROJECTS_LIMIT,
+  DELTA_DIRECTION_ICON,
+  DELTA_DIRECTION_SR_LABEL,
+  DELTA_DIRECTION_TEXT_CLASS,
+  INVERTED_DELTA_DIRECTION_TEXT_CLASS,
+  lfxColors,
+  SENTIMENT_BAR_LABEL_MIN_PERCENT,
+} from '@lfx-one/shared/constants';
+import { buildAnalyticsDelta, buildOverTimeChartData, mapPlatformDistributionRows, mapSentimentRows, mapTagRows } from '@lfx-one/shared/utils';
 import { SocialListeningService } from '@services/social-listening.service';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, map, Observable, of, startWith, switchMap } from 'rxjs';
 
 import type { Chart, ChartData, ChartOptions, TooltipModel } from 'chart.js';
@@ -26,6 +35,8 @@ import type {
   SocialListeningAnalyticsRequest,
   SocialListeningPlatformRow,
   SocialListeningSentimentRow,
+  SocialListeningSentimentTrends,
+  SocialListeningTagRow,
   SocialListeningTopProject,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
@@ -36,7 +47,7 @@ import type {
  */
 @Component({
   selector: 'lfx-social-listening-analytics',
-  imports: [DecimalPipe, CardComponent, ChartComponent, EmptyStateComponent, MessageComponent, StatCardGridComponent, SkeletonModule],
+  imports: [DecimalPipe, CardComponent, ChartComponent, EmptyStateComponent, MessageComponent, StatCardGridComponent, SkeletonModule, TooltipModule],
   templateUrl: './social-listening-analytics.component.html',
   styleUrl: './social-listening-analytics.component.scss',
 })
@@ -60,6 +71,9 @@ export class SocialListeningAnalyticsComponent {
   /** True while any panel is still fetching — the page disables the export trigger so the PNG can't capture skeletons. */
   public readonly panelsLoading = model(false);
 
+  /** Platform drill-down: the page scopes the feed to this platform and switches tabs. */
+  public readonly platformSelected = output<string>();
+
   private readonly analyticsContent = viewChild<ElementRef<HTMLElement>>('analyticsContent');
 
   private readonly analyticsRequest: Signal<SocialListeningAnalyticsRequest | null> = this.initAnalyticsRequest();
@@ -77,9 +91,9 @@ export class SocialListeningAnalyticsComponent {
     (req) => this.socialListeningService.getAnalyticsPlatformDistribution(req).pipe(map((rows) => mapPlatformDistributionRows(rows))),
     []
   );
-  private readonly tagsState: Signal<LoadableState<ChartData<'bar'> | null>> = this.initAnalyticsState(
-    (req) => this.socialListeningService.getMentionsTags(req).pipe(map(buildTagsChartData)),
-    null
+  private readonly tagsState: Signal<LoadableState<SocialListeningTagRow[]>> = this.initAnalyticsState(
+    (req) => this.socialListeningService.getMentionsTags(req).pipe(map(mapTagRows)),
+    []
   );
   private readonly sentimentState: Signal<LoadableState<SocialListeningSentimentRow[]>> = this.initAnalyticsState(
     (req) => this.socialListeningService.getAnalyticsSentimentDistribution(req).pipe(map(mapSentimentRows)),
@@ -101,25 +115,40 @@ export class SocialListeningAnalyticsComponent {
   /** Screen-reader equivalent of the canvas line chart — the chart's values are otherwise tooltip-only. */
   public readonly overTimeTable: Signal<{ periods: string[]; series: { label: string; values: (number | null)[] }[] } | null> = this.initOverTimeTable();
 
-  public readonly platformRows = computed(() => this.platformState().data);
+  /** Rows with drill-down precomputed — merged groups (multi-source) are disabled, and their label/tooltip carries the reason why. */
+  public readonly platformRows = computed(() =>
+    this.platformState().data.map((row) => ({
+      ...row,
+      drillable: row.sourcePlatforms.length === 1,
+      actionLabel:
+        row.sourcePlatforms.length === 1
+          ? `Show ${row.config.label} mentions in the feed`
+          : `${row.config.label} groups several platforms and can't be filtered in the feed`,
+    }))
+  );
   public readonly platformLoading = computed(() => this.platformState().loading);
   public readonly platformError = computed(() => this.platformState().error);
   /** PCC behavior: the per-platform % label is only meaningful on the unfiltered (all-platforms) view. */
   public readonly showPlatformPercents = computed(() => this.platform() === 'all');
 
-  public readonly tagsData = computed(() => this.tagsState().data);
+  public readonly tagRows = computed(() => this.tagsState().data);
   public readonly tagsLoading = computed(() => this.tagsState().loading);
   public readonly tagsError = computed(() => this.tagsState().error);
-  /** Screen-reader equivalent of the canvas bar chart — the chart's values are otherwise tooltip-only. */
-  public readonly tagsTable: Signal<{ label: string; count: number | null }[] | null> = this.initTagsTable();
 
-  public readonly sentimentRows = computed(() => this.sentimentState().data);
+  /** Rows with the trend chip pre-attached — neutral carries no trend, and the delta's own `inverted` flag picks the class map. */
+  public readonly sentimentRows = computed(() => {
+    const trends = this.sentimentTrends();
+    return this.sentimentState().data.map((row) => ({ ...row, trend: row.sentiment === 'neutral' ? null : trends[row.sentiment] }));
+  });
   public readonly sentimentLoading = computed(() => this.sentimentState().loading);
   public readonly sentimentError = computed(() => this.sentimentState().error);
 
   public readonly topProjects = computed(() => this.topProjectsState().data);
   public readonly topProjectsLoading = computed(() => this.topProjectsState().loading);
   public readonly topProjectsError = computed(() => this.topProjectsState().error);
+
+  /** Sentiment trends live on the overview endpoint, so the sentiment card keeps its own counts when that panel errors. */
+  public readonly sentimentTrends: Signal<SocialListeningSentimentTrends> = this.initSentimentTrends();
 
   private readonly anyPanelLoading = computed(
     () =>
@@ -150,19 +179,12 @@ export class SocialListeningAnalyticsComponent {
     },
   };
 
-  protected readonly tagsChartOptions: ChartOptions<'bar'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      // White DOM tooltip shared with the over-time chart — the canvas default renders a dark box.
-      tooltip: { enabled: false, external: this.buildChartExternalTooltip() },
-    },
-    scales: {
-      x: { grid: { display: false }, ticks: { color: lfxColors.gray[500], font: { size: 11 } } },
-      y: { display: true, beginAtZero: true, grid: { color: lfxColors.gray[200] }, ticks: { color: lfxColors.gray[500] } },
-    },
-  };
+  protected readonly deltaIcon = DELTA_DIRECTION_ICON;
+  protected readonly deltaDirectionSrLabel = DELTA_DIRECTION_SR_LABEL;
+  protected readonly deltaTextClass = DELTA_DIRECTION_TEXT_CLASS;
+  /** Negative-sentiment trends invert: an increase is bad, so up renders red and down emerald. */
+  protected readonly invertedDeltaTextClass = INVERTED_DELTA_DIRECTION_TEXT_CLASS;
+  protected readonly sentimentBarLabelMinPercent = SENTIMENT_BAR_LABEL_MIN_PERCENT;
 
   private destroyed = false;
 
@@ -179,6 +201,12 @@ export class SocialListeningAnalyticsComponent {
 
     // Report panel loading to the page so the export trigger stays disabled while skeletons are visible.
     effect(() => this.panelsLoading.set(this.anyPanelLoading()));
+  }
+
+  /** The feed filter matches raw `SOURCE_PLATFORM` values, so only single-source groups drill down (merged groups like `other` stay display-only). */
+  public onPlatformRowClick(row: SocialListeningPlatformRow): void {
+    if (row.sourcePlatforms.length !== 1) return;
+    this.platformSelected.emit(row.sourcePlatforms[0]);
   }
 
   private async exportAnalytics(): Promise<void> {
@@ -219,7 +247,7 @@ export class SocialListeningAnalyticsComponent {
    * External DOM tooltip shared by the analytics charts — white card instead of the dark canvas
    * default (and no canvas clipping); flips left near the viewport edge and clamps vertically.
    */
-  private buildChartExternalTooltip(): (args: { chart: Chart; tooltip: TooltipModel<'line'> | TooltipModel<'bar'> }) => void {
+  private buildChartExternalTooltip(): (args: { chart: Chart; tooltip: TooltipModel<'line'> }) => void {
     return ({ chart, tooltip }) => {
       const tip = chart.canvas.closest('[data-chart-tooltip-host]')?.querySelector<HTMLElement>('[data-lfx-tip]');
       if (!tip) return;
@@ -242,7 +270,7 @@ export class SocialListeningAnalyticsComponent {
 
         const dot = document.createElement('span');
         dot.className = 'h-2 w-2 shrink-0 rounded-full';
-        // Line datasets carry one borderColor; the tag bars carry a per-index backgroundColor array.
+        // Line datasets carry a single borderColor; fall back for datasets that only declare a fill.
         const dotColor = point.dataset.borderColor ?? point.dataset.backgroundColor;
         dot.style.backgroundColor = String(Array.isArray(dotColor) ? dotColor[point.dataIndex] : dotColor);
         row.appendChild(dot);
@@ -296,16 +324,14 @@ export class SocialListeningAnalyticsComponent {
     );
   }
 
-  /** Screen-reader table mirror of the tags chart data; null while the panel shows its empty state. */
-  private initTagsTable(): Signal<{ label: string; count: number | null }[] | null> {
+  /** Trend chips for the sentiment card; an overview error drops the chips without touching the card's own counts. */
+  private initSentimentTrends(): Signal<SocialListeningSentimentTrends> {
     return computed(() => {
-      const data = this.tagsData();
-      if (!data) return null;
-      const counts = data.datasets[0]?.data ?? [];
-      return (data.labels ?? []).map((label, i) => {
-        const value = counts[i];
-        return { label: String(label), count: typeof value === 'number' ? value : null };
-      });
+      const overview = this.overviewState().error ? null : this.overviewState().data;
+      return {
+        positive: buildAnalyticsDelta(overview?.POSITIVE_SENTIMENT_CHANGE_PCT ?? null) ?? null,
+        negative: buildAnalyticsDelta(overview?.NEGATIVE_SENTIMENT_CHANGE_PCT ?? null, true) ?? null,
+      };
     });
   }
 
