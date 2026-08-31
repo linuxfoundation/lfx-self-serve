@@ -2302,6 +2302,60 @@ describe('CampaignsComponent — email delivery channel', () => {
      * is kept because the write it protects (`emailAudience.set(result.audience)`) is
      * unconditional, and a late response would otherwise overwrite the cleared signal.
      */
+    /**
+     * A late persist must not clear a NEWER one's in-flight slot.
+     *
+     * `ensureEmailBriefId` dedups concurrent saves by parking the promise in
+     * `emailBriefPersistInFlight`, and its `finally` cleared that field unconditionally. A reset
+     * also clears it, so this ordering defeated the dedup: persist A starts, a reset clears the
+     * slot, persist B starts and takes it, then A settles and wipes B's slot — leaving a third
+     * action free to start a SECOND concurrent save of the same brief.
+     *
+     * Driven through the service mock, which is the real seam: the component's own
+     * `persistEmailBrief` awaits `campaignService.persistBrief`, so controlling that controls when
+     * each persist settles.
+     */
+    it("does not let a late persist clear a newer one's in-flight slot", async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const settleA: ((v: unknown) => void)[] = [];
+      const settleB: ((v: unknown) => void)[] = [];
+      let call = 0;
+      vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(
+        () =>
+          new Observable((sub) => {
+            const bucket = call++ === 0 ? settleA : settleB;
+            bucket.push((v) => {
+              sub.next(v);
+              sub.complete();
+            });
+          }) as never
+      );
+
+      const c = fixture.componentInstance as unknown as {
+        ensureEmailBriefId(brief: unknown, slug: string): Promise<string>;
+        resetEmailBriefDerivedState(): void;
+        emailBriefPersistInFlight: Promise<string> | null;
+      };
+
+      const a = c.ensureEmailBriefId(emailBrief, 'tlf');
+      // The reset frees the slot, exactly as it does in the app.
+      c.resetEmailBriefDerivedState();
+      const b = c.ensureEmailBriefId(emailBrief, 'tlf');
+      expect(c.emailBriefPersistInFlight, 'precondition: B holds the slot').not.toBeNull();
+
+      // A settles LAST. Its `finally` must leave B's slot alone.
+      settleA.forEach((f) => f({ enabled: true, briefId: 'brief-a', etag: null }));
+      await a.catch(() => undefined);
+
+      expect(c.emailBriefPersistInFlight, "a late persist cleared the newer one's slot, so a third action could start a second concurrent save").not.toBeNull();
+
+      settleB.forEach((f) => f({ enabled: true, briefId: 'brief-b', etag: null }));
+      await b.catch(() => undefined);
+    });
+
     it('discards an audience that arrives after the brief-derived state reset', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
@@ -5568,6 +5622,44 @@ describe('CampaignsComponent email monitor', () => {
     fixture.detectChanges();
 
     expect(read).toHaveBeenCalled();
+  });
+
+  /**
+   * TWO measured rows, with distinct counters in every field.
+   *
+   * Every other test in this suite pairs ONE measured row with rows that must be ignored, so a
+   * regression returning the first measured row's metrics instead of summing them would pass all
+   * of them: with a single contributor, "the first" and "the sum" are the same object. This is
+   * the case that separates them, and the counters differ per field so a reducer that summed only
+   * `sent` and carried the rest from the first row is caught too.
+   */
+  it('sums every measured email rather than reporting the first', () => {
+    load([
+      okRow(),
+      {
+        ...okRow(),
+        campaign_id: 'c-email-2',
+        metrics: {
+          campaign_id: 'c-email-2',
+          platform_campaign_id: '104670127235',
+          window: 'last_30_days',
+          impressions: 500,
+          clicks: 60,
+          cost_micros: 0,
+          ctr: 0.12,
+          email: { sent: 100, delivered: 90, opens: 40, clicks: 60, bounces: 5, unsubscribes: 3 },
+        },
+      } as unknown as BriefMetricsRow,
+    ]);
+
+    expect(internals().emailMetricsTotals()).toEqual({
+      sent: 9500,
+      delivered: 9358,
+      opens: 1880,
+      clicks: 272,
+      bounces: 100,
+      unsubscribes: 20,
+    });
   });
 
   /**

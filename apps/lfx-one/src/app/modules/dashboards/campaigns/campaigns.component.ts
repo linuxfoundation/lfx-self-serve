@@ -2820,7 +2820,14 @@ export class CampaignsComponent {
     } finally {
       // Cleared whatever the outcome: a failed persist must not wedge every later attempt into
       // returning the same rejected promise.
-      this.emailBriefPersistInFlight = null;
+      //
+      // ONLY IF IT IS STILL OURS. A reset clears this field, and an action after it starts a new
+      // persist -- so an unconditional clear here lets THIS promise, settling late, wipe the
+      // NEWER one and let a third action start a second concurrent save. That is exactly the
+      // duplicate the dedup exists to prevent, reached through the guard rather than around it.
+      if (this.emailBriefPersistInFlight === pending) {
+        this.emailBriefPersistInFlight = null;
+      }
     }
   }
 
