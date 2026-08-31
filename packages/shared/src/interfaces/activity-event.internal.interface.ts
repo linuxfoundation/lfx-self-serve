@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { ActivityEvent } from './activity-event.interface';
+import type { PaginatedResponse } from './api.interface';
 import type { AttachmentCategory } from './meeting-attachment.interface';
 
 /**
@@ -44,6 +46,22 @@ export interface CommitteeActivityQuery {
    */
   cursor?: ActivityPageCursor;
   limit: number;
+}
+
+/**
+ * `getCommitteeActivity`'s response (GH-1967 review) — extends the generic `PaginatedResponse`
+ * with `any_leg_failed`: each of the 5 aggregated legs (past meetings, votes, surveys, documents,
+ * notes) is independently caught-and-degraded on failure into `{events: [], saturated: false}`
+ * (see the per-leg `.catch()` calls in `committee-activity.service.ts`), which is otherwise
+ * indistinguishable from a leg that genuinely fetched nothing. `any_leg_failed` surfaces that a
+ * fetch-level failure occurred on at least one leg, so a caller building a completeness-sensitive
+ * signal from this response (e.g. `WeeklyBriefService#withStaleness`) can degrade rather than
+ * silently treat a partial result as exhaustive. Deliberately coarse (which leg, not surfaced) —
+ * a per-leg breakdown isn't needed by today's only completeness-sensitive caller and would widen
+ * this contract further than that caller currently justifies.
+ */
+export interface CommitteeActivityResponse extends PaginatedResponse<ActivityEvent> {
+  any_leg_failed: boolean;
 }
 
 /**

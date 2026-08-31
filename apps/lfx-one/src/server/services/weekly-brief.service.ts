@@ -1193,7 +1193,7 @@ export class WeeklyBriefService {
     // ENDED but stamped with a still-future `end_time`), so this also guards against those.
     const ceilingMs = Math.min(Date.now(), windowEndMs);
     try {
-      const { data, page_token } = await this.withStalenessFetchTimeout(
+      const { data, page_token, any_leg_failed } = await this.withStalenessFetchTimeout(
         this.committeeActivityService.getCommitteeActivity(req, committeeId, {
           since: brief.updated_at,
           limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
@@ -1224,13 +1224,21 @@ export class WeeklyBriefService {
       // `false` whenever every leg's page happens to filter down to zero FGA-visible rows
       // (committee-activity.service.ts's own comment on this). That case is indistinguishable
       // here from "genuinely no activity at all" and reports a confident `stale: false`; fixing
-      // it would mean surfacing `getCommitteeActivity`'s own per-leg saturation flag as a new
-      // field on its response, which is a shared-service change out of scope for this fix.
-      if (page_token && relevant.length === 0) {
-        logger.warning(req, 'weekly_brief_staleness', 'Activity fetch saturated with no in-range events, degrading staleness to null', {
+      // it would mean surfacing a per-request FGA-visibility retry loop, out of scope for this fix.
+      //
+      // `any_leg_failed` (GH-1967 review) covers a different gap: each of `getCommitteeActivity`'s
+      // 5 legs independently degrades a fetch failure into `{events: [], saturated: false}`
+      // (committee-activity.service.ts), indistinguishable from a leg that genuinely fetched
+      // nothing. A leg failure can only hide a real positive (relevant activity this fetch missed),
+      // never manufacture a false one — so it's only a reason to distrust a `relevant.length === 0`
+      // result, same as the saturated-with-nothing-relevant case above.
+      if (relevant.length === 0 && (page_token || any_leg_failed)) {
+        logger.warning(req, 'weekly_brief_staleness', 'Activity fetch was truncated or partially failed with no in-range events, degrading staleness to null', {
           committee_id: committeeId,
           brief_uid: brief.uid,
           fetched: data.length,
+          saturated: !!page_token,
+          any_leg_failed,
         });
         return { ...response, staleness: null };
       }

@@ -97,7 +97,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   AI_MODEL: 'mock-ai-model',
   VALKEY_CACHE: { WEEKLY_BRIEF_RATING_TTL_SECONDS: 7_776_000, WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 604800 },
   ACTIVITY_FEED_MAX_PAGE_SIZE: 50,
-  WEEKLY_BRIEF_STALENESS_EVENT_TYPES: ['meeting_held', 'vote_opened', 'vote_closed', 'document_uploaded'],
+  WEEKLY_BRIEF_STALENESS_EVENT_TYPES: ['meeting_held', 'vote_opened', 'vote_closed', 'survey_published', 'survey_closed'],
 }));
 // '../constants' (this app's server-only constants, not the `@lfx-one/shared` package) is
 // plain string/number literals with no transitive Angular imports — safe to leave unmocked,
@@ -726,13 +726,10 @@ describe('WeeklyBriefService', () => {
       });
     });
 
-    it('excludes a survey/notes event from the count — those feed event types are not brief sources, so regenerating could never reflect them', async () => {
+    it('excludes a notes event from the count — notes_added is not a brief source, so regenerating could never reflect it', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
       getCommitteeActivityMock.mockResolvedValueOnce({
-        data: [
-          { type: 'survey_published', occurred_at: '2026-01-17T10:00:00.000Z' },
-          { type: 'notes_added', occurred_at: '2026-01-17T11:00:00.000Z' },
-        ],
+        data: [{ type: 'notes_added', occurred_at: '2026-01-17T11:00:00.000Z' }],
       });
 
       const result = await service.getCurrentBrief(req, 'committee-1');
@@ -740,10 +737,14 @@ describe('WeeklyBriefService', () => {
       expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
     });
 
-    it('counts a document_uploaded event, and still counts a meeting/vote event alongside an excluded survey event', async () => {
+    it('counts survey_published/survey_closed events, and still excludes a document_uploaded event alongside a counted meeting/vote event — GH-1967 review: survey feeds the generator, document does not', async () => {
+      // Verified against lfx-v2-committee-service's buildClaimsAndRefs (group_weekly_brief_generator.go):
+      // it emits Kind: "survey" (fed into ClaimEvidence, the generator's actual LLM input) but never
+      // a "document"/"doc" kind — the original event-type list had this backwards.
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
       getCommitteeActivityMock.mockResolvedValueOnce({
         data: [
+          { type: 'survey_published', occurred_at: '2026-01-17T08:30:00.000Z' },
           { type: 'survey_closed', occurred_at: '2026-01-17T09:00:00.000Z' },
           { type: 'document_uploaded', occurred_at: '2026-01-17T10:00:00.000Z' },
           { type: 'vote_opened', occurred_at: '2026-01-17T11:00:00.000Z' },
@@ -752,7 +753,7 @@ describe('WeeklyBriefService', () => {
 
       const result = await service.getCurrentBrief(req, 'committee-1');
 
-      expect(result.staleness).toEqual({ stale: true, event_count: 2, event_count_is_floor: false });
+      expect(result.staleness).toEqual({ stale: true, event_count: 3, event_count_is_floor: false });
     });
 
     it('carries both caller_rating and staleness together in the merged response (general review finding — the parallel-await merge is otherwise untested with both enrichments actually populated)', async () => {
@@ -829,6 +830,34 @@ describe('WeeklyBriefService', () => {
 
       expect(result.staleness).toBeNull();
       expect(logger.warning).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports unknown (null), not a false negative, when a committee-activity leg failed and nothing relevant turned up (GH-1967 review)', async () => {
+      // any_leg_failed means at least one of getCommitteeActivity's 5 legs was caught-and-degraded
+      // to {events: [], saturated: false} on a fetch failure — indistinguishable from that leg
+      // genuinely having nothing, so a confident "not stale" here would risk a false negative the
+      // same way an unfetched saturated page does.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({ data: [], any_leg_failed: true });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+    });
+
+    it('still reports stale (not a degrade) when a committee-activity leg failed but other legs already found real qualifying activity', async () => {
+      // A leg failure can only hide a real positive, never manufacture a false one — once relevant
+      // activity has already been found, any_leg_failed on a different leg doesn't undermine it.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [{ type: 'meeting_held', occurred_at: '2026-01-17T10:00:00.000Z' }],
+        any_leg_failed: true,
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: true, event_count: 1, event_count_is_floor: false });
     });
 
     it('marks event_count as a floor when the activity fetch itself paginated', async () => {

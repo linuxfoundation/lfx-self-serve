@@ -178,7 +178,7 @@ describe('CommitteeActivityService', () => {
 
   it('returns an empty feed when every source is empty', async () => {
     const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
-    expect(result).toEqual({ data: [], page_token: undefined });
+    expect(result).toEqual({ data: [], page_token: undefined, any_leg_failed: false });
   });
 
   it('merges all four sources and sorts the result by occurred_at descending', async () => {
@@ -745,6 +745,10 @@ describe('CommitteeActivityService', () => {
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data.map((e) => e.type)).toEqual(['vote_opened']);
       expect(warning).toHaveBeenCalled();
+      // GH-1967 review: a leg failure must be surfaced on the response, not just swallowed into an
+      // indistinguishable-from-empty `{events: [], saturated: false}` — see any_leg_failed's own
+      // interface doc comment (activity-event.internal.interface.ts) for why.
+      expect(result.any_leg_failed).toBe(true);
     });
 
     it('renders the other three sources when votes fail', async () => {
@@ -753,6 +757,7 @@ describe('CommitteeActivityService', () => {
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data.map((e) => e.type)).toEqual(['meeting_held']);
+      expect(result.any_leg_failed).toBe(true);
     });
 
     it('renders the other three sources when surveys fail', async () => {
@@ -795,6 +800,21 @@ describe('CommitteeActivityService', () => {
       // as the real, current message; the pre-existing folders-failure test above never exercised
       // this leg's own message, so this substring was previously pinned nowhere in the suite.
       expect(warning).toHaveBeenCalledWith(expect.anything(), 'get_committee_activity', expect.stringContaining('committee files'), expect.anything());
+    });
+
+    it('does not set any_leg_failed for a folders/links/files sub-fetch failure inside the document leg', async () => {
+      // fetchDocumentEvents catches folders/links/files individually and never rejects the whole
+      // document leg for one of them failing — any_leg_failed only tracks the outer per-leg catch
+      // in getCommitteeActivity (see its own doc comment), a deliberately narrower scope than every
+      // failure this endpoint can encounter.
+      getMeetings.mockResolvedValue({ data: [pastMeeting()] });
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path.endsWith('/folders')) return Promise.reject(new Error('upstream down'));
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.any_leg_failed).toBe(false);
     });
   });
 

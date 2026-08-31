@@ -14,9 +14,9 @@ import type {
   CommitteeActivityLink,
   CommitteeActivityNoteAttachment,
   CommitteeActivityQuery,
+  CommitteeActivityResponse,
   DocumentUploadedActivityEvent,
   NotesAddedActivityEvent,
-  PaginatedResponse,
   PastMeeting,
   QueryServiceResponse,
   Survey,
@@ -188,7 +188,7 @@ export class CommitteeActivityService {
     this.voteService = new VoteService();
   }
 
-  public async getCommitteeActivity(req: Request, committeeUid: string, options: CommitteeActivityQuery): Promise<PaginatedResponse<ActivityEvent>> {
+  public async getCommitteeActivity(req: Request, committeeUid: string, options: CommitteeActivityQuery): Promise<CommitteeActivityResponse> {
     const { since: rawSince, cursor, limit } = options;
     // Same reject-not-degrade policy as the cursor/since checks below, for the same reason:
     // parseCommitteeActivityQuery already bounds page_size on the HTTP path, but this method is
@@ -349,29 +349,52 @@ export class CommitteeActivityService {
     // "complex multi-step orchestration" case logging-patterns.md reserves INFO for.
     logger.info(req, 'get_committee_activity', 'Starting committee activity aggregation', { committee_uid: committeeUid, fetch_size: fetchSize });
 
+    // Tracked via closure side-effect (not folded into each leg's own resolved shape) so a failed
+    // leg's `{events: [], saturated: false}` return keeps the exact type each fetch* method already
+    // declares — adding a `failed` field there would turn every leg's resolved type into a
+    // success/failure union and force a runtime type-guard at every one of their many read sites
+    // below, for a value only this one aggregate ever needs.
+    let pastMeetingFailed = false;
+    let voteFailed = false;
+    let surveyFailed = false;
+    let documentFailed = false;
+    let notesFailed = false;
+
     const [committee, pastMeetingResult, voteResult, surveyResult, documentResult, notesResult] = await Promise.all([
       this.fetchCommittee(req, committeeUid),
       this.fetchPastMeetingEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch past-meeting activity, continuing without it', { committee_uid: committeeUid, err });
+        pastMeetingFailed = true;
         return { events: [], saturated: false };
       }),
       this.fetchVoteEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch vote activity, continuing without it', { committee_uid: committeeUid, err });
+        voteFailed = true;
         return { events: [], saturated: false };
       }),
       this.fetchSurveyEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch survey activity, continuing without it', { committee_uid: committeeUid, err });
+        surveyFailed = true;
         return { events: [], saturated: false };
       }),
       this.fetchDocumentEvents(req, committeeUid, since, before, fetchSize, cursor).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch document activity, continuing without it', { committee_uid: committeeUid, err });
+        documentFailed = true;
         return { events: [], saturated: false };
       }),
       this.fetchNotesAddedEvents(req, committeeUid, since, before, fetchSize).catch((err) => {
         logger.warning(req, 'get_committee_activity', 'Failed to fetch notes activity, continuing without it', { committee_uid: committeeUid, err });
+        notesFailed = true;
         return { events: [], saturated: false };
       }),
     ]);
+
+    // Only meetings/votes/surveys count toward staleness (WEEKLY_BRIEF_STALENESS_EVENT_TYPES,
+    // GH-1966/#1967) — documents/notes are included too rather than narrowed to just those three,
+    // since this flag is generic to the endpoint (also read by the Recent Activity feed, which has
+    // no such narrowing) and a caller-specific leg subset would need to be threaded through
+    // CommitteeActivityQuery to compute correctly here.
+    const anyLegFailed = pastMeetingFailed || voteFailed || surveyFailed || documentFailed || notesFailed;
 
     // A committee-lookup failure already rejected the whole Promise.all above (see fetchCommittee's
     // doc comment) — by this line `committee` is always a resolved Committee.
@@ -466,10 +489,11 @@ export class CommitteeActivityService {
       // log alone — has_more can now be true without windowed.length exceeding limit, and a leg
       // count only signals saturation when compared against fetch_size (also not logged elsewhere).
       any_leg_saturated: anyLegSaturated,
+      any_leg_failed: anyLegFailed,
       fetch_size: fetchSize,
     });
 
-    return { data, page_token: pageToken };
+    return { data, page_token: pageToken, any_leg_failed: anyLegFailed };
   }
 
   // ─── Committee (for enable_voting) ─────────────────────────────────────────
