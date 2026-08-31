@@ -1007,6 +1007,19 @@ export const EVENT_TERM_STOPWORDS: readonly string[] = [
   'america',
   'europe',
   'asia',
+  // Long but GENERIC. Length was standing in for distinctiveness, and these are six-plus
+  // characters, so a single hit scored double and cleared the threshold alone: "Open Source
+  // Summit" reduces to `open` + `source`, and `source` then pre-selected an unrelated "Source
+  // newsletter". A confident wrong pick is the one outcome the suggestion must never produce,
+  // so the words that break the length proxy are dropped before scoring sees them.
+  'source',
+  'global',
+  'online',
+  'virtual',
+  'storage',
+  'meetup',
+  'forum',
+  'expo',
 ];
 
 /**

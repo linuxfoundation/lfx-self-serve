@@ -3789,6 +3789,31 @@ describe('CampaignsComponent — HubSpot template picker', () => {
      * Driven through `onSelectEmailTemplate`, because that is the setter that knows the
      * provenance; asserting on the flag directly would pass under an id-equality implementation.
      */
+    /**
+     * A LONG term is not automatically a distinctive one.
+     *
+     * The distinctiveness rule scores any term of six-plus characters as evidence on its own, on
+     * the reasoning that `kubecon`/`nairobi`/`pytorch` separate from `dev`/`mcp` at that length.
+     * Generic words are long too: `source`, `global`, `online`, `storage`. "Open Source Summit"
+     * reduces to `open` + `source` once `summit` is dropped, and `source` alone then clears the
+     * threshold against an unrelated "Source newsletter" -- a confident wrong pick, which is the
+     * one outcome this feature exists to prevent.
+     */
+    it('does not pre-select on a generic long word like "source"', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Open Source Summit', 'open-source-summit'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'src', name: 'Source newsletter — monthly roundup' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId(), 'a generic word pre-selected an unrelated template').toBe('');
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
     it('stops calling the selection system-chosen once the operator picks it themselves', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
