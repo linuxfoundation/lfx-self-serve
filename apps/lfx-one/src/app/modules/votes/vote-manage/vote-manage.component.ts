@@ -110,13 +110,8 @@ export class VoteManageComponent {
     this.initCommitteeContext();
     evictOnWriteAccessLoss(this.writeAccess);
 
-    // Derive the project context from the loaded vote so a context-less edit link
-    // (/project/votes/:id/edit) lands in the vote's project, not the cookie-restored
-    // last-visited project. The fallback covers BFF project-enrichment failure.
-    // preferEntityKind: a foundation-owned vote can be edited under a /project/* URL, so the
-    // vote's own is_foundation (not the route prefix) picks the slot and re-points the route
-    // lens kind. Opt-in — the other syncEntityProjectContext callers keep URL-prefix
-    // behavior (see the util's doc).
+    // Context-less edit links land in the VOTE's project (not the cookie-restored one);
+    // preferEntityKind picks the context slot from the vote's own is_foundation (see the util's doc).
     syncEntityProjectContext(this.voteEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
     this.initVoteContextFallback();
   }
@@ -527,11 +522,7 @@ export class VoteManageComponent {
     );
   }
 
-  /**
-   * Maps the loaded vote to the {@link EntityWithProject} shape consumed by
-   * syncEntityProjectContext — pre-enrichment payloads can lack the project fields
-   * entirely, so absent values map to null there.
-   */
+  /** Maps the loaded vote to the {@link EntityWithProject} shape; absent enrichment fields map to null. */
   private initVoteEntityContext(): Signal<EntityWithProject | null> {
     return computed(() => {
       const vote = this.vote();
@@ -615,25 +606,8 @@ export class VoteManageComponent {
   }
 
   /**
-   * Access predicate driving evictOnWriteAccessLoss. The default predicate (canWrite) is
-   * project-writer-only, but writerGuard also admits votes editors via writer on the
-   * ?committee_uid= committee. The committee leg uses the side-effect-free fetchCommittee
-   * (the guard's getCommittee tap is for its own deny/allow flow) and the URL snapshot —
-   * the param survives step navigations via merge.
-   *
-   * Two properties keep this from evicting guard-admitted users on transient false:
-   *
-   * 1. In edit mode the project leg keys off the VOTE's own project (slug, falling back to
-   *    uid — the BFF getProject route sniffs UUIDs), the same target writerGuard authorized
-   *    against. Keying off activeContext instead would evaluate the stale cookie-restored boot
-   *    context, and its false could win the race against syncEntityProjectContext's correction
-   *    (a cached boot project resolves faster than the vote fetch that triggers the switch).
-   *    Create mode has no vote, so the guard-checked active context (?project=) is the key.
-   * 2. Each leg is pending (undefined) until its first resolution, and the predicate stays
-   *    provisionally true while any applicable leg is pending — writerGuard already authorized
-   *    this navigation, so an unresolved leg is not an access-lost signal. Eviction fires only
-   *    once every applicable leg has re-checked false; an error or non-writer response still
-   *    resolves false there.
+   * Access predicate mirroring writerGuard's votes standard — project writer on the vote's OWN project
+   * (never the boot context), or committee writer via ?committee_uid=; pending legs stay provisionally true.
    */
   private initWriteAccess(): Signal<boolean> {
     const editVoteId = this.route.snapshot.paramMap.get('id');
@@ -692,25 +666,8 @@ export class VoteManageComponent {
   }
 
   /**
-   * Fallback context sync for when the BFF project enrichment failed (the detail payload has
-   * `project_uid` but no `project_slug`): resolve the project by uid and set context from it.
-   * `getProject(uid, false)` — `current: false` so the fetch doesn't clobber
-   * ProjectService's shared `project` state — already resolves to null on failure, so a failed
-   * fallback leaves the (stale) context untouched rather than erroring the page.
-   *
-   * Runs whenever the payload lacks `project_slug`, even when the uid already matches the active
-   * context: the lookup is also what corrects the lens *kind* via `computeIsFoundation` — e.g.
-   * `/project/votes/:id/edit?project=<foundation>` seeds the foundation into the project slot
-   * under the route's declared `project` kind, and only the resolved project record reveals the
-   * mismatch. As in syncEntityProjectContext, NavigationEnd re-applies the correction: query-param
-   * step navigations re-assert the route's declared kind via syncLensFromRoute without re-running
-   * guards. The re-apply hits the shareReplay-cached getProject, so it costs no extra request.
-   *
-   * When the uid lookup resolves null — the project GET is relation-gated, so an organizer without
-   * a direct viewer relation gets nothing back — the vote detail is re-fetched fresh: its BFF
-   * enrichment is query-service backed and not relation-gated, so a fresh payload can carry the
-   * `project_slug` the first one lacked. Only if that also comes back unenriched is the context
-   * left alone (it self-corrects on the next navigation).
+   * Fallback for BFF-enrichment failure (project_uid without project_slug): resolves the project by uid,
+   * re-applied on NavigationEnd; if the relation-gated lookup returns null, one fresh vote re-fetch tries the ungated enrichment.
    */
   private initVoteContextFallback(): void {
     const unresolvedEntity$ = toObservable(this.voteEntityContext).pipe(distinctUntilChanged((a, b) => a?.uid === b?.uid && a?.project_uid === b?.project_uid));

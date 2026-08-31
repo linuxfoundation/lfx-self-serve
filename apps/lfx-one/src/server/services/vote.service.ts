@@ -90,14 +90,8 @@ export class VoteService {
   }
 
   /**
-   * Fetches a single vote by UID
-   *
-   * @param options.includeProject - When true, enrich the payload with the vote's project fields
-   * (`project_slug`, `project_name`, `is_foundation`) so clients can reconcile project context
-   * from the vote itself. Opt-in because list/index payloads already carry project fields and
-   * other callers only need the raw upstream vote — neither should pay for the extra project
-   * fetch. An options object (not a boolean positional) keeps call sites self-describing —
-   * see MeetingService.getMeetingById.
+   * Fetches a single vote by UID. `includeProject` enriches the payload with the vote's project fields
+   * (slug/name/is_foundation) so clients can reconcile project context from the vote itself.
    */
   public async getVoteById(req: Request, voteUid: string, options: { includeProject?: boolean } = {}): Promise<Vote> {
     const { includeProject = false } = options;
@@ -259,7 +253,12 @@ export class VoteService {
   public async getVoteResults(req: Request, voteUid: string): Promise<VoteResultsResponse> {
     logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid });
 
-    const results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', `/votes/${encodeURIComponent(voteUid)}/results`, 'GET');
+    const results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      `/votes/${encodeURIComponent(voteUid)}/results`,
+      'GET'
+    );
 
     // The API client maps an empty response body to null; a 200 with no payload is anomalous
     // (the upstream results contract always returns a body), so fail loudly — passing null

@@ -73,12 +73,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   // edited — resolve the slug from the entity itself; only a 404 falls back, else fail closed.
   const writeFeature: string | undefined = route.data?.['writeFeature'];
   // Entity probes keyed by writeFeature — a new entity adds one registry line + the route's
-  // entityScopedSlug flag. Probes must be tap-free: fetchCommittee, not getCommittee (which sets
-  // the shared committee signal), so a guard probe can't leak stale state into other pages. The
-  // meetings/committees probes ride a short-TTL shared cache (getMeetingDetail / getCommitteeDetail
-  // via fetchCommittee), so the manage component's immediate refetch on the same navigation doesn't
-  // duplicate the request; the votes probe is uncached (VoteService keeps no detail cache), paying
-  // one extra lightweight detail GET per edit navigation.
+  // entityScopedSlug flag. Probes must be tap-free so a guard probe can't leak stale state into other pages.
   const entityProbes: Record<string, (id: string) => Observable<Pick<EntityWithProject, 'project_slug' | 'project_uid'> | null>> = {
     meetings: (id) => meetingService.getMeetingDetail(id),
     committees: (id) => committeeService.fetchCommittee(id),

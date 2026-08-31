@@ -119,12 +119,7 @@ export class VoteService {
     return this.http.get<Vote>(`/api/votes/${encodeURIComponent(voteUid)}`).pipe(tap((vote) => this.vote.set(vote)));
   }
 
-  /**
-   * Fetches a vote by ID without updating shared service state (tap-free). Used by writerGuard's
-   * entity probe and vote-manage's context fallback, where getVote's `vote` signal write would
-   * leak state. Unlike fetchCommittee there is no detail cache to share — VoteService keeps no
-   * vote-detail cache, so the manage component's refetch pays one extra lightweight detail GET.
-   */
+  /** Tap-free vote fetch for writerGuard's entity probe and vote-manage's context fallback (getVote's signal write would leak state). */
   public fetchVote(voteUid: string): Observable<Vote> {
     return this.http.get<Vote>(`/api/votes/${encodeURIComponent(voteUid)}`).pipe(take(1));
   }
