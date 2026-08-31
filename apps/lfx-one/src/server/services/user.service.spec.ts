@@ -8,23 +8,50 @@ import '@angular/compiler';
 import { PROFILE_VISIBILITY_DEFAULTS, VISIBILITY_PREFERENCE_APP_NAME, VISIBILITY_PREFERENCE_NAME } from '@lfx-one/shared/constants';
 import {
   ApiGatewayUserProfile,
+  Meeting,
+  MeetingRegistrant,
   ProfileVisibilitySections,
   ProfileVisibilityUpdateRequest,
+  QueryServiceResponse,
   UserMetadata,
   UserServicePreference,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { proxyRequest, getPendingActionSurveys, getMyPendingInvitations, getUsernameFromAuth } = vi.hoisted(() => ({
+  proxyRequest: vi.fn(),
+  getPendingActionSurveys: vi.fn(),
+  getMyPendingInvitations: vi.fn(),
+  getUsernameFromAuth: vi.fn(),
+}));
+
 // Stub the constructor collaborators (NATS, Snowflake, etc.) so `new UserService()` is cheap and
 // side-effect-free — validateUserMetadata is pure and synchronous and touches none of them.
 vi.mock('./nats.service', () => ({ NatsService: vi.fn() }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: vi.fn(() => ({})) } }));
 vi.mock('./meeting.service', () => ({ MeetingService: vi.fn() }));
-vi.mock('./project.service', () => ({ ProjectService: vi.fn() }));
-vi.mock('./microservice-proxy.service', () => ({ MicroserviceProxyService: vi.fn() }));
+vi.mock('./project.service', () => ({
+  ProjectService: class {
+    public getPendingActionSurveys = getPendingActionSurveys;
+  },
+}));
+vi.mock('./microservice-proxy.service', () => ({
+  MicroserviceProxyService: class {
+    public proxyRequest = proxyRequest;
+  },
+}));
 vi.mock('./access-check.service', () => ({ AccessCheckService: vi.fn() }));
-vi.mock('./committee.service', () => ({ CommitteeService: vi.fn() }));
+vi.mock('./committee.service', () => ({
+  CommitteeService: class {
+    public getMyPendingInvitations = getMyPendingInvitations;
+  },
+}));
+vi.mock('../utils/auth-helper', () => ({
+  getUsernameFromAuth,
+  getEffectiveEmail: vi.fn(),
+  stripAuthPrefix: (value: string) => value,
+}));
 vi.mock('./logger.service', () => ({
   logger: {
     startOperation: vi.fn(() => 0),
@@ -337,5 +364,76 @@ describe('UserService profile visibility', () => {
       const meCall = gw.mock.calls.find((c) => c[2].method === 'PATCH' && c[1].endsWith('/me'));
       expect(meCall?.[2].body).toEqual({ IsPublic: true, AccountID: 'acct-1' });
     });
+  });
+});
+
+function queryPage<T>(items: T[]): QueryServiceResponse<T> {
+  return { resources: items.map((data, index) => ({ id: `item:${index}`, data })) } as QueryServiceResponse<T>;
+}
+
+describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
+  const req = {} as unknown as Request;
+  const email = 'invitee@example.com';
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  let service: UserService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getPendingActionSurveys.mockReset();
+    getMyPendingInvitations.mockReset();
+    getUsernameFromAuth.mockReset();
+
+    getPendingActionSurveys.mockResolvedValue([]);
+    getMyPendingInvitations.mockResolvedValue([]);
+    getUsernameFromAuth.mockResolvedValue('testuser');
+
+    service = new UserService();
+  });
+
+  it('emits a Set RSVP action only for meetings whose indexed invite-response flag is true', async () => {
+    // Indexed query-service docs carry `use_new_invite_email_address`, not the ITX field.
+    // Leaving `is_invite_responses_enabled` unset proves getUserMeetings normalization is wired
+    // into this path — without it both meetings would skip RSVP actions.
+    const legacyMeeting: Partial<Meeting> = {
+      id: 'legacy-meeting',
+      title: 'Legacy Board',
+      start_time: tomorrow,
+      duration: '60',
+      use_new_invite_email_address: false,
+    };
+    const trackedMeeting: Partial<Meeting> = {
+      id: 'tracked-meeting',
+      title: 'Tracked Board',
+      start_time: tomorrow,
+      duration: '60',
+      use_new_invite_email_address: true,
+    };
+    const registrants: Partial<MeetingRegistrant>[] = [
+      { uid: 'reg-legacy', meeting_id: 'legacy-meeting' },
+      { uid: 'reg-tracked', meeting_id: 'tracked-meeting' },
+    ];
+
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      switch (params?.type) {
+        case 'v1_meeting':
+          return queryPage([legacyMeeting, trackedMeeting]);
+        case 'v1_meeting_registrant':
+          return queryPage(registrants);
+        default:
+          return queryPage([]);
+      }
+    });
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    const rsvpActions = actions.filter((action) => action.type === 'RSVP');
+
+    expect(rsvpActions).toHaveLength(1);
+    expect(rsvpActions[0].meetingUid).toBe('tracked-meeting');
+    expect(rsvpActions[0].buttonText).toBe('Set RSVP');
+    expect(actions.filter((action) => action.type === 'Agenda').map((action) => action.text)).toEqual([
+      'Review Legacy Board Agenda and Materials',
+      'Review Tracked Board Agenda and Materials',
+    ]);
   });
 });
