@@ -2546,6 +2546,49 @@ describe('CampaignsComponent — email delivery channel', () => {
     });
 
     /**
+     * A reset during staging must stop the CREATE, not just the poll — that write clones a HubSpot
+     * draft and points it at the previous brief's audience, and cancelling the poll afterwards
+     * does not undo it.
+     *
+     * LIMITATION, stated rather than implied: this pins the OUTCOME, not the generation guard.
+     * Removing that guard leaves this green, because `resetEmailBriefDerivedState` also clears
+     * `emailAudience` and the ENTRY check (`emailAudience()?.status !== 'built'`) returns first.
+     * The guard is kept as defence-in-depth for a reset that lands after that check has passed,
+     * which this harness has no seam to produce; the entry check is what this test proves.
+     */
+    it('does not create a campaign when the brief resets mid-stage', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+
+      // The audience build runs FIRST, on the fast persist -- it also awaits `ensureEmailBriefId`,
+      // so slowing the persist before this point hangs the setup rather than the staging call.
+      await internals().onBuildAudience();
+      create.mockClear();
+
+      // NOW slow the persist, and clear the cached id so staging actually awaits it.
+      const slowPersist = new Subject<CampaignBriefPersistResult>();
+      persist.mockReturnValue(slowPersist.asObservable());
+      internals().emailBriefId.set('');
+
+      // NOT awaited: the guard returns early, and the promise chain settles on its own. Awaiting
+      // it here is what timed the first version of this test out.
+      void internals().onStageEmailSend();
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+      slowPersist.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null } as unknown as CampaignBriefPersistResult);
+      slowPersist.complete();
+      // Two microtask turns: one for the persist to resolve, one for the guard to run after it.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    /**
      * A reset must CANCEL the staging poll, not merely relabel it.
      *
      * Setting `emailStaging` back to `idle` leaves the subscription running, so a job settling

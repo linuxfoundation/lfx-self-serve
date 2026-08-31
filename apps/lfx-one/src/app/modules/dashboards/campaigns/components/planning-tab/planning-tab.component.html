@@ -423,6 +423,23 @@
                 data-testid="planning-email-edit-city" />
             </div>
             <div class="flex flex-col gap-1">
+              <label for="eb-country" class="font-mono text-xs uppercase tracking-wide text-gray-400">Country code</label>
+              <!--
+              Editable because the AUDIENCE build depends on it. A failed extraction leaves this
+              empty rather than guessing 'US', which is the honest answer -- but without a field to
+              correct it an operator could not build a country-scoped audience at all.
+            -->
+              <input
+                id="eb-country"
+                type="text"
+                maxlength="2"
+                placeholder="e.g. KE"
+                class="rounded-md border border-gray-300 px-2 py-1.5 text-sm uppercase"
+                [value]="emailEditCountryCode()"
+                (input)="emailEditCountryCode.set($any($event.target).value)"
+                data-testid="planning-email-edit-country" />
+            </div>
+            <div class="flex flex-col gap-1">
               <label for="eb-aud" class="font-mono text-xs uppercase tracking-wide text-gray-400">Audience</label>
               <input
                 id="eb-aud"

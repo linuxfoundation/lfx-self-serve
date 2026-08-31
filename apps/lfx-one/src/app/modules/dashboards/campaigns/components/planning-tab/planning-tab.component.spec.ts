@@ -1159,6 +1159,28 @@ describe('PlanningTabComponent email brief editing', () => {
    * Nairobi event built a UNITED STATES audience. Real, plausible and wrong, which is worse than
    * an audience that refuses to build.
    */
+  /**
+   * The country became editable BECAUSE the fallback stopped inventing one.
+   *
+   * Empty is the honest answer for a failed extraction, but without a field to correct it an
+   * operator could not build a country-scoped audience at all — the fix would have traded a wrong
+   * audience for no audience.
+   */
+  it('carries an operator-corrected country code into the emitted brief', async () => {
+    await buildWithScrape();
+    const emitted: unknown[] = [];
+    (fixture.componentInstance as unknown as { proceedToImplementation: { subscribe(f: (v: unknown) => void): void } }).proceedToImplementation.subscribe((v) =>
+      emitted.push(v)
+    );
+
+    internals().enterEmailEditMode();
+    // Lower-case in, upper-case out: `countryNameFor` looks the code up case-sensitively.
+    (internals() as unknown as { emailEditCountryCode: { set(v: string): void } }).emailEditCountryCode.set('ke');
+    (fixture.componentInstance as unknown as { onProceedToImplementation(): void }).onProceedToImplementation();
+
+    expect((emitted[0] as { eventDetails: { countryCode: string } }).eventDetails.countryCode).toBe('KE');
+  });
+
   it('does not invent a country when event extraction produced nothing', async () => {
     // Built WITHOUT a scrape, so `eventDetails()` is null and the fallback record is what gets
     // emitted -- the state this test is about. `buildWithScrape` would set it and hide the case.

@@ -361,6 +361,16 @@ export class CampaignsComponent {
   private emailAudienceGeneration = 0;
 
   /**
+   * Guards the staging path against a brief the page no longer holds.
+   *
+   * Staging AWAITS `ensureEmailBriefId` and then CREATES a campaign. A reset landing in between
+   * meant the create proceeded against the previous brief -- and unlike a stale read this one
+   * WRITES: it clones a HubSpot draft and points it at that brief's audience. The reset bumps
+   * this, so the create is abandoned rather than issued against a context nobody is looking at.
+   */
+  private emailStagingGeneration = 0;
+
+  /**
    * The persist a concurrent caller can join instead of starting a second one.
    *
    * `ensureEmailBriefId` caches the id only AFTER its persist resolves, so two email actions
@@ -1452,10 +1462,19 @@ export class CampaignsComponent {
     this.emailStaging.set('staging');
     this.emailStagingMessage.set('');
 
+    // Bumped BEFORE the await below; the reset bumps the same counter to invalidate it.
+    const generation = ++this.emailStagingGeneration;
+    const isCurrent = (): boolean => generation === this.emailStagingGeneration;
+
     try {
       // Shared with the audience build via `ensureEmailBriefId`, so the two actions cannot write
       // two briefs for the same event.
       const briefId = await this.ensureEmailBriefId(brief, projectSlug);
+      // A reset can land during that await. Abandoning here is what stops the create below --
+      // which CLONES a HubSpot draft -- from running against the previous brief.
+      if (!isCurrent()) {
+        return;
+      }
 
       // A persist that reports success without an id cannot be followed by a create — the id is
       // a PATH segment upstream. Reported as a failure rather than retried, because a retry
@@ -2497,6 +2516,7 @@ export class CampaignsComponent {
     // same idea for the one path that owns a subscription.
     this.emailCopyGeneration++;
     this.emailAudienceGeneration++;
+    this.emailStagingGeneration++;
     // Drop the shared persist too. It is keyed to the brief that started it, so a caller joining
     // it AFTER this reset would receive the PREVIOUS brief's id and address every later write to
     // the wrong row -- the dedup turning into a correctness bug precisely because it succeeded.

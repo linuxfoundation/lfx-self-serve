@@ -131,6 +131,16 @@ export class PlanningTabComponent implements OnInit {
   protected readonly emailEditName = signal<string>('');
   protected readonly emailEditDates = signal<string>('');
   protected readonly emailEditCity = signal<string>('');
+
+  /**
+   * The event's country, editable because the audience build depends on it.
+   *
+   * It became editable when the fallback stopped inventing 'US': an extraction that produces
+   * nothing now leaves this empty, and empty is the honest answer -- but without a field to
+   * correct it, an operator had no way to build a country-scoped audience at all. The three
+   * fields beside it were already repairable; this one carried the consequence.
+   */
+  protected readonly emailEditCountryCode = signal<string>('');
   protected readonly emailEditAudience = signal<string>('');
   protected readonly emailEditRegistrationUrl = signal<string>('');
   protected readonly copyBuffer = signal('');
@@ -691,6 +701,7 @@ export class PlanningTabComponent implements OnInit {
     this.emailEditName.set(d.name);
     this.emailEditDates.set(d.dates);
     this.emailEditCity.set(d.city);
+    this.emailEditCountryCode.set(d.countryCode);
     this.emailEditAudience.set(d.audience);
     this.emailEditRegistrationUrl.set(d.registrationUrl);
     this.isEditingEmailBrief.set(true);
@@ -713,6 +724,9 @@ export class PlanningTabComponent implements OnInit {
       name: this.emailEditName().trim(),
       dates: this.emailEditDates().trim(),
       city: this.emailEditCity().trim(),
+      // Upper-cased: `countryNameFor` looks the code up case-sensitively after its own
+      // normalisation, and an operator typing "ke" should not silently produce no country.
+      countryCode: this.emailEditCountryCode().trim().toUpperCase(),
       audience: this.emailEditAudience().trim(),
       registrationUrl: this.emailEditRegistrationUrl().trim(),
     });
