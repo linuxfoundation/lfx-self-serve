@@ -4186,6 +4186,65 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().emailTemplateSuggestionId()).toBe('');
     });
 
+    /**
+     * A search that drops the auto-selected row must release it.
+     *
+     * Only the suggestion id was cleared, not the selection — so after a narrowed search the id
+     * stayed selected while the banner hid (it renders only while the suggestion IS the
+     * selection), and staging would clone a template no longer in the list. The same
+     * silent-wrong-clone the feature exists to prevent, reached from the other direction.
+     */
+    it('releases an auto-selected template when a search no longer returns it', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+
+      // A narrowed search that no longer returns the auto-selected row.
+      picker().searchEmailTemplates('newsletter');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'other', name: 'Monthly newsletter' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    /** A HAND-PICKED template is the operator's and survives a search that drops it. */
+    it('keeps a hand-picked template selected across a search that no longer returns it', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi registration' },
+          { id: 'hand', name: 'Something the operator knows about' },
+        ] as HubSpotMarketingEmail[],
+      });
+      picker().onSelectEmailTemplate('hand');
+
+      picker().searchEmailTemplates('newsletter');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'other', name: 'Monthly newsletter' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().selectedEmailTemplateId()).toBe('hand');
+    });
+
     /** But a city match still ranks, once the event itself is identified. */
     it('ranks a template naming both the event and the city above one naming only the event', () => {
       showPicker();

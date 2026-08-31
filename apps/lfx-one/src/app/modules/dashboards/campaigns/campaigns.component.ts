@@ -2512,6 +2512,21 @@ export class CampaignsComponent {
    *     it. A suggestion whose reasoning is invisible cannot be checked.
    */
   private applyEventTemplateSuggestion(templates: HubSpotMarketingEmail[]): void {
+    // Release a selection this feature made, before re-deriving against the new result set.
+    //
+    // The type-change path already did this; a SEARCH did not, and only the suggestion id was
+    // cleared. So after a narrowed search dropped the auto-selected row, that id stayed selected
+    // while the banner hid (it renders only while the suggestion IS the selection) and staging
+    // would still clone the now-invisible template -- the same silent-wrong-clone this feature
+    // exists to prevent, reached from the other direction.
+    //
+    // Only a SYSTEM-owned selection is released. A hand-picked template is the operator's and
+    // survives every search, which is why this compares against the outgoing suggestion id rather
+    // than clearing unconditionally.
+    const previousSuggestion = this.emailTemplateSuggestionId();
+    if (previousSuggestion !== '' && this.selectedEmailTemplateId() === previousSuggestion) {
+      this.selectedEmailTemplateId.set('');
+    }
     this.emailTemplateSuggestionId.set('');
     this.emailTemplateSuggestionTerms.set([]);
 
