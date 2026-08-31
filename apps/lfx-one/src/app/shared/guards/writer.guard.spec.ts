@@ -17,15 +17,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { writerGuard } from './writer.guard';
 
-// Pins the fail-closed contract of the meeting edit slug resolution (GH-1579): only a 404
-// on the meeting read may fall back to the stale active context — every other failure must
-// resolve no slug at all so the guard redirects instead of authorizing against an unrelated
-// project. A future broadened catch would silently restore the cross-project authorization bug.
-// The committee edit route (GH-1566) shares the same entity-scoped resolution through
-// fetchCommittee, so its cases pin the identical contract for the committees branch; likewise the
-// mailing-list edit route (GH-1567) through getMailingList, including the v1-sync empty-string slug.
-// Also covers the non-meetings early-returns (ED fast path, non-entity-scoped features) so the
-// file isn't a false sense of coverage for the guard's default flow.
+// Pins the fail-closed entity-scoped slug contract (GH-1579/GH-1566/GH-1567): only a 404 probe read
+// falls back to the stale context — anything else resolves no slug. Also covers the ED fast path and non-entity-scoped features.
 describe('writerGuard', () => {
   const MEETING_UID = 'meeting-uid-1';
   const MEETING_SLUG = 'meeting-project';
