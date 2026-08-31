@@ -55,7 +55,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { getUserTimezone, isHostKeyVisible, isPastMeetingCompositeId, reconcileOptimisticPad } from '@lfx-one/shared/utils';
+import { getUserTimezone, isHostKeyVisible, isMeetingInviteResponsesEnabled, isPastMeetingCompositeId, reconcileOptimisticPad } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -240,7 +240,10 @@ export class MeetingJoinComponent implements OnInit {
   protected rsvpAcceptedCount = computed(() => this.meeting()?.registrants_accepted_count ?? 0);
   protected rsvpDeclinedCount = computed(() => this.meeting()?.registrants_declined_count ?? 0);
   protected rsvpPendingCount = computed(() => this.meeting()?.registrants_pending_count ?? 0);
-  protected hasRsvpData = computed(() => this.rsvpAcceptedCount() > 0 || this.rsvpDeclinedCount() > 0 || this.rsvpPendingCount() > 0);
+  protected inviteResponsesEnabled = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
+  protected hasRsvpData = computed(
+    () => this.inviteResponsesEnabled() && (this.rsvpAcceptedCount() > 0 || this.rsvpDeclinedCount() > 0 || this.rsvpPendingCount() > 0)
+  );
   protected userInitials = computed(() => {
     const name = this.user()?.name || 'User';
     return name.substring(0, 2).toUpperCase();
@@ -1146,7 +1149,7 @@ export class MeetingJoinComponent implements OnInit {
   }
 
   private initializeCanToggleRsvpView(): Signal<boolean> {
-    return computed(() => !!this.meeting()?.organizer && this.isInvited());
+    return computed(() => !!this.meeting()?.organizer && this.isInvited() && this.inviteResponsesEnabled());
   }
 
   private initializeCurrentUserRsvp(): Signal<MeetingRsvp | null> {

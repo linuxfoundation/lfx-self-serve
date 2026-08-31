@@ -50,6 +50,7 @@ import {
   fromMeetingApiVotingStatuses,
   getMeetingOrganizerDisplayName,
   isCalendarDeadlinePast,
+  isMeetingInviteResponsesEnabled,
   isMeetingOccurrenceCancelled,
   isMeetingOrganizedByViewer,
   isOccurrencePast,
@@ -57,6 +58,7 @@ import {
   isUnresolvableParticipantName,
   isVoteCalendarEventPast,
   normalizeIndexedMeetingAiSummary,
+  normalizeIndexedMeetingInviteResponses,
   normalizeMeetingApiVotingStatuses,
   reconcileOptimisticPad,
   resolveMeetingOrganizer,
@@ -427,6 +429,44 @@ describe('normalizeIndexedMeetingAiSummary', () => {
     const result = normalizeIndexedMeetingAiSummary(meeting);
     expect(result.ai_summary_enabled).toBeUndefined();
     expect(result.require_ai_summary_approval).toBeUndefined();
+  });
+});
+
+describe('normalizeIndexedMeetingInviteResponses', () => {
+  it('maps indexed use_new_invite_email_address true onto is_invite_responses_enabled', () => {
+    const meeting = { use_new_invite_email_address: true } as Meeting;
+
+    expect(normalizeIndexedMeetingInviteResponses(meeting).is_invite_responses_enabled).toBe(true);
+  });
+
+  it('maps indexed use_new_invite_email_address false onto is_invite_responses_enabled', () => {
+    const meeting = { use_new_invite_email_address: false } as Meeting;
+
+    expect(normalizeIndexedMeetingInviteResponses(meeting).is_invite_responses_enabled).toBe(false);
+  });
+
+  it('treats a missing indexed flag as false', () => {
+    const meeting = {} as Meeting;
+
+    expect(normalizeIndexedMeetingInviteResponses(meeting).is_invite_responses_enabled).toBe(false);
+  });
+
+  it('preserves an explicit ITX is_invite_responses_enabled value', () => {
+    const enabled = { is_invite_responses_enabled: true, use_new_invite_email_address: false } as Meeting;
+    expect(normalizeIndexedMeetingInviteResponses(enabled).is_invite_responses_enabled).toBe(true);
+
+    const disabled = { is_invite_responses_enabled: false, use_new_invite_email_address: true } as Meeting;
+    expect(normalizeIndexedMeetingInviteResponses(disabled).is_invite_responses_enabled).toBe(false);
+  });
+});
+
+describe('isMeetingInviteResponsesEnabled', () => {
+  it('is true only for an explicit true flag', () => {
+    expect(isMeetingInviteResponsesEnabled({ is_invite_responses_enabled: true } as Meeting)).toBe(true);
+    expect(isMeetingInviteResponsesEnabled({ is_invite_responses_enabled: false } as Meeting)).toBe(false);
+    expect(isMeetingInviteResponsesEnabled({} as Meeting)).toBe(false);
+    expect(isMeetingInviteResponsesEnabled(null)).toBe(false);
+    expect(isMeetingInviteResponsesEnabled(undefined)).toBe(false);
   });
 });
 

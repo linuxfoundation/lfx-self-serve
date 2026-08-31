@@ -36,7 +36,7 @@
         <div class="h-3 w-8 rounded bg-gray-300 animate-pulse"></div>
       </div>
       <div class="w-full h-[5.25px] rounded-full bg-gray-300 animate-pulse"></div>
-      @if (!pastMeeting()) {
+      @if (!pastMeeting() && inviteResponsesEnabled()) {
         <div class="flex items-center justify-between">
           <div class="h-3 w-12 rounded bg-gray-300 animate-pulse"></div>
           <div class="h-3 w-16 rounded bg-gray-300 animate-pulse"></div>
@@ -44,7 +44,7 @@
         </div>
       }
     </div>
-  } @else {
+  } @else if (pastMeeting() || inviteResponsesEnabled()) {
     <div class="flex flex-col gap-2">
       <!-- Attendance Summary -->
       <div class="flex items-center justify-between">
@@ -86,7 +86,7 @@
 
       <!-- Response Breakdown -->
       @if (!pastMeeting()) {
-        <div class="flex items-center justify-between text-gray-600">
+        <div class="flex items-center justify-between text-gray-600" data-testid="rsvp-details-breakdown">
           <div class="flex items-center gap-1">
             <i class="flex fa-light fa-check-circle text-xs text-blue-500"></i>
             <span class="text-xs tracking-wide">{{ acceptedCount() }} Yes</span>
@@ -109,6 +109,11 @@
           <p class="text-xs tracking-wide text-amber-900">This meeting was poorly attended</p>
         </div>
       }
+    </div>
+  } @else {
+    <!-- Pre-RSVP-tracking meetings: invitee count only, matching PCC (GH-1951). -->
+    <div class="flex items-center justify-between" data-testid="rsvp-details-invitee-count">
+      <span class="text-[12.25px] leading-tight tracking-tight text-gray-900">{{ meetingRegistrantCount() }} invited</span>
     </div>
   }
 </div>

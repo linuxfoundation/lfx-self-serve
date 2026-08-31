@@ -17,7 +17,7 @@ import {
   Project,
   RsvpCounts,
 } from '@lfx-one/shared';
-import { resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
+import { isMeetingInviteResponsesEnabled, resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { catchError, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
@@ -75,6 +75,7 @@ export class MeetingRsvpDetailsComponent {
     }
     return this.upcomingData().rsvps;
   });
+  public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
   // Tracks across both rsvps data AND user identity; re-emits whenever either changes so the
   // parent card's "Set My RSVP" / "Update My RSVP" label stays in sync with login/impersonation.
   public readonly currentUserHasRsvp: Signal<boolean> = computed(() => {
@@ -112,22 +113,31 @@ export class MeetingRsvpDetailsComponent {
           if (this.pastMeeting() || this.externallyManaged()) {
             return of({ rsvps: [] as MeetingRsvp[], registrants: [] as MeetingRegistrant[] });
           }
-          // Me lens (backend counts not populated) — one call for both registrants + RSVPs inline.
+          const inviteResponsesEnabled = isMeetingInviteResponsesEnabled(meeting);
+          // Me lens (backend split counts not populated) — one call for both registrants + RSVPs.
           if (!this.hasBackendRegistrantCounts(meeting)) {
+            // Pre-feature Me-lens cards already carry aggregate `registrant_count`; the
+            // invitee-count-only UI reads that field, so skip the roster fetch (GH-1951).
+            if (!inviteResponsesEnabled && meeting.registrant_count !== undefined) {
+              return of({ rsvps: [] as MeetingRsvp[], registrants: [] as MeetingRegistrant[] });
+            }
             // Resolve RSVPs against the target occurrence so a `single` decline for a
             // future date doesn't overwrite the current occurrence's per-registrant
-            // chip (LFXV2-2864).
+            // chip (LFXV2-2864). Skip attaching RSVPs when tracking is disabled (GH-1951).
             const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.currentOccurrence() });
-            return this.meetingService.getMeetingRegistrants(meeting.id, true, occurrenceId).pipe(
+            return this.meetingService.getMeetingRegistrants(meeting.id, inviteResponsesEnabled, occurrenceId).pipe(
               map((registrants) => ({
                 registrants,
-                rsvps: registrants.map((r) => r.rsvp).filter((r): r is MeetingRsvp => r != null),
+                rsvps: inviteResponsesEnabled ? registrants.map((r) => r.rsvp).filter((r): r is MeetingRsvp => r != null) : [],
               })),
               catchError((error) => {
                 console.error('Failed to fetch meeting registrants:', error);
                 return of({ rsvps: [] as MeetingRsvp[], registrants: [] as MeetingRegistrant[] });
               })
             );
+          }
+          if (!inviteResponsesEnabled) {
+            return of({ rsvps: [] as MeetingRsvp[], registrants: [] as MeetingRegistrant[] });
           }
           // Non-Me lens — counts are already on the meeting object, only need RSVPs.
           return this.meetingService.getMeetingRsvps(meeting.id).pipe(
@@ -184,7 +194,7 @@ export class MeetingRsvpDetailsComponent {
       // with the drawer's per-registrant chips (LFXV2-2864).
       const registrants = this.registrants();
       if (registrants.length > 0) {
-        return countRegistrantAttendance(registrants);
+        return countRegistrantAttendance(registrants, { inviteResponsesEnabled: this.inviteResponsesEnabled() });
       }
       // Non-Me lens: no registrant array available (detail page — counts come off
       // meeting.individual_registrants_count). Fall back to RSVP-only tallying;

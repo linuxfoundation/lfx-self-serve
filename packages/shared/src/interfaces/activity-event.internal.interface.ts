@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { ActivityEvent } from './activity-event.interface';
+import type { PaginatedResponse } from './api.interface';
 import type { AttachmentCategory } from './meeting-attachment.interface';
 
 /**
@@ -44,6 +46,31 @@ export interface CommitteeActivityQuery {
    */
   cursor?: ActivityPageCursor;
   limit: number;
+}
+
+/**
+ * `getCommitteeActivity`'s response (GH-1967 review) — extends the generic `PaginatedResponse`
+ * with two completeness signals a caller can't otherwise derive from `data`/`page_token` alone.
+ * Both are deliberately coarse (which leg, not surfaced) — a per-leg breakdown isn't needed by
+ * today's only completeness-sensitive caller (`WeeklyBriefService#withStaleness`) and would widen
+ * this contract further than that caller currently justifies.
+ *
+ * `any_leg_failed`: each of the 5 aggregated legs (past meetings, votes, surveys, documents,
+ * notes) is independently caught-and-degraded on failure into `{events: [], saturated: false}`
+ * (see the per-leg `.catch()` calls in `committee-activity.service.ts`), which is otherwise
+ * indistinguishable from a leg that genuinely fetched nothing.
+ *
+ * `any_leg_saturated`: `page_token` alone under-reports this — `committee-activity.service.ts`'s
+ * own `hasMore` computation requires a real `lastPageItem` to anchor a cursor on, so if the
+ * in-memory since/cursor/timestamp pass filters every fetched row out of `windowed` (whether from
+ * FGA-filtered-empty upstream pages, or a leg like surveys whose upstream sort doesn't match its
+ * own occurred_at), `page_token` comes back unset even though a leg's own upstream page was
+ * genuinely saturated. `any_leg_saturated` is read directly off each leg's own `saturated` flag,
+ * independent of whether anything from that leg survived into the returned page.
+ */
+export interface CommitteeActivityResponse extends PaginatedResponse<ActivityEvent> {
+  any_leg_saturated: boolean;
+  any_leg_failed: boolean;
 }
 
 /**

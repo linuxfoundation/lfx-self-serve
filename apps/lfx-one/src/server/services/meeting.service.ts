@@ -43,6 +43,7 @@ import {
   getPastMeetingTranscriptUrl,
   mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary,
+  normalizeIndexedMeetingInviteResponses,
   selectApplicableRsvp,
   selectPrimaryPastMeetingSummary,
 } from '@lfx-one/shared/utils';
@@ -110,10 +111,12 @@ export class MeetingService {
     });
 
     let meetings: Meeting[] = resources.map((resource) =>
-      normalizeIndexedMeetingAiSummary({
-        ...resource.data,
-        id: resource.data.id || resource.id?.split(':').pop() || resource.id,
-      })
+      normalizeIndexedMeetingInviteResponses(
+        normalizeIndexedMeetingAiSummary({
+          ...resource.data,
+          id: resource.data.id || resource.id?.split(':').pop() || resource.id,
+        })
+      )
     );
 
     // Enrich meetings with project names and committee data in parallel (independent enrichments)
@@ -203,7 +206,9 @@ export class MeetingService {
     });
 
     // All meetings are now ITX-managed, use the ITX endpoint
-    const meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'GET');
+    const meeting = normalizeIndexedMeetingInviteResponses(
+      await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'GET')
+    );
 
     // Set the meeting ID from the URL param
     meeting.id = meetingUid;
