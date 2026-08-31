@@ -727,6 +727,16 @@ export class CampaignsComponent {
    */
   protected readonly emailTemplateSuggestionId = signal<string>('');
 
+  /**
+   * Whether the CURRENT selection was made by the suggestion rather than by the operator.
+   *
+   * ID equality cannot answer this. After suggestion A, an operator can pick B and then
+   * deliberately pick A again -- the ids coincide, so an equality check would treat their explicit
+   * choice as system-owned and silently release it on the next search. Provenance is a fact about
+   * how the value was set, and only the setter knows it.
+   */
+  private emailTemplateSelectionIsSuggested = false;
+
   /** Which event terms the suggested template matched on, so the operator can judge it themselves. */
   protected readonly emailTemplateSuggestionTerms = signal<readonly string[]>([]);
 
@@ -1688,7 +1698,7 @@ export class CampaignsComponent {
     // Only when the current selection IS the suggestion: a hand-picked template is the operator's
     // and a type change is not permission to replace it.
     const templates = this.emailTemplates();
-    if (templates !== null && this.selectedEmailTemplateId() === this.emailTemplateSuggestionId()) {
+    if (templates !== null && this.emailTemplateSelectionIsSuggested) {
       this.selectedEmailTemplateId.set('');
       this.applyEventTemplateSuggestion(templates);
     }
@@ -1926,6 +1936,7 @@ export class CampaignsComponent {
       // The page is reachable by an ED of any foundation and templates are per-project, so a
       // missing slug must not fall back to some other portal's templates.
       this.emailTemplates.set(null);
+      this.releaseSuggestedSelection();
       // Same reason as the reset below: a stale `false` would render "Connect HubSpot" instead of
       // this message, because the template checks the channel flag first.
       this.emailChannelEnabled.set(null);
@@ -1970,12 +1981,14 @@ export class CampaignsComponent {
             // Not an error: HubSpot simply is not connected for this project, which is the steady
             // state everywhere the channel is not set up.
             this.emailTemplates.set(null);
+            this.releaseSuggestedSelection();
             return;
           }
           if (result.error) {
             // The service reached HubSpot and HubSpot refused. Leave the list NULL rather than
             // empty — an empty list would claim the portal has no templates.
             this.emailTemplates.set(null);
+            this.releaseSuggestedSelection();
             this.emailTemplatesError.set(result.error);
             return;
           }
@@ -1992,6 +2005,7 @@ export class CampaignsComponent {
             // NULL rather than [], for the same reason the error arms use null: only a search
             // that genuinely came back with nothing can support the empty-portal claim.
             this.emailTemplates.set(null);
+            this.releaseSuggestedSelection();
             this.emailTemplatesError.set('Could not load templates. Try again.');
             return;
           }
@@ -2006,6 +2020,7 @@ export class CampaignsComponent {
           this.emailTemplatesLoading.set(false);
           // NULL, not []. A failed search says nothing about what the portal holds.
           this.emailTemplates.set(null);
+          this.releaseSuggestedSelection();
           this.emailTemplatesError.set('Could not load templates. Try again.');
         },
       });
@@ -2046,6 +2061,8 @@ export class CampaignsComponent {
   }
 
   protected onSelectEmailTemplate(id: string): void {
+    // A hand-pick is the operator's, even when it happens to be the same row the suggestion chose.
+    this.emailTemplateSelectionIsSuggested = false;
     this.selectedEmailTemplateId.set(id);
   }
 
@@ -2494,6 +2511,23 @@ export class CampaignsComponent {
   }
 
   /**
+   * Release a selection this feature made, and forget the suggestion.
+   *
+   * Called from BOTH the success path and every failure arm. `applyEventTemplateSuggestion` runs
+   * only after a successful listing, so the `enabled: false`, HubSpot-error, unusable-rows and
+   * transport-error arms all set `emailTemplates` to null while leaving a system-owned selection
+   * in place -- invisible, since there is no list to show it in, and still stageable.
+   */
+  private releaseSuggestedSelection(): void {
+    if (this.emailTemplateSelectionIsSuggested) {
+      this.selectedEmailTemplateId.set('');
+      this.emailTemplateSelectionIsSuggested = false;
+    }
+    this.emailTemplateSuggestionId.set('');
+    this.emailTemplateSuggestionTerms.set([]);
+  }
+
+  /**
    * Offer the template this portal already uses for this event, if one is identifiable.
    *
    * This is the answer to "how is it done for that event": rather than holding a per-event mapping
@@ -2523,12 +2557,7 @@ export class CampaignsComponent {
     // Only a SYSTEM-owned selection is released. A hand-picked template is the operator's and
     // survives every search, which is why this compares against the outgoing suggestion id rather
     // than clearing unconditionally.
-    const previousSuggestion = this.emailTemplateSuggestionId();
-    if (previousSuggestion !== '' && this.selectedEmailTemplateId() === previousSuggestion) {
-      this.selectedEmailTemplateId.set('');
-    }
-    this.emailTemplateSuggestionId.set('');
-    this.emailTemplateSuggestionTerms.set([]);
+    this.releaseSuggestedSelection();
 
     const eventTerms = this.eventTemplateTerms();
     // DECISIVE terms only. With no name or slug tokens there is nothing that identifies the event,
@@ -2595,6 +2624,7 @@ export class CampaignsComponent {
     // an unfalsifiable guard reads as protection that is not there.
     if (this.selectedEmailTemplateId() === '') {
       this.selectedEmailTemplateId.set(best.id);
+      this.emailTemplateSelectionIsSuggested = true;
     }
   }
 

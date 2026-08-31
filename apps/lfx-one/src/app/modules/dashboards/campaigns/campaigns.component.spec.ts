@@ -4218,6 +4218,59 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().selectedEmailTemplateId()).toBe('');
     });
 
+    /**
+     * ID equality cannot establish provenance.
+     *
+     * After suggestion A the operator can pick B, then deliberately pick A again — the ids
+     * coincide, so an equality check treats their explicit choice as system-owned and silently
+     * releases it on the next search. Provenance is a fact about how the value was SET.
+     */
+    it('keeps a hand-picked template that happens to match the suggestion', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      const emails = [
+        { id: 'mcp', name: 'MCP Dev Summit Nairobi registration' },
+        { id: 'other', name: 'Something else' },
+      ] as HubSpotMarketingEmail[];
+      respond({ enabled: true, error: null, possiblyTruncated: false, emails });
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+
+      // Away and deliberately back to the SAME id — now the operator's choice, not the system's.
+      picker().onSelectEmailTemplate('other');
+      picker().onSelectEmailTemplate('mcp');
+
+      picker().searchEmailTemplates('newsletter');
+      respond({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: 'n', name: 'Monthly newsletter' }] as HubSpotMarketingEmail[] });
+
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+    });
+
+    /**
+     * A FAILED search must release a system-owned selection too.
+     *
+     * `applyEventTemplateSuggestion` runs only after a successful listing, so the error arms set
+     * `emailTemplates` to null while leaving the auto-selected id in place — invisible, since
+     * there is no list to show it in, and still stageable.
+     */
+    it('releases an auto-selected template when the search fails', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+
+      picker().searchEmailTemplates('anything');
+      respond({ enabled: true, error: 'HubSpot refused the search', possiblyTruncated: false, emails: [] });
+
+      expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
     /** A HAND-PICKED template is the operator's and survives a search that drops it. */
     it('keeps a hand-picked template selected across a search that no longer returns it', () => {
       showPicker();
