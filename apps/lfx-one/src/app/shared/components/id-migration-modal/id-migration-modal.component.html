@@ -43,7 +43,19 @@
     </div>
   </form>
 
-  <!-- Actions: "Stay here" dismisses silently; "Continue" logs the reason then opens ID in a new tab -->
+  <!-- Popup blocker refused the new tab, so no CONTINUE was logged and the dialog stayed open.
+       A real anchor click is not subject to the popup blocker, so this link always works. -->
+  @if (popupBlocked()) {
+    <p class="text-xs text-red-600" role="alert" data-testid="id-migration-popup-blocked">
+      Your browser blocked the new tab.
+      <a [href]="individualDashboardUrl" target="_blank" rel="noopener noreferrer" class="underline" data-testid="id-migration-popup-blocked-link"
+        >Open Individual Dashboard</a
+      >
+      instead.
+    </p>
+  }
+
+  <!-- Actions: "Stay here" dismisses silently; "Continue" opens ID in a new tab then logs the reason -->
   <div class="flex justify-end gap-3">
     <lfx-button
       label="Stay here"
