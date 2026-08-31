@@ -4376,7 +4376,6 @@ describe('CampaignsComponent email monitor', () => {
     emailMetricsTotals(): CampaignServiceEmailMetrics | null;
     emailMetricsNothingSent(): boolean;
     emailMetricsRates(): { delivery: number | null; open: number | null; click: number | null; bounce: number | null };
-    emailMetricsUnaccountedRows(): BriefMetricsRow[];
     loadEmailMetrics(): void;
   }
 

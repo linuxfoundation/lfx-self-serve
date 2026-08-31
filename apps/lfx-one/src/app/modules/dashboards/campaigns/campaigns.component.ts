@@ -1265,10 +1265,12 @@ export class CampaignsComponent {
           this.loadEmailTemplatesIfNeverAnswered();
         }
 
-        // Same shape one tab over: an operator sitting on Monitor through a foundation switch
-        // would otherwise keep reading the PREVIOUS foundation's numbers under the new
-        // foundation's name. `loadEmailMetrics` re-reads its own context and handles the
-        // no-brief case, so it is safe to call unconditionally.
+        // Same shape one tab over, but the claim is narrower than the picker's above:
+        // `resetEmailBriefDerivedState` has already run in this handler, so the previous
+        // foundation's numbers are gone either way -- what this prevents is the panel sitting
+        // EMPTY until the operator navigates away and back, not stale numbers under a new name.
+        // `loadEmailMetrics` re-reads its own context and handles the no-brief case, so it is
+        // safe to call unconditionally.
         if (this.selectedDeliveryType() === 'email' && this.selectedEmailTab() === 'insights') {
           this.loadEmailMetrics();
         }
