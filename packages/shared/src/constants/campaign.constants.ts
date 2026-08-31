@@ -615,6 +615,10 @@ export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
  * FAILED JOB the operator has to go and read rather than a refusal of the request they made — the
  * same class as the CPC bid range below.
  */
+export const MICROSOFT_MAX_KEYWORDS = 60;
+export const MICROSOFT_MAX_KEYWORD_TEXT_LENGTH = 100;
+export const MICROSOFT_MAX_GEO_TARGETS = 30;
+
 /**
  * Maximum keyword rows one bulk pause/remove request may carry.
  *
@@ -626,10 +630,6 @@ export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
  * table exposes at once, so it cannot be reached by the product's own flows.
  */
 export const MAX_BULK_KEYWORD_ACTIONS = 50;
-
-export const MICROSOFT_MAX_KEYWORDS = 60;
-export const MICROSOFT_MAX_KEYWORD_TEXT_LENGTH = 100;
-export const MICROSOFT_MAX_GEO_TARGETS = 30;
 
 /**
  * The match type a newly added keyword starts at.

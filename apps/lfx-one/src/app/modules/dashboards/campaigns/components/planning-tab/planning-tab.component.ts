@@ -1262,12 +1262,17 @@ export class PlanningTabComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result: HubSpotUtmLookupResult | null) => {
-          // Two DIFFERENT questions, so two different guards. Releasing the shared in-flight
-          // flag asks "is this still the latest lookup?"; rendering the answer asks the stricter
-          // "does the panel still show this event?".
+          // Releasing the shared in-flight flag asks "is this still the latest lookup?".
+          // RENDERING asks two things, and needs both.
           if (this.lookupIsCurrent(generation)) {
             this.hsSearching.set(false);
           }
+          // BOTH guards, and generation first. panelStillShows compares VALUES, so an
+          // A -> B -> A foundation switch for the same event matches again and lets a stale
+          // answer overwrite a newer one — and a stale not-found leaves hsNotFound true with no
+          // token, which re-offers Create for a search that has already been superseded. The
+          // generation counter is the only thing that tells two identical-looking lookups apart.
+          if (!this.lookupIsCurrent(generation)) return;
           if (!this.panelStillShows(capturedEvent, capturedFoundation)) return;
           // THREE states, not two. A campaign that exists but has NO utm token configured is a
           // real match — treating it as not-found would offer to CREATE a campaign that already

@@ -6,7 +6,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { FormGroup } from '@angular/forms';
 import { provideRouter } from '@angular/router';
-import type { CampaignBriefLoadResult, CampaignBriefOutput, CampaignProgramTypeOption } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefLoadResult, CampaignBriefOutput, CampaignProgramTypeOption, HubSpotUtmLookupResult } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -1348,6 +1348,39 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     fixture.detectChanges();
 
     expect(instance()['hsSearching'](), 'a round-tripped stale lookup declared the newer one finished').toBe(true);
+  });
+
+  /**
+   * The same round trip must not let a stale lookup RENDER either.
+   *
+   * Clearing the flag and applying the answer are separate hazards. panelStillShows compares
+   * VALUES, so after A -> B -> A for the same event the stale response matches again and its
+   * result would overwrite the newer one — and a stale not-found leaves hsNotFound true with no
+   * token, which re-offers Create for a search already superseded. Only the generation counter
+   * can tell two identical-looking lookups apart.
+   */
+  it('does not let a round-tripped stale lookup render its answer', () => {
+    const first = new Subject<HubSpotUtmLookupResult>();
+    lookup.mockReturnValue(first);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' }, false);
+    fixture.detectChanges();
+    ctx.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture.detectChanges();
+
+    // A newer lookup for the SAME event under the SAME foundation supersedes the first.
+    const second = new Subject<HubSpotUtmLookupResult>();
+    lookup.mockReturnValue(second);
+    (fixture.componentInstance as unknown as { lookupHubSpot(n: string): void }).lookupHubSpot('KubeCon NA 2026');
+
+    // The superseded lookup answers LAST, with a different campaign.
+    first.next({ found: true, hs_utm: 'stale-token', campaign_name: 'Stale Campaign', all_matches: [], capped: false, inconclusive: false });
+    first.complete();
+    fixture.detectChanges();
+
+    expect(instance()['hsUtm'](), 'a superseded lookup wrote its token over a newer search').not.toBe('stale-token');
   });
 
   /**
