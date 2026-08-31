@@ -2425,6 +2425,12 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       // Two persists, not one joined call: the second belongs to the new brief.
       expect(persist).toHaveBeenCalledTimes(2);
+
+      // And the ABANDONED persist must not write its id into the shared cache. The call count
+      // alone passed while `brief-77` clobbered `emailBriefId`: `persistEmailBrief` short-circuits
+      // on a non-empty id, so the next action would then stage against the previous brief --
+      // exactly the cross-brief leak the reset exists to prevent.
+      expect(internals().emailBriefId(), 'the abandoned persist wrote its id back after the reset').not.toBe('brief-77');
     });
 
     /**
