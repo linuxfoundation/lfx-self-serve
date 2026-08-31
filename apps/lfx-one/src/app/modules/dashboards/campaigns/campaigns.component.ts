@@ -2480,6 +2480,11 @@ export class CampaignsComponent {
     // same idea for the one path that owns a subscription.
     this.emailCopyGeneration++;
     this.emailAudienceGeneration++;
+    // Drop the shared persist too. It is keyed to the brief that started it, so a caller joining
+    // it AFTER this reset would receive the PREVIOUS brief's id and address every later write to
+    // the wrong row -- the dedup turning into a correctness bug precisely because it succeeded.
+    // The in-flight request is left to finish; only the promise other callers can join is cut.
+    this.emailBriefPersistInFlight = null;
 
     // Cancel the poll, do not merely relabel it. Setting the signal back to `idle` leaves the
     // subscription running, so a job settling after a new brief or a foundation switch still

@@ -2334,6 +2334,38 @@ describe('CampaignsComponent — email delivery channel', () => {
     });
 
     /**
+     * The dedup must not outlive the brief that started it.
+     *
+     * A caller joining the shared promise AFTER a reset would receive the PREVIOUS brief's id and
+     * address every later write to the wrong row — the dedup becoming a correctness bug precisely
+     * because it worked. The reset drops the joinable promise; the in-flight request itself is
+     * left to finish.
+     */
+    it('does not hand a joined caller the previous brief id after a reset', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const slow = new Subject<CampaignBriefPersistResult>();
+      persist.mockReturnValue(slow.asObservable());
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+
+      const first = internals().onGenerateEmailCopy();
+      (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
+
+      // A second action after the reset must start its OWN persist rather than join the first.
+      persist.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-99', etag: null }));
+      const second = internals().onGenerateEmailCopy();
+
+      slow.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null } as unknown as CampaignBriefPersistResult);
+      slow.complete();
+      await Promise.all([first, second]);
+
+      // Two persists, not one joined call: the second belongs to the new brief.
+      expect(persist).toHaveBeenCalledTimes(2);
+    });
+
+    /**
      * Two email actions started together each found an empty cache and each issued a first-save
      * persist for the same (project, event) — a duplicate brief, or a lost ownership race.
      */
