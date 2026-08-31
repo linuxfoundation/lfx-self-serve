@@ -28,11 +28,11 @@ Agreements are matched from your signed-in session and your linked [Email and Gi
 
 An **ICLA** (Individual CLA) is _your_ paperwork, signed as yourself. An **ECLA** (Employee CLA) is coverage that came from your employer's **CCLA** (Corporate CLA) rather than from an agreement of your own. Both appear on the CLAs tab, and the **Status** column says whether each one still applies.
 
-| Type                      | What it means                                                                                                  | On CLAs                                                                  | Document                                                                                       |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| **ICLA** (Individual CLA) | You signed as yourself for a project                                                                           | Listed                                                                   | **Download PDF** when EasyCLA has the signed file; otherwise the row offers no download        |
-| **ECLA** (Employee CLA)   | Your employer holds a Corporate CLA (CCLA) and you were approved under it via that company's **Approved List** | Listed (shows the employer name), and stays listed if the coverage ends  | No individual PDF — where the row has a **⋮** menu, it shows _Covered by Corporate CLA (CCLA)_ |
-| **CCLA** (Corporate CLA)  | Signed by a company CLA manager; covers employees via the company's **Approved List**                          | Not listed as its own row — it is the parent agreement an ECLA hangs off | Managed in the corporate EasyCLA flow, not on this tab                                         |
+| Type                      | What it means                                                                                                  | On CLAs                                                                  | Document                                                                                                                    |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| **ICLA** (Individual CLA) | You signed as yourself for a project                                                                           | Listed                                                                   | **Download PDF** when EasyCLA has the signed file and the ICLA is not **Invalidated**; otherwise the row offers no download |
+| **ECLA** (Employee CLA)   | Your employer holds a Corporate CLA (CCLA) and you were approved under it via that company's **Approved List** | Listed (shows the employer name), and stays listed if the coverage ends  | No individual PDF — where the row has a **⋮** menu, it shows _Covered by Corporate CLA (CCLA)_                              |
+| **CCLA** (Corporate CLA)  | Signed by a company CLA manager; covers employees via the company's **Approved List**                          | Not listed as its own row — it is the parent agreement an ECLA hangs off | Managed in the corporate EasyCLA flow, not on this tab                                                                      |
 
 ## What does the CLAs list show?
 
@@ -91,7 +91,7 @@ Each row ends with a **⋮** menu listing only the actions available for that ag
 
 | Action                     | When it appears                                                                                                                            |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Download PDF**           | On an ICLA when EasyCLA has the signed file                                                                                                |
+| **Download PDF**           | On an ICLA that is not **Invalidated**, when EasyCLA has the signed file                                                                   |
 | **Download PDF** (greyed)  | On an ECLA that is not **Revoked**, annotated _Covered by Corporate CLA (CCLA)_ — employee coverage has no individual document to download |
 | **Request approval**       | On an ECLA that is no longer on your employer's **Approved List**                                                                          |
 | **Request Removal**        | On any ECLA that is not **Revoked**                                                                                                        |
