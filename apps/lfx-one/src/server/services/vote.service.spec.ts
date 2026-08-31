@@ -7,8 +7,8 @@
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mirrors committee.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
-// vitest config for runtime imports, so value imports need stubs (type-only imports are erased).
+// Only `@lfx-one/shared/utils` is stubbed: its barrel pulls `@angular/common/http` (HttpParams via
+// meeting.utils), which can't JIT-compile in this plain-Node env. Enums/constants resolve for real via the alias.
 const { proxyRequest, proxyRequestWithResponse, pollEndpoint, fetchEntityProject } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
@@ -18,13 +18,6 @@ const { proxyRequest, proxyRequestWithResponse, pollEndpoint, fetchEntityProject
   fetchEntityProject: vi.fn(() => Promise.resolve(null)),
 }));
 
-vi.mock('@lfx-one/shared/enums', () => ({
-  VoteResponseStatus: {},
-  IndexedVoteResponseStatus: {},
-}));
-vi.mock('@lfx-one/shared/constants', () => ({
-  VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT: 10,
-}));
 vi.mock('@lfx-one/shared/utils', () => ({
   sortCommentResponsesByRecency: vi.fn((responses: unknown[]) => responses),
 }));
