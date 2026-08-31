@@ -377,9 +377,9 @@ export class OrgRoleGrantsService {
    * line ~341) so `safeUids.length` at the ORG_ROLE_GRANTS_HARD_CAP ceiling (500) would produce a
    * ~19 KB GET — well past the repo's documented `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE = 100` guard
    * (`packages/shared/src/constants/api.constants.ts`). Chunked and fanned out with
-   * `Promise.allSettled`, following the same pattern used in `mailing-list.service.ts` and
-   * `committee.service.ts`. Failed chunks are logged and skipped — a partial result degrades one
-   * caller's list rather than fail-closing the entire role-grants read.
+   * `Promise.allSettled`, following the same pattern used in `committee.service.ts` and
+   * `access-check.service.ts`. Failed chunks are logged and skipped — a partial result degrades
+   * one caller's list rather than fail-closing the entire role-grants read.
    */
   private async fetchOrgDetailsByUids(req: Request, uids: string[]): Promise<Map<string, B2bOrgIndexedDoc>> {
     const safeUids = this.filterSafeUids(req, uids, 'fetch_org_details_by_uids');

@@ -109,7 +109,7 @@
             class="flex items-center gap-3 p-2 w-full text-left rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             [class.bg-blue-50]="displayItem.isSelected"
             [class.hover:bg-gray-100]="!displayItem.isSelected"
-            (click)="selectItem(displayItem.item, popover)"
+            (click)="selectItem(displayItem.item)"
             [attr.data-testid]="'org-item-' + displayItem.item.uid"
             [attr.data-selected]="displayItem.isSelected"
             [attr.data-account-id]="displayItem.item.accountId">

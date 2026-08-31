@@ -23,9 +23,10 @@
  *       organization while the failure is active. Fail-closed.
  * - M6: Grant B added does not modify A; grant B revoked leaves A unchanged.
  *       Verified via before/after stub-swap deep-equal on A's role label + name.
- * - M7: Email domain does not confer or block access — verified by construction
- *       (the seeded grants use domains unrelated to the caller's identity) plus
- *       a direct-fetch refusal on an ungranted org.
+ * - M7: Email domain does not BLOCK access — a grant on an org whose domain is
+ *       unrelated to the caller's identity still resolves and renders. The
+ *       converse (a matching domain must not CONFER access) is a server-side
+ *       outcome, asserted with mocked grants in the middleware unit spec.
  * - M8: When the actively selected organization is revoked while others remain,
  *       the switcher auto-selects the first remaining valid organization on the
  *       next load and does NOT surface a "revoked" toast.
@@ -34,7 +35,7 @@
  * deterministic regardless of the bootstrap identity.
  */
 
-import { expect, Page, Request, test } from '@playwright/test';
+import { APIRequestContext, expect, Page, Request, test } from '@playwright/test';
 
 // The org-selector trigger only renders (data-visible=true) while the active lens is 'org'; on the
 // default 'me' lens the sidebar keeps it in the DOM but CSS-hidden. Navigating to `/org` sets the
@@ -52,6 +53,25 @@ function skipWhenAuthMissing(page: Page): void {
     }
   } catch {
     // Malformed URL — keep the test running.
+  }
+}
+
+// Inverse of `skipWhenNotStaff` in `org-selector.spec.ts`: skip a scenario whose expected answer is
+// a refusal when the bootstrap identity is lf-staff, because staff hold `auditor` on every b2b_org
+// and are deliberately allowed through the per-org check — for them a 200 is correct, not a bug.
+//
+// The probe deliberately uses the top-level `request` fixture rather than `page.request`: it is a
+// separate APIRequestContext that carries the project's storageState cookies (so it is
+// authenticated) but none of this spec's `page.route` stubs, so it reads the identity the SERVER
+// will actually gate on instead of the `isStaff: false` this file stubs into the browser.
+async function skipWhenStaff(request: APIRequestContext): Promise<void> {
+  const response = await request.get('/api/orgs/me/role-grants');
+  if (response.status() !== 200) {
+    test.skip(true, `Cannot resolve staff status — /api/orgs/me/role-grants returned ${response.status()}`);
+  }
+  const body = (await response.json()) as { isStaff?: boolean };
+  if (body.isStaff) {
+    test.skip(true, 'Skipping ungranted-refusal scenario — TEST_USERNAME is lf-staff, which is legitimately allowed on every org');
   }
 }
 
@@ -194,22 +214,20 @@ test.describe('Multi-Organization Switching — non-staff, two unrelated direct 
     expect(parsedAfterReload).toEqual({ uid: ORG_B_UID });
   });
 
-  test('M3: fetching an ungranted org is refused (domain-independent by construction)', async ({ page }) => {
-    // Ordinary users never see an org they were not granted — even if it exists in the catalogue.
-    // Direct fetch MUST be refused by the shared read-gate middleware (`requireOrgLensAccess`),
-    // which throws a `MicroserviceError(403, 'FORBIDDEN')` for a caller with no grant on the
-    // requested uid. Hitting a REGISTERED lens endpoint here is deliberate: an unmatched route
-    // (e.g. `/lens/summary`) returns 404 whether or not the middleware exists, so a stale test
-    // would not catch a regression that removed the gate.
+  test('M3: an org the caller holds no grant on is refused when its Org Lens URL is fetched directly', async ({ page, request }) => {
+    // The gate resolves the caller's grants and staff entitlement SERVER-side from the real
+    // upstream — it never sees the `/api/orgs/me/role-grants` body this spec stubs, since
+    // `page.route` only intercepts the browser's own fetches. So the refusal asserted below is a
+    // property of the REAL bootstrap identity, and it only holds for a non-staff one; staff are
+    // legitimately allowed on every org. Skipping (rather than widening the assertion to accept
+    // 200) keeps the 403 exact, so a gate that started falling open still fails this test.
     //
-    // Scope of the domain claim here: this test only proves refusal on an ungranted UID; it does
-    // NOT construct a shared-domain ungranted org. The domain independence claim is derived by
-    // construction — the read gate inspects the FGA writer/auditor relation only, and no domain
-    // field is consulted anywhere along the path. See `M7` for the companion assertion where the
-    // seeded grants intentionally use domains unrelated to the caller's identity, exercising the
-    // "different-domain grant still resolves" side of the same invariant.
+    // A registered lens endpoint is used deliberately: a 404 would let a removed gate masquerade
+    // as a refusal.
+    await skipWhenStaff(request);
+
     const response = await page.request.get(`/api/orgs/${ORG_UNGRANTED_UID}/lens/events/summary`, { failOnStatusCode: false });
-    expect(response.status(), 'gate must reply 403 for an ungranted caller on a real lens endpoint').toBe(403);
+    expect(response.status(), 'ungranted org must be refused, not served').toBe(403);
   });
 
   test('M4: non-staff user sees NO staff catalogue affordance and exactly the seeded grants', async ({ page }) => {
@@ -301,10 +319,17 @@ test.describe('Multi-Organization Switching — non-staff, two unrelated direct 
     expect(nameAfterRevoke).toBe(nameBefore);
   });
 
-  test('M7: domain match does not confer access; domain mismatch does not block a granted org', async ({ page }) => {
-    // The active stub sets ORG_A and ORG_B with primary domains that intentionally do NOT match the
-    // Auth0 test identity's email domain. If the caller can select B and the switcher renders it,
-    // "differing domain must not block grant" is verified by construction.
+  test('M7: a grant on a domain unrelated to the caller resolves and renders', async ({ page }) => {
+    // ORG_A and ORG_B are seeded with primary domains that intentionally do NOT match the Auth0
+    // test identity's email domain. If the caller can see B with its role label, then email
+    // domain plays no part in resolving a grant — the switcher rendered a row for an org the
+    // caller has no domain relationship to.
+    //
+    // The converse ("a matching domain must not CONFER access") is deliberately not asserted
+    // here. It is a server-side authorization outcome, and this spec cannot influence the
+    // server's view of the caller's grants — see the note in M3. It is covered with mocked
+    // grants in `src/server/middleware/require-org-lens-access.middleware.spec.ts`, where the
+    // gate is shown to consult only the resolved relation and never a domain field.
     const trigger = page.getByTestId('org-selector');
     await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
     await trigger.click();
@@ -312,13 +337,6 @@ test.describe('Multi-Organization Switching — non-staff, two unrelated direct 
     const rowB = page.getByTestId(`org-item-${ORG_B_UID}`);
     await expect(rowB).toBeVisible({ timeout: 5_000 });
     await expect(page.getByTestId(`org-item-${ORG_B_UID}-role-badge`)).toHaveAttribute('data-role-label', 'Org Admin Editor');
-
-    // An ungranted org with any domain — matching or not — MUST NOT confer access via the API.
-    // The direct fetch below carries no grant tuple for ORG_UNGRANTED_UID and must be refused by
-    // `requireOrgLensAccess` with 403. Same rationale as M3: a REGISTERED lens endpoint is used
-    // so a regression that dropped the gate can't hide behind a 404 from an unmatched route.
-    const response = await page.request.get(`/api/orgs/${ORG_UNGRANTED_UID}/lens/events/summary`, { failOnStatusCode: false });
-    expect(response.status(), 'gate must reply 403 for an ungranted caller on a real lens endpoint').toBe(403);
   });
 
   test('M8: selected-org revoked while others remain auto-selects the first remaining org', async ({ page, context }) => {
