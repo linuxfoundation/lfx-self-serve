@@ -20,6 +20,7 @@ import type {
 import { orgLeaderboardDetailCategoryRows } from '@lfx-one/shared/utils';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { DrawerModule } from 'primeng/drawer';
+import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, map, Observable, of, startWith, switchMap } from 'rxjs';
 
@@ -34,7 +35,7 @@ import { catchError, combineLatest, map, Observable, of, startWith, switchMap } 
  */
 @Component({
   selector: 'lfx-org-leaderboard-detail-drawer',
-  imports: [DecimalPipe, DrawerModule, TooltipModule],
+  imports: [DecimalPipe, DrawerModule, SkeletonModule, TooltipModule],
   templateUrl: './org-leaderboard-detail-drawer.component.html',
 })
 export class OrgLeaderboardDetailDrawerComponent {
