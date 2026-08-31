@@ -1716,8 +1716,15 @@ export interface CampaignServiceHubSpotCampaigns {
   /**
    * Mirrors campaign-service's `capped` on `GET /projects/{id}/connection-hubspot/campaigns`.
    *
-   * True when HubSpot matched more campaigns than the (capped, unpaged) search returned, so
-   * absence from `campaigns` is not proof the campaign does not exist.
+   * True when the search could NOT be shown to be COMPLETE — which is broader than "truncated".
+   * It covers HubSpot reporting more matches than it returned, and equally the cases where
+   * completeness is simply unknown: an absent `total`, or one that contradicts the rows (negative,
+   * or fewer than were returned). All of them fail CLOSED, because "we cannot tell" must not be
+   * reported as the proven absence a caller acts on.
+   *
+   * While it is true, absence from `campaigns` is NOT proof the campaign does not exist, and the
+   * UI must not offer an unqualified create — that would duplicate a campaign in a namespace
+   * shared by everyone on the portal.
    */
   capped: boolean;
 }
