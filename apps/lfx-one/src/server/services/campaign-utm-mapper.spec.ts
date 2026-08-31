@@ -157,4 +157,41 @@ describe('toUtmLookupResult capped', () => {
     expect(res.hs_utm).not.toBe('wrong-token');
     expect(res.found).toBe(false);
   });
+
+  it('refuses to auto-apply when two candidates tie', () => {
+    // "KubeCon Europe 2026" and "KubeCon China 2026" both score 1 against "KubeCon NA 2026" —
+    // one shared word each. scored[0] would be decided by HubSpot's OBJECT-CREATION order, which
+    // carries no relevance information, so applying it silently puts another campaign's token
+    // into this event's links. The links work, so the misattribution is invisible.
+    const res = toUtmLookupResult(
+      payload({ id: 'eu', name: 'KubeCon Europe 2026', utm: 'eu-token' }, { id: 'cn', name: 'KubeCon China 2026', utm: 'cn-token' }),
+      'KubeCon NA 2026'
+    );
+
+    expect(res.found).toBe(false);
+    expect(res.hs_utm).toBeNull();
+    // The candidates survive: the operator picks, rather than the sort picking for them.
+    expect(res.all_matches.map((m) => m.hs_utm).sort()).toEqual(['cn-token', 'eu-token']);
+    // Real candidates exist, so a create offer must not read as a clean "nothing matched".
+    expect(res.inconclusive).toBe(true);
+  });
+
+  it('refuses to auto-apply a lone weak match', () => {
+    // One shared word and nothing else is still a guess, even unopposed.
+    const res = toUtmLookupResult(payload({ id: 'eu', name: 'KubeCon Europe 2026', utm: 'eu-token' }), 'KubeCon NA 2026');
+
+    expect(res.found).toBe(false);
+    expect(res.all_matches).toHaveLength(1);
+  });
+
+  it('still auto-applies an unambiguous winner', () => {
+    // The common case must stay one click: an exact name beats a same-token rival outright.
+    const res = toUtmLookupResult(
+      payload({ id: 'eu', name: 'KubeCon Europe 2026', utm: 'eu-token' }, { id: 'na', name: 'KubeCon NA 2026', utm: 'na-token' }),
+      'KubeCon NA 2026'
+    );
+
+    expect(res.found).toBe(true);
+    expect(res.hs_utm).toBe('na-token');
+  });
 });

@@ -152,9 +152,12 @@ export async function seedEdPersona(page: Page): Promise<void> {
     {
       name: PERSONA_COOKIE_KEY,
       value: encodeURIComponent(JSON.stringify(state)),
-      // Must match the host in baseURL (127.0.0.1) — a cookie scoped to 'localhost' is simply
-      // not sent to 127.0.0.1, and the persona guard would redirect away from the tab.
-      domain: new URL(process.env['E2E_BASE_URL'] ?? `http://${process.env['E2E_HOST'] ?? '127.0.0.1'}:${process.env['E2E_PORT'] ?? '4200'}`).hostname,
+      // Must match the host baseURL actually uses, and the DEFAULT has to match too: a cookie
+      // scoped to one host is simply not sent to the other, and the persona guard then redirects
+      // away from the tab. This defaulted to 127.0.0.1 while playwright.config.ts defaults
+      // E2E_HOST to localhost, so a run with no overrides set the cookie on a host the browser
+      // never visited. Same default, same source of truth.
+      domain: new URL(process.env['E2E_BASE_URL'] ?? `http://${process.env['E2E_HOST'] ?? 'localhost'}:${process.env['E2E_PORT'] ?? '4200'}`).hostname,
       path: '/',
       sameSite: 'Lax',
     },

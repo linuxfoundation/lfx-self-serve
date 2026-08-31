@@ -27,6 +27,16 @@ import type {
  * backend cutover would make a behaviour change look like a backend bug, and this ordering is
  * what users have been choosing from.
  */
+/**
+ * The lowest score that may be applied without a human choosing it.
+ *
+ * score() adds three independent signals: exact name, containment either way, and a shared word
+ * longer than three characters. A score of 1 is a SINGLE weak signal — "KubeCon Europe 2026"
+ * earns it against "KubeCon NA 2026" purely by sharing one word — so requiring 2 means at least
+ * two signals agree before a token is applied to an event without anyone looking at it.
+ */
+const MIN_CONFIDENT_SCORE = 2;
+
 function score(name: string, query: string): number {
   const nameLower = name.toLowerCase();
   const queryLower = query.toLowerCase();
@@ -78,8 +88,10 @@ export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, quer
   const scored = payload.campaigns
     .map((c) => ({ campaign: c, score: score(c.name, query) }))
     .filter((s) => s.score > 0)
-    // Stable descending sort: upstream's relevance order is preserved within a score band, so
-    // two equally-scored candidates stay in the order HubSpot ranked them.
+    // Stable descending sort. Within a score band this preserves the order upstream returned,
+    // which is HubSpot's OBJECT-CREATION order — not a ranking. campaign-service documents that
+    // the search is token-based and not relevance-sorted, so position inside a band carries no
+    // information about which candidate is the better match.
     .sort((a, b) => b.score - a.score);
 
   if (scored.length === 0) {
@@ -99,14 +111,41 @@ export function toUtmLookupResult(payload: CampaignServiceHubSpotCampaigns, quer
     };
   }
 
+  // Auto-apply only an UNAMBIGUOUS winner. Applying scored[0] unconditionally silently put the
+  // wrong campaign's token into generated links: for "KubeCon NA 2026", both "KubeCon Europe
+  // 2026" and "KubeCon China 2026" score 1 and TIE, and the tie is broken by HubSpot's creation
+  // order, which says nothing about relevance. A misattributed token is invisible — the links
+  // work, and the traffic lands on another campaign's report.
+  //
+  // Unambiguous means the top score is strictly higher than the next one AND strong enough to be
+  // more than a shared token: a lone weak match is still a guess, so it is offered rather than
+  // applied. The candidates are returned either way, so the operator picks instead of the sort.
+  const runnerUp = scored[1]?.score ?? 0;
+  const unambiguous = scored[0].score >= MIN_CONFIDENT_SCORE && scored[0].score > runnerUp;
+
+  const candidates = scored
+    .map((s) => ({ name: s.campaign.name, hs_utm: utmTokenOf(s.campaign) }))
+    .filter((m): m is { name: string; hs_utm: string } => m.hs_utm !== null);
+
+  if (!unambiguous) {
+    return {
+      found: false,
+      hs_utm: null,
+      campaign_name: '',
+      all_matches: candidates,
+      capped: payload.capped,
+      // Inconclusive: real candidates exist and one of them may be the campaign a create would
+      // duplicate, so the create offer must not be presented as a clean "nothing matched".
+      inconclusive: true,
+    };
+  }
+
   const best = scored[0].campaign;
   return {
     found: true,
     hs_utm: utmTokenOf(best),
     campaign_name: best.name,
-    all_matches: scored
-      .map((s) => ({ name: s.campaign.name, hs_utm: utmTokenOf(s.campaign) }))
-      .filter((m): m is { name: string; hs_utm: string } => m.hs_utm !== null),
+    all_matches: candidates,
     // Carried through because it changes what a not-found answer MEANS downstream.
     capped: payload.capped,
     inconclusive: payload.capped,
