@@ -3716,6 +3716,56 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
+     * A RE-PICK of the suggested row is the operator's choice, not the system's.
+     *
+     * The banner and the screen-reader announcement both asked `suggestionId === selectedId`. That
+     * is true again after an operator overrides the suggestion and then deliberately picks that
+     * same template back, so both claimed the system chose what the operator chose — and for a
+     * screen-reader user the announcement is the only channel, with no highlight to contradict it.
+     *
+     * Driven through `onSelectEmailTemplate`, because that is the setter that knows the
+     * provenance; asserting on the flag directly would pass under an id-equality implementation.
+     */
+    it('stops calling the selection system-chosen once the operator picks it themselves', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'kc', name: 'KubeCon registration reminder' },
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi — registration push' },
+        ] as HubSpotMarketingEmail[],
+      });
+      fixture.detectChanges();
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]'),
+        'precondition: the suggestion banner is up'
+      ).not.toBeNull();
+
+      const c = fixture.componentInstance as unknown as { onSelectEmailTemplate(id: string): void };
+      // Override to another row, then deliberately pick the suggested one BACK.
+      c.onSelectEmailTemplate('kc');
+      c.onSelectEmailTemplate('mcp');
+      fixture.detectChanges();
+
+      // The ids coincide again -- an equality check would still say "system chose this".
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]'),
+        "the banner called the operator's own re-pick a pre-selection"
+      ).toBeNull();
+      expect(
+        (fixture.componentInstance as unknown as { emailTemplateSuggestionAnnouncement(): string }).emailTemplateSuggestionAnnouncement(),
+        "the screen-reader announcement called the operator's own re-pick a pre-selection"
+      ).toBe('');
+    });
+
+    /**
      * The case that matters most. A portal whose templates do not name their event must produce NO
      * pre-selection — a confident wrong pick clones another event's branding into a real HubSpot
      * draft, and because it reads as decided nobody re-examines it.

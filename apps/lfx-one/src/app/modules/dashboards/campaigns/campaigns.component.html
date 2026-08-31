@@ -372,13 +372,16 @@
                   -->
                     <p class="text-xs text-amber-700" data-testid="campaigns-email-templates-render-capped">{{ emailTemplatesRenderCapMessage() }}</p>
                   }
-                  @if (emailTemplateSuggestionId() !== '' && emailTemplateSuggestionId() === selectedEmailTemplateId()) {
+                  @if (emailTemplateSelectionIsSuggested() && emailTemplateSuggestionId() !== '') {
                     <!--
-                    Rendered only while the suggestion IS the current selection. Keying it on the
-                    suggestion merely existing meant that after an operator picked a different row
-                    the banner still read "pre-selected ... for this event" beside a template the
-                    derivation never chose -- a false statement about what is selected, which is
-                    the exact class of claim this feature exists to avoid making.
+                    Gated on PROVENANCE, not on id equality. Keying it on the suggestion merely
+                    existing meant that after an operator picked a different row the banner still
+                    read "pre-selected ... for this event" beside a template the derivation never
+                    chose. Keying it on `suggestionId === selectedId` fixed that case and kept a
+                    subtler one: after suggestion A, an operator can pick B and then deliberately
+                    pick A again -- the ids coincide, so the banner claimed the system chose what
+                    the operator chose. Only the setter knows how the value was set, which is what
+                    `emailTemplateSelectionIsSuggested` records.
                     The matched terms are shown because a suggestion whose reasoning is invisible
                     cannot be judged: "matched on kubecon" can be checked at a glance.
                   -->

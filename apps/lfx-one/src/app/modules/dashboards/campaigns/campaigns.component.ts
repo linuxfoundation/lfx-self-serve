@@ -735,7 +735,7 @@ export class CampaignsComponent {
    * choice as system-owned and silently release it on the next search. Provenance is a fact about
    * how the value was set, and only the setter knows it.
    */
-  private emailTemplateSelectionIsSuggested = false;
+  protected readonly emailTemplateSelectionIsSuggested = signal<boolean>(false);
 
   /** Which event terms the suggested template matched on, so the operator can judge it themselves. */
   protected readonly emailTemplateSuggestionTerms = signal<readonly string[]>([]);
@@ -770,8 +770,12 @@ export class CampaignsComponent {
   );
 
   protected readonly emailTemplateSuggestionAnnouncement = computed<string>(() => {
+    // PROVENANCE, matching the banner: `id === selectedId` also holds when an operator overrode
+    // the suggestion and then deliberately re-picked that same row, and announcing "Template
+    // selected for this event" over their own choice is the same false claim in the one place a
+    // screen-reader user cannot see the highlight that would contradict it.
     const id = this.emailTemplateSuggestionId();
-    if (id === '' || id !== this.selectedEmailTemplateId()) {
+    if (id === '' || !this.emailTemplateSelectionIsSuggested()) {
       return '';
     }
     // A template can carry a subject and no name -- it is matched on either -- and announcing an
@@ -1698,7 +1702,7 @@ export class CampaignsComponent {
     // Only when the current selection IS the suggestion: a hand-picked template is the operator's
     // and a type change is not permission to replace it.
     const templates = this.emailTemplates();
-    if (templates !== null && this.emailTemplateSelectionIsSuggested) {
+    if (templates !== null && this.emailTemplateSelectionIsSuggested()) {
       this.selectedEmailTemplateId.set('');
       this.applyEventTemplateSuggestion(templates);
     }
@@ -2062,7 +2066,7 @@ export class CampaignsComponent {
 
   protected onSelectEmailTemplate(id: string): void {
     // A hand-pick is the operator's, even when it happens to be the same row the suggestion chose.
-    this.emailTemplateSelectionIsSuggested = false;
+    this.emailTemplateSelectionIsSuggested.set(false);
     this.selectedEmailTemplateId.set(id);
   }
 
@@ -2519,9 +2523,9 @@ export class CampaignsComponent {
    * in place -- invisible, since there is no list to show it in, and still stageable.
    */
   private releaseSuggestedSelection(): void {
-    if (this.emailTemplateSelectionIsSuggested) {
+    if (this.emailTemplateSelectionIsSuggested()) {
       this.selectedEmailTemplateId.set('');
-      this.emailTemplateSelectionIsSuggested = false;
+      this.emailTemplateSelectionIsSuggested.set(false);
     }
     this.emailTemplateSuggestionId.set('');
     this.emailTemplateSuggestionTerms.set([]);
@@ -2624,7 +2628,7 @@ export class CampaignsComponent {
     // an unfalsifiable guard reads as protection that is not there.
     if (this.selectedEmailTemplateId() === '') {
       this.selectedEmailTemplateId.set(best.id);
-      this.emailTemplateSelectionIsSuggested = true;
+      this.emailTemplateSelectionIsSuggested.set(true);
     }
   }
 
@@ -3323,7 +3327,7 @@ export class CampaignsComponent {
     // the type-change path both branch on this flag to decide whether a selection is the
     // operator's, and leaving it describing a discarded brief is one new writer away from
     // discarding a hand-picked template.
-    this.emailTemplateSelectionIsSuggested = false;
+    this.emailTemplateSelectionIsSuggested.set(false);
     // The suggestion is derived from THIS brief's event, so it and the override that rejected it
     // both belong to the brief. Carrying the override into a new event would suppress a suggestion
     // the operator has never seen.
