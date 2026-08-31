@@ -26,7 +26,7 @@ Agreements are matched from your signed-in session and your linked [Email and Gi
 
 ## What is the difference between ICLA and ECLA?
 
-An **ICLA** (Individual CLA) is _your_ paperwork, signed as yourself; an **ECLA** (Employee CLA) means you are covered under your employer's **CCLA** (Corporate CLA). Both appear on the CLAs tab.
+An **ICLA** (Individual CLA) is _your_ paperwork, signed as yourself. An **ECLA** (Employee CLA) is coverage that came from your employer's **CCLA** (Corporate CLA) rather than from an agreement of your own. Both appear on the CLAs tab, and the **Status** column says whether each one still applies.
 
 | Type                      | What it means                                                                                                  | On CLAs                                                                  | Document                                                                                       |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
