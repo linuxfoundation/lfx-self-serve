@@ -918,6 +918,35 @@ describe('WeeklyBriefService', () => {
       expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
     });
 
+    it('counts a scheduled survey created before the brief but SENT after it, when its collapsed survey_closed occurred_at is out of range — opened_at is the send moment, not creation (GH-1967 Copilot review)', async () => {
+      // Scheduled survey: created before the brief was generated, scheduled-sent after it, then
+      // explicitly closed with a last_modified after window_end — the collapsed survey_closed
+      // event's occurred_at is out of range, so only payload.opened_at carries the in-window open
+      // moment. CommitteeActivityService keys opened_at on survey_send_date (not created_at)
+      // precisely so this survey isn't missed; with created_at it would fall before updated_at and
+      // the survey would be invisible here.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [
+          {
+            type: 'survey_closed',
+            occurred_at: '2026-01-18T09:00:00.000Z', // after window_end (explicit close edit)
+            payload: {
+              survey_uid: 's1',
+              title: 'Q1 Survey',
+              status: 'Closed',
+              opened_at: '2026-01-17T11:00:00.000Z', // survey_send_date — in-window, after updated_at
+              cutoff_date: '2026-01-17T20:00:00.000Z', // in-window and (by real now) passed
+            },
+          },
+        ],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: true, event_count: 1, event_count_is_floor: false });
+    });
+
     it('confidently reports not stale — and skips the fetch entirely — when updated_at exactly equals window_end (GH-1967 review)', async () => {
       // The qualifying interval (updated_at, window_end] is provably empty here (nothing can be
       // strictly greater than and at-most-equal-to the same instant) — the >= short-circuit (not

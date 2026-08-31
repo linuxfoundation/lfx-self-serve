@@ -96,7 +96,10 @@ export interface VoteClosedActivityEvent extends BaseActivityEvent {
 /**
  * Survey lifecycle payload — shared by `survey_published` and `survey_closed`, same rationale as
  * votes. `opened_at` (GH-1967 review) is the survey's publish moment, same reasoning as
- * `VoteActivityEventPayload.opened_at`. `cutoff_date` (GH-1967 Copilot review) is
+ * `VoteActivityEventPayload.opened_at` — but keyed on `survey_send_date` (with `created_at` only
+ * as a fallback for rows with no send date), NOT bare record creation: ITX's survey API is a
+ * schedule API, so a scheduled survey is created before it actually goes out (GH-1967 Copilot
+ * review). `cutoff_date` (GH-1967 Copilot review) is
  * `survey_cutoff_date` — the field upstream's weekly-brief `SurveySource` windows on AND requires
  * to have already passed (`survey_source.go` skips unparseable cutoffs and drops
  * `cutoff.After(time.Now())` rows, "excluding surveys still collecting responses") — same

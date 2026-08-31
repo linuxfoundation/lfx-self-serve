@@ -1463,7 +1463,7 @@ describe('CommitteeActivityService', () => {
       expect(byType['survey_published']).toMatchObject({ payload: { survey_uid: 'survey-open' } });
     });
 
-    it("carries the survey's created_at as payload.opened_at and its cutoff_date even once closed, independent of the collapsed occurred_at (GH-1967 review)", async () => {
+    it('falls back to created_at for payload.opened_at when a survey has no send date, and still carries its cutoff_date (GH-1967 review)', async () => {
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (path === '/query/resources' && query?.['type'] === 'survey') {
           return Promise.resolve({
@@ -1487,12 +1487,44 @@ describe('CommitteeActivityService', () => {
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       // Explicit CLOSED status (not a cutoff-driven closure), so occurred_at stays last_modified_at
-      // — and cutoff_date still rides along for the weekly-brief staleness gate, upstream's
-      // SurveySource window field (GH-1967 Copilot review).
+      // — and with no survey_send_date on the row, opened_at falls back to created_at while
+      // cutoff_date still rides along for the weekly-brief staleness gate (GH-1967 Copilot review).
       expect(result.data[0]).toMatchObject({
         type: 'survey_closed',
         occurred_at: '2026-01-05T00:00:00Z',
         payload: expect.objectContaining({ opened_at: '2026-01-01T00:00:00Z', cutoff_date: '2026-01-06T00:00:00Z' }),
+      });
+    });
+
+    it('prefers survey_send_date over created_at for payload.opened_at — a scheduled survey opens when it sends, not when it is created (GH-1967 Copilot review)', async () => {
+      // ITX's survey API is a schedule API (POST /v2/surveys/schedule requires a future
+      // survey_send_date), so created_at is the record-creation moment, not the publish moment.
+      // SENT with a far-future cutoff keeps the survey published (not cutoff-closed) for this test.
+      proxyRequest.mockImplementation((r, s, path, m, query) => {
+        if (path === '/query/resources' && query?.['type'] === 'survey') {
+          return Promise.resolve({
+            resources: [
+              {
+                type: 'survey',
+                id: 'survey-scheduled',
+                data: survey({
+                  uid: 'survey-scheduled',
+                  survey_status: SurveyStatus.SENT,
+                  survey_cutoff_date: '2099-01-01T00:00:00Z',
+                  created_at: '2026-01-01T00:00:00Z',
+                  survey_send_date: '2026-01-05T09:00:00Z',
+                }),
+              },
+            ],
+          });
+        }
+        return defaultProxyRequest(r, s, path, m, query);
+      });
+
+      const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
+      expect(result.data[0]).toMatchObject({
+        type: 'survey_published',
+        payload: expect.objectContaining({ opened_at: '2026-01-05T09:00:00Z' }),
       });
     });
   });

@@ -795,10 +795,15 @@ export class CommitteeActivityService {
       type: displayStatus === SurveyStatus.CLOSED ? 'survey_closed' : 'survey_published',
       occurred_at: occurredAt,
       committee_uid: committeeUid,
-      // opened_at (GH-1967 review) — always the survey's own created_at (its publish moment),
-      // independent of displayStatus, so a closed survey's collapsed occurred_at (its cutoff-driven
-      // closure) doesn't hide the fact that it published at a different, potentially
-      // independently-relevant time. See SurveyActivityEventPayload's own doc comment for why.
+      // opened_at (GH-1967 review) — the survey's PUBLISH moment, independent of displayStatus, so
+      // a closed survey's collapsed occurred_at (its cutoff-driven closure) doesn't hide the fact
+      // that it opened at a different, potentially independently-relevant time. The publish moment
+      // is survey_send_date, NOT created_at: ITX's survey API is a schedule API (POST
+      // /v2/surveys/schedule requires survey_send_date in the future), so a scheduled survey is
+      // created well before it actually goes out — keying on created_at would misdate it (GH-1967
+      // Copilot review: a survey created before a weekly brief but sent after it would be missed by
+      // withStaleness's opened_at fallback). created_at stays as the fallback for rows with no send
+      // date. See SurveyActivityEventPayload's own doc comment for why opened_at exists at all.
       // cutoff_date (GH-1967 Copilot review) — upstream's weekly-brief SurveySource windows on
       // survey_cutoff_date and requires it to have already passed, so publication alone is never
       // brief-relevant; carried so the staleness signal can apply the same rule.
@@ -806,7 +811,7 @@ export class CommitteeActivityService {
         survey_uid: survey.uid,
         title: survey.survey_title,
         status: displayStatus,
-        opened_at: firstValidTimestamp(survey.created_at) || undefined,
+        opened_at: firstValidTimestamp(survey.survey_send_date ?? undefined, survey.created_at) || undefined,
         cutoff_date: firstValidTimestamp(survey.survey_cutoff_date ?? undefined) || undefined,
       },
     };
