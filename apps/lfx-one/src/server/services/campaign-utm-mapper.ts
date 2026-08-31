@@ -30,6 +30,14 @@ import type {
 function score(name: string, query: string): number {
   const nameLower = name.toLowerCase();
   const queryLower = query.toLowerCase();
+  // A blank name cannot match anything, and must be refused BEFORE the containment test:
+  // every string contains '', so `queryLower.includes('')` is true and an unnamed campaign
+  // scores 1 — beating a genuinely unrelated named campaign, which scores 0. The winner's UTM
+  // is then applied to this event, attributing its traffic to a campaign nobody named. The
+  // name is legitimately empty on a campaign-service hit, so this is reachable, not defensive.
+  if (nameLower.trim() === '') {
+    return 0;
+  }
   return (
     (nameLower === queryLower ? 1 : 0) +
     (queryLower.includes(nameLower) || nameLower.includes(queryLower) ? 1 : 0) +

@@ -140,4 +140,21 @@ describe('toUtmLookupResult capped', () => {
     expect(res.capped).toBe(false);
     expect(res.inconclusive).toBe(false);
   });
+
+  it('never lets a blank-named campaign win the match', () => {
+    // Every string contains '', so an unguarded `queryLower.includes(nameLower)` scores a
+    // blank name 1 -- ahead of a genuinely unrelated named campaign, which scores 0. The
+    // winner's UTM is applied to this event, so an unnamed row would attribute this event's
+    // paid traffic to a campaign nobody named. The name is legitimately empty on a
+    // campaign-service hit, so this is reachable rather than defensive.
+    const res = toUtmLookupResult(
+      payload({ id: 'blank', name: '', utm: 'wrong-token' }, { id: 'real', name: 'Cloud Native Rejekts', utm: 'rejekts-token' }),
+      'KubeCon NA 2026'
+    );
+
+    // The blank row must not supply the token. Nothing else matches either, so this is
+    // correctly a no-match: found stays false rather than naming the unnamed campaign.
+    expect(res.hs_utm).not.toBe('wrong-token');
+    expect(res.found).toBe(false);
+  });
 });
