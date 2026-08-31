@@ -160,8 +160,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
         with:
-          role-to-assume: arn:aws:iam::788942260905:role/github-actions-deploy
-          aws-region: us-east-2
+          role-to-assume: arn:aws:iam::450177423209:role/lfx-v2-github-actions # lfx-core
+          aws-region: us-west-2
 
       - name: Get version-bump GitHub App from AWS Secrets Manager
         uses: aws-actions/aws-secretsmanager-get-secrets@3a411b6ec5cace3d626412dd917e7bfeac242cfa # v3.0.0
