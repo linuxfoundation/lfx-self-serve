@@ -1193,7 +1193,7 @@ export class WeeklyBriefService {
     // ENDED but stamped with a still-future `end_time`), so this also guards against those.
     const ceilingMs = Math.min(Date.now(), windowEndMs);
     try {
-      const { data, page_token, any_leg_failed } = await this.withStalenessFetchTimeout(
+      const { data, page_token, any_leg_saturated, any_leg_failed } = await this.withStalenessFetchTimeout(
         this.committeeActivityService.getCommitteeActivity(req, committeeId, {
           since: brief.updated_at,
           limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
@@ -1210,34 +1210,35 @@ export class WeeklyBriefService {
         return !Number.isNaN(ms) && ms <= ceilingMs;
       });
       // getCommitteeActivity sorts descending by occurred_at, so events past the ceiling sort
-      // ahead of relevant ones. `page_token` is only ever set when a real `lastPageItem` exists
-      // (committee-activity.service.ts's `hasMore` computation) — so its absence, whenever
-      // `data.length > 0`, is a reliable signal the fetch was NOT truncated: everything that
-      // exists was returned, and if none of it is relevant, that's a confident `false`, not a
-      // degrade. Only when `page_token` IS set and nothing relevant turned up on this page could
-      // real relevant activity still be sitting on a page never fetched — that's the genuine
-      // false-negative risk this guards against.
+      // ahead of relevant ones. If `page_token`/`any_leg_saturated`/`any_leg_failed` are all unset,
+      // everything that exists was returned and known-complete, so an all-irrelevant result here is
+      // a confident `false`, not a degrade — see below for why none of the three, alone, is a
+      // reliable "nothing was truncated" signal on its own (`page_token` in particular needs a real
+      // `lastPageItem` to anchor a cursor on, so it can be absent even when a leg's own upstream
+      // page was genuinely saturated).
       //
-      // Known residual, not covered by this guard: `getCommitteeActivity` can also return
-      // `data: []` with no `page_token` even though a later upstream page (of a saturated leg)
-      // holds rows this caller is authorized to see — its own `hasMore` computation forces
-      // `false` whenever every leg's page happens to filter down to zero FGA-visible rows
-      // (committee-activity.service.ts's own comment on this). That case is indistinguishable
-      // here from "genuinely no activity at all" and reports a confident `stale: false`; fixing
-      // it would mean surfacing a per-request FGA-visibility retry loop, out of scope for this fix.
+      // `page_token` alone under-detects truncation for this purpose: it requires a real
+      // `lastPageItem` to anchor a cursor on, so if the in-memory since/cursor/timestamp pass
+      // filters every fetched row out of the merged pool (a FGA-filtered-empty upstream page, or a
+      // leg like surveys whose upstream sort doesn't match its own occurred_at — see
+      // committee-activity.service.ts's own comment on this), `page_token` comes back unset even
+      // though a leg's own upstream page was genuinely saturated. `any_leg_saturated` (GH-1967
+      // review) is read directly off each leg's own saturation, independent of whether anything
+      // from that leg survived into `data` — closing that gap for this caller.
       //
       // `any_leg_failed` (GH-1967 review) covers a different gap: each of `getCommitteeActivity`'s
       // 5 legs independently degrades a fetch failure into `{events: [], saturated: false}`
       // (committee-activity.service.ts), indistinguishable from a leg that genuinely fetched
       // nothing. A leg failure can only hide a real positive (relevant activity this fetch missed),
       // never manufacture a false one — so it's only a reason to distrust a `relevant.length === 0`
-      // result, same as the saturated-with-nothing-relevant case above.
-      if (relevant.length === 0 && (page_token || any_leg_failed)) {
+      // result, same as the truncation signals above.
+      if (relevant.length === 0 && (page_token || any_leg_saturated || any_leg_failed)) {
         logger.warning(req, 'weekly_brief_staleness', 'Activity fetch was truncated or partially failed with no in-range events, degrading staleness to null', {
           committee_id: committeeId,
           brief_uid: brief.uid,
           fetched: data.length,
           saturated: !!page_token,
+          any_leg_saturated,
           any_leg_failed,
         });
         return { ...response, staleness: null };

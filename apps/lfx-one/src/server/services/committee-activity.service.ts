@@ -248,15 +248,19 @@ export class CommitteeActivityService {
     // (filter-dimension) caveats discussed next, just in the sort dimension
     // instead.
     //
-    // Filter dimension: votes/files each filter on a single upstream `date_field` that only
-    // approximates their own multi-field occurred_at derivation (see each leg's own comment for
-    // which field and why) — sending that imperfect narrowing upstream still beats sending none at
-    // all, which was tried and reverted earlier in this file's history: it traded the rare
-    // filter-mismatch miss for hard truncation at `fetchSize` on every page instead, a strictly worse
-    // failure mode. The in-memory since/cursor pass in getCommitteeActivity is the correctness
-    // backstop against over-inclusion for both legs, not under-inclusion — an imperfectly-narrowed
-    // leg can still exclude a real in-window row upstream before that pass ever sees it. Surveys
-    // send no `date_field` at all for a `date_from` reason: unlike votes/files, a survey's
+    // Filter dimension: files filters on a single upstream `date_field` that only approximates its
+    // own multi-field occurred_at derivation (see fetchDocumentEvents's own comment for which field
+    // and why) — sending that imperfect narrowing upstream still beats sending none at all, which
+    // was tried and reverted earlier in this file's history: it traded the rare filter-mismatch
+    // miss for hard truncation at `fetchSize` on every page instead, a strictly worse failure mode.
+    // The in-memory since/cursor pass in getCommitteeActivity is the correctness backstop against
+    // over-inclusion for files, not under-inclusion — an imperfectly-narrowed leg can still exclude
+    // a real in-window row upstream before that pass ever sees it. Votes (GH-1967 review) moved out
+    // of this bucket into the notes/surveys one below: a deadline-driven `vote_closed` can occur
+    // with no write to `last_modified_time` at all, so a `date_from` there wasn't a rare
+    // filter-mismatch miss the way files' is — it was systematic, the same failure class surveys
+    // documents next, so votes now only sends `date_to` (see fetchVoteEvents's own comment).
+    // Surveys send no `date_field` at all for a `date_from` reason: unlike files, a survey's
     // cutoff-driven occurred_at isn't bounded below by any field the row gets written to, so
     // date_field narrowing there would systematically (not rarely) exclude exactly the rows `since`
     // is meant to include — see fetchSurveyEvents. That reasoning only covers `date_from`, though;
@@ -462,15 +466,19 @@ export class CommitteeActivityService {
     // is still present. `anyLegSaturated` (above) already correctly reflects this via each leg's
     // real `page_token` (not row count) — but if EVERY leg's single page happens to filter down to
     // zero visible rows, `windowed`/`page` end up empty too, `lastPageItem` is undefined, and
-    // `hasMore` forces `false` regardless of `anyLegSaturated`: this response looks terminal even
-    // though a later upstream page (of any saturated leg) could contain rows this caller is
-    // authorized to see. Closing this for real means looping a leg's own upstream call until a
-    // visible candidate or exhaustion — ruled out for v1 by the ticket's "bounded calls, no
-    // per-event follow-ups" requirement (same constraint documented at the top of this method).
-    // Accepted as a known residual (per-request, not per-response — a follow-up request with the
-    // same `since`/no cursor would simply re-run this same fetch and could still surface nothing
-    // new if the access-filtering pattern hasn't changed), not solved by a second round-trip within
-    // this call.
+    // `hasMore`/`pageToken` force to a terminal-looking `false`/`undefined` regardless of
+    // `anyLegSaturated`, even though a later upstream page (of any saturated leg) could contain rows
+    // this caller is authorized to see. A second round-trip within this call would close it for
+    // real (looping a leg's own upstream call until a visible candidate or exhaustion) — ruled out
+    // for v1 by the ticket's "bounded calls, no per-event follow-ups" requirement (same constraint
+    // documented at the top of this method) — so instead `any_leg_saturated` (GH-1967 review) is
+    // returned on the response directly, independent of whether `pageToken` survived the
+    // `lastPageItem` computation, letting a completeness-sensitive caller (e.g.
+    // `WeeklyBriefService#withStaleness`) distrust an empty-looking result without needing a second
+    // request. Same fix closes an unrelated but structurally identical gap: `fetchSurveyEvents`'
+    // page, sorted by `updated_desc` rather than `occurred_at`, can be entirely filtered out of
+    // `windowed` by a cutoff-driven closure whose `occurred_at` doesn't match its sort position,
+    // even though the survey leg's own upstream page was genuinely saturated.
     const lastPageItem = page.at(-1);
     const hasMore = (windowed.length > limit || anyLegSaturated) && !!lastPageItem;
     const pageToken = hasMore && lastPageItem ? encodeActivityPageToken({ before: lastPageItem.event.occurred_at, key: lastPageItem.key }) : undefined;
@@ -493,7 +501,7 @@ export class CommitteeActivityService {
       fetch_size: fetchSize,
     });
 
-    return { data, page_token: pageToken, any_leg_failed: anyLegFailed };
+    return { data, page_token: pageToken, any_leg_saturated: anyLegSaturated, any_leg_failed: anyLegFailed };
   }
 
   // ─── Committee (for enable_voting) ─────────────────────────────────────────
@@ -651,19 +659,21 @@ export class CommitteeActivityService {
     before: string | undefined,
     fetchSize: number
   ): Promise<{ events: (VoteOpenedActivityEvent | VoteClosedActivityEvent)[]; saturated: boolean }> {
-    // date_field: 'last_modified_time' is best-effort narrowing (see the filter-dimension paragraph
-    // in getCommitteeActivity's fetchSize comment for why narrowing imperfectly still beats not
-    // narrowing at all) — a vote's occurred_at is actually
-    // end_time/early_end_time/last_modified_time/creation_time depending on status, not always
-    // last_modified_time.
-    const hasWindow = !!since || !!before;
+    // date_to only, never date_from (GH-1967 review) — same asymmetry as fetchNotesAddedEvents,
+    // same reason as fetchSurveyEvents' own no-narrowing-at-all: a vote's occurred_at is actually
+    // end_time/early_end_time/last_modified_time/creation_time depending on status, and a
+    // deadline-driven vote_closed (isVoteDeadlinePast in mapVoteToEvent, below) can fire with no
+    // corresponding write to last_modified_time at all — a date_from on last_modified_time would
+    // then systematically exclude exactly the votes `since` is meant to include, not just
+    // best-effort-miss them (Copilot caught this once the staleness signal started depending on
+    // this leg's completeness). date_to has no equivalent failure — over-inclusion on the upper
+    // bound is always safe, trimmed by the in-memory since/cursor pass in getCommitteeActivity —
+    // and is still needed for Recent Activity's own cursor pagination to reach older votes.
     const query: Record<string, unknown> = {
       tags: `committee_uid:${committeeUid}`,
       page_size: fetchSize,
       sort: 'updated_desc',
-      ...(hasWindow && { date_field: 'last_modified_time' }),
-      ...(since && { date_from: since }),
-      ...(before && { date_to: before }),
+      ...(before && { date_field: 'last_modified_time', date_to: before }),
     };
 
     // page_token — see the saturation comment in getCommitteeActivity for why this is preferred
@@ -716,16 +726,17 @@ export class CommitteeActivityService {
     before: string | undefined,
     fetchSize: number
   ): Promise<{ events: (SurveyPublishedActivityEvent | SurveyClosedActivityEvent)[]; saturated: boolean }> {
-    // No date_field/date_from/date_to on this leg — unlike votes/files, surveys have a mode of
+    // No date_field/date_from/date_to on this leg — unlike files, surveys have a mode of
     // occurred_at (a cutoff-driven closure, see isCutoffDrivenClosure/mapSurveyToEvent below) that
     // is NOT bounded below by last_modified_at: a SENT survey can sit with an old last_modified_at
     // while its real occurred_at (survey_cutoff_date) is still in the future relative to that
     // write, with no upstream write ever marking the transition. Narrowing on
     // date_field: 'last_modified_at' (the previous approach) would upstream-exclude exactly that
     // row whenever `since` falls between its last_modified_at and its cutoff-driven occurred_at —
-    // not a rare-edge best-effort miss like the votes/files legs' narrowing, but a systematic one
-    // for every cutoff-driven closure `since` is meant to include (Copilot caught this on this
-    // leg's initial cutoff fix). Dropping upstream date narrowing here entirely closes that: this
+    // not a rare-edge best-effort miss like the files leg's narrowing, but a systematic one for
+    // every cutoff-driven closure `since` is meant to include (Copilot caught this on this leg's
+    // initial cutoff fix; votes had the same systematic gap for deadline-driven closures, fixed the
+    // same way — see fetchVoteEvents). Dropping upstream date narrowing here entirely closes that: this
     // leg falls back to the same "Known v1 limitation" already documented at the top of
     // getCommitteeActivity for every page_size-bounded leg (a survey outside the top-fetchSize
     // slice by `sort: updated_desc` can still be missed), which is an honest, pre-existing

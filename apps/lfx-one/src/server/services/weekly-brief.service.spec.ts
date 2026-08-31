@@ -846,6 +846,20 @@ describe('WeeklyBriefService', () => {
       expect(logger.warning).toHaveBeenCalledTimes(1);
     });
 
+    it('reports unknown (null), not a false negative, when any_leg_saturated is true with no page_token and nothing relevant turned up (GH-1967 review)', async () => {
+      // Distinct from the page_token-set case above: this covers getCommitteeActivity's own
+      // documented gap where page_token comes back unset (no real lastPageItem to anchor a cursor
+      // on) even though a leg's own upstream page was genuinely saturated — any_leg_saturated is
+      // read directly off each leg's own saturation and isn't affected by that.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({ data: [], any_leg_saturated: true });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toBeNull();
+      expect(logger.warning).toHaveBeenCalledTimes(1);
+    });
+
     it('still reports stale (not a degrade) when a committee-activity leg failed but other legs already found real qualifying activity', async () => {
       // A leg failure can only hide a real positive, never manufacture a false one — once relevant
       // activity has already been found, any_leg_failed on a different leg doesn't undermine it.
