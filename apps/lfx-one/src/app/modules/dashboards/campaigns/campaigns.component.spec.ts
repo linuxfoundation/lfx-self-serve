@@ -2295,6 +2295,60 @@ describe('CampaignsComponent — email delivery channel', () => {
      * is kept because the write it protects (`emailAudience.set(result.audience)`) is
      * unconditional, and a late response would otherwise overwrite the cleared signal.
      */
+    /**
+     * A late persist must not clear a NEWER one's in-flight slot.
+     *
+     * `ensureEmailBriefId` dedups concurrent saves by parking the promise in
+     * `emailBriefPersistInFlight`, and its `finally` cleared that field unconditionally. A reset
+     * also clears it, so this ordering defeated the dedup: persist A starts, a reset clears the
+     * slot, persist B starts and takes it, then A settles and wipes B's slot — leaving a third
+     * action free to start a SECOND concurrent save of the same brief.
+     *
+     * Driven through the service mock, which is the real seam: the component's own
+     * `persistEmailBrief` awaits `campaignService.persistBrief`, so controlling that controls when
+     * each persist settles.
+     */
+    it("does not let a late persist clear a newer one's in-flight slot", async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+
+      const settleA: ((v: unknown) => void)[] = [];
+      const settleB: ((v: unknown) => void)[] = [];
+      let call = 0;
+      vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(
+        () =>
+          new Observable((sub) => {
+            const bucket = call++ === 0 ? settleA : settleB;
+            bucket.push((v) => {
+              sub.next(v);
+              sub.complete();
+            });
+          }) as never
+      );
+
+      const c = fixture.componentInstance as unknown as {
+        ensureEmailBriefId(brief: unknown, slug: string): Promise<string>;
+        resetEmailBriefDerivedState(): void;
+        emailBriefPersistInFlight: Promise<string> | null;
+      };
+
+      const a = c.ensureEmailBriefId(emailBrief, 'tlf');
+      // The reset frees the slot, exactly as it does in the app.
+      c.resetEmailBriefDerivedState();
+      const b = c.ensureEmailBriefId(emailBrief, 'tlf');
+      expect(c.emailBriefPersistInFlight, 'precondition: B holds the slot').not.toBeNull();
+
+      // A settles LAST. Its `finally` must leave B's slot alone.
+      settleA.forEach((f) => f({ enabled: true, briefId: 'brief-a', etag: null }));
+      await a.catch(() => undefined);
+
+      expect(c.emailBriefPersistInFlight, "a late persist cleared the newer one's slot, so a third action could start a second concurrent save").not.toBeNull();
+
+      settleB.forEach((f) => f({ enabled: true, briefId: 'brief-b', etag: null }));
+      await b.catch(() => undefined);
+    });
+
     it('discards an audience that arrives after the brief-derived state reset', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
