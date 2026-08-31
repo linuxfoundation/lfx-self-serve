@@ -632,6 +632,23 @@ export const MICROSOFT_MAX_GEO_TARGETS = 30;
 export const MAX_BULK_KEYWORD_ACTIONS = 50;
 
 /**
+ * Google Ads resource ids are the canonical base-10 spelling of a positive int64.
+ *
+ * Mirrors campaign-service's own declaration on `keyword-action-input` — `Pattern("^[0-9]+$")`
+ * with `MaxLength(19)` — and its design states why the digits-only rule is load-bearing rather
+ * than cosmetic: these ids are concatenated into a Google Ads resource NAME, so the same
+ * injection reasoning that governs the customer id applies. 19 rather than 20 because
+ * `math.MaxInt64` ("9223372036854775807") has nineteen digits.
+ *
+ * Not the whole check upstream and not meant to be here either: a digit count cannot rule out
+ * "9999999999999999999", "0", or the leading-zero spelling "0305729261" — campaign-service parses
+ * the value for those. This refuses the clearly-impossible ids BEFORE any fan-out, which is what
+ * keeps the batch all-or-nothing: the controller validates every row before mutating anything,
+ * and a keyword REMOVE is irreversible, so a half-applied batch cannot be undone by retrying.
+ */
+export const GOOGLE_ADS_RESOURCE_ID_RE = /^[0-9]{1,19}$/;
+
+/**
  * The match type a newly added keyword starts at.
  *
  * `Phrase` is the middle of Microsoft's three: `Broad` can spend on loosely related queries and

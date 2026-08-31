@@ -2141,7 +2141,11 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
     return { body: { keywords, action: 'pause' }, query, path: '/api/campaigns/keywords/actions' } as unknown as Request;
   }
 
-  const keyword = (campaignId: string, criterionId: string) => ({ campaignId, adGroupId: 'ag-1', criterionId, action: 'pause' });
+  // `adGroupId` is a real Google ad-group id shape (digits), not a label: campaign-service
+  // declares ad_group_id/criterion_id as `^[0-9]+$` with MaxLength(19), and the controller now
+  // enforces that before any fan-out. A placeholder like 'ag-1' would make every fixture an
+  // invalid request and the suite would test the refusal path by accident.
+  const keyword = (campaignId: string, criterionId: string) => ({ campaignId, adGroupId: '176216228', criterionId, action: 'pause' });
   const resolvedTo = (campaignId: string, briefId: string) => ({
     platform_campaign_id: 'x',
     match_count: 1,
@@ -2161,7 +2165,7 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
     svcApplyKeywordActions.mockResolvedValue({
       campaign_id: 'c-1',
       applied_count: 1,
-      results: [{ ad_group_id: 'ag-1', criterion_id: '1', action: 'PAUSE' }],
+      results: [{ ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' }],
     });
   });
 
@@ -2184,6 +2188,28 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
     expect(svcApplyKeywordActions).not.toHaveBeenCalled();
   });
 
+  it('refuses a malformed id in the LAST row before mutating the rows ahead of it', async () => {
+    // The position is the point. Campaign-service declares these ids as `^[0-9]+$`, so a malformed
+    // one was previously refused UPSTREAM — by which time the earlier rows in the same request had
+    // already been mutated, because the fan-out is sequential. A keyword REMOVE is irreversible,
+    // so a half-applied batch is not something a retry can undo.
+    //
+    // A valid row FIRST, so passing this cannot be explained by the request being rejected on its
+    // very first entry.
+    const rows = [keyword('24183781329', '1'), keyword('24183781329', '2'), keyword('not-an-id', '3')];
+
+    await controller.executeKeywordActions(actionsReq(rows), res, next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validationErrors: expect.arrayContaining([expect.objectContaining({ field: 'keywords', message: expect.stringContaining('positive integer') })]),
+      })
+    );
+    // Nothing upstream, not even for the two well-formed rows that preceded the bad one.
+    expect(svcResolveCampaign).not.toHaveBeenCalled();
+    expect(svcApplyKeywordActions).not.toHaveBeenCalled();
+  });
+
   it('allows a bulk request exactly at the fan-out cap', async () => {
     // The boundary is inclusive: a request the UI can actually produce must not be refused.
     const atCap = Array.from({ length: MAX_BULK_KEYWORD_ACTIONS }, (_, i) => keyword(String(24183781329 + i), String(i)));
@@ -2199,7 +2225,9 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
     expect(svcResolveCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', '24183781329');
     // The brief and campaign must come from the RESOLUTION, not from the request — the request
     // carries neither, which is the whole reason the resolver exists.
-    expect(svcApplyKeywordActions).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', 'c-1', [{ ad_group_id: 'ag-1', criterion_id: '1', action: 'PAUSE' }]);
+    expect(svcApplyKeywordActions).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', 'c-1', [
+      { ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' },
+    ]);
     expect(legacyKeywordActions).not.toHaveBeenCalled();
   });
 
@@ -2291,15 +2319,15 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
    * probably ran, and a retried REMOVE is irreversible.
    */
   it.each([
-    ['a short confirmation', { campaign_id: 'c-1', applied_count: 1, results: [{ ad_group_id: 'ag-1', criterion_id: '1', action: 'PAUSE' }] }],
+    ['a short confirmation', { campaign_id: 'c-1', applied_count: 1, results: [{ ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' }] }],
     [
       'a criterion that was not requested',
       {
         campaign_id: 'c-1',
         applied_count: 2,
         results: [
-          { ad_group_id: 'ag-1', criterion_id: '1', action: 'PAUSE' },
-          { ad_group_id: 'ag-1', criterion_id: '999', action: 'PAUSE' },
+          { ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' },
+          { ad_group_id: '176216228', criterion_id: '999', action: 'PAUSE' },
         ],
       },
     ],
@@ -2321,8 +2349,8 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
       applied_count: 2,
       // Reversed: order is not part of the contract, membership and count are.
       results: [
-        { ad_group_id: 'ag-1', criterion_id: '2', action: 'PAUSE' },
-        { ad_group_id: 'ag-1', criterion_id: '1', action: 'PAUSE' },
+        { ad_group_id: '176216228', criterion_id: '2', action: 'PAUSE' },
+        { ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' },
       ],
     });
 
@@ -2337,7 +2365,7 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
     svcResolveCampaign.mockResolvedValueOnce(resolvedTo('c-1', 'b-1')).mockResolvedValueOnce(resolvedTo('c-2', 'b-2'));
     svcApplyKeywordActions
       .mockRejectedValueOnce(new Error('upstream refused'))
-      .mockResolvedValueOnce({ campaign_id: 'c-2', applied_count: 1, results: [{ ad_group_id: 'ag-1', criterion_id: '2', action: 'PAUSE' }] });
+      .mockResolvedValueOnce({ campaign_id: 'c-2', applied_count: 1, results: [{ ad_group_id: '176216228', criterion_id: '2', action: 'PAUSE' }] });
 
     await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2')]), res, next);
 
@@ -2361,7 +2389,7 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
     svcApplyKeywordActions.mockResolvedValue({
       campaign_id: 'c-2',
       applied_count: 1,
-      results: [{ ad_group_id: 'ag-1', criterion_id: '2', action: 'PAUSE' }],
+      results: [{ ad_group_id: '176216228', criterion_id: '2', action: 'PAUSE' }],
     });
 
     await controller.executeKeywordActions(actionsReq([keyword('555', '1'), keyword('666', '2')]), res, next);

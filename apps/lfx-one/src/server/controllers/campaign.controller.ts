@@ -29,6 +29,7 @@ import {
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
+  GOOGLE_ADS_RESOURCE_ID_RE,
   MICROSOFT_MAX_GEO_TARGETS,
   MAX_BULK_KEYWORD_ACTIONS,
   MICROSOFT_MAX_KEYWORDS,
@@ -1190,6 +1191,23 @@ export class CampaignController {
       if (!kw || typeof kw !== 'object' || !kw.campaignId || !kw.adGroupId || !kw.criterionId) {
         next(
           ServiceValidationError.forField('keywords', 'each keyword must include campaignId, adGroupId, and criterionId', {
+            operation: 'keyword_actions',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+      // FORMAT too, not just presence. Campaign-service declares these ids as `^[0-9]+$`, so a
+      // malformed one was refused upstream instead — and by then the rows AHEAD of it in the same
+      // request have already been mutated, because the fan-out below is sequential. A keyword
+      // REMOVE is irreversible, so a half-applied batch is not recoverable by retrying.
+      //
+      // Refusing the whole request here is what keeps it all-or-nothing, and matches the
+      // reject-all rule the Microsoft keyword path already states: a partial application that
+      // reports success is worse than a refusal the operator can act on.
+      if (!GOOGLE_ADS_RESOURCE_ID_RE.test(kw.campaignId) || !GOOGLE_ADS_RESOURCE_ID_RE.test(kw.adGroupId) || !GOOGLE_ADS_RESOURCE_ID_RE.test(kw.criterionId)) {
+        next(
+          ServiceValidationError.forField('keywords', 'campaignId, adGroupId, and criterionId must each be a positive integer id', {
             operation: 'keyword_actions',
             service: 'campaign_controller',
           })
