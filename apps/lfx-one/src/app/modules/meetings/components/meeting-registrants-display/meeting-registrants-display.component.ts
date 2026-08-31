@@ -175,11 +175,13 @@ export class MeetingRegistrantsDisplayComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((hosts) => this.resolvedHostsChange.emit(hosts));
 
-    effect(() => {
-      if (!this.inviteResponsesEnabled() && this.rsvpFilterControl.value !== 'all') {
-        this.rsvpFilterControl.setValue('all');
-      }
-    });
+    toObservable(this.inviteResponsesEnabled)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((enabled) => {
+        if (!enabled && this.rsvpFilterControl.value !== 'all') {
+          this.rsvpFilterControl.setValue('all');
+        }
+      });
 
     effect(() => {
       if (!this.visible()) return;
