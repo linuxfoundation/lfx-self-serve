@@ -2091,6 +2091,42 @@ describe('OptimizationTabComponent — keyword action outcome states', () => {
     expect(transportState(status)).toBe('failed');
   });
 
+  /**
+   * Drives `bulkKeywordAction` rather than the classifier, because the defect was that the BULK
+   * path never called the classifier at all: it passed the raw message to `toActionOutcome`,
+   * which looks for an unconfirmed marker in the MESSAGE. A transport failure carries no such
+   * marker -- the request died before campaign-service could describe its own outcome -- so
+   * every dropped bulk mutation rendered "Failed".
+   *
+   * That is worse in bulk than singly: one dropped response covers the whole selection, so an
+   * operator is invited to re-run an irreversible REMOVE across every keyword at once.
+   */
+  it.each([
+    [0, 'network failure'],
+    [408, 'timeout'],
+    [503, 'BFF unavailable'],
+  ])('classifies a bulk transport failure (%i, %s) as unconfirmed, not failed', (status) => {
+    const campaignService = TestBed.inject(CampaignService) as unknown as {
+      executeKeywordActions: ReturnType<typeof vi.fn>;
+    };
+    campaignService.executeKeywordActions = vi.fn().mockReturnValue(throwError(() => ({ status, message: 'Http failure response' })));
+
+    const keywords = [
+      { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr1' },
+      { campaignId: 'c1', adGroupId: 'ag1', criterionId: 'cr2' },
+    ];
+    const component = fixture.componentInstance as unknown as {
+      bulkKeywordAction(keywords: unknown[], action: string): void;
+      actionResults: () => Record<string, { state: string }>;
+    };
+    component.bulkKeywordAction(keywords, 'REMOVE');
+
+    // EVERY key in the selection, not just the first: the failure covers all of them.
+    for (const key of ['ag1-cr1', 'ag1-cr2']) {
+      expect(component.actionResults()[key]?.state, `${key} read as a definite failure after a dropped bulk mutation`).toBe('unconfirmed');
+    }
+  });
+
   it('distinguishes an unconfirmed outcome from a definite failure', () => {
     expect(isUnconfirmed({ success: false, message: unconfirmedMessage }), 'an unconfirmed change read as a definite failure').toBe(true);
   });

@@ -904,10 +904,16 @@ export class OptimizationTabComponent implements OnInit {
             for (const key of keys) updated[key] = false;
             return updated;
           });
-          const msg = err?.error?.message || err?.message || 'Bulk action failed';
+          // Classified the same way as the single-keyword path. A dropped, timed-out or 5xx bulk
+          // response says NOTHING about whether the mutations applied -- and it covers every
+          // keyword in the selection, so rendering "Failed" here invites an operator to re-run a
+          // bulk REMOVE that may already have gone through. `toActionOutcome(false, msg)` reads
+          // the MESSAGE for an unconfirmed marker, which a transport failure never carries: the
+          // request died before campaign-service could describe its own outcome.
+          const outcome = this.toTransportOutcome(err);
           this.actionResults.update((map) => {
             const updated = { ...map };
-            for (const key of keys) updated[key] = this.toActionOutcome(false, msg);
+            for (const key of keys) updated[key] = outcome;
             return updated;
           });
         },
