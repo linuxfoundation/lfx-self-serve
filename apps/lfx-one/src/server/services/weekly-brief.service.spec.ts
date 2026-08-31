@@ -726,6 +726,20 @@ describe('WeeklyBriefService', () => {
       });
     });
 
+    it('excludes an event stamped at the exact same instant as brief.updated_at — the lower bound is strictly after, not at-or-after (GH-1967 review)', async () => {
+      // getCommitteeActivity's own since filter (isAtOrAfterSince) is inclusive (occurred_at >=
+      // since), so without withStaleness re-asserting a strict lower bound, an event stamped at
+      // exactly brief.updated_at would count as "new" activity that happened after generation.
+      proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
+      getCommitteeActivityMock.mockResolvedValueOnce({
+        data: [{ type: 'meeting_held', occurred_at: liveBrief.updated_at }],
+      });
+
+      const result = await service.getCurrentBrief(req, 'committee-1');
+
+      expect(result.staleness).toEqual({ stale: false, event_count: 0, event_count_is_floor: false });
+    });
+
     it('excludes a notes event from the count — notes_added is not a brief source, so regenerating could never reflect it', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
       getCommitteeActivityMock.mockResolvedValueOnce({

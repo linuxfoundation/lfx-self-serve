@@ -1207,7 +1207,11 @@ export class WeeklyBriefService {
       const relevant = data.filter((event) => {
         if (!(WEEKLY_BRIEF_STALENESS_EVENT_TYPES as readonly string[]).includes(event.type)) return false;
         const ms = Date.parse(event.occurred_at);
-        return !Number.isNaN(ms) && ms <= ceilingMs;
+        // `getCommitteeActivity`'s own `since` filter (isAtOrAfterSince) is inclusive (`ms >=
+        // since`), so without this, an event stamped at the exact same instant as brief.updated_at
+        // would count as "new" activity — the strict lower bound here is what actually enforces
+        // "happened after the brief was generated" (GH-1967 review).
+        return !Number.isNaN(ms) && ms > sinceMs && ms <= ceilingMs;
       });
       // getCommitteeActivity sorts descending by occurred_at, so events past the ceiling sort
       // ahead of relevant ones. If `page_token`/`any_leg_saturated`/`any_leg_failed` are all unset,
