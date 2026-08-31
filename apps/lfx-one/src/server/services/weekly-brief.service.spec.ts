@@ -685,7 +685,7 @@ describe('WeeklyBriefService', () => {
 
     it('starts the staleness fetch without waiting for the caller-rating lookup to resolve first (parallel, not serial — perf fix)', async () => {
       proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
-      valkeyServiceMock.getJson.mockReturnValueOnce(new Promise(() => {})); // caller-rating lookup hangs forever
+      valkeyServiceMock.getJson.mockReturnValueOnce(new Promise<never>(() => undefined)); // caller-rating lookup hangs forever
       getCommitteeActivityMock.mockResolvedValueOnce({ data: [] });
 
       void service.getCurrentBrief(userReq, 'committee-1'); // not awaited — the rating lookup above never resolves
@@ -926,7 +926,7 @@ describe('WeeklyBriefService', () => {
       vi.useFakeTimers();
       try {
         proxyRequest.mockResolvedValueOnce({ brief: liveBrief, throttle: null });
-        getCommitteeActivityMock.mockReturnValueOnce(new Promise(() => {})); // never settles
+        getCommitteeActivityMock.mockReturnValueOnce(new Promise<never>(() => undefined)); // never settles
 
         const resultPromise = service.getCurrentBrief(req, 'committee-1');
         await vi.advanceTimersByTimeAsync(WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS);

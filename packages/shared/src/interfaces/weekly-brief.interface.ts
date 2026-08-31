@@ -183,7 +183,7 @@ export type WeeklyBriefRating = 'up' | 'down';
 export interface WeeklyBriefStaleness {
   /** True when at least one qualifying event was found. */
   stale: boolean;
-  /** Count of qualifying events found in the fetched page — see `event_count_is_floor`. */
+  /** Count of qualifying events found — from the fetched page when a fetch ran; provably `0` on the closed-window short-circuit, where no fetch is needed. See `event_count_is_floor`. */
   event_count: number;
   /**
    * True when the underlying committee-activity fetch itself paginated (a `page_token` came
