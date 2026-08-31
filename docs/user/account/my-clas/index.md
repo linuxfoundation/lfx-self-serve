@@ -59,7 +59,7 @@ That does not always mean you never signed — see [Why don't my signed CLAs sho
 
 ## What do the status labels mean?
 
-The **Status** column on the CLAs tab tells you whether an agreement still covers your contributions, and if not, why:
+The **Status** column on the CLAs tab tells you whether an agreement still covers your contributions. These are the labels it uses:
 
 | Status              | What it means                                                                                                                                                                    | Applies to |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
