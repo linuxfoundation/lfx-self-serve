@@ -61,7 +61,7 @@ Select anywhere on a card to open the original post in a new tab — this also m
 - **Mark as Read / Mark as Unread** — toggles the mention's read state
 - **Bookmark** — saves the mention so you can find it later with the **Bookmarked** filter (up to 500 bookmarks per foundation)
 
-Above the list, **Mark all as read** and **Mark all as unread** apply to every mention in the current scope. The **Data as of** timestamp next to them shows when the underlying data was last refreshed.
+Above the list, **Mark all as read** and **Mark all as unread** apply to **every mention in the foundation** — not just the ones matching your current filters, search, or period. **Mark all as read** marks everything up to the foundation's newest mention as read, and **Mark all as unread** clears the read state for the whole foundation, including mentions your current scope hides. The **Data as of** timestamp next to them shows when the underlying data was last refreshed.
 
 ## Load more mentions
 

@@ -38,12 +38,21 @@ Selecting **No Preset View** at the top of the dropdown returns the feed to its 
 
 ## Share a view
 
-The page URL always reflects your current filters, so you can share any view by copying the address bar:
+The page URL always reflects your current filters, so you can share any view by copying the address bar. What your colleague sees depends on whether the link carries a saved view.
 
-1. Apply the saved view (or set the filters up manually).
+**Sharing a saved view:**
+
+1. Apply the saved view.
 2. Copy the page URL and send it to a colleague.
 
-When someone opens your link, the feed loads with those filters applied and a banner explains: "These filters were shared as a preset view — they were saved by the person who shared this link." They can select **Save as my view** in the banner to keep a copy under their own account, or dismiss the banner to use the filters without saving.
+The URL contains the view's ID. When someone opens your link, the feed loads with those filters applied and a banner explains: "These filters were shared as a preset view — they were saved by the person who shared this link." They can select **Save as my view** in the banner to keep a copy under their own account, or dismiss the banner to use the filters without saving.
+
+**Sharing filters you set up manually:**
+
+1. Set the filters up manually.
+2. Copy the page URL and send it to a colleague.
+
+The URL restores those filters for whoever opens it, but no banner or **Save as my view** action appears — those are tied to saved views. Your colleague can still keep the setup by selecting **Save current view** in the views dropdown.
 
 ## Moving from PCC
 

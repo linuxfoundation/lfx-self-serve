@@ -17,7 +17,7 @@ This article applies to users with the **executive-director** persona and to **L
 
 ## Set the scope
 
-The project, platform, and period selectors at the top of the page apply to the Analytics tab, so every panel reflects the same slice of data. The search box, saved views, and the **FILTERS** panel are part of the Feed tab and do not apply here.
+The project, platform, and period selectors at the top of the page apply to the Analytics tab, so every panel reflects the same slice of data. The search query and most Feed tab filters — Sentiment, Relevance, Language, Has Title, Authors, Keywords, and Tags — also apply here, even though their controls stay on the Feed tab; the active-filter pills above the panels show which ones are in effect. Applying a saved view changes those filters, so its search and filter settings carry across too. Only the bookmark and read-state filters are ignored — Analytics is bookmark- and read-state-blind.
 
 - **Project** — every project in the foundation (the default) or a single project
 - **Platform** — every platform (the default) or a single platform
