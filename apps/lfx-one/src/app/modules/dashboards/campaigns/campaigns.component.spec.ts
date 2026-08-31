@@ -2494,6 +2494,58 @@ describe('CampaignsComponent — email delivery channel', () => {
     });
 
     /**
+     * A failed HubSpot row must not be announced as a created draft.
+     *
+     * campaign-service reports a partial outcome as `{ platform: 'hubspot', ok: false, error }`
+     * with an EMPTY `errors` array, so checking only the top level said "Draft created in
+     * HubSpot" for a staging that failed — sending the operator to look for a draft that is not
+     * there.
+     */
+    it('reports a failed hubspot platform result as an error, not a created draft', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({
+          campaigns: [],
+          errors: [],
+          platformResults: [{ platform: 'hubspot', ok: false, error: 'the source template could not be cloned' }],
+        } as unknown as CampaignJobOutcome)
+      );
+
+      await internals().onBuildAudience();
+      await internals().onStageEmailSend();
+      fixture.detectChanges();
+
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingMessage()).toContain('could not be cloned');
+    });
+
+    /** An ABSENT platformResults must still succeed — it is optional on the contract. */
+    it('still reports success when the service omits platformResults', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({ campaigns: [{ id: 'c1' }], errors: [] } as unknown as CampaignJobOutcome)
+      );
+
+      await internals().onBuildAudience();
+      await internals().onStageEmailSend();
+      fixture.detectChanges();
+
+      expect(internals().emailStaging()).toBe('done');
+    });
+
+    /**
      * A reset must CANCEL the staging poll, not merely relabel it.
      *
      * Setting `emailStaging` back to `idle` leaves the subscription running, so a job settling

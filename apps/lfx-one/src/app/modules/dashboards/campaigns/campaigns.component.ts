@@ -1960,6 +1960,23 @@ export class CampaignsComponent {
             this.emailStagingMessage.set(outcome.errors[0]);
             return;
           }
+
+          // The PER-PLATFORM result decides, not just the top-level errors. campaign-service
+          // reports a partial outcome as `{ platform: 'hubspot', ok: false, error }` with an EMPTY
+          // `errors` array, so checking only the latter announced "Draft created in HubSpot" for a
+          // staging that failed -- and the operator would go looking for a draft that is not
+          // there. The paid Implementation tab already reads these rows per platform; this path
+          // did not.
+          const hubspotResult = outcome.platformResults?.find((r) => r.platform === 'hubspot');
+          if (hubspotResult !== undefined && !hubspotResult.ok) {
+            this.emailStaging.set('error');
+            this.emailStagingMessage.set(hubspotResult.error ?? 'The draft could not be created in HubSpot.');
+            return;
+          }
+
+          // An ABSENT hubspot row is not treated as a failure: `platformResults` is optional on
+          // the contract, and an older service that omits it entirely would otherwise report every
+          // successful staging as an error. Only an explicit `ok: false` is a failure.
           this.emailStaging.set('done');
           this.emailStagingMessage.set('Draft created in HubSpot. Review and send it from there.');
         },
