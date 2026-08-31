@@ -392,6 +392,20 @@ export class CampaignsComponent {
    */
   private emailBriefPersistInFlight: Promise<string> | null = null;
 
+  /**
+   * Invalidates a persist's own CACHE WRITES, not just the responses that consume them.
+   *
+   * The generation guards on the copy/audience/staging paths protect the writes those handlers
+   * make. `persistEmailBrief` makes its own, deeper down: `emailBriefId.set(briefId)` and the
+   * `knownBriefIds` entry beside it. A persist already on the wire when a reset lands still
+   * resolved afterwards and wrote the PREVIOUS brief's id back -- and because `persistEmailBrief`
+   * short-circuits on a non-empty `emailBriefId()`, the next action on the new brief read the
+   * clobbered id and proceeded against the abandoned one, staging a HubSpot draft against the
+   * wrong audience. The reset's own comment says the in-flight request is "left to finish"
+   * harmlessly; that is only true if it does not write.
+   */
+  private emailBriefPersistGeneration = 0;
+
   private briefPersistenceGeneration = 0;
 
   /**
@@ -2465,6 +2479,9 @@ export class CampaignsComponent {
     // a plain first save exactly as before.
     const ownershipKey = this.ownershipKey(projectSlug, brief);
     const owned = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
+    // Captured BEFORE the await, compared after: the only thing that can tell a response
+    // belonging to this brief from one belonging to a brief the page has since dropped.
+    const generation = this.emailBriefPersistGeneration;
     const persisted = await firstValueFrom(
       this.campaignService.persistBrief(brief, projectSlug, owned?.id ?? null, owned?.etag ?? null, owned?.absence === 'overwrite')
     );
@@ -2475,6 +2492,12 @@ export class CampaignsComponent {
     // call fail against a brief this session believes is ready -- and because the cache
     // short-circuits, a retry would never re-attempt the approval that is actually missing.
     if (briefId !== '' && persisted.approved) {
+      // A reset while this was on the wire means the id belongs to a brief the page no longer
+      // holds. Returning it is fine -- the caller that started this persist asked for it -- but
+      // writing it into the SHARED cache is what strands the next action on the abandoned brief.
+      if (generation !== this.emailBriefPersistGeneration) {
+        return briefId;
+      }
       this.emailBriefId.set(briefId);
       // Record OWNERSHIP too, not just the id. `emailBriefId` is cleared by
       // `resetEmailBriefDerivedState`, so caching only there meant the next save after a Proceed
@@ -2904,6 +2927,9 @@ export class CampaignsComponent {
    * rest are cleared for the ordinary reason that they describe a brief that is no longer on screen.
    */
   private resetEmailBriefDerivedState(): void {
+    // Bumped FIRST, before any signal is cleared: a persist that resolves between the clear and
+    // the bump would otherwise still see its own generation and write the stale id back.
+    this.emailBriefPersistGeneration++;
     // `selectedEmailTypeId` is deliberately NOT cleared, unlike every signal below it. It is the
     // operator's choice rather than state derived from the brief, and someone working an event's
     // send sequence usually wants the type to persist across briefs. Nothing stale survives with

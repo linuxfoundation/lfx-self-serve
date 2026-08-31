@@ -146,9 +146,12 @@ export class CampaignService {
    * Generate email copy for a brief. Brief-scoped upstream, so both ids are required.
    */
   public generateEmailCopy(projectSlug: string, briefId: string, stage?: CampaignEmailStage): Observable<GenerateEmailCopyResult> {
-    // `stage` travels in the QUERY STRING. Declared as a body attribute it made the whole request
-    // body mandatory -- Goa emits `requestBody.required: true` and answers `MissingPayloadError`
-    // on EOF -- so every body-less POST began failing with a 400.
+    // `stage` travels in this request's BODY, and in the BFF's own request to campaign-service it
+    // travels in the QUERY STRING. The two hops differ deliberately: declaring it as a Goa body
+    // attribute upstream made the whole request body mandatory -- Goa emits
+    // `requestBody.required: true` and answers `MissingPayloadError` on EOF -- so every body-less
+    // POST began failing with a 400. The comment above previously described only the upstream hop
+    // and read as a claim about this one.
     //
     // Omitted when absent rather than sent empty, because those mean different things to a caller
     // reading the request: absence is "did not say". Upstream resolves BOTH to Registration Push
