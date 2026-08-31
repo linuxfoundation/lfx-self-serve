@@ -1,6 +1,7 @@
 ---
 title: Mentions Feed
 description: How to search, filter, and manage individual brand mentions in the Social Listening feed in LFX Self Serve.
+display_order: 1
 audience: [executive-director]
 product_area: Social Listening
 tags: [social listening, mentions, feed, filters, search, bookmarks, read state]

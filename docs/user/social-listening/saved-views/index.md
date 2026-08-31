@@ -1,6 +1,7 @@
 ---
 title: Saved Views
 description: How to save, apply, share, and manage named filter views on the Social Listening feed in LFX Self Serve.
+display_order: 3
 audience: [executive-director]
 product_area: Social Listening
 tags: [social listening, saved views, filters, sharing, presets]

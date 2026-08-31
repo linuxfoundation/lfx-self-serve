@@ -1,6 +1,7 @@
 ---
 title: Analytics
 description: How to read and export the Social Listening analytics — trends, platform and tag breakdowns, and sentiment distribution — in LFX Self Serve.
+display_order: 2
 audience: [executive-director]
 product_area: Social Listening
 tags: [social listening, analytics, charts, sentiment, trends, export]
