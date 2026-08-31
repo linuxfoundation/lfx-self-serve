@@ -15,7 +15,7 @@ import {
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
 import { MAILING_LIST_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
-import { catchError, map, Observable, of, shareReplay, tap } from 'rxjs';
+import { catchError, map, Observable, of, shareReplay, take, tap } from 'rxjs';
 
 /**
  * Service for managing mailing list data
@@ -59,10 +59,9 @@ export class MailingListService {
     if (cached) {
       this.mailingListDetailCache.delete(uid);
     }
-    const request$ = this.http.get<GroupsIOMailingList>(`${this.baseUrl}/${uid}`).pipe(
-      tap({ error: () => this.mailingListDetailCache.delete(uid) }),
-      shareReplay(1)
-    );
+    const request$ = this.http
+      .get<GroupsIOMailingList>(`${this.baseUrl}/${uid}`)
+      .pipe(tap({ error: () => this.mailingListDetailCache.delete(uid) }), shareReplay(1));
     this.pruneExpiredMailingListDetailCache();
     this.mailingListDetailCache.set(uid, { observable: request$, cachedAt: Date.now() });
     return request$;
@@ -79,11 +78,14 @@ export class MailingListService {
   }
 
   public createMailingList(data: CreateMailingListRequest): Observable<GroupsIOMailingList> {
-    return this.http.post<GroupsIOMailingList>(this.baseUrl, data);
+    return this.http.post<GroupsIOMailingList>(this.baseUrl, data).pipe(take(1));
   }
 
   public updateMailingList(uid: string, data: Partial<CreateMailingListRequest>): Observable<GroupsIOMailingList> {
-    return this.http.put<GroupsIOMailingList>(`${this.baseUrl}/${uid}`, data).pipe(tap(() => this.mailingListDetailCache.delete(uid)));
+    return this.http.put<GroupsIOMailingList>(`${this.baseUrl}/${uid}`, data).pipe(
+      take(1),
+      tap(() => this.mailingListDetailCache.delete(uid))
+    );
   }
 
   public getServicesByProject(projectUid: string): Observable<GroupsIOService[]> {
@@ -93,7 +95,7 @@ export class MailingListService {
   }
 
   public createService(data: CreateGroupsIOServiceRequest): Observable<GroupsIOService> {
-    return this.http.post<GroupsIOService>(`${this.baseUrl}/services`, data);
+    return this.http.post<GroupsIOService>(`${this.baseUrl}/services`, data).pipe(take(1));
   }
 
   public getMembers(mailingListId: string): Observable<MailingListMember[]> {
@@ -109,17 +111,28 @@ export class MailingListService {
   }
 
   public createMember(mailingListId: string, data: CreateMailingListMemberRequest): Observable<MailingListMember> {
-    return this.http.post<MailingListMember>(`${this.baseUrl}/${mailingListId}/members`, data).pipe(tap(() => this.mailingListDetailCache.delete(mailingListId)));
+    return this.http
+      .post<MailingListMember>(`${this.baseUrl}/${mailingListId}/members`, data)
+      .pipe(
+        take(1),
+        tap(() => this.mailingListDetailCache.delete(mailingListId))
+      );
   }
 
   public updateMember(mailingListId: string, memberId: string, data: UpdateMailingListMemberRequest): Observable<MailingListMember> {
     return this.http
       .put<MailingListMember>(`${this.baseUrl}/${mailingListId}/members/${memberId}`, data)
-      .pipe(tap(() => this.mailingListDetailCache.delete(mailingListId)));
+      .pipe(
+        take(1),
+        tap(() => this.mailingListDetailCache.delete(mailingListId))
+      );
   }
 
   public deleteMember(mailingListId: string, memberId: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/${mailingListId}/members/${memberId}`).pipe(tap(() => this.mailingListDetailCache.delete(mailingListId)));
+    return this.http.delete<void>(`${this.baseUrl}/${mailingListId}/members/${memberId}`).pipe(
+      take(1),
+      tap(() => this.mailingListDetailCache.delete(mailingListId))
+    );
   }
 
   private pruneExpiredMailingListDetailCache(): void {
