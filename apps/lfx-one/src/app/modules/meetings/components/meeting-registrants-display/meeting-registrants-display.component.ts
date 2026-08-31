@@ -176,6 +176,12 @@ export class MeetingRegistrantsDisplayComponent {
       .subscribe((hosts) => this.resolvedHostsChange.emit(hosts));
 
     effect(() => {
+      if (!this.inviteResponsesEnabled() && this.rsvpFilterControl.value !== 'all') {
+        this.rsvpFilterControl.setValue('all');
+      }
+    });
+
+    effect(() => {
       if (!this.visible()) return;
       // Past-meeting participants always self-fetch.
       if (this.pastMeeting()) {
@@ -309,9 +315,10 @@ export class MeetingRegistrantsDisplayComponent {
               const meeting = this.meeting() as Meeting;
               const occurrenceId = resolveRsvpOccurrenceId(meeting);
               // Use access-controlled endpoint for meeting join page, regular endpoint for organizer views
+              const includeRsvp = this.inviteResponsesEnabled();
               const registrantsObservable = useMyEndpoint
-                ? this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId)
-                : this.meetingService.getMeetingRegistrants(meeting.id, true, occurrenceId);
+                ? this.meetingService.getMyMeetingRegistrants(meeting.id, includeRsvp, occurrenceId)
+                : this.meetingService.getMeetingRegistrants(meeting.id, includeRsvp, occurrenceId);
 
               return registrantsObservable.pipe(
                 catchError(() => of([])),
@@ -461,9 +468,11 @@ export class MeetingRegistrantsDisplayComponent {
             registrant.email?.toLowerCase().includes(query) ||
             registrant.org_name?.toLowerCase().includes(query);
 
-          // RSVP filter — must match chip rendering via attendanceStatus
+          // RSVP filter — must match chip rendering via attendanceStatus.
+          // Skip when tracking is off: the selector is hidden, but a reused join-page
+          // instance can still hold "Accepted" from the previous meeting (GH-1951).
           let matchesRsvp = true;
-          if (rsvp !== 'all') {
+          if (this.inviteResponsesEnabled() && rsvp !== 'all') {
             const status = registrant.attendanceStatus;
             if (rsvp === 'yes') {
               matchesRsvp = status === 'accepted';

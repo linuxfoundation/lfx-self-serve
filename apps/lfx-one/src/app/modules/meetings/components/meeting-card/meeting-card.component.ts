@@ -48,7 +48,6 @@ import {
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   getUpcomingMeetingStartTime,
-  isMeetingInviteResponsesEnabled,
   isPastMeetingSummaryAwaitingApproval,
   isPastMeetingSummaryVisible,
   Meeting,
@@ -66,6 +65,7 @@ import {
   resolveOccurrenceRecurrence,
   TagSeverity,
 } from '@lfx-one/shared';
+import { isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
 import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { LinkifyPipe } from '@pipes/linkify.pipe';

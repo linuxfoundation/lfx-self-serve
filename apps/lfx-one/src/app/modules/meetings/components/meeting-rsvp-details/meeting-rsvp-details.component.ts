@@ -8,7 +8,6 @@ import { ButtonComponent } from '@components/button/button.component';
 import {
   calculateRsvpCounts,
   countRegistrantAttendance,
-  isMeetingInviteResponsesEnabled,
   Meeting,
   MeetingOccurrence,
   MeetingRegistrant,
@@ -18,7 +17,7 @@ import {
   Project,
   RsvpCounts,
 } from '@lfx-one/shared';
-import { resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
+import { isMeetingInviteResponsesEnabled, resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { catchError, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';

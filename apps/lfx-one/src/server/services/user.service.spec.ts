@@ -399,14 +399,14 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
       id: 'legacy-meeting',
       title: 'Legacy Board',
       start_time: tomorrow,
-      duration: '60',
+      duration: 60,
       use_new_invite_email_address: false,
     };
     const trackedMeeting: Partial<Meeting> = {
       id: 'tracked-meeting',
       title: 'Tracked Board',
       start_time: tomorrow,
-      duration: '60',
+      duration: 60,
       use_new_invite_email_address: true,
     };
     const registrants: Partial<MeetingRegistrant>[] = [
@@ -446,7 +446,7 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
             id: 'legacy-meeting',
             title: 'Legacy Board',
             start_time: tomorrow,
-            duration: '60',
+            duration: 60,
             use_new_invite_email_address: false,
           } satisfies Partial<Meeting>,
         ]);

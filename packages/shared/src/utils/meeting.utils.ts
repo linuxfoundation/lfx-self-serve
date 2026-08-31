@@ -1002,10 +1002,14 @@ export function parseTranscriptVtt(vtt: string | null | undefined): TranscriptCu
  * Maps the indexed `v1_meeting` flag `use_new_invite_email_address` onto
  * `is_invite_responses_enabled` when the ITX field is absent.
  *
- * ITX GET omits `is_invite_responses_enabled` when false (Go `omitempty`); the
- * query-service projection stores the same boolean as `use_new_invite_email_address`.
+ * PCC gates RSVP UI on ITX `is_invite_responses_enabled`, which is mapped 1:1 from
+ * DynamoDB `use_new_invite_email_address` (set true only for meetings created after
+ * the January 2024 invite-responses release). The indexer stores that same DynamoDB
+ * attribute as `use_new_invite_email_address`; ITX GET exposes it as
+ * `is_invite_responses_enabled` and omits the field when false (Go `omitempty`).
  * Explicit `is_invite_responses_enabled` wins. Missing both layers becomes `false`
- * so Self Serve can hide RSVP UI for pre-feature meetings (GH-1951).
+ * so Self Serve can hide RSVP UI for pre-feature meetings (GH-1951 / InterUSS
+ * `91098305796`).
  */
 export function normalizeIndexedMeetingInviteResponses<
   T extends {
