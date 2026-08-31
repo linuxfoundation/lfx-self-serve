@@ -1468,10 +1468,13 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
     for (const [status, offerStaysUp, expected] of [
       [400, true, /check the name/i],
       [404, true, /connect HubSpot/i],
-      // 500 is the CATCH-ALL, not just "credential undecryptable": it also covers "the campaign
-      // was not returned after creation", where the campaign may well exist. A status cannot
-      // tell those apart, so it must fail CLOSED for a non-idempotent create.
-      [500, false, /may or may not/i],
+      // 500 is RESERVED for the pre-send position by campaign-service's own contract: "a fault
+      // discovered AFTER the create returned without error is a 503, because by then the campaign
+      // may exist and only this service's reading of the outcome failed" (design/connection.go).
+      // So 500 proves nothing reached HubSpot, and the contract says reporting it as unconfirmed
+      // "hides the remedy they actually need" -- reconnecting HubSpot, not hunting for a campaign
+      // that was never attempted.
+      [500, true, /reconnect HubSpot/i],
       [503, false, /may or may not/i],
       // Unclassifiable: a non-idempotent create must fail CLOSED, so it reads as unconfirmed.
       [0, false, /may or may not/i],

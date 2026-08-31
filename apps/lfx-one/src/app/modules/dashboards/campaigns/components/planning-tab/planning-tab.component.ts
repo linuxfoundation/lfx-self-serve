@@ -706,7 +706,13 @@ export class PlanningTabComponent implements OnInit {
           // a message telling the operator to check HubSpot for a campaign never attempted; the
           // fix must not overshoot into the opposite error.
           const status = typeof err === 'object' && err !== null && 'status' in err ? Number((err as { status: unknown }).status) : 0;
-          if (status === 400 || status === 404) {
+          // 500 joins 400/404 because campaign-service RESERVES it for the pre-send position:
+          // "a fault discovered AFTER the create returned without error is a 503, because by
+          // then the campaign may exist" (design/connection.go). All three prove nothing reached
+          // HubSpot, and the contract is explicit that reporting them as unconfirmed "hides the
+          // remedy they actually need" -- a decryption fault is fixed by reconnecting HubSpot,
+          // not by hunting for a campaign that was never attempted.
+          if (status === 400 || status === 404 || status === 500) {
             // Nothing was created: keep the offer so the operator can act on the message.
             this.hsUnconfirmed.set(false);
             this.hsStatus.set(this.createFailureMessage(status));
@@ -1222,6 +1228,12 @@ export class PlanningTabComponent implements OnInit {
   private createFailureMessage(status: number): string {
     if (status === 404) {
       return 'No HubSpot connection is configured for this project — connect HubSpot before creating a campaign.';
+    }
+    if (status === 500) {
+      // A stored-credential or internal fault, discovered BEFORE the request went out. Naming the
+      // name here would send the operator to edit a field that is not the problem: the contract
+      // calls this "not the operator's to fix, and not retryable by them".
+      return 'The HubSpot connection could not be used. Nothing was created — reconnect HubSpot, or ask an administrator to check the stored credential.';
     }
     return 'HubSpot rejected the campaign. Nothing was created — check the name and try again.';
   }
