@@ -23,6 +23,10 @@
 
           <p class="text-gray-600 mb-8 max-w-lg mx-auto" data-testid="invite-error-description">
             {{ description }}
+            @if (isGenericError) {
+              <span>Need more help? </span
+              ><button type="button" lfxOpenIntercom class="font-medium underline" data-testid="invite-error-contact-support">Contact support</button>
+            }
           </p>
 
           <lfx-button routerLink="/" icon="fa-light fa-house" label="Go to Dashboard" size="small" data-testid="invite-error-home-button"> </lfx-button>

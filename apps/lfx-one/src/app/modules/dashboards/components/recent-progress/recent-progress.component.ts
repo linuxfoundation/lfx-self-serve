@@ -565,7 +565,7 @@ export class RecentProgressComponent {
       if (entityType === 'foundation') {
         return (row as HealthMetricsAggregatedRow).AVG_HEALTH_SCORE;
       }
-      return (row as ProjectHealthMetricsDailyRow).HEALTH_SCORE;
+      return (row as ProjectHealthMetricsDailyRow).HEALTH_SCORE_V2;
     };
 
     // Tooltip label based on entity type

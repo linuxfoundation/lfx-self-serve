@@ -407,6 +407,7 @@ test.describe('Org Selector — /org/overview no-access state (S15)', () => {
     expect(page.url()).toContain('/org/overview');
     await expect(page.getByTestId('org-overview-no-access-state')).toBeVisible();
     await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('Organization Lens is not available');
+    await expect(page.getByTestId('org-overview-no-access-contact-support')).toBeVisible();
     // The skeleton and the no-org-selected empty state must NOT show in this branch.
     await expect(page.getByTestId('org-overview-loading')).toHaveCount(0);
     await expect(page.getByTestId('org-overview-empty-state')).toHaveCount(0);

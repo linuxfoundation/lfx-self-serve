@@ -1860,10 +1860,12 @@ describe('CampaignServiceClient.createCampaigns', () => {
   });
 
   it('does not refuse a non-Google create that happens to carry demand-gen', async () => {
-    // `campaignTypes` is a GOOGLE concept, but the Implementation tab sends it unconditionally:
-    // `includeDemandGen` defaults to true and nothing clears it when Google is deselected. So a
-    // LinkedIn-only create arrives carrying `demand-gen`, and refusing on the type alone gave a
-    // Google error for a request Google was never part of.
+    // `campaignTypes` is a GOOGLE concept, but the Implementation tab sends it unconditionally
+    // and nothing clears it when Google is deselected. The form defaults `includeDemandGen` to
+    // false now, so the way it arrives set is RETAINED state — ticked and then Google deselected,
+    // or restored from a draft saved under the old default. So a LinkedIn-only create still
+    // arrives carrying `demand-gen`, and refusing on the type alone gave a Google error for a
+    // request Google was never part of.
     bothFlagsOn();
     proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-00000000000c' } });
 
@@ -2356,7 +2358,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
 
     const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
 
-    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false });
+    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true });
   });
 
   // The index stores `version`; a write needs `If-Match`. campaign-service's ETag is exactly
@@ -2379,7 +2381,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
   });
 
   // The list read is UNGATED while the toggle route refuses every UUID with the flag off, so the
-  // client cannot infer this — a default deployment would render controls that can only 400.
+  // client cannot infer this. The chart ships the flag on, but an override or un-rolled pod still
+  // answers off, and that deployment would render controls that can only 400.
   // Asserted in BOTH directions: a field hardcoded to either constant would pass one of these.
   it.each([
     [true, true],
@@ -2396,6 +2399,46 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // `vi.clearAllMocks()` in this file's beforeEach clears CALLS but not IMPLEMENTATIONS, so a
       // stray mockImplementation here would silently re-answer every later flag question in the
       // suite. Restored to the file's default rather than left for the next test to discover.
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The capability is NOT the raw `CampaignServiceDemandGen` flag.
+   *
+   * While the create cutover is dark the controller falls through to the legacy creator, which
+   * creates demand-gen campaigns perfectly well — so reporting the raw flag would hide a working
+   * option for the whole of the staged CREATE-off rollout this chart prescribes.
+   *
+   * The staged-rollout row is the one that matters and the one a naive implementation fails: all
+   * three create prerequisites on is NOT the same as CREATE alone, and demand-gen off only bites
+   * once campaign-service actually owns creation.
+   */
+  it.each([
+    // cutover fully on + capability on  -> campaign-service can serve it
+    [{ create: true, briefs: true, jobs: true, demandGen: true }, true],
+    // cutover fully on + capability off -> the one case that is genuinely unavailable
+    [{ create: true, briefs: true, jobs: true, demandGen: false }, false],
+    // the staged CREATE-off rollout: legacy owns creation and supports demand gen
+    [{ create: false, briefs: true, jobs: true, demandGen: false }, true],
+    // a PARTIAL flag set is equivalent to "cutover off" in createCampaigns; it must match here
+    [{ create: true, briefs: false, jobs: true, demandGen: false }, true],
+    [{ create: true, briefs: true, jobs: false, demandGen: false }, true],
+  ])('reports the demand-gen capability from the create path that will actually run (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceDemandGen) return flags.demandGen;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.demandGenEnabled).toBe(expected);
+    } finally {
       isServerFeatureEnabled.mockImplementation(() => false);
     }
   });
@@ -2422,7 +2465,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     expect(proxyRequest).not.toHaveBeenCalled();
     // possiblyStale TRUE on a refusal: nothing was queried, so the empty list must not assert
     // that the brief has no campaigns.
-    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false });
+    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true });
   });
 });
 

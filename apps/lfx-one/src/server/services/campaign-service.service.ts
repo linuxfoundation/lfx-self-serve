@@ -303,6 +303,32 @@ function fromMarketingEmail(email: CampaignServiceMarketingEmail): HubSpotMarket
  * is an addition here plus a branch at the call site, and a rollback is the flag alone —
  * rather than an edit tangled through the vendor code that has to be reverted by hand.
  */
+/**
+ * Whether this deployment can create a Demand Gen Google campaign.
+ *
+ * NOT simply `CampaignServiceDemandGen`. That flag gates the campaign-service create path only;
+ * while the create cutover is dark the controller falls through to the LEGACY creator, whose
+ * `includeGoogle` gates on platform membership alone and which creates demand-gen campaigns
+ * perfectly well (see the note above `unconfigured` in `createCampaigns`).
+ *
+ * So the capability is missing only in the narrow window where campaign-service owns creation and
+ * has not been told it understands `googleAdsConfig.channel`. Reporting the raw flag instead would
+ * hide a working legacy option — including for the whole of the staged CREATE-off rollout this
+ * chart prescribes, which is exactly the deployment state most likely to be in effect.
+ *
+ * Mirrors `createCampaigns`' own three-flag gate rather than restating it as two: a partial flag
+ * set is equivalent to "cutover off" there, and it has to mean the same here or the two disagree
+ * mid-rollout.
+ */
+function canCreateDemandGen(): boolean {
+  const cutoverOwnsCreate =
+    isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate) &&
+    isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs) &&
+    isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs);
+
+  return !cutoverOwnsCreate || isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceDemandGen);
+}
+
 export class CampaignServiceClient {
   private readonly microserviceProxy: MicroserviceProxyService;
 
@@ -361,7 +387,12 @@ export class CampaignServiceClient {
       // programming error, and it is exactly the false absence this field exists to prevent. The
       // HTTP path never reaches this (the controller refuses both blanks first), so this guards
       // direct callers, where an unqualified "no campaigns" is the most expensive thing to say.
-      return { campaigns: [], possiblyStale: true, statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle) };
+      return {
+        campaigns: [],
+        possiblyStale: true,
+        statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle),
+        demandGenEnabled: canCreateDemandGen(),
+      };
     }
 
     const docs = await fetchAllQueryResources<CampaignIndexDoc>(
@@ -397,13 +428,20 @@ export class CampaignServiceClient {
     // yet" and "none exist" are the same answer here. Say so rather than letting the caller read
     // absence as proof.
     // Reported with the list because the client cannot infer it: this read is ungated, while the
-    // toggle route refuses every UUID when the flag is off — so a default deployment would render
-    // controls that can only fail. Read at request time rather than cached, so a flag flip does
-    // not need a redeploy of this process to take effect on the next list.
+    // toggle route refuses every UUID when the flag is off. The chart now ships the flag on, but
+    // it is read per request from the environment, so a values override or a not-yet-rolled pod
+    // still answers off — and that deployment would render controls that can only fail. Read at
+    // request time rather than cached, so a flag flip does not need a redeploy of this process to
+    // take effect on the next list.
+    //
+    // `demandGenEnabled` rides along for the same reason and is read the same way: the create
+    // route refuses `demand-gen` unless its own flag is on, and nothing in the create request
+    // tells the client that in advance.
     return {
       campaigns,
       possiblyStale: campaigns.length === 0,
       statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle),
+      demandGenEnabled: canCreateDemandGen(),
     };
   }
 
@@ -781,10 +819,13 @@ export class CampaignServiceClient {
     // actually serve the request until this BFF can send both channels in one envelope.
     //
     // Gated on google-ads being SELECTED, not on `campaignTypes` alone. `campaignTypes` is a
-    // Google concept but the Implementation tab sends it unconditionally — `includeDemandGen`
-    // defaults to true in the form and nothing clears it when Google is deselected — so a
-    // LinkedIn-only create arrives carrying `demand-gen`. Refusing on the type alone rejected
-    // creates that have no Google campaign in them at all.
+    // Google concept but the Implementation tab sends it unconditionally (implementation-tab
+    // :1327-1338), and nothing clears it when Google is deselected. The form now defaults
+    // `includeDemandGen` to false, so this is no longer the untouched-form case — it is RETAINED
+    // state: a user who ticks Demand Gen and then deselects Google, or a saved draft restoring
+    // the old default through `:1611`. Either way a LinkedIn-only create arrives carrying
+    // `demand-gen`, and refusing on the type alone rejected creates that have no Google campaign
+    // in them at all.
     if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen') && campaignTypes.includes('search')) {
       return {
         enabled: true,

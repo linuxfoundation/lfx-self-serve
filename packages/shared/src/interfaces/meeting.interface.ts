@@ -1442,3 +1442,61 @@ export interface MeLensMeetingFilters {
   /** Viewer username/LFID used by the `organizerOnly` predicate; null disables matching. */
   viewerUsername: string | null;
 }
+
+/**
+ * Public-safe meeting projection for the anonymous project calendar feed
+ * @description Allowlisted rendering and navigation fields only. `GET /public/api/projects/:id/meetings`
+ * builds this shape field-by-field rather than deleting known-sensitive keys off a full `Meeting`, so
+ * credentials (`password`, `passcode`, `host_key`, `zoom_config`) and organizer PII (`created_by`,
+ * `owner`, `organizers`) stay out of the anonymous payload even as new `Meeting` fields land upstream
+ * (LFXV2-2802). Mirrors the minimal-projection contract of `PublicMeetingOccurrencesResponse`.
+ */
+export interface PublicCalendarMeeting {
+  /** Meeting UID of the live series, or of the originating series for a past-meeting row */
+  id: string;
+  /** Series title — also used for every occurrence, since per-occurrence titles are not published */
+  title: string;
+  /** Series start time in RFC3339 format */
+  start_time: string;
+  /** Duration in minutes */
+  duration: number;
+  /** IANA timezone (e.g. "America/New_York") */
+  timezone: string;
+  /** Occurrence timestamps and status only — no titles, descriptions, or registrant counts */
+  occurrences?: MeetingOccurrenceSummary[];
+  /** Cancelled occurrence IDs from the live series (10-digit Unix-second keys) */
+  cancelled_occurrences?: string[];
+  /** Scheduled start of a past occurrence; present only on `v1_past_meeting` rows */
+  scheduled_start_time?: string;
+  /** Composite past-meeting id (e.g. "99152950841-1630560600000"); present only on `v1_past_meeting` rows */
+  meeting_and_occurrence_id?: string;
+  /**
+   * Committee UIDs this meeting is associated with — opaque identifiers used to filter, label, and
+   * color-code the public calendar.
+   *
+   * Restricted server-side to committees the public group directory lists, and never accompanied by a
+   * name. A PUBLIC meeting can be tied to a non-public committee; publishing that UID would let an
+   * anonymous caller correlate meetings by a group the directory deliberately hides, and the name would
+   * label the feed with that hidden group. Clients resolve display names from
+   * `GET /public/api/projects/:id/groups`, so a withheld UID would have been unusable to them anyway.
+   *
+   * Not a claim that a non-public committee's name is unreachable everywhere: `GET /public/api/meetings/:id`
+   * still returns `committees[].name` to anonymous callers for a PUBLIC, non-restricted meeting. Narrowing
+   * that endpoint is a separate change against a pre-existing surface.
+   */
+  committee_uids?: string[];
+}
+
+/**
+ * Response envelope returned by `GET /public/api/projects/:id/meetings`
+ * @description The public calendar page's meeting list — PUBLIC-visibility meetings only, upcoming
+ * and past combined, optionally scoped to one committee via the `committee` query param
+ */
+export interface PublicProjectMeetingsResponse {
+  /** Credential- and PII-free meeting projections; see {@link PublicCalendarMeeting} */
+  meetings: PublicCalendarMeeting[];
+  /** Number of entries in `meetings` */
+  total: number;
+  /** Slim project envelope for the page header; `name` is empty when project lookup fails */
+  project: { uid: string; name: string };
+}

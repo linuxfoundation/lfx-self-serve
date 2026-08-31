@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import type { GithubAccountChoice, GithubAccountOption } from '@lfx-one/shared/interfaces';
+import type { GithubAccountChoice, GithubAccountOption, GithubAccountSelectResult } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
@@ -12,7 +12,8 @@ import { SelectableCardComponent } from '@components/selectable-card/selectable-
 
 /**
  * "Which GitHub account are you signing as?" step, shown between the CLA-group picker and the
- * Console hand-off (#1252) when the contributor has linked more than one GitHub account.
+ * Console hand-off (#1252). It is shown for every account list the server returns, an empty
+ * one included.
  *
  * It exists because the account a CLA is recorded against used to be decided by whichever
  * record an identity search returned first, which is not a decision the contributor got to
@@ -24,9 +25,21 @@ import { SelectableCardComponent } from '@components/selectable-card/selectable-
  * component must present what it is given and nothing else — it must never accept an account
  * from the URL, from user input, or from anywhere but `config.data`.
  *
- * Closes with the chosen account's `githubId`, or `null` if the contributor backs out. The id
- * alone, because the parent already holds the list and resolves the rest from it rather than
- * taking a handle from here.
+ * With no linked account it becomes a blocking empty state rather than an empty list: the
+ * contributor is told why they cannot continue at the point they tried to, instead of being
+ * moved elsewhere and left to work out that the CLA group they picked was dropped (#1917).
+ *
+ * That block is written out here rather than delegated to `lfx-empty-state` because that
+ * component takes `title` as a required input and the design has no title — an icon, one
+ * sentence, one action. Reusing it would mean inventing a heading, and the wording here is
+ * required to be the design's. Its page-level proportions — a card, `p-8 md:p-16`, an 80px icon
+ * badge — are the second reason; every other use of it in the app is a page or a table, not a
+ * 32rem dialog. The action still takes that component's own outlined treatment, so the two
+ * agree on everything but size.
+ *
+ * Closes with the chosen account's `githubId`, with `linkAccounts` if they asked to link one,
+ * or `null` if they backed out. The id alone, because the parent already holds the list and
+ * resolves the rest from it rather than taking a handle from here.
  */
 @Component({
   selector: 'lfx-github-account-select',
@@ -60,6 +73,7 @@ export class GithubAccountSelectComponent {
     }))
   );
   protected readonly selectedId = signal<string | null>(null);
+  protected readonly hasAccounts = computed(() => this.accounts().length > 0);
 
   public constructor() {
     this.selectForm.controls.githubId.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.selectedId.set(value));
@@ -68,10 +82,18 @@ export class GithubAccountSelectComponent {
   protected onContinue(): void {
     const githubId = this.selectedId();
     if (!githubId) return;
-    this.ref.close(githubId);
+    this.ref.close({ githubId } satisfies GithubAccountSelectResult);
   }
 
   protected onCancel(): void {
     this.ref.close(null);
+  }
+
+  /**
+   * Asks the caller to take the contributor to Identities. Navigating from here instead would
+   * put routing in a dialog, which nothing else in this flow does.
+   */
+  protected onLinkAccounts(): void {
+    this.ref.close({ linkAccounts: true } satisfies GithubAccountSelectResult);
   }
 }

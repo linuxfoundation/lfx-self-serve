@@ -16,6 +16,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 import {
+  CAMPAIGN_ALERT_THRESHOLDS,
   CAMPAIGN_PACING_THRESHOLDS,
   META_DEFAULT_PLACEMENTS,
   META_NUMERIC_ID_PATTERN,
@@ -574,7 +575,7 @@ function buildMetaActionItems(campaigns: MetaCampaignMetrics[]): MetaActionItem[
         action: 'Check ad set targeting, budget, and creative approval status in Meta Ads Manager',
       });
     }
-    if (c.ctr < 0.5 && c.impressions > 500) {
+    if (c.ctr < CAMPAIGN_ALERT_THRESHOLDS['meta-ads'].lowCtrPct && c.impressions > CAMPAIGN_ALERT_THRESHOLDS['meta-ads'].minImpressions) {
       items.push({
         priority: 'MED',
         campaignName: c.campaignName,
@@ -582,7 +583,7 @@ function buildMetaActionItems(campaigns: MetaCampaignMetrics[]): MetaActionItem[
         action: 'Refresh creative assets, test new ad formats, or narrow audience targeting',
       });
     }
-    if (c.clicks > 20 && c.conversions === 0) {
+    if (c.clicks > CAMPAIGN_ALERT_THRESHOLDS['meta-ads'].clicksWithoutConversions && c.conversions === 0) {
       items.push({
         priority: 'MED',
         campaignName: c.campaignName,

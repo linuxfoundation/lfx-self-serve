@@ -144,8 +144,8 @@ describe('CampaignController.persistBrief', () => {
 
     expect(saveBrief).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
-    // 200 with a body, not a 4xx/5xx: the flag being off is the default in every environment, so
-    // an error status here would fire the client's error arm on the ordinary case.
+    // 200 with a body, not a 4xx/5xx: the flag being off is an ordinary deployment state rather
+    // than a fault, so an error status here would fire the client's error arm on that case.
     expect(res.json).toHaveBeenCalledWith({ enabled: false, briefId: '', etag: null, created: false, approved: false });
   });
 
@@ -262,7 +262,7 @@ describe('CampaignController.loadBrief', () => {
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
-    // The flag being off is the default in every environment and warrants no error. A 4xx/5xx
+    // The flag being off is an ordinary deployment state and warrants no error. A 4xx/5xx
     // would fire the client's error arm on the ordinary case and train whoever sees it to ignore
     // a UI that should never fire.
     expect(loadBrief).not.toHaveBeenCalled();
@@ -333,13 +333,13 @@ describe('CampaignController.loadBrief', () => {
   it('returns a "none" status when campaign-service has no brief for this slug', async () => {
     // The ordinary first-time case: the user has not generated a brief yet, so campaign-service
     // returns nothing. This is not an error, just an empty result that tells the UI "generate one".
-    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, approved: false });
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
     expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ status: 'none', briefId: null, brief: null, approved: false });
+    expect(res.json).toHaveBeenCalledWith({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
   });
 
   it('returns a "loaded" status with the brief when campaign-service reconstructs it successfully', async () => {
@@ -350,13 +350,13 @@ describe('CampaignController.loadBrief', () => {
       structuredCopy: null,
       keywords: [],
     } as unknown as CampaignBriefOutput;
-    loadBrief.mockResolvedValue({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, approved: true });
+    loadBrief.mockResolvedValue({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, etag: 'W/"7"', approved: true });
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
     expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, approved: true });
+    expect(res.json).toHaveBeenCalledWith({ status: 'loaded', briefId: 'brief-abc123', brief: mockBrief, etag: 'W/"7"', approved: true });
   });
 
   it('returns an "unreadable" status with the brief ID when a row exists but cannot be reconstructed', async () => {
@@ -365,13 +365,13 @@ describe('CampaignController.loadBrief', () => {
     // UI from treating this as "no brief" and silently overwriting the orphaned row with a new save.
     // The client learns "a saved brief exists but could not be opened" and can prompt the user
     // rather than pretending the slate is clean.
-    loadBrief.mockResolvedValue({ status: 'unreadable', briefId: 'brief-def456', brief: null, approved: false });
+    loadBrief.mockResolvedValue({ status: 'unreadable', briefId: 'brief-def456', brief: null, etag: 'W/"9"', approved: false });
 
     await controller.loadBrief(buildLoadReq(), res, next);
 
     expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf');
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ status: 'unreadable', briefId: 'brief-def456', brief: null, approved: false });
+    expect(res.json).toHaveBeenCalledWith({ status: 'unreadable', briefId: 'brief-def456', brief: null, etag: 'W/"9"', approved: false });
   });
 
   it('sends a failed load to the error middleware instead of returning a degraded result', async () => {
@@ -1685,7 +1685,7 @@ describe('CampaignController.listBriefCampaigns', () => {
     // Carries `statusToggleEnabled` because the real `listBriefCampaigns` always returns it and
     // `CampaignListResult` declares it required. A fixture omitting it stands in for a payload the
     // service cannot produce, and this suite is the only place the /list HTTP contract is exercised.
-    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, statusToggleEnabled: false });
+    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: false });
   });
 
   it('passes both scopes through, trimmed', async () => {
@@ -1700,6 +1700,11 @@ describe('CampaignController.listBriefCampaigns', () => {
     ['brief_id', { project: 'tlf' }],
     ['a blank project', { project: '   ', brief_id: 'b-1' }],
     ['a blank brief_id', { project: 'tlf', brief_id: '   ' }],
+    // The EMPTY string specifically, not just whitespace. The disabled-persist path reports
+    // `briefId: ''`, and a client that forwarded it here to read a deployment capability would
+    // get a 400 rather than an answer — the request never reaches the service branch that
+    // returns `demandGenEnabled` for a blank id.
+    ['an empty brief_id', { project: 'tlf', brief_id: '' }],
   ])('refuses a request with no %s', async (_label, query) => {
     await controller.listBriefCampaigns(listReq(query), res, next);
 
@@ -1722,11 +1727,11 @@ describe('CampaignController.listBriefCampaigns', () => {
    * here because this is the only test of the /list response shape.
    */
   it('forwards statusToggleEnabled through the passthrough', async () => {
-    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: false, statusToggleEnabled: true });
+    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false });
 
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ statusToggleEnabled: true }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ statusToggleEnabled: true, demandGenEnabled: false }));
   });
 
   it('lets a query-service failure reach the error middleware', async () => {

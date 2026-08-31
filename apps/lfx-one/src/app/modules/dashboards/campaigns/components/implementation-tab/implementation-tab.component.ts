@@ -152,6 +152,23 @@ export class ImplementationTabComponent implements OnInit {
   public readonly sourceEmailId = input<string>('');
 
   /**
+   * Whether this deployment can create a Demand Gen Google campaign — `null` while unknown.
+   *
+   * THREE states, not two, and the distinction is load-bearing. `false` means the server said the
+   * capability is off; `null` means nothing has answered yet. Collapsing them makes the pre-load
+   * state indistinguishable from an explicit refusal, and `applyDraft` below would then rewrite a
+   * user's saved Demand Gen selection to `false` on a restore that merely raced the answer — a
+   * destructive edit to persisted state, from a value that was never a server fact.
+   *
+   * The control is withheld while `null` (offering one that may not submit is worse than a brief
+   * absence), but the DRAFT is preserved: hiding is reversible, and clearing is not.
+   */
+  public readonly demandGenEnabled = input<boolean | null>(null);
+
+  /** Render the control only on an explicit yes. `null` (unknown) withholds it. */
+  protected readonly demandGenAvailable = computed<boolean>(() => this.demandGenEnabled() === true);
+
+  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *
@@ -246,7 +263,13 @@ export class ImplementationTabComponent implements OnInit {
     startDate: ['', [Validators.required]],
     endDate: ['', [Validators.required]],
     includeSearch: [true],
-    includeDemandGen: [true],
+    // Search only by default. Both on is a REFUSED combination once the campaign-service cutover
+    // is live: `createCampaigns` rejects a Google request carrying both `search` and `demand-gen`
+    // and does NOT fall back to the legacy creator, so a user who accepted the old defaults got a
+    // terminal failure on their first create rather than a campaign. Search alone and Demand Gen
+    // alone are each servable; only the pair is not. Defaulting to the one that works means the
+    // untouched form submits successfully, and choosing Demand Gen stays one click away.
+    includeDemandGen: [false],
     headlines: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)])]),
     descriptions: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)])]),
     // The LinkedIn ad account, geo targets and targeting profile, on the FORM rather than in
@@ -756,7 +779,8 @@ export class ImplementationTabComponent implements OnInit {
     const sharedFieldsValid = !!form.eventName.value?.trim() && !!form.registrationUrl.value?.trim() && !!form.startDate.value && !!form.endDate.value;
     if (!sharedFieldsValid) return false;
 
-    if (googleSelected && !this.campaignForm.controls.includeSearch.value && !this.campaignForm.controls.includeDemandGen.value) return false;
+    if (googleSelected && !this.campaignForm.controls.includeSearch.value && !(this.demandGenAvailable() && this.campaignForm.controls.includeDemandGen.value))
+      return false;
     if (googleSelected && this.campaignForm.invalid) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
@@ -1320,7 +1344,7 @@ export class ImplementationTabComponent implements OnInit {
     const form = this.campaignForm.getRawValue();
     const campaignTypes: CampaignType[] = [];
     if (form.includeSearch) campaignTypes.push('search');
-    if (form.includeDemandGen) campaignTypes.push('demand-gen');
+    if (this.demandGenAvailable() && form.includeDemandGen) campaignTypes.push('demand-gen');
     const slug = form.eventSlug || form.eventName.toLowerCase().replace(/\s+/g, '-');
 
     const request = {
@@ -1602,7 +1626,14 @@ export class ImplementationTabComponent implements OnInit {
       startDate: draft.startDate,
       endDate: draft.endDate,
       includeSearch: draft.includeSearch,
-      includeDemandGen: draft.includeDemandGen,
+      // Cleared only on an EXPLICIT `false`, never on `null`. A draft saved when Demand Gen was
+      // available would otherwise restore a hidden `true` and submit it into the create route's
+      // refusal — hiding the control does not stop that, because this path writes the value
+      // without it. But `null` means the capability answer has not arrived, and clearing on that
+      // rewrites the user's saved selection to `false` permanently: the emit below carries it
+      // back to the parent, so a later `true` reveals an unchecked box with the choice already
+      // destroyed. Withholding the control while unknown is reversible; this is not.
+      includeDemandGen: this.demandGenEnabled() === false ? false : draft.includeDemandGen,
       // The three LinkedIn controls (LFXV2-3230), restored in the SAME patch as everything else —
       // which is the entire benefit of having moved them onto the form: no extra signal writes and
       // no second emission. This runs AFTER `populateFromBrief`, so it deliberately overwrites the
@@ -2008,23 +2039,33 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   private initCampaignName(): Signal<string> {
-    return toSignal(
-      this.campaignForm.valueChanges.pipe(
-        startWith(this.campaignForm.getRawValue()),
-        map((form) => {
-          const name = form.eventName;
-          const region = form.countryCode || 'NA';
-          const startDate = form.startDate || '';
-          const includeSearch = form.includeSearch;
-          const includeDemandGen = form.includeDemandGen;
-          let channel = 'Search';
-          if (includeSearch && includeDemandGen) channel = 'Multi';
-          else if (includeDemandGen) channel = 'DG Display';
-          return name ? `Events | ${name} | ${region} | Conversions | Prospecting | ${channel} | Linux Foundation | BoFU | ${startDate}` : '';
-        })
-      ),
-      { initialValue: '' }
-    );
+    // A `computed` over the form stream, not a `map` inside it, because the name depends on the
+    // CAPABILITY as well as the form. A signal read inside that `map` is not a reactive
+    // dependency — `toSignal` re-emits only when `valueChanges` fires — so gating the preview on
+    // `demandGenAvailable()` there froze it at whatever the capability was at mount: a tab that
+    // mounts before the capability resolves would preview Search for ever while submit sent
+    // `demand-gen`. Reading it in the outer `computed` makes it a real dependency, so the name
+    // recomputes when either the form or the capability changes.
+    const formValue = toSignal(this.campaignForm.valueChanges.pipe(startWith(this.campaignForm.getRawValue())), {
+      initialValue: this.campaignForm.getRawValue(),
+    });
+    return computed(() => {
+      const demandGenAvailable = this.demandGenAvailable();
+      const form = formValue();
+      const name = form.eventName;
+      const region = form.countryCode || 'NA';
+      const startDate = form.startDate || '';
+      const includeSearch = form.includeSearch;
+      // Capability-gated exactly as the request builder is. The form can carry a hidden
+      // `includeDemandGen: true` — a draft restored before the capability resolved — and reading
+      // it raw would preview `Multi` or `DG Display` for a request that sends only `search`,
+      // naming a campaign that will not be created.
+      const includeDemandGen = demandGenAvailable && form.includeDemandGen;
+      let channel = 'Search';
+      if (includeSearch && includeDemandGen) channel = 'Multi';
+      else if (includeDemandGen) channel = 'DG Display';
+      return name ? `Events | ${name} | ${region} | Conversions | Prospecting | ${channel} | Linux Foundation | BoFU | ${startDate}` : '';
+    });
   }
   /**
    * Shape only: two uppercase letters, the form campaign-service requires before it consults its
