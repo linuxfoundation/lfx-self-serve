@@ -322,6 +322,27 @@ describe('ProfileController.getLinuxAlias', () => {
     expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardAuthRequired');
   });
 
+  it('degrades to service_unavailable when a management token is present but the forward is unreadable', async () => {
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+    forwardsSvc.getForward.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getLinuxAlias(buildReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith({
+      state: 'service_unavailable',
+      domain: 'linux.com',
+      alias: null,
+      email: null,
+      forwardTo: null,
+      primaryEmail: null,
+    });
+    expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardAuthRequired');
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('suppresses forwardAuthRequired during impersonation even without a management token', async () => {
     isImpersonatingMock.mockReturnValue(true);
     profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);

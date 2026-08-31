@@ -284,7 +284,10 @@ export class ProfileLinuxEmailComponent {
    * token. When that token is absent the server flags `forwardAuthRequired`;
    * redirect once to load the real target instead of silently showing the
    * primary email. The one-shot guard prevents a loop if the round-trip returns
-   * still tokenless (or the user cancels).
+   * still tokenless (or the user cancels). If `authorizeUrl` is absent (Flow C
+   * isn't configured), this no-ops instead of redirecting — the template shows
+   * the "try again later" variant of the re-auth panel (no Re-authorize action)
+   * in that case.
    */
   private maybeReauthForForward(alias: LinuxAliasData | null): void {
     if (!isPlatformBrowser(this.platformId)) return;
