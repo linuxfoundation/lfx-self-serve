@@ -34,7 +34,7 @@ A summary of social listening activity also appears as a tab on the **Campaign I
 - **Relevance**: How closely a mention relates to your foundation — **High** or **Low**
 - **Platforms**: Twitter / X, Bluesky, Reddit, YouTube, Facebook, Hacker News, DEV, Podcasts, GitHub, LinkedIn, and Other
 - **Saved views**: Named, reusable filter combinations you can apply with one click and share by URL
-- **Bookmarks**: Mentions you flag for follow-up, saved per project
+- **Bookmarks**: Mentions you flag for follow-up, saved per foundation
 - **Read state**: Each mention is tracked as read or unread so you can tell at a glance what is new
 - **Octolens**: The third-party data provider that supplies all mention data
 
