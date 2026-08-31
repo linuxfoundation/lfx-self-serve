@@ -2922,6 +2922,30 @@ describe('CampaignsComponent — email delivery channel', () => {
      * `|| a.index - b.index` unverified for the case it exists for: several templates matching the
      * type equally, where the server's newest-first order must survive the sort.
      */
+    /**
+     * The type score must COUNT matched keywords, not merely report that one matched.
+     *
+     * Every prior case compared a multi-keyword match against zero-score rows, so collapsing the
+     * reduce to a boolean left them all green — ranking would silently stop distinguishing a
+     * three-keyword match from a one-keyword one, which is the whole point of scoring.
+     */
+    it('ranks a template matching more type keywords above one matching fewer', () => {
+      selectEmail();
+      // `final-countdown` carries seven keywords. The first row matches one, the second several,
+      // and BOTH are non-zero — so only a counting score can order them.
+      internals().emailTemplates.set([
+        { id: 'one', name: 'Deadline reminder', subject: 'Sign up' },
+        { id: 'many', name: 'Final countdown: last chance, closing soon', subject: 'Deadline' },
+      ] as never);
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('final-countdown');
+
+      expect(
+        internals()
+          .emailTemplatesRendered()
+          .map((t) => t.id)
+      ).toEqual(['many', 'one']);
+    });
+
     it('keeps the server order among templates that score equally above zero', () => {
       selectEmail();
       // All three carry the same type keyword, so they score identically and only `index` orders
