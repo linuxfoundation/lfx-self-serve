@@ -81,7 +81,7 @@ When EasyCLA recorded the account used to sign, the **Signed** cell adds a secon
 - _Signed as \<username\> (Gerrit)_ — also used for agreements identified by LF login or email address, which have no separate platform of their own
 - _Signed as \<identity\>_ — with no platform label, when EasyCLA recorded an identity but no recognised platform for it
 
-This line is informational. It tells you which of your accounts an agreement is attached to, which is useful when you have several linked identities and are working out why a project still asks you to sign.
+This line is informational. It records the account used at signing time, which is useful when you sign from more than one account and are working out why a project still asks you to sign. It is historical: EasyCLA reports whatever it recorded when the agreement was signed, so the account named does not have to be an identity currently linked to your profile.
 
 The line is omitted when EasyCLA has no signing identity on record for that agreement. That applies equally to ICLAs and ECLAs — a missing line means missing data, not a difference between the two types.
 

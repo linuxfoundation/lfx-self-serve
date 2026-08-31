@@ -82,7 +82,7 @@ You can start there. Select **Sign CLA**, search for the project, CLA group, or 
 
 ## Which account was my CLA signed under?
 
-When EasyCLA recorded the account used to sign, the **Signed** column adds a second line under the date, such as _Signed as \<username\> (GitHub)_. It is informational: it tells you which of your linked identities that agreement is attached to, which is what to check when a project still asks you to sign something you believe you have already signed. The line is omitted when EasyCLA has no signing identity on record for that agreement. See [Which identity was a CLA signed under?](../my-clas/#which-identity-was-a-cla-signed-under).
+When EasyCLA recorded the account used to sign, the **Signed** column adds a second line under the date, such as _Signed as \<username\> (GitHub)_. It is informational: it records the account used at signing time, which is what to check when a project still asks you to sign something you believe you have already signed. It is historical — the account it names does not have to be an identity currently linked to your profile. The line is omitted when EasyCLA has no signing identity on record for that agreement. See [Which identity was a CLA signed under?](../my-clas/#which-identity-was-a-cla-signed-under).
 
 ## Can I download my signed CLA PDF?
 
