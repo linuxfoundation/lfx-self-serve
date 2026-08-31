@@ -4,7 +4,7 @@ description: View your signed Individual and Employee CLAs in LFX Self Serve, st
 audience: [all]
 product_area: Account
 tags: [account, cla, easycla, icla, ecla, ccla, identities, signing]
-last_updated: 2026-08-29
+last_updated: 2026-08-31
 intercom_collection: Account
 ---
 
