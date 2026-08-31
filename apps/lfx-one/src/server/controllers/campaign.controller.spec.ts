@@ -1735,6 +1735,11 @@ describe('CampaignController.listBriefCampaigns', () => {
     ['brief_id', { project: 'tlf' }],
     ['a blank project', { project: '   ', brief_id: 'b-1' }],
     ['a blank brief_id', { project: 'tlf', brief_id: '   ' }],
+    // The EMPTY string specifically, not just whitespace. The disabled-persist path reports
+    // `briefId: ''`, and a client that forwarded it here to read a deployment capability would
+    // get a 400 rather than an answer — the request never reaches the service branch that
+    // returns `demandGenEnabled` for a blank id.
+    ['an empty brief_id', { project: 'tlf', brief_id: '' }],
   ])('refuses a request with no %s', async (_label, query) => {
     await controller.listBriefCampaigns(listReq(query), res, next);
 

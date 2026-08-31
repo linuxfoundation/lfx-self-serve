@@ -332,16 +332,16 @@ export class MultiPersonaDashboardComponent {
 
   private getHealthStatus(scores?: FoundationHealthScoreDistributionResponse): 'on-track' | 'watch' | 'needs-attention' {
     if (!scores) return 'on-track';
-    if (scores.critical + scores.unsteady > 0) return 'needs-attention';
-    if (scores.stable > 0) return 'watch';
+    if (scores.critical + scores.concerning > 0) return 'needs-attention';
+    if (scores.fair > 0) return 'watch';
     return 'on-track';
   }
 
   private getHealthDetail(scores?: FoundationHealthScoreDistributionResponse): string {
     if (!scores) return 'On Track';
-    const needsAttention = scores.critical + scores.unsteady;
+    const needsAttention = scores.critical + scores.concerning;
     if (needsAttention > 0) return `${needsAttention} need attention`;
-    if (scores.stable > 0) return `${scores.stable} watch`;
+    if (scores.fair > 0) return `${scores.fair} watch`;
     return 'On Track';
   }
 

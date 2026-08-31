@@ -1915,18 +1915,31 @@ export interface CampaignListResult {
   /**
    * Whether THIS deployment can actually create a Demand Gen Google campaign.
    *
-   * Same reasoning as `statusToggleEnabled`, for a different capability: the create route refuses
-   * `demand-gen` unless `LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` is on, and the chart leaves that
-   * flag unset. Nothing in the create request tells the client that in advance, so without this
-   * field the Implementation tab offers a Demand Gen checkbox whose every submission is refused.
+   * Same reasoning as `statusToggleEnabled`, for a different capability. Nothing in the create
+   * request tells the client in advance, so without this field the Implementation tab offers a
+   * Demand Gen checkbox whose every submission is refused.
+   *
+   * NOT the `LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN` flag, and the difference matters. That flag
+   * gates the campaign-service create path only; while the CREATE/BRIEFS/JOBS cutover is dark the
+   * legacy creator owns creation and makes Demand Gen campaigns regardless of it. So this is
+   * `true` across the whole staged CREATE-off rollout, and `false` only in the narrow window
+   * where campaign-service owns creation and has not been told it understands
+   * `googleAdsConfig.channel`. See `canCreateDemandGen` in `campaign-service.service.ts`, which
+   * is the authoritative computation — simplifying this back to the raw flag would hide a
+   * working legacy option for the entire rollout.
    *
    * Worse than a plain dead end, because the two refusals disagree: selecting Search AND Demand
    * Gen is refused with "deselect one and create it", and following that advice lands on the
    * capability refusal saying Demand Gen is not available at all. The first message walks the
    * user into the second.
    *
-   * Defaults to `false` on every error and pre-load path. Withholding a control for one request
-   * is cheap; offering one that cannot succeed is not.
+   * Always present on a successful read, and never a fallback: an error produces no
+   * `CampaignListResult` at all, so there is no arm of this type that means "we could not tell".
+   * The client models that separately — it holds the capability as `boolean | null` and uses
+   * `null` for unanswered or failed, because a false negative there would clear a user's saved
+   * Demand Gen selection rather than merely withhold a control. Do not read this field's type as
+   * licence to treat `false` as a safe default for "unknown"; `false` is a server statement that
+   * the capability is off.
    */
   demandGenEnabled: boolean;
 }

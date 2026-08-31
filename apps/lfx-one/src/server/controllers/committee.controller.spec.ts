@@ -191,7 +191,7 @@ describe('CommitteeController.getCommitteeCalendar', () => {
   });
 
   it('passes the resolved committee name through to buildVCalendar as calname', async () => {
-    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, name: 'Technical Steering Committee' });
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, name: 'Technical Steering Committee', public: true });
     const req = buildCalendarReq();
     const res = buildRes();
     const next = vi.fn();
@@ -201,6 +201,34 @@ describe('CommitteeController.getCommitteeCalendar', () => {
     expect(next).not.toHaveBeenCalled();
     expect(buildVCalendar).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'Technical Steering Committee');
     expect(res.send).toHaveBeenCalled();
+  });
+
+  // A committee UID is obtainable anonymously from the public meetings feed, so this endpoint must not
+  // become a lookup that turns a UID the public group directory withholds into that group's name.
+  it('withholds the calname for a committee the public group directory does not list', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, name: 'Private Security Committee', public: false });
+    const req = buildCalendarReq();
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getCommitteeCalendar(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(buildVCalendar).toHaveBeenCalledWith(expect.anything(), expect.any(String), undefined);
+    expect(JSON.stringify((buildVCalendar as any).mock.calls)).not.toContain('Private Security Committee');
+    // The feed itself is still served — its PUBLIC meetings are already discoverable elsewhere.
+    expect(res.send).toHaveBeenCalled();
+  });
+
+  it('withholds the calname when the committee omits the public flag entirely', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, name: 'Ambiguous Committee' });
+    const req = buildCalendarReq();
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getCommitteeCalendar(req, res, next);
+
+    expect(buildVCalendar).toHaveBeenCalledWith(expect.anything(), expect.any(String), undefined);
   });
 
   it('falls back to an undefined calname (still 200) when the committee name lookup fails', async () => {

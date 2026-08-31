@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPORT_REGISTRANTS_MAX } from '@lfx-one/shared/constants';
+import { IMPORT_REGISTRANTS_MAX, QUERY_SERVICE_MAX_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiRequestOptions,
@@ -50,6 +50,7 @@ import { Request } from 'express';
 
 import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
+import { attachRsvpsToRegistrants, filterRsvpsToActiveRegistrants } from '../helpers/meeting-rsvp.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
@@ -628,63 +629,67 @@ export class MeetingService {
     includeRsvp: boolean = false,
     occurrenceId?: string,
     failOnPartial: boolean = false,
-    maxResults?: number
+    maxResults?: number,
+    options?: ApiRequestOptions
   ): Promise<MeetingRegistrant[]> {
     // Registrant records carry `parent_refs: ['meeting:<uid>']` but no indexed tags — use `parent`
     // to query parent_refs, matching the working pattern in getMeetingRsvps.
+    // When maxResults bounds the walk (e.g. rejecting an over-limit roster), only that many
+    // rows are ever needed — cap the page request instead of always pulling the full 1000.
     const params: Record<string, any> = {
       type: 'v1_meeting_registrant',
       parent: `meeting:${meetingUid}`,
+      page_size: maxResults ? Math.min(QUERY_SERVICE_MAX_PAGE_SIZE, maxResults + 1) : QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
     logger.debug(req, 'get_meeting_registrants', 'Fetching meeting registrants', { meeting_id: meetingUid, params });
 
-    let registrants = await fetchAllQueryResources<MeetingRegistrant>(
+    const registrantsPromise = fetchAllQueryResources<MeetingRegistrant>(
       req,
       (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          ...params,
-          ...(pageToken && { page_token: pageToken }),
-        }),
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          { ...params, ...(pageToken && { page_token: pageToken }) },
+          undefined,
+          undefined,
+          options
+        ),
       { failOnPartial, maxResults }
     );
 
-    // If include_rsvp is true, fetch RSVP data and attach to registrants.
-    if (includeRsvp) {
-      try {
-        const rsvps = await this.getMeetingRsvps(req, meetingUid);
+    // If include_rsvp is false, the RSVP walk isn't needed at all — skip it rather than fetching
+    // and discarding it.
+    if (!includeRsvp) {
+      return registrantsPromise;
+    }
 
-        // Group RSVPs by registrant_id for lookup.
-        const rsvpsByRegistrant = new Map<string, MeetingRsvp[]>();
-        for (const rsvp of rsvps) {
-          const key = rsvp.registrant_id;
-          if (!rsvpsByRegistrant.has(key)) {
-            rsvpsByRegistrant.set(key, []);
-          }
-          rsvpsByRegistrant.get(key)!.push(rsvp);
-        }
-
-        // Resolve the applicable RSVP per registrant against the caller's occurrence.
-        // Delegating to the shared resolver keeps this endpoint aligned with the
-        // detail-page BFF (`getMeetingRsvpForCurrentUser`) and the counts calculator
-        // (`calculateRsvpCounts`) — a newer `single` decline no longer shadows an
-        // older `all` accept on unrelated occurrences (LFXV2-2864).
-        registrants = registrants.map((registrant) => {
-          const registrantRsvps = rsvpsByRegistrant.get(registrant.uid);
-          if (!registrantRsvps || registrantRsvps.length === 0) {
-            return { ...registrant, rsvp: null };
-          }
-          return { ...registrant, rsvp: selectApplicableRsvp(occurrenceId, registrantRsvps) };
-        });
-      } catch (error) {
+    // Fetch RSVPs via the raw page walk (`getRawMeetingRsvps`) in parallel with the roster fetch,
+    // rather than going through `getMeetingRsvps` — that method does its own registrant-roster
+    // walk to build the active-id filter set, which would re-walk the roster fetched above.
+    // Filtering against the roster we already have is also more consistent than
+    // `getMeetingRsvps`'s independent fetch: the two walks could otherwise diverge on
+    // partial-page failures, attaching RSVPs for registrants that aren't even in the roster being
+    // returned (LFXV2-2078).
+    const [registrants, rsvps] = await Promise.all([
+      registrantsPromise,
+      this.getRawMeetingRsvps(req, meetingUid, options).catch((error) => {
         logger.warning(req, 'get_meeting_registrants', 'Failed to fetch RSVPs for registrants, returning registrants without RSVP data', {
           meeting_id: meetingUid,
           err: error,
         });
-      }
+        return null;
+      }),
+    ]);
+
+    if (rsvps === null) {
+      return registrants;
     }
 
-    return registrants;
+    const activeRsvps = filterRsvpsToActiveRegistrants(rsvps, registrants);
+    return attachRsvpsToRegistrants(registrants, activeRsvps, occurrenceId);
   }
 
   /**
@@ -747,6 +752,7 @@ export class MeetingService {
       type: 'v1_meeting_registrant',
       parent: '',
       filters: [`email:${normalizedEmail}`, `meeting_id:${meetingUid}`],
+      page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
     logger.debug(req, 'get_meeting_registrants_by_email', 'Fetching meeting registrants by email params', {
@@ -1395,6 +1401,36 @@ export class MeetingService {
   }
 
   /**
+   * Fetches the raw RSVP page walk for a meeting, with no registrant filtering. Split out of
+   * `getMeetingRsvps` so callers that have already fetched (or are about to fetch) the registrant
+   * roster for another reason — e.g. `getMeetingRegistrants` with `includeRsvp` — can fetch RSVPs
+   * in parallel with that roster fetch instead of going through `getMeetingRsvps`, which would
+   * walk the roster a second time (LFXV2-2078).
+   */
+  public async getRawMeetingRsvps(req: Request, meetingUid: string, options?: ApiRequestOptions): Promise<MeetingRsvp[]> {
+    logger.debug(req, 'get_raw_meeting_rsvps', 'Fetching meeting RSVPs', { meeting_id: meetingUid });
+
+    const rsvpParams = {
+      tags: `meeting_id:${meetingUid}`,
+      type: 'v1_meeting_rsvp',
+      page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
+    };
+
+    return fetchAllQueryResources<MeetingRsvp>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        { ...rsvpParams, ...(pageToken && { page_token: pageToken }) },
+        undefined,
+        undefined,
+        options
+      )
+    );
+  }
+
+  /**
    * Get all RSVPs for a meeting, filtered to current registrants only.
    * The v1_meeting_rsvp records persist historical RSVPs including for registrants
    * who have since been removed or re-registered with a new registrant_id. We filter
@@ -1404,24 +1440,15 @@ export class MeetingService {
     logger.debug(req, 'get_meeting_rsvps', 'Fetching meeting RSVPs', { meeting_id: meetingUid });
 
     try {
-      const rsvpParams = {
-        tags: `meeting_id:${meetingUid}`,
-        type: 'v1_meeting_rsvp',
-      };
-
       const registrantParams = {
         type: 'v1_meeting_registrant',
         parent: `meeting:${meetingUid}`,
+        page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
       };
 
       let registrantsFetchFailed = false;
       const [rsvps, registrants] = await Promise.all([
-        fetchAllQueryResources<MeetingRsvp>(req, (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            ...rsvpParams,
-            ...(pageToken && { page_token: pageToken }),
-          })
-        ),
+        this.getRawMeetingRsvps(req, meetingUid),
         fetchAllQueryResources<MeetingRegistrant>(
           req,
           (pageToken) =>
@@ -1445,13 +1472,12 @@ export class MeetingService {
         return rsvps;
       }
 
-      const activeRegistrantIds = new Set(registrants.map((r) => r.uid).filter(Boolean));
-      const filtered = rsvps.filter((rsvp) => activeRegistrantIds.has(rsvp.registrant_id));
+      const filtered = filterRsvpsToActiveRegistrants(rsvps, registrants);
 
       logger.debug(req, 'get_meeting_rsvps', 'Filtered RSVPs to active registrants', {
         meeting_id: meetingUid,
         raw_rsvp_count: rsvps.length,
-        active_registrant_count: activeRegistrantIds.size,
+        registrant_count: registrants.length,
         filtered_rsvp_count: filtered.length,
       });
 
