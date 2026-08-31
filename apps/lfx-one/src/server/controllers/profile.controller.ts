@@ -814,22 +814,21 @@ export class ProfileController {
         const managementToken = isImpersonating(req) ? null : this.profileAuthService.getManagementToken(req);
         const forward = managementToken ? await this.forwardsService.getForward(req, managementToken, domain) : null;
 
-        // A claimed alias always has a forward target. If we had a management token but the read
-        // still came back null, the forwards-service was unreachable (timeout/no-responder) — degrade
-        // to service_unavailable (retry panel) rather than emitting a claimed state with a null
-        // forward, which the client could misread and overwrite on Save.
+        // Null with a token means forwards-service was unreachable — degrade to service_unavailable
+        // instead of emitting a claimed state with a null forward the client could overwrite on Save.
         if (managementToken && forward === null) {
           logger.success(req, 'get_linux_alias', startTime, { state: 'service_unavailable' });
           res.json(this.linuxAliasState('service_unavailable', domain));
           return;
         }
 
-        // A claimed alias always has a forward target, but reading it needs the Flow C
-        // management token. When it's absent (and the flow is configured), tell the client
-        // to re-authorize so it can load the real target instead of defaulting to primary.
-        // Suppress the re-auth prompt during impersonation — it is a write-path the impersonator
-        // must not trigger against their own session while viewing the target read-only.
-        const forwardAuthRequired = !isImpersonating(req) && !managementToken && this.profileAuthService.isProfileAuthConfigured();
+        // The forward is unreadable without a Flow C management token — true regardless of whether
+        // Flow C is even configured, so the client can't mistake "unreadable" for "unset". Suppressed
+        // under impersonation — the re-auth would rewrite the impersonator's own session.
+        const forwardAuthRequired = !isImpersonating(req) && !managementToken;
+        // Re-authorization is only offered when Flow C is actually configured; otherwise there's no
+        // authorizeUrl to send the client to and it falls back to the "try again later" copy.
+        const canReauth = forwardAuthRequired && this.profileAuthService.isProfileAuthConfigured();
 
         logger.success(req, 'get_linux_alias', startTime, { state: 'claimed' });
         res.json({
@@ -842,7 +841,9 @@ export class ProfileController {
           ...(forwardAuthRequired
             ? {
                 forwardAuthRequired: true,
-                authorizeUrl: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/linux-email')}`,
+                ...(canReauth
+                  ? { authorizeUrl: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/linux-email')}` }
+                  : {}),
               }
             : {}),
         } satisfies LinuxAliasData);

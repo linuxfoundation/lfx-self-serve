@@ -10,6 +10,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MessageComponent } from '@components/message/message.component';
+import { IDENTITY_LINK_ERROR_MESSAGES, PROFILE_AUTH_ERROR_MESSAGES } from '@lfx-one/shared/constants';
 import {
   AddAccountDialogData,
   ConnectedIdentityFull,
@@ -97,17 +98,18 @@ export class ProfileIdentitiesComponent implements OnInit {
     } else if (params['error'] === 'already_linked') {
       this.conflictDetected.set(true);
       this.clearQueryParams();
-    } else if (params['error']) {
-      const errorMap: Record<string, string> = {
-        social_auth_failed: 'Social authentication failed. Please try again.',
-        invalid_state: 'Security validation failed. Please try again.',
-        link_failed: 'Failed to link identity. Please try again.',
-        social_verification_failed: 'Identity verification failed. Please try again.',
-        invalid_provider: 'Invalid identity provider specified.',
-        no_management_token: 'Authorization expired. Please try again.',
-        no_identity_token: 'No identity token received. Please try again.',
-      };
-      this.messageService.add({ severity: 'error', summary: 'Error', detail: errorMap[params['error']] || 'An error occurred. Please try again.' });
+    } else if (typeof params['error'] === 'string' && params['error']) {
+      const errorCode = params['error'];
+      // Flow C (/passwordless/callback) codes are owned by ProfileLayoutComponent, which is
+      // alive on this route and already toasts them — skip here to avoid a double toast.
+      // hasOwn guard: errorCode is unvalidated user input — an inherited Object.prototype key
+      // (e.g. 'toString') would otherwise resolve as a truthy hit in either map below.
+      if (Object.hasOwn(PROFILE_AUTH_ERROR_MESSAGES, errorCode)) return;
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Error',
+        detail: Object.hasOwn(IDENTITY_LINK_ERROR_MESSAGES, errorCode) ? IDENTITY_LINK_ERROR_MESSAGES[errorCode] : 'An error occurred. Please try again.',
+      });
       this.clearQueryParams();
     }
   }

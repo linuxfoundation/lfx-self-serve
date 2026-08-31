@@ -99,9 +99,14 @@ export function claStatusSeverity(status: ClaStatus): TagSeverity {
 /**
  * Second line under the signed date (#1573). Undefined ⇒ the Signed cell is date-only.
  *
- * GitHub and GitLab take a platform suffix; Gerrit / LF SSO / email do not — that is the
- * committed prototype, not a missing label. A blank identity omits the line even when a
- * platform is present: `Signed as  (GitHub)` is worse than a date-only cell.
+ * Every platform the producer names takes a suffix. `gerrit` reads wider than the Gerrit
+ * tool — it is also the LF SSO / email-identified case and the last resort in the producer's
+ * `github > gitlab > gerrit` precedence — and `(Gerrit)` is still the agreed label, because
+ * a narrower one cannot be derived from that token alone.
+ *
+ * An absent or unrecognised platform prints the bare line rather than borrowing a label, and
+ * a blank identity omits the line even when a platform is present: `Signed as  (GitHub)` is
+ * worse than a date-only cell.
  */
 export function signedAsLine(signedVia: ClaSignedVia | undefined, signedAs: string | undefined): string | undefined {
   const identity = signedAs?.trim();
@@ -112,6 +117,7 @@ export function signedAsLine(signedVia: ClaSignedVia | undefined, signedAs: stri
     case 'gitlab':
       return `Signed as ${identity} (GitLab)`;
     case 'gerrit':
+      return `Signed as ${identity} (Gerrit)`;
     default:
       return `Signed as ${identity}`;
   }

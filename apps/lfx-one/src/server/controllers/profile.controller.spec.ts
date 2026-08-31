@@ -4,9 +4,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { getUsernameFromAuthMock, generateM2MTokenMock, objectStoreSvc, userSvc, profileAuthSvc, meetingPrefSvc } = vi.hoisted(() => ({
+const {
+  getUsernameFromAuthMock,
+  generateM2MTokenMock,
+  getEffectiveEmailMock,
+  getEffectiveSubMock,
+  isImpersonatingMock,
+  getLinuxForwardDomainMock,
+  objectStoreSvc,
+  userSvc,
+  profileAuthSvc,
+  emailVerificationSvc,
+  forwardsSvc,
+  enrollmentSvc,
+  meetingPrefSvc,
+} = vi.hoisted(() => ({
   getUsernameFromAuthMock: vi.fn(),
   generateM2MTokenMock: vi.fn(),
+  getEffectiveEmailMock: vi.fn(),
+  getEffectiveSubMock: vi.fn(),
+  isImpersonatingMock: vi.fn(() => false),
+  getLinuxForwardDomainMock: vi.fn(() => 'linux.com'),
   meetingPrefSvc: {
     getMeetingInviteEmail: vi.fn(),
     setMeetingInviteEmail: vi.fn(),
@@ -22,6 +40,15 @@ const { getUsernameFromAuthMock, generateM2MTokenMock, objectStoreSvc, userSvc, 
   profileAuthSvc: {
     isProfileAuthConfigured: vi.fn(() => false),
     getManagementToken: vi.fn(),
+  },
+  emailVerificationSvc: {
+    getUserEmails: vi.fn(),
+  },
+  forwardsSvc: {
+    getForward: vi.fn(),
+  },
+  enrollmentSvc: {
+    hasLinuxComAddon: vi.fn(),
   },
 }));
 
@@ -45,13 +72,13 @@ vi.mock('@lfx-one/shared/utils', () => ({
 
 vi.mock('../utils/auth-helper', () => ({
   getUsernameFromAuth: getUsernameFromAuthMock,
-  getEffectiveEmail: vi.fn(),
-  getEffectiveSub: vi.fn(),
+  getEffectiveEmail: getEffectiveEmailMock,
+  getEffectiveSub: getEffectiveSubMock,
   getEffectiveUsername: vi.fn(),
-  isImpersonating: vi.fn(() => false),
+  isImpersonating: isImpersonatingMock,
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
-vi.mock('../helpers/linux-forward.helper', () => ({ getLinuxForwardDomain: vi.fn() }));
+vi.mock('../helpers/linux-forward.helper', () => ({ getLinuxForwardDomain: getLinuxForwardDomainMock }));
 vi.mock('../services/logger.service', () => ({
   logger: {
     startOperation: vi.fn(() => 0),
@@ -75,17 +102,17 @@ vi.mock('../services/cdp.service', () => ({
 }));
 vi.mock('../services/email-verification.service', () => ({
   EmailVerificationService: vi.fn(function () {
-    return {};
+    return emailVerificationSvc;
   }),
 }));
 vi.mock('../services/enrollment.service', () => ({
   EnrollmentService: vi.fn(function () {
-    return {};
+    return enrollmentSvc;
   }),
 }));
 vi.mock('../services/forwards.service', () => ({
   ForwardsService: vi.fn(function () {
-    return {};
+    return forwardsSvc;
   }),
 }));
 vi.mock('../services/meeting-preference.service', () => ({
@@ -437,5 +464,77 @@ describe('ProfileController.setMeetingInviteEmail', () => {
     await controller.setMeetingInviteEmail(buildSetReq({ email: 'invite@example.com' }), buildRes(), next);
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'BAD_GATEWAY', statusCode: 502 }));
+  });
+});
+
+describe('ProfileController.getLinuxAlias', () => {
+  let controller: ProfileController;
+
+  const claimedEmails = { primary_email: 'user@example.com', alternate_emails: [{ email: 'alias@linux.com' }] };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getLinuxForwardDomainMock.mockReturnValue('linux.com');
+    getEffectiveSubMock.mockReturnValue('auth0|user123');
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    isImpersonatingMock.mockReturnValue(false);
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(false);
+    profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+    emailVerificationSvc.getUserEmails.mockResolvedValue(claimedEmails);
+    controller = new ProfileController();
+  });
+
+  it('reports forwardAuthRequired without authorizeUrl when Flow C is not configured', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getLinuxAlias(buildReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ state: 'claimed', forwardAuthRequired: true }));
+    expect(res.json.mock.calls[0][0]).not.toHaveProperty('authorizeUrl');
+    expect(forwardsSvc.getForward).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('reports forwardAuthRequired with authorizeUrl when Flow C is configured but no management token is in session', async () => {
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getLinuxAlias(buildReq({ headers: { referer: '/profile/linux-email' } }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: 'claimed',
+        forwardAuthRequired: true,
+        authorizeUrl: '/api/profile/auth/start?returnTo=%2Fprofile%2Flinux-email',
+      })
+    );
+  });
+
+  it('omits forwardAuthRequired and reads the forward target when a management token is present', async () => {
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+    forwardsSvc.getForward.mockResolvedValue({ target_email: 'forward@example.com' });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getLinuxAlias(buildReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ state: 'claimed', forwardTo: 'forward@example.com' }));
+    expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardAuthRequired');
+  });
+
+  it('suppresses forwardAuthRequired during impersonation even without a management token', async () => {
+    isImpersonatingMock.mockReturnValue(true);
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getLinuxAlias(buildReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ state: 'claimed', forwardTo: null }));
+    expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardAuthRequired');
+    expect(forwardsSvc.getForward).not.toHaveBeenCalled();
   });
 });

@@ -241,6 +241,15 @@ export interface GithubAccountChoice extends GithubAccountOption {
   label: string;
 }
 
+/**
+ * What the GitHub account step closes with, beyond `null` for a dismissal (#1917).
+ *
+ * The two outcomes are kept apart because dismissing the empty state and asking to link an
+ * account both leave the picker with no account chosen, and only one of them should move the
+ * contributor off the page they started from.
+ */
+export type GithubAccountSelectResult = { githubId: string } | { linkAccounts: true };
+
 /** Response for `GET /api/me/clas/github-accounts`. */
 export interface GithubAccountOptions {
   accounts: GithubAccountOption[];
