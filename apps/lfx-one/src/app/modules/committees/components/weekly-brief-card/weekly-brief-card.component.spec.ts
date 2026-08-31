@@ -1187,3 +1187,164 @@ describe('WeeklyBriefCardComponent — Current activity tally (GH-1922)', () => 
     expect(component.hasCurrentActivityData()).toBe(true);
   });
 });
+
+describe('WeeklyBriefCardComponent — staleness indicator (GH-1966)', () => {
+  let fixture: ComponentFixture<WeeklyBriefCardComponent>;
+
+  const COMMITTEE: Committee = { uid: 'committee-1', name: 'Test Committee', project_uid: 'project-1' } as Committee;
+
+  function briefResponse(overrides: Partial<WeeklyBriefCurrentResponse> = {}): WeeklyBriefCurrentResponse {
+    return {
+      brief: {
+        uid: 'brief-1',
+        committee_uid: 'committee-1',
+        window_start: '2026-08-23T00:00:00Z',
+        window_end: '2026-08-29T23:59:59Z',
+        state: 'generated',
+        brief_text: 'Weekly summary.',
+        source_refs: [],
+        prompt_version: 'v1',
+        model: 'test-model',
+        regeneration_count: 0,
+        private_source_present: false,
+        created_at: '2026-08-24T00:00:00Z',
+        updated_at: '2026-08-24T00:00:00Z',
+        revision: 1,
+      },
+      throttle: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3, window_resets_at: '2026-08-30T00:00:00Z' },
+      caller_rating: null,
+      ...overrides,
+    };
+  }
+
+  async function setup(response: WeeklyBriefCurrentResponse, generateWeeklyBrief: ReturnType<typeof vi.fn> = vi.fn()): Promise<WeeklyBriefCardComponent> {
+    await TestBed.configureTestingModule({
+      imports: [WeeklyBriefCardComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: WeeklyBriefService,
+          useValue: { getWeeklyBrief: vi.fn(() => of(response)), listWeeklyBriefs: vi.fn(() => of({ data: [] })), generateWeeklyBrief },
+        },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(WeeklyBriefCardComponent);
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    await fixture.whenStable();
+    return fixture.componentInstance;
+  }
+
+  function stalenessTag(): HTMLElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-staleness-tag"]');
+  }
+
+  function regenerateButton(): HTMLButtonElement {
+    const el = fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-regenerate-button"] button');
+    if (!el) throw new Error('no native button rendered inside weekly-brief-card-regenerate-button');
+    return el as HTMLButtonElement;
+  }
+
+  it('renders the staleness tag when stale', async () => {
+    await setup(briefResponse({ staleness: { stale: true, event_count: 3, event_count_is_floor: false } }));
+
+    expect(stalenessTag()).not.toBeNull();
+  });
+
+  it('does not render the staleness tag when not stale', async () => {
+    await setup(briefResponse({ staleness: { stale: false, event_count: 0, event_count_is_floor: false } }));
+
+    expect(stalenessTag()).toBeNull();
+  });
+
+  it('does not render the staleness tag when staleness is null (uncomputable)', async () => {
+    await setup(briefResponse({ staleness: null }));
+
+    expect(stalenessTag()).toBeNull();
+  });
+
+  it('tooltip says "last updated", not "generated" — updated_at is the last edit time for an edited brief, not its original generation time', async () => {
+    const component = await setup(briefResponse({ staleness: { stale: true, event_count: 3, event_count_is_floor: false } }));
+
+    expect(component.stalenessTooltip()).toBe('3 new events since this brief was last updated');
+  });
+
+  it('pluralizes "event" for a floor count of exactly 1 (a "1+" count is never exactly one)', async () => {
+    const component = await setup(briefResponse({ staleness: { stale: true, event_count: 1, event_count_is_floor: true } }));
+
+    expect(component.stalenessTooltip()).toBe('1+ new events since this brief was last updated');
+  });
+
+  it('keeps the singular for a non-floor count of exactly 1', async () => {
+    const component = await setup(briefResponse({ staleness: { stale: true, event_count: 1, event_count_is_floor: false } }));
+
+    expect(component.stalenessTooltip()).toBe('1 new event since this brief was last updated');
+  });
+
+  it('leaves the Regenerate button enabled when stale, even with a fresh quota', async () => {
+    await setup(
+      briefResponse({
+        staleness: { stale: true, event_count: 1, event_count_is_floor: false },
+        throttle: { generates_used: 0, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3, window_resets_at: '2026-08-30T00:00:00Z' },
+      })
+    );
+
+    expect(stalenessTag()).not.toBeNull();
+    expect(regenerateButton().disabled).toBeFalsy();
+  });
+
+  it('leaves the Regenerate button disabled on exhausted quota even when not stale — staleness never overrides the throttle gate', async () => {
+    await setup(
+      briefResponse({
+        staleness: { stale: false, event_count: 0, event_count_is_floor: false },
+        throttle: { generates_used: 2, generates_limit: 2, regenerations_used: 3, regenerations_limit: 3, window_resets_at: '2026-08-30T00:00:00Z' },
+      })
+    );
+
+    expect(stalenessTag()).toBeNull();
+    expect(regenerateButton().disabled).toBeTruthy();
+  });
+
+  it('drops (not carries forward) staleness when the 202 envelope itself already carries a new brief — the old verdict was computed against the pre-regenerate updated_at', async () => {
+    const generateWeeklyBrief = vi.fn(() =>
+      of({
+        // Same uid as briefResponse()'s fixture — upstream's regenerate reuses the existing
+        // brief's uid and only bumps revision, matching the real shape (see the identical
+        // fixture rationale in the "current activity tally" describe block's own drop test).
+        brief: {
+          uid: 'brief-1',
+          committee_uid: 'committee-1',
+          window_start: '2026-08-23T00:00:00Z',
+          window_end: '2026-08-29T23:59:59Z',
+          state: 'generating',
+          brief_text: '',
+          source_refs: [],
+          prompt_version: 'v1',
+          model: 'test-model',
+          regeneration_count: 1,
+          private_source_present: false,
+          created_at: '2026-08-24T00:00:00Z',
+          updated_at: '2026-08-24T00:00:00Z',
+          revision: 2,
+        },
+      } as GenerateWeeklyBriefResponse)
+    );
+    const component = await setup(briefResponse({ staleness: { stale: true, event_count: 3, event_count_is_floor: false } }), generateWeeklyBrief);
+    expect(stalenessTag()).not.toBeNull();
+
+    component.onGenerate();
+    await fixture.whenStable();
+
+    // The old stale:true verdict described the pre-regenerate brief's updated_at — it must NOT
+    // carry forward onto the new, just-created revision. The poll's first GET restores the
+    // correct (freshly computed) value for that revision instead.
+    expect(component.staleness()).toBeNull();
+    expect(stalenessTag()).toBeNull();
+  });
+});

@@ -38,6 +38,7 @@ import {
   WeeklyBriefSourceChip,
   WeeklyBriefSourceChipAction,
   WeeklyBriefSourceChipSection,
+  WeeklyBriefStaleness,
   WeeklyBriefThrottle,
 } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel, isGoverningBoard, mapWeeklyBriefSourceRefsToChips } from '@lfx-one/shared/utils';
@@ -288,6 +289,27 @@ export class WeeklyBriefCardComponent {
     return this.briefResponse()?.caller_rating ?? null;
   });
 
+  // BFF enrichment on the response envelope (GH-1966), not on `WeeklyBrief` itself — read from
+  // `briefResponse`, same pattern as `callerRating`. `null` whenever staleness couldn't be
+  // computed (non-shareable state, mock mode, an unparseable timestamp, or an inconclusive or
+  // soft-failed upstream fetch); a brief generated after its own window closed instead
+  // confidently reports `stale: false`. Purely informational — never gates
+  // canGenerate/canRegenerate.
+  public readonly staleness: Signal<WeeklyBriefStaleness | null> = computed(() => this.briefResponse()?.staleness ?? null);
+
+  // Precomputed here rather than resolved inline in the template (repo rule:
+  // docs/reviews/frontend-checklist.md §4) — also avoids a nested ternary in markup.
+  public readonly stalenessTooltip: Signal<string> = computed(() => {
+    const s = this.staleness();
+    if (!s) return '';
+    const suffix = s.event_count_is_floor ? '+' : '';
+    // `updated_at` (what staleness compares against) is the last edit time for an `edited`
+    // brief, not its original generation time — "last updated" covers both without
+    // misattributing an edit to a regenerate that never happened.
+    const noun = s.event_count === 1 && !s.event_count_is_floor ? 'event' : 'events';
+    return `${s.event_count}${suffix} new ${noun} since this brief was last updated`;
+  });
+
   public readonly canGenerate: Signal<boolean> = computed(() => {
     const t = this.throttle();
     return !t || t.generates_used < t.generates_limit;
@@ -367,26 +389,28 @@ export class WeeklyBriefCardComponent {
           // Regenerate, where a real brief is on screen when this fires). Same reasoning
           // extends to current_activity (GH-1922): this week's activity doesn't change just
           // because a brief was requested, so it always carries forward regardless of whether
-          // res.brief itself landed. caller_rating is narrower: it describes specific brief
-          // content, so it only carries forward when res.brief is absent. Upstream's own
-          // contract documents brief as normally populated on this response (the new,
-          // just-created `state: 'generating'` revision, per GroupWeeklyBriefGenerateResult's
-          // description and its 202 example) — reusing the pre-regenerate rating against that
-          // new revision would misattribute, so this drops it whenever res.brief lands and
-          // lets the poll's first GET restore the correct value for that revision instead.
+          // res.brief itself landed. caller_rating and staleness (GH-1966) are both narrower:
+          // each describes specific brief content, so both only carry forward when res.brief is
+          // absent. Upstream's own contract documents brief as normally populated on this
+          // response (the new, just-created `state: 'generating'` revision, per
+          // GroupWeeklyBriefGenerateResult's description and its 202 example) — reusing the
+          // pre-regenerate rating or staleness verdict against that new revision would
+          // misattribute (staleness in particular is computed against the OLD brief's
+          // `updated_at`, which a new revision replaces), so both drop whenever res.brief lands
+          // and let the poll's first GET restore the correct values for that revision instead.
           // Spreads `prev` rather than enumerating every field, so a week-scoped field like
           // current_activity (unaffected by a brief request) carries forward by construction
           // instead of needing to be named here. This is NOT a universal safety improvement,
           // though: a brief-scoped field — keyed to the specific brief/revision, like
-          // caller_rating above — is wrong to carry forward once res.brief lands, and spreading
-          // would silently do exactly that unless explicitly overridden, same as caller_rating
-          // is below. A future field must be classified as one or the other, not assumed safe by
-          // default either way.
+          // caller_rating/staleness below — is wrong to carry forward once res.brief lands, and
+          // spreading would silently do exactly that unless explicitly overridden. A future field
+          // must be classified as one or the other, not assumed safe by default either way.
           this.briefResponse.update((prev) => ({
             ...prev,
             brief: res.brief ?? prev?.brief ?? null,
             throttle: res.throttle ?? prev?.throttle ?? null,
             caller_rating: res.brief ? null : prev?.caller_rating,
+            staleness: res.brief ? undefined : prev?.staleness,
           }));
           // On Regenerate, currentBrief.revision is the pre-regenerate revision — pollUntilTerminal
           // uses it to reject a first tick that reads back that same (stale) terminal brief instead

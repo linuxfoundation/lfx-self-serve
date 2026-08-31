@@ -16,6 +16,7 @@ describe('MentionCardComponent', () => {
       id: 'm1',
       platform: 'reddit',
       keyword: 'kubernetes',
+      sourceProjectName: 'Kubernetes',
       timestamp: '2026-08-01T00:00:00Z',
       authorName: 'Jane Doe',
       authorProfileLink: 'https://reddit.com/u/jane',
@@ -255,6 +256,44 @@ describe('MentionCardComponent', () => {
     expect(querySelector('[data-testid="mention-card"]')?.className).toContain('mention-card--read');
     // Read cards no longer mark on click — the stretched link's label must not promise it.
     expect(querySelector('.card-link')?.getAttribute('aria-label')).toBe('Open original post on Reddit');
+  });
+
+  it('announces sentiment through the rail instead of a chip, coloring both the icon and the bar', async () => {
+    setMention(baseMention({ sentiment: 'negative' }));
+    await fixture.whenStable();
+
+    const rail = querySelector('[data-testid="mention-card-sentiment-rail"]') as HTMLElement;
+    expect(rail).not.toBeNull();
+    expect(rail.querySelector('.sr-only')?.textContent?.trim()).toBe('Negative sentiment');
+    expect(rail.querySelector('i')?.className).toContain('text-red-500');
+    expect(rail.querySelector('span[aria-hidden="true"]')?.className).toContain('bg-red-500');
+  });
+
+  it('names the sub-project in the pill, falling back to the capitalized keyword when the column is blank', async () => {
+    setMention(baseMention({ sourceProjectName: 'CNCF Kubernetes' }));
+    await fixture.whenStable();
+
+    expect(querySelector('[data-testid="mention-card-project"]')?.textContent?.trim()).toBe('CNCF Kubernetes');
+
+    setMention(baseMention({ sourceProjectName: '' }));
+    await fixture.whenStable();
+
+    expect(querySelector('[data-testid="mention-card-project"]')?.textContent?.trim()).toBe('Kubernetes');
+  });
+
+  it('keeps the body clamped and points to the original post once truncated', async () => {
+    setMention(baseMention());
+    await fixture.whenStable();
+
+    // jsdom reports zero heights — stub the layout boxes so the clamp measure sees overflow.
+    const body = querySelector('.mention-body') as HTMLElement;
+    Object.defineProperty(body, 'scrollHeight', { value: 200 });
+    Object.defineProperty(body, 'clientHeight', { value: 72 });
+    fixture.componentRef.setInput('timeTick', 1);
+    await fixture.whenStable();
+
+    expect(querySelector('.mention-body')?.className).toContain('line-clamp-4');
+    expect(querySelector('[data-testid="mention-card-read-more"]')?.textContent).toContain('Read full post on Reddit');
   });
 
   it('exposes the stretched link as the sole keyboard tab stop to the original URL', async () => {

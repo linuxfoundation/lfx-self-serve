@@ -193,8 +193,9 @@ export class WeeklyBriefController {
         revision: result.brief?.revision,
       });
 
-      // Per-user, FGA-filtered activity (current_activity's source_refs; caller_rating) — must
-      // not sit in a shared or intermediary cache, same rationale as the sibling
+      // caller_rating, staleness (GH-1966), and current_activity (GH-1922) are all
+      // per-user/per-request BFF enrichments derived from FGA-filtered activity — must not sit
+      // in a shared or intermediary cache, same rationale as the sibling
       // CommitteeActivityController.
       res.setHeader('Cache-Control', 'no-store');
       res.json(result);

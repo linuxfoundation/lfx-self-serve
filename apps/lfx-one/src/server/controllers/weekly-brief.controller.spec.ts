@@ -327,7 +327,7 @@ describe('WeeklyBriefController', () => {
       expect(weeklyBriefSvc.getCurrentBrief).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, { includeCurrentActivity: true });
     });
 
-    it('sets Cache-Control: no-store — the response can carry per-user, FGA-filtered activity/rating content', async () => {
+    it('sets Cache-Control: no-store — the response carries per-user caller_rating, staleness (GH-1966), and current_activity (GH-1922), all derived from FGA-filtered data', async () => {
       weeklyBriefSvc.getCurrentBrief.mockResolvedValue({ brief: null, throttle: null });
       const res = buildRes();
 

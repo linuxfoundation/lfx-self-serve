@@ -11,6 +11,7 @@ import {
   WEEKLY_BRIEF_DEFAULT_THROTTLE,
   WEEKLY_BRIEF_ERROR_REASON,
   WEEKLY_BRIEF_SHAREABLE_STATES,
+  WEEKLY_BRIEF_STALENESS_EVENT_TYPES,
 } from '@lfx-one/shared/constants';
 import {
   ActivityEvent,
@@ -32,11 +33,12 @@ import {
   WeeklyBriefCurrentResponse,
   WeeklyBriefRating,
   WeeklyBriefSourceRef,
+  WeeklyBriefStaleness,
 } from '@lfx-one/shared/interfaces';
 import { formatUtcDateRangeLabel, isGoverningBoard } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID } from '../constants';
+import { WEEKLY_BRIEF_MOCK_QUIET_WEEK_COMMITTEE_UID, WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS } from '../constants';
 import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getEffectiveSub, getEffectiveUsername, getRealEmail, resolveRealAccessToken } from '../utils/auth-helper';
@@ -318,43 +320,62 @@ export class WeeklyBriefService {
   private aiService: AiService = new AiService();
 
   /**
-   * GET /committees/:committeeId/weekly-briefs/current — see `fetchBriefResponse` for the
+   * GET /committees/:committeeId/weekly-briefs/current — see `fetchCurrentBrief` for the
    * mock/live `brief`/`throttle` contract this builds on.
    *
+   * Upstream's own contract is 200-with-null-brief-and-throttle when no draft
+   * exists yet for the window — a 404 here means "committee not found", a
+   * real error the caller needs to see, not an empty-brief state to paper
+   * over.
+   *
+   * This is the controller's read path — it carries `caller_rating`, `staleness` (GH-1966), AND
+   * `current_activity` (GH-1922). Internal callers that only need `brief`/`throttle`
+   * (`getActionItems`, `shareBrief`, `shareToSlack`) call `fetchCurrentBrief` directly instead:
+   * both `withStaleness`'s and `buildCurrentActivityWithBudget`'s committee-activity fan-outs are
+   * real upstream cost that only the card's own read needs, and paying them on every action-item
+   * extraction, share, and rating write for fields those paths immediately discard would multiply
+   * that cost for nothing.
+   *
    * `includeCurrentActivity` (default true) lets a caller opt out of the current_activity
-   * (GH-1922) fan-out entirely — worth having because `getCommitteeActivity`'s own multi-call
-   * aggregation isn't free, and this week's activity can't change within one poll cycle, so
-   * re-running it on every tick would multiply a real upstream cost for a value that's already
-   * correct from the first tick. Two independent client callers opt out, each on its own signal
-   * — see `WeeklyBriefService#getWeeklyBrief` (the Angular client, `app/shared/services/`) for
-   * which callers, when, and why — and see `WeeklyBriefCurrentResponse.current_activity`'s doc
-   * comment (`@lfx-one/shared/interfaces`) for the absent/null/present contract this option
-   * interacts with. Not re-derived here to avoid yet another copy of that contract drifting out
-   * of sync with the other five that already reference it.
+   * (GH-1922) fan-out specifically, independent of the other two enrichments — worth having
+   * because `getCommitteeActivity`'s own multi-call aggregation isn't free, and this week's
+   * activity can't change within one poll cycle, so re-running it on every tick would multiply a
+   * real upstream cost for a value that's already correct from the first tick. Two independent
+   * client callers opt out, each on its own signal — see `WeeklyBriefService#getWeeklyBrief` (the
+   * Angular client, `app/shared/services/`) for which callers, when, and why — and see
+   * `WeeklyBriefCurrentResponse.current_activity`'s doc comment (`@lfx-one/shared/interfaces`) for
+   * the absent/null/present contract this option interacts with. Not re-derived here to avoid yet
+   * another copy of that contract drifting out of sync with the other places that reference it.
    */
   public async getCurrentBrief(req: Request, committeeId: string, options: { includeCurrentActivity?: boolean } = {}): Promise<WeeklyBriefCurrentResponse> {
     const includeCurrentActivity = options.includeCurrentActivity ?? true;
-    // current_activity (GH-1922) is sourced from CommitteeActivityService's existing live
-    // aggregation — runs identically in mock and live mode, since that service has no mock/live
-    // split of its own; only fetchBriefResponse's own mock-vs-proxy branch (brief/throttle)
-    // differs between the two. Run in parallel with fetchBriefResponse, not after — the two are
-    // independent reads, so awaiting them sequentially would make this tally's latency fully
-    // additive on top of the brief fetch for no reason.
-    //
-    // Only built here, not inside fetchBriefResponse — every internal caller that reuses that
-    // helper (getActionItems, shareBrief, shareToSlack, resolveRatableBrief) only ever reads
-    // brief/caller_rating off the result, so building the tally for them too would pay a real
-    // upstream fan-out (getCommitteeBase, and for a governance committee,
-    // CommitteeActivityService's own multi-call aggregation) for a field they'd discard on every
-    // write path (share, rate) and every read of just the AI-extracted action items.
-    const [response, currentActivity] = await Promise.all([
-      this.fetchBriefResponse(req, committeeId),
+    const { response, live } = await this.fetchCurrentBrief(req, committeeId);
+    // All three enrichments read only `response.brief`, which none of them mutate — run them
+    // concurrently rather than serially chaining, since withStaleness's and
+    // buildCurrentActivityWithBudget's committee-activity fetches are the endpoint's most
+    // expensive steps. The no-brief passthrough case is asserted by `toBe` against the raw
+    // upstream object in the existing "getCurrentBrief proxies straight through and does not
+    // swallow a 404" spec — falling back to the original `response` reference when nothing was
+    // added keeps that pre-existing contract intact rather than spreading into a fresh object
+    // unconditionally.
+    const [withRating, withStale, currentActivity] = await Promise.all([
+      this.withCallerRating(req, committeeId, response),
+      this.withStaleness(req, committeeId, response, live),
       includeCurrentActivity ? this.buildCurrentActivityWithBudget(req, committeeId) : Promise.resolve(undefined),
     ]);
-    // !== undefined, not truthiness — currentActivity can be null (a settled "doesn't apply"
-    // answer, see buildCurrentActivity's doc comment), which is a real value the client needs
-    // to see, not an absence to fall through on.
-    return currentActivity !== undefined ? { ...response, current_activity: currentActivity } : response;
+    // Composed explicitly over `response` (not a blind spread of all three results) so no
+    // enrichment's key can be silently dropped if another's return shape ever changes — each
+    // helper's own object/value is only a source of its own field. `currentActivity`'s check is
+    // `!== undefined`, not truthiness — it can be `null` (a settled "doesn't apply" answer, see
+    // buildCurrentActivity's doc comment), which is a real value the client needs to see, not an
+    // absence to fall through on.
+    if (withRating === response && withStale === response && currentActivity === undefined) return response;
+    return {
+      ...response,
+      ...(withRating !== response && { caller_rating: withRating.caller_rating }),
+      ...(withStale !== response && { staleness: withStale.staleness }),
+      ...(currentActivity !== undefined && { current_activity: currentActivity }),
+    };
   }
 
   /**
@@ -537,7 +558,7 @@ export class WeeklyBriefService {
    * (a miss, same as an actual cache miss) — that narrower case isn't covered here.
    */
   public async getActionItems(req: Request, committeeId: string): Promise<GetWeeklyBriefActionItemsResponse> {
-    const { brief } = await this.fetchBriefResponse(req, committeeId);
+    const { brief } = (await this.fetchCurrentBrief(req, committeeId)).response;
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state) || !brief.brief_text?.trim()) {
       return { items: [] };
     }
@@ -772,7 +793,7 @@ export class WeeklyBriefService {
    * this service — impersonation still shows staff what the target sees.
    */
   public async shareBrief(req: Request, committeeId: string, expectedRevision: number): Promise<ShareWeeklyBriefResult> {
-    const { brief } = await this.fetchBriefResponse(req, committeeId);
+    const { brief } = (await this.fetchCurrentBrief(req, committeeId)).response;
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', committeeId, {
         operation: 'share_weekly_brief',
@@ -1010,7 +1031,7 @@ export class WeeklyBriefService {
       });
     }
 
-    const { brief } = await this.fetchBriefResponse(req, committeeId);
+    const { brief } = (await this.fetchCurrentBrief(req, committeeId)).response;
     if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', committeeId, {
         operation: 'share_weekly_brief_slack',
@@ -1149,6 +1170,33 @@ export class WeeklyBriefService {
     return {};
   }
 
+  /** Fetches the current brief/throttle with no BFF-side enrichment — the shared collaborator for `getCurrentBrief` and the internal callers that don't need `caller_rating`/`staleness`. */
+  private async fetchCurrentBrief(req: Request, committeeId: string): Promise<{ response: WeeklyBriefCurrentResponse; live: boolean }> {
+    const live = this.isLive(req);
+    let response: WeeklyBriefCurrentResponse;
+    if (!live) {
+      const brief = currentMockBrief(committeeId);
+      response = {
+        brief,
+        throttle: {
+          ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
+          generates_used: 1,
+          regenerations_used: brief.regeneration_count,
+          window_resets_at: nextSundayIso(),
+        },
+      };
+    } else {
+      logger.debug(req, 'get_weekly_brief_current', 'Proxying to committee-service', { committee_id: committeeId });
+      response = await this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
+        'GET'
+      );
+    }
+    return { response, live };
+  }
+
   /**
    * Refuses mock mode outright in production instead of silently serving
    * fabricated brief content. `assertCommitteeRead`/`assertCommitteeWrite` gate
@@ -1180,41 +1228,6 @@ export class WeeklyBriefService {
   }
 
   /**
-   * Shared by `getCurrentBrief` and every internal caller that only needs `brief`/`throttle`/
-   * `caller_rating` — `getActionItems`, `shareBrief`, `shareToSlack`, `resolveRatableBrief`.
-   * Deliberately does NOT build `current_activity` (see `getCurrentBrief`'s own doc comment for
-   * why that stays exclusive to the actual `GET /current` read path — those four callers would
-   * otherwise pay a real upstream fan-out for a field they immediately discard).
-   *
-   * Upstream's own contract is 200-with-null-brief-and-throttle when no draft exists yet for the
-   * window — a 404 here means "committee not found", a real error the caller needs to see, not an
-   * empty-brief state to paper over.
-   */
-  private async fetchBriefResponse(req: Request, committeeId: string): Promise<WeeklyBriefCurrentResponse> {
-    let response: WeeklyBriefCurrentResponse;
-    if (!this.isLive(req)) {
-      const brief = currentMockBrief(committeeId);
-      response = {
-        brief,
-        throttle: {
-          ...WEEKLY_BRIEF_DEFAULT_THROTTLE,
-          generates_used: 1,
-          regenerations_used: brief.regeneration_count,
-          window_resets_at: nextSundayIso(),
-        },
-      };
-    } else {
-      logger.debug(req, 'get_weekly_brief_current', 'Proxying to committee-service', { committee_id: committeeId });
-      response = await this.microserviceProxy.proxyRequest<WeeklyBriefCurrentResponse>(
-        req,
-        'LFX_V2_SERVICE',
-        `/committees/${encodeURIComponent(committeeId)}/weekly-briefs/current`,
-        'GET'
-      );
-    }
-    return this.withCallerRating(req, committeeId, response);
-  }
-
   /**
    * Races `buildCurrentActivity` against `WEEKLY_BRIEF_CURRENT_ACTIVITY_BUDGET_MS` — see that
    * constant's own doc comment for why this exists (a slow, not just an erroring, upstream must
@@ -1476,11 +1489,11 @@ export class WeeklyBriefService {
   }
 
   /**
-   * Enriches a `fetchBriefResponse` result (called from both `getCurrentBrief` and every other
-   * internal caller that needs `brief`/`caller_rating`) with the caller's own rating on that
-   * exact brief revision (LFXV2-3042). Fails soft on every edge: no brief, no resolvable
-   * username, or a cache miss/fault all resolve to `caller_rating: null` rather than throwing —
-   * this is a convenience read for the UI's pre-lit thumb state, not a precondition for anything.
+   * Enriches a current-brief response (from `getCurrentBrief` or `resolveRatableBrief`) with
+   * the caller's own rating on that exact brief revision (LFXV2-3042). No state check of its
+   * own: no brief, no resolvable username, or an unbuildable rating key leave `caller_rating`
+   * absent entirely (never throwing); only a cache miss/fault resolves it to `null`. This is a
+   * convenience read for the UI's pre-lit thumb state, not a precondition for anything.
    */
   private async withCallerRating(req: Request, committeeId: string, response: WeeklyBriefCurrentResponse): Promise<WeeklyBriefCurrentResponse> {
     if (!response.brief) return response;
@@ -1490,6 +1503,229 @@ export class WeeklyBriefService {
     if (!key) return response;
     const stored = await valkeyService.getJson<RateWeeklyBriefResponse>(key, isStoredRating);
     return { ...response, caller_rating: stored?.rating ?? null };
+  }
+
+  /**
+   * Enriches `getCurrentBrief`'s result with a staleness signal (GH-1966): whether real
+   * committee activity has occurred, inside this brief's own window and after its text was last
+   * generated/edited, up to the earlier of "now" or the window's own close. No brief or a
+   * non-shareable state leave `staleness` absent entirely. Mock mode, an unparseable
+   * `updated_at`/`window_end`, an inconclusive fetch (see below), or a fetch fault all resolve
+   * to `staleness: null` rather than throwing. A brief (re)generated after its own window had
+   * already closed confidently reports `stale: false` — see the inline comment below for the
+   * reasoning, and its caveat: this assumes `updated_at` only ever advances when the brief's
+   * text actually changes. Upstream documents `updated_at` as a generic record-write stamp (not
+   * scoped to text-producing writes), with a separate `last_edited_at` for chair edits only —
+   * `last_edited_at` isn't a safe substitute either, since a regenerate doesn't set it. Using
+   * `updated_at` is still the best available signal; a non-text upstream write landing after
+   * window close, if one exists, could in principle move this short-circuit early. This is an
+   * honest best-effort indicator, never a precondition for anything, and must never consume
+   * generate/regenerate quota.
+   *
+   * Mock mode: `CommitteeActivityService` always calls live upstream (committee/meeting/vote/
+   * query-service) — it has no mock-data branch of its own. Comparing that live activity
+   * against a synthetic in-memory mock brief would produce a meaningless signal (or simply
+   * fail against an unreachable local stack), so staleness is unconditionally `null` in mock
+   * mode rather than faked. Known gap, not silently papered over — see PR description.
+   */
+  private async withStaleness(req: Request, committeeId: string, response: WeeklyBriefCurrentResponse, live: boolean): Promise<WeeklyBriefCurrentResponse> {
+    const brief = response.brief;
+    if (!brief || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) return response;
+    if (!live) return { ...response, staleness: null };
+    // Upstream marks NONE of these fields Required (confirmed against committee-service's Goa
+    // design — none carries a `dsl.Required` entry), even though `WeeklyBrief` declares all three
+    // as non-optional `string` here — this guard is deliberately stricter than the declared type,
+    // not redundant with it. An absent `updated_at` would otherwise reach `getCommitteeActivity`
+    // as `since: undefined`, silently dropping the lower bound and returning the most recent
+    // activity of ANY age as if it were "since generated"; an absent window bound would silently
+    // disable the per-source window alignment in isNewBriefSourceActivity below.
+    const sinceMs = Date.parse(brief.updated_at ?? '');
+    const windowStartMs = Date.parse(brief.window_start ?? '');
+    const windowEndMs = Date.parse(brief.window_end ?? '');
+    if (Number.isNaN(sinceMs) || Number.isNaN(windowStartMs) || Number.isNaN(windowEndMs)) {
+      logger.warning(req, 'weekly_brief_staleness', 'Brief has an unparseable or missing updated_at/window_start/window_end, degrading staleness to null', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+        updated_at: brief.updated_at ?? null,
+        window_start: brief.window_start ?? null,
+        window_end: brief.window_end ?? null,
+      });
+      return { ...response, staleness: null };
+    }
+    // `briefWindow()`'s own selection (and upstream's identical `WeeklyWindow`, confirmed
+    // against committee-service's Go source) is a Sun 00:00 → Sat 23:59:59.999 window, but keeps
+    // ONE window "current" — retrievable via GET /current — from the Saturday it CLOSES (the day
+    // it first becomes selectable) through the following Friday, rolling over only on the next
+    // Saturday. A brief first generated any day other than that anchor Saturday is
+    // therefore always generated AFTER its own window already closed (`updated_at > window_end`)
+    // — and since the generator had the complete, already-closed window available at that exact
+    // moment, nothing can have been missed: `stale: false` here is provable — modulo the
+    // `updated_at` assumption this method's own doc comment caveats above — not a guess, and
+    // skipping the fetch entirely avoids paying committee-activity's fan-out for a brief that
+    // can never be stale. A brief generated on the anchor Saturday itself remains checkable for
+    // the rest of that week, since `updated_at` stays before `window_end` regardless of how much
+    // later "now" is — gating on "is the window closed right now" instead would wrongly suppress
+    // that case.
+    //
+    // `>=`, not `>` (GH-1967 review): the relevant-events filter below requires a strict
+    // `occurred_at > sinceMs` lower bound and an `occurred_at <= ceilingMs <= windowEndMs` upper
+    // bound — when `sinceMs === windowEndMs` exactly, that interval is provably empty (nothing can
+    // be both strictly greater than and at-most-equal-to the same instant), so `stale: false` is
+    // just as provable here as the strictly-greater case, and skipping the fetch avoids degrading
+    // an already-known-false result to `null` on a timeout/failure/saturation that can't change it.
+    if (sinceMs >= windowEndMs) {
+      return { ...response, staleness: { stale: false, event_count: 0, event_count_is_floor: false } };
+    }
+    // The upper bound is whichever is earlier: the window's own close (activity after it belongs
+    // to a later week this brief can never cover) or "now" (an event can't have "already
+    // happened" before it has) — the feed can return future-dated events (e.g. a vote already
+    // ENDED but stamped with a still-future `end_time`), so this also guards against those.
+    const ceilingMs = Math.min(Date.now(), windowEndMs);
+    try {
+      const { data, page_token, any_leg_saturated, any_leg_failed } = await this.withStalenessFetchTimeout(
+        this.committeeActivityService.getCommitteeActivity(req, committeeId, {
+          since: brief.updated_at,
+          limit: ACTIVITY_FEED_MAX_PAGE_SIZE,
+        })
+      );
+      // WEEKLY_BRIEF_STALENESS_EVENT_TYPES narrows the feed's full event vocabulary down to the
+      // types that actually map onto a brief source kind (see that constant's own doc comment for
+      // the full reasoning, including the mailing-list/membership blind spot it does NOT solve);
+      // isNewBriefSourceActivity then additionally applies each source's OWN upstream window rule
+      // (meeting start, vote end_time, survey cutoff-date-and-already-passed — GH-1967 Copilot
+      // review) so activity a regeneration could never consume can't flag this brief stale.
+      const relevant = data.filter((event) => this.isNewBriefSourceActivity(event, { sinceMs, ceilingMs, windowStartMs, windowEndMs }));
+      // getCommitteeActivity sorts descending by occurred_at, so events past the ceiling sort
+      // ahead of relevant ones. If `page_token`/`any_leg_saturated`/`any_leg_failed` are all unset,
+      // everything that exists was returned and known-complete, so an all-irrelevant result here is
+      // a confident `false`, not a degrade — see below for why none of the three, alone, is a
+      // reliable "nothing was truncated" signal on its own (`page_token` in particular needs a real
+      // `lastPageItem` to anchor a cursor on, so it can be absent even when a leg's own upstream
+      // page was genuinely saturated).
+      //
+      // `page_token` alone under-detects truncation for this purpose: it requires a real
+      // `lastPageItem` to anchor a cursor on, so if the in-memory since/cursor/timestamp pass
+      // filters every fetched row out of the merged pool (a FGA-filtered-empty upstream page, or a
+      // leg like surveys whose upstream sort doesn't match its own occurred_at — see
+      // committee-activity.service.ts's own comment on this), `page_token` comes back unset even
+      // though a leg's own upstream page was genuinely saturated. `any_leg_saturated` (GH-1967
+      // review) is read directly off each leg's own saturation, independent of whether anything
+      // from that leg survived into `data` — closing that gap for this caller.
+      //
+      // `any_leg_failed` (GH-1967 review) covers a different gap: each of `getCommitteeActivity`'s
+      // 5 legs independently degrades a fetch failure into `{events: [], saturated: false}`
+      // (committee-activity.service.ts), indistinguishable from a leg that genuinely fetched
+      // nothing. A leg failure can only hide a real positive (relevant activity this fetch missed),
+      // never manufacture a false one — so it's only a reason to distrust a `relevant.length === 0`
+      // result, same as the truncation signals above.
+      if (relevant.length === 0 && (page_token || any_leg_saturated || any_leg_failed)) {
+        logger.warning(req, 'weekly_brief_staleness', 'Activity fetch was truncated or partially failed with no in-range events, degrading staleness to null', {
+          committee_id: committeeId,
+          brief_uid: brief.uid,
+          fetched: data.length,
+          saturated: !!page_token,
+          any_leg_saturated,
+          any_leg_failed,
+        });
+        return { ...response, staleness: null };
+      }
+      const staleness: WeeklyBriefStaleness = {
+        stale: relevant.length > 0,
+        event_count: relevant.length,
+        event_count_is_floor: !!page_token,
+      };
+      return { ...response, staleness };
+    } catch (error) {
+      logger.warning(req, 'weekly_brief_staleness', 'Failed to compute weekly-brief staleness, degrading to null', {
+        committee_id: committeeId,
+        brief_uid: brief.uid,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return { ...response, staleness: null };
+    }
+  }
+
+  /**
+   * Whether one activity-feed event is BOTH new (after the brief's `updated_at`, at or before the
+   * ceiling) AND something a regeneration of this brief could actually consume — aligned with
+   * upstream's per-source window rules (GH-1967 Copilot review), verified against
+   * committee-service's Go sources:
+   *
+   * - `MeetingSource` windows on the meeting's `start_time` (`start_time[gte/lte]`,
+   *   meeting_source.go) — which IS `meeting_held`'s occurred_at, so the in-range occurrence check
+   *   alone is already fully aligned.
+   * - `VoteSource` qualifies a vote SOLELY on `end_time` ∈ [window_start, window_end]
+   *   (`date_field=end_time`, vote_source.go — "we want votes that closed within the window"; no
+   *   already-passed guard) — an open moment alone never qualifies, and even an in-window EARLY
+   *   close doesn't when the scheduled end_time falls outside the window. payload.end_time
+   *   (absent only when the row has no parseable end_time, which upstream's end_time filter treats
+   *   as unselectable too) is what makes that rule checkable here.
+   * - `SurveySource` windows on `survey_cutoff_date` the same way AND drops cutoffs still in the
+   *   future (`cutoff.After(time.Now())`, survey_source.go — "excluding surveys still collecting
+   *   responses"), skipping rows with unparseable cutoffs entirely — so a survey_published event
+   *   (a publish moment) can never qualify on its own. `cutoffMs <= ceilingMs` IS upstream's
+   *   `cutoff <= now` here because the ceiling is min(now, window_end).
+   *
+   * Without the payload gates this predicate was broader than what regeneration consumes: a vote
+   * opened after generation but ending outside the window (or a survey published while still
+   * collecting responses) flagged the brief stale even though regenerating could never pull it
+   * in — a false positive that burns one of the week's regenerations for no new content.
+   *
+   * Newness: strict `> sinceMs` / `<= ceilingMs` on occurred_at — `getCommitteeActivity`'s own
+   * `since` filter (isAtOrAfterSince) is inclusive (`ms >= since`), so the strict lower bound is
+   * what actually enforces "happened after the brief was generated" (GH-1967 review). The
+   * payload.opened_at fallback covers the collapsed lifecycle (GH-1967 review): the feed collapses
+   * each vote/survey to one event reflecting only its CURRENT state, so one that opened in-window
+   * but has since closed shows up only as vote_closed/survey_closed at its (now out-of-window)
+   * close moment, otherwise invisible here. For vote_opened/survey_published the fallback is
+   * provably identical to the occurred_at check (both read the same creation/publish moment) —
+   * applied uniformly anyway so the newness rule lives in exactly one place.
+   */
+  private isNewBriefSourceActivity(event: ActivityEvent, bounds: { sinceMs: number; ceilingMs: number; windowStartMs: number; windowEndMs: number }): boolean {
+    if (!(WEEKLY_BRIEF_STALENESS_EVENT_TYPES as readonly string[]).includes(event.type)) return false;
+    const occurredMs = Date.parse(event.occurred_at);
+    const occurredInRange = !Number.isNaN(occurredMs) && occurredMs > bounds.sinceMs && occurredMs <= bounds.ceilingMs;
+    switch (event.type) {
+      case 'meeting_held':
+        return occurredInRange;
+      case 'vote_opened':
+      case 'vote_closed': {
+        const endMs = Date.parse(event.payload.end_time ?? '');
+        if (Number.isNaN(endMs) || endMs < bounds.windowStartMs || endMs > bounds.windowEndMs) return false;
+        const openedMs = Date.parse(event.payload.opened_at ?? '');
+        return occurredInRange || (!Number.isNaN(openedMs) && openedMs > bounds.sinceMs && openedMs <= bounds.ceilingMs);
+      }
+      case 'survey_published':
+      case 'survey_closed': {
+        const cutoffMs = Date.parse(event.payload.cutoff_date ?? '');
+        if (Number.isNaN(cutoffMs) || cutoffMs < bounds.windowStartMs || cutoffMs > bounds.ceilingMs) return false;
+        const openedMs = Date.parse(event.payload.opened_at ?? '');
+        return occurredInRange || (!Number.isNaN(openedMs) && openedMs > bounds.sinceMs && openedMs <= bounds.ceilingMs);
+      }
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Races the staleness enrichment's committee-activity fetch against
+   * `WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS` — see that constant's doc comment for why this
+   * tightens, rather than introduces, a deadline on this call. A lost race rejects;
+   * `withStaleness`'s own catch handles it the same as any other fetch fault. Mirrors
+   * `ValkeyService#withTimeout`'s pattern: the abandoned op's eventual settlement is swallowed
+   * so a late rejection never surfaces as an unhandled rejection.
+   */
+  private async withStalenessFetchTimeout<T>(op: Promise<T>): Promise<T> {
+    let timer: NodeJS.Timeout;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('weekly_brief_staleness_fetch_timeout')), WEEKLY_BRIEF_STALENESS_FETCH_TIMEOUT_MS);
+    });
+    op.catch(() => undefined);
+    try {
+      return await Promise.race([op, timeout]);
+    } finally {
+      clearTimeout(timer!);
+    }
   }
 
   /**
@@ -1513,10 +1749,11 @@ export class WeeklyBriefService {
    * the thumb against content the rater never actually reviewed (PR #1361 review). Matches the
    * optimistic-concurrency contract `saveBrief`/`shareBrief` already enforce for their own writes.
    *
-   * Also returns the brief's `caller_rating` (already resolved by `fetchBriefResponse` →
-   * `withCallerRating` for this exact key) as `callerRating`, so `rateBrief`/`clearBriefRating`
-   * can use it as `previous_rating` in their log line without a second, identical Valkey read for
-   * a key this call already read.
+   * Also returns the brief's `caller_rating` (already resolved by this method's own
+   * `withCallerRating` call for this exact key — via `fetchCurrentBrief`, not the full
+   * `getCurrentBrief`, since this call has no need for `staleness` (GH-1966) or `current_activity`
+   * (GH-1922)) as `callerRating`, so `rateBrief`/`clearBriefRating` can use it as `previous_rating`
+   * in their log line without a second, identical Valkey read for a key this call already read.
    */
   private async resolveRatableBrief(
     req: Request,
@@ -1525,7 +1762,8 @@ export class WeeklyBriefService {
     expectedRevision: number,
     operation: string
   ): Promise<{ brief: WeeklyBrief; callerRating: WeeklyBriefRating | null }> {
-    const response = await this.fetchBriefResponse(req, committeeId);
+    const { response: fetched } = await this.fetchCurrentBrief(req, committeeId);
+    const response = await this.withCallerRating(req, committeeId, fetched);
     const { brief } = response;
     if (!brief || brief.uid !== briefUid || !WEEKLY_BRIEF_SHAREABLE_STATES.includes(brief.state)) {
       throw new ResourceNotFoundError('Weekly brief', briefUid, { operation, service: 'weekly_brief_service' });

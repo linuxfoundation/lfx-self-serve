@@ -11,12 +11,15 @@ const PROJECT_UID = 'project-2222';
 // into vitest (see vitest.config.ts), so the shared barrels the controller imports at
 // module load are stubbed here. `computeIsFoundation` is mocked so each test can drive
 // the foundation-vs-project branch without constructing a full Project graph.
-const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, projectSvc } = vi.hoisted(() => ({
+const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, projectSvc, committeeSvc } = vi.hoisted(() => ({
   computeIsFoundationMock: vi.fn(),
   generateM2MTokenMock: vi.fn(),
   isUuidMock: vi.fn(),
   meetingSvc: {
     getMeetings: vi.fn(),
+  },
+  committeeSvc: {
+    getCommittees: vi.fn(),
   },
   projectSvc: {
     getProjectIdBySlug: vi.fn(),
@@ -59,6 +62,11 @@ vi.mock('../services/project.service', () => ({
 vi.mock('../services/meeting.service', () => ({
   MeetingService: vi.fn(function () {
     return meetingSvc;
+  }),
+}));
+vi.mock('../services/committee.service', () => ({
+  CommitteeService: vi.fn(function () {
+    return committeeSvc;
   }),
 }));
 vi.mock('../services/logger.service', () => ({
@@ -356,6 +364,12 @@ describe('ProjectController.getProjectMeetings', () => {
     isUuidMock.mockImplementation((value: string) => value === PROJECT_UID || value === 'committee-uid-1234');
     projectSvc.getProjectById.mockResolvedValue(buildProject());
     meetingSvc.getMeetings.mockResolvedValue({ data: [], page_token: undefined });
+    // Default: both fixture committees are publicly listed, so tests that are not about visibility
+    // filtering see every association pass through.
+    committeeSvc.getCommittees.mockResolvedValue([
+      { uid: 'committee-uid-1234', name: 'Private Security Committee', public: true },
+      { uid: 'committee-uid-5678', name: 'Board', public: true },
+    ]);
   });
 
   it('returns only allowlisted calendar fields and the project envelope', async () => {
@@ -373,7 +387,18 @@ describe('ProjectController.getProjectMeetings', () => {
     // Exact key set, not a list of absent keys — a delete-based strip would pass an "is X absent"
     // check for every field named here while still shipping the next sensitive field added upstream.
     expect(Object.keys(response.meetings[0]).sort()).toEqual(
-      ['cancelled_occurrences', 'duration', 'id', 'meeting_and_occurrence_id', 'occurrences', 'scheduled_start_time', 'start_time', 'timezone', 'title'].sort()
+      [
+        'cancelled_occurrences',
+        'committee_uids',
+        'duration',
+        'id',
+        'meeting_and_occurrence_id',
+        'occurrences',
+        'scheduled_start_time',
+        'start_time',
+        'timezone',
+        'title',
+      ].sort()
     );
     expect(response.total).toBe(1);
     expect(response.project).toEqual({ uid: PROJECT_UID, name: 'CNCF' });
@@ -396,6 +421,108 @@ describe('ProjectController.getProjectMeetings', () => {
     for (const key of ['password', 'passcode', 'host_key', 'zoom_config', 'organizers', 'created_by', 'owner']) {
       expect(serialized).not.toContain(key);
     }
+  });
+
+  it('publishes committee UIDs but never committee names', async () => {
+    // The UID is opaque and already part of the `?committee=` contract; the name is not, so the client
+    // resolves labels from the public group directory instead of trusting this payload.
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data:
+          resourceType === 'v1_meeting'
+            ? [
+                buildMeeting({
+                  committees: [
+                    { uid: 'committee-uid-1234', name: 'Private Security Committee' },
+                    { uid: 'committee-uid-5678', name: 'Board' },
+                  ],
+                }),
+              ]
+            : [],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json.mock.calls[0][0].meetings[0].committee_uids).toEqual(['committee-uid-1234', 'committee-uid-5678']);
+    const serialized = JSON.stringify(res.json.mock.calls[0][0]);
+    expect(serialized).not.toContain('Private Security Committee');
+    expect(serialized).not.toContain('Board');
+  });
+
+  it('drops committee entries with no UID and collapses duplicates', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data:
+          resourceType === 'v1_meeting'
+            ? [buildMeeting({ committees: [{ uid: 'committee-uid-1234' }, { uid: 'committee-uid-1234' }, { uid: '' }] as any })]
+            : [],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json.mock.calls[0][0].meetings[0].committee_uids).toEqual(['committee-uid-1234']);
+  });
+
+  // The UID of a committee the directory withholds is itself disclosive: it lets an anonymous caller
+  // group meetings by a hidden committee, and hand that UID to other anonymous committee endpoints.
+  it('withholds UIDs of committees the public directory does not list', async () => {
+    committeeSvc.getCommittees.mockResolvedValue([
+      { uid: 'committee-uid-1234', name: 'Private Security Committee', public: false },
+      { uid: 'committee-uid-5678', name: 'Board', public: true },
+    ]);
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data: resourceType === 'v1_meeting' ? [buildMeeting({ committees: [{ uid: 'committee-uid-1234' }, { uid: 'committee-uid-5678' }] as any })] : [],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json.mock.calls[0][0].meetings[0].committee_uids).toEqual(['committee-uid-5678']);
+    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('committee-uid-1234');
+  });
+
+  it('fails closed on a committee lookup error, publishing no UIDs rather than every association', async () => {
+    committeeSvc.getCommittees.mockRejectedValue(new Error('committee service 503'));
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data: resourceType === 'v1_meeting' ? [buildMeeting({ committees: [{ uid: 'committee-uid-1234' }] as any })] : [],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    // Still a 200 with the calendar — the outage costs attribution, not the feed.
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].meetings).toHaveLength(1);
+    expect(res.json.mock.calls[0][0].meetings[0].committee_uids).toEqual([]);
+  });
+
+  it('returns no meetings when filtered by a committee the public directory does not list', async () => {
+    committeeSvc.getCommittees.mockResolvedValue([{ uid: 'committee-uid-5678', name: 'Board', public: true }]);
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({ data: resourceType === 'v1_meeting' ? [buildMeeting()] : [], page_token: undefined })
+    );
+    const { req, res, next } = buildMeetingsReqRes(PROJECT_UID, { committee: 'committee-uid-1234' });
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const response = res.json.mock.calls[0][0];
+    expect(response.meetings).toEqual([]);
+    expect(response.total).toBe(0);
+    // The project envelope still resolves, so the page renders its header rather than an error state.
+    expect(response.project.uid).toBe(PROJECT_UID);
   });
 
   it('projects occurrences down to timestamps and status, dropping per-occurrence titles', async () => {

@@ -4,7 +4,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
-import { TableComponent } from '@components/table/table.component';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { Mention } from '@lfx-one/shared/interfaces';
@@ -20,6 +19,7 @@ describe('MentionsListComponent', () => {
       id,
       platform: 'reddit',
       keyword: 'kubernetes',
+      sourceProjectName: 'Kubernetes',
       timestamp: '2026-08-01T00:00:00Z',
       authorName: 'Jane Doe',
       authorProfileLink: 'https://reddit.com/u/jane',
@@ -48,8 +48,9 @@ describe('MentionsListComponent', () => {
   function setMentions(mentions: Mention[]): void {
     fixture.componentRef.setInput('mentions', mentions);
     fixture.componentRef.setInput('totalMentions', mentions.length);
-    // Mirror the parent: the paginator total tracks the true total until the server offset cap kicks in.
-    fixture.componentRef.setInput('paginatorTotalRecords', mentions.length);
+    // Mirror the parent: everything handed down is loaded, and the reachable total tracks it until the offset cap bites.
+    fixture.componentRef.setInput('loadedCount', mentions.length);
+    fixture.componentRef.setInput('servableTotal', mentions.length);
   }
 
   function cards(): MentionCardComponent[] {
@@ -138,7 +139,7 @@ describe('MentionsListComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-mark-all-unread"]')).toBeNull();
   });
 
-  it('keeps the range count and the paginator report visible in unread view — the server total is exact', async () => {
+  it('keeps the range count visible in unread view — the server total is exact', async () => {
     setMentions([baseMention('m1')]);
     await fixture.whenStable();
     expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-count"]')).not.toBeNull();
@@ -147,14 +148,66 @@ describe('MentionsListComponent', () => {
     await fixture.whenStable();
 
     expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-count"]')).not.toBeNull();
-    const table = fixture.debugElement.query(By.directive(TableComponent)).componentInstance as TableComponent;
-    expect(table.showCurrentPageReport()).toBe(true);
+  });
 
-    // Above the server offset cap the report would echo the capped paginator total — it suppresses so the header's true total stays authoritative.
-    fixture.componentRef.setInput('totalMentions', 150000);
-    fixture.componentRef.setInput('paginatorTotalRecords', 100100);
+  it('hides the Load More control once the feed is exhausted', async () => {
+    setMentions([baseMention('m1')]);
     await fixture.whenStable();
-    expect(table.showCurrentPageReport()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-load-more"]')).toBeNull();
+
+    fixture.componentRef.setInput('hasMore', true);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-load-more"]')).not.toBeNull();
+  });
+
+  it('emits loadMore when the advance control is clicked', async () => {
+    setMentions([baseMention('m1')]);
+    fixture.componentRef.setInput('hasMore', true);
+    await fixture.whenStable();
+
+    let emitted = 0;
+    fixture.componentInstance.loadMore.subscribe(() => (emitted += 1));
+    (fixture.nativeElement.querySelector('[data-testid="mentions-list-load-more"]') as HTMLButtonElement).click();
+
+    expect(emitted).toBe(1);
+  });
+
+  it('spins and locks the advance control while a Load More fetch is in flight', async () => {
+    setMentions([baseMention('m1')]);
+    fixture.componentRef.setInput('hasMore', true);
+    fixture.componentRef.setInput('loadingMore', true);
+    await fixture.whenStable();
+
+    const button = fixture.nativeElement.querySelector('[data-testid="mentions-list-load-more"]') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.querySelector('.fa-spinner-third')).not.toBeNull();
+  });
+
+  it('drops the reachable total from the running count when the count request failed', async () => {
+    setMentions([baseMention('m1')]);
+    fixture.componentRef.setInput('hasMore', true);
+    fixture.componentRef.setInput('servableTotal', 500);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mentions-list-showing"]').textContent).toContain('1 of 500');
+
+    fixture.componentRef.setInput('countError', true);
+    await fixture.whenStable();
+
+    const showing = fixture.nativeElement.querySelector('[data-testid="mentions-list-showing"]').textContent;
+    expect(showing).toContain('Showing 1 mention');
+    expect(showing).not.toContain('500');
+  });
+
+  it('drops the reachable total from the running count while the count request is in flight', async () => {
+    setMentions([baseMention('m1')]);
+    fixture.componentRef.setInput('hasMore', true);
+    fixture.componentRef.setInput('servableTotal', 0);
+    fixture.componentRef.setInput('countLoading', true);
+    await fixture.whenStable();
+
+    const showing = fixture.nativeElement.querySelector('[data-testid="mentions-list-showing"]').textContent;
+    expect(showing).toContain('Showing 1 mention');
+    expect(showing).not.toContain(' of ');
   });
 
   it('swaps the empty state for all-caught-up copy in unread view', async () => {
@@ -170,5 +223,22 @@ describe('MentionsListComponent', () => {
     const allRead = fixture.nativeElement.querySelector('[data-testid="mentions-list-all-read-state"]');
     expect(allRead).not.toBeNull();
     expect(allRead.textContent).toContain('No unread mentions match the current filters.');
+
+    // The unread branch carries the same one-click filter reset as the generic empty state (#1821).
+    let emitted = 0;
+    fixture.componentInstance.clearFilters.subscribe(() => (emitted += 1));
+    (allRead.querySelector('button') as HTMLButtonElement).click();
+    expect(emitted).toBe(1);
+  });
+
+  it('offers a one-click filter reset from the empty state', async () => {
+    setMentions([]);
+    await fixture.whenStable();
+
+    let emitted = 0;
+    fixture.componentInstance.clearFilters.subscribe(() => (emitted += 1));
+    (fixture.nativeElement.querySelector('[data-testid="mentions-list-empty-state"] button') as HTMLButtonElement).click();
+
+    expect(emitted).toBe(1);
   });
 });

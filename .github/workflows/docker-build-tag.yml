@@ -145,3 +145,51 @@ jobs:
       registry-username: ${{ github.actor }}
     secrets:
       registry-password: ${{ secrets.GITHUB_TOKEN }}
+
+  notify-argocd-version-bump:
+    name: Notify ArgoCD version-bump job
+    needs:
+      - build-and-push
+      - release-helm-chart
+      - create-ghcr-helm-provenance
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
+        with:
+          role-to-assume: arn:aws:iam::788942260905:role/github-actions-deploy
+          aws-region: us-east-2
+
+      - name: Get version-bump GitHub App from AWS Secrets Manager
+        uses: aws-actions/aws-secretsmanager-get-secrets@3a411b6ec5cace3d626412dd917e7bfeac242cfa # v3.0.0
+        with:
+          secret-ids: |
+            TRIGGER, /cloudops/managed-secrets/cloud/github/linuxfoundation/lfx-self-serve-release-triggerer-app
+          parse-json-secrets: true
+
+      - name: Mint GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ env.TRIGGER_CLIENT_ID }}
+          private-key: ${{ env.TRIGGER_PRIVATE_KEY }}
+          owner: linuxfoundation
+          repositories: lfx-v2-argocd
+
+      - name: Dispatch create-version-bump-pr.yml
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_VERSION: ${{ needs.build-and-push.outputs.app_version }}
+        run: |
+          set -euo pipefail
+          gh workflow run create-version-bump-pr.yml \
+            --repo linuxfoundation/lfx-v2-argocd \
+            --ref main \
+            -f service=lfx-self-serve \
+            -f version="${APP_VERSION}" \
+            -f source_repo="${GITHUB_REPOSITORY}" \
+            -f source_run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            -f release_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"

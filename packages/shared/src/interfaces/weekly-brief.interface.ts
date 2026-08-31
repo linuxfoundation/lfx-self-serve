@@ -176,11 +176,24 @@ export interface WeeklyBriefCurrentResponse {
   throttle: WeeklyBriefThrottle | null;
   /**
    * BFF-side enrichment (not part of upstream's contract): the calling user's own rating on
-   * this specific `brief.uid` + `brief.revision`, or `null` if they haven't rated it (or no
-   * `brief` was returned). Absent entirely when `brief` is null. Read from the BFF's
-   * per-user rating store, not upstream — see `weekly-brief.service.ts#fetchBriefResponse`.
+   * this specific `brief.uid` + `brief.revision`, or `null` on a cache miss/fault. Absent
+   * entirely when `brief` is null, no user identity is resolvable, or no rating cache key
+   * could be built. Read from the BFF's per-user rating store, not upstream — see
+   * `weekly-brief.service.ts#withCallerRating`.
    */
   caller_rating?: WeeklyBriefRating | null;
+  /**
+   * BFF-side enrichment (not part of upstream's contract, GH-1966): whether real committee
+   * activity has occurred inside `brief`'s own window, after `brief` was last touched, up to
+   * the earlier of "now" or the window's own close (see `WeeklyBriefService#withStaleness`'s
+   * doc comment for the full reasoning, including why a brief generated after its own window
+   * closed confidently reports `stale: false` rather than `null`). Absent entirely when `brief`
+   * is null or in a non-shareable state — a stricter gate than `caller_rating`'s (which has no
+   * state check of its own). `null` when staleness specifically couldn't be computed for a
+   * shareable brief — mock mode, an unparseable `updated_at`/`window_end`, an inconclusive
+   * fetch, or a fetch fault. Never a hard failure of `getCurrentBrief`.
+   */
+  staleness?: WeeklyBriefStaleness | null;
   /**
    * BFF-side enrichment (not part of upstream's contract, same as `caller_rating`): a raw
    * count of activity in the current, not-yet-closed week — distinct from `brief`'s own
@@ -221,6 +234,26 @@ export interface WeeklyBriefCurrentActivity {
 
 /** A caller's one-tap quality rating on a specific weekly-brief revision. BFF-only — no upstream equivalent. */
 export type WeeklyBriefRating = 'up' | 'down';
+
+/**
+ * BFF-side enrichment (GH-1966, not part of upstream's contract): whether real committee
+ * activity has occurred inside this brief's own window (`window_end`), after its text was last
+ * generated/edited (`updated_at`), up to the earlier of "now" or the window's own close, and how
+ * much (see `WeeklyBriefService#withStaleness`'s doc comment for the full reasoning). Computed
+ * from `CommitteeActivityService` — purely informational, never affects the brief's own state,
+ * content, or generate/regenerate quota.
+ */
+export interface WeeklyBriefStaleness {
+  /** True when at least one qualifying event was found. */
+  stale: boolean;
+  /** Count of qualifying events found — from the fetched page when a fetch ran; provably `0` on the closed-window short-circuit, where no fetch is needed. See `event_count_is_floor`. */
+  event_count: number;
+  /**
+   * True when the underlying committee-activity fetch itself paginated (a `page_token` came
+   * back) — `event_count` is then a floor, not an exact count.
+   */
+  event_count_is_floor: boolean;
+}
 
 /**
  * Request body for `POST /committees/:committeeId/weekly-briefs/:briefUid/rating`. `revision` is
