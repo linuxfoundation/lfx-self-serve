@@ -19,7 +19,7 @@
       role="group"
       [attr.aria-label]="currentActivityLine()"
       data-testid="weekly-brief-card-current-activity">
-      <span>This week so far:</span>
+      <span>{{ currentActivityPrefix }}</span>
       @if (currentActivity().length) {
         @for (section of currentActivity(); track section.kind; let last = $last) {
           @let sectionExpanded = expandedActivityKinds().has(section.kind);
