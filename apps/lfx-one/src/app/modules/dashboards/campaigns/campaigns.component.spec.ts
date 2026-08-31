@@ -4765,6 +4765,44 @@ describe('CampaignsComponent email monitor', () => {
   });
 
   /**
+   * TWO measured rows, with distinct counters in every field.
+   *
+   * Every other test in this suite pairs ONE measured row with rows that must be ignored, so a
+   * regression returning the first measured row's metrics instead of summing them would pass all
+   * of them: with a single contributor, "the first" and "the sum" are the same object. This is
+   * the case that separates them, and the counters differ per field so a reducer that summed only
+   * `sent` and carried the rest from the first row is caught too.
+   */
+  it('sums every measured email rather than reporting the first', () => {
+    load([
+      okRow(),
+      {
+        ...okRow(),
+        campaign_id: 'c-email-2',
+        metrics: {
+          campaign_id: 'c-email-2',
+          platform_campaign_id: '104670127235',
+          window: 'last_30_days',
+          impressions: 500,
+          clicks: 60,
+          cost_micros: 0,
+          ctr: 0.12,
+          email: { sent: 100, delivered: 90, opens: 40, clicks: 60, bounces: 5, unsubscribes: 3 },
+        },
+      } as unknown as BriefMetricsRow,
+    ]);
+
+    expect(internals().emailMetricsTotals()).toEqual({
+      sent: 9500,
+      delivered: 9358,
+      opens: 1880,
+      clicks: 272,
+      bounces: 100,
+      unsubscribes: 20,
+    });
+  });
+
+  /**
    * A row that is `ok` on its ad counters but carries no `email` object must be skipped, not
    * treated as six zeroes — otherwise it silently widens the denominator the totals are read
    * against while contributing nothing.
