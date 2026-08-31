@@ -45,10 +45,12 @@ export interface LinuxAliasData {
   /**
    * True in the `claimed` state when the forwarding target could not be read
    * because no profile-management token is in session. The client should
-   * redirect to `authorizeUrl` (Flow C) to load the real target.
+   * redirect to `authorizeUrl` (Flow C) to load the real target — when it's
+   * present. Set regardless of whether Flow C is configured, so the client
+   * can distinguish "unreadable" from "not set".
    */
   forwardAuthRequired?: boolean;
-  /** Flow C authorization URL to call when `forwardAuthRequired` is true. */
+  /** Flow C authorization URL to call when `forwardAuthRequired` is true. Omitted when Flow C isn't configured — there's nowhere to send the client. */
   authorizeUrl?: string;
 }
 
