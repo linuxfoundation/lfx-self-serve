@@ -91,8 +91,8 @@
                   -->
                   @if (hsTruncated()) {
                     <p class="text-sm text-amber-700">
-                      No match for "{{ lastLookedUpEvent }}" among the campaigns HubSpot returned — but it matched more than it could return, so the campaign
-                      may still exist. Search a narrower term, or check HubSpot directly, before creating one.
+                      No match for "{{ lastLookedUpEvent }}" among the campaigns HubSpot returned — and HubSpot did not confirm that search was complete, so the
+                      campaign may still exist. Check HubSpot directly, or search a narrower term, before creating one.
                     </p>
                   } @else {
                     <p class="text-sm text-amber-700">

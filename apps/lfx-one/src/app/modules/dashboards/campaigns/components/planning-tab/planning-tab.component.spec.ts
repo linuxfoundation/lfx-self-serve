@@ -1491,6 +1491,27 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
    * saying something TRUE about why. Claiming HubSpot returned fewer than it matched, when it
    * returned everything, points the operator at narrowing a term instead of checking the name.
    */
+  /**
+   * `capped: true` must not be reported as TRUNCATION either.
+   *
+   * campaign-service sets capped whenever completeness cannot be PROVEN — including HubSpot
+   * omitting `total` altogether — not only when it truncated. The old copy said "it matched more
+   * than it could return", which is fabricated for a response that never claimed a total, and
+   * sends the operator to narrow a search term when the remedy is to check the name. The BFF
+   * cannot separate the two: both arrive in one boolean.
+   */
+  it('does not claim truncation even when capped is set', () => {
+    runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: true, inconclusive: true }, 'KubeCon NA 2026 capped');
+
+    const el = fixture.nativeElement as HTMLElement;
+    const notice = el.querySelector('[data-testid="planning-hubspot-capped"]');
+    expect(notice).not.toBeNull();
+    expect(notice?.textContent, 'stated truncation the response never claimed').not.toMatch(/matched more than it could return/i);
+    // What IS known: the search was not confirmed complete.
+    expect(notice?.textContent).toMatch(/did not confirm|check HubSpot/i);
+    expect(el.querySelector('[data-testid="planning-hubspot-create-btn"]'), 'create offered on a capped search').toBeNull();
+  });
+
   it('suppresses the create on an inconclusive result without claiming truncation', () => {
     runLookup({ found: false, hs_utm: null, campaign_name: '', all_matches: [], capped: false, inconclusive: true }, 'KubeCon NA 2026');
 

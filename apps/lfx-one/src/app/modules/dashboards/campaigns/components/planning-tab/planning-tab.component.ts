@@ -1297,8 +1297,11 @@ export class PlanningTabComponent implements OnInit {
             // hsCapped gates the CREATE, so it takes the union answer: any reason a match might
             // be hidden is a reason not to offer a non-idempotent write into a shared namespace.
             this.hsCapped.set(result?.inconclusive === true);
-            // The COPY distinguishes them, because the two remedies differ. Only a truncated
-            // search may say HubSpot matched more than it returned.
+            // The COPY distinguishes them, because the two remedies differ — but neither may
+            // claim TRUNCATION as fact. `capped` is set whenever completeness cannot be proven,
+            // which includes HubSpot omitting `total` entirely, so "it matched more than it
+            // could return" would be fabricated for a response that never said so, and would
+            // send the operator to narrow a term when the remedy is to check the name.
             this.hsTruncated.set(result?.capped === true);
             this.hsStatus.set(this.noMatchStatus(result?.capped === true, result?.inconclusive === true));
           }
