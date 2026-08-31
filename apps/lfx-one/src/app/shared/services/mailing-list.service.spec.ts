@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import type { GroupsIOMailingList } from '@lfx-one/shared/interfaces';
+import type { GroupsIOMailingList, MailingListMember } from '@lfx-one/shared/interfaces';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -76,10 +76,28 @@ describe('MailingListService detail cache', () => {
     expect(http.get).toHaveBeenCalledTimes(2);
   });
 
-  it('evicts the cached detail on member writes', () => {
+  it('evicts the cached detail on deleteMember', () => {
     http.delete.mockReturnValue(of(void 0));
     service.getMailingList('ml-1').subscribe();
     service.deleteMember('ml-1', 'member-1').subscribe();
+    service.getMailingList('ml-1').subscribe();
+
+    expect(http.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('evicts the cached detail on createMember', () => {
+    http.post.mockReturnValue(of({} as MailingListMember));
+    service.getMailingList('ml-1').subscribe();
+    service.createMember('ml-1', { email: 'member@example.com' }).subscribe();
+    service.getMailingList('ml-1').subscribe();
+
+    expect(http.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('evicts the cached detail on updateMember', () => {
+    http.put.mockReturnValue(of({} as MailingListMember));
+    service.getMailingList('ml-1').subscribe();
+    service.updateMember('ml-1', 'member-1', {}).subscribe();
     service.getMailingList('ml-1').subscribe();
 
     expect(http.get).toHaveBeenCalledTimes(2);

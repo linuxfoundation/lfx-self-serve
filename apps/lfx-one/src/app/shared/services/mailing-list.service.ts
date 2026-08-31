@@ -111,21 +111,17 @@ export class MailingListService {
   }
 
   public createMember(mailingListId: string, data: CreateMailingListMemberRequest): Observable<MailingListMember> {
-    return this.http
-      .post<MailingListMember>(`${this.baseUrl}/${mailingListId}/members`, data)
-      .pipe(
-        take(1),
-        tap(() => this.mailingListDetailCache.delete(mailingListId))
-      );
+    return this.http.post<MailingListMember>(`${this.baseUrl}/${mailingListId}/members`, data).pipe(
+      take(1),
+      tap(() => this.mailingListDetailCache.delete(mailingListId))
+    );
   }
 
   public updateMember(mailingListId: string, memberId: string, data: UpdateMailingListMemberRequest): Observable<MailingListMember> {
-    return this.http
-      .put<MailingListMember>(`${this.baseUrl}/${mailingListId}/members/${memberId}`, data)
-      .pipe(
-        take(1),
-        tap(() => this.mailingListDetailCache.delete(mailingListId))
-      );
+    return this.http.put<MailingListMember>(`${this.baseUrl}/${mailingListId}/members/${memberId}`, data).pipe(
+      take(1),
+      tap(() => this.mailingListDetailCache.delete(mailingListId))
+    );
   }
 
   public deleteMember(mailingListId: string, memberId: string): Observable<void> {
