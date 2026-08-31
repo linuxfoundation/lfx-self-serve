@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Generated with [Claude Code](https://claude.ai/code)
-
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -13,6 +11,7 @@ import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
+import { LINUX_EMAIL_FORWARD_REAUTH_KEY } from '@lfx-one/shared/constants';
 import { EnrichedIdentity, LinuxAliasData, LinuxForwardOption } from '@lfx-one/shared/interfaces';
 import { linuxAliasValidator } from '@lfx-one/shared/validators';
 import { UserService } from '@services/user.service';
@@ -37,7 +36,7 @@ export class ProfileLinuxEmailComponent {
   public readonly identities = input<EnrichedIdentity[]>([]);
 
   // One-shot guard (sessionStorage key) so a tokenless re-auth round-trip can't loop.
-  private readonly reauthFlagKey = 'linux-email:forward-reauth-attempted';
+  private readonly reauthFlagKey = LINUX_EMAIL_FORWARD_REAUTH_KEY;
 
   // Set on FORWARD_SET_FAILED so the recovery toast can be shown once the refreshed
   // alias state is known, instead of assuming the refetch lands on 'claimed'.
@@ -71,6 +70,18 @@ export class ProfileLinuxEmailComponent {
   public state = computed(() => this.data()?.state ?? null);
   public domain = computed(() => this.data()?.domain ?? '');
   public email = computed(() => this.data()?.email ?? null);
+
+  // The forward target couldn't be read (no Flow C token in session) — the select is actively
+  // harmful here (it renders blank), so the template swaps it for a re-auth panel instead.
+  public forwardReauthRequired = computed(() => this.state() === 'claimed' && !!this.data()?.forwardAuthRequired);
+
+  // Can be empty while forwardReauthRequired() is true — the BFF omits authorizeUrl when Flow C
+  // itself is unconfigured, since there's nowhere to send the client to re-authorize.
+  public forwardAuthorizeUrl = computed(() => this.data()?.authorizeUrl ?? '');
+
+  // Forward is genuinely unset (not unreadable) — the FORWARD_SET_FAILED recovery path and the
+  // impersonation read-only path both land here. Drives an honest hint on the still-usable select.
+  public forwardNotSet = computed(() => this.state() === 'claimed' && !this.data()?.forwardTo && !this.data()?.forwardAuthRequired);
 
   // True only when the user has changed the forward-to selection from its saved value.
   public forwardDirty: Signal<boolean> = this.initForwardDirty();
@@ -202,6 +213,21 @@ export class ProfileLinuxEmailComponent {
     this.refresh.next();
   }
 
+  /**
+   * Manual recovery for a still-tokenless return. Deliberately does NOT clear reauthFlagKey —
+   * doing so would let maybeReauthForForward fire a second automatic redirect on a still-
+   * tokenless return. This button is the recovery path and stays available on every reload,
+   * which is what makes the one-shot guard recoverable without reopening the redirect loop it
+   * exists to prevent.
+   */
+  public reauthorizeForward(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const url = this.forwardAuthorizeUrl();
+    if (url) {
+      window.location.href = url;
+    }
+  }
+
   // Private methods
 
   private handleError(err: HttpErrorResponse, fallback: string): void {
@@ -254,11 +280,11 @@ export class ProfileLinuxEmailComponent {
   }
 
   /**
-   * A claimed alias always has a forward target, but the server can only read it
-   * with a Flow C management token. When that token is absent the server flags
-   * `forwardAuthRequired`; redirect once to load the real target instead of
-   * silently showing the primary email. The one-shot guard prevents a loop if the
-   * round-trip returns still tokenless (or the user cancels).
+   * A claimed alias's forward target can only be read with a Flow C management
+   * token. When that token is absent the server flags `forwardAuthRequired`;
+   * redirect once to load the real target instead of silently showing the
+   * primary email. The one-shot guard prevents a loop if the round-trip returns
+   * still tokenless (or the user cancels).
    */
   private maybeReauthForForward(alias: LinuxAliasData | null): void {
     if (!isPlatformBrowser(this.platformId)) return;
