@@ -194,13 +194,20 @@ test.describe('Multi-Organization Switching — non-staff, two unrelated direct 
     expect(parsedAfterReload).toEqual({ uid: ORG_B_UID });
   });
 
-  test('M3: fetching an ungranted org is refused, regardless of email domain', async ({ page }) => {
+  test('M3: fetching an ungranted org is refused (domain-independent by construction)', async ({ page }) => {
     // Ordinary users never see an org they were not granted — even if it exists in the catalogue.
     // Direct fetch MUST be refused by the shared read-gate middleware (`requireOrgLensAccess`),
     // which throws a `MicroserviceError(403, 'FORBIDDEN')` for a caller with no grant on the
     // requested uid. Hitting a REGISTERED lens endpoint here is deliberate: an unmatched route
     // (e.g. `/lens/summary`) returns 404 whether or not the middleware exists, so a stale test
     // would not catch a regression that removed the gate.
+    //
+    // Scope of the domain claim here: this test only proves refusal on an ungranted UID; it does
+    // NOT construct a shared-domain ungranted org. The domain independence claim is derived by
+    // construction — the read gate inspects the FGA writer/auditor relation only, and no domain
+    // field is consulted anywhere along the path. See `M7` for the companion assertion where the
+    // seeded grants intentionally use domains unrelated to the caller's identity, exercising the
+    // "different-domain grant still resolves" side of the same invariant.
     const response = await page.request.get(`/api/orgs/${ORG_UNGRANTED_UID}/lens/events/summary`, { failOnStatusCode: false });
     expect(response.status(), 'gate must reply 403 for an ungranted caller on a real lens endpoint').toBe(403);
   });
@@ -399,7 +406,15 @@ test.describe('Multi-Organization Switching — non-staff, two unrelated direct 
       }
     });
 
+    // Synchronize on the failed role-grants response BEFORE probing the trigger — `isVisible()`
+    // resolves immediately, so without this wait the branch below can inspect a mid-bootstrap DOM
+    // where the switcher hasn't yet processed the 502 and the final "no lens fetches" assertion
+    // can pass on a stale timeline instead of on the fail-closed state we're claiming to verify.
+    const failedRoleGrants = page.waitForResponse((response) => response.url().includes('/api/orgs/me/role-grants') && response.status() === 502, {
+      timeout: 15_000,
+    });
     await page.reload({ waitUntil: 'domcontentloaded' });
+    await failedRoleGrants;
 
     // Under failure, the switcher renders the unavailable / empty state instead of stale rows. The
     // trigger MAY still render (identity is available from the session cookie), but the panel body

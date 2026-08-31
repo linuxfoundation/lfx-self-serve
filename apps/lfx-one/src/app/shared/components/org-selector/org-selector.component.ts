@@ -42,6 +42,16 @@ export class OrgSelectorComponent {
    */
   private keyDownListener: ((event: KeyboardEvent) => void) | null = null;
 
+  /**
+   * True from `onPopoverShow` (non-staff branch) until `focusInitialOption` successfully places
+   * focus on a row. When the panel opens before the first item batch arrives (`/api/nav/org-items`
+   * is async), the initial microtask in `focusInitialOption` sees an empty listbox and no-ops;
+   * a `toObservable(items)` subscription set up in the constructor re-runs the focus placement
+   * as soon as rows first render, so ArrowDown lands on the caller's active org rather than the
+   * first row.
+   */
+  private pendingInitialFocus = false;
+
   public readonly isPanelOpen = model<boolean>(false);
   /** When false the trigger is hidden by the sidebar gate — skip list bootstrap so zero-grants users don't hit /api/nav/org-items. */
   public readonly enabled = input<boolean>(true);
@@ -187,6 +197,16 @@ export class OrgSelectorComponent {
           takeUntilDestroyed(this.destroyRef)
         )
         .subscribe(() => this.bootstrapOrgList());
+
+      // Deferred initial-focus: `onPopoverShow` calls `focusInitialOption` synchronously, but a
+      // panel opened during the async bootstrap sees an empty listbox and the microtask no-ops.
+      // Re-run once when the first batch of rows renders while the panel is still open.
+      toObservable(this.items, { injector: this.injector })
+        .pipe(
+          filter((rows) => rows.length > 0 && this.pendingInitialFocus && this.isPanelOpen()),
+          takeUntilDestroyed(this.destroyRef)
+        )
+        .subscribe(() => this.focusInitialOption());
     });
 
     // Second cleanup path for the document-scoped keyDown listener. PrimeNG's popover teardown
@@ -237,12 +257,14 @@ export class OrgSelectorComponent {
     // Non-staff callers land on the currently-selected option so Arrow keys can immediately navigate;
     // staff callers keep the pAutoFocus search input as their entry point per current UX.
     if (!this.isStaff()) {
+      this.pendingInitialFocus = true;
       this.focusInitialOption();
     }
   }
 
   protected onPopoverHide(): void {
     this.isPanelOpen.set(false);
+    this.pendingInitialFocus = false;
     this.searchControl.setValue('', { emitEvent: true });
     this.detachKeyboardHandler();
   }
@@ -327,11 +349,14 @@ export class OrgSelectorComponent {
         this.moveFocusTo(options, options.length - 1);
         return;
       case 'Enter':
-        // Native button behavior fires a click on the focused row, which invokes `selectItem`
-        // and hides the popover (no `preventDefault` / imperative `.click()` here — that
-        // combination double-fires under zone.js). The row is about to be removed from the DOM,
-        // so schedule the focus restore in a microtask: it lands after the click has processed
-        // and matches Escape's contract (focus returns to the combobox trigger, WAI-ARIA APG).
+      case ' ':
+      case 'Spacebar':
+        // Native button behavior fires a click on the focused row (both Enter and Space activate
+        // a `role="option"` button), which invokes `selectItem` and hides the popover. No
+        // `preventDefault` / imperative `.click()` here — that combination double-fires under
+        // zone.js. The row is about to leave the DOM, so schedule the focus restore in a
+        // microtask: it lands after the click has processed and matches Escape's contract
+        // (focus returns to the combobox trigger, WAI-ARIA APG).
         queueMicrotask(() => this.triggerRef()?.nativeElement.focus());
         return;
       default:
@@ -377,6 +402,7 @@ export class OrgSelectorComponent {
       if (options.length === 0) return;
       const selectedIdx = options.findIndex((el) => el.getAttribute('aria-selected') === 'true');
       this.moveFocusTo(options, selectedIdx >= 0 ? selectedIdx : 0);
+      this.pendingInitialFocus = false;
     });
   }
 

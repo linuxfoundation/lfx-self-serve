@@ -13,9 +13,15 @@
  * - A2: panel body is modeled as role="listbox".
  * - A3: rows are modeled as role="option"; the currently active row carries
  *       aria-selected="true"; the others carry aria-selected="false".
- * - A4: keyboard-navigation contract — ArrowDown / ArrowUp move focus between
- *       rows; Enter activates the focused row; Escape closes the panel and
- *       returns focus to the trigger.
+ * - A4: keyboard-navigation contract — ArrowDown / ArrowUp / Home / End move
+ *       focus between rows; Enter and Space activate the focused row; Escape
+ *       closes the panel; every activation and Escape restores focus to the
+ *       trigger.
+ * - A5: the listbox itself carries an accessible name (`aria-label`) — the
+ *       trigger's own aria-label names the combobox, not the controlled widget.
+ * - A6: initial focus survives a delayed first-batch response — a panel opened
+ *       while `/api/nav/org-items` is still in flight still lands focus on the
+ *       aria-selected row once rows finally arrive.
  *
  * All rows and grants in this file are stubbed via `page.route` so the test is
  * deterministic regardless of what the bootstrap identity actually holds.
@@ -174,5 +180,92 @@ test.describe('Org Selector — accessibility contract', () => {
     // received Enter is about to be removed from the DOM, so without an explicit restore, the
     // keyboard user is dumped on `body`.
     await expect(trigger).toBeFocused();
+  });
+
+  test('A4c: Space on a focused option activates that row and restores focus to the combobox trigger', async ({ page }) => {
+    // Space activates a native `role="option"` button just like Enter, so it needs the same
+    // focus-restore contract — a row that received Space is about to leave the DOM and without
+    // the restore the keyboard user lands on `body`.
+    const trigger = page.getByTestId('org-selector');
+    await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
+    await trigger.click();
+
+    const listbox = page.locator('#org-selector-listbox');
+    await expect(listbox).toBeVisible({ timeout: 5_000 });
+    const options = listbox.locator('[role="option"]');
+    await expect(options).toHaveCount(2);
+
+    await page.keyboard.press('ArrowDown');
+    await expect(options.nth(1)).toBeFocused();
+    await page.keyboard.press('Space');
+
+    await expect(page.getByTestId('org-selector-list')).not.toBeVisible({ timeout: 5_000 });
+    await expect(trigger).toBeFocused();
+  });
+
+  test('A5: listbox carries its own accessible name', async ({ page }) => {
+    // The trigger's aria-label names the combobox, not the controlled widget. Per WAI-ARIA APG
+    // a listbox needs its own accessible name; without it assistive tech announces an unnamed
+    // region when focus arrives.
+    const trigger = page.getByTestId('org-selector');
+    await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
+    await trigger.click();
+
+    const listbox = page.locator('#org-selector-listbox');
+    await expect(listbox).toBeVisible({ timeout: 5_000 });
+    await expect(listbox).toHaveAttribute('aria-label', /.+/);
+  });
+
+  test('A6: initial focus survives a delayed first-batch response', async ({ page }) => {
+    // Rebuild the routes with a deliberate delay on /api/nav/org-items so the panel can open
+    // before rows exist — this is the async-bootstrap race the initial-focus retry addresses.
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await page.route('**/api/orgs/me/role-grants', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          writers: [ORG_A_UID, ORG_B_UID],
+          auditors: [],
+          cascadingWriters: [],
+          cascadingAuditors: [],
+          isStaff: false,
+          username: 'e2e-a11y-delayed',
+          loaded_at: new Date().toISOString(),
+        }),
+      })
+    );
+    await page.route('**/api/nav/org-items*', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            { uid: ORG_A_UID, accountId: ORG_A_UID, name: ORG_A_NAME, logoUrl: null, primaryDomain: 'alpha.example', isMember: true, parentName: null },
+            { uid: ORG_B_UID, accountId: ORG_B_UID, name: ORG_B_NAME, logoUrl: null, primaryDomain: 'bravo.example', isMember: true, parentName: null },
+          ],
+          next_page_token: null,
+          upstream_failed: false,
+          total: 2,
+        }),
+      });
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    const trigger = page.getByTestId('org-selector');
+    await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
+    await trigger.click();
+
+    const listbox = page.locator('#org-selector-listbox');
+    await expect(listbox).toBeVisible({ timeout: 5_000 });
+
+    // Rows arrive after the panel opens; once they render, the aria-selected row should end up
+    // focused. Without the retry, the first row would render with tabindex=-1 and focus would
+    // stay on `body`.
+    const options = listbox.locator('[role="option"]');
+    await expect(options).toHaveCount(2, { timeout: 5_000 });
+    const selected = listbox.locator('[role="option"][aria-selected="true"]');
+    await expect(selected).toBeFocused({ timeout: 5_000 });
   });
 });
