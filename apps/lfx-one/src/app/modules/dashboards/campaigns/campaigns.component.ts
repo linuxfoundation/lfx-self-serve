@@ -32,6 +32,7 @@ import type {
   CampaignJobOutcome,
   CampaignEmailStage,
   EmailBriefCopy,
+  EventTemplateTerms,
   CampaignCreateRequest,
   CampaignBriefPersistenceState,
   CampaignImplementationDraft,
@@ -2436,7 +2437,8 @@ export class CampaignsComponent {
   private rankTemplatesForSelectedType(templates: HubSpotMarketingEmail[]): HubSpotMarketingEmail[] {
     const keywords = CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
     const eventTerms = this.eventTemplateTerms();
-    if (keywords.length === 0 && eventTerms.length === 0) {
+    const hasEventTerms = eventTerms.decisive.length > 0 || eventTerms.ranking.length > 0 || eventTerms.year !== '';
+    if (keywords.length === 0 && !hasEventTerms) {
       return templates;
     }
     // Score once per row rather than inside the comparator: a comparator that lowercases and
@@ -2457,7 +2459,7 @@ export class CampaignsComponent {
     const scored = templates.map((template, index) => ({
       template,
       index,
-      score: this.templateKeywordScore(template, keywords) + this.eventMatchScore(template, eventTerms),
+      score: this.templateKeywordScore(template, keywords) + this.eventMatchScore(template, eventTerms) + this.eventRankBonus(template, eventTerms),
     }));
     // `index` breaks ties, which is what makes this stable across engines rather than relying on
     // Array.prototype.sort's stability guarantee holding for every input shape.
@@ -2488,7 +2490,9 @@ export class CampaignsComponent {
     this.emailTemplateSuggestionTerms.set([]);
 
     const eventTerms = this.eventTemplateTerms();
-    if (eventTerms.length === 0 || templates.length === 0) {
+    // DECISIVE terms only. With no name or slug tokens there is nothing that identifies the event,
+    // and city or year matches alone are not evidence it is the right template.
+    if (eventTerms.decisive.length === 0 || templates.length === 0) {
       return;
     }
 
@@ -2508,16 +2512,24 @@ export class CampaignsComponent {
     const typeKeywords = CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
     let best: HubSpotMarketingEmail | null = null;
     let bestScore = 0;
+    let bestBonus = 0;
     let bestTypeScore = 0;
     for (const template of templates) {
       const score = this.eventMatchScore(template, eventTerms);
       if (score === 0) {
         continue;
       }
+      // Ordered tie-breaks, most specific last-resort first: the event decides, then the year
+      // (so this year's edition beats last year's -- otherwise they tie and the server's order
+      // picks, which pre-selected a previous edition), then the city, then the email type.
+      const bonus = this.eventRankBonus(template, eventTerms);
       const typeScore = this.templateKeywordScore(template, typeKeywords);
-      if (score > bestScore || (score === bestScore && typeScore > bestTypeScore)) {
+      const better =
+        score > bestScore || (score === bestScore && bonus > bestBonus) || (score === bestScore && bonus === bestBonus && typeScore > bestTypeScore);
+      if (better) {
         best = template;
         bestScore = score;
+        bestBonus = bonus;
         bestTypeScore = typeScore;
       }
     }
@@ -2527,7 +2539,10 @@ export class CampaignsComponent {
     }
 
     this.emailTemplateSuggestionId.set(best.id);
-    this.emailTemplateSuggestionTerms.set(this.matchedEventTerms(best, eventTerms));
+    // The DECISIVE terms only. These are what justified offering the suggestion at all, and they
+    // are what an operator needs to judge it -- listing a city or year match here would present
+    // as a reason something that could never have been sufficient on its own.
+    this.emailTemplateSuggestionTerms.set(this.matchedEventTerms(best, eventTerms.decisive));
 
     // Pre-fill ONLY an untouched selection. `selectedEmailTemplateId` is the operator's, and a
     // suggestion that overwrites a deliberate choice is a bug wearing a feature's clothes.
@@ -2552,11 +2567,25 @@ export class CampaignsComponent {
    * A short token like `dev` or `mcp` genuinely does need a second term, since it turns up in
    * unrelated names, so the two cases must not be scored the same.
    */
-  private eventMatchScore(template: HubSpotMarketingEmail, eventTerms: readonly string[]): number {
-    return this.matchedEventTerms(template, eventTerms).reduce(
+  private eventMatchScore(template: HubSpotMarketingEmail, terms: EventTemplateTerms): number {
+    return this.matchedEventTerms(template, terms.decisive).reduce(
       (score, term) => score + (term.length >= EVENT_TERM_DISTINCTIVE_LENGTH ? EVENT_TERM_WEIGHT * 2 : EVENT_TERM_WEIGHT),
       0
     );
+  }
+
+  /**
+   * How well a template orders among others the event already identified.
+   *
+   * City terms and the year live here rather than in the decisive score: they sharpen the choice
+   * between templates that all name the event, and are not evidence of the event themselves.
+   * Weighted below a single decisive term so they can never reorder a real match beneath a weak
+   * one.
+   */
+  private eventRankBonus(template: HubSpotMarketingEmail, terms: EventTemplateTerms): number {
+    const city = this.matchedEventTerms(template, terms.ranking).length;
+    const year = terms.year !== '' && this.matchedEventTerms(template, [terms.year]).length > 0 ? 1 : 0;
+    return city + year;
   }
 
   /**
@@ -2599,31 +2628,54 @@ export class CampaignsComponent {
    * "security") and collide across unrelated events in the same portal, which is exactly the
    * false-positive this scoring must avoid.
    */
-  private eventTemplateTerms(): string[] {
+  private eventTemplateTerms(): EventTemplateTerms {
     const details = this.emailBriefOutput()?.eventDetails;
     if (!details) {
-      return [];
+      return { decisive: [], ranking: [], year: '' };
     }
     // SPLIT on punctuation rather than deleting it. Deleting merged "KubeCon+CloudNativeCon" into
     // one unmatchable token, and -- worse -- silently dropped accented letters, so "München"
     // became "mnchen" and could never match a template actually named "München". The event side
     // was mangled while the template side was not, which makes international event names
     // permanently unsuggestable.
-    const raw = [
-      ...(details.name ?? '').split(/[^\p{L}\p{N}]+/u),
-      ...(details.slug ?? '').split(/[^\p{L}\p{N}]+/u),
-      ...(details.city ?? '').split(/[^\p{L}\p{N}]+/u),
-    ];
-    const seen = new Set<string>();
-    for (const token of raw) {
-      // Lower-cased only. Letters outside a-z are KEPT, and the boundary matcher below is built
-      // from the same alphabet, so an accented term matches an accented template name.
+    const split = (value: string): string[] => value.split(/[^\p{L}\p{N}]+/u);
+
+    // Lower-cased only. Letters outside a-z are KEPT, and the boundary matcher is built from the
+    // same alphabet, so an accented term matches an accented template name.
+    const usable = (token: string): boolean => token.length >= 3 && !EVENT_TERM_STOPWORDS.includes(token);
+
+    const decisive = new Set<string>();
+    let year = '';
+    for (const token of [...split(details.name ?? ''), ...split(details.slug ?? '')]) {
       const cleaned = token.toLowerCase();
-      if (cleaned.length >= 3 && !EVENT_TERM_STOPWORDS.includes(cleaned) && !EVENT_TERM_YEAR_PATTERN.test(cleaned)) {
-        seen.add(cleaned);
+      if (EVENT_TERM_YEAR_PATTERN.test(cleaned)) {
+        // The year is a TIE-BREAK, never decisive. Dropping it entirely made annual editions
+        // score identically, so the server's order picked between "KubeCon NA 2025" and
+        // "KubeCon NA 2026" -- last year's template, pre-selected and stageable. Counting it
+        // toward the threshold instead would re-admit "Open newsletter 2028" for an
+        // "Open Source Summit 2028" brief, which is why it is neither.
+        year = year === '' ? cleaned : year;
+        continue;
+      }
+      if (usable(cleaned)) {
+        decisive.add(cleaned);
       }
     }
-    return [...seen];
+
+    // The CITY ranks but never decides. "Salt Lake City visitor guide" matched all three of
+    // `salt`, `lake`, `city` for a KubeCon brief and scored 9 against a threshold of 6 -- a
+    // template with no relation to the event, pre-selected on location words alone. Operators do
+    // name templates by city where a brand repeats annually, so the terms are still worth
+    // ordering by; they just cannot be the reason a suggestion is offered.
+    const ranking = new Set<string>();
+    for (const token of split(details.city ?? '')) {
+      const cleaned = token.toLowerCase();
+      if (usable(cleaned) && !decisive.has(cleaned) && !EVENT_TERM_YEAR_PATTERN.test(cleaned)) {
+        ranking.add(cleaned);
+      }
+    }
+
+    return { decisive: [...decisive], ranking: [...ranking], year };
   }
 
   /**

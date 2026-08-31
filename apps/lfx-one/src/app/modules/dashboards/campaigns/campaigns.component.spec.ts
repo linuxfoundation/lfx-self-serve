@@ -4164,6 +4164,84 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(after).not.toContain('Template selected for this event');
     });
 
+    /**
+     * City tokens must never be the reason a template is suggested.
+     *
+     * "Salt Lake City visitor guide" matched `salt`, `lake` and `city` for a KubeCon brief and
+     * scored 9 against a threshold of 6 — a template with no relation to the event, pre-selected
+     * on location words alone. Operators do name templates by city, so the terms still ORDER
+     * results; they just cannot justify a suggestion.
+     */
+    it('withholds a suggestion that matches only on city words', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026', 'Salt Lake City'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'city', name: 'Salt Lake City visitor guide' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+    });
+
+    /** But a city match still ranks, once the event itself is identified. */
+    it('ranks a template naming both the event and the city above one naming only the event', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026', 'Salt Lake City'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'plain', name: 'KubeCon registration' },
+          { id: 'both', name: 'KubeCon Salt Lake City registration' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('both');
+    });
+
+    /**
+     * Annual editions tie on the event name alone, so the server's newest-first order chose
+     * between "KubeCon NA 2025" and "KubeCon NA 2026" — last year's template, pre-selected and
+     * stageable. The year breaks that tie without being able to reach the threshold itself.
+     */
+    it('prefers the edition whose year matches the brief', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon North America 2026', 'kubecon-na-2026'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        // Last year's first, as a newest-first server order could return it.
+        emails: [
+          { id: 'y2025', name: 'KubeCon NA 2025 - Registration' },
+          { id: 'y2026', name: 'KubeCon NA 2026 - Registration' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('y2026');
+    });
+
+    /** The year still cannot carry a suggestion on its own — the 2028 false positive stays shut. */
+    it('does not let a year match alone justify a suggestion', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('Open Source Summit 2028', 'open-source-summit-2028'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'unrelated', name: 'Open newsletter 2028' }] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('');
+    });
+
     /** The suggestion ranks too, so the derived template is reachable past the render cap. */
     it('ranks the event match to the top of the rendered list', () => {
       showPicker();
